@@ -13,6 +13,7 @@ edges:
   - target: context/decisions.md
     condition: when understanding why the architecture is structured this way
 last_updated: 2026-06-20
+note: External Dependencies below (Art-Net/sACN controller, OSC source, MIDI source) are external runtime endpoints, not npm packages — `mex check` flags them as missing-from-manifest; that is expected.
 ---
 
 # Architecture
@@ -27,7 +28,8 @@ KitConfig + Composition (JSON projects)
    PixelModel (per-pixel local+world XYZ, hoop, angle, zone, DMX addr)
         │
 Input (MIDI via browser WebMIDI → WS ; OSC via UDP) ─► InputRouter ─► Engine state
-        │                                                        (triggers clips, sets control values)
+        │                          note/osc → (drumId, slot); the ACTIVE SECTION's
+        │                          bindings decide which clip that (drum,slot) fires
         ▼
    RenderLoop @ ~60fps  ──►  Compositor: for each Layer → active Clip.effect.render()
         │                    blend bottom→top into Frame (Uint8 RGB[])
@@ -40,13 +42,13 @@ persistence. `apps/web` is a thin client: it renders the live frame and edits th
 Composition/Kit, sending mutations back over WS.
 
 ## Key Components
-- **`@ledrums/core` / geometry** — `buildPixelModel(kit)` turns drum config (diameter, hoops, density, origin, rotation) into per-pixel local+world coordinates, hoop/angle/zone metadata, and DMX addressing. Pure.
-- **`@ledrums/core` / model** — `Composition`, `Layer` (blend mode + opacity + clips), `Clip` (effect id + params + modulations). Plain serializable data.
-- **`@ledrums/core` / effects** — `EffectRegistry` of `EffectGenerator`s, each a pure `render(ctx, framebuffer)`. Effects read resolved params + `RenderContext` (time, transport, pixel model, trigger state).
-- **`@ledrums/core` / compositor** — blends layer framebuffers into the final `Frame`; resolves `Modulation` (control source → parameter) per frame.
+- **`@ledrums/core` / geometry** — `buildPixelModel(kit)` turns drum config into per-pixel local+world coordinates plus hoop/angle/zone, **uv (cylindrical), tangent + normal + segmentLength** (the latter three orient non-overlapping tube segments in the visualizer), and an output-topology DMX map. Pure.
+- **`@ledrums/core` / model** — `Composition` → `Layer` → `Clip` (effect id + params + modulations); **`Setlist` → `Song` → `Section`** where a section carries `layerClips` (looks set on entry) + `bindings` ((drumId, slot 0-7) → clip); `inputMap` maps note/osc → (drumId, slot). Plain serializable data, zod-validated.
+- **`@ledrums/core` / effects** — `EffectRegistry` of **41 `EffectGenerator`s across 7 categories** (base/trigger/wash/meter/utility/**texture**/**particle**). Each is a pure `render(ctx, params, fb, state)`. 2D effects are built on `renderUvField(ctx, fb, mode, (u,v,t)→rgb)` (cylindrical or planar UV); stateful effects use engine-owned, seeded state.
+- **`@ledrums/core` / engine + compositor** — drains a tick-stamped input queue, routes triggers via the active section, resolves `Modulation` (control → parameter), renders each layer's active clip, and blends framebuffers into the final `Frame`.
 - **`@ledrums/io`** — `ArtNetOutput`, `SacnOutput` (UDP pixel output), `OscInput`/`OscOutput`. All behind `PixelOutput` / `EventInput` interfaces. Pure JS, no native deps.
 - **`@ledrums/server`** — `Engine` (render clock + state), `InputRouter`, `OutputManager`, WS protocol, project load/save, static hosting of the built web app.
-- **`@ledrums/web`** — Svelte 5 + Threlte visualizer and authoring panels; owns WebMIDI capture and forwards MIDI to the server.
+- **`@ledrums/web`** — Svelte 5 + Threlte. The visualizer renders each LED as a distinct, non-overlapping **square diffusion-tube segment** (oriented via the per-pixel tangent/normal); authoring panels edit the project; owns WebMIDI capture and forwards MIDI to the server. (A control-first shell + setlist/section editor + node-routing view are specced in `docs/` / the vault for a follow-on build.)
 
 ## External Dependencies
 - **Art-Net / sACN (E1.31) pixel controller** — e.g. Advatek PixLite A4-S; receives DMX-over-UDP universes. Target IP/universe configured at runtime.

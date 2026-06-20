@@ -37,8 +37,9 @@ last_updated: 2026-06-20
 - `pnpm dev` — server + web dev server with HMR.
 - `pnpm build` — build the web app to `apps/web/dist`.
 - `pnpm start` — run the server, serving the built app + engine.
-- `pnpm test` — all Vitest suites (core 58, io 12, server 27, web 24).
+- `pnpm test` — all Vitest suites (core 113, io 12, server 27, web 24 = 176).
 - `pnpm typecheck` — typecheck every package (core/io/server via `tsc`, web via `svelte-check`).
+- `pnpm clean` — remove `dist`/`.svelte-kit`/Vite caches across packages.
 
 ## Common Issues
 - **No MIDI input:** use Chrome/Edge (WebMIDI), and keep the control tab foregrounded — background tab throttling can drop hits. OSC is unaffected.

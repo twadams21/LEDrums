@@ -19,6 +19,38 @@ last_updated: 2026-06-20
 
 ## Decision Log
 
+### Setlist → Song → Section arrangement with per-section (drum, slot) trigger routing
+**Date:** 2026-06-20
+**Status:** Active
+**Decision:** Above the composition sits `Setlist → Song → Section`. Input maps note/OSC → `(drumId, slot)` (8 slots/drum, Sensory-Percussion zones); the **active section's** `bindings` decide which clip a `(drum, slot)` hit fires, and its `layerClips` set the looks on entry.
+**Reasoning:** The same physical hit must do different things per song-section; routing belongs to the section, not the input map. Slots model multi-zone drum triggers.
+**Alternatives considered:** Hard-coding note→clip on the input map (rejected — not section-aware); a global scene list decoupled from songs (rejected — songs/sections match how a set is performed).
+**Consequences:** Engine resolves bindings from the active section each hit; switching a section re-points every trigger. New WS messages: `setActiveSection`, `setBinding`/`removeBinding`, add/remove song/section, `setSectionLayerClip`, `setInputMap`.
+
+### Density pinned to 120 px/m with explicit per-drum output topology
+**Date:** 2026-06-20
+**Status:** Active
+**Decision:** Default density is 120 px/m (hardware strip pitch). The default kit wires **one physical output per drum (all 4 hoops)**; `maxPixelsPerOutput` = 2400 (4 strips × ~5 m × 120). `buildDmxMap` walks the output topology, not a flat sweep.
+**Reasoning:** Density is a property of the real GS8208 strips, not a render knob; the PixLite binds physical outputs, so universes must follow the wiring. (Matches the operator's actual rig: 4 hoops/output.)
+**Alternatives considered:** 60 px/m for render smoothness (rejected — geometrically wrong; instancing handles 2,300 px fine); flat 170-px/universe sweep (rejected — mis-patches the kit).
+**Consequences:** Default kit ≈ 2,300 px, 15 universes; topology lives in `apps/server/projects/*.json` `outputs[]` and is schema-validated against the per-output cap.
+
+### 2D effects via a UV-field sampler; 41-effect registry across 7 categories
+**Date:** 2026-06-20
+**Status:** Active
+**Decision:** Pixels carry a `uv` (cylindrical) coordinate; 2D "texture" effects are pure `(u,v,t) → rgb` functions rendered through `renderUvField(ctx, fb, mode, sample)`. The registry now spans 41 effects across `base/trigger/wash/meter/utility/texture/particle`.
+**Reasoning:** A UV sampler makes 2D/video-style looks (plasma, fire, tunnels, caustics…) trivial and parallelizable to author, without each effect re-deriving spatial mapping.
+**Alternatives considered:** Only 3D-spatial effects (rejected — user wants 2D UV-sampled looks); a real video-texture decode pipeline (deferred — procedural fields cover the need with zero assets).
+**Consequences:** New effects are mostly one pure function; `texture`/`particle` categories added to `EffectCategory`.
+
+### Visualizer renders oriented tube segments, not point sprites
+**Date:** 2026-06-20
+**Status:** Active
+**Decision:** Each pixel exposes world `tangent`, `normal`, and `segmentLengthMm`; the visualizer draws one non-overlapping box per LED (a segment of a square diffusion tube), sized to the arc length with a small gap.
+**Reasoning:** Sphere/point sprites overlapped and read as blobs; tube segments match the real build (LED tape in square diffusion tube) and guarantee no overlap.
+**Alternatives considered:** Smaller spheres (rejected — still overlap/ambiguous); deriving orientation from neighbor positions in the web (rejected — fragile; core has the exact local frame).
+**Consequences:** `SerializedModel` carries `tangents/normals/segmentLengths`; `Pixels.svelte` builds per-instance matrices from the basis.
+
 ### Pure `core` / IO-at-the-edges layering
 **Date:** 2026-06-20
 **Status:** Active
