@@ -1,0 +1,122 @@
+import { z } from 'zod';
+import { BLEND_MODES } from '../color/blend';
+import { kitSchema } from '../geometry/kit-schema';
+
+/** A control source feeds a live value (0..1 conceptually) into a parameter. */
+export const controlSourceSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('velocity'), drum: z.string().optional() }),
+  z.object({ type: z.literal('volume') }),
+  z.object({ type: z.literal('beat'), mult: z.number().default(1) }),
+  z.object({
+    type: z.literal('lfo'),
+    rate: z.number().positive().default(1),
+    shape: z.enum(['sine', 'triangle', 'square', 'saw']).default('sine'),
+  }),
+  z.object({ type: z.literal('osc'), address: z.string() }),
+]);
+
+export const curveSchema = z.enum(['linear', 'exp', 'log', 'invert']);
+
+/** Binds a control source to a clip parameter over a min..max range with a curve. */
+export const modulationSchema = z.object({
+  source: controlSourceSchema,
+  param: z.string(),
+  min: z.number().default(0),
+  max: z.number().default(1),
+  curve: curveSchema.default('linear'),
+});
+
+export const paramValueSchema = z.union([z.number(), z.string(), z.boolean()]);
+
+export const clipSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().default(''),
+  effectId: z.string().min(1),
+  params: z.record(paramValueSchema).default({}),
+  modulations: z.array(modulationSchema).default([]),
+});
+
+export const layerRoleSchema = z.enum(['base', 'trigger', 'automation', 'effect']);
+
+export const layerSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().default(''),
+  role: layerRoleSchema.default('effect'),
+  blendMode: z.enum(BLEND_MODES).default('normal'),
+  opacity: z.number().min(0).max(1).default(1),
+  clips: z.array(clipSchema).default([]),
+  activeClipId: z.string().nullable().default(null),
+});
+
+export const transportSchema = z.object({
+  bpm: z.number().positive().default(120),
+  playing: z.boolean().default(true),
+  beatsPerBar: z.number().int().positive().default(4),
+});
+
+export const compositionSchema = z.object({
+  layers: z.array(layerSchema).default([]),
+  transport: transportSchema.default({}),
+});
+
+/** Maps a MIDI note to a drum (velocity control) and optionally a clip trigger. */
+export const midiNoteMapSchema = z.object({
+  note: z.number().int().min(0).max(127),
+  drumId: z.string(),
+  trigger: z.object({ layerId: z.string(), clipId: z.string() }).optional(),
+});
+
+export const inputMapSchema = z.object({
+  midiNotes: z.array(midiNoteMapSchema).default([]),
+  /** OSC address that drives the master `volume` control. */
+  volumeOscAddress: z.string().optional(),
+  /** OSC addresses that trigger a clip. */
+  oscTriggers: z
+    .array(z.object({ address: z.string(), layerId: z.string(), clipId: z.string() }))
+    .default([]),
+});
+
+export const outputStateSchema = z.enum(['disabled', 'dry-run', 'armed']);
+export const rgbOrderSchema = z.enum(['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR']);
+
+export const outputSettingsSchema = z.object({
+  state: outputStateSchema.default('disabled'),
+  protocol: z.enum(['artnet', 'sacn']).default('artnet'),
+  host: z.string().default('255.255.255.255'),
+  port: z.number().int().positive().optional(),
+  broadcast: z.boolean().default(false),
+  rgbOrder: rgbOrderSchema.default('RGB'),
+  /** Output transmit rate, frames/sec. */
+  fps: z.number().positive().max(120).default(44),
+  /** Multicast interface override (sACN, multi-NIC safety). */
+  iface: z.string().optional(),
+});
+
+export const projectSchema = z.object({
+  name: z.string().default('Untitled'),
+  kit: kitSchema,
+  composition: compositionSchema.default({}),
+  inputMap: inputMapSchema.default({}),
+  output: outputSettingsSchema.default({}),
+});
+
+export type ControlSource = z.infer<typeof controlSourceSchema>;
+export type Curve = z.infer<typeof curveSchema>;
+export type Modulation = z.infer<typeof modulationSchema>;
+export type ParamValue = z.infer<typeof paramValueSchema>;
+export type Clip = z.infer<typeof clipSchema>;
+export type LayerRole = z.infer<typeof layerRoleSchema>;
+export type Layer = z.infer<typeof layerSchema>;
+export type Transport = z.infer<typeof transportSchema>;
+export type Composition = z.infer<typeof compositionSchema>;
+export type MidiNoteMap = z.infer<typeof midiNoteMapSchema>;
+export type InputMap = z.infer<typeof inputMapSchema>;
+export type OutputState = z.infer<typeof outputStateSchema>;
+export type RgbOrder = z.infer<typeof rgbOrderSchema>;
+export type OutputSettings = z.infer<typeof outputSettingsSchema>;
+export type Project = z.infer<typeof projectSchema>;
+
+/** Parse + validate a project JSON, applying defaults. Throws ZodError on invalid input. */
+export function parseProject(raw: unknown): Project {
+  return projectSchema.parse(raw);
+}
