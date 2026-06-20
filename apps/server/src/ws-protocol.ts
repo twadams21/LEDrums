@@ -1,9 +1,13 @@
 import type {
   Clip,
   EngineStats,
+  InputMap,
   Layer,
   PixelModel,
   Project,
+  Section,
+  Song,
+  TriggerBinding,
 } from '@ledrums/core';
 import { listEffects } from '@ledrums/core';
 
@@ -23,6 +27,16 @@ export type ClientMessage =
   | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
   | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number }
   | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean }
+  // Setlist / songs / sections / per-trigger routing
+  | { t: 'setActiveSection'; songId: string; sectionId: string }
+  | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }
+  | { t: 'removeBinding'; sectionId: string; drumId: string; slot: number }
+  | { t: 'addSong'; song: Song }
+  | { t: 'removeSong'; songId: string }
+  | { t: 'addSection'; songId: string; section: Section }
+  | { t: 'removeSection'; songId: string; sectionId: string }
+  | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
+  | { t: 'setInputMap'; inputMap: InputMap }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };
@@ -30,6 +44,8 @@ export type ClientMessage =
 const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'midi', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setOutput',
+  'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
+  'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
   'loadProject', 'saveProject', 'listProjects',
 ]);
 
@@ -61,6 +77,12 @@ export interface SerializedModel {
   count: number;
   /** Flat world positions [x0,y0,z0, x1,y1,z1, ...], mm. */
   positions: number[];
+  /** Flat unit tangents (along the hoop), same layout as positions. */
+  tangents: number[];
+  /** Flat unit outward normals (radial), same layout as positions. */
+  normals: number[];
+  /** Arc length each pixel occupies along its hoop, mm. */
+  segmentLengths: number[];
   drums: SerializedDrum[];
   bounds: { center: [number, number, number]; size: number };
 }
@@ -96,15 +118,28 @@ export function encodeServer(msg: ServerMessage): string {
 /** Serialize the pixel model for the visualizer (sent once per connection / rebuild). */
 export function serializeModel(model: PixelModel): SerializedModel {
   const positions: number[] = new Array(model.pixelCount * 3);
+  const tangents: number[] = new Array(model.pixelCount * 3);
+  const normals: number[] = new Array(model.pixelCount * 3);
+  const segmentLengths: number[] = new Array(model.pixelCount);
   for (let i = 0; i < model.pixelCount; i++) {
     const p = model.pixels[i]!;
     positions[i * 3] = p.world.x;
     positions[i * 3 + 1] = p.world.y;
     positions[i * 3 + 2] = p.world.z;
+    tangents[i * 3] = p.tangent.x;
+    tangents[i * 3 + 1] = p.tangent.y;
+    tangents[i * 3 + 2] = p.tangent.z;
+    normals[i * 3] = p.normal.x;
+    normals[i * 3 + 1] = p.normal.y;
+    normals[i * 3 + 2] = p.normal.z;
+    segmentLengths[i] = p.segmentLengthMm;
   }
   return {
     count: model.pixelCount,
     positions,
+    tangents,
+    normals,
+    segmentLengths,
     drums: model.drums.map((d) => ({ id: d.drumId, label: d.label, color: d.color, pixelStart: d.pixelStart, pixelCount: d.pixelCount })),
     bounds: { center: [model.bounds.center.x, model.bounds.center.y, model.bounds.center.z], size: model.bounds.size },
   };

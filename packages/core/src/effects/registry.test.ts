@@ -7,12 +7,20 @@ describe('effect registry', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('ships the full MVP catalog across every category', () => {
+  it('ships the full catalog across every category', () => {
     const categories = new Set(listEffects().map((e) => e.category));
-    expect(categories).toEqual(new Set(['base', 'trigger', 'wash', 'meter', 'utility']));
-    for (const id of ['solid-base', 'chase', 'whole-drum', 'whole-kit', 'follow-hoop', 'radial-wash', 'wipe-3d', 'meter-eq', 'pixel-accum', 'colour-melody', 'strobe', 'synced-hoops', 'burst', 'swing', 'sidechain', 'sacred-hogs', 'collisions']) {
+    expect(categories).toEqual(new Set(['base', 'trigger', 'wash', 'meter', 'utility', 'texture', 'particle']));
+    for (const id of [
+      // original catalog
+      'solid-base', 'chase', 'whole-drum', 'whole-kit', 'follow-hoop', 'radial-wash', 'wipe-3d', 'meter-eq', 'pixel-accum', 'colour-melody', 'strobe', 'synced-hoops', 'burst', 'swing', 'sidechain', 'sacred-hogs', 'collisions',
+      // 2D UV textures
+      'plasma', 'fire', 'ripple-pond', 'rainbow-flow', 'tunnel', 'checker-pulse', 'perlin-clouds', 'lava-lamp', 'interference', 'caustics', 'spiral', 'grid-glow',
+      // particles / spatial / musical
+      'starfield', 'comet-trails', 'lightning', 'confetti-burst', 'helix', 'orbit-rings', 'gravity-wells', 'breathing-kit', 'temp-sweep', 'velocity-flames', 'hue-rotate-kit', 'wave-collapse',
+    ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
+    expect(listEffects().length).toBe(41);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {

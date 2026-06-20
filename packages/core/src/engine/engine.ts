@@ -1,7 +1,17 @@
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
 import type { DrumConfig } from '../geometry/kit-schema';
-import type { Clip, Layer, OutputSettings, Project, Transport } from '../model/project-schema';
+import type {
+  Clip,
+  InputMap,
+  Layer,
+  OutputSettings,
+  Project,
+  Section,
+  Song,
+  TriggerBinding,
+  Transport,
+} from '../model/project-schema';
 import { getEffect, tryGetEffect } from '../effects/registry';
 import { Framebuffer } from './framebuffer';
 import { ControlState } from './control-state';
@@ -137,22 +147,36 @@ export class Engine {
     if (e.kind === 'noteOn') {
       const maps = this.project.inputMap.midiNotes.filter((m) => m.note === e.note);
       if (maps.length === 0) {
-        this.triggers.push({ seq: ++this.seq, drumId: '', note: e.note, velocity: e.velocity, timeMs: this.timeMs, ageMs: 0 });
+        // Unmapped: still fire a generic trigger so note-only effects react.
+        this.fireTrigger('', 0, e.note, e.velocity);
         return;
       }
-      for (const m of maps) {
-        this.controlState.setVelocity(m.drumId, e.velocity);
-        this.triggers.push({ seq: ++this.seq, drumId: m.drumId, note: e.note, velocity: e.velocity, timeMs: this.timeMs, ageMs: 0 });
-        if (m.trigger) this.setActiveClip(m.trigger.layerId, m.trigger.clipId);
-      }
+      for (const m of maps) this.fireTrigger(m.drumId, m.slot, e.note, e.velocity);
     } else if (e.kind === 'osc') {
       this.controlState.setOsc(e.address, e.value);
       if (e.address === this.project.inputMap.volumeOscAddress) this.controlState.volume = e.value;
-      for (const t of this.project.inputMap.oscTriggers) {
-        if (t.address === e.address) this.setActiveClip(t.layerId, t.clipId);
+      for (const m of this.project.inputMap.oscMap) {
+        if (m.address === e.address) this.fireTrigger(m.drumId, m.slot, -1, e.value);
       }
     }
     // noteOff currently has no engine effect (velocity decays on its own envelope).
+  }
+
+  /**
+   * Fire a (drum, slot) trigger: set the drum's velocity, activate whatever the
+   * ACTIVE SECTION binds that slot to (per-section routing), and surface the hit to
+   * trigger-reactive effects. Activation happens before the trigger is pushed so the
+   * newly-active clip sees the hit this frame.
+   */
+  private fireTrigger(drumId: string, slot: number, note: number, velocity: number): void {
+    if (drumId) this.controlState.setVelocity(drumId, velocity);
+    const binding = this.resolveBinding(drumId, slot);
+    if (binding) this.setActiveClip(binding.layerId, binding.clipId);
+    this.triggers.push({ seq: ++this.seq, drumId, note, velocity, timeMs: this.timeMs, ageMs: 0 });
+  }
+
+  private resolveBinding(drumId: string, slot: number): TriggerBinding | undefined {
+    return this.getActiveSection()?.bindings.find((b) => b.drumId === drumId && b.slot === slot);
   }
 
   // --- tick ----------------------------------------------------------------
@@ -280,5 +304,90 @@ export class Engine {
 
   private findClip(layerId: string, clipId: string): Clip | undefined {
     return this.project.composition.layers.find((l) => l.id === layerId)?.clips.find((c) => c.id === clipId);
+  }
+
+  // --- setlist / songs / sections ------------------------------------------
+
+  getActiveSection(): Section | undefined {
+    const sl = this.project.setlist;
+    if (!sl.activeSongId || !sl.activeSectionId) return undefined;
+    const song = sl.songs.find((s) => s.id === sl.activeSongId);
+    return song?.sections.find((sec) => sec.id === sl.activeSectionId);
+  }
+
+  /** Activate a section: re-point active song/section, set song BPM, apply its looks. */
+  setActiveSection(songId: string, sectionId: string): void {
+    const song = this.project.setlist.songs.find((s) => s.id === songId);
+    const section = song?.sections.find((sec) => sec.id === sectionId);
+    if (!song || !section) return;
+    this.project.setlist.activeSongId = songId;
+    this.project.setlist.activeSectionId = sectionId;
+    if (song.bpm) this.project.composition.transport.bpm = song.bpm;
+    this.applyActiveSection();
+  }
+
+  /** Apply the active section's layer looks (the clips it sets on load). */
+  private applyActiveSection(): void {
+    const section = this.getActiveSection();
+    if (!section) return;
+    for (const lc of section.layerClips) this.setActiveClip(lc.layerId, lc.clipId);
+  }
+
+  setInputMap(inputMap: InputMap): void {
+    this.project.inputMap = inputMap;
+  }
+
+  addSong(song: Song): void {
+    this.project.setlist.songs.push(song);
+  }
+
+  removeSong(songId: string): void {
+    this.project.setlist.songs = this.project.setlist.songs.filter((s) => s.id !== songId);
+    if (this.project.setlist.activeSongId === songId) {
+      this.project.setlist.activeSongId = null;
+      this.project.setlist.activeSectionId = null;
+    }
+  }
+
+  addSection(songId: string, section: Section): void {
+    this.project.setlist.songs.find((s) => s.id === songId)?.sections.push(section);
+  }
+
+  removeSection(songId: string, sectionId: string): void {
+    const song = this.project.setlist.songs.find((s) => s.id === songId);
+    if (!song) return;
+    song.sections = song.sections.filter((sec) => sec.id !== sectionId);
+    if (this.project.setlist.activeSectionId === sectionId) this.project.setlist.activeSectionId = null;
+  }
+
+  /** Upsert a (drum, slot) trigger binding within a section. */
+  setBinding(sectionId: string, binding: TriggerBinding): void {
+    const section = this.findSection(sectionId);
+    if (!section) return;
+    const existing = section.bindings.find((b) => b.drumId === binding.drumId && b.slot === binding.slot);
+    if (existing) Object.assign(existing, binding);
+    else section.bindings.push(binding);
+  }
+
+  removeBinding(sectionId: string, drumId: string, slot: number): void {
+    const section = this.findSection(sectionId);
+    if (section) section.bindings = section.bindings.filter((b) => !(b.drumId === drumId && b.slot === slot));
+  }
+
+  /** Upsert a section's layer look (clip set when the section loads). */
+  setSectionLayerClip(sectionId: string, layerId: string, clipId: string | null): void {
+    const section = this.findSection(sectionId);
+    if (!section) return;
+    const existing = section.layerClips.find((lc) => lc.layerId === layerId);
+    if (existing) existing.clipId = clipId;
+    else section.layerClips.push({ layerId, clipId });
+  }
+
+  private findSection(sectionId: string): Section | undefined {
+    for (const song of this.project.setlist.songs) {
+      const s = song.sections.find((sec) => sec.id === sectionId);
+      if (s) return s;
+    }
+    return undefined;
   }
 }

@@ -21,6 +21,7 @@ export * from './model/defaults';
 
 // Effects
 export * from './effects/types';
+export * from './effects/field';
 export * from './effects/registry';
 
 // Engine

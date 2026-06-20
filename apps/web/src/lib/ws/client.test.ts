@@ -72,7 +72,7 @@ describe('WSClient', () => {
     const msg: ServerMessage = {
       t: 'state',
       project: { name: 'P' } as never,
-      model: { count: 2, positions: [0, 0, 0, 1, 1, 1], drums: [], bounds: { center: [0, 0, 0], size: 1 } },
+      model: { count: 2, positions: [0, 0, 0, 1, 1, 1], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 1 } },
       effects: [],
       projects: ['default'],
       output: { state: 'disabled', protocol: 'artnet', host: '1.2.3.4', packetsSent: 0, lastError: null },

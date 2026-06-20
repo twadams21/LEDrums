@@ -1,5 +1,5 @@
 import { DEG2RAD, type Vec3 } from '../math';
-import { localToWorld } from './euler';
+import { eulerXYZApply, localToWorld } from './euler';
 import {
   drumDensity,
   drumHoopCount,
@@ -21,10 +21,18 @@ export interface Pixel {
   /** Normalized hoop height, 0 (head side) .. 1 (shell side). */
   normHoop: number;
   zone: Zone;
+  /** Per-drum cylindrical UV for 2D texture sampling: u = angle/360, v = normHoop. */
+  uv: { u: number; v: number };
   /** Position in the drum's local frame, mm. */
   local: Vec3;
   /** Position in world (kit) space, mm. */
   world: Vec3;
+  /** Unit world-space tangent (along the hoop) — orients tube segments. */
+  tangent: Vec3;
+  /** Unit world-space outward normal (radial, away from hoop centre). */
+  normal: Vec3;
+  /** Arc length this pixel occupies along the hoop, mm (segment length, no overlap). */
+  segmentLengthMm: number;
 }
 
 export interface DrumInfo {
@@ -87,6 +95,7 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
       const localZ = h * spacing;
       const normHoop = hoopCount > 1 ? h / (hoopCount - 1) : 0;
       const zone = classifyZone(normHoop);
+      const segLen = (Math.PI * 2 * radiusMm) / perHoop;
       for (let i = 0; i < perHoop; i++) {
         const angleDeg = drum.startAngleDeg + drum.localSpinDeg + (360 * i) / perHoop;
         const a = angleDeg * DEG2RAD;
@@ -96,16 +105,24 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
           z: localZ,
         };
         const world = localToWorld(local, drum.rotation, drum.origin);
+        // Tangent (along hoop) and outward radial normal, rotated into world space.
+        const tangent = eulerXYZApply({ x: -Math.sin(a), y: Math.cos(a), z: 0 }, drum.rotation);
+        const normal = eulerXYZApply({ x: Math.cos(a), y: Math.sin(a), z: 0 }, drum.rotation);
+        const wrappedAngle = ((angleDeg % 360) + 360) % 360;
         pixels.push({
           id,
           drumId: drum.id,
           hoopIndex: h,
           indexInHoop: i,
-          angleDeg: ((angleDeg % 360) + 360) % 360,
+          angleDeg: wrappedAngle,
           normHoop,
           zone,
+          uv: { u: wrappedAngle / 360, v: normHoop },
           local,
           world,
+          tangent,
+          normal,
+          segmentLengthMm: segLen,
         });
         id++;
       }

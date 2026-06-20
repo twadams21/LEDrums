@@ -16,6 +16,33 @@ import { swing } from './impl/swing';
 import { sidechain } from './impl/sidechain';
 import { sacredHogs } from './impl/sacred-hogs';
 import { collisions } from './impl/collisions';
+// 2D UV texture fields
+import { plasma } from './impl/plasma';
+import { fire } from './impl/fire';
+import { ripplePond } from './impl/ripple-pond';
+import { rainbowFlow } from './impl/rainbow-flow';
+import { tunnel } from './impl/tunnel';
+import { checkerPulse } from './impl/checker-pulse';
+import { perlinClouds } from './impl/perlin-clouds';
+import { lavaLamp } from './impl/lava-lamp';
+import { interference } from './impl/interference';
+import { caustics } from './impl/caustics';
+import { spiral } from './impl/spiral';
+import { gridGlow } from './impl/grid-glow';
+// Particles / spatial
+import { starfield } from './impl/starfield';
+import { cometTrails } from './impl/comet-trails';
+import { lightning } from './impl/lightning';
+import { confettiBurst } from './impl/confetti-burst';
+import { helix } from './impl/helix';
+import { orbitRings } from './impl/orbit-rings';
+// Spatial / musical
+import { gravityWells } from './impl/gravity-wells';
+import { breathingKit } from './impl/breathing-kit';
+import { tempSweep } from './impl/temp-sweep';
+import { velocityFlames } from './impl/velocity-flames';
+import { hueRotateKit } from './impl/hue-rotate-kit';
+import { waveCollapse } from './impl/wave-collapse';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -35,6 +62,30 @@ const ALL: EffectGenerator<any>[] = [
   sidechain,
   sacredHogs,
   collisions,
+  plasma,
+  fire,
+  ripplePond,
+  rainbowFlow,
+  tunnel,
+  checkerPulse,
+  perlinClouds,
+  lavaLamp,
+  interference,
+  caustics,
+  spiral,
+  gridGlow,
+  starfield,
+  cometTrails,
+  lightning,
+  confettiBurst,
+  helix,
+  orbitRings,
+  gravityWells,
+  breathingKit,
+  tempSweep,
+  velocityFlames,
+  hueRotateKit,
+  waveCollapse,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();

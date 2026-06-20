@@ -19,7 +19,7 @@ export interface ParamSpec {
   unit?: string;
 }
 
-export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility';
+export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility' | 'texture' | 'particle';
 
 /** Resolved parameter values (base params overlaid with modulation), passed to render. */
 export type ResolvedParams = Record<string, number | string | boolean>;

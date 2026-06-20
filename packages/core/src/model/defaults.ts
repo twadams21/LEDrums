@@ -107,13 +107,54 @@ export function defaultProject(): Project {
     },
     inputMap: {
       midiNotes: [
-        { note: 36, drumId: 'kick', trigger: { layerId: 'trigger', clipId: 'whole-drum' } },
-        { note: 38, drumId: 'snare', trigger: { layerId: 'trigger', clipId: 'chase' } },
-        { note: 48, drumId: 'tom1' },
-        { note: 45, drumId: 'tom2' },
+        { note: 36, drumId: 'kick', slot: 0 },
+        { note: 38, drumId: 'snare', slot: 0 },
+        { note: 48, drumId: 'tom1', slot: 0 },
+        { note: 45, drumId: 'tom2', slot: 0 },
+      ],
+      oscMap: [
+        { address: '/sp/kick', drumId: 'kick', slot: 0 },
+        { address: '/sp/snare', drumId: 'snare', slot: 0 },
       ],
       volumeOscAddress: '/ledrums/volume',
-      oscTriggers: [],
+    },
+    setlist: {
+      activeSongId: 'song1',
+      activeSectionId: 'verse',
+      songs: [
+        {
+          id: 'song1',
+          name: 'Demo Song',
+          bpm: 120,
+          sections: [
+            {
+              id: 'verse',
+              name: 'Verse',
+              layerClips: [
+                { layerId: 'base', clipId: 'base-swirl' },
+                { layerId: 'trigger', clipId: 'chase' },
+                { layerId: 'effect', clipId: 'wash' },
+              ],
+              bindings: [
+                { drumId: 'kick', slot: 0, layerId: 'trigger', clipId: 'whole-drum' },
+                { drumId: 'snare', slot: 0, layerId: 'trigger', clipId: 'chase' },
+              ],
+            },
+            {
+              id: 'chorus',
+              name: 'Chorus',
+              layerClips: [
+                { layerId: 'base', clipId: 'base-swirl' },
+                { layerId: 'effect', clipId: 'wash' },
+              ],
+              bindings: [
+                { drumId: 'kick', slot: 0, layerId: 'trigger', clipId: 'chase' },
+                { drumId: 'snare', slot: 0, layerId: 'trigger', clipId: 'whole-drum' },
+              ],
+            },
+          ],
+        },
+      ],
     },
     output: { state: 'disabled', protocol: 'artnet', host: '255.255.255.255', rgbOrder: 'RGB', fps: 44 },
   });

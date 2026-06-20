@@ -59,21 +59,74 @@ export const compositionSchema = z.object({
   transport: transportSchema.default({}),
 });
 
-/** Maps a MIDI note to a drum (velocity control) and optionally a clip trigger. */
+/**
+ * Each drum exposes up to 8 trigger slots (Sensory Percussion-style zones).
+ * What a `(drum, slot)` hit DOES is decided by the active section's bindings.
+ */
+export const TRIGGER_SLOT_COUNT = 8;
+export const SLOT_LABELS = [
+  'center', 'edge', 'rim-tip', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2',
+] as const;
+export const slotSchema = z.number().int().min(0).max(TRIGGER_SLOT_COUNT - 1);
+
+/** Maps a MIDI note to a drum + trigger slot (velocity control + section routing). */
 export const midiNoteMapSchema = z.object({
   note: z.number().int().min(0).max(127),
   drumId: z.string(),
-  trigger: z.object({ layerId: z.string(), clipId: z.string() }).optional(),
+  slot: slotSchema.default(0),
+});
+
+/** Maps an incoming OSC address to a drum + trigger slot (Sensory Percussion / Ableton). */
+export const oscMapSchema = z.object({
+  address: z.string(),
+  drumId: z.string(),
+  slot: slotSchema.default(0),
 });
 
 export const inputMapSchema = z.object({
   midiNotes: z.array(midiNoteMapSchema).default([]),
+  /** OSC addresses that fire a drum/slot trigger. */
+  oscMap: z.array(oscMapSchema).default([]),
   /** OSC address that drives the master `volume` control. */
   volumeOscAddress: z.string().optional(),
-  /** OSC addresses that trigger a clip. */
-  oscTriggers: z
-    .array(z.object({ address: z.string(), layerId: z.string(), clipId: z.string() }))
-    .default([]),
+});
+
+/** A (drum, slot) trigger → the clip/layer it activates within a section. */
+export const triggerBindingSchema = z.object({
+  drumId: z.string(),
+  slot: slotSchema,
+  layerId: z.string(),
+  clipId: z.string(),
+});
+
+/** A layer's active clip when a section loads (sets the look, not trigger-driven). */
+export const sectionLayerClipSchema = z.object({
+  layerId: z.string(),
+  clipId: z.string().nullable(),
+});
+
+export const sectionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().default(''),
+  /** Optional length hint, bars. */
+  bars: z.number().int().positive().optional(),
+  /** Layer looks applied when this section is entered. */
+  layerClips: z.array(sectionLayerClipSchema).default([]),
+  /** Per (drum, slot) trigger routing for this section. */
+  bindings: z.array(triggerBindingSchema).default([]),
+});
+
+export const songSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().default(''),
+  bpm: z.number().positive().optional(),
+  sections: z.array(sectionSchema).default([]),
+});
+
+export const setlistSchema = z.object({
+  songs: z.array(songSchema).default([]),
+  activeSongId: z.string().nullable().default(null),
+  activeSectionId: z.string().nullable().default(null),
 });
 
 export const outputStateSchema = z.enum(['disabled', 'dry-run', 'armed']);
@@ -97,6 +150,7 @@ export const projectSchema = z.object({
   kit: kitSchema,
   composition: compositionSchema.default({}),
   inputMap: inputMapSchema.default({}),
+  setlist: setlistSchema.default({}),
   output: outputSettingsSchema.default({}),
 });
 
@@ -110,7 +164,13 @@ export type Layer = z.infer<typeof layerSchema>;
 export type Transport = z.infer<typeof transportSchema>;
 export type Composition = z.infer<typeof compositionSchema>;
 export type MidiNoteMap = z.infer<typeof midiNoteMapSchema>;
+export type OscMap = z.infer<typeof oscMapSchema>;
 export type InputMap = z.infer<typeof inputMapSchema>;
+export type TriggerBinding = z.infer<typeof triggerBindingSchema>;
+export type SectionLayerClip = z.infer<typeof sectionLayerClipSchema>;
+export type Section = z.infer<typeof sectionSchema>;
+export type Song = z.infer<typeof songSchema>;
+export type Setlist = z.infer<typeof setlistSchema>;
 export type OutputState = z.infer<typeof outputStateSchema>;
 export type RgbOrder = z.infer<typeof rgbOrderSchema>;
 export type OutputSettings = z.infer<typeof outputSettingsSchema>;

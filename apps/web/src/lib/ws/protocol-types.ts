@@ -74,6 +74,12 @@ export interface SerializedModel {
   count: number;
   /** Flat world positions [x0,y0,z0, x1,y1,z1, ...], mm. */
   positions: number[];
+  /** Flat unit tangents [tx0,ty0,tz0, ...] per pixel — direction ALONG the hoop. */
+  tangents: number[];
+  /** Flat unit outward radial normals [nx0,ny0,nz0, ...] per pixel. */
+  normals: number[];
+  /** Arc length (mm) each pixel occupies along its hoop. */
+  segmentLengths: number[];
   drums: SerializedDrum[];
   bounds: { center: [number, number, number]; size: number };
 }

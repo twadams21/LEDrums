@@ -82,6 +82,33 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.broadcast !== undefined ? { broadcast: msg.broadcast } : {}),
       });
       return { structural: true };
+    case 'setActiveSection':
+      engine.setActiveSection(msg.songId, msg.sectionId);
+      return { structural: true };
+    case 'setBinding':
+      engine.setBinding(msg.sectionId, msg.binding);
+      return { structural: true };
+    case 'removeBinding':
+      engine.removeBinding(msg.sectionId, msg.drumId, msg.slot);
+      return { structural: true };
+    case 'addSong':
+      engine.addSong(msg.song);
+      return { structural: true };
+    case 'removeSong':
+      engine.removeSong(msg.songId);
+      return { structural: true };
+    case 'addSection':
+      engine.addSection(msg.songId, msg.section);
+      return { structural: true };
+    case 'removeSection':
+      engine.removeSection(msg.songId, msg.sectionId);
+      return { structural: true };
+    case 'setSectionLayerClip':
+      engine.setSectionLayerClip(msg.sectionId, msg.layerId, msg.clipId);
+      return { structural: true };
+    case 'setInputMap':
+      engine.setInputMap(msg.inputMap);
+      return { structural: true };
     default:
       // loadProject / saveProject / listProjects are handled by the host.
       return { structural: false };
