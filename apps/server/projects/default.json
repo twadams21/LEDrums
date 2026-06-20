@@ -7,7 +7,7 @@
       "ledDensityPxPerM": 120,
       "hoopCount": 4,
       "defaultHoopSpacingMm": 50,
-      "maxPixelsPerOutput": 304
+      "maxPixelsPerOutput": 2400
     },
     "drums": [
       {
@@ -40,16 +40,10 @@
       }
     ],
     "outputs": [
-      { "id": "kick-0", "startUniverse": 0, "channelsPerPixel": 3, "segments": [{ "drumId": "kick", "hoopStart": 0, "hoopEnd": 0 }] },
-      { "id": "kick-1", "startUniverse": 4, "channelsPerPixel": 3, "segments": [{ "drumId": "kick", "hoopStart": 1, "hoopEnd": 1 }] },
-      { "id": "kick-2", "startUniverse": 8, "channelsPerPixel": 3, "segments": [{ "drumId": "kick", "hoopStart": 2, "hoopEnd": 2 }] },
-      { "id": "kick-3", "startUniverse": 12, "channelsPerPixel": 3, "segments": [{ "drumId": "kick", "hoopStart": 3, "hoopEnd": 3 }] },
-      { "id": "snare-0", "startUniverse": 16, "channelsPerPixel": 3, "segments": [{ "drumId": "snare", "hoopStart": 0, "hoopEnd": 1 }] },
-      { "id": "snare-1", "startUniverse": 20, "channelsPerPixel": 3, "segments": [{ "drumId": "snare", "hoopStart": 2, "hoopEnd": 3 }] },
-      { "id": "tom1-0", "startUniverse": 24, "channelsPerPixel": 3, "segments": [{ "drumId": "tom1", "hoopStart": 0, "hoopEnd": 1 }] },
-      { "id": "tom1-1", "startUniverse": 28, "channelsPerPixel": 3, "segments": [{ "drumId": "tom1", "hoopStart": 2, "hoopEnd": 3 }] },
-      { "id": "tom2-0", "startUniverse": 32, "channelsPerPixel": 3, "segments": [{ "drumId": "tom2", "hoopStart": 0, "hoopEnd": 1 }] },
-      { "id": "tom2-1", "startUniverse": 36, "channelsPerPixel": 3, "segments": [{ "drumId": "tom2", "hoopStart": 2, "hoopEnd": 3 }] }
+      { "id": "out-kick", "startUniverse": 0, "channelsPerPixel": 3, "segments": [{ "drumId": "kick", "hoopStart": 0, "hoopEnd": 3 }] },
+      { "id": "out-snare", "startUniverse": 16, "channelsPerPixel": 3, "segments": [{ "drumId": "snare", "hoopStart": 0, "hoopEnd": 3 }] },
+      { "id": "out-tom1", "startUniverse": 32, "channelsPerPixel": 3, "segments": [{ "drumId": "tom1", "hoopStart": 0, "hoopEnd": 3 }] },
+      { "id": "out-tom2", "startUniverse": 48, "channelsPerPixel": 3, "segments": [{ "drumId": "tom2", "hoopStart": 0, "hoopEnd": 3 }] }
     ]
   },
   "composition": {

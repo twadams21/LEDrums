@@ -50,8 +50,12 @@ export interface WSClientOptions {
 }
 
 function defaultUrl(): string {
-  const loc = typeof location !== 'undefined' ? location : { host: 'localhost' };
-  return `ws://${loc.host}${WS_PATH}`;
+  const loc =
+    typeof location !== 'undefined' ? location : { host: 'localhost', protocol: 'http:' };
+  // Match the page protocol so HTTPS pages (e.g. behind a Tailscale/HTTPS proxy)
+  // use wss:// — a ws:// socket from an https:// page is blocked as mixed content.
+  const scheme = loc.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${loc.host}${WS_PATH}`;
 }
 
 function defaultFactory(url: string): WSLike {
