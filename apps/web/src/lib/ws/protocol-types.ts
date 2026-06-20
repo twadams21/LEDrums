@@ -5,9 +5,13 @@
 import type {
   Clip,
   EngineStats,
+  InputMap,
   Layer,
   Project,
   ParamSpec,
+  Section,
+  Song,
+  TriggerBinding,
 } from '@ledrums/core';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +58,15 @@ export type ClientMessage =
       fps?: number;
       broadcast?: boolean;
     }
+  | { t: 'setActiveSection'; songId: string; sectionId: string }
+  | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }
+  | { t: 'removeBinding'; sectionId: string; drumId: string; slot: number }
+  | { t: 'addSong'; song: Song }
+  | { t: 'removeSong'; songId: string }
+  | { t: 'addSection'; songId: string; section: Section }
+  | { t: 'removeSection'; songId: string; sectionId: string }
+  | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
+  | { t: 'setInputMap'; inputMap: InputMap }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };

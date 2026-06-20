@@ -1,4 +1,13 @@
-import type { Clip, EngineStats, Layer, Project } from '@ledrums/core';
+import type {
+  Clip,
+  EngineStats,
+  InputMap,
+  Layer,
+  Project,
+  Section,
+  Song,
+  TriggerBinding,
+} from '@ledrums/core';
 import { WSClient, type ConnectionState } from '../ws/client';
 import {
   initMidi,
@@ -13,6 +22,7 @@ import type {
 } from '../ws/protocol-types';
 
 export type AppMode = 'performance' | 'authoring';
+export type PrimaryView = 'perform' | 'arrange' | 'map' | 'routing';
 export type MidiState = 'unavailable' | 'no-access' | 'active';
 
 /** One recent input echo, for the InputMonitor rolling tail. */
@@ -50,6 +60,7 @@ class AppStore {
   latencyMs = $state(0);
   fps = $state(0);
   mode = $state<AppMode>('performance');
+  view = $state<PrimaryView>('perform');
   hits = $state<InputHit[]>([]);
   lastError = $state<string | null>(null);
 
@@ -163,6 +174,11 @@ class AppStore {
     this.mode = mode;
   }
 
+  setView(view: PrimaryView): void {
+    this.view = view;
+    if (view !== 'perform') this.mode = 'authoring';
+  }
+
   selectLayer(layerId: string | null): void {
     this.selectedLayerId = layerId;
   }
@@ -260,6 +276,73 @@ class AppStore {
 
   listProjects(): void {
     this.send({ t: 'listProjects' });
+  }
+
+  setActiveSection(songId: string, sectionId: string): void {
+    if (this.project) {
+      this.project.setlist.activeSongId = songId;
+      this.project.setlist.activeSectionId = sectionId;
+    }
+    this.send({ t: 'setActiveSection', songId, sectionId });
+  }
+
+  setBinding(sectionId: string, binding: TriggerBinding): void {
+    const section = this.findSection(sectionId);
+    if (section) {
+      section.bindings = [
+        ...section.bindings.filter((b) => b.drumId !== binding.drumId || b.slot !== binding.slot),
+        binding,
+      ];
+    }
+    this.send({ t: 'setBinding', sectionId, binding });
+  }
+
+  removeBinding(sectionId: string, drumId: string, slot: number): void {
+    const section = this.findSection(sectionId);
+    if (section) {
+      section.bindings = section.bindings.filter((b) => b.drumId !== drumId || b.slot !== slot);
+    }
+    this.send({ t: 'removeBinding', sectionId, drumId, slot });
+  }
+
+  addSong(song: Song): void {
+    this.send({ t: 'addSong', song });
+  }
+
+  removeSong(songId: string): void {
+    this.send({ t: 'removeSong', songId });
+  }
+
+  addSection(songId: string, section: Section): void {
+    this.send({ t: 'addSection', songId, section });
+  }
+
+  removeSection(songId: string, sectionId: string): void {
+    this.send({ t: 'removeSection', songId, sectionId });
+  }
+
+  setSectionLayerClip(sectionId: string, layerId: string, clipId: string | null): void {
+    const section = this.findSection(sectionId);
+    if (section) {
+      section.layerClips = [
+        ...section.layerClips.filter((entry) => entry.layerId !== layerId),
+        { layerId, clipId },
+      ];
+    }
+    this.send({ t: 'setSectionLayerClip', sectionId, layerId, clipId });
+  }
+
+  setInputMap(inputMap: InputMap): void {
+    if (this.project) this.project.inputMap = inputMap;
+    this.send({ t: 'setInputMap', inputMap });
+  }
+
+  private findSection(sectionId: string): Section | null {
+    for (const song of this.project?.setlist.songs ?? []) {
+      const section = song.sections.find((s) => s.id === sectionId);
+      if (section) return section;
+    }
+    return null;
   }
 }
 
