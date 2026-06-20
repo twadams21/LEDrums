@@ -23,15 +23,11 @@
 
   // Unit cube — scaled and oriented per-instance into a tube segment.
   const geometry = new THREE.BoxGeometry(1, 1, 1);
-  // Frosted "diffusion tube" feel: emissive carries the per-instance colour so
-  // lit segments glow; a faint constant emissive keeps unlit tube dark grey
-  // rather than invisible. Slight transparency softens it like frosted acrylic.
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x000000,
-    emissive: 0xffffff,
-    emissiveIntensity: 1,
-    roughness: 0.7,
-    metalness: 0,
+  // Instance colours carry the live RGB frame. Keep the material white so
+  // Three's instanceColor multiplier does not black out lit segments.
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    toneMapped: false,
     transparent: true,
     opacity: 0.95,
   });
