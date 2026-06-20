@@ -85,6 +85,8 @@ export interface OutputStatus {
   host: string;
   packetsSent: number;
   lastError: string | null;
+  /** Number of DMX universes the current topology transmits. */
+  universeCount: number;
 }
 
 export function encodeServer(msg: ServerMessage): string {

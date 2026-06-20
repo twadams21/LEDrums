@@ -42,10 +42,12 @@ export class OutputManager {
   private signature = '';
   private packetsSent = 0;
   private lastError: string | null = null;
+  private universeCount = 0;
 
   constructor(private readonly factory: OutputFactory = defaultFactory) {}
 
   applySettings(settings: OutputSettings, dmxMap: DmxMap): void {
+    this.universeCount = dmxMap.universes.length;
     const sig = `${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}`;
     if (settings.state === 'armed') {
       if (!this.output || sig !== this.signature) {
@@ -118,6 +120,7 @@ export class OutputManager {
       host: this.settings?.host ?? '',
       packetsSent: this.packetsSent,
       lastError: this.lastError,
+      universeCount: this.universeCount,
     };
   }
 
