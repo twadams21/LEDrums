@@ -10,6 +10,12 @@ import { meterEq } from './impl/meter-eq';
 import { pixelAccum } from './impl/pixel-accum';
 import { colourMelody } from './impl/colour-melody';
 import { strobe } from './impl/strobe';
+import { syncedHoops } from './impl/synced-hoops';
+import { burst } from './impl/burst';
+import { swing } from './impl/swing';
+import { sidechain } from './impl/sidechain';
+import { sacredHogs } from './impl/sacred-hogs';
+import { collisions } from './impl/collisions';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -23,6 +29,12 @@ const ALL: EffectGenerator<any>[] = [
   pixelAccum,
   colourMelody,
   strobe,
+  syncedHoops,
+  burst,
+  swing,
+  sidechain,
+  sacredHogs,
+  collisions,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();

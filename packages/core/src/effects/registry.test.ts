@@ -10,7 +10,7 @@ describe('effect registry', () => {
   it('ships the full MVP catalog across every category', () => {
     const categories = new Set(listEffects().map((e) => e.category));
     expect(categories).toEqual(new Set(['base', 'trigger', 'wash', 'meter', 'utility']));
-    for (const id of ['solid-base', 'chase', 'whole-drum', 'whole-kit', 'follow-hoop', 'radial-wash', 'wipe-3d', 'meter-eq', 'pixel-accum', 'colour-melody', 'strobe']) {
+    for (const id of ['solid-base', 'chase', 'whole-drum', 'whole-kit', 'follow-hoop', 'radial-wash', 'wipe-3d', 'meter-eq', 'pixel-accum', 'colour-melody', 'strobe', 'synced-hoops', 'burst', 'swing', 'sidechain', 'sacred-hogs', 'collisions']) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
   });

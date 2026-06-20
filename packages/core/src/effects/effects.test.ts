@@ -16,6 +16,12 @@ import { meterEq } from './impl/meter-eq';
 import { pixelAccum } from './impl/pixel-accum';
 import { colourMelody } from './impl/colour-melody';
 import { strobe } from './impl/strobe';
+import { syncedHoops } from './impl/synced-hoops';
+import { burst } from './impl/burst';
+import { swing } from './impl/swing';
+import { sidechain } from './impl/sidechain';
+import { sacredHogs } from './impl/sacred-hogs';
+import { collisions } from './impl/collisions';
 
 function model(drums = 1, hoopCount = 4): PixelModel {
   const drumDefs = [];
@@ -197,6 +203,110 @@ describe('strobe', () => {
     // rate 10 Hz -> half-period 50ms. t=0 on, t=60ms off.
     expect(litCount(render(strobe, m, ctx(m, { timeMs: 0 }), { rate: 10 }))).toBe(m.pixelCount);
     expect(litCount(render(strobe, m, ctx(m, { timeMs: 60 }), { rate: 10 }))).toBe(0);
+  });
+});
+
+describe('synced-hoops', () => {
+  it('renders the same color for the same hoopIndex across two drums', () => {
+    const m = model(2, 4);
+    const fb = render(syncedHoops, m, ctx(m, { transport: transport(1.3, 700) }));
+    const d0 = m.drumById.get('d0')!;
+    const d1 = m.drumById.get('d1')!;
+    // First pixel of hoop 0 on each drum is the start pixel of that drum.
+    const colorAt = (id: number) => [fb.rgba[id * 4]!, fb.rgba[id * 4 + 1]!, fb.rgba[id * 4 + 2]!].join(',');
+    expect(colorAt(d0.pixelStart)).toBe(colorAt(d1.pixelStart));
+    // Different hoop levels differ (the wave/hue varies up the drum).
+    const hoop2Start = d0.pixelStart + 2 * d0.pixelsPerHoop;
+    expect(colorAt(d0.pixelStart)).not.toBe(colorAt(hoop2Start));
+  });
+});
+
+describe('burst', () => {
+  it('lights the whole struck drum; harder hits stay lit longer', () => {
+    const m = model(2);
+    const params = { baseDecayMs: 200 };
+    const d0 = m.drumById.get('d0')!;
+    // Whole struck drum lit at age 0.
+    const fresh = render(burst, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 0)] }), params);
+    let drumLit = 0;
+    for (let p = d0.pixelStart; p < d0.pixelStart + d0.pixelCount; p++) {
+      if (fresh.rgba[p * 4]! > 0.004 || fresh.rgba[p * 4 + 1]! > 0.004 || fresh.rgba[p * 4 + 2]! > 0.004) drumLit++;
+    }
+    expect(drumLit).toBe(d0.pixelCount);
+
+    // At a fixed later age, the harder hit retains more brightness than a soft hit.
+    const briOf = (vel: number) => {
+      const fb = render(burst, m, ctx(m, { triggers: [trig(1, 'd0', 36, vel, 400)] }), params);
+      const j = d0.pixelStart * 4;
+      return Math.max(fb.rgba[j]!, fb.rgba[j + 1]!, fb.rgba[j + 2]!);
+    };
+    expect(briOf(1)).toBeGreaterThan(briOf(0.4));
+  });
+});
+
+describe('swing', () => {
+  it('accumulates energy with repeated hits and decays when idle', () => {
+    const m = model(1);
+    const params = { gain: 0.4, decayMs: 100000 };
+    const d0 = m.drumById.get('d0')!;
+    const briOf = (fb: Framebuffer) => {
+      const j = d0.pixelStart * 4;
+      return Math.max(fb.rgba[j]!, fb.rgba[j + 1]!, fb.rgba[j + 2]!);
+    };
+    const state = swing.createState!(m);
+    const one = render(swing, m, ctx(m, { dt: 0, triggers: [trig(1, 'd0', 36, 1, 0)] }), params, state);
+    const after1 = briOf(one);
+    const two = render(swing, m, ctx(m, { dt: 0, triggers: [trig(2, 'd0', 36, 1, 0)] }), params, state);
+    const after2 = briOf(two);
+    expect(after1).toBeGreaterThan(0);
+    expect(after2).toBeGreaterThan(after1);
+
+    // With a fast decay and a long idle frame, energy falls.
+    const decayState = swing.createState!(m);
+    render(swing, m, ctx(m, { dt: 0, triggers: [trig(1, 'd0', 36, 1, 0)] }), { gain: 1, decayMs: 100 }, decayState);
+    const faded = briOf(render(swing, m, ctx(m, { dt: 500, triggers: [] }), { gain: 1, decayMs: 100 }, decayState));
+    expect(faded).toBeLessThan(after1);
+  });
+});
+
+describe('sidechain', () => {
+  it('dips brightness right after a trigger then recovers', () => {
+    const m = model(1);
+    const params = { brightness: 1, duckDepth: 0.8, recoverMs: 400 };
+    const briOf = (fb: Framebuffer) => Math.max(fb.rgba[0]!, fb.rgba[1]!, fb.rgba[2]!);
+
+    const state = sidechain.createState!(m);
+    // Recovered baseline (no triggers, small dt).
+    const baseline = briOf(render(sidechain, m, ctx(m, { dt: 16, triggers: [] }), params, state));
+    // Trigger arrives -> ducks.
+    const ducked = briOf(render(sidechain, m, ctx(m, { dt: 0, triggers: [trig(1, 'd0', 36, 1, 0)] }), params, state));
+    expect(ducked).toBeLessThan(baseline);
+    // Subsequent idle frames recover toward the baseline.
+    const recovering = briOf(render(sidechain, m, ctx(m, { dt: 200, triggers: [] }), params, state));
+    expect(recovering).toBeGreaterThan(ducked);
+  });
+});
+
+describe('sacred-hogs', () => {
+  it('lights pixels (halo + hogs) over time without NaNs', () => {
+    const m = model(1, 4);
+    const fb = render(sacredHogs, m, ctx(m, { timeMs: 500, dt: 16 }));
+    expect(litCount(fb)).toBeGreaterThan(0);
+    for (let i = 0; i < fb.rgba.length; i++) expect(Number.isFinite(fb.rgba[i]!)).toBe(true);
+  });
+});
+
+describe('collisions', () => {
+  it('lights circling nodes over time without NaNs', () => {
+    const m = model(1, 4);
+    const state = collisions.createState!(m);
+    // Advance several frames so nodes move and may collide.
+    let fb = new Framebuffer(m.pixelCount);
+    for (let f = 0; f < 30; f++) {
+      fb = render(collisions, m, ctx(m, { timeMs: f * 100, dt: 100 }), {}, state);
+    }
+    expect(litCount(fb)).toBeGreaterThan(0);
+    for (let i = 0; i < fb.rgba.length; i++) expect(Number.isFinite(fb.rgba[i]!)).toBe(true);
   });
 });
 
