@@ -52,10 +52,13 @@
 <style>
   .perform {
     display: grid;
-    grid-template-columns: minmax(260px, 0.9fr) minmax(300px, 1.15fr) minmax(320px, 1.3fr);
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     grid-auto-rows: min-content;
     gap: 10px;
     align-items: start;
+    align-content: start;
+    height: 100%;
+    padding-bottom: 16px;
     overflow: auto;
     min-height: 0;
   }
@@ -84,21 +87,5 @@
   .panel.recede {
     background: rgba(13, 17, 24, 0.72);
     border-color: #1b2230;
-  }
-  .transport {
-    grid-column: 1;
-  }
-  .layers {
-    grid-column: 1;
-  }
-  .clips,
-  .params,
-  .modulation {
-    grid-column: 2;
-  }
-  .output,
-  .kit,
-  .monitor {
-    grid-column: 3;
   }
 </style>

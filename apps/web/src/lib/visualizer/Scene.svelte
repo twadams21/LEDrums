@@ -20,8 +20,8 @@
     model
       ? [
           model.bounds.center[0] / SCALE,
-          model.bounds.center[1] / SCALE,
           model.bounds.center[2] / SCALE,
+          model.bounds.center[1] / SCALE,
         ]
       : [0, 0, 0],
   );
@@ -39,7 +39,7 @@
           return {
             id: d.id,
             color: d.color,
-            pos: [px / SCALE, py / SCALE, pz / SCALE] as [number, number, number],
+            pos: [px / SCALE, pz / SCALE, py / SCALE] as [number, number, number],
           };
         })
       : [],

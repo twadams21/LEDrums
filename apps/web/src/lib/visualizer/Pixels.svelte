@@ -16,7 +16,7 @@
 
   // Cross-section of the square diffusion tube, in mm. Reads as LED tape inside
   // a frosted square tube (~10–16mm); 12mm sits in the sweet spot.
-  const TUBE_MM = 12;
+  const TUBE_MM = 20;
   // Fraction of each pixel's arc length the lit segment fills. The <1 gap
   // guarantees neighbouring segments never overlap.
   const FILL = 0.9;
@@ -59,7 +59,9 @@
       // Orthonormal basis from the sent vectors. tangent runs along the hoop,
       // normal points radially outward; binormal completes the frame.
       t.set(tangents[i3]!, tangents[i3 + 1]!, tangents[i3 + 2]!).normalize();
+      t.set(t.x, t.z, t.y).normalize();
       n.set(normals[i3]!, normals[i3 + 1]!, normals[i3 + 2]!).normalize();
+      n.set(n.x, n.z, n.y).normalize();
       b.crossVectors(n, t).normalize();
       // Re-orthogonalize the normal in case the sent vectors were not perfectly
       // perpendicular, so the basis stays rigid (no shear in the box).
@@ -67,8 +69,8 @@
 
       pos.set(
         positions[i3]! / scale,
-        positions[i3 + 1]! / scale,
         positions[i3 + 2]! / scale,
+        positions[i3 + 1]! / scale,
       );
 
       // Length along the hoop fills FILL of the arc; cross-section is the square
