@@ -2,6 +2,7 @@ import type { Edge, Node } from '@xyflow/svelte';
 import type { Project } from '@ledrums/core';
 
 type RoutingNode = Node<{ label: string; kind: string; detail: string }>;
+type RoutingEdge = Edge & { reconnectable?: boolean };
 
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
   'ableton-osc': { x: 0, y: 20 },
@@ -14,7 +15,7 @@ const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
 export function buildRoutingGraph(
   project: Project,
   savedPositions: Record<string, { x: number; y: number }> = {},
-): { nodes: RoutingNode[]; edges: Edge[] } {
+): { nodes: RoutingNode[]; edges: RoutingEdge[] } {
   const nodes: RoutingNode[] = [
     node('ableton-osc', 'input', 'Ableton OSC Input', 'OSC port 9000', savedPositions),
     node(
@@ -57,28 +58,22 @@ export function buildRoutingGraph(
     ),
   );
 
-  const edges: Edge[] = [];
+  const edges: RoutingEdge[] = [];
   for (const drum of project.kit.drums) {
-    edges.push({
-      id: `sensory-drum-${drum.id}`,
-      source: 'sensory-osc',
-      target: `drum-${drum.id}`,
-      label: 'trigger',
-    });
-    edges.push({
-      id: `drum-combine-${drum.id}`,
-      source: `drum-${drum.id}`,
-      target: 'hoop-combine',
-      label: 'hoops',
-    });
+    edges.push(edge(`sensory-drum-${drum.id}`, 'sensory-osc', `drum-${drum.id}`, 'trigger'));
+    edges.push(edge(`drum-combine-${drum.id}`, `drum-${drum.id}`, 'hoop-combine', 'hoops'));
   }
   edges.push(
-    { id: 'ableton-controller-output', source: 'ableton-osc', target: 'controller-output', label: 'automation' },
-    { id: 'combine-controller-output', source: 'hoop-combine', target: 'controller-output', label: 'data' },
-    { id: 'controller-output-controller', source: 'controller-output', target: 'controller', label: '4 outputs' },
+    edge('ableton-controller-output', 'ableton-osc', 'controller-output', 'automation'),
+    edge('combine-controller-output', 'hoop-combine', 'controller-output', 'data'),
+    edge('controller-output-controller', 'controller-output', 'controller', '4 outputs'),
   );
 
   return { nodes, edges };
+}
+
+function edge(id: string, source: string, target: string, label: string): RoutingEdge {
+  return { id, source, target, label, type: 'smoothstep', reconnectable: true };
 }
 
 function node(

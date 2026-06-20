@@ -61,74 +61,78 @@
   }
 </script>
 
-<div
-  class="app"
-  role="application"
-  onpointermove={moveWindow}
-  onpointerup={endPointer}
-  onpointercancel={endPointer}
->
-  <header class="topbar">
-    <ProjectBar />
-    <div class="compact-transport">
-      <Transport />
-    </div>
-    <StatusBar />
-  </header>
-
-  <nav class="switcher" aria-label="Primary view">
-    {#each views as view (view.id)}
-      <button
-        class:active={store.view === view.id}
-        aria-pressed={store.view === view.id}
-        onclick={() => store.setView(view.id)}
-      >
-        {view.label}
-      </button>
-    {/each}
-  </nav>
-
-  <main class="workspace">
-    {#if store.view === 'perform'}
-      <PerformView />
-    {:else if store.view === 'arrange'}
-      <ArrangeView />
-    {:else if store.view === 'map'}
-      <MapView />
-    {:else}
-      <RoutingView />
-    {/if}
-  </main>
-
-  <section
-    class="render-window"
-    class:collapsed={renderCollapsed}
-    style={`left:${renderX}px; top:${renderY}px; width:${renderW}px; height:${renderCollapsed ? 34 : renderH}px;`}
+{#if store.view === 'routing'}
+  <div class="routing-page">
+    <RoutingView fullscreen />
+  </div>
+{:else}
+  <div
+    class="app"
+    role="application"
+    onpointermove={moveWindow}
+    onpointerup={endPointer}
+    onpointercancel={endPointer}
   >
-    <div class="render-title" role="button" tabindex="0" onpointerdown={beginDrag}>
-      <span>Renderer</span>
-      <button onclick={() => (renderCollapsed = !renderCollapsed)}>
-        {renderCollapsed ? 'Open' : 'Hide'}
-      </button>
-    </div>
-    {#if !renderCollapsed}
-      <div class="render-body">
-        <Scene model={store.model} frame={store.frame} dim={disconnected} />
-        {#if disconnected}
-          <div class="overlay">
-            <span class="spin"></span>
-            <span>
-              {store.connection === 'connecting'
-                ? `Connecting${store.reconnectAttempt > 0 ? ` retry ${store.reconnectAttempt}` : ''}`
-                : 'Engine offline'}
-            </span>
-          </div>
-        {/if}
+    <header class="topbar">
+      <ProjectBar />
+      <div class="compact-transport">
+        <Transport />
       </div>
-      <button class="resize" aria-label="Resize renderer" onpointerdown={beginResize}></button>
-    {/if}
-  </section>
-</div>
+      <StatusBar />
+    </header>
+
+    <nav class="switcher" aria-label="Primary view">
+      {#each views as view (view.id)}
+        <button
+          class:active={store.view === view.id}
+          aria-pressed={store.view === view.id}
+          onclick={() => store.setView(view.id)}
+        >
+          {view.label}
+        </button>
+      {/each}
+    </nav>
+
+    <main class="workspace">
+      {#if store.view === 'perform'}
+        <PerformView />
+      {:else if store.view === 'arrange'}
+        <ArrangeView />
+      {:else}
+        <MapView />
+      {/if}
+    </main>
+
+    <section
+      class="render-window"
+      class:collapsed={renderCollapsed}
+      style={`left:${renderX}px; top:${renderY}px; width:${renderW}px; height:${renderCollapsed ? 34 : renderH}px;`}
+    >
+      <div class="render-title" role="button" tabindex="0" onpointerdown={beginDrag}>
+        <span>Renderer</span>
+        <button onclick={() => (renderCollapsed = !renderCollapsed)}>
+          {renderCollapsed ? 'Open' : 'Hide'}
+        </button>
+      </div>
+      {#if !renderCollapsed}
+        <div class="render-body">
+          <Scene model={store.model} frame={store.frame} dim={disconnected} />
+          {#if disconnected}
+            <div class="overlay">
+              <span class="spin"></span>
+              <span>
+                {store.connection === 'connecting'
+                  ? `Connecting${store.reconnectAttempt > 0 ? ` retry ${store.reconnectAttempt}` : ''}`
+                  : 'Engine offline'}
+              </span>
+            </div>
+          {/if}
+        </div>
+        <button class="resize" aria-label="Resize renderer" onpointerdown={beginResize}></button>
+      {/if}
+    </section>
+  </div>
+{/if}
 
 <style>
   .app {
@@ -138,6 +142,12 @@
     grid-template-rows: 48px 42px minmax(0, 1fr);
     background: var(--bg);
     overflow: hidden;
+  }
+  .routing-page {
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    background: var(--bg);
   }
   .topbar {
     display: grid;
