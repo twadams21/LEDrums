@@ -103,10 +103,6 @@ importers:
         version: 2.1.9(@types/node@22.19.21)
 
   packages/io:
-    dependencies:
-      '@ledrums/core':
-        specifier: workspace:*
-        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

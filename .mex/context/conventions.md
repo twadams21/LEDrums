@@ -11,57 +11,35 @@ triggers:
 edges:
   - target: context/architecture.md
     condition: when a convention depends on understanding the system structure
-last_updated: [YYYY-MM-DD]
+last_updated: 2026-06-20
 ---
 
 # Conventions
 
 ## Naming
-<!-- How things are named in this codebase.
-     Cover: files, functions, variables, classes, database tables/columns — whichever are non-obvious.
-     Only include conventions that are actually enforced, not aspirational.
-     Minimum 3 items. If you cannot find 3, write "[TO DETERMINE]" — do not pad with generic advice.
-     Length: 3-7 items.
-     Example:
-     - Files: kebab-case (`user-profile.ts`, not `UserProfile.ts`)
-     - Functions: camelCase, verb-first (`getUserById`, not `userById`)
-     - Database columns: snake_case (`created_at`, not `createdAt`) -->
+- Files: kebab-case (`pixel-model.ts`, `output-manager.ts`); Svelte components PascalCase (`OutputConfig.svelte`).
+- Functions: camelCase, verb-first (`buildPixelModel`, `resolveParams`, `frameToUniverseBytes`).
+- Effect ids: kebab-case string ids (`solid-base`, `radial-wash`) that double as registry keys and clip `effectId`s.
+- Tests: colocated `*.test.ts` next to the unit they test.
+- Svelte 5 runes state modules use the `.svelte.ts` extension (`app-store.svelte.ts`).
 
 ## Structure
-<!-- How code is organised within files and across the codebase.
-     Cover the things the agent is most likely to get wrong.
-     Minimum 3 items. If you cannot find 3, write "[TO DETERMINE]" — do not pad with generic advice.
-     Length: 3-7 items.
-     Example:
-     - Business logic lives in services/, never in route handlers
-     - Each service file exports a single class
-     - Tests live next to the file they test (`user.service.ts` → `user.service.test.ts`) -->
+- `packages/core` is pure — no `node:*`, no DOM, no IO imports. Geometry/model/effects/engine only.
+- IO (UDP/Art-Net/sACN/OSC) lives in `packages/io` behind `PixelOutput`/`EventInput`; `core` never imports it.
+- The zod schemas (`kit-schema.ts`, `project-schema.ts`) are the single source of truth — TS types are `z.infer`'d from them, never hand-duplicated.
+- Effects are pure `render(ctx, params, fb, state)`; per-clip mutable state is engine-owned (`ClipState`), reset on clip change, never persisted.
+- Server reducer is explicit + typed (`applyClientMessage`) — no generic path-mutation. The engine is the source of truth; the UI applies optimistically and reconciles on `state` echo.
+- Relative imports are extensionless (Bundler resolution); type-only imports use `import type` (verbatimModuleSyntax).
 
 ## Patterns
-<!-- Recurring code patterns that must be followed consistently.
-     Include concrete before/after examples for the most important ones.
-     Minimum 2 patterns. If you cannot find 2, write "[TO DETERMINE]".
-     Length: 2-5 patterns with examples.
-     Example:
-     Always use the Result type for error handling — never throw from the service layer:
-     ```
-     // Correct
-     return { success: true, data: user }
-     return { success: false, error: 'User not found' }
-
-     // Wrong
-     throw new Error('User not found')
-     ``` -->
+- **Pure encoders, thin transports.** Protocol code splits a pure `encode*()` (byte-level tested) from a thin `dgram` sender. Example: `encodeArtDmx()` vs `ArtNetOutput`.
+- **Float framebuffer, quantize once.** Effects/compositor work in `Float32Array` RGBA; bytes are produced only at the output/wire boundary (`toByte`, `frameToUniverseBytes`).
+- **Replay determinism.** Effects are pure functions of `RenderContext`; randomness comes from a seeded `mulberry32` in engine-owned state. Two engines fed the same tick-stamped event log render identical frames.
 
 ## Verify Checklist
-<!-- A short checklist the agent runs against any code it writes in this project.
-     These are the things most likely to go wrong based on this specific codebase.
-     The agent should explicitly check each item before presenting output.
-     Minimum 4 items. If you cannot find 4, write "[TO DETERMINE]".
-     Length: 4-8 items.
-     Example:
-     Before presenting any code:
-     - [ ] Business logic is not in route handlers
-     - [ ] All database access goes through the repository layer
-     - [ ] Error handling uses the Result type, not exceptions
-     - [ ] New files follow the naming convention above -->
+Before presenting any code:
+- [ ] `packages/core` change added no `node:*` / DOM / IO import.
+- [ ] New types are `z.infer`'d from a schema, not hand-written duplicates.
+- [ ] Effects/render code stays pure (no wall-clock, no unseeded RNG, no hidden globals).
+- [ ] New WS message is a typed member of the union with encode/decode + reducer handling (no generic mutation).
+- [ ] `pnpm typecheck` and `pnpm test` are green; new behavior has a colocated test.

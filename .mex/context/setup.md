@@ -13,60 +13,35 @@ edges:
     condition: when specific technology versions or library details are needed
   - target: context/architecture.md
     condition: when understanding how components connect during setup
-last_updated: [YYYY-MM-DD]
+last_updated: 2026-06-20
 ---
 
 # Setup
 
 ## Prerequisites
-<!-- What must be installed before anything else.
-     Include exact versions if they matter.
-     Minimum 2 items. If you cannot find 2, write "[TO DETERMINE]".
-     Length: 2-5 items.
-     Example:
-     - Node.js 20+
-     - PostgreSQL 15
-     - pnpm (`npm install -g pnpm`) -->
+- Node.js 20+ (developed on 25.x).
+- pnpm (`npm install -g pnpm`).
+- A Chromium browser (Chrome/Edge) for live MIDI input (WebMIDI is Chromium-only). OSC works without one.
 
 ## First-time Setup
-<!-- Exact steps to go from clone to running. In order.
-     Use the actual commands from this project. No placeholders.
-     Minimum 3 steps. If you cannot find 3, write "[TO DETERMINE]".
-     Length: 3-7 steps.
-     Example:
-     1. `pnpm install`
-     2. Copy `.env.example` to `.env` and fill in values
-     3. `pnpm db:migrate`
-     4. `pnpm db:seed` (optional, loads sample data)
-     5. `pnpm dev` -->
+1. `pnpm install`
+2. `pnpm dev` — runs the server (engine, port 4321) + Vite dev server (UI, port 5173, proxies `/ws`).
+3. Open the Vite URL it prints. For a production-style run: `pnpm build` then `pnpm start`.
 
 ## Environment Variables
-<!-- Required environment variables and what they do.
-     Mark which are required vs optional vs conditionally required.
-     Do NOT include actual values — this file is committed to version control.
-     Length: list all required, then conditional, then optional.
-     Example:
-     - `DATABASE_URL` (required) — PostgreSQL connection string
-     - `JWT_SECRET` (required) — secret for signing tokens, min 32 chars
-     - `STRIPE_API_KEY` (required if payments enabled) — only needed when ENABLE_PAYMENTS=true
-     - `SENDGRID_API_KEY` (optional) — only needed if email features are used -->
+- `PORT` (optional) — server HTTP/WS port, default `4321`.
+- `OSC_PORT` (optional) — OSC UDP listen port, default `9000`.
+- No secrets; the app runs entirely on the operator's machine/LAN.
 
 ## Common Commands
-<!-- The commands used daily. Already in AGENTS.md but repeated here with more detail.
-     Minimum 4 commands. If you cannot find 4, write "[TO DETERMINE]".
-     Length: 4-8 commands.
-     Example:
-     - `pnpm dev` — starts dev server on port 3000 with hot reload
-     - `pnpm test` — runs full test suite
-     - `pnpm test:watch` — runs tests in watch mode
-     - `pnpm lint` — ESLint + TypeScript check
-     - `pnpm db:migrate` — runs pending migrations -->
+- `pnpm dev` — server + web dev server with HMR.
+- `pnpm build` — build the web app to `apps/web/dist`.
+- `pnpm start` — run the server, serving the built app + engine.
+- `pnpm test` — all Vitest suites (core 58, io 12, server 27, web 24).
+- `pnpm typecheck` — typecheck every package (core/io/server via `tsc`, web via `svelte-check`).
 
 ## Common Issues
-<!-- The things that go wrong most often and how to fix them.
-     Only include issues that have actually occurred — not hypothetical problems.
-     Minimum 2 items. If you cannot find 2, write "[TO DETERMINE]".
-     Length: 2-5 issues.
-     Example:
-     **Port already in use:** `lsof -i :3000` to find the process, `kill -9 [PID]`
-     **Migration fails:** Check DATABASE_URL is correct and the database is running -->
+- **No MIDI input:** use Chrome/Edge (WebMIDI), and keep the control tab foregrounded — background tab throttling can drop hits. OSC is unaffected.
+- **OSC not arriving on Windows:** allow the inbound-UDP firewall prompt on first run, or it is silently dropped.
+- **Nothing on the hardware:** output defaults to **Disabled**. In the UI Output panel set the controller IP, choose Art-Net/sACN, and click **Armed**.
+- **`tsx not found` when launching the server directly:** run via `pnpm --filter @ledrums/server start` (resolves the workspace bin), not `node` from the repo root.
