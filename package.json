@@ -1,0 +1,26 @@
+{
+  "name": "ledrums",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LEDrums — real-time generative lighting engine and content authoring app for a 3D LED-pixel drum kit.",
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" run build && pnpm --filter @ledrums/web run build && pnpm --filter @ledrums/server run build",
+    "dev": "pnpm --parallel --filter @ledrums/server --filter @ledrums/web run dev",
+    "start": "pnpm --filter @ledrums/server run start",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "clean": "pnpm -r exec rimraf dist .svelte-kit node_modules/.vite"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
