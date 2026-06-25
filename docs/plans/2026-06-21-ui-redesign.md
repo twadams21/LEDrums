@@ -80,6 +80,19 @@ The trigger-lab prototype is being promoted toward the real UI, so form primitiv
 - **ADSR envelope editor (2026-06-25):** EnvelopeEditor rebuilt as a Vital/Serum-style ADSR — three draggable stage handles (Attack/Decay·Sustain/Release) over a filled curve, Pluck/Stab/Swell/Gate presets, a Curve (tension) slider, Amount (depth), and A/D/S/R readouts. Model: `Envelope.adsr?: AdsrShape` + `adsrToPoints` (sim) regenerates the persisted `points` the renderer already samples; `store.setEnvAdsr` is the single write path.
 - *Remaining native controls* (older shell, not the prototype): `lib/panels/EffectParams.svelte`, `lib/panels/LayerStack.svelte`, `lib/styleguide/Styleguide.svelte` — convert when those panels are next touched.
 
+## Unified application shell (active — 2026-06-25, codebase-design + make-interfaces-feel-better)
+
+The shell that reconciles the prototype with the original control app into one cohesive surface, mirroring `docs/unified-ui-wireframe.html`. Lives in **`apps/web/src/lib/app/`** on the `TriggerLab` engine store; it is now the **default app** (`App.svelte`). `?proto=trigger` still works during transition. Built on branch `feat/unified-shell` (commit `9719261`, not pushed).
+
+**Seams:**
+- `shell-nav.ts` — pure navigation reducer (mode `perform|author` · view `trigger|patch|sections|kit` · dock `inspector|monitor` · `selection`). Invariants live here once: view-switch clears the Inspector selection; select surfaces the Inspector. Unit-tested in node (`shell-nav.test.ts`, 14 tests) — same pure-core/reactive-shell split as `show-builder`. `shell-store.svelte.ts` = thin rune wrapper.
+- `chrome/` (TopBar · ModeSwitch · Transport[extracted, owns tap-tempo] · OutputPill · LeftRail · SongRail), `views/` (TriggerGraphView · PatchGraphView · SectionsView · KitView), `docks/` (Visualizer 3D/2D · Inspector[contextual node/bus, no separate Settings page] · Monitor · LayersDock), `Overlays.svelte` (single mount for Gallery/ClipSettings/Envelope/Creator).
+- `App.svelte` crossfades Perform/Author off `shell.mode` (reduced-motion aware) over ONE engine store (WS link never restarts on mode switch); `?mode=`/`?view=` deep-links. `NodeCanvas` gained additive `onSelect`/`selectedId` (node → Inspector); standalone lab use unaffected.
+
+**Built + green:** mode-split shells; all 4 views route; Inspector/Monitor tabs; node/bus selection → Inspector; Layers/Buses dock; section recall; perform pads; engine link + overlays reused. Gates: typecheck 0 errors (all pkgs), web 44 + server 34 tests, web build OK.
+
+**Remaining (flagged in-UI):** Patch as a freeform node canvas + real device settings (today a fixed signal-flow layout, selectable); Sections as the layerable per-drum graph-slot grid + Song→sections hierarchy (today shows section looks + recall); Kit geometry editor (today live 3D preview); Setlist open/save/new (needs a persistence seam); true Art-Net arm/dry-run/off (OutputPill is link-derived). Legacy `lib/shell` + `lib/views` + `lib/store` left intact but unused by the default path.
+
 ## Trigger-lab → app promotion (active — 2026-06-25)
 
 Decision: **trigger-lab is promoted from probe to the real control surface** — it's the better-looking UI, so we grow it into the app rather than migrating its internals back into the old `PerformShell`/`AuthorShell`. Anything ported in must use the `lib/ui/` design system + oklch/green tokens (no bare HTML controls).
