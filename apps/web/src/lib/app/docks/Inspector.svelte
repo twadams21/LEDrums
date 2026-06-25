@@ -6,6 +6,7 @@
      here via the engine store. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
+  import { describePatchNode } from '../patch-topology';
   import type { GraphNode, ParamSpec, ParamValue, Polyphony } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../ui/Slider.svelte';
@@ -158,9 +159,13 @@
       </p>
     </div>
   {:else if sel?.kind === 'patch'}
+    {@const d = describePatchNode(sel.nodeId, store.drums)}
     <div class="nodeinfo">
-      <Eyebrow>{sel.nodeId}</Eyebrow>
-      <p class="hint">Patch device settings load here. (Wiring lands with the Patch Graph view.)</p>
+      <Eyebrow>{d.stage}</Eyebrow>
+      <h3 class="patch-title">{d.title}</h3>
+      <p class="hint">
+        {d.sub}. Device settings (universes, ports, IP) are read-only for now — editing lands in a later slice.
+      </p>
     </div>
   {:else}
     <div class="empty">

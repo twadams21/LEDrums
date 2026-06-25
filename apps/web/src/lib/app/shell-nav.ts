@@ -10,8 +10,11 @@ export type Mode = 'perform' | 'author';
 export type View = 'trigger' | 'patch' | 'sections' | 'kit';
 export type DockTab = 'inspector' | 'monitor';
 
-/** A device node in the Patch Graph (input/device routing). */
-export type PatchNodeId = 'controller' | 'midi' | 'osc' | 'kit' | 'output';
+/** A node id in the Patch Graph (device routing). These are stage-prefixed strings
+    minted by `patch-topology.ts` — `input` · `trigger:<drumId>` · `zone:<drumId>:<zone>`
+    · `drum:<drumId>` · `hoop:<drumId>:<n>` · `dataline:<n>` · `output:<n>` · `controller`
+    — so the graph can name any node without a closed enum. */
+export type PatchNodeId = string;
 
 /** What is loaded into the right-dock Inspector: a node in the active trigger
     graph, a Patch-graph device node, or a layer/bus. `null` = nothing selected. */
