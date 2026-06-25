@@ -16,6 +16,7 @@ function authored(): AuthoredState {
   song = setSlot(song, 'intro', 'kick', 0, 'kick:1');
   return {
     graphs: { 'kick:1': graph(), 'graph:1001': graph() },
+    graphNames: { 'graph:1001': 'New graph 1' },
     songs: [song],
     buses: [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 120 }],
     presets: [{ id: 'flash:default', name: 'Default', effectId: 'flash', params: { hue: 200 } }],

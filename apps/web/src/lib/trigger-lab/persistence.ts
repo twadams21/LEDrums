@@ -28,6 +28,9 @@ export const VERSION = 1;
     voice/frame/link/transport-playing state). */
 export interface AuthoredState {
   graphs: Record<string, TriggerGraph>;
+  /** human labels for AUTHORED graph keys (pad-derived graphs label from the kit).
+      Kept beside `graphs` so a created graph keeps its name across reloads. */
+  graphNames: Record<string, string>;
   songs: Song[];
   buses: Bus[];
   presets: Preset[];
@@ -77,6 +80,7 @@ export function deserializeAuthored(raw: unknown): Partial<AuthoredState> | null
 
   // containers — included only when the expected shape (records vs arrays)
   if (isObject(data.graphs)) out.graphs = data.graphs as Record<string, TriggerGraph>;
+  if (isObject(data.graphNames)) out.graphNames = data.graphNames as Record<string, string>;
   if (Array.isArray(data.songs)) out.songs = data.songs as Song[];
   if (Array.isArray(data.buses)) out.buses = data.buses as Bus[];
   if (Array.isArray(data.presets)) out.presets = data.presets as Preset[];

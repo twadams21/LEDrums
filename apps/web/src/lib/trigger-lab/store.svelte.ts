@@ -134,8 +134,12 @@ export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
   pads = $state<Pad[]>(structuredClone(PADS));
-  /** per-pad freeform trigger graphs (keyed by padKey) — the editable model. */
+  /** per-pad freeform trigger graphs (keyed by padKey) — the editable model.
+      Authored (non-pad) graphs created via createGraph() live here too, keyed
+      `graph:<n>`, with their display labels in `graphNames`. */
   graphs = $state<Record<string, TriggerGraph>>(Object.fromEntries(PADS.map((p) => [padKey(p), treeToGraph(p.tree)])));
+  /** display labels for AUTHORED graph keys (pad graphs label from the kit). */
+  graphNames = $state<Record<string, string>>({});
   sections = $state<Section[]>(structuredClone(SECTIONS));
   /** mutable presets — linked instances read these live. */
   presets = $state<Preset[]>(structuredClone(PRESETS));
@@ -249,10 +253,14 @@ export class TriggerLab {
   // setlist derived
   activeSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? this.songs[0] ?? null);
   arrangeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.arrangeSectionId) ?? null);
-  /** The reusable graph library: every per-pad graph key, labelled "Drum · zone". */
-  graphLibrary = $derived(
-    this.pads.map((p) => ({ key: padKey(p), label: `${p.drumLabel} · ${p.zoneLabel}` })),
-  );
+  /** The reusable graph library: every per-pad graph ("Drum · zone") plus every
+      authored graph (its user/auto label), so the picker + slot labels see both. */
+  graphLibrary = $derived([
+    ...this.pads.map((p) => ({ key: padKey(p), label: `${p.drumLabel} · ${p.zoneLabel}` })),
+    ...Object.keys(this.graphNames).map((key) => ({ key, label: this.graphNames[key]! })),
+  ]);
+  /** Just the authored (non-pad) graphs, for the editor's "Authored" group. */
+  authoredGraphs = $derived(Object.keys(this.graphNames).map((key) => ({ key, label: this.graphNames[key]! })));
 
   /** Human label for a graph key (for slot cells); falls back to the raw key. */
   graphLabel(key: string): string {
@@ -313,6 +321,7 @@ export class TriggerLab {
   private toAuthored(): AuthoredState {
     return $state.snapshot({
       graphs: this.graphs,
+      graphNames: this.graphNames,
       songs: this.songs,
       buses: this.buses,
       presets: this.presets,
@@ -331,6 +340,7 @@ export class TriggerLab {
       missing/forward field keeps its seed default. */
   private applyAuthored(a: Partial<AuthoredState>): void {
     if (a.graphs) this.graphs = a.graphs;
+    if (a.graphNames) this.graphNames = a.graphNames;
     if (a.songs) this.songs = a.songs;
     if (a.buses) this.buses = a.buses;
     if (a.presets) this.presets = a.presets;
@@ -578,6 +588,28 @@ export class TriggerLab {
   /** Jump to the Trigger Graph editor for a slot's referenced graph (by pad key). */
   editGraph(graphKey: string): void {
     if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
+  }
+
+  /** Author a brand-new, empty trigger graph (just the implicit trigger input) and
+      select it for editing. Returns its key. The label defaults to "New graph N"
+      (first unused N). Persisted via the authored-state autosave. */
+  createGraph(name?: string): string {
+    let key = nid('graph');
+    while (this.graphs[key]) key = nid('graph'); // global uniqueness (survives reload)
+    const graph: TriggerGraph = { nodes: [makeNode('trigger', 'trigger')], edges: [] };
+    const label = name?.trim() || this.nextGraphName();
+    this.graphs = { ...this.graphs, [key]: graph };
+    this.graphNames = { ...this.graphNames, [key]: label };
+    this.selectedPadKey = key;
+    return key;
+  }
+
+  /** Smallest unused "New graph N" label, so auto-named graphs stay distinct. */
+  private nextGraphName(): string {
+    const used = new Set(Object.values(this.graphNames));
+    let n = 1;
+    while (used.has(`New graph ${n}`)) n++;
+    return `New graph ${n}`;
   }
 
   // --- registries / lookups ------------------------------------------------

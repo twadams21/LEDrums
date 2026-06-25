@@ -9,6 +9,7 @@
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Play from '@lucide/svelte/icons/play';
+  import Plus from '@lucide/svelte/icons/plus';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -18,6 +19,16 @@
   function pick(p: Pad): void {
     store.selectedPadKey = padKey(p);
     shell.clearSelection(); // switching graphs clears the node inspector
+  }
+  /** Select an authored graph (by key) for editing on the canvas. */
+  function pickKey(key: string): void {
+    store.selectedPadKey = key;
+    shell.clearSelection();
+  }
+  /** Author a fresh empty graph and edit it (createGraph selects it). */
+  function newGraph(): void {
+    store.createGraph();
+    shell.clearSelection();
   }
 </script>
 
@@ -40,6 +51,21 @@
           {/each}
         </div>
       {/each}
+
+      <div class="group">
+        <div class="ghead">Authored</div>
+        {#each store.authoredGraphs as g (g.key)}
+          <div class="trig" class:active={store.selectedPadKey === g.key}>
+            <button class="trig-main" onclick={() => pickKey(g.key)}>
+              <span class="zone">{g.label}</span>
+              <span class="root">graph</span>
+            </button>
+          </div>
+        {/each}
+        <button class="newgraph" type="button" onclick={newGraph}>
+          <Plus size={13} aria-hidden="true" /> New graph
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -132,6 +158,33 @@
     font-family: var(--font-mono);
     color: var(--accent);
     text-transform: uppercase;
+  }
+  .newgraph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    margin-top: var(--space-1);
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-1);
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+  .newgraph:hover {
+    color: var(--accent);
+    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+  }
+  .newgraph:active {
+    scale: 0.98;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .newgraph {
+      transition: none;
+    }
   }
   .canvas {
     min-height: 0;

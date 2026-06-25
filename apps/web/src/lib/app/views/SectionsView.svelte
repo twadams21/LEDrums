@@ -36,6 +36,14 @@
     store.editGraph(graphKey);
     shell.setView('trigger');
   }
+  /** Author a fresh graph, drop it into the pending slot, and jump to edit it. */
+  function createAndPlace(): void {
+    if (!pending) return;
+    const key = store.createGraph();
+    store.assignSlot(pending.sectionId, pending.drumId, pending.slot, key);
+    pending = null;
+    shell.setView('trigger'); // createGraph selected it — land on the canvas to edit
+  }
 </script>
 
 <div class="sections-view">
@@ -112,6 +120,11 @@
       {sections.find((s) => s.id === pending!.sectionId)?.name}
     </p>
     <div class="picker-list">
+      <button class="picker-item new" onclick={createAndPlace}>
+        <Plus size={14} aria-hidden="true" />
+        <span>New graph</span>
+        <span class="picker-tag">empty</span>
+      </button>
       {#each store.graphLibrary as g (g.key)}
         <button class="picker-item" onclick={() => place(g.key)}>
           <Workflow size={14} aria-hidden="true" />
@@ -320,6 +333,16 @@
   }
   .picker-item:active {
     scale: 0.98;
+  }
+  .picker-item.new {
+    background: var(--surface-inset);
+    border-style: dashed;
+    border-color: var(--border-strong);
+    color: var(--text-muted);
+  }
+  .picker-item.new:hover {
+    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+    color: var(--ink);
   }
   .picker-item :global(svg) {
     color: var(--accent);
