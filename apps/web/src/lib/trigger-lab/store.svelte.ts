@@ -399,6 +399,9 @@ export class TriggerLab {
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       writeStored(serializeAuthored(snap));
+      // Same debounced tick re-syncs the authored Show to the engine (guarded so it
+      // only sends on a real change) — so live edits actually reach the server.
+      this.syncShowToServer();
     }, SAVE_DEBOUNCE_MS);
   }
 
@@ -417,7 +420,9 @@ export class TriggerLab {
         this.link = state === 'closed' ? 'offline' : state;
         if (state === 'open') {
           // hand the server the authored content, then the current transport
-          this.client.send({ t: 'setShow', show: buildShow(this) });
+          const show = buildShow(this);
+          this.client.send({ t: 'setShow', show });
+          this.lastShowSig = this.showSig(show); // baseline so the first sync tick is a no-op
           this.lastSent = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
           this.client.send({ t: 'setTransport', ...this.lastSent });
           // align the engine's active section with the store's current arrange focus
@@ -425,8 +430,9 @@ export class TriggerLab {
             this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangeSectionId });
           }
         } else {
-          // a drop means our next open must re-send the transport
+          // a drop means our next open must re-send the transport + Show
           this.lastSent = null;
+          this.lastShowSig = null;
         }
       },
       onStats: (stats, latencyMs, fps) => {
@@ -446,6 +452,32 @@ export class TriggerLab {
         this.serverFrame = frame;
       },
     });
+  }
+
+  /** Re-send the authored Show to the engine when it actually changed, so edits
+      (swap effect, tweak params/preset, rewire a graph, edit slots/buses) take
+      effect live — without this the server runs whatever Show it got at connect
+      time and keeps firing the original effects. Driven off the debounced autosave
+      tick. A signature guard skips no-op fires AND pure node-position (x/y) drags,
+      so dragging the graph doesn't needlessly reset engine voices; transport lives
+      on a separate message so tempo edits never resend the Show. NOTE: setShow
+      reseeds the engine (voices clear) — acceptable for authoring; a finer-grained
+      live-update message is a future refinement. */
+  private lastShowSig: string | null = null;
+  private showSig(show: ReturnType<typeof buildShow>): string {
+    return JSON.stringify(show, (k, v) => (k === 'x' || k === 'y' ? 0 : v));
+  }
+  private syncShowToServer(): void {
+    if (this.link !== 'open') return;
+    const show = buildShow(this);
+    const sig = this.showSig(show);
+    if (sig === this.lastShowSig) return;
+    this.lastShowSig = sig;
+    this.client.send({ t: 'setShow', show });
+    // setShow reseeds the active section to the first song/section — restore focus.
+    if (this.arrangeSectionId) {
+      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangeSectionId });
+    }
   }
 
   /** Send setTransport to the server iff bpm/playing/beatsPerBar changed. */
