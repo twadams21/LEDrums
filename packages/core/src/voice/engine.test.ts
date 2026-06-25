@@ -339,7 +339,8 @@ function flatGraph(effectId: string): TriggerGraph {
   };
 }
 
-/** Show with two named flat graphs ('gA', 'gB') and one song with one section. */
+/** Show with two named flat graphs ('gA', 'gB') and one song with one section.
+    Slots are keyed per pad by padKey — the struck pad here is kick zone '' ('kick:'). */
 function sectionShow(slotRefs: (string | null)[]): Show {
   const graphA = flatGraph('fxA');
   const graphB = flatGraph('fxB');
@@ -350,7 +351,7 @@ function sectionShow(slotRefs: (string | null)[]): Show {
       {
         id: 'sec1',
         name: 'Sec 1',
-        slots: { kick: slotRefs },
+        slots: { [padKey('kick', '')]: slotRefs },
       },
     ],
   };
@@ -394,6 +395,90 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
     expect(e.stats().voiceCount).toBe(2);
   });
 
+  it('fires the per-(drum,zone) slot graph — Edge ≠ Centre (the regression)', () => {
+    // The bug resolved hits per-DRUM (section.slots[drumId], ignoring zone), so every
+    // zone of a drum fired the seeded zone-0 graph. Slots are now keyed per pad by
+    // padKey, so Centre (zone '0') fires its graph and Edge (zone '1') fires a DIFFERENT
+    // one. Discriminator: Centre → fxA on 'base', Edge → fxB on 'lead'.
+    const centre = flatGraph('fxA'); // → base bus
+    const edge = flatGraph('fxB'); // → lead bus
+    const mk = (): ReturnType<typeof createVoiceBusEngine> => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow({
+        buses: buses(),
+        graphs: { gCentre: centre, gEdge: edge },
+        sections: [],
+        effects: [effect('fxA', { busId: 'base' }), effect('fxB', { busId: 'lead' })],
+        presets: [],
+        songs: [
+          {
+            id: 'song1',
+            name: 'Song 1',
+            sections: [
+              {
+                id: 'sec1',
+                name: 'Sec 1',
+                slots: {
+                  [padKey('kick', '0')]: ['gCentre', null, null],
+                  [padKey('kick', '1')]: ['gEdge', null, null],
+                },
+              },
+            ],
+          },
+        ],
+      });
+      e.applyInput(recallSection('song1', 'sec1', 0));
+      return e;
+    };
+
+    // Centre (zone '0') → fxA on 'base'; 'lead' stays dark.
+    const eC = mk();
+    eC.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: 1 });
+    eC.tick(5, 5, transport(5));
+    eC.tick(40, 35, transport(40)); // age past attack so levels register
+    expect(eC.stats().busLevels.base).toBeGreaterThan(0);
+    expect(eC.stats().busLevels.lead).toBe(0);
+
+    // Edge (zone '1') → fxB on 'lead' (the bug fired Centre's 'base' graph here).
+    const eE = mk();
+    eE.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '1', velocity: 1, timeMs: 1 });
+    eE.tick(5, 5, transport(5));
+    eE.tick(40, 35, transport(40));
+    expect(eE.stats().busLevels.lead).toBeGreaterThan(0);
+    expect(eE.stats().busLevels.base).toBe(0);
+  });
+
+  it("falls back to the pad's own flat graph when that pad has no slots in the section", () => {
+    // The active section fills kick:0 but NOT kick:1. Hitting zone '1' must fall back to
+    // graphs['kick:1'] (the pad's own graph), not borrow zone-0's slot.
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow({
+      buses: buses(),
+      graphs: {
+        gCentre: flatGraph('fxA'),
+        [padKey('kick', '1')]: flatGraph('fxB'), // the Edge pad's own graph
+      },
+      sections: [],
+      effects: [effect('fxA', { busId: 'base' }), effect('fxB', { busId: 'lead' })],
+      presets: [],
+      songs: [
+        {
+          id: 'song1',
+          name: 'Song 1',
+          sections: [{ id: 'sec1', name: 'Sec 1', slots: { [padKey('kick', '0')]: ['gCentre', null, null] } }],
+        },
+      ],
+    });
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '1', velocity: 1, timeMs: 1 });
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(1); // fell back to graphs['kick:1']
+    expect(e.stats().busLevels.lead).toBeGreaterThan(0); // fxB (the pad's own), not fxA
+  });
+
   it('switching to a section with different slots changes what fires', () => {
     // Section 1: kick → ['gA']; section 2: kick → ['gB', 'gA'].
     const graphA = flatGraph('fxA');
@@ -409,8 +494,8 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
           id: 'song1',
           name: 'Song 1',
           sections: [
-            { id: 'sec1', name: 'Sec 1', slots: { kick: ['gA', null, null] } },
-            { id: 'sec2', name: 'Sec 2', slots: { kick: ['gB', 'gA', null] } },
+            { id: 'sec1', name: 'Sec 1', slots: { [padKey('kick', '')]: ['gA', null, null] } },
+            { id: 'sec2', name: 'Sec 2', slots: { [padKey('kick', '')]: ['gB', 'gA', null] } },
           ],
         },
       ],
@@ -481,7 +566,7 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
         {
           id: 'song1',
           name: 'Song 1',
-          sections: [{ id: 'sec1', name: 'Sec 1', slots: { kick: ['gSeqA', 'gSeqB', null] } }],
+          sections: [{ id: 'sec1', name: 'Sec 1', slots: { [padKey('kick', '')]: ['gSeqA', 'gSeqB', null] } }],
         },
       ],
     };
@@ -538,7 +623,7 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
           id: 'song1',
           name: 'Song 1',
           // SAME key 'gSeq' in two slots — the duplicate-slot case under guard.
-          sections: [{ id: 'sec1', name: 'Sec 1', slots: { kick: ['gSeq', 'gSeq', null] } }],
+          sections: [{ id: 'sec1', name: 'Sec 1', slots: { [padKey('kick', '')]: ['gSeq', 'gSeq', null] } }],
         },
       ],
     };

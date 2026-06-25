@@ -54,8 +54,9 @@ export function buildShow(source: ShowSource): voice.Show {
       sections: song.sections.map((sec) => ({
         id: sec.id,
         name: sec.name,
+        // slots are keyed per pad by padKey "drumId:zone" — passed through verbatim.
         slots: Object.fromEntries(
-          Object.entries(sec.slots).map(([drumId, slotArr]) => [drumId, slotArr.slice()]),
+          Object.entries(sec.slots).map(([padKey, slotArr]) => [padKey, slotArr.slice()]),
         ),
       })),
     })),

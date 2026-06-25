@@ -216,11 +216,11 @@ class VoiceBusEngine implements RenderEngine {
         beatPhase: this.beatPhase(),
         sourceDrumId: drumId,
       };
-      // Section-aware resolution: fire each non-null slot graph for the drum.
-      // The v1 semantic is per-drum (not per-zone): any zone hit on a drum fires
-      // all of that drum's active slot graphs. Zone-specific behaviour lives inside
-      // the graph itself. Fallback to the flat padKey graph when there is no active
-      // section or the drum has no slots in the active section.
+      // Section-aware resolution: fire each non-null slot graph for THIS pad.
+      // Slots are keyed per (drum, zone) by padKey, so a hit fires only the active
+      // section's graphs for the struck pad — Edge, Rim and Centre each fire their
+      // own slot graph. Fallback to the flat padKey graph when there is no active
+      // section or this pad has no slots in the active section.
       const toFire = this.resolveHitGraphs(drumId, zone);
       for (const { graph, statePrefix } of toFire) {
         this.fireGraph(graph, statePrefix, ctx);
@@ -231,23 +231,27 @@ class VoiceBusEngine implements RenderEngine {
   /**
    * Resolve which graphs to fire for a (drumId, zone) hit.
    *
-   * If an active section is set and has non-null slot entries for the drum,
-   * returns one entry per filled slot, each with a per-slot-POSITION state
-   * prefix (`${key}#${slotIndex}`) so layered graphs from the same hit — even
-   * two slots holding the SAME graph key — get distinct PRNG/sequence/latch
-   * state and don't interfere with each other.
+   * Slots are keyed per pad by padKey `"drumId:zone"` (the same identity `graphs`
+   * uses), so resolution is a direct `section.slots[padKey(drumId, zone)]` lookup —
+   * each zone of a drum fires ITS OWN slot graphs. If the active section has non-null
+   * slot entries for this pad, returns one entry per filled slot, each with a per-slot-
+   * POSITION state prefix (`${key}#${slotIndex}`) so layered graphs from the same hit —
+   * even two slots holding the SAME graph key — get distinct PRNG/sequence/latch state
+   * and don't interfere with each other.
    *
    * Falls back to the flat `graphs[padKey(drumId, zone)]` graph when:
    *  - no active section / song is set, OR
-   *  - the active section has no slots for this drum, OR
+   *  - the active section has no slots for this pad, OR
    *  - all slots are null (unassigned).
+   * The fallback restores the pre-section per-zone behaviour exactly.
    */
   private resolveHitGraphs(drumId: string, zone: string): Array<{ graph: TriggerGraph; statePrefix: string }> {
+    const pad = padKey(drumId, zone);
     if (this.activeSongId !== null && this.activeSectionId !== null && this.show.songs) {
       const song = this.show.songs.find((s) => s.id === this.activeSongId);
       const section = song?.sections.find((s) => s.id === this.activeSectionId);
       if (section) {
-        const slots = section.slots[drumId];
+        const slots = section.slots[pad];
         if (slots) {
           const resolved: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
           for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
@@ -264,7 +268,6 @@ class VoiceBusEngine implements RenderEngine {
         }
       }
     }
-    const pad = padKey(drumId, zone);
     const g = this.show.graphs[pad];
     return g ? [{ graph: g, statePrefix: pad }] : [];
   }

@@ -61,19 +61,19 @@ describe('buildShow referential integrity', () => {
 
   it('throws when a setlist slot references a graph that does not exist', () => {
     const src = fixtureSource();
-    const drumIds = DRUMS.map((d) => d.id);
-    let song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', drumIds)] };
-    song = setSlot(song, 'a', 'kick', 0, 'kick:9'); // no graph keyed kick:9
+    const padKeys = PADS.map((p) => `${p.drumId}:${p.zone}`);
+    let song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', padKeys)] };
+    song = setSlot(song, 'a', 'kick:0', 0, 'kick:9'); // no graph keyed kick:9
     src.songs = [song];
     expect(() => buildShow(src)).toThrow(/setlist slot → graph "kick:9"/);
   });
 
   it('passes when setlist slots reference real graphs', () => {
     const src = fixtureSource();
-    const drumIds = DRUMS.map((d) => d.id);
+    const padKeys = PADS.map((p) => `${p.drumId}:${p.zone}`);
     const realKey = `${PADS[0]!.drumId}:${PADS[0]!.zone}`;
-    let song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', drumIds)] };
-    song = setSlot(song, 'a', PADS[0]!.drumId, 0, realKey);
+    let song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', padKeys)] };
+    song = setSlot(song, 'a', realKey, 0, realKey); // the pad's own graph (the seed case)
     src.songs = [song];
     expect(() => buildShow(src)).not.toThrow();
   });

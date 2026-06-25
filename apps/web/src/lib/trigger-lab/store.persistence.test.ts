@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
-import { makeNode } from './sim';
+import { makeNode, type EffectDef } from './sim';
+import { EFFECTS } from './fixtures';
 import type { WSClient } from '../ws/client';
 
 /* Integration: construction = "reload". Verifies the store hydrates the persisted
@@ -88,6 +89,37 @@ describe('TriggerLab hydration (restore on reload)', () => {
     localStorage.setItem(STORAGE_KEY, '{ not json');
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
+  });
+});
+
+describe('TriggerLab effects hydration (union, never replace)', () => {
+  const userFx = (id: string): EffectDef => ({
+    id,
+    name: id,
+    pattern: 'flash',
+    busId: 'base',
+    scope: 'kit',
+    attackMs: 10,
+    sustainMs: 0,
+    releaseMs: 100,
+    params: [],
+  });
+
+  it('surfaces new built-in effects even when the persisted blob predates them', () => {
+    // A returning user's blob holds only a stale subset (no generator effects). The
+    // union re-adds every CURRENT built-in, so the 41 generator effects still appear.
+    seed({ effects: [userFx('swirl')] }); // 'swirl' is a built-in; the blob lacks gen:*
+    const store = new TriggerLab(fakeClient);
+    expect(store.effects).toHaveLength(EFFECTS.length);
+    expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true);
+  });
+
+  it('preserves user-created effects across the union (and never duplicates built-ins)', () => {
+    seed({ effects: [...EFFECTS, userFx('my-custom-fx')] });
+    const store = new TriggerLab(fakeClient);
+    expect(store.effects.some((e) => e.id === 'my-custom-fx')).toBe(true); // user effect kept
+    expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true); // built-ins present
+    expect(store.effects).toHaveLength(EFFECTS.length + 1); // built-ins de-duped, +1 user effect
   });
 });
 

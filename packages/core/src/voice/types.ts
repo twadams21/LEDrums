@@ -176,12 +176,14 @@ export interface Section {
 // ---- Setlist (song → section → per-drum graph slots) -----------------------
 
 /**
- * drumId → ordered list of graph keys (null = empty slot). Each key references
- * a graph in `Show.graphs`; stacked non-null keys are fired as layers on a hit.
+ * padKey "drumId:zone" → ordered list of graph keys (null = empty slot). Keyed per
+ * PAD (not per drum), so each zone of a drum carries its own slot graphs. Each key
+ * references a graph in `Show.graphs`; stacked non-null keys are fired as layers on
+ * a hit to that pad.
  */
 export type SlotRefs = Record<string, (string | null)[]>;
 
-/** One section in a song's arrangement: per-drum ordered graph-key slots. */
+/** One section in a song's arrangement: per-pad ordered graph-key slots. */
 export interface SongSection {
   id: string;
   name: string;
@@ -213,10 +215,11 @@ export interface Show {
   effects: EffectDef[];
   presets: Preset[];
   /**
-   * Authored arrangement: songs with per-section slot grids. Each slot holds a
-   * graph key into `Show.graphs` (null = empty). When an active section is set,
-   * a hit fires the non-null slot graphs for that drum (layered, in slot order)
-   * instead of the flat `graphs[padKey(drumId, zone)]` fallback.
+   * Authored arrangement: songs with per-section slot grids keyed per pad by
+   * padKey "drumId:zone". Each slot holds a graph key into `Show.graphs` (null =
+   * empty). When an active section is set, a hit fires the non-null slot graphs for
+   * THAT pad (layered, in slot order) instead of the flat `graphs[padKey(drumId,
+   * zone)]` fallback — so each zone fires its own graphs.
    */
   songs?: ShowSong[];
 }

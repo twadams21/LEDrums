@@ -101,33 +101,45 @@ export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
 
 const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
 
-/** Seed one demo song from the fixture sections + the first graph of each drum.
-    slot 0 of every drum is the SAME graph across sections (so reuse is visible in
-    the grid); Verse stacks a second snare graph to show layering. References are by
-    graph key — the same key in two sections is the same graph, not a copy. */
+/** Seed one demo song from the fixture sections, filling each PAD's slot 0 with that
+    pad's OWN graph. Slots are keyed per pad by padKey, so the default arrangement
+    reproduces the pre-section per-zone behaviour exactly (hit a zone → its own graph
+    fires) while still being a real, editable arrangement. The same pad's graph in
+    every section makes reuse visible in the grid; Verse stacks a second graph on the
+    snare-centre pad to show layering. References are by graph key — the same key in
+    two sections is the same graph, not a copy. */
 function seedSongs(): Song[] {
-  const drumIds = DRUMS.map((d) => d.id);
-  const firstKeyOf = (drumId: string): string | null => {
-    const p = PADS.find((pp) => pp.drumId === drumId);
-    return p ? padKey(p) : null;
-  };
+  const padKeys = PADS.map(padKey);
   let song: Song = {
     id: 'set-1',
     name: 'Set 1',
-    sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, drumIds)),
+    sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys)),
   };
   for (const sec of SECTIONS) {
-    for (const id of drumIds) {
-      const key = firstKeyOf(id);
-      if (key) song = setlist.setSlot(song, sec.id, id, 0, key);
+    for (const p of PADS) {
+      const key = padKey(p); // slot 0 of each pad = the pad's own graph
+      song = setlist.setSlot(song, sec.id, key, 0, key);
     }
   }
-  // a layered example: Verse stacks a second snare graph (zone 2) over its base
-  const snare2 = PADS.find((p) => p.drumId === 'snare' && p.zone === 2);
-  if (snare2 && SECTIONS.some((s) => s.id === 'verse')) {
-    song = setlist.setSlot(song, 'verse', 'snare', 1, padKey(snare2));
+  // a layered example: Verse stacks the snare-rim graph (zone 2) over the snare-centre
+  // pad, so hitting snare centre in Verse fires both layers.
+  const snareCentre = PADS.find((p) => p.drumId === 'snare' && p.zone === 0);
+  const snareRim = PADS.find((p) => p.drumId === 'snare' && p.zone === 2);
+  if (snareCentre && snareRim && SECTIONS.some((s) => s.id === 'verse')) {
+    song = setlist.setSlot(song, 'verse', padKey(snareCentre), 1, padKey(snareRim));
   }
   return [song];
+}
+
+/** Union built-in effects with persisted USER-CREATED ones. Hydration must never
+    drop new built-ins: a user's blob saved before the 41 generator effects existed
+    would otherwise overwrite the fresh registry and hide them forever. So start from
+    the fixture EFFECTS (every built-in, always current) and append only persisted
+    effects whose id isn't a built-in — the user's own createEffect() additions.
+    Built-ins are immutable from the UI, so re-taking the fresh def loses nothing. */
+function unionEffects(persisted: readonly EffectDef[]): EffectDef[] {
+  const builtinIds = new Set(EFFECTS.map((e) => e.id));
+  return [...EFFECTS, ...persisted.filter((e) => !builtinIds.has(e.id))];
 }
 
 export class TriggerLab {
@@ -344,7 +356,9 @@ export class TriggerLab {
     if (a.songs) this.songs = a.songs;
     if (a.buses) this.buses = a.buses;
     if (a.presets) this.presets = a.presets;
-    if (a.effects) this.effects = a.effects;
+    // Union, never replace: keep every current built-in (so new generator effects
+    // always appear) and re-add only the user's own created effects.
+    if (a.effects) this.effects = unionEffects(a.effects);
     if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
     if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
     if (a.arrangeSectionId !== undefined) this.arrangeSectionId = a.arrangeSectionId;
@@ -464,16 +478,17 @@ export class TriggerLab {
 
   /**
    * Resolve which graphs to fire locally for a pad hit — mirrors the engine's
-   * `resolveHitGraphs`. If the active song + arrange section has non-null slots
-   * for the drum, returns one entry per filled slot (layered). Falls back to the
-   * flat per-pad graph when there is no active section or no slots for the drum.
+   * `resolveHitGraphs`. Slots are keyed per pad by padKey, so if the active song +
+   * arrange section has non-null slots for THIS pad, returns one entry per filled
+   * slot (layered). Falls back to the flat per-pad graph when there is no active
+   * section or no slots for this pad — so each zone fires its own graph.
    */
   private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string }> {
     const song = this.activeSong;
     if (song) {
       const section = song.sections.find((s) => s.id === this.arrangeSectionId);
       if (section) {
-        const slots = section.slots[pad.drumId];
+        const slots = section.slots[padKey(pad)];
         if (slots) {
           const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
           for (const key of slots) {
@@ -573,16 +588,16 @@ export class TriggerLab {
     const id = this.activeSongId;
     this.songs = this.songs.map((s) => (s.id === id ? fn(s) : s));
   }
-  assignSlot(sectionId: string, drumId: string, slotIndex: number, graphKey: string | null): void {
-    this.updateActiveSong((song) => setlist.setSlot(song, sectionId, drumId, slotIndex, graphKey));
+  assignSlot(sectionId: string, padKeyId: string, slotIndex: number, graphKey: string | null): void {
+    this.updateActiveSong((song) => setlist.setSlot(song, sectionId, padKeyId, slotIndex, graphKey));
   }
-  clearSlot(sectionId: string, drumId: string, slotIndex: number): void {
-    this.updateActiveSong((song) => setlist.clearSlot(song, sectionId, drumId, slotIndex));
+  clearSlot(sectionId: string, padKeyId: string, slotIndex: number): void {
+    this.updateActiveSong((song) => setlist.clearSlot(song, sectionId, padKeyId, slotIndex));
   }
   addSongSection(name: string): void {
-    const drumIds = this.drums.map((d) => d.id);
+    const padKeys = this.pads.map(padKey);
     const id = nid('section');
-    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name, drumIds)));
+    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name, padKeys)));
     this.arrangeSectionId = id;
   }
   /** Jump to the Trigger Graph editor for a slot's referenced graph (by pad key). */

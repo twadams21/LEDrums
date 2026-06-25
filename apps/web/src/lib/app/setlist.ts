@@ -1,19 +1,21 @@
-/* Setlist model — songs → sections → per-drum GRAPH SLOTS, as a PURE module (no
+/* Setlist model — songs → sections → per-PAD GRAPH SLOTS, as a PURE module (no
    runes, no DOM) so the structure + its invariants are unit-testable in node, like
-   shell-nav / show-builder. A slot holds a *reference* to a trigger graph (its key
+   shell-nav / show-builder. Slots are keyed per pad by padKey "drumId:zone" — the
+   SAME identity `store.graphs` uses — so each zone of a drum carries its own slot
+   graphs (Edge ≠ Centre). A slot holds a *reference* to a trigger graph (its key
    in the store's `graphs` map), never a copy — so the SAME graph can appear in
    many sections (reuse), and stacking a second graph in another slot LAYERS it
    (layer routing lives inside the graph's buses, so slots are graph layers, not a
    separate layer axis). The store is a thin rune holder that delegates here.
 
-   Scope note: this is the authored ARRANGEMENT. Driving the engine from it (firing
-   a section's per-drum slot graphs on a hit) is a deeper engine change — see the
-   redesign plan; today the grid authors + organises + links to graph editing. */
+   Scope note: this is the authored ARRANGEMENT. The engine fires a section's per-pad
+   slot graphs on a hit (resolved by padKey); the grid authors + organises + links to
+   graph editing. */
 
 /** A slot is a reference to a graph by key (store.graphs padKey), or empty. */
 export type Slot = string | null;
 
-/** drumId → its ordered graph slots for a section (length === SLOTS_PER_DRUM). */
+/** padKey "drumId:zone" → its ordered graph slots for a section (length === SLOTS_PER_DRUM). */
 export type SectionSlots = Record<string, Slot[]>;
 
 export interface SetlistSection {
@@ -31,19 +33,19 @@ export interface Song {
 /** Up to three layerable graph slots per drum, per the wireframe (L1/L2/L3). */
 export const SLOTS_PER_DRUM = 3;
 
-export function emptySlots(drumIds: readonly string[], n = SLOTS_PER_DRUM): SectionSlots {
+export function emptySlots(padKeys: readonly string[], n = SLOTS_PER_DRUM): SectionSlots {
   const out: SectionSlots = {};
-  for (const d of drumIds) out[d] = Array.from({ length: n }, () => null);
+  for (const k of padKeys) out[k] = Array.from({ length: n }, () => null);
   return out;
 }
 
-export function makeSection(id: string, name: string, drumIds: readonly string[], n = SLOTS_PER_DRUM): SetlistSection {
-  return { id, name, slots: emptySlots(drumIds, n) };
+export function makeSection(id: string, name: string, padKeys: readonly string[], n = SLOTS_PER_DRUM): SetlistSection {
+  return { id, name, slots: emptySlots(padKeys, n) };
 }
 
-/** Slots for a drum in a section, always padded to SLOTS_PER_DRUM. */
-export function slotsFor(section: SetlistSection, drumId: string, n = SLOTS_PER_DRUM): Slot[] {
-  const s = section.slots[drumId];
+/** Slots for a pad (padKey) in a section, always padded to SLOTS_PER_DRUM. */
+export function slotsFor(section: SetlistSection, padKey: string, n = SLOTS_PER_DRUM): Slot[] {
+  const s = section.slots[padKey];
   if (!s) return Array.from({ length: n }, () => null);
   if (s.length === n) return s;
   return Array.from({ length: n }, (_, i) => s[i] ?? null);
@@ -62,18 +64,18 @@ function mapSection(song: Song, sectionId: string, fn: (s: SetlistSection) => Se
   return changed ? { ...song, sections } : song;
 }
 
-/** Place a graph reference into (drum, slot). Returns a new Song (immutable). */
-export function setSlot(song: Song, sectionId: string, drumId: string, slotIndex: number, graphKey: string | null): Song {
+/** Place a graph reference into (pad, slot). Returns a new Song (immutable). */
+export function setSlot(song: Song, sectionId: string, padKey: string, slotIndex: number, graphKey: string | null): Song {
   return mapSection(song, sectionId, (s) => {
-    const slots = slotsFor(s, drumId).slice();
+    const slots = slotsFor(s, padKey).slice();
     if (slotIndex < 0 || slotIndex >= slots.length) return s;
     slots[slotIndex] = graphKey;
-    return { ...s, slots: { ...s.slots, [drumId]: slots } };
+    return { ...s, slots: { ...s.slots, [padKey]: slots } };
   });
 }
 
-export function clearSlot(song: Song, sectionId: string, drumId: string, slotIndex: number): Song {
-  return setSlot(song, sectionId, drumId, slotIndex, null);
+export function clearSlot(song: Song, sectionId: string, padKey: string, slotIndex: number): Song {
+  return setSlot(song, sectionId, padKey, slotIndex, null);
 }
 
 export function addSection(song: Song, section: SetlistSection): Song {
@@ -86,7 +88,7 @@ export function renameSection(song: Song, sectionId: string, name: string): Song
 
 // ---- reuse / usage queries -------------------------------------------------
 
-/** Count every (section, drum, slot) position across the song that references a graph. */
+/** Count every (section, pad, slot) position across the song that references a graph. */
 export function graphUsageCount(song: Song, graphKey: string): number {
   let n = 0;
   for (const sec of song.sections) {
@@ -113,7 +115,7 @@ export function referencedGraphs(song: Song): string[] {
   return [...set];
 }
 
-/** How many slots a drum has filled in a section (for the "+ layer" affordance). */
-export function filledCount(section: SetlistSection, drumId: string): number {
-  return slotsFor(section, drumId).filter(Boolean).length;
+/** How many slots a pad has filled in a section (for the "+ layer" affordance). */
+export function filledCount(section: SetlistSection, padKey: string): number {
+  return slotsFor(section, padKey).filter(Boolean).length;
 }

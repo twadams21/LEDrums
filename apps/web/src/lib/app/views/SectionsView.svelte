@@ -1,11 +1,13 @@
 <script lang="ts">
   /* Sections / Setlist — the real model: a grid of reusable, layerable GRAPHS.
-     Columns = the active song's sections; rows = drums, each with up to
-     SLOTS_PER_DRUM graph slots (L1..L3). A slot references a trigger graph by key,
-     so the same graph can appear in many sections (reuse), and stacking a second
-     graph in another slot layers it (layer routing lives in the graph's buses).
-     Clicking an empty slot opens the graph picker; a filled slot can be edited
-     (jumps to the Trigger Graph view) or cleared. */
+     Columns = the active song's sections; rows = PADS (drum · zone), grouped under
+     each drum, with up to SLOTS_PER_DRUM graph slots (L1..L3) per pad. Slots are
+     keyed per pad by padKey, so each zone of a drum carries its own slot graphs
+     (Edge ≠ Centre). A slot references a trigger graph by key, so the same graph can
+     appear in many sections (reuse), and stacking a second graph in another slot
+     layers it (layer routing lives in the graph's buses). Clicking an empty slot
+     opens the graph picker; a filled slot can be edited (jumps to the Trigger Graph
+     view) or cleared. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { SLOTS_PER_DRUM, slotsFor, isReused } from '../setlist';
@@ -24,12 +26,26 @@
   const sections = $derived(song?.sections ?? []);
   const slotRows = Array.from({ length: SLOTS_PER_DRUM }, (_, i) => i);
 
+  /** padKey "drumId:zone" — the slot + graph identity used everywhere else. */
+  const padKey = (p: { drumId: string; zone: number }): string => `${p.drumId}:${p.zone}`;
+
+  /** Pads grouped under their drum (in kit drum order): the grid renders a drum
+      header then that drum's zone rows. Drums with no authored pads are dropped. */
+  const drumGroups = $derived(
+    store.drums
+      .map((d) => ({ drum: d, pads: store.pads.filter((p) => p.drumId === d.id) }))
+      .filter((g) => g.pads.length > 0),
+  );
+
   // graph picker: the slot awaiting a graph (or null when closed)
-  let pending = $state<{ sectionId: string; drumId: string; slot: number } | null>(null);
+  let pending = $state<{ sectionId: string; padKey: string; slot: number } | null>(null);
+
+  /** The pending slot's pad (for the picker context line + "in use" check). */
+  const pendingPad = $derived(pending ? store.pads.find((p) => padKey(p) === pending!.padKey) ?? null : null);
 
   function place(graphKey: string): void {
     if (!pending) return;
-    store.assignSlot(pending.sectionId, pending.drumId, pending.slot, graphKey);
+    store.assignSlot(pending.sectionId, pending.padKey, pending.slot, graphKey);
     pending = null;
   }
   function editSlot(graphKey: string): void {
@@ -40,7 +56,7 @@
   function createAndPlace(): void {
     if (!pending) return;
     const key = store.createGraph();
-    store.assignSlot(pending.sectionId, pending.drumId, pending.slot, key);
+    store.assignSlot(pending.sectionId, pending.padKey, pending.slot, key);
     pending = null;
     shell.setView('trigger'); // createGraph selected it — land on the canvas to edit
   }
@@ -73,38 +89,42 @@
           </button>
         {/each}
 
-        <!-- one block of SLOTS_PER_DRUM rows per drum -->
-        {#each store.drums as drum (drum.id)}
-          {#each slotRows as slot (slot)}
-            {#if slot === 0}
-              <div class="drumh" style="grid-row: span {SLOTS_PER_DRUM}">{drum.label}</div>
-            {/if}
-            <div class="sloth">L{slot + 1}</div>
-            {#each sections as sec (sec.id)}
-              {@const key = slotsFor(sec, drum.id)[slot] ?? null}
-              {#if key}
-                {@const reused = isReused(song, key)}
-                <div class="cell filled" class:reused class:dim={store.arrangeSectionId !== sec.id}>
-                  <button class="cell-main" title="Edit {store.graphLabel(key)}" onclick={() => editSlot(key)}>
-                    <Workflow size={12} aria-hidden="true" />
-                    <span class="cell-label">{store.graphLabel(key)}</span>
-                    {#if reused}<span class="reuse-dot" title="Reused in another section" aria-hidden="true"></span>{/if}
-                  </button>
-                  <div class="cell-actions">
-                    <IconButton icon={Pencil} label="Edit graph" size={12} onclick={() => editSlot(key)} />
-                    <IconButton icon={X} label="Clear slot" size={12} onclick={() => store.clearSlot(sec.id, drum.id, slot)} />
-                  </div>
-                </div>
-              {:else}
-                <button
-                  class="cell add"
-                  class:dim={store.arrangeSectionId !== sec.id}
-                  title="Place a graph"
-                  onclick={() => (pending = { sectionId: sec.id, drumId: drum.id, slot })}
-                >
-                  <Plus size={13} aria-hidden="true" />
-                </button>
+        <!-- one drum group: a full-width header, then each pad's SLOTS_PER_DRUM rows -->
+        {#each drumGroups as group (group.drum.id)}
+          <div class="drumgroup">{group.drum.label}</div>
+          {#each group.pads as pad (padKey(pad))}
+            {@const pk = padKey(pad)}
+            {#each slotRows as slot (slot)}
+              {#if slot === 0}
+                <div class="zoneh" style="grid-row: span {SLOTS_PER_DRUM}">{pad.zoneLabel}</div>
               {/if}
+              <div class="sloth">L{slot + 1}</div>
+              {#each sections as sec (sec.id)}
+                {@const key = slotsFor(sec, pk)[slot] ?? null}
+                {#if key}
+                  {@const reused = isReused(song, key)}
+                  <div class="cell filled" class:reused class:dim={store.arrangeSectionId !== sec.id}>
+                    <button class="cell-main" title="Edit {store.graphLabel(key)}" onclick={() => editSlot(key)}>
+                      <Workflow size={12} aria-hidden="true" />
+                      <span class="cell-label">{store.graphLabel(key)}</span>
+                      {#if reused}<span class="reuse-dot" title="Reused in another section" aria-hidden="true"></span>{/if}
+                    </button>
+                    <div class="cell-actions">
+                      <IconButton icon={Pencil} label="Edit graph" size={12} onclick={() => editSlot(key)} />
+                      <IconButton icon={X} label="Clear slot" size={12} onclick={() => store.clearSlot(sec.id, pk, slot)} />
+                    </div>
+                  </div>
+                {:else}
+                  <button
+                    class="cell add"
+                    class:dim={store.arrangeSectionId !== sec.id}
+                    title="Place a graph"
+                    onclick={() => (pending = { sectionId: sec.id, padKey: pk, slot })}
+                  >
+                    <Plus size={13} aria-hidden="true" />
+                  </button>
+                {/if}
+              {/each}
             {/each}
           {/each}
         {/each}
@@ -116,7 +136,7 @@
 <Drawer open={!!pending} onClose={() => (pending = null)} title="Place a graph" side="right" width="320px">
   {#if pending}
     <p class="picker-ctx">
-      {store.drums.find((d) => d.id === pending!.drumId)?.label} · L{pending.slot + 1} ·
+      {pendingPad?.drumLabel} · {pendingPad?.zoneLabel} · L{pending.slot + 1} ·
       {sections.find((s) => s.id === pending!.sectionId)?.name}
     </p>
     <div class="picker-list">
@@ -129,7 +149,7 @@
         <button class="picker-item" onclick={() => place(g.key)}>
           <Workflow size={14} aria-hidden="true" />
           <span>{g.label}</span>
-          {#if isReused(song!, g.key) || (song && song.sections.some((s) => slotsFor(s, pending!.drumId).includes(g.key)))}
+          {#if isReused(song!, g.key) || (song && song.sections.some((s) => slotsFor(s, pending!.padKey).includes(g.key)))}
             <span class="picker-tag">in use</span>
           {/if}
         </button>
@@ -214,13 +234,28 @@
     border-color: color-mix(in oklch, var(--accent) 55%, transparent);
     background: var(--accent-soft);
   }
-  .drumh {
+  .drumgroup {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
-    padding: 0 var(--space-1);
+    padding: var(--space-2) var(--space-1) var(--space-1);
+    margin-top: var(--space-1);
     font-size: var(--text-sm);
     font-weight: 700;
     color: var(--ink);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .drumgroup:first-of-type {
+    margin-top: 0;
+  }
+  .zoneh {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: capitalize;
   }
   .sloth {
     display: flex;
