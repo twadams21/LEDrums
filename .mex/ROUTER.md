@@ -47,9 +47,11 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 **Unified shell (done — 2026-06-25, branch `feat/unified-shell`):** the cohesive app reconciling the prototype with the original control app, in `apps/web/src/lib/app/` on the `TriggerLab` store — now the default `App.svelte`. Mode-split Perform/Author crossfade, view router (Trigger/Patch/Sections/Kit), right-dock Inspector/Monitor, Layers/Buses dock, engine link + overlays reused. Pure `shell-nav` reducer (unit-tested) + thin rune store. Gates green. See `docs/plans/2026-06-21-ui-redesign.md` → "Unified application shell".
 
+**Section-aware engine playback (done — 2026-06-25, branch `feat/unified-shell`):** `recallSection` InputEvent (deterministic, queued like other inputs) sets the engine's active song/section. On a pad hit the engine resolves the active section's per-drum slot graphs and fires them layered (in slot order), each with its own graph-key state prefix so PRNG/sequence state doesn't collide. Falls back to flat `graphs[padKey(drumId,zone)]` when no section/slots (back-compat). Web store mirrors locally + sends `recallSection` to server on section change or WS open. 8 new core tests (240 total). `Show.songs?` added to core types; `buildShow` passes songs through. Remaining: add/remove songs + setlist persistence, unify looks-recall vs slot-arrangement section notions.
+
 **Not yet built (redesign):**
 - `packages/core` model refactor: Content vs Effect split + per-instance Clip presets.
-- Unified-shell view internals: Patch freeform node canvas, Sections layerable graph-slot grid + Song hierarchy, Kit geometry editor, Setlist persistence.
+- Unified-shell view internals: Patch freeform node canvas, Kit geometry editor, Setlist persistence.
 
 **Known issues:**
 - Existing panels still use legacy token names via aliases; migrate per-view, then drop aliases.
