@@ -13,10 +13,12 @@
 
   let { model, frame, scale }: Props = $props();
 
-  // Radial width (mm) of the lit ring band — inner radius → outer radius. The
-  // band lies in each hoop's plane and segments tile it end-to-end, so the ring
-  // reads as one continuous strip of light rather than separate beads.
+  // Cross-section of the lit ring (mm): BAND_MM radial (inner→outer radius, in
+  // the hoop's plane) × THICK_MM axial (depth along the hoop axis). The axial
+  // extrusion gives each segment real body — a thick ring/tube, not a flat
+  // ribbon — matching the old box-tube look while now following the curve.
   const BAND_MM = 18;
+  const THICK_MM = 20;
   // Hoop-boundary thresholds (data-only — SerializedModel carries no hoopCount,
   // so this also works for the live server kit). The PRIMARY test is axial: the
   // step between two pixels in the same ring barely moves along the hoop axis,
@@ -27,13 +29,22 @@
   // fallback that also catches any large positional leap.
   const AXIAL_K = 0.5;
   const HOOP_GAP_K = 2.5;
-  // Per pixel: 3 cross-sections (midBefore · center · midAfter) × 2 radial edge
-  // points = 6 vertices; 2 quads = 4 triangles = 12 index entries. Building the
-  // segment through the pixel's own position (not just the two midpoints) keeps
-  // the ribbon curved along the ring; sharing the midpoint cross-sections with
-  // neighbours (coincident, per-pixel-coloured) makes the joins gap-free.
-  const VPP = 6;
-  const IPP = 12;
+  // Per pixel: 3 cross-sections (midBefore · center · midAfter), each a 4-corner
+  // ring slice (inner/outer × bottom/top) = 12 vertices. Two box segments
+  // (B→C, C→A) × 4 walls (outer/inner/top/bottom) × 2 triangles = 16 triangles
+  // = 48 index entries. Routing the segment through the pixel's own position
+  // keeps the tube curved along the ring; the midpoint cross-sections are shared
+  // (coincident, per-pixel-coloured) with neighbours so the joins are gap-free.
+  const VPP = 12;
+  const IPP = 48;
+  // Local vertex indices (0..11) for the 16 triangles, laid out per cross-section
+  // as [innerBottom, innerTop, outerBottom, outerTop] → B:0-3, C:4-7, A:8-11.
+  const TRIS = [
+    // segment B→C: outer, inner, top, bottom
+    2, 3, 7, 2, 7, 6, 0, 1, 5, 0, 5, 4, 1, 3, 7, 1, 7, 5, 0, 2, 6, 0, 6, 4,
+    // segment C→A: outer, inner, top, bottom
+    6, 7, 11, 6, 11, 10, 4, 5, 9, 4, 9, 8, 5, 7, 11, 5, 11, 9, 4, 6, 10, 4, 10, 8,
+  ];
 
   // Unlit segments read as a dark frosted band, not black voids.
   const DARK_R = 0.05;
@@ -42,8 +53,8 @@
 
   // Geometry + material live for the component's lifetime; the cold build swaps
   // the geometry's attributes in place, the hot path only rewrites colours.
-  // vertexColors carries the live RGB frame; DoubleSide keeps the flat annular
-  // band visible from either face of the hoop.
+  // vertexColors carries the live RGB frame; DoubleSide keeps every tube wall
+  // visible (segments share coincident end faces, so no caps are needed).
   const geometry = new THREE.BufferGeometry();
   const material = new THREE.MeshBasicMaterial({
     vertexColors: true,
@@ -71,6 +82,17 @@
     out[1] = y / len;
     out[2] = z / len;
   }
+  // Tangent (along the hoop), same axis swap, normalized.
+  function readTan(m: SerializedModel, idx: number, out: number[]): void {
+    const j = idx * 3;
+    const x = m.tangents[j]!;
+    const y = m.tangents[j + 2]!;
+    const z = m.tangents[j + 1]!;
+    const len = Math.hypot(x, y, z) || 1;
+    out[0] = x / len;
+    out[1] = y / len;
+    out[2] = z / len;
+  }
   function avgN(a: number[], b: number[], out: number[]): void {
     const x = a[0]! + b[0]!;
     const y = a[1]! + b[1]!;
@@ -80,12 +102,26 @@
     out[1] = y / len;
     out[2] = z / len;
   }
-  // Write one radial edge point: cross-section position p offset by ±half along
-  // the (in-plane) radial n.
-  function edge(arr: Float32Array, o: number, p: number[], n: number[], s: number): void {
-    arr[o] = p[0]! + n[0]! * s;
-    arr[o + 1] = p[1]! + n[1]! * s;
-    arr[o + 2] = p[2]! + n[2]! * s;
+  // Write one cross-section's 4 corner vertices (12 floats at offset o): the
+  // position p offset ±halfR along the in-plane radial n and ±halfT along the
+  // hoop axis ax, in order [innerBottom, innerTop, outerBottom, outerTop].
+  function corners(
+    arr: Float32Array,
+    o: number,
+    p: number[],
+    n: number[],
+    ax: number[],
+    halfR: number,
+    halfT: number,
+  ): void {
+    for (let c = 0; c < 4; c++) {
+      const rs = c < 2 ? -halfR : halfR; // inner (0,1) vs outer (2,3)
+      const ts = c % 2 === 0 ? -halfT : halfT; // bottom (0,2) vs top (1,3)
+      const q = o + c * 3;
+      arr[q] = p[0]! + n[0]! * rs + ax[0]! * ts;
+      arr[q + 1] = p[1]! + n[1]! * rs + ax[1]! * ts;
+      arr[q + 2] = p[2]! + n[2]! * rs + ax[2]! * ts;
+    }
   }
 
   // Split each drum's pixel run into contiguous hoops. A boundary is where the
@@ -143,7 +179,8 @@
     const positions = new Float32Array(count * VPP * 3);
     const colors = new Float32Array(count * VPP * 3);
     const index = new Uint32Array(count * IPP);
-    const half = BAND_MM / s / 2;
+    const halfR = BAND_MM / s / 2;
+    const halfT = THICK_MM / s / 2;
 
     // Scratch — reused per pixel to keep the build allocation-light.
     const pC: number[] = [0, 0, 0];
@@ -158,6 +195,8 @@
     const nA: number[] = [0, 0, 0];
     const a0: number[] = [0, 0, 0];
     const b0: number[] = [0, 0, 0];
+    const tan0: number[] = [0, 0, 0];
+    const axis: number[] = [0, 0, 0];
 
     for (const H of buildHoops(m)) {
       const L = H.length;
@@ -167,6 +206,19 @@
       readPos(m, H[L - 1]!, s, b0);
       const span = Math.hypot(a0[0]! - b0[0]!, a0[1]! - b0[1]!, a0[2]! - b0[2]!);
       const closed = L > 2 && span <= (HOOP_GAP_K * (m.segmentLengths[H[0]!] || 1)) / s;
+
+      // One axis per hoop (a hoop is planar, so its axis is constant). Using a
+      // single axis for every cross-section keeps neighbours' shared end faces
+      // exactly coincident → the extruded tube stays watertight around the ring.
+      readTan(m, H[0]!, tan0);
+      readNrm(m, H[0]!, nC);
+      axis[0] = tan0[1]! * nC[2]! - tan0[2]! * nC[1]!;
+      axis[1] = tan0[2]! * nC[0]! - tan0[0]! * nC[2]!;
+      axis[2] = tan0[0]! * nC[1]! - tan0[1]! * nC[0]!;
+      const alen = Math.hypot(axis[0]!, axis[1]!, axis[2]!) || 1;
+      axis[0] /= alen;
+      axis[1] /= alen;
+      axis[2] /= alen;
 
       for (let t = 0; t < L; t++) {
         const i = H[t]!;
@@ -192,12 +244,9 @@
         avgN(nC, nN, nA);
 
         const v = i * VPP * 3;
-        edge(positions, v + 0, pB, nB, -half); // innerB
-        edge(positions, v + 3, pB, nB, +half); // outerB
-        edge(positions, v + 6, pC, nC, -half); // innerC
-        edge(positions, v + 9, pC, nC, +half); // outerC
-        edge(positions, v + 12, pA, nA, -half); // innerA
-        edge(positions, v + 15, pA, nA, +half); // outerA
+        corners(positions, v + 0, pB, nB, axis, halfR, halfT); // B: verts 0-3
+        corners(positions, v + 12, pC, nC, axis, halfR, halfT); // C: verts 4-7
+        corners(positions, v + 24, pA, nA, axis, halfR, halfT); // A: verts 8-11
 
         for (let k = 0; k < VPP; k++) {
           const o = v + k * 3;
@@ -208,20 +257,7 @@
 
         const vb = i * VPP;
         const ib = i * IPP;
-        // quad midBefore→center
-        index[ib] = vb;
-        index[ib + 1] = vb + 1;
-        index[ib + 2] = vb + 3;
-        index[ib + 3] = vb;
-        index[ib + 4] = vb + 3;
-        index[ib + 5] = vb + 2;
-        // quad center→midAfter
-        index[ib + 6] = vb + 2;
-        index[ib + 7] = vb + 3;
-        index[ib + 8] = vb + 5;
-        index[ib + 9] = vb + 2;
-        index[ib + 10] = vb + 5;
-        index[ib + 11] = vb + 4;
+        for (let q = 0; q < IPP; q++) index[ib + q] = vb + TRIS[q]!;
       }
     }
 
