@@ -91,6 +91,13 @@ export interface EffectDef {
   id: string;
   name: string;
   pattern: Pattern;
+  /**
+   * When set, this effect is GENERATOR-BACKED: a voice hosting it delegates rendering
+   * to the legacy {@link EffectGenerator} registered under this id (see the compositor
+   * bridge) instead of sampling `pattern`. `pattern` is ignored for such effects.
+   * Undefined → the lightweight per-pixel pattern fast path.
+   */
+  generatorId?: string;
   busId: string;
   scope: Scope;
   params: ParamSpec[];
@@ -243,6 +250,24 @@ export interface Voice {
   mode: PlayMode;
   scope: Scope;
   sourceDrumId: string | null;
+  /** Normalized hit velocity 0..1 captured at spawn — drives a hosted generator's
+   * synthetic trigger (intensity / wash falloff / particle spread). */
+  velocity: number;
+  /**
+   * Hosted legacy-effect generator id, or `null` for a pattern voice. When set, the
+   * compositor renders that {@link EffectGenerator} into a scratch framebuffer and
+   * composites it into the frame scaled by `level*deckGain`, masked to the drum range
+   * for `scope==='drum'`. The generator owns its own colour, so the voice `hue`/
+   * `brightness` pattern handling is bypassed (brightness lives inside the generator).
+   */
+  generatorId: string | null;
+  /**
+   * Per-voice generator state (from `EffectGenerator.createState`) — accumulation
+   * buffers, seeded RNG cursors, particle lists. Built lazily on first render and
+   * persisted across frames for the voice's life; reset to `null` when the pool slot
+   * is reused. Opaque to everything but the hosted generator.
+   */
+  genState: unknown;
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
   /**

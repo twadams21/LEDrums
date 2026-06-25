@@ -18,6 +18,7 @@ export {
   applyEffectiveParams,
   voicePhase,
   type Compositor,
+  type CompositorFrame,
   type PixelAttrs,
 } from './compositor';
 export {

@@ -1,7 +1,12 @@
 /* Throwaway seed data: effects (with parameters), named presets, an abstract kit,
    and trigger trees chosen to show every block type. */
 
-import { DEFAULT_KIT } from '@ledrums/core';
+import {
+  DEFAULT_KIT,
+  listEffects,
+  type EffectCategory,
+  type ParamSpec as CoreParamSpec,
+} from '@ledrums/core';
 import {
   defaultParams,
   type Block,
@@ -43,7 +48,8 @@ const densityP: ParamSpec = { key: 'density', label: 'Density', kind: 'number', 
 /** Common parameters the effect creator offers to include on a new effect. */
 export const PARAM_LIBRARY: ParamSpec[] = [hueP(200), briP, speedP, syncP, bandsP(3), angleP, widthP, densityP];
 
-export const EFFECTS: EffectDef[] = [
+/** The original 10 hand-rolled per-pixel pattern effects (the lightweight fast path). */
+export const PATTERN_EFFECTS: EffectDef[] = [
   { id: 'swirl', name: 'Swirl', pattern: 'swirl', busId: 'base', scope: 'kit', attackMs: 700, sustainMs: 0, releaseMs: 900, params: [hueP(245), briP, speedP, syncP, bandsP(2), angleP] },
   { id: 'aurora', name: 'Aurora', pattern: 'aurora', busId: 'base', scope: 'kit', attackMs: 900, sustainMs: 0, releaseMs: 900, params: [hueP(300), briP, speedP, syncP] },
   { id: 'drift', name: 'Drift', pattern: 'drift', busId: 'base', scope: 'kit', attackMs: 1100, sustainMs: 0, releaseMs: 1100, params: [hueP(205), briP, speedP, syncP] },
@@ -57,6 +63,88 @@ export const EFFECTS: EffectDef[] = [
   { id: 'strobe', name: 'Strobe', pattern: 'strobe', busId: 'effect', scope: 'kit', attackMs: 4, sustainMs: 30, releaseMs: 120, params: [hueP(95), briP, speedP] },
   { id: 'haze', name: 'Haze', pattern: 'haze', busId: 'effect', scope: 'kit', attackMs: 800, sustainMs: 0, releaseMs: 1000, params: [hueP(230), briP, speedP] },
 ];
+
+// ---- generator-backed effects (the 41 original engine effects) --------------
+// Each legacy `EffectGenerator` in core's registry is surfaced as a selectable
+// EffectDef carrying `generatorId`; the compositor (server) and render.ts (offline)
+// delegate rendering to it. Param specs are mapped from the generator's own spec;
+// category drives the bus + envelope timing. See docs/prompts/port-all-effects.md.
+
+/** Legacy category → voice bus. Backdrops on base, washes/utility/meter on effect,
+    one-shot/particle hits on trigger. */
+const CATEGORY_BUS: Record<EffectCategory, string> = {
+  base: 'base',
+  texture: 'base',
+  wash: 'effect',
+  meter: 'effect',
+  utility: 'effect',
+  particle: 'trigger',
+  trigger: 'trigger',
+};
+
+/** Legacy category → default voice envelope (attack/sustain/release ms). Continuous
+    fields get a slow attack/release; trigger/particle effects a fast one-shot shape. */
+const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number; releaseMs: number }> = {
+  base: { attackMs: 800, sustainMs: 0, releaseMs: 900 },
+  texture: { attackMs: 800, sustainMs: 0, releaseMs: 900 },
+  wash: { attackMs: 400, sustainMs: 0, releaseMs: 700 },
+  meter: { attackMs: 80, sustainMs: 0, releaseMs: 250 },
+  utility: { attackMs: 200, sustainMs: 0, releaseMs: 400 },
+  particle: { attackMs: 10, sustainMs: 120, releaseMs: 500 },
+  trigger: { attackMs: 10, sustainMs: 100, releaseMs: 300 },
+};
+
+/** Map a legacy core ParamSpec → the lab's ParamSpec. number/bool map 1:1 (and become
+    envelope-able); color/enum params can't be represented in ParamValues (number|bool),
+    so they're dropped here and the generator falls back to its own default for them. */
+function mapParamSpec(spec: CoreParamSpec): ParamSpec | null {
+  if (spec.type === 'number') {
+    return {
+      key: spec.key,
+      label: spec.label,
+      kind: 'number',
+      min: spec.min,
+      max: spec.max,
+      step: spec.step,
+      unit: spec.unit,
+      default: typeof spec.default === 'number' ? spec.default : 0,
+      envable: true,
+    };
+  }
+  if (spec.type === 'bool') {
+    return {
+      key: spec.key,
+      label: spec.label,
+      kind: 'bool',
+      default: typeof spec.default === 'boolean' ? spec.default : false,
+    };
+  }
+  return null; // color / enum — not voice-editable yet; generator uses its own default
+}
+
+/** All 41 legacy generators as selectable, generator-backed EffectDefs. Scope is `kit`
+    for every one: generators own their spatial layout (drum-locality is intrinsic — e.g.
+    whole-drum lights only the struck drum from its trigger), so drum-masking a kit-wide
+    field (plasma, radial-wash) would wrongly clip it. */
+export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef => {
+  const env = CATEGORY_ENV[gen.category];
+  return {
+    id: `gen:${gen.id}`,
+    name: gen.name,
+    pattern: 'flash', // ignored — generatorId drives rendering
+    generatorId: gen.id,
+    category: gen.category,
+    busId: CATEGORY_BUS[gen.category],
+    scope: 'kit',
+    params: gen.paramSpec.map(mapParamSpec).filter((p): p is ParamSpec => p !== null),
+    attackMs: env.attackMs,
+    sustainMs: env.sustainMs,
+    releaseMs: env.releaseMs,
+  };
+});
+
+/** The full selectable registry: the 10 pattern effects + the 41 generator effects. */
+export const EFFECTS: EffectDef[] = [...PATTERN_EFFECTS, ...GENERATOR_EFFECTS];
 
 const effectById = new Map(EFFECTS.map((e) => [e.id, e] as const));
 
@@ -90,6 +178,8 @@ export const PRESETS: Preset[] = [
   preset('wash', 'Default'),
   preset('strobe', 'Default'),
   preset('haze', 'Default'),
+  // A Default preset for every generator effect so play nodes resolve `${id}:default`.
+  ...GENERATOR_EFFECTS.map((e) => preset(e.id, 'Default')),
 ];
 
 const presetById = new Map(PRESETS.map((p) => [p.id, p] as const));

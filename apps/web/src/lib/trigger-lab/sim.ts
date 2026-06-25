@@ -13,6 +13,8 @@
    Delete this whole directory once the branches are decided.
    ============================================================================= */
 
+import type { EffectCategory } from '@ledrums/core';
+
 // ---- Block tree (branch 2) --------------------------------------------------
 
 export type PlayMode = 'oneshot' | 'loop' | 'hold';
@@ -394,6 +396,16 @@ export interface EffectDef {
   id: string;
   name: string;
   pattern: Pattern;
+  /**
+   * When set, this effect is GENERATOR-BACKED: a voice hosting it delegates rendering
+   * to the legacy core {@link EffectGenerator} registered under this id. The server
+   * voice path renders it for real output; the offline preview (render.ts) delegates to
+   * the SAME core generator. `pattern` is ignored for these effects.
+   */
+  generatorId?: string;
+  /** Legacy effect category (base/trigger/wash/meter/texture/particle/utility) —
+      surfaced so the gallery can group/filter generator effects. */
+  category?: EffectCategory;
   busId: string;
   scope: Scope;
   params: ParamSpec[];
@@ -429,6 +441,14 @@ export interface Voice {
   mode: PlayMode;
   scope: Scope;
   sourceDrumId: string | null;
+  /** hit velocity 0..1 at spawn — drives a hosted generator's synthetic trigger. */
+  velocity: number;
+  /** hosted legacy-generator id (offline preview delegates to the core generator), or
+      null for a pattern voice. Mirrors the core Voice field. */
+  generatorId?: string | null;
+  /** per-voice generator state (from the core EffectGenerator's createState) — built
+      lazily by the offline renderer and persisted for the voice's life. */
+  genState?: unknown;
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   env: EnvMap;
@@ -498,6 +518,9 @@ export class Sim {
   beat = 0;
   bpm = 120;
   beatsPerBar = 4;
+  /** dt of the most recent tick, ms — read by the offline renderer to build a
+      RenderContext for hosted generators (stateful particle/decay effects need it). */
+  lastDt = 0;
 
   buses: Bus[];
   voices: Voice[] = [];
@@ -552,7 +575,7 @@ export class Sim {
           resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
         }
       } else {
-        const v = this.spawn(a, ctx.sourceDrumId);
+        const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
         if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
       }
     }
@@ -574,7 +597,7 @@ export class Sim {
           resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
         }
       } else {
-        const v = this.spawn(a, ctx.sourceDrumId);
+        const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
         if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
       }
     }
@@ -753,7 +776,7 @@ export class Sim {
 
   // --- voice lifecycle -----------------------------------------------------
 
-  private spawn(a: PlayAction, sourceDrumId: string | null = null): Voice | null {
+  private spawn(a: PlayAction, sourceDrumId: string | null = null, velocity = 1): Voice | null {
     const effect = this.effect(a.effectId);
     if (!effect) return null;
     const bus = this.bus(a.busId || effect.busId);
@@ -773,6 +796,9 @@ export class Sim {
       mode: a.mode,
       scope: a.scope,
       sourceDrumId,
+      velocity,
+      generatorId: effect.generatorId ?? null,
+      genState: null,
       params: { ...a.params },
       env: Object.fromEntries(Object.entries(a.env).map(([k, e]) => [k, cloneEnvelope(e)])),
       attackMs: effect.attackMs,
@@ -809,6 +835,7 @@ export class Sim {
 
   tick(dtMs: number): void {
     this.timeMs += dtMs;
+    this.lastDt = dtMs;
     this.beat += (dtMs / 60000) * this.bpm;
 
     for (const v of this.voices) {

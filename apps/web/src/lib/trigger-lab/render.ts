@@ -3,6 +3,14 @@
    speed, bands, angle, width, density, tempo-sync) and per-param ENVELOPES that
    sweep a value over the voice's life. Throwaway — stand-in for packages/core. */
 
+import {
+  Framebuffer,
+  defaultParams as genDefaultParams,
+  tryGetEffect,
+  type RenderContext,
+  type ResolvedParams,
+  type Trigger,
+} from '@ledrums/core';
 import { sampleEnvelope, type ParamValues, type Pattern, type Sim, type Voice } from './sim';
 import type { LabModel, PixelAttrs } from './kit';
 import { hueToRgb } from './kit';
@@ -98,11 +106,8 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   for (const v of sim.voices) {
     const level = sim.voiceLevel(v);
     if (level <= 0.003) continue;
-    const p = effectiveParams(v, sim);
-    const hue = num(p.hue, 0);
-    const amp = level * num(p.brightness, 1);
-    if (amp <= 0.003) continue;
 
+    // Pixel range: drum-scoped voices touch only their drum's range.
     let start = 0;
     let end = model.count;
     if (v.scope === 'drum' && v.sourceDrumId != null) {
@@ -112,6 +117,18 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
       end = d.pixelStart + d.pixelCount;
     }
 
+    // Generator-backed voice: delegate to the SAME core EffectGenerator the server
+    // renders, so the offline preview matches real output (no silent divergence).
+    if (v.generatorId) {
+      renderGeneratorVoice(buf, v, level, sim, lab, start, end);
+      continue;
+    }
+
+    // Pattern voice (per-pixel fast path).
+    const p = effectiveParams(v, sim);
+    const hue = num(p.hue, 0);
+    const amp = level * num(p.brightness, 1);
+    if (amp <= 0.003) continue;
     for (let i = start; i < end; i++) {
       const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
       const inten = si * amp;
@@ -122,5 +139,90 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
       buf[j + 1] = Math.min(255, buf[j + 1]! + g);
       buf[j + 2] = Math.min(255, buf[j + 2]! + b);
     }
+  }
+}
+
+// ---- hosted core EffectGenerator bridge (offline preview parity) ------------
+// Mirrors the core compositor's generator path: render the legacy whole-frame
+// EffectGenerator into a reused core Framebuffer, then blit it into `buf` scaled by
+// the voice envelope. Shared scratch/cache across voices — the offline previewer runs
+// one Sim, single-threaded.
+
+let genScratch: Framebuffer | null = null;
+const genDefaults = new Map<string, ResolvedParams>();
+const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
+const genTriggers: Trigger[] = [genTrigger];
+
+function renderGeneratorVoice(
+  buf: Uint8Array,
+  v: Voice,
+  level: number,
+  sim: Sim,
+  lab: LabModel,
+  start: number,
+  end: number,
+): void {
+  const gen = tryGetEffect(v.generatorId!);
+  if (!gen) return;
+  const pm = lab.pm;
+  if (!genScratch || genScratch.pixelCount !== pm.pixelCount) genScratch = new Framebuffer(pm.pixelCount);
+  if (v.genState == null && gen.createState) v.genState = gen.createState(pm);
+
+  // Resolved params: generator defaults (incl. enum/colour) overlaid with the voice's
+  // live numeric/bool params (envelopes applied via effectiveParams).
+  let defs = genDefaults.get(gen.id);
+  if (!defs) {
+    defs = genDefaultParams(gen.paramSpec);
+    genDefaults.set(gen.id, defs);
+  }
+  const params: ResolvedParams = { ...defs };
+  const lp = effectiveParams(v, sim);
+  for (const k in lp) {
+    const val = lp[k];
+    if (val !== undefined) params[k] = val;
+  }
+
+  // Synthetic single trigger = this voice's originating hit (same model as core).
+  const seq = Number(v.id.slice(1));
+  genTrigger.seq = Number.isFinite(seq) && seq > 0 ? seq : 1;
+  genTrigger.drumId = v.sourceDrumId ?? '';
+  genTrigger.velocity = v.velocity;
+  genTrigger.note = Math.round(v.velocity * 127);
+  genTrigger.timeMs = v.bornAtMs;
+  const age = sim.timeMs - v.bornAtMs;
+  genTrigger.ageMs = age > 0 ? age : 0;
+
+  const beatInBar = sim.beat - Math.floor(sim.beat / sim.beatsPerBar) * sim.beatsPerBar;
+  const ctx: RenderContext = {
+    model: pm,
+    timeMs: sim.timeMs,
+    dt: sim.lastDt,
+    transport: {
+      timeMs: sim.timeMs,
+      beat: sim.beat,
+      bar: Math.floor(sim.beat / sim.beatsPerBar),
+      beatInBar,
+      bpm: sim.bpm,
+      beatsPerBar: sim.beatsPerBar,
+      playing: true,
+    },
+    triggers: genTriggers,
+  };
+
+  genScratch.clear();
+  gen.render(ctx, params, genScratch, v.genState);
+
+  // Blit scratch (float RGBA) → buf (0..255 RGB), scaled by the voice envelope.
+  const src = genScratch.rgba;
+  for (let i = start; i < end; i++) {
+    const j4 = i * 4;
+    const r = src[j4]!;
+    const g = src[j4 + 1]!;
+    const b = src[j4 + 2]!;
+    if (r <= 0 && g <= 0 && b <= 0) continue;
+    const j3 = i * 3;
+    buf[j3] = Math.min(255, buf[j3]! + Math.round(r * level * 255));
+    buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * level * 255));
+    buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * level * 255));
   }
 }

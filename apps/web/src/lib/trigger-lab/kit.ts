@@ -2,7 +2,7 @@
    engine/IO) and serialises it into the shape the visualiser's <Scene> wants.
    Throwaway — gives the Trigger Lab the same kit preview the app has. */
 
-import { buildPixelModel, DEFAULT_KIT } from '@ledrums/core';
+import { buildPixelModel, DEFAULT_KIT, type PixelModel } from '@ledrums/core';
 import type { SerializedModel } from '../ws/protocol-types';
 
 /** Per-pixel attributes the pattern renderer samples (kept parallel to the frame). */
@@ -21,6 +21,10 @@ export interface PixelAttrs {
 export interface LabModel {
   model: SerializedModel;
   attrs: PixelAttrs;
+  /** The underlying core PixelModel (same pixel order/count as `model`). Kept so the
+      offline renderer can run hosted core EffectGenerators (which need full 3D geometry,
+      uv, hoop index, drum origins) for generator-backed effects. */
+  pm: PixelModel;
 }
 
 export function buildLabModel(): LabModel {
@@ -83,7 +87,7 @@ export function buildLabModel(): LabModel {
     },
   };
 
-  return { model, attrs: { drumIndex, angle01, norm01, nx, ny, nz } };
+  return { model, attrs: { drumIndex, angle01, norm01, nx, ny, nz }, pm };
 }
 
 /** HSL-ish hue (deg) → sRGB 0..255, brightness scaled by `level` (additive on black). */

@@ -282,7 +282,7 @@ class VoiceBusEngine implements RenderEngine {
         const v = this.findActiveVoice(a.voiceId);
         if (v) this.release(v);
       } else {
-        this.spawn(a, ctx.sourceDrumId);
+        this.spawn(a, ctx.sourceDrumId, ctx.velocity);
       }
     }
   }
@@ -388,7 +388,7 @@ class VoiceBusEngine implements RenderEngine {
 
   // --- voice lifecycle (object-pooled; ported from sim.spawn/release/tick) ----
 
-  private spawn(a: PlayAction, sourceDrumId: string | null): Voice | null {
+  private spawn(a: PlayAction, sourceDrumId: string | null, velocity: number): Voice | null {
     const effect = this.effectsById.get(a.effectId);
     if (!effect) return null;
     const bus = this.busById.get(a.busId || effect.busId);
@@ -411,6 +411,12 @@ class VoiceBusEngine implements RenderEngine {
     slot.mode = a.mode;
     slot.scope = a.scope;
     slot.sourceDrumId = sourceDrumId;
+    slot.velocity = velocity;
+    // Generator-backed effects host a legacy EffectGenerator; the compositor reads
+    // `generatorId` + `genState`. Reset state on (re)spawn so a reused pool slot never
+    // inherits a previous voice's accumulation buffers / RNG cursor.
+    slot.generatorId = effect.generatorId ?? null;
+    slot.genState = null;
     slot.params = { ...a.params };
     slot.specs = effect.params;
     slot.env = cloneEnvMap(a.env);
@@ -467,7 +473,7 @@ class VoiceBusEngine implements RenderEngine {
 
   // --- tick --------------------------------------------------------------
 
-  tick(now: number, _dt: number, transport: TransportState): void {
+  tick(now: number, dt: number, transport: TransportState): void {
     this.timeMs = now;
     this.beat = transport.beat;
     this.bpm = transport.bpm;
@@ -511,7 +517,7 @@ class VoiceBusEngine implements RenderEngine {
       for (const v of this.pool) {
         if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm);
       }
-      this.compositor.render(this.pool, this.model, this.attrs, this.timeMs, this.finalFb);
+      this.compositor.render(this.pool, this.model, this.attrs, { timeMs: this.timeMs, dt, transport }, this.finalFb);
     }
   }
 
@@ -623,6 +629,9 @@ function makeVoiceSlot(): Voice {
     mode: 'oneshot',
     scope: 'kit',
     sourceDrumId: null,
+    velocity: 1,
+    generatorId: null,
+    genState: null,
     params: {},
     liveParams: {},
     specs: EMPTY_SPECS,

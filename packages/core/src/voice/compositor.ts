@@ -1,15 +1,29 @@
 /**
- * Inner seam — the voices → pixels hotspot. {@link Compositor.render} samples each
- * live voice's procedural pattern over every pixel it touches and additively
- * accumulates the result into the destination {@link Framebuffer}. Ported from the
- * throwaway `trigger-lab/render.ts` `sample()` renderer; deterministic (sparkle uses
- * a position/time hash, not `Math.random`). Pure: no IO, no wall-clock.
+ * Inner seam — the voices → pixels hotspot. {@link Compositor.render} accumulates each
+ * live voice into the destination {@link Framebuffer}. A voice renders one of two ways:
+ *
+ * - **Pattern voice** (fast path): samples a lightweight procedural {@link Pattern}
+ *   per pixel (ported from the throwaway `trigger-lab/render.ts` `sample()` renderer).
+ * - **Generator voice** (bridge): hosts a legacy {@link import('../effects/types').EffectGenerator}
+ *   from `effects/registry` — the compositor builds a {@link RenderContext}, keeps the
+ *   voice's per-instance generator state, renders the whole-frame generator into a
+ *   reused scratch framebuffer, then composites it into `dst` scaled by the voice
+ *   envelope and masked to the drum range for `scope==='drum'`. This is how all 41
+ *   original effects reach real output without being rewritten as per-pixel patterns.
+ *
+ * Deterministic: no IO, no wall-clock, no `Math.random` (sparkle uses a position/time
+ * hash; legacy generators carry seeded RNG in their state). The voice model has no live
+ * trigger stream, so a generator voice is fed ONE synthetic trigger representing its own
+ * originating hit (age grows with the voice; seq is stable so accumulators fire once).
  *
  * This is the perf hotspot the design wants swappable — keep the interface narrow so
  * a SIMD-ish / batched / WASM variant can drop in without touching voices or host.
  */
-import type { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
+import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
+import { defaultParams, type ResolvedParams } from '../effects/types';
+import { tryGetEffect } from '../effects/registry';
 import { sampleEnvelope } from './envelope';
 import type { ParamSpec, ParamValues, Pattern, Voice } from './types';
 
@@ -222,33 +236,74 @@ function sample(pattern: Pattern, t: number, i: number, a: PixelAttrs, p: ParamV
   }
 }
 
+/**
+ * Per-frame context the host supplies to {@link Compositor.render}. `timeMs` drives the
+ * pattern fast path; `dt` + `transport` additionally feed hosted generators (transport
+ * beat for tempo-locked effects, dt for stateful accumulators / particles).
+ */
+export interface CompositorFrame {
+  timeMs: number;
+  dt: number;
+  transport: TransportState;
+}
+
 /** Voices → pixels. The inner seam. */
 export interface Compositor {
-  render(voices: readonly Voice[], model: PixelModel, attrs: PixelAttrs, timeMs: number, dst: Framebuffer): void;
+  render(
+    voices: readonly Voice[],
+    model: PixelModel,
+    attrs: PixelAttrs,
+    frame: CompositorFrame,
+    dst: Framebuffer,
+  ): void;
 }
 
 /**
- * The default compositor: additive accumulation of every live voice's pattern into
- * `dst`. Drum-scoped voices touch only their drum's pixel range. Assumes each voice's
- * `liveParams` was refreshed (by the engine) for this frame. Zero-alloc: reuses two
- * small scratch vectors across the whole frame.
+ * The default compositor: additive accumulation of every live voice into `dst`.
+ * Drum-scoped voices touch only their drum's pixel range. Assumes each voice's
+ * `liveParams` was refreshed (by the engine) for this frame.
+ *
+ * Zero-alloc on the pattern fast path (reuses two small scratch vectors). The
+ * hosted-generator path reuses one scratch {@link Framebuffer}, one {@link RenderContext},
+ * and one {@link Trigger} across all voices in the frame; the only per-generator-voice
+ * allocation is the merged params object (generator defaults overlaid with live params)
+ * — see the perf note in the report. Generators run far fewer voices (mono buses, level
+ * gating) than the per-pixel pattern path, so this stays well within budget in practice.
  */
 export function createDefaultCompositor(): Compositor {
   const sampleOut = new Float32Array(2); // [intensity, hueOffset]
   const rgb = new Float32Array(3);
 
+  // --- hosted-generator bridge scratch (lazily sized; reused across voices) ---
+  let genScratch: Framebuffer | null = null;
+  /** Cached default param record per generator id (incl. enum/colour string defaults). */
+  const genDefaults = new Map<string, ResolvedParams>();
+  /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
+  const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
+  const genTriggers: Trigger[] = [genTrigger];
+  /** Reused RenderContext (rebuilt only when the model identity changes). */
+  let genCtx: RenderContext | null = null;
+
   return {
-    render(voices, model, attrs, timeMs, dst): void {
+    render(voices, model, attrs, frame, dst): void {
       dst.clear();
+      const timeMs = frame.timeMs;
       const t = timeMs / 1000;
+
+      // Refresh the reusable hosted-generator RenderContext for this frame. The
+      // triggers array reference is stable; its single element is mutated per voice.
+      if (!genCtx || genCtx.model !== model) {
+        genCtx = { model, timeMs, dt: frame.dt, transport: frame.transport, triggers: genTriggers };
+      } else {
+        genCtx.timeMs = timeMs;
+        genCtx.dt = frame.dt;
+        genCtx.transport = frame.transport;
+      }
+
       for (const v of voices) {
         if (!v.active) continue;
         const level = v.level * v.deckGain;
         if (level <= 0.003) continue;
-        const p = v.liveParams;
-        const hue = num(p.hue, 0);
-        const amp = level * num(p.brightness, 1);
-        if (amp <= 0.003) continue;
 
         let start = 0;
         let end = model.pixelCount;
@@ -258,6 +313,67 @@ export function createDefaultCompositor(): Compositor {
           start = d.pixelStart;
           end = d.pixelStart + d.pixelCount;
         }
+
+        // --- hosted legacy-generator voice -----------------------------------
+        if (v.generatorId) {
+          const gen = tryGetEffect(v.generatorId);
+          if (!gen) continue; // unknown id → render nothing (don't fall through to pattern)
+          if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
+            genScratch = new Framebuffer(model.pixelCount);
+          }
+          // Build per-voice state lazily and persist it for the voice's life.
+          if (v.genState == null && gen.createState) v.genState = gen.createState(model);
+
+          // Resolved params: generator defaults (incl. enum/colour) overlaid with the
+          // voice's live numeric/bool params (envelopes already applied by the engine).
+          let defs = genDefaults.get(gen.id);
+          if (!defs) {
+            defs = defaultParams(gen.paramSpec);
+            genDefaults.set(gen.id, defs);
+          }
+          const params: ResolvedParams = { ...defs };
+          const lp = v.liveParams;
+          for (const k in lp) {
+            const val = lp[k];
+            if (val !== undefined) params[k] = val;
+          }
+
+          // Synthetic single trigger = this voice's originating hit. The voice model
+          // has no live trigger stream: age grows with the voice (so age-driven
+          // generators — washes, decays, cascades — animate), and seq is stable across
+          // frames (so accumulators / particle spawns fire exactly once per voice).
+          const seq = Number(v.id.slice(1));
+          genTrigger.seq = Number.isFinite(seq) && seq > 0 ? seq : 1;
+          genTrigger.drumId = v.sourceDrumId ?? '';
+          genTrigger.velocity = v.velocity;
+          genTrigger.note = Math.round(v.velocity * 127);
+          genTrigger.timeMs = v.bornAtMs;
+          const age = timeMs - v.bornAtMs;
+          genTrigger.ageMs = age > 0 ? age : 0;
+
+          genScratch.clear();
+          gen.render(genCtx, params, genScratch, v.genState);
+
+          // Composite scratch → dst, scaled by the voice envelope (brightness is
+          // applied inside the generator), masked to [start, end). dst.add clamps.
+          const src = genScratch.rgba;
+          for (let i = start; i < end; i++) {
+            const j = i * 4;
+            const r = src[j]!;
+            const g = src[j + 1]!;
+            const b = src[j + 2]!;
+            const a = src[j + 3]!;
+            if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+            dst.add(i, r * level, g * level, b * level, a * level);
+          }
+          continue;
+        }
+
+        // --- pattern voice (fast path) ---------------------------------------
+        const p = v.liveParams;
+        const hue = num(p.hue, 0);
+        const amp = level * num(p.brightness, 1);
+        if (amp <= 0.003) continue;
 
         for (let i = start; i < end; i++) {
           sample(v.pattern, t, i, attrs, p, sampleOut);
