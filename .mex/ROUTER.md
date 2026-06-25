@@ -49,6 +49,15 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 **Section-aware engine playback (done — 2026-06-25, branch `feat/unified-shell`):** `recallSection` InputEvent (deterministic, queued like other inputs) sets the engine's active song/section. On a pad hit the engine resolves the active section's per-drum slot graphs and fires them layered (in slot order), each with its own graph-key state prefix so PRNG/sequence state doesn't collide. Falls back to flat `graphs[padKey(drumId,zone)]` when no section/slots (back-compat). Web store mirrors locally + sends `recallSection` to server on section change or WS open. 8 new core tests (240 total). `Show.songs?` added to core types; `buildShow` passes songs through. Remaining: add/remove songs + setlist persistence, unify looks-recall vs slot-arrangement section notions.
 
+**Parallel agent batch (done — 2026-06-26, branch `feat/unified-shell`):** orchestrated implementer agents, integrated + full-gate-verified (typecheck 0; 303 tests: core 156 / server 36 / web 99 / io 12).
+- Duplicate-slot-key guard (`c311e81`): per-slot state prefix so two layers of one graph run independently.
+- Live persistence + create-new-graph + resizable docks (`099b9db`/`82bdb8a`/`fcb2485`): localStorage autosave of authored state (no save button), `store.createGraph`, draggable `lib/ui/Splitter` panes (sizes persisted).
+- All 41 original effects bridged (`1ec20f1`): voices host legacy `EffectGenerator`s via the registry (server + offline). Follow-ups: live-stream effects render single-hit; color/enum params not voice-editable; gallery should group by category.
+- Per-zone trigger firing (`3b2da91`): section slots keyed by **padKey** (was per-drum → every zone fired zone-0's graph) + effects-union on hydrate so built-ins always surface.
+- Arc-segment LEDs (`f9f67f6`+`f7fb63f`): continuous curved thick rings (was gapped box-tubes); cold geometry / hot colors; camera-framing fix preserved.
+- Live Show re-sync (`0b03ed7`): store re-sends `setShow` (debounced, signature-guarded) on authored edits — effect/param/preset/wiring changes now reach the engine (previously frozen at connect).
+- Real Patch Graph topology (`b1765a2`): `@xyflow` 8-stage device routing (input→trigger→zone→drum→hoop→dataline→output→controller), data-driven. Follow-up: wire data-line/output to server `dmxMap`; editable device settings.
+
 **Not yet built (redesign):**
 - `packages/core` model refactor: Content vs Effect split + per-instance Clip presets.
 - Unified-shell view internals: Patch freeform node canvas, Kit geometry editor, Setlist persistence.
