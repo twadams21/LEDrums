@@ -12,6 +12,7 @@ import type {
   Section,
   Song,
   TriggerBinding,
+  voice,
 } from '@ledrums/core';
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,9 @@ export type ClientMessage =
   | { t: 'removeSection'; songId: string; sectionId: string }
   | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
   | { t: 'setInputMap'; inputMap: InputMap }
+  // Voice-bus engine (additive, voice mode only) — keep in sync with the server.
+  | { t: 'setShow'; show: voice.Show }
+  | { t: 'key'; drumId: string; zone?: string; velocity?: number }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };
@@ -114,6 +118,12 @@ export interface OutputStatus {
   universeCount?: number;
 }
 
+/** Optional voice-bus telemetry, present only when the server runs the voice engine. */
+export interface VoiceStats {
+  voiceCount: number;
+  busLevels: Record<string, number>;
+}
+
 export type ServerMessage =
   | {
       t: 'state';
@@ -123,7 +133,7 @@ export type ServerMessage =
       projects: string[];
       output: OutputStatus;
     }
-  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus }
+  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
   | { t: 'projects'; names: string[] }
   | { t: 'error'; message: string };

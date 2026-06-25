@@ -8,6 +8,7 @@ import type {
   Section,
   Song,
   TriggerBinding,
+  voice,
 } from '@ledrums/core';
 import { listEffects } from '@ledrums/core';
 
@@ -37,6 +38,10 @@ export type ClientMessage =
   | { t: 'removeSection'; songId: string; sectionId: string }
   | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
   | { t: 'setInputMap'; inputMap: InputMap }
+  // Voice-bus engine (additive, voice mode only): replace the authored Show, and a
+  // native pad-hit input (drum + zone), distinct from the legacy midi/osc inputs.
+  | { t: 'setShow'; show: voice.Show }
+  | { t: 'key'; drumId: string; zone?: string; velocity?: number }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };
@@ -46,6 +51,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
+  'setShow', 'key',
   'loadProject', 'saveProject', 'listProjects',
 ]);
 
@@ -94,9 +100,15 @@ export interface EffectSpec {
   paramSpec: ReturnType<typeof listEffects>[number]['paramSpec'];
 }
 
+/** Optional voice-bus telemetry, present only when the server runs the voice engine. */
+export interface VoiceStats {
+  voiceCount: number;
+  busLevels: Record<string, number>;
+}
+
 export type ServerMessage =
   | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus }
-  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus }
+  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
   | { t: 'projects'; names: string[] }
   | { t: 'error'; message: string };

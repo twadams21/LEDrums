@@ -104,9 +104,9 @@
     border: 1px solid var(--border);
   }
   .cell.active {
-    background: var(--accent-dim);
+    background: var(--accent-soft);
     border-color: var(--accent);
-    box-shadow: 0 0 10px rgba(78, 161, 255, 0.4);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--accent) 40%, transparent);
   }
   .cn {
     font-weight: 600;

@@ -17,9 +17,9 @@
   // Cross-section of the square diffusion tube, in mm. Reads as LED tape inside
   // a frosted square tube (~10–16mm); 12mm sits in the sweet spot.
   const TUBE_MM = 20;
-  // Fraction of each pixel's arc length the lit segment fills. The <1 gap
-  // guarantees neighbouring segments never overlap.
-  const FILL = 0.9;
+  // Fraction of each pixel's arc length the lit segment fills. 1.0 makes
+  // neighbouring segments meet end-to-end with no gap and no overlap.
+  const FILL = 1.0;
 
   // Unit cube — scaled and oriented per-instance into a tube segment.
   const geometry = new THREE.BoxGeometry(1, 1, 1);

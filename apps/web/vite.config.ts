@@ -21,6 +21,8 @@ export default defineConfig({
         rewriteWsOrigin: true,
       },
     },
+    // Leading dot allows the whole tailnet (hostnames gain -1/-2 suffixes across forwards).
+    allowedHosts: ['.tail568a80.ts.net']
   },
   build: {
     outDir: 'dist',

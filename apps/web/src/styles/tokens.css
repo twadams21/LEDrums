@@ -1,0 +1,180 @@
+/* =============================================================================
+   LEDrums — design tokens
+   A dark, instrument-grade system: graphite near-black body, the LED output is
+   the only free-saturated colour on screen. OKLCH throughout. AA-verified ink.
+   Stages of the signal path (Input → Content → Effect → Layer → Output) get a
+   functional role-colour family, always paired with an icon + label.
+   ============================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- Graphite canvas — cool near-black instrument body ------------------ */
+  --bg-perform: oklch(0.135 0.011 256); /* perform stage backdrop (deepest)   */
+  --bg: oklch(0.170 0.012 256); /* app canvas (authoring)                      */
+  --surface: oklch(0.208 0.013 256); /* panel base                            */
+  --surface-2: oklch(0.245 0.014 256); /* raised control / panel header        */
+  --surface-3: oklch(0.288 0.015 256); /* popover / menu / hover lift          */
+  --surface-inset: oklch(0.155 0.011 256); /* sunken wells (inputs, tracks)    */
+
+  --border-faint: oklch(0.262 0.012 256);
+  --border: oklch(0.318 0.015 256);
+  --border-strong: oklch(0.430 0.022 256);
+
+  /* ---- Ink ramp (cool neutral, AA-verified against --surface) ------------- */
+  --ink: oklch(0.967 0.004 256); /* headings / high emphasis                   */
+  --text: oklch(0.905 0.005 256); /* body                                      */
+  --text-muted: oklch(0.770 0.009 256); /* secondary — still AA for body text  */
+  --text-faint: oklch(0.668 0.011 256); /* meta / labels (AA for ≥large)       */
+  --text-disabled: oklch(0.560 0.009 256);
+  --ink-on-accent: oklch(0.145 0.01 256); /* default; per-accent overrides     */
+
+  /* ---- Signature accent (interactive: selection, focus, primary action) ---
+     Phosphor lime — scope/console heritage, most alive on graphite, and the
+     least collision with the signal-flow role colours. The styleguide previews
+     alternatives via [data-accent]. */
+  --accent: oklch(0.845 0.190 128);
+  --accent-bright: oklch(0.900 0.195 128);
+  --accent-dim: oklch(0.560 0.120 130);
+  --accent-soft: oklch(0.845 0.190 128 / 0.15); /* tinted fills / selected bg  */
+  --accent-ring: oklch(0.900 0.195 128 / 0.55); /* focus ring                  */
+  --accent-glow: 0 0 0 1px oklch(0.900 0.195 128 / 0.4), 0 0 18px oklch(0.845 0.190 128 / 0.42);
+  --on-accent: oklch(0.210 0.050 130); /* dark text/icon on a lime fill         */
+
+  /* ---- State colours ------------------------------------------------------ */
+  --live: oklch(0.630 0.224 25); /* LIVE / armed — must read across a room     */
+  --live-bright: oklch(0.700 0.230 25);
+  --live-soft: oklch(0.630 0.224 25 / 0.16);
+  --live-glow: 0 0 16px oklch(0.630 0.224 25 / 0.55);
+  --ok: oklch(0.760 0.150 150); /* connected / success                        */
+  --warn: oklch(0.810 0.150 80); /* dry-run / warning                          */
+  --info: oklch(0.720 0.120 240);
+
+  /* ---- Signal-flow role colours (functional; icon + label always) --------- */
+  --role-input: oklch(0.720 0.130 245); /* MIDI / OSC in                       */
+  --role-content: oklch(0.700 0.165 300); /* generator / media                 */
+  --role-effect: oklch(0.785 0.150 68); /* modifier                            */
+  --role-layer: oklch(0.745 0.150 152); /* composite / blend                   */
+  --role-output: oklch(0.720 0.120 205); /* to the wire (Art-Net/sACN)         */
+  --role-mod: oklch(0.760 0.130 330); /* modulation (control → param)          */
+
+  /* ---- Live-reactive tint (opt-in; runtime sets to dominant LED colour) ---- */
+  --reactive-tint: transparent;
+  --reactive-amount: 0; /* 0..1 — how far chrome leans toward the show         */
+
+  /* ---- Typography --------------------------------------------------------- */
+  --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+
+  --text-2xs: 0.625rem; /* 10px — dense meta                                   */
+  --text-xs: 0.6875rem; /* 11px — labels                                       */
+  --text-sm: 0.75rem; /* 12px — controls                                       */
+  --text-base: 0.8125rem; /* 13px — body / app default                         */
+  --text-md: 0.875rem; /* 14px                                                 */
+  --text-lg: 1rem; /* 16px — panel titles                                      */
+  --text-xl: 1.1875rem; /* 19px                                               */
+  --text-2xl: 1.4375rem; /* 23px                                              */
+  --text-3xl: 1.75rem; /* 28px — view headers (ceiling for product)            */
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --tracking-label: 0.04em; /* small caps labels                              */
+  --tracking-tight: -0.011em; /* display sizes                                */
+
+  /* ---- Spacing (4px base) ------------------------------------------------- */
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ---- Radii -------------------------------------------------------------- */
+  --radius-1: 3px;
+  --radius-2: 5px;
+  --radius-3: 8px;
+  --radius-4: 12px;
+  --radius-pill: 999px;
+  /* Cards/panels are square (Ableton/Resolume feel). Tokens above stay for
+     small controls; flip this to a rounded value to soften the whole shell. */
+  --radius-card: 0px;
+
+  /* ---- Elevation ---------------------------------------------------------- */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.40);
+  --shadow-2: 0 6px 20px rgb(0 0 0 / 0.45);
+  --shadow-3: 0 18px 48px rgb(0 0 0 / 0.55);
+
+  /* ---- Semantic z-index --------------------------------------------------- */
+  --z-base: 0;
+  --z-docked: 10;
+  --z-sticky: 20;
+  --z-dropdown: 30;
+  --z-overlay: 40;
+  --z-modal-backdrop: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+
+  /* ---- Motion ------------------------------------------------------------- */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-1: 90ms; /* state flips (hover/active)                                 */
+  --dur-2: 150ms; /* most transitions                                          */
+  --dur-3: 220ms; /* panel / mode reveals                                      */
+  --dur-4: 320ms; /* the stage ⇄ studio mode crossfade                         */
+
+  /* ===== Backward-compat aliases (old token names → new values) =============
+     Lets the existing panels render on the new palette during migration.
+     Remove a line once every consumer has moved to the new token. */
+  --panel: var(--surface);
+  --panel-solid: var(--surface);
+  --panel-raised: var(--surface-2);
+  --border-bright: var(--border-strong);
+  --text-dim: var(--text-muted);
+  --shadow: var(--shadow-2);
+  --mono: var(--font-mono);
+  --sans: var(--font-sans);
+}
+
+/* ===== Accent candidates (styleguide preview; pick one) ===================== */
+[data-accent='violet'] {
+  --accent: oklch(0.625 0.196 300);
+  --accent-bright: oklch(0.715 0.196 300);
+  --accent-dim: oklch(0.470 0.130 300);
+  --accent-soft: oklch(0.625 0.196 300 / 0.16);
+  --accent-ring: oklch(0.715 0.196 300 / 0.55);
+  --accent-glow: 0 0 0 1px oklch(0.715 0.196 300 / 0.4), 0 0 18px oklch(0.625 0.196 300 / 0.45);
+  --on-accent: oklch(0.99 0.004 300);
+}
+[data-accent='amber'] {
+  --accent: oklch(0.800 0.150 78);
+  --accent-bright: oklch(0.865 0.155 82);
+  --accent-dim: oklch(0.560 0.105 70);
+  --accent-soft: oklch(0.800 0.150 78 / 0.16);
+  --accent-ring: oklch(0.865 0.155 82 / 0.55);
+  --accent-glow: 0 0 0 1px oklch(0.865 0.155 82 / 0.4), 0 0 18px oklch(0.800 0.150 78 / 0.45);
+  --on-accent: oklch(0.205 0.03 80);
+}
+[data-accent='lime'] {
+  --accent: oklch(0.845 0.190 128);
+  --accent-bright: oklch(0.900 0.195 128);
+  --accent-dim: oklch(0.560 0.120 130);
+  --accent-soft: oklch(0.845 0.190 128 / 0.16);
+  --accent-ring: oklch(0.900 0.195 128 / 0.55);
+  --accent-glow: 0 0 0 1px oklch(0.900 0.195 128 / 0.4), 0 0 18px oklch(0.845 0.190 128 / 0.45);
+  --on-accent: oklch(0.210 0.05 130);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+    --dur-4: 0ms;
+  }
+}

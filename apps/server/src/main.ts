@@ -9,6 +9,7 @@ import {
 import { OscInput, OSC_DEFAULT_PORT } from '@ledrums/io';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
+import { VoiceEngineHost } from './voice-engine-host';
 import { applyClientMessage, oscToEvent } from './input-router';
 import { listProjects, loadProject, saveProject } from './projects';
 import { serveStatic } from './static-host';
@@ -23,6 +24,10 @@ import {
 const port = Number(process.env.PORT) || WS_PORT;
 const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
 
+/** Engine mode: legacy layer/clip/binding brain (default) or the voice-bus brain.
+ * Opt in with `LEDRUMS_ENGINE=voice`; anything else (or unset) keeps legacy. */
+const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
+
 // --- project + host ---------------------------------------------------------
 
 function initialProject(): Project {
@@ -33,7 +38,12 @@ function initialProject(): Project {
   }
 }
 
-const host = new EngineHost(initialProject());
+const project0 = initialProject();
+const host = new EngineHost(project0);
+/** Voice-bus host, only constructed in voice mode. It owns the live render + output;
+ * the legacy `host` still backs the `state` message and the structural reducer so the
+ * existing UI/project surface keeps working. */
+const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
 
 // --- HTTP + static + WS -----------------------------------------------------
 
@@ -65,11 +75,12 @@ function stateMessage(): ServerMessage {
     model: serializeModel(host.engine.getModel()),
     effects: effectSpecs(),
     projects: listProjects(),
-    output: host.getOutputStatus(),
+    output: (voiceHost ?? host).getOutputStatus(),
   };
 }
 
-host.onFrame = (rgb) => broadcastBinary(rgb);
+if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
+else host.onFrame = (rgb) => broadcastBinary(rgb);
 
 wss.on('connection', (ws) => {
   clients.add(ws);
@@ -117,6 +128,36 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
     return;
   }
 
+  // --- voice-mode inputs (only meaningful when the voice host is running) ---
+  if (voiceHost) {
+    if (msg.t === 'setShow') {
+      voiceHost.setShow(msg.show);
+      return;
+    }
+    if (msg.t === 'key') {
+      voiceHost.applyInput({ kind: 'key', drumId: msg.drumId, zone: msg.zone, velocity: msg.velocity });
+      broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
+      return;
+    }
+    if (msg.t === 'midi') {
+      if (msg.on && msg.velocity > 0) {
+        voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127 });
+      } else {
+        voiceHost.applyInput({ kind: 'noteOff', note: msg.note });
+      }
+      broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127 });
+      return;
+    }
+    if (msg.t === 'osc') {
+      voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
+      broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
+      return;
+    }
+  } else if (msg.t === 'setShow' || msg.t === 'key') {
+    // These only apply to the voice engine; ignore in legacy mode.
+    return;
+  }
+
   // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.
   if (msg.t === 'midi' || msg.t === 'osc') host.markInput();
 
@@ -143,14 +184,39 @@ const oscInput = new OscInput({ port: oscPort });
 oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
   if (!event || event.kind !== 'osc') return;
-  host.markInput();
-  host.engine.applyEvent(event);
+  if (voiceHost) {
+    voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
+  } else {
+    host.markInput();
+    host.engine.applyEvent(event);
+  }
   broadcastJson({ t: 'input', kind: 'osc', label: event.address, value: event.value });
 });
 
 // --- periodic stats ---------------------------------------------------------
 
 const statsTimer = setInterval(() => {
+  if (voiceHost) {
+    const s = voiceHost.getStats();
+    // Adapt the voice engine's stats onto the legacy `stats` shape, plus the additive
+    // `voice` extension carrying voiceCount + per-bus levels.
+    broadcastJson({
+      t: 'stats',
+      stats: {
+        timeMs: s.engine.timeMs,
+        beat: s.engine.beat,
+        bar: Math.floor(s.engine.beat / host.engine.getProject().composition.transport.beatsPerBar),
+        activeTriggers: s.engine.voiceCount,
+        tickCount: 0,
+        pixelCount: voiceHost.getModel().pixelCount,
+      },
+      latencyMs: s.latencyMs,
+      fps: s.fps,
+      output: s.output,
+      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels },
+    });
+    return;
+  }
   const s = host.getStats();
   broadcastJson({ t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output });
 }, 500);
@@ -169,8 +235,9 @@ function lanUrls(p: number): string[] {
 }
 
 server.listen(port, () => {
-  host.start();
-  console.log(`LEDrums server listening on http://localhost:${port}`);
+  if (voiceHost) voiceHost.start();
+  else host.start();
+  console.log(`LEDrums server listening on http://localhost:${port}${VOICE_MODE ? ' [voice engine]' : ''}`);
   for (const url of lanUrls(port)) console.log(`  LAN: ${url}`);
   console.log(`OSC listening on udp:${oscPort}`);
   console.log('Pixel output: set target IP + Arm in the UI');
@@ -183,7 +250,8 @@ function shutdown(): void {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(statsTimer);
-  host.stop();
+  if (voiceHost) voiceHost.stop();
+  else host.stop();
   oscInput.close();
   for (const ws of clients) {
     try {
