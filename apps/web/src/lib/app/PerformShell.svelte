@@ -12,6 +12,7 @@
   import Visualizer from './docks/Visualizer.svelte';
   import StatusBar from '../trigger-lab/StatusBar.svelte';
   import Eyebrow from '../ui/Eyebrow.svelte';
+  import Splitter from '../ui/Splitter.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -23,12 +24,39 @@
   function firePad(pad: Pad | null): void {
     if (pad) store.hit(pad);
   }
+
+  // Resizable layout (persisted live via store.paneSizes; keys namespaced "perform").
+  const GAP = 12; // ≈ var(--space-3), for the 50/50 default of the viz split
+  const PRAIL = { key: 'performRailW', def: 184, min: 140, max: 340 };
+  const prailW = $derived(store.paneSizes[PRAIL.key] ?? PRAIL.def);
+  const setPane = (key: string, v: number): void => {
+    store.paneSizes = { ...store.paneSizes, [key]: v };
+  };
+
+  // 3D|2D split: a px left column over a measured container; defaults to 50/50
+  // (rendered as `1fr 1fr` until measured, so there is no first-paint flash).
+  const PVIZ_KEY = 'performPvizLeft';
+  const PVIZ_MIN = 220;
+  let pvizW = $state(0);
+  const pvizLeft = $derived(store.paneSizes[PVIZ_KEY] ?? (pvizW > 0 ? (pvizW - GAP) / 2 : null));
+  const pvizCols = $derived(pvizLeft == null ? '1fr 1fr' : `${pvizLeft}px minmax(0, 1fr)`);
+  const pvizMax = $derived(pvizW > 0 ? Math.max(PVIZ_MIN, pvizW - GAP - PVIZ_MIN) : PVIZ_MIN);
 </script>
 
-<div class="perform">
+<div class="perform" style="--prail-w:{prailW}px;">
   <aside class="prail">
     <SongRail {store} />
   </aside>
+
+  <Splitter
+    orientation="vertical"
+    size={prailW}
+    min={PRAIL.min}
+    max={PRAIL.max}
+    onResize={(v) => setPane(PRAIL.key, v)}
+    label="Resize songs rail"
+    style="top:var(--pad); bottom:var(--pad); left:calc(var(--pad) + var(--prail-w) + var(--gap) / 2); transform:translateX(-50%);"
+  />
 
   <div class="pbar">
     <div class="brand">
@@ -50,9 +78,20 @@
     {/each}
   </div>
 
-  <div class="pviz">
+  <div class="pviz" bind:clientWidth={pvizW} style="grid-template-columns:{pvizCols}; --pviz-l:{pvizLeft ?? 0}px;">
     <Visualizer {store} mode="3d" showToggle={false} label="3D stage" />
     <Visualizer {store} mode="2d" showToggle={false} label="2D map" />
+    {#if pvizLeft != null}
+      <Splitter
+        orientation="vertical"
+        size={pvizLeft}
+        min={PVIZ_MIN}
+        max={pvizMax}
+        onResize={(v) => setPane(PVIZ_KEY, v)}
+        label="Resize 3D and 2D split"
+        style="top:0; bottom:0; left:calc(var(--pviz-l) + var(--space-3) / 2); transform:translateX(-50%);"
+      />
+    {/if}
   </div>
 
   <div class="ppads">
@@ -67,18 +106,21 @@
 
 <style>
   .perform {
+    --pad: var(--space-3);
+    --gap: var(--space-3);
+    position: relative;
     height: 100vh;
     width: 100vw;
     display: grid;
-    grid-template-columns: 184px minmax(0, 1fr);
+    grid-template-columns: var(--prail-w, 184px) minmax(0, 1fr);
     grid-template-rows: 54px auto minmax(0, 1fr) 176px;
     grid-template-areas:
       'prail pbar'
       'prail precall'
       'prail pviz'
       'prail ppads';
-    gap: var(--space-3);
-    padding: var(--space-3);
+    gap: var(--gap);
+    padding: var(--pad);
     background: var(--bg);
     color: var(--text);
     overflow: hidden;
@@ -180,6 +222,7 @@
   }
   .pviz {
     grid-area: pviz;
+    position: relative;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-3);

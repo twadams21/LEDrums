@@ -18,6 +18,7 @@
   import KitView from './views/KitView.svelte';
   import Eyebrow from '../ui/Eyebrow.svelte';
   import Tabs from '../ui/Tabs.svelte';
+  import Splitter from '../ui/Splitter.svelte';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import Terminal from '@lucide/svelte/icons/terminal';
   import LayersIcon from '@lucide/svelte/icons/layers';
@@ -28,9 +29,21 @@
     { value: 'inspector', label: 'Inspector', icon: SlidersHorizontal },
     { value: 'monitor', label: 'Monitor', icon: Terminal },
   ];
+
+  // Resizable layout tracks — sizes live in store.paneSizes (persisted live) with
+  // sensible defaults + clamps. Keys are namespaced so Perform's panes don't clash.
+  const RAIL = { key: 'authorRailW', def: 220, min: 168, max: 380 };
+  const DOCK = { key: 'authorDockW', def: 360, min: 300, max: 560 };
+  const BOTTOM = { key: 'authorBottomH', def: 148, min: 96, max: 360 };
+  const railW = $derived(store.paneSizes[RAIL.key] ?? RAIL.def);
+  const dockW = $derived(store.paneSizes[DOCK.key] ?? DOCK.def);
+  const bottomH = $derived(store.paneSizes[BOTTOM.key] ?? BOTTOM.def);
+  const setPane = (key: string, v: number): void => {
+    store.paneSizes = { ...store.paneSizes, [key]: v };
+  };
 </script>
 
-<div class="author">
+<div class="author" style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px;">
   <div class="top"><TopBar {store} {shell} /></div>
 
   <div class="rail"><LeftRail {store} {shell} /></div>
@@ -69,20 +82,59 @@
       </div>
     </div>
   </aside>
+
+  <!-- Resize handles, positioned on the grid divides (direct children of .author so
+       they paint above the panes — their ≥40px hit areas overhang each side). -->
+  <Splitter
+    orientation="vertical"
+    size={railW}
+    min={RAIL.min}
+    max={RAIL.max}
+    onResize={(v) => setPane(RAIL.key, v)}
+    label="Resize left rail"
+    style="top:var(--content-top); bottom:var(--pad); left:calc(var(--pad) + var(--rail-w) + var(--gap) / 2); transform:translateX(-50%);"
+  />
+  <Splitter
+    orientation="vertical"
+    invert
+    size={dockW}
+    min={DOCK.min}
+    max={DOCK.max}
+    onResize={(v) => setPane(DOCK.key, v)}
+    label="Resize right dock"
+    style="top:var(--content-top); bottom:var(--pad); right:calc(var(--pad) + var(--dock-w) + var(--gap) / 2); transform:translateX(50%);"
+  />
+  <Splitter
+    orientation="horizontal"
+    invert
+    size={bottomH}
+    min={BOTTOM.min}
+    max={BOTTOM.max}
+    onResize={(v) => setPane(BOTTOM.key, v)}
+    label="Resize layers dock"
+    style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
+  />
 </div>
 
 <style>
   .author {
+    /* layout constants — single source for the grid tracks AND the splitter
+       placement math below, so the resize handles stay on the divides. */
+    --pad: var(--space-3);
+    --gap: var(--space-3);
+    --topbar: 58px;
+    --content-top: calc(var(--pad) + var(--topbar) + var(--gap));
+    position: relative;
     height: 100vh;
     width: 100vw;
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr) clamp(320px, 24vw, 380px);
-    grid-template-rows: 58px minmax(0, 1fr);
+    grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr) var(--dock-w, 360px);
+    grid-template-rows: var(--topbar) minmax(0, 1fr);
     grid-template-areas:
       'top top top'
       'rail center dock';
-    gap: var(--space-3);
-    padding: var(--space-3);
+    gap: var(--gap);
+    padding: var(--pad);
     background: var(--bg);
     color: var(--text);
     overflow: hidden;
@@ -100,7 +152,7 @@
   .center {
     grid-area: center;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) 148px;
+    grid-template-rows: minmax(0, 1fr) var(--bottom-h, 148px);
     gap: var(--space-3);
     min-height: 0;
     min-width: 0;

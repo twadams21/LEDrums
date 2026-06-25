@@ -1,0 +1,113 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { TriggerLab } from './store.svelte';
+import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
+import { makeNode } from './sim';
+import type { WSClient } from '../ws/client';
+
+/* Integration: construction = "reload". Verifies the store hydrates the persisted
+   authored slice before wiring (so a reload restores content), tolerates a bad
+   blob, and that createGraph mints a persistable authored graph. The pure module's
+   serialize/deserialize contract is covered separately in persistence.test.ts. */
+
+class MemStorage {
+  private m = new Map<string, string>();
+  get length(): number {
+    return this.m.size;
+  }
+  key(i: number): string | null {
+    return [...this.m.keys()][i] ?? null;
+  }
+  getItem(k: string): string | null {
+    return this.m.has(k) ? this.m.get(k)! : null;
+  }
+  setItem(k: string, v: string): void {
+    this.m.set(k, String(v));
+  }
+  removeItem(k: string): void {
+    this.m.delete(k);
+  }
+  clear(): void {
+    this.m.clear();
+  }
+}
+
+// The store never connects in these tests (start() is not called), so a no-op client
+// that satisfies the constructor's factory is enough.
+const fakeClient = (): WSClient =>
+  ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
+
+function seed(partial: Partial<AuthoredState>): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored(partial as AuthoredState)));
+}
+
+beforeEach(() => {
+  (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
+});
+afterEach(() => {
+  delete (globalThis as { localStorage?: Storage }).localStorage;
+});
+
+describe('TriggerLab hydration (restore on reload)', () => {
+  it('starts from the seed when storage is empty', () => {
+    const store = new TriggerLab(fakeClient);
+    expect(store.bpm).toBe(120);
+    expect(Object.keys(store.graphNames)).toHaveLength(0);
+  });
+
+  it('restores persisted scalar fields on construction', () => {
+    seed({ bpm: 97, velocity: 0.42, beatsPerBar: 3, selectedPadKey: 'kick:1' });
+    const store = new TriggerLab(fakeClient);
+    expect(store.bpm).toBe(97);
+    expect(store.velocity).toBeCloseTo(0.42);
+    expect(store.beatsPerBar).toBe(3);
+    expect(store.selectedPadKey).toBe('kick:1');
+  });
+
+  it('restores an authored graph + its label, surfaced in graphLibrary', () => {
+    const g = { nodes: [makeNode('trigger', 'trigger')], edges: [] };
+    seed({ graphs: { 'graph-x': g }, graphNames: { 'graph-x': 'My graph' } });
+    const store = new TriggerLab(fakeClient);
+    expect(store.graphs['graph-x']).toBeTruthy();
+    expect(store.graphLabel('graph-x')).toBe('My graph');
+    expect(store.graphLibrary.some((e) => e.key === 'graph-x' && e.label === 'My graph')).toBe(true);
+  });
+
+  it('restores persisted pane sizes', () => {
+    seed({ paneSizes: { authorRailW: 300 } });
+    const store = new TriggerLab(fakeClient);
+    expect(store.paneSizes.authorRailW).toBe(300);
+  });
+
+  it('ignores a version-mismatched blob (seed stands, never wedges boot)', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 999, data: { bpm: 1 } }));
+    const store = new TriggerLab(fakeClient);
+    expect(store.bpm).toBe(120);
+  });
+
+  it('ignores a malformed (non-JSON) blob', () => {
+    localStorage.setItem(STORAGE_KEY, '{ not json');
+    const store = new TriggerLab(fakeClient);
+    expect(store.bpm).toBe(120);
+  });
+});
+
+describe('TriggerLab.createGraph', () => {
+  it('mints a uniquely-keyed, auto-named, selected empty graph', () => {
+    const store = new TriggerLab(fakeClient);
+    const key = store.createGraph();
+    expect(store.graphs[key]).toBeTruthy();
+    expect(store.selectedPadKey).toBe(key);
+    expect(store.graphNames[key]).toBe('New graph 1');
+    expect(store.graphs[key]!.nodes).toHaveLength(1);
+    expect(store.graphs[key]!.nodes[0]!.kind).toBe('trigger');
+  });
+
+  it('uses the given name and auto-increments the default for the next', () => {
+    const store = new TriggerLab(fakeClient);
+    const a = store.createGraph('Kick swell');
+    const b = store.createGraph();
+    expect(store.graphNames[a]).toBe('Kick swell');
+    expect(store.graphNames[b]).toBe('New graph 1');
+    expect(a).not.toBe(b);
+  });
+});
