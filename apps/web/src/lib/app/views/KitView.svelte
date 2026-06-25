@@ -8,10 +8,6 @@
   import Box from '@lucide/svelte/icons/box';
 
   let { store }: { store: TriggerLab } = $props();
-
-  const previewFrame = $derived(
-    store.link === 'open' && store.serverFrame ? store.serverFrame : store.frameBuf,
-  );
 </script>
 
 <div class="kit-view">
@@ -20,7 +16,7 @@
     <span class="hint">{store.drums.length} drums · {store.model.count} pixels · transform / hoop / spin editing arrives in its slice</span>
   </header>
   <section class="stage">
-    <Scene model={store.model} frame={previewFrame} />
+    <Scene model={store.model} frame={store.previewFrame} />
   </section>
 </div>
 

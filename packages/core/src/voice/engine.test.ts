@@ -236,6 +236,52 @@ describe('VoiceBusEngine — graph eval parity (deterministic nodes)', () => {
     expect(lit).toBeGreaterThan(0);
     expect(lit).toBeLessThanOrEqual(kickCount); // drum-scoped: only kick's pixels
   });
+
+  // Regression: a drum-scoped voice whose sourceDrumId is absent from the engine's
+  // kit renders NOTHING (the compositor `drumById.get(id)` misses → skip). This is
+  // the failure mode behind "effects don't trigger reliably" when the authored
+  // content's drum ids drift from the engine kit's (e.g. fixtures 'tom' vs kit
+  // 'tom1'). A kit-scoped voice with the same unknown id still lights (it ignores
+  // the drum), which is why washes survived while per-drum effects vanished.
+  const litCount = (f: Readonly<Float32Array>, n: number): number => {
+    let lit = 0;
+    for (let i = 0; i < n; i++) {
+      const j = i * 4;
+      if (f[j]! > 0.004 || f[j + 1]! > 0.004 || f[j + 2]! > 0.004) lit++;
+    }
+    return lit;
+  };
+  const fireScoped = (scope: 'drum' | 'kit', drumId: string): Readonly<Float32Array> => {
+    const m = testModel(); // drums: kick, snare
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('play', 'pa', { effectId: 'fxA', scope, params: { brightness: 1 } }),
+      ],
+      edges: [{ id: 'e0', from: 'trigger', to: 'pa' }],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(m);
+    // register the graph under the (possibly unknown) drum so the hit resolves it
+    e.setShow({ ...show(g), graphs: { [padKey(drumId, '')]: g } });
+    e.applyInput(hit(drumId, 0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40)); // age past attack so level > 0
+    return e.frame();
+  };
+
+  it('drum-scoped voice with an unknown drum id lights nothing (id-drift regression)', () => {
+    const m = testModel();
+    expect(litCount(fireScoped('drum', 'kick'), m.pixelCount)).toBeGreaterThan(0); // known → lit
+    expect(litCount(fireScoped('drum', 'ghost'), m.pixelCount)).toBe(0); // unknown → dark
+  });
+
+  it('kit-scoped voice lights regardless of the source drum id', () => {
+    const m = testModel();
+    // even an unknown source drum lights the whole kit (scope ignores the drum) —
+    // explains why kit washes kept working while drum-scoped effects went dark.
+    expect(litCount(fireScoped('kit', 'ghost'), m.pixelCount)).toBeGreaterThan(0);
+  });
 });
 
 describe('VoiceBusEngine — determinism', () => {

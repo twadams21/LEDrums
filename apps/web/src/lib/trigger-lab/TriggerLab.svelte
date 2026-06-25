@@ -74,11 +74,10 @@
 
   const BPB_OPTS = [3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: `${n}/4` }));
 
-  // preview source: the server engine's real LED output when the WS link is open
-  // (and a frame has arrived), else the local sim composite — so offline = local.
-  const previewFrame = $derived(
-    store.link === 'open' && store.serverFrame ? store.serverFrame : store.frameBuf,
-  );
+  // preview source: store.previewFrame is the server engine's real LED output when
+  // connected (paired with store.model = the server's kit), else the local sim
+  // composite on the lab kit — frame + model always swap together.
+  const previewFrame = $derived(store.previewFrame);
 
   // kit-preview view mode (3D stage vs flat 2D pixel map — diagnostic counterpart)
   let previewMode = $state<'3d' | '2d'>('3d');

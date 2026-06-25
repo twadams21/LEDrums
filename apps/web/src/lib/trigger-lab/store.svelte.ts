@@ -38,6 +38,7 @@ import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, play, type Pad } from '
 import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
+import type { SerializedModel } from '../ws/protocol-types';
 import { buildShow } from './show-builder';
 
 let idSeq = 1000;
@@ -109,14 +110,26 @@ export class TriggerLab {
   /** latest binary RGB frame from the server engine (null until one arrives) —
       the kit preview shows this instead of the local composite when connected. */
   serverFrame = $state<Uint8Array | null>(null);
+  /** the server engine's real kit model (from the WS `state` message). The engine
+      runs its OWN kit (density/geometry/pixel count), so its frames only map onto
+      ITS model — previewing them on the local lab model misaligns every pixel. We
+      adopt this for the preview while connected. null until the first state msg. */
+  serverModel = $state<SerializedModel | null>(null);
 
   /** mutable effect registry — the effect creator appends here (synced to the sim). */
   effects = $state<EffectDef[]>([...EFFECTS]);
   drums = DRUMS;
 
   labModel = buildLabModel();
-  model = this.labModel.model;
   frameBuf = new Uint8Array(this.labModel.model.count * 3);
+  /** Safe to preview server geometry only once the link is up AND we have BOTH the
+      server's model and a frame — model.count and frame length must agree, so they
+      switch together (never a server frame on the lab model, or vice versa). */
+  useServer = $derived(this.link === 'open' && !!this.serverModel && !!this.serverFrame);
+  /** Preview model: the engine's real kit when connected, else the local lab kit. */
+  model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
+  /** Preview frame: the engine's composited output when connected, else local sim. */
+  previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.frameBuf);
 
   sim: Sim;
   private raf = 0;
@@ -187,6 +200,11 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
+      onState: (_project, model) => {
+        // adopt the engine's real kit model so its frames map 1:1 in the preview
+        // (the server runs its own kit geometry/pixel count, not the lab kit).
+        this.serverModel = model;
+      },
       onConnection: (state: ConnectionState) => {
         // map the client's 'closed' to the lab's 'offline'; others pass through
         this.link = state === 'closed' ? 'offline' : state;

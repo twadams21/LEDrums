@@ -36,7 +36,7 @@ export function buildLabModel(): LabModel {
     drums: [
       drum('kick', 'Kick', '#5bbcff', 21, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
       drum('snare', 'Snare', '#72d572', 12, { x: -250, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
-      drum('tom', 'Tom', '#ff8e72', 13, { x: -60, y: 300, z: 820 }, { x: 16, y: 0, z: 0 }),
+      drum('tom1', 'Tom 1', '#ff8e72', 13, { x: -60, y: 300, z: 820 }, { x: 16, y: 0, z: 0 }),
       drum('tom2', 'Tom 2', '#d69cff', 15, { x: 340, y: 60, z: 660 }, { x: 6, y: 0, z: 0 }),
     ],
     outputs: [],

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { defaultProject } from '@ledrums/core';
 import { buildShow, type ShowSource } from './show-builder';
-import { BUSES, PADS, PRESETS, SECTIONS, EFFECTS } from './fixtures';
+import { BUSES, DRUMS, PADS, PRESETS, SECTIONS, EFFECTS } from './fixtures';
+import { buildLabModel } from './kit';
 import { treeToGraph } from './sim';
 
 /** A ShowSource mirroring how the store seeds itself from the fixtures (graphs are
@@ -42,5 +44,21 @@ describe('buildShow', () => {
     const show = buildShow(src);
     show.buses.push({ id: 'extra', name: 'Extra', polyphony: 'poly', crossfadeMs: 0 });
     expect(src.buses).toHaveLength(BUSES.length); // source untouched
+  });
+});
+
+// Regression: drum-scoped voices only render when the authored content's drum ids
+// exist in the kit the compositor runs against (`drumById.get(sourceDrumId)`). If a
+// fixture drum id is absent from the kit, every drum-scoped effect on it goes dark
+// (the "effects don't trigger reliably" bug — fixtures used 'tom', the kit 'tom1').
+describe('fixture drum ids resolve against the kit', () => {
+  it('every fixture drum exists in the local lab kit (offline preview path)', () => {
+    const labDrumIds = new Set(buildLabModel().model.drums.map((d) => d.id));
+    for (const d of DRUMS) expect(labDrumIds.has(d.id)).toBe(true);
+  });
+
+  it('every fixture drum exists in the canonical engine kit (connected path)', () => {
+    const kitDrumIds = new Set(defaultProject().kit.drums.map((d) => d.id));
+    for (const d of DRUMS) expect(kitDrumIds.has(d.id)).toBe(true);
   });
 });

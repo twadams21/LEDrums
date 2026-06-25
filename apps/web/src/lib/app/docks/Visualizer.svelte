@@ -22,10 +22,8 @@
     showToggle?: boolean;
   } = $props();
 
-  const previewFrame = $derived(
-    store.link === 'open' && store.serverFrame ? store.serverFrame : store.frameBuf,
-  );
-
+  // store.previewFrame + store.model swap together (server when connected, else
+  // local) so the frame always matches the model it's painted on.
   const PREVIEW_OPTS = [
     { value: '3d', label: '3D' },
     { value: '2d', label: '2D' },
@@ -40,9 +38,9 @@
     </span>
   {/if}
   {#if mode === '3d'}
-    <Scene model={store.model} frame={previewFrame} />
+    <Scene model={store.model} frame={store.previewFrame} />
   {:else}
-    <Pixels2D model={store.model} frame={previewFrame} />
+    <Pixels2D model={store.model} frame={store.previewFrame} />
   {/if}
 </div>
 

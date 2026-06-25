@@ -142,9 +142,9 @@ export const PADS: Pad[] = [
   pad('snare', 'Snare', 0, snareCenter),
   pad('snare', 'Snare', 2, snareRim),
   pad('snare', 'Snare', 3, snareShell),
-  pad('tom', 'Tom', 0, tomCenter),
-  pad('tom', 'Tom', 1, tomEdge),
-  pad('tom', 'Tom', 2, tomRim),
+  pad('tom1', 'Tom 1', 0, tomCenter),
+  pad('tom1', 'Tom 1', 1, tomEdge),
+  pad('tom1', 'Tom 1', 2, tomRim),
   pad('tom2', 'Tom 2', 0, tom2Center),
   pad('tom2', 'Tom 2', 2, tom2Rim),
 ];
@@ -152,7 +152,7 @@ export const PADS: Pad[] = [
 export const DRUMS = [
   { id: 'kick', label: 'Kick' },
   { id: 'snare', label: 'Snare' },
-  { id: 'tom', label: 'Tom' },
+  { id: 'tom1', label: 'Tom 1' },
   { id: 'tom2', label: 'Tom 2' },
 ];
 
