@@ -91,7 +91,12 @@ The shell that reconciles the prototype with the original control app into one c
 
 **Built + green:** mode-split shells; all 4 views route; Inspector/Monitor tabs; node/bus selection → Inspector; Layers/Buses dock; section recall; perform pads; engine link + overlays reused. Gates: typecheck 0 errors (all pkgs), web 44 + server 34 tests, web build OK.
 
-**Remaining (flagged in-UI):** Patch as a freeform node canvas + real device settings (today a fixed signal-flow layout, selectable); Sections as the layerable per-drum graph-slot grid + Song→sections hierarchy (today shows section looks + recall); Kit geometry editor (today live 3D preview); Setlist open/save/new (needs a persistence seam); true Art-Net arm/dry-run/off (OutputPill is link-derived). Legacy `lib/shell` + `lib/views` + `lib/store` left intact but unused by the default path.
+**Remaining (flagged in-UI):** Patch as a freeform node canvas + real device settings (today a fixed signal-flow layout, selectable); Kit geometry editor (today live 3D preview); Setlist open/save/new (needs a persistence seam); true Art-Net arm/dry-run/off (OutputPill is link-derived). Legacy `lib/shell` + `lib/views` + `lib/store` left intact but unused by the default path.
+
+### Follow-ups landed (2026-06-25)
+
+- **Kit-divergence fix (P1).** The web (lab kit) and the server voice engine (`apps/server/projects/default.json`, density 120, drum id `tom1`) ran two different kits → drum-scoped voices for fixture id `tom` rendered nothing (compositor `drumById.get` miss), and the server frame was painted onto the mismatched lab model so the kit-scoped wash smeared in 3D. Fix: (A) fixtures + lab kit `tom`→`tom1` (kit is source of truth); (B) the store adopts the engine's serialized model from the WS `state` message (`serverModel`) and `model`+`previewFrame` switch server-vs-local together. Regression tests in `voice/engine.test.ts` (drum-scoped unknown-id → dark; kit-scoped → lit) + `show-builder.test.ts` (fixture ids ⊆ lab kit + canonical kit).
+- **Sections-as-graph-slots (P2).** `lib/app/setlist.ts` (pure, tested) — Song → SetlistSection → per-drum graph slots referencing graphs by key (reuse-by-reference; stacked slots = layers). New SectionsView grid (sections×drums×slots) + graph-picker drawer + Songs rail. Authoring only; **engine playback from slots (section-aware input resolution + morph) is the remaining slice-3/4 change**, plus add/remove songs + setlist persistence, plus unifying the looks-recall vs slot-arrangement section notions.
 
 ## Trigger-lab → app promotion (active — 2026-06-25)
 
