@@ -735,6 +735,24 @@ export class TriggerLab {
     const g = this.selectedGraph;
     if (g) g.edges = g.edges.filter((e) => e.id !== edgeId);
   }
+  /** Re-point an existing edge to a new source/target (an edge-end drag). Validates
+      exactly as connect() does — but ignoring the edge being moved — and leaves the
+      wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
+      reconnect drag snaps back instead of deleting the wire. */
+  reconnect(edgeId: string, fromId: string, toId: string): void {
+    const g = this.selectedGraph;
+    if (!g || fromId === toId) return;
+    const edge = g.edges.find((e) => e.id === edgeId);
+    if (!edge) return;
+    const from = g.nodes.find((n) => n.id === fromId);
+    const to = g.nodes.find((n) => n.id === toId);
+    if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return;
+    if (g.edges.some((e) => e.id !== edgeId && e.from === fromId && e.to === toId)) return; // dup
+    // cycle check over the graph WITHOUT the edge being moved
+    if (this.reaches({ nodes: g.nodes, edges: g.edges.filter((e) => e.id !== edgeId) }, toId, fromId)) return;
+    edge.from = fromId;
+    edge.to = toId;
+  }
   private reaches(g: TriggerGraph, startId: string, targetId: string): boolean {
     const seen = new Set<string>();
     const stack = [startId];
