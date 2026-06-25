@@ -17,6 +17,7 @@ export * from './color/blend';
 
 // Model
 export * from './model/project-schema';
+export * from './model/integrity';
 export * from './model/defaults';
 
 // Effects

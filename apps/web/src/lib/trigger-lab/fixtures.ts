@@ -1,6 +1,7 @@
 /* Throwaway seed data: effects (with parameters), named presets, an abstract kit,
    and trigger trees chosen to show every block type. */
 
+import { DEFAULT_KIT } from '@ledrums/core';
 import {
   defaultParams,
   type Block,
@@ -149,12 +150,10 @@ export const PADS: Pad[] = [
   pad('tom2', 'Tom 2', 2, tom2Rim),
 ];
 
-export const DRUMS = [
-  { id: 'kick', label: 'Kick' },
-  { id: 'snare', label: 'Snare' },
-  { id: 'tom1', label: 'Tom 1' },
-  { id: 'tom2', label: 'Tom 2' },
-];
+/** The drum roster, sourced from the canonical kit so ids/labels can't drift from
+    the engine. PADS below reference these ids; the integrity check + a guard test
+    fail loudly if a pad ever names a drum the canonical kit doesn't define. */
+export const DRUMS = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
 
 export const SECTIONS: Section[] = [
   { id: 'intro', name: 'Intro', looks: { base: 'drift', trigger: null, effect: 'haze' } },
