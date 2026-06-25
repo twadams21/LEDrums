@@ -11,7 +11,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
 import { applyClientMessage, oscToEvent } from './input-router';
-import { listProjects, loadProject, saveProject } from './projects';
+import { listProjects, loadProject, projectExists, saveProject } from './projects';
 import { serveStatic } from './static-host';
 import {
   decodeClient,
@@ -31,11 +31,12 @@ const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
 // --- project + host ---------------------------------------------------------
 
 function initialProject(): Project {
-  try {
-    return loadProject('default');
-  } catch {
-    return defaultProject();
-  }
+  // Seed-from-core: with no saved 'default', the default project is computed from
+  // the canonical in-code definition (defaultProject → DEFAULT_KIT), so there is no
+  // hand-edited file to drift from the engine/lab kit. A saved 'default' (if the
+  // user saved one) is loaded + integrity-checked, and fails loudly on dangling refs.
+  if (!projectExists('default')) return defaultProject();
+  return loadProject('default');
 }
 
 const project0 = initialProject();

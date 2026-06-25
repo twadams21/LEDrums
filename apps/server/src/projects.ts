@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseProject, type Project } from '@ledrums/core';
+import { assertProjectIntegrity, parseProject, type Project } from '@ledrums/core';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PROJECTS_DIR = join(here, '..', 'projects');
@@ -15,10 +15,23 @@ export function listProjects(dir: string = PROJECTS_DIR): string[] {
     .sort();
 }
 
-/** Load + validate a project by name. Throws on missing file or invalid JSON. */
+/** True when a saved project file exists for `name`. */
+export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean {
+  return existsSync(join(dir, `${name}.json`));
+}
+
+/**
+ * Load + validate a project by name. Throws on missing file or invalid JSON, and —
+ * reusing the core referential-integrity guard (#3) — throws
+ * {@link ReferentialIntegrityError} when a saved project references drums not in its
+ * own kit, so a drifted/dangling project fails loudly at load instead of silently
+ * going dark downstream.
+ */
 export function loadProject(name: string, dir: string = PROJECTS_DIR): Project {
   const raw = readFileSync(join(dir, `${name}.json`), 'utf8');
-  return parseProject(JSON.parse(raw));
+  const project = parseProject(JSON.parse(raw));
+  assertProjectIntegrity(project);
+  return project;
 }
 
 /** Validate then persist a project as `<name>.json`. */
