@@ -38,12 +38,30 @@
   } from '../patch-topology';
   import PatchNode from './PatchNode.svelte';
   import PatchFitView from './PatchFitView.svelte';
+  import { GraphHover } from './graph-hover.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Cable from '@lucide/svelte/icons/cable';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const nodeTypes: NodeTypes = { patch: PatchNode };
+
+  /* Hover → lift the node (nudge its xyflow position so handles + edges follow) and
+     accent every wire one level connected to it. Selection rings the node but does
+     NOT light its wires. Shared with the Trigger graph. */
+  const hover = new GraphHover();
+  function onEnter(id: string): void {
+    nodes = hover.enter(id, nodes);
+    edges = hover.decorate(edges);
+  }
+  function onLeave(): void {
+    nodes = hover.leave(nodes);
+    edges = hover.decorate(edges);
+  }
+  function onDragStart(): void {
+    nodes = hover.dragStart(nodes);
+    edges = hover.decorate(edges);
+  }
 
   /** Physical sensor zones for a drum. The kick exposes only centre + shell; every
       other drum exposes the full Sensory Percussion zone set. We union that with
@@ -103,6 +121,10 @@
       minZoom={0.2}
       onnodeclick={({ node }) => shell.select({ kind: 'patch', nodeId: node.id })}
       onpaneclick={() => shell.clearSelection()}
+      onnodepointerenter={({ node }) => onEnter(node.id)}
+      onnodepointerleave={onLeave}
+      onnodedragstart={onDragStart}
+      onnodedragstop={() => hover.dragStop()}
     >
       <PatchFitView padding={0.15} />
       <Background variant={BackgroundVariant.Dots} />
@@ -158,7 +180,7 @@
     color: inherit;
     font-family: inherit;
   }
-  /* the canvas selection ring is drawn by the node itself (.pnode.sel) */
+  /* the canvas selection ring is drawn by the node card itself (NodeCard .card.sel) */
   .canvas :global(.svelte-flow__node-patch.selected) {
     box-shadow: none;
   }
@@ -168,6 +190,10 @@
   }
   .canvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
   .canvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
+    stroke: var(--accent);
+  }
+  /* a wire one level connected to the hovered node lights up (see graph-hover) */
+  .canvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
   .canvas :global(.svelte-flow__handle) {
