@@ -40,6 +40,8 @@ import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import type { SerializedModel } from '../ws/protocol-types';
 import { buildShow } from './show-builder';
+import * as setlist from '../app/setlist';
+import type { Song } from '../app/setlist';
 
 let idSeq = 1000;
 const nid = (k: string) => `${k}-${idSeq++}`;
@@ -65,6 +67,35 @@ export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
 }
 
 const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
+
+/** Seed one demo song from the fixture sections + the first graph of each drum.
+    slot 0 of every drum is the SAME graph across sections (so reuse is visible in
+    the grid); Verse stacks a second snare graph to show layering. References are by
+    graph key — the same key in two sections is the same graph, not a copy. */
+function seedSongs(): Song[] {
+  const drumIds = DRUMS.map((d) => d.id);
+  const firstKeyOf = (drumId: string): string | null => {
+    const p = PADS.find((pp) => pp.drumId === drumId);
+    return p ? padKey(p) : null;
+  };
+  let song: Song = {
+    id: 'set-1',
+    name: 'Set 1',
+    sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, drumIds)),
+  };
+  for (const sec of SECTIONS) {
+    for (const id of drumIds) {
+      const key = firstKeyOf(id);
+      if (key) song = setlist.setSlot(song, sec.id, id, 0, key);
+    }
+  }
+  // a layered example: Verse stacks a second snare graph (zone 2) over its base
+  const snare2 = PADS.find((p) => p.drumId === 'snare' && p.zone === 2);
+  if (snare2 && SECTIONS.some((s) => s.id === 'verse')) {
+    song = setlist.setSlot(song, 'verse', 'snare', 1, padKey(snare2));
+  }
+  return [song];
+}
 
 export class TriggerLab {
   // editable config (shared by reference with the sim)
@@ -92,6 +123,15 @@ export class TriggerLab {
 
   // section recall (timed morph only)
   activeSectionId = $state<string | null>(null);
+
+  // --- setlist (songs → sections → per-drum graph slots) -------------------
+  /** authored arrangement: songs, each with sections holding per-drum graph slots
+      that REFERENCE graphs by key (reuse-by-reference; stacked slots = layers). */
+  songs = $state<Song[]>(seedSongs());
+  /** which song the Sections view + Songs rail show. */
+  activeSongId = $state<string>('set-1');
+  /** which section column is focused for arranging (independent of look recall). */
+  arrangeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
 
   // transient snapshot
   voices = $state<Voice[]>([]);
@@ -155,6 +195,19 @@ export class TriggerLab {
   selectedGraph = $derived(this.selectedPadKey ? this.graphs[this.selectedPadKey] ?? null : null);
   activeSection = $derived(this.sections.find((s) => s.id === this.activeSectionId) ?? null);
   beatPhase = $derived((this.beat % 4) / 4);
+
+  // setlist derived
+  activeSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? this.songs[0] ?? null);
+  arrangeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.arrangeSectionId) ?? null);
+  /** The reusable graph library: every per-pad graph key, labelled "Drum · zone". */
+  graphLibrary = $derived(
+    this.pads.map((p) => ({ key: padKey(p), label: `${p.drumLabel} · ${p.zoneLabel}` })),
+  );
+
+  /** Human label for a graph key (for slot cells); falls back to the raw key. */
+  graphLabel(key: string): string {
+    return this.graphLibrary.find((g) => g.key === key)?.label ?? key;
+  }
 
   // --- lifecycle -----------------------------------------------------------
 
@@ -318,6 +371,41 @@ export class TriggerLab {
     this.activeSectionId = sectionId;
     this.sim.recallSection(s);
     this.snapshot();
+  }
+
+  // --- setlist arranging (songs → sections → per-drum graph slots) ----------
+  // Authoring only today: edits the arrangement + links to graph editing. Firing a
+  // section's slot graphs on a hit is the deeper engine change (see redesign plan).
+
+  setActiveSong(songId: string): void {
+    if (!this.songs.some((s) => s.id === songId)) return;
+    this.activeSongId = songId;
+    // focus the song's first section for arranging
+    this.arrangeSectionId = this.songs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
+  }
+  setArrangeSection(sectionId: string): void {
+    this.arrangeSectionId = sectionId;
+  }
+  /** Mutate the active song immutably via the pure setlist ops, then store it back. */
+  private updateActiveSong(fn: (song: Song) => Song): void {
+    const id = this.activeSongId;
+    this.songs = this.songs.map((s) => (s.id === id ? fn(s) : s));
+  }
+  assignSlot(sectionId: string, drumId: string, slotIndex: number, graphKey: string | null): void {
+    this.updateActiveSong((song) => setlist.setSlot(song, sectionId, drumId, slotIndex, graphKey));
+  }
+  clearSlot(sectionId: string, drumId: string, slotIndex: number): void {
+    this.updateActiveSong((song) => setlist.clearSlot(song, sectionId, drumId, slotIndex));
+  }
+  addSongSection(name: string): void {
+    const drumIds = this.drums.map((d) => d.id);
+    const id = nid('section');
+    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name, drumIds)));
+    this.arrangeSectionId = id;
+  }
+  /** Jump to the Trigger Graph editor for a slot's referenced graph (by pad key). */
+  editGraph(graphKey: string): void {
+    if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
   }
 
   // --- registries / lookups ------------------------------------------------

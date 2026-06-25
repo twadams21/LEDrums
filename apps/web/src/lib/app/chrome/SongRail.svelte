@@ -1,8 +1,7 @@
 <script lang="ts">
-  /* Left-rail section list — the recallable scenes ("looks"). Clicking recalls a
-     section (timed morph on the engine). This is the rail's "Songs" slot in the
-     wireframe; a Song → sections hierarchy is a later milestone, so today it lists
-     the flat section set the engine actually knows. Shared by Author + Perform. */
+  /* Left-rail song list. Songs are the top of the setlist hierarchy; selecting one
+     makes its sections the columns of the Sections view. Shared by Author + Perform.
+     (Adding/removing songs + persistence is a later slice — see the redesign plan.) */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
@@ -11,18 +10,18 @@
 </script>
 
 <div class="songrail">
-  {#if heading}<Eyebrow icon={ListMusic}>Sections</Eyebrow>{/if}
+  {#if heading}<Eyebrow icon={ListMusic}>Songs</Eyebrow>{/if}
   <ul class="list">
-    {#each store.sections as s (s.id)}
+    {#each store.songs as song (song.id)}
       <li>
         <button
           class="item"
-          class:active={store.activeSectionId === s.id}
-          aria-pressed={store.activeSectionId === s.id}
-          onclick={() => store.recall(s.id)}
+          class:active={store.activeSongId === song.id}
+          aria-pressed={store.activeSongId === song.id}
+          onclick={() => store.setActiveSong(song.id)}
         >
-          <span class="name">{s.name}</span>
-          {#if store.activeSectionId === s.id}<span class="now">live</span>{/if}
+          <span class="name">{song.name}</span>
+          <span class="count">{song.sections.length}</span>
         </button>
       </li>
     {/each}
@@ -74,11 +73,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .now {
+  .count {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    color: var(--accent);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
   }
 </style>
