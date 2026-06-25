@@ -266,6 +266,10 @@ export class TriggerLab {
           this.client.send({ t: 'setShow', show: buildShow(this) });
           this.lastSent = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
           this.client.send({ t: 'setTransport', ...this.lastSent });
+          // align the engine's active section with the store's current arrange focus
+          if (this.arrangeSectionId) {
+            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangeSectionId });
+          }
         } else {
           // a drop means our next open must re-send the transport
           this.lastSent = null;
@@ -318,17 +322,47 @@ export class TriggerLab {
 
   // --- play surface --------------------------------------------------------
 
-  hit(pad: Pad): void {
+  /**
+   * Resolve which graphs to fire locally for a pad hit — mirrors the engine's
+   * `resolveHitGraphs`. If the active song + arrange section has non-null slots
+   * for the drum, returns one entry per filled slot (layered). Falls back to the
+   * flat per-pad graph when there is no active section or no slots for the drum.
+   */
+  private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string }> {
+    const song = this.activeSong;
+    if (song) {
+      const section = song.sections.find((s) => s.id === this.arrangeSectionId);
+      if (section) {
+        const slots = section.slots[pad.drumId];
+        if (slots) {
+          const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
+          for (const key of slots) {
+            if (!key) continue;
+            const g = this.graphs[key];
+            if (g) resolved.push({ graph: g, label: this.graphLabel(key) });
+          }
+          if (resolved.length > 0) return resolved;
+        }
+      }
+    }
     const g = this.graphs[padKey(pad)];
-    if (!g) return;
+    return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}` }] : [];
+  }
+
+  hit(pad: Pad): void {
+    const toFire = this.resolveHitGraphsLocal(pad);
+    if (toFire.length === 0) return;
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    this.sim.triggerGraph(`${pad.drumLabel} · ${pad.zoneLabel}`, g, {
+    const ctx = {
       velocity: this.velocity,
       sectionIndex: idx < 0 ? 0 : idx,
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
       sourceDrumId: pad.drumId,
-    });
+    };
+    for (const { graph, label } of toFire) {
+      this.sim.triggerGraph(label, graph, ctx);
+    }
     this.renderFrame();
     this.snapshot();
     // forward the hit so the server fires the REAL output (local sim stays intact
@@ -380,11 +414,19 @@ export class TriggerLab {
   setActiveSong(songId: string): void {
     if (!this.songs.some((s) => s.id === songId)) return;
     this.activeSongId = songId;
-    // focus the song's first section for arranging
-    this.arrangeSectionId = this.songs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
+    const firstSectionId = this.songs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
+    this.arrangeSectionId = firstSectionId;
+    if (this.link === 'open' && firstSectionId) {
+      this.client.send({ t: 'recallSection', songId, sectionId: firstSectionId });
+    }
   }
+
   setArrangeSection(sectionId: string): void {
     this.arrangeSectionId = sectionId;
+    // Activating a section column drives playback — the engine fires its slot graphs.
+    if (this.link === 'open') {
+      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
+    }
   }
   /** Mutate the active song immutably via the pure setlist ops, then store it back. */
   private updateActiveSong(fn: (song: Song) => Song): void {

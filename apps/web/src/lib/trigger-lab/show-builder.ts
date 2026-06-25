@@ -48,5 +48,16 @@ export function buildShow(source: ShowSource): voice.Show {
     sections: source.sections.map((s) => ({ ...s })),
     effects: source.effects.map((e) => ({ ...e })),
     presets: source.presets.map((p) => ({ ...p })),
+    songs: (source.songs ?? []).map((song) => ({
+      id: song.id,
+      name: song.name,
+      sections: song.sections.map((sec) => ({
+        id: sec.id,
+        name: sec.name,
+        slots: Object.fromEntries(
+          Object.entries(sec.slots).map(([drumId, slotArr]) => [drumId, slotArr.slice()]),
+        ),
+      })),
+    })),
   };
 }

@@ -44,13 +44,16 @@ import {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection';
   drumId?: string;
   zone?: string;
   note?: number;
   velocity?: number;
   address?: string;
   value?: number;
+  /** recallSection: activate a song's section so hits fire its slot graphs. */
+  songId?: string;
+  sectionId?: string;
   timeMs: number;
 }
 
@@ -138,6 +141,15 @@ class VoiceBusEngine implements RenderEngine {
   private bpm = 120;
   private sectionIndex = 0;
 
+  /**
+   * Active song/section for slot-aware hit resolution. Set via `recallSection`
+   * input events (queued + drained deterministically, never mutated outside the
+   * queue drain). `setShow` seeds from the first song/section and clears on
+   * show change so stale ids don't resolve against a new arrangement.
+   */
+  private activeSongId: string | null = null;
+  private activeSectionId: string | null = null;
+
   constructor() {
     for (let i = 0; i < VOICE_CAP; i++) this.pool.push(makeVoiceSlot());
   }
@@ -162,6 +174,10 @@ class VoiceBusEngine implements RenderEngine {
     this.latched.clear();
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
+    // Seed active section from the first song/section (a recallSection event can
+    // override this immediately after; here we just ensure a clean non-null start).
+    this.activeSongId = show.songs?.[0]?.id ?? null;
+    this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
   }
 
   // --- input -------------------------------------------------------------
@@ -179,23 +195,71 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   private processEvent(e: InputEvent): void {
+    if (e.kind === 'recallSection') {
+      // Activate a section so subsequent hits fire its slot graphs (layered).
+      this.activeSongId = e.songId ?? null;
+      this.activeSectionId = e.sectionId ?? null;
+      return;
+    }
     // noteOn / key both fire a pad's graph; noteOff currently has no engine effect
     // (voices decay on their own envelope). osc with only an address is unmapped.
     if (e.kind === 'noteOn' || e.kind === 'key' || e.kind === 'osc') {
       const drumId = e.drumId;
       if (!drumId) return;
       const zone = e.zone ?? '';
-      const graph = this.show.graphs[padKey(drumId, zone)];
-      if (!graph) return;
       const velocity = clamp01(e.kind === 'osc' ? e.value ?? 0 : e.velocity ?? 1);
-      this.fireGraph(graph, padKey(drumId, zone), {
+      const ctx: TriggerCtx = {
         velocity,
         sectionIndex: this.sectionIndex,
         sectionCount: this.show.sections.length,
         beatPhase: this.beatPhase(),
         sourceDrumId: drumId,
-      });
+      };
+      // Section-aware resolution: fire each non-null slot graph for the drum.
+      // The v1 semantic is per-drum (not per-zone): any zone hit on a drum fires
+      // all of that drum's active slot graphs. Zone-specific behaviour lives inside
+      // the graph itself. Fallback to the flat padKey graph when there is no active
+      // section or the drum has no slots in the active section.
+      const toFire = this.resolveHitGraphs(drumId, zone);
+      for (const { graph, statePrefix } of toFire) {
+        this.fireGraph(graph, statePrefix, ctx);
+      }
     }
+  }
+
+  /**
+   * Resolve which graphs to fire for a (drumId, zone) hit.
+   *
+   * If an active section is set and has non-null slot entries for the drum,
+   * returns one entry per filled slot (slot graph key used as the state prefix
+   * so layered graphs from the same hit get distinct PRNG/sequence state and
+   * don't interfere with each other).
+   *
+   * Falls back to the flat `graphs[padKey(drumId, zone)]` graph when:
+   *  - no active section / song is set, OR
+   *  - the active section has no slots for this drum, OR
+   *  - all slots are null (unassigned).
+   */
+  private resolveHitGraphs(drumId: string, zone: string): Array<{ graph: TriggerGraph; statePrefix: string }> {
+    if (this.activeSongId !== null && this.activeSectionId !== null && this.show.songs) {
+      const song = this.show.songs.find((s) => s.id === this.activeSongId);
+      const section = song?.sections.find((s) => s.id === this.activeSectionId);
+      if (section) {
+        const slots = section.slots[drumId];
+        if (slots) {
+          const resolved: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
+          for (const key of slots) {
+            if (!key) continue;
+            const g = this.show.graphs[key];
+            if (g) resolved.push({ graph: g, statePrefix: key });
+          }
+          if (resolved.length > 0) return resolved;
+        }
+      }
+    }
+    const pad = padKey(drumId, zone);
+    const g = this.show.graphs[pad];
+    return g ? [{ graph: g, statePrefix: pad }] : [];
   }
 
   private beatPhase(): number {

@@ -140,6 +140,10 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
       broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
       return;
     }
+    if (msg.t === 'recallSection') {
+      voiceHost.applyInput({ kind: 'recallSection', songId: msg.songId, sectionId: msg.sectionId });
+      return;
+    }
     if (msg.t === 'midi') {
       if (msg.on && msg.velocity > 0) {
         voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127 });
@@ -154,7 +158,7 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
       broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
       return;
     }
-  } else if (msg.t === 'setShow' || msg.t === 'key') {
+  } else if (msg.t === 'setShow' || msg.t === 'key' || msg.t === 'recallSection') {
     // These only apply to the voice engine; ignore in legacy mode.
     return;
   }

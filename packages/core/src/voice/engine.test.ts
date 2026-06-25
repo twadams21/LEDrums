@@ -3,7 +3,7 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type ShowSong, type TriggerGraph } from './types';
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -319,6 +319,203 @@ describe('VoiceBusEngine — determinism', () => {
       for (let i = 0; i < 40; i++) {
         now += 16;
         e.tick(now, 16, transport(now, (now / 1000) * 2));
+      }
+      return Array.from(e.frame());
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
+// ---- helpers for section-aware tests ----------------------------------------
+
+/** A flat graph: trigger → play (effectId). */
+function flatGraph(effectId: string): TriggerGraph {
+  return {
+    nodes: [
+      node('trigger', 'trigger'),
+      node('play', 'p1', { effectId, params: { brightness: 1 } }),
+    ],
+    edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
+  };
+}
+
+/** Show with two named flat graphs ('gA', 'gB') and one song with one section. */
+function sectionShow(slotRefs: (string | null)[]): Show {
+  const graphA = flatGraph('fxA');
+  const graphB = flatGraph('fxB');
+  const song: ShowSong = {
+    id: 'song1',
+    name: 'Song 1',
+    sections: [
+      {
+        id: 'sec1',
+        name: 'Sec 1',
+        slots: { kick: slotRefs },
+      },
+    ],
+  };
+  return {
+    buses: buses(),
+    graphs: { gA: graphA, gB: graphB, [padKey('kick', '')]: flatGraph('fxA') },
+    sections: [],
+    effects: [effect('fxA'), effect('fxB')],
+    presets: [],
+    songs: [song],
+  };
+}
+
+function recallSection(songId: string, sectionId: string, timeMs = 0): InputEvent {
+  return { kind: 'recallSection', songId, sectionId, timeMs };
+}
+
+// ---- section-aware tests ----------------------------------------------------
+
+describe('VoiceBusEngine — section-aware slot resolution', () => {
+  it('fires slot graph (not the flat padKey graph) when a section is active', () => {
+    // slot for kick = ['gA']: graphA (trigger→play fxA). The flat padKey 'kick:'
+    // also resolves to graphA, but slot 'gA' is the one that should fire.
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(sectionShow(['gA', null, null]));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(hit('kick', 1));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(1);
+  });
+
+  it('fires two slot graphs (layered) when both slots are filled', () => {
+    // kick slots = ['gA', 'gB']: both graphs fire → 2 voices per hit.
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(sectionShow(['gA', 'gB', null]));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(hit('kick', 1));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(2);
+  });
+
+  it('switching to a section with different slots changes what fires', () => {
+    // Section 1: kick → ['gA']; section 2: kick → ['gB', 'gA'].
+    const graphA = flatGraph('fxA');
+    const graphB = flatGraph('fxB');
+    const show: Show = {
+      buses: buses(),
+      graphs: { gA: graphA, gB: graphB },
+      sections: [],
+      effects: [effect('fxA'), effect('fxB')],
+      presets: [],
+      songs: [
+        {
+          id: 'song1',
+          name: 'Song 1',
+          sections: [
+            { id: 'sec1', name: 'Sec 1', slots: { kick: ['gA', null, null] } },
+            { id: 'sec2', name: 'Sec 2', slots: { kick: ['gB', 'gA', null] } },
+          ],
+        },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show);
+
+    // Recall section 1 → 1 slot → 1 voice per hit.
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(hit('kick', 1));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(1);
+
+    // Recall section 2 → 2 slots → 2 voices added per hit.
+    e.applyInput(recallSection('song1', 'sec2', 5));
+    e.applyInput(hit('kick', 6));
+    e.tick(10, 5, transport(10));
+    expect(e.stats().voiceCount).toBe(3); // 1 from sec1 (still alive) + 2 from sec2
+  });
+
+  it('falls back to flat padKey graph when drum has no slots in the active section', () => {
+    // kick slots all null → fallback to graphs['kick:'] which fires fxA.
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(sectionShow([null, null, null]));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(hit('kick', 1));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(1); // flat padKey graph fired
+  });
+
+  it('falls back to flat padKey graph when no section is set (no songs)', () => {
+    // A Show without songs: the flat padKey graph fires, back-compat preserved.
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(allGraph())); // no .songs
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(2); // allGraph fires 2 play nodes
+  });
+
+  it('layered slot graphs get distinct PRNG/sequence state (state key isolation)', () => {
+    // Two sequence graphs with the same node ids wired in two slots. Firing them
+    // together must advance each graph's own sequence counter independently.
+    const seqA: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('sequence', 'seq', { y: 0 }),
+        node('play', 'pa', { y: 0, effectId: 'fxA' }),
+        node('play', 'pb', { y: 100, effectId: 'fxB' }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'seq' },
+        { id: 'e1', from: 'seq', to: 'pa' },
+        { id: 'e2', from: 'seq', to: 'pb' },
+      ],
+    };
+    // seqB is structurally identical to seqA (same node ids), placed in a second slot.
+    const seqB: TriggerGraph = structuredClone(seqA);
+    const showS: Show = {
+      buses: buses(),
+      graphs: { gSeqA: seqA, gSeqB: seqB },
+      sections: [],
+      effects: [effect('fxA'), effect('fxB')],
+      presets: [],
+      songs: [
+        {
+          id: 'song1',
+          name: 'Song 1',
+          sections: [{ id: 'sec1', name: 'Sec 1', slots: { kick: ['gSeqA', 'gSeqB', null] } }],
+        },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(showS);
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    // Hit 1: each graph fires sequence[0] → both pick 'pa' (fxA).
+    e.applyInput(hit('kick', 1));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(2);
+    // Hit 2: each graph independently advances its own sequence → sequence[1] → both pick 'pb' (fxB).
+    e.applyInput(hit('kick', 10));
+    e.tick(15, 10, transport(15));
+    // 4 total voices (2 from hit 1 still alive + 2 from hit 2).
+    expect(e.stats().voiceCount).toBe(4);
+  });
+
+  it('determinism: two engines with identical section-recall + hits produce byte-identical frames', () => {
+    const s = sectionShow(['gA', 'gB', null]);
+    const events: InputEvent[] = [
+      recallSection('song1', 'sec1', 0),
+      hit('kick', 5, 0.9),
+      hit('kick', 40, 0.4),
+    ];
+    const run = (): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(s);
+      for (const ev of events) e.applyInput(ev);
+      let now = 0;
+      for (let i = 0; i < 20; i++) {
+        now += 16;
+        e.tick(now, 16, transport(now));
       }
       return Array.from(e.frame());
     };

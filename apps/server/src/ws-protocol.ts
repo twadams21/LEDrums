@@ -38,10 +38,12 @@ export type ClientMessage =
   | { t: 'removeSection'; songId: string; sectionId: string }
   | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
   | { t: 'setInputMap'; inputMap: InputMap }
-  // Voice-bus engine (additive, voice mode only): replace the authored Show, and a
-  // native pad-hit input (drum + zone), distinct from the legacy midi/osc inputs.
+  // Voice-bus engine (additive, voice mode only): replace the authored Show, a
+  // native pad-hit input (drum + zone), and a section recall (activates a song's
+  // section so subsequent hits fire its slot graphs).
   | { t: 'setShow'; show: voice.Show }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
+  | { t: 'recallSection'; songId: string; sectionId: string }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };
@@ -51,7 +53,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
-  'setShow', 'key',
+  'setShow', 'key', 'recallSection',
   'loadProject', 'saveProject', 'listProjects',
 ]);
 

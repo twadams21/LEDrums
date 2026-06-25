@@ -166,11 +166,37 @@ export interface Section {
   looks: Record<string, string | null>;
 }
 
+// ---- Setlist (song → section → per-drum graph slots) -----------------------
+
+/**
+ * drumId → ordered list of graph keys (null = empty slot). Each key references
+ * a graph in `Show.graphs`; stacked non-null keys are fired as layers on a hit.
+ */
+export type SlotRefs = Record<string, (string | null)[]>;
+
+/** One section in a song's arrangement: per-drum ordered graph-key slots. */
+export interface SongSection {
+  id: string;
+  name: string;
+  slots: SlotRefs;
+}
+
+/**
+ * An authored song: a named sequence of arrangement sections. Structural
+ * mirror of the web's `setlist.Song` so `show-builder` assembles by pass-through.
+ */
+export interface ShowSong {
+  id: string;
+  name: string;
+  sections: SongSection[];
+}
+
 // ---- Show aggregate (the authored content) ----------------------------------
 
 /**
  * The authored content the engine runs: buses, per-pad trigger graphs (keyed by
- * padKey `"drumId:zone"`), section snapshots, and the effect/preset registries.
+ * padKey `"drumId:zone"`), section snapshots, the effect/preset registries, and
+ * the optional setlist arrangement (songs → sections → per-drum graph slots).
  */
 export interface Show {
   buses: Bus[];
@@ -179,6 +205,13 @@ export interface Show {
   sections: Section[];
   effects: EffectDef[];
   presets: Preset[];
+  /**
+   * Authored arrangement: songs with per-section slot grids. Each slot holds a
+   * graph key into `Show.graphs` (null = empty). When an active section is set,
+   * a hit fires the non-null slot graphs for that drum (layered, in slot order)
+   * instead of the flat `graphs[padKey(drumId, zone)]` fallback.
+   */
+  songs?: ShowSong[];
 }
 
 export function emptyShow(): Show {

@@ -23,7 +23,8 @@ export type VoicePartialInput =
   | { kind: 'noteOn'; note: number; velocity: number }
   | { kind: 'noteOff'; note: number }
   | { kind: 'osc'; address: string; value: number }
-  | { kind: 'key'; drumId: string; zone?: string; velocity?: number };
+  | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
+  | { kind: 'recallSection'; songId?: string; sectionId: string };
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -145,6 +146,13 @@ export class VoiceEngineHost {
   private toInputEvent(partial: VoicePartialInput): voice.InputEvent | null {
     const timeMs = this.engineTimeMs;
     switch (partial.kind) {
+      case 'recallSection':
+        return {
+          kind: 'recallSection',
+          songId: partial.songId,
+          sectionId: partial.sectionId,
+          timeMs,
+        };
       case 'key':
         return {
           kind: 'key',

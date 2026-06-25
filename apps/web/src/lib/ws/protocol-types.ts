@@ -71,6 +71,7 @@ export type ClientMessage =
   // Voice-bus engine (additive, voice mode only) — keep in sync with the server.
   | { t: 'setShow'; show: voice.Show }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
+  | { t: 'recallSection'; songId: string; sectionId: string }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };
