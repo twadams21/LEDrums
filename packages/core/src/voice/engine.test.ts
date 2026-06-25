@@ -500,6 +500,71 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
     expect(e.stats().voiceCount).toBe(4);
   });
 
+  it('two slots referencing the SAME graph key fire as independent layers (per-slot state)', () => {
+    // Regression (duplicate-slot-key guard): one graph key placed in TWO slots of a
+    // section must run two INDEPENDENT layers. The old code prefixed eval state with
+    // the bare graph key, so both slots shared one sequence counter — layer 0
+    // advanced layer 1's index (one shared sequencer, not two). Per-slot prefixes
+    // (`${key}#${slotIndex}`) give each slot POSITION its own state, so both
+    // sequencers start at index 0 and advance in lockstep but independently.
+    //
+    // Discriminator: route sequence child 0 → 'base' bus and child 1 → 'busB' bus.
+    //   • independent (fixed): hit 1 → both layers fire child 0 → 'busB' stays dark.
+    //   • shared (bug):        hit 1 → layer 1 advances to child 1 → 'busB' lights.
+    const seq: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('sequence', 'seq', { y: 0 }),
+        node('play', 'pa', { y: 0, effectId: 'fxA', busId: 'base' }),
+        node('play', 'pb', { y: 100, effectId: 'fxB', busId: 'busB' }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'seq' },
+        { id: 'e1', from: 'seq', to: 'pa' },
+        { id: 'e2', from: 'seq', to: 'pb' },
+      ],
+    };
+    const showS: Show = {
+      buses: [
+        { id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 },
+        { id: 'busB', name: 'Bus B', polyphony: 'poly', crossfadeMs: 200 },
+      ],
+      graphs: { gSeq: seq },
+      sections: [],
+      effects: [effect('fxA', { busId: 'base' }), effect('fxB', { busId: 'busB' })],
+      presets: [],
+      songs: [
+        {
+          id: 'song1',
+          name: 'Song 1',
+          // SAME key 'gSeq' in two slots — the duplicate-slot case under guard.
+          sections: [{ id: 'sec1', name: 'Sec 1', slots: { kick: ['gSeq', 'gSeq', null] } }],
+        },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(showS);
+    e.applyInput(recallSection('song1', 'sec1', 0));
+
+    // Hit 1: two independent sequencers BOTH start at index 0 → both fire child 0
+    // ('fxA' on 'base'). A shared counter would advance layer 1 to child 1 ('busB').
+    e.applyInput(hit('kick', 1));
+    e.tick(5, 5, transport(5)); // drain recall + hit, spawn 2 voices (born at 5)
+    e.tick(40, 35, transport(40)); // age past attack (10ms) so levels register
+    expect(e.stats().voiceCount).toBe(2); // two independent layers, both alive
+    expect(e.stats().busLevels.base).toBeGreaterThan(0); // both layers on 'base'…
+    expect(e.stats().busLevels.busB).toBe(0); // …none on 'busB' (shared counter would light it)
+
+    // Hit 2: each sequencer independently advances 0→1 → both fire child 1
+    // ('fxB' on 'busB'). 'busB' now lights and the total reaches 4 voices.
+    e.applyInput(hit('kick', 45));
+    e.tick(50, 50, transport(50)); // spawn 2 more voices (born at 50)
+    e.tick(85, 35, transport(85)); // age past attack
+    expect(e.stats().busLevels.busB).toBeGreaterThan(0); // both layers now on 'busB'
+    expect(e.stats().voiceCount).toBe(4); // 2 from hit 1 (still alive) + 2 from hit 2
+  });
+
   it('determinism: two engines with identical section-recall + hits produce byte-identical frames', () => {
     const s = sectionShow(['gA', 'gB', null]);
     const events: InputEvent[] = [

@@ -128,7 +128,8 @@ class VoiceBusEngine implements RenderEngine {
   private readonly pool: Voice[] = [];
   private voiceSeq = 0;
 
-  // Per-node graph eval state (keyed by `${padKey}#${nodeId}` so pads don't collide).
+  // Per-node graph eval state (keyed by `${statePrefix}#${nodeId}`, where the prefix
+  // is a per-slot or pad key, so layers/pads don't collide).
   private seqIndex = new Map<string, number>();
   private lastPick = new Map<string, number>();
   private latched = new Map<string, string | null>();
@@ -231,9 +232,10 @@ class VoiceBusEngine implements RenderEngine {
    * Resolve which graphs to fire for a (drumId, zone) hit.
    *
    * If an active section is set and has non-null slot entries for the drum,
-   * returns one entry per filled slot (slot graph key used as the state prefix
-   * so layered graphs from the same hit get distinct PRNG/sequence state and
-   * don't interfere with each other).
+   * returns one entry per filled slot, each with a per-slot-POSITION state
+   * prefix (`${key}#${slotIndex}`) so layered graphs from the same hit — even
+   * two slots holding the SAME graph key — get distinct PRNG/sequence/latch
+   * state and don't interfere with each other.
    *
    * Falls back to the flat `graphs[padKey(drumId, zone)]` graph when:
    *  - no active section / song is set, OR
@@ -248,10 +250,15 @@ class VoiceBusEngine implements RenderEngine {
         const slots = section.slots[drumId];
         if (slots) {
           const resolved: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
-          for (const key of slots) {
+          for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+            const key = slots[slotIndex];
             if (!key) continue;
             const g = this.show.graphs[key];
-            if (g) resolved.push({ graph: g, statePrefix: key });
+            // Prefix is per-slot POSITION, not the bare graph key: two slots holding
+            // the SAME key in one section must run as INDEPENDENT layers (own
+            // sequence/random/toggle/latch state), so fold in the slot index. Cross-
+            // section reuse stays stable — slot 0 of any section shares one state key.
+            if (g) resolved.push({ graph: g, statePrefix: `${key}#${slotIndex}` });
           }
           if (resolved.length > 0) return resolved;
         }
