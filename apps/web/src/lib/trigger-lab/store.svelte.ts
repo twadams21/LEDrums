@@ -42,6 +42,39 @@ import type { SerializedModel } from '../ws/protocol-types';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { Song } from '../app/setlist';
+import {
+  STORAGE_KEY,
+  deserializeAuthored,
+  serializeAuthored,
+  type AuthoredState,
+  type PersistedAuthored,
+} from './persistence';
+
+/** How long after the last authored change we wait before writing to storage. */
+const SAVE_DEBOUNCE_MS = 300;
+
+/** Read + parse the persisted authored blob. Guards SSR / no-localStorage /
+    quota / malformed JSON — any failure yields null (boot keeps the seed). */
+function readStored(): unknown {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write the versioned envelope. Best-effort — quota / private-mode failures are
+    swallowed (persistence must never throw into the render loop or lifecycle). */
+function writeStored(payload: PersistedAuthored): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore */
+  }
+}
 
 let idSeq = 1000;
 const nid = (k: string) => `${k}-${idSeq++}`;
@@ -133,6 +166,10 @@ export class TriggerLab {
   /** which section column is focused for arranging (independent of look recall). */
   arrangeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
 
+  /** persisted shell pane sizes in px, keyed by a stable pane id (set by the
+      resizable docks — step 3). Empty until the user drags a splitter. */
+  paneSizes = $state<Record<string, number>>({});
+
   // transient snapshot
   voices = $state<Voice[]>([]);
   log = $state<LogEntry[]>([]);
@@ -186,8 +223,21 @@ export class TriggerLab {
       frame (we only push setTransport when one of these actually changes). */
   private lastSent: { bpm: number; playing: boolean; beatsPerBar: number } | null = null;
 
+  /** disposes the autosave $effect.root (null while persistence is not running). */
+  private persistDispose: (() => void) | null = null;
+  /** pending debounced-save timer (plain field — must NOT be reactive). */
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(makeClient: () => WSClient = () => new WSClient()) {
-    this.sim = new Sim(this.buses, EFFECTS, this.presets);
+    // Hydrate AUTHORED state from storage BEFORE the sim is built and the engine
+    // link opens, so the sim's bus/preset/effect registries and the first
+    // setShow/recallSection all reflect the restored content. A missing / stale /
+    // corrupt blob is ignored by deserializeAuthored, so the seed stands.
+    this.hydrate();
+    // Build the sim from the (possibly restored) arrays — it snapshots `buses` by
+    // reference and indexes `effects`/`presets` into maps at construction, so it
+    // must see the hydrated arrays, not the fixture defaults.
+    this.sim = new Sim(this.buses, this.effects, this.presets);
     this.client = makeClient();
   }
 
@@ -213,6 +263,7 @@ export class TriggerLab {
 
   start(): void {
     if (this.raf) return;
+    this.startAutosave();
     this.wireClient();
     this.client.connect();
     this.last = performance.now();
@@ -246,6 +297,85 @@ export class TriggerLab {
     this.raf = 0;
     this.client.close();
     this.lastSent = null;
+    this.stopAutosave();
+  }
+
+  // --- live persistence (authored state ⇄ localStorage) --------------------
+
+  /** Apply a persisted blob over the seed defaults. Runs in the constructor,
+      before the sim exists — touches runes only. */
+  private hydrate(): void {
+    const slice = deserializeAuthored(readStored());
+    if (slice) this.applyAuthored(slice);
+  }
+
+  /** Read the authored runes into a plain, JSON-safe slice (proxies stripped). */
+  private toAuthored(): AuthoredState {
+    return $state.snapshot({
+      graphs: this.graphs,
+      songs: this.songs,
+      buses: this.buses,
+      presets: this.presets,
+      effects: this.effects,
+      selectedPadKey: this.selectedPadKey,
+      activeSongId: this.activeSongId,
+      arrangeSectionId: this.arrangeSectionId,
+      bpm: this.bpm,
+      velocity: this.velocity,
+      beatsPerBar: this.beatsPerBar,
+      paneSizes: this.paneSizes,
+    }) as AuthoredState;
+  }
+
+  /** Merge a (partial) restored slice into the runes — only present fields, so a
+      missing/forward field keeps its seed default. */
+  private applyAuthored(a: Partial<AuthoredState>): void {
+    if (a.graphs) this.graphs = a.graphs;
+    if (a.songs) this.songs = a.songs;
+    if (a.buses) this.buses = a.buses;
+    if (a.presets) this.presets = a.presets;
+    if (a.effects) this.effects = a.effects;
+    if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
+    if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
+    if (a.arrangeSectionId !== undefined) this.arrangeSectionId = a.arrangeSectionId;
+    if (typeof a.bpm === 'number') this.bpm = a.bpm;
+    if (typeof a.velocity === 'number') this.velocity = a.velocity;
+    if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
+    if (a.paneSizes) this.paneSizes = a.paneSizes;
+  }
+
+  /** Begin reactively autosaving authored changes (debounced). Idempotent; a
+      no-op without localStorage (SSR / node tests). The $effect deep-reads the
+      whole authored slice via toAuthored(), so any nested edit re-schedules. */
+  private startAutosave(): void {
+    if (this.persistDispose || typeof localStorage === 'undefined') return;
+    this.persistDispose = $effect.root(() => {
+      $effect(() => {
+        const snap = this.toAuthored();
+        this.scheduleSave(snap);
+      });
+    });
+  }
+
+  /** Flush any pending write and tear down the autosave effect (on stop/unmount),
+      so edits in the last debounce window are not lost. */
+  private stopAutosave(): void {
+    if (!this.persistDispose) return;
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    writeStored(serializeAuthored(this.toAuthored()));
+    this.persistDispose();
+    this.persistDispose = null;
+  }
+
+  private scheduleSave(snap: AuthoredState): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      writeStored(serializeAuthored(snap));
+    }, SAVE_DEBOUNCE_MS);
   }
 
   // --- engine link plumbing ------------------------------------------------
