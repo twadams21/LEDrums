@@ -14,6 +14,8 @@
   import Drawer from '../../ui/Drawer.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
+  import Copy from '@lucide/svelte/icons/copy';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
@@ -73,10 +75,22 @@
       {#each sections as sec (sec.id)}
         {@const active = store.activeSectionId === sec.id}
         <section class="col" class:active>
-          <button class="colh" class:active onclick={() => store.setActiveSection(sec.id)}>
-            <span class="colname">{sec.name}</span>
-            <span class="colcount">{sec.graphs.length}</span>
-          </button>
+          <div class="colh-row">
+            <button class="colh" class:active onclick={() => store.setActiveSection(sec.id)}>
+              <span class="colname">{sec.name}</span>
+              <span class="colcount">{sec.graphs.length}</span>
+            </button>
+            <div class="colh-actions">
+              <IconButton icon={Copy} label="Copy section" size={13} onclick={() => store.copySection(sec.id)} />
+              <IconButton
+                icon={ClipboardPaste}
+                label="Paste section"
+                size={13}
+                disabled={!store.sectionClipboard}
+                onclick={() => store.pasteSection()}
+              />
+            </div>
+          </div>
 
           <div class="graphlist">
             {#each sec.graphs as key (key)}
@@ -197,11 +211,18 @@
   .col.active {
     border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
   }
+  .colh-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
   .colh {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
+    flex: 1;
+    min-width: 0;
     padding: var(--space-2);
     font-size: var(--text-xs);
     font-weight: 600;
@@ -211,6 +232,15 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  }
+  /* copy / paste affordance, revealed on header hover (mirrors .grow-actions) */
+  .colh-actions {
+    display: none;
+    align-items: center;
+    flex: none;
+  }
+  .colh-row:hover .colh-actions {
+    display: inline-flex;
   }
   .colh:hover {
     color: var(--ink);
