@@ -1,20 +1,33 @@
 <script lang="ts">
-  /* Top bar: brand · setlist context · transport · engine status · output pill.
-     The setlist control is a readout for now (open/save/new
-     needs a project-persistence seam the engine store doesn't have yet — a later
-     milestone); it shows the live section context so the bar isn't hollow. */
+  /* Top bar: brand · show identity · transport · engine status · output pill.
+     The show control is the document identity: the active show's name shown + edited
+     in place (→ store.renameShow), with a ListMusic affordance that opens the show
+     browser (New / Open / Save / Save-As / Close / Rename / Delete). The live section
+     context rides underneath so the bar still reads at a glance. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import Transport from './Transport.svelte';
   import OutputPill from './OutputPill.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
+  import ShowBrowser from './ShowBrowser.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
+  import CommitInput from '../../ui/CommitInput.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
 
-  // `shell` stays in the props type (the shell passes it) but is unused for now —
-  // the ModeSwitch that consumed it is gone; a later slice adds the show-title here.
+  // `shell` stays in the props type (the shell passes it) but is unused — the ModeSwitch
+  // that consumed it is gone, and the show title reads straight from the store.
   let { store }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const activeName = $derived(store.activeSection?.name ?? '—');
+  const showName = $derived(store.activeShow?.name ?? 'Untitled show');
+
+  let browserOpen = $state(false);
+  let editingName = $state(false);
+
+  function commitName(name: string): void {
+    editingName = false;
+    store.renameShow(store.activeShowId, name);
+  }
 </script>
 
 <header class="topbar">
@@ -23,10 +36,18 @@
     <span class="word">LEDrums</span>
   </div>
 
-  <div class="setlist" title="Setlist (open / save / new — coming in a later slice)">
-    <ListMusic size={15} aria-hidden="true" />
+  <div class="setlist">
+    <IconButton icon={ListMusic} label="Shows" size={15} onclick={() => (browserOpen = true)} />
     <span class="set-labels">
-      <span class="set-name">Untitled show</span>
+      {#if editingName}
+        <span class="set-name-edit">
+          <CommitInput value={showName} ariaLabel="Show name" onCommit={commitName} onCancel={() => (editingName = false)} />
+        </span>
+      {:else}
+        <button type="button" class="set-name" title="Rename show" onclick={() => (editingName = true)}>
+          {showName}
+        </button>
+      {/if}
       <span class="set-sub">{store.sections.length} sections · {activeName}</span>
     </span>
   </div>
@@ -38,6 +59,8 @@
     <OutputPill {store} />
   </div>
 </header>
+
+<ShowBrowser {store} open={browserOpen} onClose={() => (browserOpen = false)} />
 
 <style>
   .topbar {
@@ -93,10 +116,30 @@
     flex-direction: column;
     line-height: 1.15;
   }
+  /* the show name is an in-place editable title: a bare button that reveals a CommitInput */
   .set-name {
+    align-self: flex-start;
+    max-width: 22ch;
+    margin: -2px -4px;
+    padding: 2px 4px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-1);
     font-size: var(--text-sm);
-    color: var(--ink);
     font-weight: 600;
+    color: var(--ink);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .set-name:hover {
+    background: var(--surface-3);
+    border-color: var(--border);
+  }
+  .set-name-edit {
+    display: block;
+    width: 180px;
   }
   .set-sub {
     font-size: var(--text-2xs);
