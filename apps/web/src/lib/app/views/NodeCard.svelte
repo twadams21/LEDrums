@@ -79,10 +79,11 @@
   .card.hov {
     border-color: var(--accent);
   }
-  /* selected into the Inspector — accent ring (wires deliberately do NOT light up) */
+  /* selected into the Inspector — same full-accent border as hover, plus a crisp ring
+     so selection still reads when the node isn't hovered (wires do NOT light up) */
   .card.sel {
-    border-color: color-mix(in oklch, var(--accent) 60%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent), var(--shadow-1);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), var(--shadow-1);
   }
   /* a wire is being dropped onto this node (the whole node is the drop target) */
   .card.drop {
