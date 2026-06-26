@@ -202,6 +202,85 @@ describe('VoiceEngineHost', () => {
     expect(after).not.toBe(before);
   });
 
+  // --- U3: trigger-source routing (zone-map precedence + direct bindings) ---
+  // A play-on-`busId` graph whose trigger carries `source`; the bus that lights tells us
+  // which graph fired. defaultProject maps note 36 → kick/center and OSC /sp/* → pads, so
+  // anything else is "unmapped" and falls through to a direct trigger-source binding.
+  const trigNode = (source?: voice.TriggerSource): voice.GraphNode =>
+    ({
+      id: 'trig', kind: 'trigger', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '',
+      presetId: '', busId: '', params: {}, env: {}, linked: false, noRepeat: false, on: 'value',
+      valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1, source,
+    }) as voice.GraphNode;
+
+  const playNode = (busId: string): voice.GraphNode =>
+    ({
+      id: 'play', kind: 'play', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
+      presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {}, linked: false,
+      noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
+    }) as voice.GraphNode;
+
+  const trigGraph = (source: voice.TriggerSource | undefined, busId: string): voice.TriggerGraph => ({
+    nodes: [trigNode(source), playNode(busId)],
+    edges: [{ id: 'e1', from: 'trig', to: 'play' }],
+  });
+
+  /** A show from explicit graphs, with a poly bus per id the plays land on. */
+  const routingShow = (graphs: Record<string, voice.TriggerGraph>, busIds: string[]): voice.Show => ({
+    buses: busIds.map((id) => ({ id, name: id, polyphony: 'poly' as const, crossfadeMs: 200 })),
+    graphs,
+    sections: [],
+    effects: [
+      {
+        id: 'fx-flash', name: 'Flash', pattern: 'flash', busId: busIds[0] ?? 'main', scope: 'kit',
+        params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
+        attackMs: 0, sustainMs: 200, releaseMs: 200,
+      },
+    ],
+    presets: [],
+  });
+
+  const litBuses = (host: VoiceEngineHost): string[] => {
+    const { busLevels } = host.getStats().engine;
+    return Object.keys(busLevels)
+      .filter((b) => (busLevels[b] ?? 0) > 0)
+      .sort();
+  };
+
+  it('a raw unmapped MIDI note fires the authored graph bound to its midi source', () => {
+    const { host } = makeHost();
+    host.setShow(routingShow({ 'graph:1': trigGraph({ kind: 'midi', note: 60 }, 'direct') }, ['direct']));
+    host.applyInput({ kind: 'noteOn', note: 60, velocity: 1 }); // 60 is unmapped → direct binding
+    for (let i = 0; i < 8; i++) host.step(STEP);
+    expect(litBuses(host)).toEqual(['direct']);
+  });
+
+  it('no double-fire: a zone-mapped note fires only its pad graph, not a same-note direct binding', () => {
+    const { host } = makeHost();
+    host.setShow(
+      routingShow(
+        {
+          [voice.padKey('kick', SLOT_LABELS[0])]: trigGraph({ kind: 'drum', drumId: 'kick', zone: SLOT_LABELS[0] }, 'pad'),
+          'graph:1': trigGraph({ kind: 'midi', note: 36 }, 'direct'),
+        },
+        ['pad', 'direct'],
+      ),
+    );
+    // note 36 → kick/center via the zone-map → pad graph fires and STOPS. The direct
+    // binding that also declares note 36 must NOT fire (zone-map wins; exactly one path).
+    host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 });
+    for (let i = 0; i < 8; i++) host.step(STEP);
+    expect(litBuses(host)).toEqual(['pad']);
+  });
+
+  it('a raw unmapped OSC address fires the authored graph bound to its osc source', () => {
+    const { host } = makeHost();
+    host.setShow(routingShow({ 'graph:1': trigGraph({ kind: 'osc', address: '/fx/strobe' }, 'direct') }, ['direct']));
+    host.applyInput({ kind: 'osc', address: '/fx/strobe', value: 1 }); // unmapped address → direct
+    for (let i = 0; i < 8; i++) host.step(STEP);
+    expect(litBuses(host)).toEqual(['direct']);
+  });
+
   it('setKitTransform with pixelsPerHoop changes the live model pixel count', () => {
     const { host } = makeHost(voice.createNullEngine());
     const before = host.getModel().pixelCount;

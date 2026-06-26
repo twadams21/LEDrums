@@ -1,4 +1,4 @@
-import type { Engine, InputEvent } from '@ledrums/core';
+import { SLOT_LABELS, type Engine, type InputEvent, type InputMap } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
 import type { ClientMessage } from './ws-protocol';
 
@@ -7,6 +7,36 @@ export interface ReduceResult {
   structural: boolean;
   /** Optional monitor echo for the input panel. */
   monitor?: { kind: 'midi' | 'osc'; label: string; value: number };
+}
+
+/** A drum-zone pad resolved from the patch zone-map (the pad-bound graph it fires). */
+export interface ZonePad {
+  drumId: string;
+  zone: string;
+}
+
+/** Map a trigger slot index to a voice zone label (clamped into range). */
+function slotToZone(slot: number): string {
+  return SLOT_LABELS[Math.max(0, Math.min(SLOT_LABELS.length - 1, slot))] ?? SLOT_LABELS[0];
+}
+
+/**
+ * Zone-map resolution — PINNED precedence STEP 1. Resolve a raw MIDI note to its
+ * `(drumId, zone)` pad via the patch {@link InputMap} (`midiNotes`, keyed `(drumId,
+ * slot)` → zone label). A match fires the pad-bound graph (the padKey path) and the
+ * caller STOPS; a miss (`null`) means the caller forwards the raw note so the engine can
+ * fire a graph bound DIRECTLY to it by its trigger source (step 2) — never both.
+ */
+export function zoneForNote(inputMap: InputMap, note: number): ZonePad | null {
+  const m = inputMap.midiNotes.find((x) => x.note === note);
+  return m ? { drumId: m.drumId, zone: slotToZone(m.slot) } : null;
+}
+
+/** Zone-map resolution (step 1) for OSC: resolve an address to its `(drumId, zone)` pad
+    via the patch {@link InputMap} `oscMap`, else `null` (forward raw for direct binding). */
+export function zoneForOsc(inputMap: InputMap, address: string): ZonePad | null {
+  const m = inputMap.oscMap.find((x) => x.address === address);
+  return m ? { drumId: m.drumId, zone: slotToZone(m.slot) } : null;
 }
 
 /** Convert a WS MIDI message into a time-stamped engine event (velocity 0..127 → 0..1). */

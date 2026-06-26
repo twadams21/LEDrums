@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Engine, defaultProject } from '@ledrums/core';
-import { applyClientMessage, midiToEvent, oscToEvent } from './input-router';
+import { Engine, SLOT_LABELS, defaultProject } from '@ledrums/core';
+import { applyClientMessage, midiToEvent, oscToEvent, zoneForNote, zoneForOsc } from './input-router';
 
 describe('input-router', () => {
   it('normalizes MIDI velocity and distinguishes note on/off', () => {
@@ -40,5 +40,26 @@ describe('input-router', () => {
     const e = new Engine(defaultProject());
     expect(applyClientMessage(e, { t: 'setLayer', layerId: 'base', opacity: 0.5 }, 0).structural).toBe(true);
     expect(applyClientMessage(e, { t: 'setTransport', bpm: 140 }, 0).structural).toBe(true);
+  });
+});
+
+describe('zone-map resolution (PINNED precedence step 1)', () => {
+  // defaultProject maps note 36 → kick/slot 0 and OSC /sp/kick → kick/slot 0; slot 0 is
+  // the 'center' zone. A match fires the pad-bound graph (caller stops); a miss returns
+  // null so the caller forwards the raw input for a DIRECT trigger-source binding.
+  it('resolves a mapped MIDI note to its (drumId, zone) pad', () => {
+    const { inputMap } = defaultProject();
+    expect(zoneForNote(inputMap, 36)).toEqual({ drumId: 'kick', zone: SLOT_LABELS[0] });
+    expect(zoneForNote(inputMap, 38)).toEqual({ drumId: 'snare', zone: SLOT_LABELS[0] });
+  });
+
+  it('returns null for an unmapped MIDI note (forward raw for direct binding)', () => {
+    expect(zoneForNote(defaultProject().inputMap, 7)).toBeNull();
+  });
+
+  it('resolves a mapped OSC address to its pad, null otherwise', () => {
+    const { inputMap } = defaultProject();
+    expect(zoneForOsc(inputMap, '/sp/kick')).toEqual({ drumId: 'kick', zone: SLOT_LABELS[0] });
+    expect(zoneForOsc(inputMap, '/nope')).toBeNull();
   });
 });

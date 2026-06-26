@@ -15,6 +15,7 @@ import {
   type TransportState,
 } from '@ledrums/core';
 import { OutputManager } from './output-manager';
+import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 
 /**
@@ -172,11 +173,13 @@ export class VoiceEngineHost {
   // --- input ---------------------------------------------------------------
 
   /**
-   * Resolve a partial input to a {@link voice.InputEvent} and apply it. `key` is
-   * native (drum + zone). `noteOn`/`osc` are resolved to a pad via the project's
-   * inputMap: a MIDI note → (drumId, slot) and an OSC address → (drumId, slot), with
-   * the slot index mapped to a zone label via {@link SLOT_LABELS}. `noteOff` is passed
-   * through (the engine decays voices on their own envelopes).
+   * Resolve a partial input to a {@link voice.InputEvent} and apply it. `key` is native
+   * (drum + zone). `noteOn`/`osc` route through the PINNED precedence: the patch inputMap
+   * zone-map first ({@link zoneForNote}/{@link zoneForOsc} → a `(drumId, zone)` pad, the
+   * pad-bound graph path). On a zone-map MISS the raw note/address is forwarded WITHOUT a
+   * pad, so the engine fires any graph bound DIRECTLY to it by its trigger source (and an
+   * event never fires both — exactly one of the two paths runs). `noteOff` passes through
+   * (the engine decays voices on their own envelopes).
    */
   applyInput(partial: VoicePartialInput): void {
     this.pendingInputWall = nowWall();
@@ -203,16 +206,22 @@ export class VoiceEngineHost {
           timeMs,
         };
       case 'noteOn': {
-        const pad = this.resolveNote(partial.note);
-        if (!pad) return null;
-        return { kind: 'noteOn', drumId: pad.drumId, zone: pad.zone, note: partial.note, velocity: partial.velocity, timeMs };
+        // Zone-map first; a miss forwards the raw note (no pad) for direct binding.
+        const pad = zoneForNote(this.project.inputMap, partial.note);
+        return {
+          kind: 'noteOn',
+          ...(pad ? { drumId: pad.drumId, zone: pad.zone } : {}),
+          note: partial.note,
+          velocity: partial.velocity,
+          timeMs,
+        };
       }
       case 'noteOff':
         // No engine effect today; forward the raw note so the seam stays honest.
         return { kind: 'noteOff', note: partial.note, timeMs };
       case 'osc': {
-        const pad = this.resolveOsc(partial.address);
-        // Always forward so address-driven shows can react; attach a pad when mapped.
+        // Always forward; attach a pad when the zone-map claims it, else direct binding.
+        const pad = zoneForOsc(this.project.inputMap, partial.address);
         return {
           kind: 'osc',
           ...(pad ? { drumId: pad.drumId, zone: pad.zone } : {}),
@@ -222,20 +231,6 @@ export class VoiceEngineHost {
         };
       }
     }
-  }
-
-  /** Resolve a MIDI note to a (drumId, zone) pad via the project inputMap. */
-  private resolveNote(note: number): { drumId: string; zone: string } | null {
-    const m = this.project.inputMap.midiNotes.find((x) => x.note === note);
-    if (!m) return null;
-    return { drumId: m.drumId, zone: slotToZone(m.slot) };
-  }
-
-  /** Resolve an OSC address to a (drumId, zone) pad via the project inputMap. */
-  private resolveOsc(address: string): { drumId: string; zone: string } | null {
-    const m = this.project.inputMap.oscMap.find((x) => x.address === address);
-    if (!m) return null;
-    return { drumId: m.drumId, zone: slotToZone(m.slot) };
   }
 
   /** Mark an input ingress for the latency loop without constructing an event here. */
@@ -380,11 +375,6 @@ export class VoiceEngineHost {
   getOutputStatus(): OutputStatus {
     return this.output.status();
   }
-}
-
-/** Map a trigger slot index to a voice zone label (clamped into range). */
-function slotToZone(slot: number): string {
-  return SLOT_LABELS[Math.max(0, Math.min(SLOT_LABELS.length - 1, slot))] ?? SLOT_LABELS[0];
 }
 
 /** Wall clock (ms). Indirected so the host has no direct `performance` coupling. */
