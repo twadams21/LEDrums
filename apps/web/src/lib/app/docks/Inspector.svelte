@@ -171,10 +171,9 @@
   // kind selector (every node but the trigger root) + switch routing options.
   const KIND_OPTS = NODE_KINDS.map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
   const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
-    { value: 'velocity', label: 'velocity' },
+    { value: 'value', label: 'value' },
     { value: 'section', label: 'section' },
     { value: 'beat', label: 'beat' },
-    { value: 'value', label: 'value' },
   ];
   const VALUEMODE_OPTS: Array<{ value: ValueMode; label: string }> = [
     { value: 'gate', label: 'Gate' },

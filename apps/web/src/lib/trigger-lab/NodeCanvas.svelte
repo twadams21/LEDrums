@@ -110,7 +110,7 @@
     { value: 'hold', label: 'Hold', icon: Hand },
   ];
   const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
-    { value: 'velocity', label: 'velocity' },
+    { value: 'value', label: 'value' },
     { value: 'section', label: 'section' },
     { value: 'beat', label: 'beat' },
   ];

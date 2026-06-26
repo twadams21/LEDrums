@@ -32,6 +32,7 @@ import {
   type TriggerGraph,
   type TriggerSource,
   treeToGraph,
+  foldVelocitySwitches,
   makeNode,
   nodeHasOutput,
   nodeHasInput,
@@ -96,7 +97,15 @@ export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
     case 'sequence':
       return { id: nid('sequence'), kind: 'sequence', children: [play(firstEffectId), play(firstEffectId)] };
     case 'switch':
-      return { id: nid('switch'), kind: 'switch', on: 'velocity', children: [play(firstEffectId), play(firstEffectId)] };
+      // value+bands by default (canonical): 2 children → band-0 / band-1, one cutoff at 0.5.
+      return {
+        id: nid('switch'),
+        kind: 'switch',
+        on: 'value',
+        valueMode: 'bands',
+        bands: [0.5],
+        children: [play(firstEffectId), play(firstEffectId)],
+      };
     case 'chance':
       return { id: nid('chance'), kind: 'chance', p: 0.5, child: play(firstEffectId) };
     case 'toggle':
@@ -315,6 +324,10 @@ export class TriggerLab {
     // padKey) — seed or restored, idempotent, authored graphs left unset. See
     // unionTriggerSources: this is the trigger-source back-compat default.
     this.graphs = unionTriggerSources(this.graphs, new Set(Object.keys(this.graphNames)));
+    // Fold any legacy `on:'velocity'` switch (seed or a returning user's persisted graph)
+    // into the canonical `value`+`bands` form, preserving routing exactly. Idempotent —
+    // a no-op once migrated — so it runs unconditionally, like unionTriggerSources.
+    this.graphs = foldVelocitySwitches(this.graphs);
     // Build the sim from the (possibly restored) arrays — it snapshots `buses` by
     // reference and indexes `effects`/`presets` into maps at construction, so it
     // must see the hydrated arrays, not the fixture defaults.

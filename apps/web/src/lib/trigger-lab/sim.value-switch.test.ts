@@ -150,13 +150,13 @@ describe('value switch — back-compat defaults', () => {
   });
 });
 
-describe('existing switch modes unchanged', () => {
-  it('velocity still splits evenly across children by child count', () => {
+describe('non-value switch modes unchanged', () => {
+  it('section routes by section index, count-based (velocity is gone; section stays)', () => {
     const sim = mk();
     const graph: TriggerGraph = {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
-        makeNode('switch', 'sw', 200, 0, { on: 'velocity' }),
+        makeNode('switch', 'sw', 200, 0, { on: 'section' }),
         makeNode('play', 'a', 400, -40, { effectId: 'chase', presetId: 'chase:default' }),
         makeNode('play', 'b', 400, 40, { effectId: 'sparkle', presetId: 'sparkle:default' }),
       ],
@@ -166,7 +166,7 @@ describe('existing switch modes unchanged', () => {
         { id: 'e1', from: 'sw', to: 'b' },
       ],
     };
-    sim.triggerGraph('pad', graph, ctxV(0.2)); // low velocity → first child
+    sim.triggerGraph('pad', graph, ctxV(0.2)); // ctx sectionIndex 0 → first child
     expect(sim.voices.map((v) => v.effectId)).toEqual(['chase']);
   });
 });

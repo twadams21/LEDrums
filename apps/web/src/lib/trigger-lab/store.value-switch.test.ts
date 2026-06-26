@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import type { GraphNode } from './sim';
+import { makeNode, type GraphNode, type SwitchOn, type TriggerGraph } from './sim';
+import { STORAGE_KEY } from './persistence';
 import type { WSClient } from '../ws/client';
 
 /* Store-level coverage for the value-switch mutators + source-port wiring. These are
@@ -110,7 +111,7 @@ describe('enter / leave value mode', () => {
     const { store, sw, play } = withBandsSwitch();
     const a = play();
     store.connect(sw.id, a.id, 'band-0');
-    store.setSwitchOn(sw, 'velocity');
+    store.setSwitchOn(sw, 'section'); // leaving value mode (any non-value mode) strips band ports
     expect(portsFrom(store, sw.id)).toEqual([undefined]);
   });
 
@@ -176,5 +177,35 @@ describe('band cutoffs', () => {
     const toA = store.selectedGraph!.edges.filter((e) => e.from === sw.id && e.to === a.id);
     expect(toA).toHaveLength(1);
     expect(toA[0]!.fromPort).toBe('band-1');
+  });
+});
+
+describe('velocity fold on hydrate', () => {
+  it('folds a persisted on:velocity switch into value+bands on construction', () => {
+    // a returning user's blob with a legacy `velocity` switch (2 children, no band ports)
+    const graph: TriggerGraph = {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('switch', 'sw', 200, 0, { on: 'velocity' as unknown as SwitchOn }),
+        makeNode('play', 'a', 400, 0, { effectId: 'chase', presetId: 'chase:default' }),
+        makeNode('play', 'b', 400, 100, { effectId: 'sparkle', presetId: 'sparkle:default' }),
+      ],
+      edges: [
+        { id: 'e-t', from: 'trigger', to: 'sw' },
+        { id: 'e0', from: 'sw', to: 'a' },
+        { id: 'e1', from: 'sw', to: 'b' },
+      ],
+    };
+    globalThis.localStorage!.setItem(STORAGE_KEY, JSON.stringify({ version: 1, data: { graphs: { 'kick:0': graph } } }));
+
+    const store = new TriggerLab(fakeClient);
+    const g = store.graphs['kick:0']!;
+    const node = g.nodes.find((n) => n.id === 'sw')!;
+    expect(node.on).toBe('value');
+    expect(node.valueMode).toBe('bands');
+    expect(node.bands).toEqual([0.5]); // 2 children → one even cutoff
+    const ports = new Map(g.edges.filter((e) => e.from === 'sw').map((e) => [e.to, e.fromPort]));
+    expect(ports.get('a')).toBe('band-0'); // y-order: a (y=0) → band-0, b (y=100) → band-1
+    expect(ports.get('b')).toBe('band-1');
   });
 });

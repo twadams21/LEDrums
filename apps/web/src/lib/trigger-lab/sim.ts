@@ -18,7 +18,11 @@ import type { EffectCategory } from '@ledrums/core';
 // ---- Block tree (branch 2) --------------------------------------------------
 
 export type PlayMode = 'oneshot' | 'loop' | 'hold';
-export type SwitchOn = 'velocity' | 'section' | 'beat' | 'value';
+/** What a switch routes on. `value` (gate/bands) is the canonical intensity-routing
+    mode; the older `velocity` mode was a near-duplicate (even count split on the same
+    normalized intensity) and was folded into `value` and removed — see
+    {@link foldVelocitySwitch}. `section`/`beat` are count-based and unchanged. */
+export type SwitchOn = 'section' | 'beat' | 'value';
 /** Sub-mode of a `value` switch: a single pass/block gate, or N value bands. */
 export type ValueMode = 'gate' | 'bands';
 export type Scope = 'drum' | 'kit';
@@ -214,6 +218,12 @@ export interface SequenceBlock extends BlockBase {
 export interface SwitchBlock extends BlockBase {
   kind: 'switch';
   on: SwitchOn;
+  /** value-switch sub-mode (only meaningful when `on === 'value'`). Optional so a
+      block authored before value-mode omits it; {@link treeToGraph} carries it onto
+      the graph node and, for `'bands'`, gives each child edge its `band-${i}` handle. */
+  valueMode?: ValueMode;
+  /** ascending band cutoffs for a `value`+`bands` switch (see {@link GraphNode.bands}). */
+  bands?: number[];
   children: Block[];
 }
 export interface ChanceBlock extends BlockBase {
@@ -374,7 +384,7 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     env: {},
     linked: false,
     noRepeat: true,
-    on: 'velocity',
+    on: 'value',
     valueMode: 'gate',
     threshold: 0.5,
     invert: false,
@@ -408,8 +418,12 @@ function nodeFromBlock(b: Block): GraphNode {
       });
     case 'random':
       return makeNode('random', b.id, 0, 0, { noRepeat: b.noRepeat });
-    case 'switch':
-      return makeNode('switch', b.id, 0, 0, { on: b.on });
+    case 'switch': {
+      const over: Partial<GraphNode> = { on: b.on };
+      if (b.valueMode !== undefined) over.valueMode = b.valueMode;
+      if (b.bands !== undefined) over.bands = b.bands;
+      return makeNode('switch', b.id, 0, 0, over);
+    }
     case 'chance':
       return makeNode('chance', b.id, 0, 0, { p: b.p });
     default:
@@ -427,8 +441,8 @@ export function treeToGraph(tree: Block): TriggerGraph {
   const edges: GraphEdge[] = [];
   let row = 0;
   let edgeSeq = 0;
-  const link = (from: string, to: string): void => {
-    edges.push({ id: `e${edgeSeq++}`, from, to });
+  const link = (from: string, to: string, fromPort?: string): void => {
+    edges.push(fromPort === undefined ? { id: `e${edgeSeq++}`, from, to } : { id: `e${edgeSeq++}`, from, to, fromPort });
   };
 
   const walk = (b: Block, depth: number): { id: string; y: number } => {
@@ -439,9 +453,14 @@ export function treeToGraph(tree: Block): TriggerGraph {
     if (kids.length === 0) {
       node.y = row++ * ROW_H;
     } else {
-      const infos = kids.map((k) => {
+      // A value+bands switch routes each child from its own band handle (`band-${i}`),
+      // in child order — which is top→bottom (ascending y) in this layout, matching
+      // both childrenViaPort's y-sort and the fold migration, so a seed graph is
+      // identical to a migrated persisted one.
+      const bandPorts = b.kind === 'switch' && b.on === 'value' && b.valueMode === 'bands';
+      const infos = kids.map((k, i) => {
         const ci = walk(k, depth + 1);
-        link(node.id, ci.id);
+        link(node.id, ci.id, bandPorts ? `band-${i}` : undefined);
         return ci;
       });
       node.y = (infos[0]!.y + infos[infos.length - 1]!.y) / 2;
@@ -454,6 +473,62 @@ export function treeToGraph(tree: Block): TriggerGraph {
   nodes.push(trigger);
   link(trigger.id, root.id);
   return { nodes, edges };
+}
+
+// ---- velocity → value fold (migration) --------------------------------------
+
+/** Evenly-spaced ascending cutoffs that split 0..1 into `n` equal bands: `[1/n, …, (n−1)/n]`
+    (n−1 cutoffs; `n ≤ 1` → `[]`, a single band). Reproduces the old `velocity` switch's
+    even-by-count split expressed as `value`+`bands`. */
+function evenCutoffs(n: number): number[] {
+  const cuts: number[] = [];
+  for (let i = 1; i < n; i++) cuts.push(i / n);
+  return cuts;
+}
+
+/** `velocity` was dropped from {@link SwitchOn}; a stray one is read via a string compare
+    (this fold is the migrator for exactly that legacy value). */
+const isVelocitySwitch = (n: GraphNode): boolean => n.kind === 'switch' && (n.on as string) === 'velocity';
+
+/** Fold every legacy `on:'velocity'` switch in a graph into the canonical `value`+`bands`
+    form, behaviour-preserving:
+      - `on='value'`, `valueMode='bands'`, `bands = evenCutoffs(N)` where N is the switch's
+        outgoing-edge count (N even bands == the old even-by-count split), and
+      - each outgoing edge re-homed onto its band handle `band-${i}`, edges sorted by target
+        y ascending — the order the old velocity switch fired children in (`childrenOf`).
+    Edge cases: N≤1 → one band (`band-0`); N=0 → nothing to wire. `section`/`beat` switches
+    and non-switch nodes are untouched. Idempotent + immutable: returns the SAME graph
+    reference when there is no velocity switch, so re-running — or a graph authored after the
+    fold — is a no-op. */
+export function foldVelocitySwitch(graph: TriggerGraph): TriggerGraph {
+  if (!graph.nodes.some(isVelocitySwitch)) return graph;
+
+  const yOf = new Map(graph.nodes.map((n) => [n.id, n.y] as const));
+  const migrated = new Set<string>();
+  const nodes = graph.nodes.map((n) => {
+    if (!isVelocitySwitch(n)) return n;
+    migrated.add(n.id);
+    const outCount = graph.edges.reduce((c, e) => (e.from === n.id ? c + 1 : c), 0);
+    return { ...n, on: 'value' as const, valueMode: 'bands' as const, bands: evenCutoffs(outCount) };
+  });
+
+  // Re-home each migrated switch's outgoing edges onto band handles, in target-y order.
+  const edges = graph.edges.map((e) => ({ ...e }));
+  for (const id of migrated) {
+    const outs = edges.filter((e) => e.from === id).sort((a, b) => (yOf.get(a.to) ?? 0) - (yOf.get(b.to) ?? 0));
+    outs.forEach((e, i) => {
+      e.fromPort = `band-${i}`;
+    });
+  }
+  return { nodes, edges };
+}
+
+/** Apply {@link foldVelocitySwitch} across a keyed map of graphs (the store's hydrate
+    migration). Each unchanged graph keeps its reference (alias-stable + idempotent). */
+export function foldVelocitySwitches(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) out[key] = foldVelocitySwitch(graph);
+  return out;
 }
 
 // ---- Effects + presets + buses (branch 1) -----------------------------------
@@ -742,7 +817,11 @@ export class Sim {
         return this.evalNode(graph, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
       }
       case 'switch': {
-        if (node.on === 'value') return this.evalValueSwitch(graph, node, ctx, label, seen2);
+        // `value` (gate/bands) is canonical. `velocity` was folded into it and dropped from
+        // SwitchOn — graphs are migrated on hydrate (foldVelocitySwitch), but route anything
+        // that isn't a count-based mode (`section`/`beat`) through value eval so a stray
+        // legacy `velocity` never throws or mis-routes (mirrors core engine).
+        if (node.on !== 'section' && node.on !== 'beat') return this.evalValueSwitch(graph, node, ctx, label, seen2);
         if (kids.length === 0) return [];
         const i = this.switchIndexN(kids.length, node.on, ctx);
         return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
@@ -770,11 +849,11 @@ export class Sim {
     if (node.linked) return this.preset(node.presetId)?.params ?? node.params;
     return node.params;
   }
+  /** Count-based child index for the `section`/`beat` switch modes (the only modes that
+      reach here — `value` is routed to {@link evalValueSwitch}). */
   private switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
-    let frac = 0;
-    if (on === 'velocity') frac = ctx.velocity;
-    else if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-    else if (on === 'beat') frac = ctx.beatPhase;
+    if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
+    const frac = on === 'beat' ? ctx.beatPhase : 0;
     return Math.min(n - 1, Math.floor(frac * n));
   }
 
@@ -874,10 +953,8 @@ export class Sim {
 
   private switchIndex(block: SwitchBlock, ctx: TriggerCtx): number {
     const n = block.children.length;
-    let frac = 0;
-    if (block.on === 'velocity') frac = ctx.velocity;
-    else if (block.on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-    else if (block.on === 'beat') frac = ctx.beatPhase;
+    if (block.on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
+    const frac = block.on === 'beat' ? ctx.beatPhase : 0;
     return Math.min(n - 1, Math.floor(frac * n));
   }
 

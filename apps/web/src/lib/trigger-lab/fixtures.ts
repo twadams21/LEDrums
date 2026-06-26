@@ -211,7 +211,16 @@ const kickCenter: Block = play('whole', 'oneshot');
 const snareCenter: Block = { id: bid('rand'), kind: 'random', noRepeat: true, children: [play('chase'), play('sparkle'), play('rip')] };
 const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('sparkle'), play('strobe')] };
 const tomCenter: Block = { id: bid('seq'), kind: 'sequence', children: [play('chase'), play('rip'), play('whole')] };
-const tomEdge: Block = { id: bid('switch'), kind: 'switch', on: 'velocity', children: [play('sparkle'), play('chase'), play('whole')] };
+// value+bands switch: 3 even bands (cutoffs 1/3, 2/3) == the old 3-child velocity split.
+// treeToGraph wires the children onto band-0 / band-1 / band-2 in y-order.
+const tomEdge: Block = {
+  id: bid('switch'),
+  kind: 'switch',
+  on: 'value',
+  valueMode: 'bands',
+  bands: [1 / 3, 2 / 3],
+  children: [play('sparkle'), play('chase'), play('whole')],
+};
 const kickShell: Block = { id: bid('toggle'), kind: 'toggle', child: play('haze', 'loop') };
 const snareShell: Block = { id: bid('chance'), kind: 'chance', p: 0.5, child: play('strobe') };
 const tomRim: Block = {
