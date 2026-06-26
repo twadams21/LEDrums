@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-06-21
+last_updated: 2026-06-26
 ---
 
 # Session Bootstrap
@@ -57,6 +57,16 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 - Arc-segment LEDs (`f9f67f6`+`f7fb63f`): continuous curved thick rings (was gapped box-tubes); cold geometry / hot colors; camera-framing fix preserved.
 - Live Show re-sync (`0b03ed7`): store re-sends `setShow` (debounced, signature-guarded) on authored edits — effect/param/preset/wiring changes now reach the engine (previously frozen at connect).
 - Real Patch Graph topology (`b1765a2`): `@xyflow` 8-stage device routing (input→trigger→zone→drum→hoop→dataline→output→controller), data-driven. Follow-up: wire data-line/output to server `dmxMap`; editable device settings.
+
+**Unified node graphs on @xyflow/svelte (done — 2026-06-26, branch `feat/unified-shell`):** both graphs now run on one engine + one shared node design (8 commits, full suite green: core 156 / server 36 / web 107 / io 12). Implementer agent via twux (`unify-graphs-9a0267`), orchestrated + git-verified here.
+- Shared `NodeCard` extracted from `PatchNode` (the source look); `PatchNode` + new `TriggerNode` both render it. Icon chip + title + mono sub + right-side `EffectThumb` slot (play nodes).
+- Trigger Graph ported off the hand-rolled `NodeCanvas` onto `SvelteFlow` (`TriggerGraphView` + `graph-to-flow.ts` converter, 8 tests; store stays source of truth + autosaves). `NodeCanvas.svelte` kept ONLY for the lab `/?proto=trigger` (`TriggerLab.svelte`), retired from the shell.
+- Inspector is now the full per-node editor for every kind (kind selector + Remove + per-kind controls); play-mode/layer are the **iconed** SegmentedControls (Zap/Repeat/Hand · Disc3/Activity/Wand2), not text. In-node controls removed → click a node = edit in Inspector.
+- Patch Graph editable: wire delete/rewire + add palette (Data Line / Output), **ephemeral** local state — device-settings model (zone OSC/MIDI · 8 data lines · 4 outputs · controller IP + sACN/Art-Net) is still the deferred slice.
+- **Graph UX (locked, see memory `graph-interaction-prefs`):** NO node lift/click motion; hover highlights node border + connected wires **instantly**; dropping a wire anywhere on a node body → its input (DOM hit-test, since xyflow only sets `toNode` near a handle). New validated `store.reconnect()` keeps the wire on a rejected rewire. xyflow 1.6 has no `edgesReconnectable` — reconnect is a custom `WireEdge` (bezier + `EdgeReconnectAnchor`s).
+- Runtime behaviour (hover feel, drop-on-node wiring, iconed Inspector, patch rewire) verified by gates/typecheck/autofixer only — **needs a live `:5173` spot-check** (agent did not drive a browser).
+
+**Switch node — value routing (done — 2026-06-26, branch `feat/unified-shell`):** the trigger-graph **switch** gains an `on:'value'` mode (additive; `velocity|section|beat` unchanged) with two sub-modes. **Gate** = one threshold + invert (pass when value ≤ threshold, or > when inverted; default = does nothing above). **Bands** = N contiguous value bands, *each its own source handle* on the node (`band-${i}`), so a different child wires per band; the value lands in exactly one band → that band's children fire. Value source = `ctx.velocity` (0–1; MIDI/OSC sources are a later trigger-source slice). Model: `GraphNode` += `valueMode/threshold/invert/bands`, `GraphEdge` += `fromPort` (the source handle); pure `bandIndex` resolver + `childrenViaPort`; defensive defaults so pre-value persisted graphs still eval. Nodes display-only (per-band handles + cutoff readouts); all editing in the Inspector (gate slider+invert · band cutoff sliders kept ascending + add/remove). Store carries `fromPort` through connect/reconnect (dup is per-port; removeBand remaps+dedups ports). 29 new web tests (gate/band eval, port wiring, band bookkeeping); web typecheck 0, 138 web tests green. Implementer agent `switch-value-4f4a8f` via twux (4 phase commits). **Server-side note:** `value` switches reach the engine via `buildShow` but core `voice` eval doesn't model `value`/`fromPort` yet (bridged with one cast at show-builder) — a connected server treats them as the default until a core slice lands; the **local lab sim + preview is fully correct**. Runtime feel + per-band wiring **need a live `:5173` spot-check** (agent did not drive a browser).
 
 **Not yet built (redesign):**
 - `packages/core` model refactor: Content vs Effect split + per-instance Clip presets.
