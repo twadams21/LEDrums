@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
-import { createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type ShowSong, type TriggerGraph } from './types';
+import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
+import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type TriggerGraph } from './types';
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -56,6 +56,10 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     linked: false,
     noRepeat: true,
     on: 'velocity',
+    valueMode: 'gate',
+    threshold: 0.5,
+    invert: false,
+    bands: [0.5],
     p: 0.5,
     ...over,
   };
@@ -698,5 +702,187 @@ describe('VoiceBusEngine — zero-alloc / cap sanity', () => {
     e.tick(32, 16, transport(32));
     const b = e.frame();
     expect(a).toBe(b);
+  });
+});
+
+// ---- value-switch fixtures + helpers ----------------------------------------
+// Mirrors apps/web/src/lib/trigger-lab/sim.value-switch.test.ts. Core voices are
+// private, so a fired child is identified by the BUS it lands on (the core analog of
+// the web test's spawned-effectId assertions): each child play node is forced onto a
+// distinct bus, and we read back which buses lit.
+
+/** A play node forced onto a given bus, so a fired child is identifiable by bus. */
+function playOn(id: string, busId: string, y: number): GraphNode {
+  return node('play', id, { y, effectId: 'fxA', busId, params: { brightness: 1 } });
+}
+
+/** Build a value-switch show: trigger → switch(on:'value', ...over) → children. */
+function valueSwitchShow(over: Partial<GraphNode>, children: GraphNode[], edges: GraphEdge[]): Show {
+  const graph: TriggerGraph = {
+    nodes: [node('trigger', 'trigger', { y: 0 }), node('switch', 'sw', { y: 0, on: 'value', ...over }), ...children],
+    edges: [{ id: 'e-t', from: 'trigger', to: 'sw' }, ...edges],
+  };
+  return show(graph);
+}
+
+/** Fire a value switch at a velocity; return the buses that lit (sorted). */
+function firedBuses(over: Partial<GraphNode>, children: GraphNode[], edges: GraphEdge[], velocity: number): string[] {
+  const e = createVoiceBusEngine();
+  e.setModel(testModel());
+  e.setShow(valueSwitchShow(over, children, edges));
+  e.applyInput(hit('kick', 0, velocity));
+  e.tick(5, 5, transport(5));
+  e.tick(40, 35, transport(40)); // age past attack so bus levels register
+  const { busLevels } = e.stats();
+  return Object.keys(busLevels)
+    .filter((b) => (busLevels[b] ?? 0) > 0)
+    .sort();
+}
+
+describe('bandIndex resolver', () => {
+  it('routes value at or below a cutoff to that band (lower wins at the boundary)', () => {
+    expect(bandIndex(0.0, [0.5])).toBe(0);
+    expect(bandIndex(0.49, [0.5])).toBe(0);
+    expect(bandIndex(0.5, [0.5])).toBe(0); // exactly at the cutoff → lower band
+  });
+
+  it('routes value above the last cutoff to the final "rest" band', () => {
+    expect(bandIndex(0.51, [0.5])).toBe(1);
+    expect(bandIndex(1.0, [0.5])).toBe(1);
+  });
+
+  it('picks the right band across multiple ascending cutoffs', () => {
+    const cuts = [0.3, 0.7];
+    expect(bandIndex(0.3, cuts)).toBe(0);
+    expect(bandIndex(0.31, cuts)).toBe(1);
+    expect(bandIndex(0.7, cuts)).toBe(1);
+    expect(bandIndex(0.71, cuts)).toBe(2);
+  });
+
+  it('treats an empty cutoff list as a single band', () => {
+    expect(bandIndex(0.4, [])).toBe(0);
+  });
+});
+
+describe('VoiceBusEngine — value switch (gate)', () => {
+  const playBase = playOn('p', 'base', 0);
+  const wire: GraphEdge[] = [{ id: 'e1', from: 'sw', to: 'p' }];
+
+  it('passes the child when value ≤ threshold (default direction)', () => {
+    expect(firedBuses({ valueMode: 'gate', threshold: 0.5, invert: false }, [playBase], wire, 0.3)).toEqual(['base']);
+  });
+
+  it('blocks (does nothing) when value > threshold', () => {
+    expect(firedBuses({ valueMode: 'gate', threshold: 0.5, invert: false }, [playBase], wire, 0.7)).toEqual([]);
+  });
+
+  it('passes at exactly the threshold (≤ is inclusive)', () => {
+    expect(firedBuses({ valueMode: 'gate', threshold: 0.5, invert: false }, [playBase], wire, 0.5)).toEqual(['base']);
+  });
+
+  it('inverts: passes when value > threshold, blocks below', () => {
+    expect(firedBuses({ valueMode: 'gate', threshold: 0.5, invert: true }, [playBase], wire, 0.7)).toEqual(['base']);
+    expect(firedBuses({ valueMode: 'gate', threshold: 0.5, invert: true }, [playBase], wire, 0.3)).toEqual([]);
+  });
+});
+
+describe('VoiceBusEngine — value switch (bands)', () => {
+  // two bands (cutoff 0.5): band-0 → base bus, band-1 → lead bus
+  const twoBandKids = [playOn('a', 'base', -40), playOn('b', 'lead', 40)];
+  const twoBandWires: GraphEdge[] = [
+    { id: 'e0', from: 'sw', to: 'a', fromPort: 'band-0' },
+    { id: 'e1', from: 'sw', to: 'b', fromPort: 'band-1' },
+  ];
+
+  it('fires the child wired from the band the value lands in', () => {
+    expect(firedBuses({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.3)).toEqual(['base']);
+    expect(firedBuses({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.7)).toEqual(['lead']);
+  });
+
+  it('routes a value exactly at a cutoff to the lower band', () => {
+    expect(firedBuses({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.5)).toEqual(['base']);
+  });
+
+  it('routes a value above the last cutoff to the final band', () => {
+    expect(firedBuses({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 1.0)).toEqual(['lead']);
+  });
+
+  it('only the matching band fires — other bands stay silent', () => {
+    // value 0.7 lands in band-1; band-0's child (base) must NOT fire
+    expect(firedBuses({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.7)).not.toContain('base');
+  });
+
+  it('a band with no wired child does nothing (empty middle band)', () => {
+    // three bands (cutoffs 0.3, 0.7); wire only band-0 and band-2, leave band-1 empty
+    const kids = [playOn('a', 'base', -60), playOn('c', 'lead', 60)];
+    const wires: GraphEdge[] = [
+      { id: 'e0', from: 'sw', to: 'a', fromPort: 'band-0' },
+      { id: 'e2', from: 'sw', to: 'c', fromPort: 'band-2' },
+    ];
+    const sw = { valueMode: 'bands' as const, bands: [0.3, 0.7] };
+    expect(firedBuses(sw, kids, wires, 0.2)).toEqual(['base']); // band-0
+    expect(firedBuses(sw, kids, wires, 0.5)).toEqual([]); // band-1 empty → nothing
+    expect(firedBuses(sw, kids, wires, 0.9)).toEqual(['lead']); // band-2
+  });
+
+  it('ignores edges on the default output when in bands mode (port-less wires fire nothing)', () => {
+    // an edge with no fromPort must not be treated as any band
+    const kids = [playOn('a', 'base', 0)];
+    const wires: GraphEdge[] = [{ id: 'e0', from: 'sw', to: 'a' }];
+    expect(firedBuses({ valueMode: 'bands', bands: [0.5] }, kids, wires, 0.2)).toEqual([]);
+  });
+
+  it('is deterministic (two engines → byte-identical frames; no RNG on the value path)', () => {
+    const s = valueSwitchShow({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires);
+    const events: InputEvent[] = [hit('kick', 5, 0.3), hit('kick', 40, 0.8), hit('kick', 90, 0.5)];
+    const run = (): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(s);
+      for (const ev of events) e.applyInput(ev);
+      let now = 0;
+      for (let i = 0; i < 20; i++) {
+        now += 16;
+        e.tick(now, 16, transport(now));
+      }
+      return Array.from(e.frame());
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('VoiceBusEngine — value switch (back-compat + additive parity)', () => {
+  it('defaults a value switch with absent fields to a ≤0.5 gate', () => {
+    // a switch with on:'value' but missing the new value fields (an old persisted
+    // graph) must still evaluate: default gate, threshold 0.5, not inverted.
+    const sw = node('switch', 'sw', { on: 'value' });
+    delete (sw as Partial<GraphNode>).valueMode;
+    delete (sw as Partial<GraphNode>).threshold;
+    delete (sw as Partial<GraphNode>).invert;
+    delete (sw as Partial<GraphNode>).bands;
+    const graph: TriggerGraph = {
+      nodes: [node('trigger', 'trigger'), sw, playOn('p', 'base', 0)],
+      edges: [
+        { id: 'e-t', from: 'trigger', to: 'sw' },
+        { id: 'e1', from: 'sw', to: 'p' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(graph));
+    e.applyInput(hit('kick', 0, 0.3));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().busLevels.base).toBeGreaterThan(0); // ≤0.5 → passes (defaults to gate)
+  });
+
+  it('leaves the velocity switch unchanged (additive: value branch never fires here)', () => {
+    // low velocity → first child by count; the additive value branch must not affect this.
+    const kids = [playOn('a', 'base', -40), playOn('b', 'lead', 40)];
+    const wires: GraphEdge[] = [
+      { id: 'e0', from: 'sw', to: 'a' },
+      { id: 'e1', from: 'sw', to: 'b' },
+    ];
+    expect(firedBuses({ on: 'velocity' }, kids, wires, 0.2)).toEqual(['base']);
   });
 });

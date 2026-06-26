@@ -8,7 +8,9 @@
 // ---- Enumerations -----------------------------------------------------------
 
 export type PlayMode = 'oneshot' | 'loop' | 'hold';
-export type SwitchOn = 'velocity' | 'section' | 'beat';
+export type SwitchOn = 'velocity' | 'section' | 'beat' | 'value';
+/** Sub-mode of a `value` switch: a single pass/block gate, or N value bands. */
+export type ValueMode = 'gate' | 'bands';
 export type Scope = 'drum' | 'kit';
 export type Polyphony = 'mono' | 'poly';
 
@@ -149,6 +151,15 @@ export interface GraphNode {
   noRepeat: boolean;
   // switch
   on: SwitchOn;
+  /** value-switch sub-mode (only meaningful when on==='value'). */
+  valueMode: ValueMode;
+  /** gate cutoff 0..1 (value-switch gate). */
+  threshold: number;
+  /** gate direction: false → pass when value ≤ threshold; true → pass when value > threshold. */
+  invert: boolean;
+  /** ascending band cutoffs 0..1 (value-switch bands). N bands = N−1 cutoffs; the
+      last band is "the rest" (value above the final cutoff). */
+  bands: number[];
   // chance
   p: number;
 }
@@ -157,6 +168,9 @@ export interface GraphEdge {
   id: string;
   from: string; // source node id (output port)
   to: string; // target node id (input port)
+  /** source handle id this edge leaves from. undefined = the node's default single
+      output (back-compat). For a value+bands switch, band i's handle is `band-${i}`. */
+  fromPort?: string;
 }
 
 export interface TriggerGraph {

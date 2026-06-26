@@ -44,14 +44,10 @@ export function buildShow(source: ShowSource): voice.Show {
   });
   return {
     buses: source.buses.map((b) => ({ ...b })),
-    // The web sim's TriggerGraph has gained an ADDITIVE `value` switch mode (on:'value'
-    // + per-band edge `fromPort`s) that the core `voice` types don't model yet — core
-    // engine evaluation of value switches is a later slice (out of scope for the web
-    // work that added it). The shapes are otherwise structurally identical, so bridge
-    // the one divergence HERE (the documented single place to map web↔core), rather
-    // than casting at the call site. Runtime-safe: extra fields ride along untouched;
-    // until core learns `value`, a live server treats such a switch as its default.
-    graphs: { ...source.graphs } as voice.Show['graphs'],
+    // Graphs (incl. the `value` switch mode + per-band edge `fromPort`s) pass through
+    // by structural assignment: core's `voice` types now model `on:'value'` and
+    // `fromPort`, so the web↔core graph types have re-converged (no cast needed).
+    graphs: { ...source.graphs },
     sections: source.sections.map((s) => ({ ...s })),
     effects: source.effects.map((e) => ({ ...e })),
     presets: source.presets.map((p) => ({ ...p })),

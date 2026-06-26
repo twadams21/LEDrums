@@ -51,6 +51,10 @@ function makeShow(drumId: string, zone: string): voice.Show {
     linked: false,
     noRepeat: false,
     on: 'velocity',
+    valueMode: 'gate',
+    threshold: 0.5,
+    invert: false,
+    bands: [0.5],
     p: 1,
     ...extra,
   });
