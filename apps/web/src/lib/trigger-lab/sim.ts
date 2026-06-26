@@ -253,6 +253,41 @@ export function blockChildren(b: Block): Block[] {
   }
 }
 
+// ---- Trigger source + value normalization -----------------------------------
+
+/** What input fires a trigger graph — declared on the graph's `trigger` node. A tagged
+    union: `drum` is the existing implicit padKey binding (`"drumId:zone"`) made explicit;
+    `midi` (a note OR a CC) and `osc` (an address) are direct bindings for AUTHORED graphs
+    that have no physical drum zone. The MIDI channel and OSC host/namespace live on the
+    patch device, NOT here. Mirrored byte-for-byte in core `voice/types.ts`. */
+export type TriggerSource =
+  | { kind: 'drum'; drumId: string; zone: string }
+  | { kind: 'midi'; note?: number; cc?: number }
+  | { kind: 'osc'; address: string };
+
+/** A raw fire from one of the three trigger sources, in that source's native units.
+    Normalized to the trigger's 0..1 value by {@link normalizeTriggerValue} — the single
+    value the switch `value` mode (gate/bands) routes on, identical across all sources. */
+export type TriggerFire =
+  | { kind: 'drum'; velocity: number } // Sensory Percussion velocity, already 0..1
+  | { kind: 'midi'; value: number } //   MIDI note-on velocity OR CC value, 0..127
+  | { kind: 'osc'; arg: number }; //     OSC float argument (clamped to 0..1)
+
+/** Normalize a raw fire to the trigger's 0..1 value — the ONE seam every source feeds so
+    they route through the switch `value` mode identically. Pure: drum velocity passes
+    through (already 0..1), MIDI note-velocity / CC divides by 127, OSC arg is taken as-is;
+    all clamped to 0..1. Not yet wired into eval/resolution (that is a later slice). */
+export function normalizeTriggerValue(fire: TriggerFire): number {
+  switch (fire.kind) {
+    case 'drum':
+      return clampUnit(fire.velocity);
+    case 'midi':
+      return clampUnit(fire.value / 127);
+    case 'osc':
+      return clampUnit(fire.arg);
+  }
+}
+
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
 export type NodeKind = 'trigger' | BlockKind;
@@ -289,6 +324,11 @@ export interface GraphNode {
   bands: number[];
   // chance
   p: number;
+  // trigger (only meaningful on the `trigger` node)
+  /** What input fires this graph. Optional + additive: graphs persisted before the
+      trigger-source model lack it — the store hydrate back-fills a `drum` source from
+      the pad key for pad-bound graphs; authored graphs stay unset until bound. */
+  source?: TriggerSource;
 }
 
 export interface GraphEdge {

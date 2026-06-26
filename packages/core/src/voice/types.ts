@@ -123,6 +123,21 @@ export interface Bus {
   crossfadeMs: number;
 }
 
+// ---- Trigger source (what fires a trigger graph) ----------------------------
+
+/**
+ * What input fires a trigger graph — declared on the graph's `trigger` node. A tagged
+ * union: `drum` is the implicit padKey binding (`"drumId:zone"`) made explicit; `midi`
+ * (a note OR a CC) and `osc` (an address) are direct bindings for AUTHORED graphs with
+ * no physical drum zone. MIDI channel + OSC host/namespace live on the patch device,
+ * NOT here. Structurally IDENTICAL to the web sim's `TriggerSource` (the show-builder
+ * passes graphs through by structural typing — the shapes must stay byte-identical).
+ */
+export type TriggerSource =
+  | { kind: 'drum'; drumId: string; zone: string }
+  | { kind: 'midi'; note?: number; cc?: number }
+  | { kind: 'osc'; address: string };
+
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
 export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle';
@@ -162,6 +177,11 @@ export interface GraphNode {
   bands: number[];
   // chance
   p: number;
+  // trigger (only meaningful on the `trigger` node)
+  /** What input fires this graph (the explicit binding). Optional + additive — graphs
+      authored before the source model carry none. Resolution lives in a later slice;
+      core only mirrors the field so web graphs pass through structurally. */
+  source?: TriggerSource;
 }
 
 export interface GraphEdge {

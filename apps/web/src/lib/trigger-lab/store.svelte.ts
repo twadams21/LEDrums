@@ -30,6 +30,7 @@ import {
   type GraphNode,
   type NodeKind,
   type TriggerGraph,
+  type TriggerSource,
   treeToGraph,
   makeNode,
   nodeHasOutput,
@@ -157,6 +158,39 @@ function unionPresets(persisted: readonly Preset[]): Preset[] {
   return [...persisted, ...PRESETS.filter((p) => !persistedIds.has(p.id))];
 }
 
+/** Back-fill an explicit `drum` trigger source on every PAD-BOUND graph that lacks one —
+    the implicit padKey binding (`"drumId:zone"`) made explicit, so a graph now declares
+    what fires it. Mirrors {@link unionEffects}/{@link unionPresets}: a blob saved before
+    the trigger-source model has no `source`, and we fill the least-surprising default
+    rather than dropping anything. Idempotent (a trigger node that already carries a
+    `source` is left untouched) and immutable (only changed graphs are rebuilt). AUTHORED
+    graphs (`graph:<n>`, listed in `authoredKeys`) have NO pad, so they keep `source`
+    unset = behave exactly as today until the user binds a MIDI/OSC source. */
+function unionTriggerSources(
+  graphs: Record<string, TriggerGraph>,
+  authoredKeys: ReadonlySet<string>,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    out[key] = authoredKeys.has(key) ? graph : withDrumSource(graph, key);
+  }
+  return out;
+}
+
+/** Ensure a pad graph's trigger node carries a `drum` source derived from its padKey
+    `"drumId:zone"`. Returns the SAME graph reference when nothing changes (idempotent +
+    alias-stable), so an already-sourced or non-pad-keyed graph is untouched. */
+function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
+  const i = graph.nodes.findIndex((n) => n.kind === 'trigger');
+  if (i < 0 || graph.nodes[i]!.source) return graph; // no trigger node, or already explicit
+  const sep = key.indexOf(':');
+  if (sep < 0) return graph; // not a "drumId:zone" key → leave unset
+  const source: TriggerSource = { kind: 'drum', drumId: key.slice(0, sep), zone: key.slice(sep + 1) };
+  const nodes = graph.nodes.slice();
+  nodes[i] = { ...nodes[i]!, source };
+  return { nodes, edges: graph.edges };
+}
+
 export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
@@ -277,6 +311,10 @@ export class TriggerLab {
     // setShow/recallSection all reflect the restored content. A missing / stale /
     // corrupt blob is ignored by deserializeAuthored, so the seed stands.
     this.hydrate();
+    // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its
+    // padKey) — seed or restored, idempotent, authored graphs left unset. See
+    // unionTriggerSources: this is the trigger-source back-compat default.
+    this.graphs = unionTriggerSources(this.graphs, new Set(Object.keys(this.graphNames)));
     // Build the sim from the (possibly restored) arrays — it snapshots `buses` by
     // reference and indexes `effects`/`presets` into maps at construction, so it
     // must see the hydrated arrays, not the fixture defaults.
@@ -763,6 +801,26 @@ export class TriggerLab {
     let n = 1;
     while (used.has(`New graph ${n}`)) n++;
     return `New graph ${n}`;
+  }
+
+  // --- trigger source (what fires a graph — U1 model; Inspector UI is a later slice) ---
+
+  /** Set the trigger node's source (drum / midi / osc) for a graph. The future
+      Trigger-node Inspector calls this — an optimistic local write the authored autosave
+      persists (the source lives on the graph's trigger node, already inside `graphs`). No
+      WS message: resolving a fire from the source is a later slice. No-op if the graph or
+      its trigger node is missing. */
+  setTriggerSource(graphKey: string, source: TriggerSource): void {
+    const g = this.graphs[graphKey];
+    if (!g) return;
+    const trig = g.nodes.find((n) => n.kind === 'trigger');
+    if (trig) trig.source = source;
+  }
+
+  /** The explicit trigger source for a graph (what the Inspector reads). undefined when
+      the graph/trigger is missing, or an authored graph has no source bound yet. */
+  triggerSource(graphKey: string): TriggerSource | undefined {
+    return this.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
   }
 
   // --- registries / lookups ------------------------------------------------
