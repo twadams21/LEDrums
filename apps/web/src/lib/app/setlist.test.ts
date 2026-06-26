@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addGraph,
   addSection,
+  cloneSection,
   graphUsageCount,
   isReused,
   makeSection,
@@ -103,5 +104,28 @@ describe('section ops', () => {
     expect(s.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']);
     s = renameSection(s, 'chorus', 'Big Chorus');
     expect(s.sections.find((x) => x.id === 'chorus')!.name).toBe('Big Chorus');
+  });
+});
+
+describe('cloneSection (copy / paste)', () => {
+  const verse = (): ReturnType<typeof makeSection> => makeSection('verse', 'Verse', ['gKick', 'gSnare']);
+
+  it('copies the graph list under a fresh id; name defaults to "<name> copy"', () => {
+    const copy = cloneSection(verse(), 'verse-2');
+    expect(copy.id).toBe('verse-2');
+    expect(copy.name).toBe('Verse copy');
+    expect(copy.graphs).toEqual(['gKick', 'gSnare']); // same references (reuse), copied list
+  });
+
+  it('honours an explicit new name', () => {
+    expect(cloneSection(verse(), 'verse-2', 'Chorus').name).toBe('Chorus');
+  });
+
+  it('deep-copies the list — mutating the copy does not touch the original', () => {
+    const original = verse();
+    const copy = cloneSection(original, 'verse-2');
+    expect(copy.graphs).not.toBe(original.graphs); // a distinct array, not an alias
+    copy.graphs.push('gTom');
+    expect(original.graphs).toEqual(['gKick', 'gSnare']); // original list unchanged
   });
 });

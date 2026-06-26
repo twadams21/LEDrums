@@ -68,6 +68,15 @@ export function addSection(song: Song, section: SetlistSection): Song {
   return { ...song, sections: [...song.sections, section] };
 }
 
+/** Deep-copy a section under a NEW id (name defaults to "<name> copy"). The `graphs` list is
+    copied so the clone is an INDEPENDENT section — editing one section's list never touches
+    the other. The keys themselves stay references into store.graphs, so the copy shares the
+    SAME underlying graphs (reuse); only the section's ordered key list is duplicated, never
+    the graphs. Backs the section copy/paste in the store. */
+export function cloneSection(section: SetlistSection, newId: string, newName?: string): SetlistSection {
+  return { id: newId, name: newName ?? `${section.name} copy`, graphs: [...section.graphs] };
+}
+
 export function renameSection(song: Song, sectionId: string, name: string): Song {
   return mapSection(song, sectionId, (s) => ({ ...s, name }));
 }
