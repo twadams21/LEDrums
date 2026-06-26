@@ -147,7 +147,7 @@ export class VoiceEngineHost {
   setKitTransform(
     drumId: string,
     partial: Partial<
-      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm'>
+      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn'>
     >,
   ): void {
     const drum = this.kit.drums.find((d) => d.id === drumId);

@@ -71,6 +71,7 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
         ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
+        ...(msg.diameterIn !== undefined ? { diameterIn: msg.diameterIn } : {}),
       });
       return { structural: true };
     case 'setOutput':

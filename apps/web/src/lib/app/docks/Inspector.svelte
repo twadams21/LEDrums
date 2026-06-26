@@ -686,6 +686,17 @@
               onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { hoopSpacingMm: n }))}
             />
           </Field>
+          <Field label="Diameter" hint="drum size — sets ring radius">
+            <CommitInput
+              type="number"
+              min={1}
+              value={drum.diameterIn}
+              disabled={!project}
+              suffix="in"
+              ariaLabel="Diameter"
+              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { diameterIn: n }))}
+            />
+          </Field>
           {@render renameField(sel.nodeId, d.title)}
         {:else if editor.kind === 'hoop' && patchDrum}
           {@const drum = patchDrum}

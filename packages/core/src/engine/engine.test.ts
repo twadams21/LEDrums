@@ -100,6 +100,18 @@ describe('Engine', () => {
     expect(zOf(2)).toBeCloseTo(240, 6);
   });
 
+  it('setKitTransform({ diameterIn }) rebuilds geometry with the new ring radius', () => {
+    const e = new Engine(velocityMeterProject());
+    // ring radius of any pixel = hypot(local.x, local.y) = diameterIn * 25.4 / 2 mm (angle/origin/rotation independent).
+    const radiusOf = (): number => {
+      const p = e.getModel().pixels[0]!;
+      return Math.hypot(p.local.x, p.local.y);
+    };
+    expect(radiusOf()).toBeCloseTo((8 * 25.4) / 2, 6); // initial diameter 8in -> 101.6mm radius
+    e.setKitTransform('d', { diameterIn: 16 });
+    expect(radiusOf()).toBeCloseTo((16 * 25.4) / 2, 6); // rebuilt: doubled diameter -> doubled radius
+  });
+
   it('renders the full default kit within frame budget', () => {
     const e = new Engine(defaultProject());
     // warm up

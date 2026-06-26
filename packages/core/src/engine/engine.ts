@@ -295,7 +295,7 @@ export class Engine {
   }
 
   /** Update a drum's transform and rebuild geometry (KitEditor live calibration). */
-  setKitTransform(drumId: string, partial: Partial<Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'hoopSpacingMm'>>): void {
+  setKitTransform(drumId: string, partial: Partial<Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'hoopSpacingMm' | 'diameterIn'>>): void {
     const drum = this.project.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);

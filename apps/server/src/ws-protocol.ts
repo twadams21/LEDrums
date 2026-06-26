@@ -27,7 +27,7 @@ export type ClientMessage =
   | { t: 'addClip'; layerId: string; clip: Clip }
   | { t: 'removeClip'; layerId: string; clipId: string }
   | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
-  | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number; pixelsPerHoop?: number; hoopSpacingMm?: number }
+  | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number; pixelsPerHoop?: number; hoopSpacingMm?: number; diameterIn?: number }
   // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
   | { t: 'setKitOutputs'; outputs: OutputConfig[] }
   | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean; priority?: number; port?: number; iface?: string }
