@@ -142,6 +142,17 @@ function unionEffects(persisted: readonly EffectDef[]): EffectDef[] {
   return [...EFFECTS, ...persisted.filter((e) => !builtinIds.has(e.id))];
 }
 
+/** Union persisted presets with the built-ins (mirrors {@link unionEffects}). Keeps
+    the user's persisted presets first — so edits to a built-in preset (linked mode)
+    survive — then re-adds any built-in preset the stored slice LACKS. Without this a
+    pre-generator localStorage blob silently drops the 41 generator `${id}:default`
+    presets, so swapping a play node to a generator effect leaves `presetId` dangling:
+    the node sub goes blank AND the engine can't resolve the effect (frozen preview). */
+function unionPresets(persisted: readonly Preset[]): Preset[] {
+  const persistedIds = new Set(persisted.map((p) => p.id));
+  return [...persisted, ...PRESETS.filter((p) => !persistedIds.has(p.id))];
+}
+
 export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
@@ -355,7 +366,10 @@ export class TriggerLab {
     if (a.graphNames) this.graphNames = a.graphNames;
     if (a.songs) this.songs = a.songs;
     if (a.buses) this.buses = a.buses;
-    if (a.presets) this.presets = a.presets;
+    // Union, never replace (mirrors effects below): a stale localStorage slice must
+    // not drop the built-in generator `:default` presets, or play nodes that point at
+    // a generator effect can't resolve their preset (blank sub + frozen live preview).
+    if (a.presets) this.presets = unionPresets(a.presets);
     // Union, never replace: keep every current built-in (so new generator effects
     // always appear) and re-add only the user's own created effects.
     if (a.effects) this.effects = unionEffects(a.effects);

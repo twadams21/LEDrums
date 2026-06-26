@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
-import { makeNode, type EffectDef } from './sim';
-import { EFFECTS } from './fixtures';
+import { makeNode, type EffectDef, type Preset } from './sim';
+import { EFFECTS, PRESETS } from './fixtures';
 import type { WSClient } from '../ws/client';
 
 /* Integration: construction = "reload". Verifies the store hydrates the persisted
@@ -120,6 +120,28 @@ describe('TriggerLab effects hydration (union, never replace)', () => {
     expect(store.effects.some((e) => e.id === 'my-custom-fx')).toBe(true); // user effect kept
     expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true); // built-ins present
     expect(store.effects).toHaveLength(EFFECTS.length + 1); // built-ins de-duped, +1 user effect
+  });
+});
+
+describe('TriggerLab presets hydration (union, never replace)', () => {
+  it('re-adds built-in generator :default presets a stale blob lacks (so play nodes resolve)', () => {
+    // A pre-generator blob persists only its own preset and none of the 41 generator
+    // `<id>:default`s. The union re-adds every missing built-in, so swapping a play
+    // node to a generator effect still resolves its Default preset (no blank sub /
+    // frozen preview). Regression for the generator-effect swap bug.
+    seed({ presets: [{ id: 'mine:default', name: 'mine', effectId: 'swirl', params: {} } as Preset] });
+    const store = new TriggerLab(fakeClient);
+    const genDefaults = store.presets.filter((p) => p.id.startsWith('gen:') && p.id.endsWith(':default'));
+    expect(genDefaults.length).toBeGreaterThan(0); // generator Defaults restored
+    expect(store.presets.some((p) => p.id === 'mine:default')).toBe(true); // user preset kept
+  });
+
+  it("keeps the user's edited built-in preset (persisted wins over the seed, no dup)", () => {
+    const builtin = PRESETS.find((p) => p.id.endsWith(':default'))!;
+    seed({ presets: [{ ...builtin, name: 'EDITED' }] });
+    const store = new TriggerLab(fakeClient);
+    expect(store.presets.find((p) => p.id === builtin.id)?.name).toBe('EDITED'); // edit preserved
+    expect(store.presets).toHaveLength(PRESETS.length); // 1 edited + the rest re-added, de-duped
   });
 });
 
