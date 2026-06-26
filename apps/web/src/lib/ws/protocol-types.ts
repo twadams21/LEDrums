@@ -62,6 +62,9 @@ export type ClientMessage =
       rgbOrder?: Project['output']['rgbOrder'];
       fps?: number;
       broadcast?: boolean;
+      priority?: number;
+      port?: number;
+      iface?: string;
     }
   | { t: 'setActiveSection'; songId: string; sectionId: string }
   | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }

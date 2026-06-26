@@ -679,6 +679,9 @@ export class TriggerLab {
     rgbOrder?: Project['output']['rgbOrder'];
     fps?: number;
     broadcast?: boolean;
+    priority?: number;
+    port?: number;
+    iface?: string;
   }): void {
     const p = this.project;
     if (p) this.project = { ...p, output: { ...p.output, ...partial } };

@@ -606,6 +606,30 @@
             />
           </Field>
           <div class="tworow">
+            <Field label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
+              <CommitInput
+                type="number"
+                min={1}
+                max={65535}
+                value={out.port ?? ''}
+                placeholder={out.protocol === 'sacn' ? '5568' : '6454'}
+                disabled={!project}
+                ariaLabel="Output port"
+                onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
+              />
+            </Field>
+            <Field label="Interface" hint="source NIC · blank = default">
+              <CommitInput
+                value={out.iface ?? ''}
+                mono
+                placeholder="0.0.0.0"
+                disabled={!project}
+                ariaLabel="Source interface"
+                onCommit={(v) => store.setOutput({ iface: v.trim() })}
+              />
+            </Field>
+          </div>
+          <div class="tworow">
             <Field label="RGB order">
               <Select
                 value={out.rgbOrder}
@@ -637,6 +661,19 @@
             />
             <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
           </label>
+          {#if out.protocol === 'sacn'}
+            <Field label="Priority" hint="1–200 · higher wins at a merge">
+              <CommitInput
+                type="number"
+                min={1}
+                max={200}
+                value={out.priority}
+                disabled={!project}
+                ariaLabel="sACN priority"
+                onCommit={(v) => onNum(v, (n) => store.setOutput({ priority: n }))}
+              />
+            </Field>
+          {/if}
           {@render renameField(sel.nodeId, d.title)}
         {/if}
       </div>

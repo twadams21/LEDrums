@@ -26,9 +26,19 @@ export type OutputFactory = (settings: OutputSettings) => PixelOutput;
 
 function defaultFactory(settings: OutputSettings): PixelOutput {
   if (settings.protocol === 'sacn') {
-    return new SacnOutput({ host: settings.broadcast ? undefined : settings.host, iface: settings.iface });
+    return new SacnOutput({
+      host: settings.broadcast ? undefined : settings.host,
+      port: settings.port,
+      iface: settings.iface,
+      priority: settings.priority,
+    });
   }
-  return new ArtNetOutput({ host: settings.host, port: settings.port, broadcast: settings.broadcast });
+  return new ArtNetOutput({
+    host: settings.host,
+    port: settings.port,
+    broadcast: settings.broadcast,
+    iface: settings.iface,
+  });
 }
 
 /**
@@ -48,7 +58,9 @@ export class OutputManager {
 
   applySettings(settings: OutputSettings, dmxMap: DmxMap): void {
     this.universeCount = dmxMap.universes.length;
-    const sig = `${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}`;
+    // priority + iface are baked into the sender at construction, so a change to either must
+    // re-create the transport (alongside protocol/host/broadcast/port).
+    const sig = `${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}|${settings.iface ?? ''}|${settings.priority}`;
     if (settings.state === 'armed') {
       if (!this.output || sig !== this.signature) {
         this.teardown(dmxMap, settings);

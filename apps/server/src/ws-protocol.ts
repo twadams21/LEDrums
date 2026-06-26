@@ -30,7 +30,7 @@ export type ClientMessage =
   | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number; pixelsPerHoop?: number }
   // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
   | { t: 'setKitOutputs'; outputs: OutputConfig[] }
-  | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean }
+  | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean; priority?: number; port?: number; iface?: string }
   // Setlist / songs / sections / per-trigger routing
   | { t: 'setActiveSection'; songId: string; sectionId: string }
   | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }

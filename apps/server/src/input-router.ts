@@ -80,6 +80,9 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.rgbOrder !== undefined ? { rgbOrder: msg.rgbOrder } : {}),
         ...(msg.fps !== undefined ? { fps: msg.fps } : {}),
         ...(msg.broadcast !== undefined ? { broadcast: msg.broadcast } : {}),
+        ...(msg.priority !== undefined ? { priority: msg.priority } : {}),
+        ...(msg.port !== undefined ? { port: msg.port } : {}),
+        ...(msg.iface !== undefined ? { iface: msg.iface } : {}),
       });
       return { structural: true };
     case 'setActiveSection':
