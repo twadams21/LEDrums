@@ -113,6 +113,14 @@
     rebuildEdges();
   });
 
+  // Hide the canvas content while a graph switch re-fits, so the new graph never
+  // flashes at the previous graph's viewport — revealed instantly once fitted.
+  let fitted = $state(false);
+  $effect(() => {
+    store.selectedPadKey; // a switch hides the canvas until TriggerFitView reports back
+    fitted = false;
+  });
+
   // ---- canvas interactions (all flow through the store) ---------------------
   function syncPos(fn: { id: string; position: { x: number; y: number } }): void {
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
@@ -178,7 +186,7 @@
     </div>
   </aside>
 
-  <section class="canvas">
+  <section class="canvas" class:swapping={!fitted}>
     {#if store.selectedGraph}
       <SvelteFlow
         bind:nodes
@@ -205,7 +213,7 @@
         onreconnect={onReconnect}
         ondelete={({ edges: removed }) => onDeleteEdges(removed)}
       >
-        <TriggerFitView padding={0.2} watch={store.selectedPadKey} />
+        <TriggerFitView padding={0.2} watch={store.selectedPadKey} onfitted={() => (fitted = true)} />
         <Panel position="top-left"><TriggerPalette {store} /></Panel>
         <Background variant={BackgroundVariant.Dots} />
         <Controls />
@@ -334,6 +342,8 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
     overflow: hidden;
+    /* matches the flow bg so the brief swap blank shows no colour blink */
+    background: var(--bg-perform);
   }
   .hint {
     position: absolute;
@@ -348,6 +358,10 @@
   /* --- @xyflow/svelte on the project tokens (shared theming with PatchGraphView) -- */
   .canvas :global(.svelte-flow) {
     background: var(--bg-perform);
+  }
+  /* during a graph switch, hide the flow until it's re-fitted (no flash, instant) */
+  .canvas.swapping :global(.svelte-flow) {
+    opacity: 0;
   }
   /* custom `trigger` nodes bring their own card — strip xyflow's default chrome */
   .canvas :global(.svelte-flow__node-trigger) {
