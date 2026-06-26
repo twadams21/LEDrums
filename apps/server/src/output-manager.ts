@@ -1,4 +1,11 @@
-import { toByte, type DmxMap, type OutputSettings, type RgbOrder, type UniversePatch } from '@ledrums/core';
+import {
+  CHANNELS_PER_UNIVERSE,
+  toByte,
+  type DmxMap,
+  type OutputSettings,
+  type RgbOrder,
+  type UniversePatch,
+} from '@ledrums/core';
 import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
 import type { OutputStatus } from './ws-protocol';
 
@@ -8,16 +15,25 @@ export function applyRgbOrder(order: RgbOrder, r: number, g: number, b: number):
   return [ch[order[0]!]!, ch[order[1]!]!, ch[order[2]!]!];
 }
 
-/** Build one universe's channel bytes from the frame, in patch order with RGB ordering. */
+/**
+ * Build one universe's channel bytes from the frame. Pixels pack channel-DENSE in the
+ * global stream (see core `buildDmxMap`), so each pixel writes its `channelsPerPixel`
+ * channels at their GLOBAL positions, clipped to this universe's `[U*512, U*512+512)`
+ * window — a pixel straddling the boundary writes part here and the rest in the next
+ * universe. RGB ordering is applied; any channels beyond R/G/B (e.g. the W of RGBW)
+ * stay zero.
+ */
 export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, rgbOrder: RgbOrder): Uint8Array {
-  const cpp = patch.channelsPerPixel;
-  const out = new Uint8Array(patch.pixelIds.length * cpp);
-  for (let k = 0; k < patch.pixelIds.length; k++) {
-    const j = patch.pixelIds[k]! * 4;
+  const base = patch.universe * CHANNELS_PER_UNIVERSE;
+  const out = new Uint8Array(patch.channelCount);
+  for (const px of patch.pixels) {
+    const j = px.id * 4;
     const [r, g, b] = applyRgbOrder(rgbOrder, toByte(rgba[j]!), toByte(rgba[j + 1]!), toByte(rgba[j + 2]!));
-    out[k * cpp] = r;
-    out[k * cpp + 1] = g;
-    out[k * cpp + 2] = b;
+    for (let n = 0; n < px.channelsPerPixel; n++) {
+      const local = px.channel + n - base; // channel position within this universe
+      if (local < 0 || local >= patch.channelCount) continue; // belongs to an adjacent universe
+      out[local] = n === 0 ? r : n === 1 ? g : n === 2 ? b : 0;
+    }
   }
   return out;
 }
@@ -116,7 +132,7 @@ export class OutputManager {
     try {
       this.output.nextFrame();
       for (const patch of dmxMap.universes) {
-        const zero = new Uint8Array(patch.pixelIds.length * patch.channelsPerPixel);
+        const zero = new Uint8Array(patch.channelCount);
         this.output.send(patch.universe, zero);
       }
     } catch (err) {

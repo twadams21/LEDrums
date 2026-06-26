@@ -175,25 +175,29 @@ describe('VoiceEngineHost', () => {
     const { host } = makeHost(voice.createNullEngine());
     const model = host.getModel();
     // Default kit declares no outputs → a flat map whose first transmitted pixel is id 0.
-    const before = host.getDmxMap().universes[0]!.pixelIds[0];
+    const before = host.getDmxMap().universes[0]!.pixels[0]!.id;
     expect(before).toBe(0);
 
-    // A single output that reverses the drum order: the last drum is patched first.
+    // A single output (one data line) reversing the drum order: last drum patched first.
     const reversed = model.drums.map((d) => d.drumId).reverse();
     host.setKitOutputs([
       {
         id: 'out0',
-        startUniverse: 0,
         channelsPerPixel: 3,
-        segments: reversed.map((drumId) => ({
-          drumId,
-          hoopStart: 0,
-          hoopEnd: model.drumById.get(drumId)!.hoopCount - 1,
-        })),
+        dataLines: [
+          {
+            id: 'out0:dl0',
+            segments: reversed.map((drumId) => ({
+              drumId,
+              hoopStart: 0,
+              hoopEnd: model.drumById.get(drumId)!.hoopCount - 1,
+            })),
+          },
+        ],
       },
     ]);
 
-    const after = host.getDmxMap().universes[0]!.pixelIds[0];
+    const after = host.getDmxMap().universes[0]!.pixels[0]!.id;
     expect(after).toBe(model.drumById.get(reversed[0]!)!.pixelStart);
     expect(after).not.toBe(before);
   });
