@@ -230,15 +230,6 @@
     store.setTriggerSource(gkey, mode === 'cc' ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
   }
 
-  /** Rename an AUTHORED graph from its trigger node (editable-node parity). Pad graphs
-      label from the kit; only `graph:<n>` keys live in graphNames. No store mutator owns
-      this (U1 owns store.svelte.ts), so write the reactive record directly — the authored
-      autosave persists it. An empty commit keeps the existing name. */
-  function renameGraph(gkey: string, raw: string): void {
-    const v = raw.trim();
-    if (v) store.graphNames = { ...store.graphNames, [gkey]: v };
-  }
-
   /** One-line description for the container/modifier kinds that take no extra control. */
   function kindBlurb(kind: NodeKind): string {
     switch (kind) {
@@ -357,7 +348,7 @@
             value={store.graphNames[gkey] ?? ''}
             placeholder="New graph"
             ariaLabel="Graph name"
-            onCommit={(v) => renameGraph(gkey, v)}
+            onCommit={(v) => store.renameGraph(gkey, v)}
           />
         </Field>
       {/if}

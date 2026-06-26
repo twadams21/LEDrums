@@ -117,6 +117,14 @@ export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
 
 const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
 
+/** True for AUTHORED graph keys — the ones `createGraph` mints via `nid('graph')` (`graph-<n>`;
+    legacy persisted blobs may carry the older `graph:<n>` form). Pad graphs are keyed
+    `drumId:zone` (e.g. "kick:0") and derive their label/identity from the kit, so they're never
+    renamable/deletable — only authored graphs are. A pure key test (no store state). */
+export function isAuthoredGraphKey(key: string): boolean {
+  return key.startsWith('graph-') || key.startsWith('graph:');
+}
+
 /** Seed one demo song from the fixture sections, each section being the FLAT list of every
     pad's graph key (U4). Each pad graph declares a `drum` source from its padKey (the
     constructor's unionTriggerSources back-fill), so a hit fires only the matching pad's
@@ -932,6 +940,36 @@ export class TriggerLab {
     let n = 1;
     while (used.has(`New graph ${n}`)) n++;
     return `New graph ${n}`;
+  }
+
+  /** Rename an AUTHORED graph — its display label in `graphNames`. The autosave-consistent
+      wrapper the Inspector's rename field now calls (it used to write `graphNames` directly).
+      Pad graphs label from the kit, so a non-authored / unknown key is a no-op. A blank name
+      keeps the existing label (mirrors {@link renameSong}). Persists via the authored autosave. */
+  renameGraph(key: string, name: string): void {
+    if (!isAuthoredGraphKey(key) || !(key in this.graphNames)) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.graphNames = { ...this.graphNames, [key]: trimmed };
+  }
+
+  /** Delete an AUTHORED graph everywhere: drop it from `graphs` + `graphNames`, and purge its
+      key from EVERY section across ALL songs (no dangling references). Pad graphs derive from
+      the kit, so a non-authored / unknown key is a no-op. When the deleted graph was the
+      open/selected one, clear the selection. Persists via the authored autosave. */
+  deleteGraph(key: string): void {
+    if (!isAuthoredGraphKey(key) || !(key in this.graphNames)) return;
+    const graphs = { ...this.graphs };
+    delete graphs[key];
+    this.graphs = graphs;
+    const names = { ...this.graphNames };
+    delete names[key];
+    this.graphNames = names;
+    // sweep every section of every song, reusing the pure setlist op (no-op per untouched song).
+    this.songs = this.songs.map((song) =>
+      song.sections.reduce((acc, sec) => setlist.removeGraph(acc, sec.id, key), song),
+    );
+    if (this.selectedPadKey === key) this.selectedPadKey = null;
   }
 
   // --- trigger source (what fires a graph — U1 model; Inspector UI is a later slice) ---

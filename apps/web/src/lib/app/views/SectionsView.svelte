@@ -7,7 +7,7 @@
      Trigger canvas (highlighted). The "+ graph" button opens the picker drawer to add a
      graph (existing or new) to that section; the × removes it. Layering is now two graphs
      in a section that share a trigger source — no per-pad slot grid. */
-  import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import { isAuthoredGraphKey, type TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { isReused } from '../setlist';
   import { describeTriggerSource } from '../trigger-source-label';
@@ -48,6 +48,20 @@
   function deleteSection(sectionId: string): void {
     if (editingSectionId === sectionId) editingSectionId = null;
     store.removeSection(sectionId);
+  }
+
+  // inline rename for an AUTHORED graph row — which row (section + key) is editing, or null.
+  // Keyed by section too so the field opens only in the right-clicked row when a graph is reused.
+  let editingGraph = $state<{ sectionId: string; key: string } | null>(null);
+
+  function commitGraphRename(key: string, name: string): void {
+    store.renameGraph(key, name);
+    editingGraph = null;
+  }
+  /** Delete an authored graph everywhere via the context menu; leave edit mode if it was renaming. */
+  function deleteGraph(key: string): void {
+    if (editingGraph?.key === key) editingGraph = null;
+    store.deleteGraph(key);
   }
 
   /** The graph's source sub line (e.g. "Kick · center", "MIDI note 38") for a row + picker. */
@@ -139,19 +153,41 @@
             {#each sec.graphs as key (key)}
               {@const current = active && store.selectedPadKey === key}
               {@const reused = isReused(song, key)}
-              <div class="grow" class:current class:reused>
-                <button class="grow-main" title="Open {store.graphLabel(key)}" onclick={() => openGraph(sec.id, key)}>
-                  <Workflow size={12} aria-hidden="true" />
-                  <span class="grow-text">
-                    <span class="grow-label">{store.graphLabel(key)}</span>
-                    <span class="grow-sub">{sourceSub(key)}</span>
-                  </span>
-                  {#if reused}<span class="reuse-dot" title="Reused in another section" aria-hidden="true"></span>{/if}
-                </button>
-                <div class="grow-actions">
-                  <IconButton icon={X} label="Remove from section" size={12} onclick={() => store.removeGraphFromSection(sec.id, key)} />
+              {@const rowEditing = editingGraph?.sectionId === sec.id && editingGraph?.key === key}
+              {@const authored = isAuthoredGraphKey(key)}
+              {@const rowActions = [
+                ...(authored
+                  ? [{ label: 'Rename', icon: Pencil, onSelect: () => (editingGraph = { sectionId: sec.id, key }) }]
+                  : []),
+                { label: 'Remove from section', icon: X, onSelect: () => store.removeGraphFromSection(sec.id, key) },
+                ...(authored ? [{ label: 'Delete graph', icon: Trash2, danger: true, onSelect: () => deleteGraph(key) }] : []),
+              ] satisfies ContextMenuAction[]}
+              <ContextMenu actions={rowActions}>
+                <div class="grow" class:current class:reused>
+                  {#if rowEditing}
+                    <div class="grow-edit">
+                      <CommitInput
+                        value={store.graphLabel(key)}
+                        ariaLabel="Graph name"
+                        onCommit={(name) => commitGraphRename(key, name)}
+                        onCancel={() => (editingGraph = null)}
+                      />
+                    </div>
+                  {:else}
+                    <button class="grow-main" title="Open {store.graphLabel(key)}" onclick={() => openGraph(sec.id, key)}>
+                      <Workflow size={12} aria-hidden="true" />
+                      <span class="grow-text">
+                        <span class="grow-label">{store.graphLabel(key)}</span>
+                        <span class="grow-sub">{sourceSub(key)}</span>
+                      </span>
+                      {#if reused}<span class="reuse-dot" title="Reused in another section" aria-hidden="true"></span>{/if}
+                    </button>
+                    <div class="grow-actions">
+                      <IconButton icon={X} label="Remove from section" size={12} onclick={() => store.removeGraphFromSection(sec.id, key)} />
+                    </div>
+                  {/if}
                 </div>
-              </div>
+              </ContextMenu>
             {/each}
 
             {#if sec.graphs.length === 0}
@@ -330,6 +366,12 @@
   .grow.current {
     border-color: color-mix(in oklch, var(--accent) 60%, transparent);
     background: var(--accent-soft);
+  }
+  /* inline-rename slot for an authored graph row — fills the row; CommitInput draws its field */
+  .grow-edit {
+    display: flex;
+    flex: 1;
+    min-width: 0;
   }
   .grow-main {
     display: inline-flex;
