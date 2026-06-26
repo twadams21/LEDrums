@@ -3,6 +3,7 @@ import type {
   EngineStats,
   InputMap,
   Layer,
+  OutputConfig,
   PixelModel,
   Project,
   Section,
@@ -26,7 +27,9 @@ export type ClientMessage =
   | { t: 'addClip'; layerId: string; clip: Clip }
   | { t: 'removeClip'; layerId: string; clipId: string }
   | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
-  | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number }
+  | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number; pixelsPerHoop?: number }
+  // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
+  | { t: 'setKitOutputs'; outputs: OutputConfig[] }
   | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean }
   // Setlist / songs / sections / per-trigger routing
   | { t: 'setActiveSection'; songId: string; sectionId: string }
@@ -50,7 +53,7 @@ export type ClientMessage =
 
 const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'midi', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
-  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setOutput',
+  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
   'setShow', 'key', 'recallSection',

@@ -5,7 +5,11 @@ import {
   SLOT_LABELS,
   voice,
   type DmxMap,
+  type DrumConfig,
+  type InputMap,
   type KitConfig,
+  type OutputConfig,
+  type OutputSettings,
   type Project,
   type Transport,
   type TransportState,
@@ -51,6 +55,9 @@ const PREVIEW_FPS = 30; // WS preview broadcast throttle
 export class VoiceEngineHost {
   readonly engine: voice.RenderEngine;
   private project: Project;
+  /** Live kit geometry (shares the reference held by `project.kit`); mutated in place
+   * by the runtime-mutable setters below so the active render reflects edits at once. */
+  private kit: KitConfig;
   private model: ReturnType<typeof buildPixelModel>;
   private dmxMap: DmxMap;
   private readonly output: OutputManager;
@@ -87,10 +94,11 @@ export class VoiceEngineHost {
     output: OutputManager = new OutputManager(),
   ) {
     this.project = project;
+    this.kit = project.kit;
     this.engine = engine;
     this.output = output;
-    this.model = buildPixelModel(project.kit);
-    this.dmxMap = this.buildMapSafe(project.kit);
+    this.model = buildPixelModel(this.kit);
+    this.dmxMap = this.buildMapSafe(this.kit);
     this.engine.setModel(this.model);
   }
 
@@ -121,6 +129,39 @@ export class VoiceEngineHost {
 
   getDmxMap(): DmxMap {
     return this.dmxMap;
+  }
+
+  // --- runtime-mutable geometry / routing ----------------------------------
+
+  /** Rebuild every model-derived structure from the current kit and re-apply output.
+   * Call after any geometry edit so the live render + transmit reflect it at once. */
+  reloadKit(): void {
+    this.model = buildPixelModel(this.kit);
+    this.engine.setModel(this.model);
+    this.dmxMap = this.buildMapSafe(this.kit);
+    this.reloadOutputSettings();
+  }
+
+  /** Edit a drum's transform (origin/rotation/spin/start-angle/literal pixel count) and
+   * rebuild geometry live. Unknown drum id is a no-op. */
+  setKitTransform(
+    drumId: string,
+    partial: Partial<
+      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop'>
+    >,
+  ): void {
+    const drum = this.kit.drums.find((d) => d.id === drumId);
+    if (!drum) return;
+    Object.assign(drum, partial);
+    this.reloadKit();
+  }
+
+  /** Replace the physical-output topology (PixLite patch order). Outputs change the DMX
+   * patch only, not geometry — rebuild the dmxMap and re-apply output, skip the model. */
+  setKitOutputs(outputs: OutputConfig[]): void {
+    this.kit.outputs = outputs;
+    this.dmxMap = this.buildMapSafe(this.kit);
+    this.reloadOutputSettings();
   }
 
   /** Replace the show the engine runs (authored voice-bus content). */
@@ -202,11 +243,23 @@ export class VoiceEngineHost {
     this.pendingInputWall = nowWall();
   }
 
+  /** Replace the input map the note/OSC resolvers read (zone-node MIDI/OSC editing). */
+  setInputMap(map: InputMap): void {
+    this.project.inputMap = map;
+  }
+
   // --- output settings -----------------------------------------------------
 
   /** Re-apply the project's output settings to the OutputManager. */
   reloadOutputSettings(): void {
     this.output.applySettings(this.project.output, this.dmxMap);
+  }
+
+  /** Apply a partial output-settings change (state/protocol/host/rgbOrder/fps/...) and
+   * re-apply it to the transport live. */
+  setOutput(partial: Partial<OutputSettings>): void {
+    Object.assign(this.project.output, partial);
+    this.reloadOutputSettings();
   }
 
   // --- lifecycle -----------------------------------------------------------

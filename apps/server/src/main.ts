@@ -68,12 +68,14 @@ function broadcastBinary(rgb: Uint8Array): void {
   }
 }
 
-/** Build the full `state` message reflecting the current engine/project. */
+/** Build the full `state` message reflecting the current engine/project. In voice mode
+ * the voice host owns the live geometry, so its model is authoritative for the wire. */
 function stateMessage(): ServerMessage {
+  const model = voiceHost ? voiceHost.getModel() : host.engine.getModel();
   return {
     t: 'state',
     project: host.engine.getProject(),
-    model: serializeModel(host.engine.getModel()),
+    model: serializeModel(model),
     effects: effectSpecs(),
     projects: listProjects(),
     output: (voiceHost ?? host).getOutputStatus(),
@@ -168,8 +170,42 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
 
   const result = applyClientMessage(host.engine, msg, host.engineTimeMs);
 
+  // Voice mode: the legacy reducer above mutated the shared project, but the voice host
+  // owns the live render + output. Propagate kit/output/input edits so real device
+  // behaviour changes without a restart. (setKitOutputs has no legacy reducer case, so
+  // the host mutation here is what actually applies it.)
+  if (voiceHost) {
+    switch (msg.t) {
+      case 'setKitTransform':
+        voiceHost.setKitTransform(msg.drumId, {
+          ...(msg.origin !== undefined ? { origin: msg.origin } : {}),
+          ...(msg.rotation !== undefined ? { rotation: msg.rotation } : {}),
+          ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
+          ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
+          ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
+        });
+        break;
+      case 'setKitOutputs':
+        voiceHost.setKitOutputs(msg.outputs);
+        break;
+      case 'setOutput':
+        voiceHost.setOutput({
+          ...(msg.state !== undefined ? { state: msg.state } : {}),
+          ...(msg.protocol !== undefined ? { protocol: msg.protocol } : {}),
+          ...(msg.host !== undefined ? { host: msg.host } : {}),
+          ...(msg.rgbOrder !== undefined ? { rgbOrder: msg.rgbOrder } : {}),
+          ...(msg.fps !== undefined ? { fps: msg.fps } : {}),
+          ...(msg.broadcast !== undefined ? { broadcast: msg.broadcast } : {}),
+        });
+        break;
+      case 'setInputMap':
+        voiceHost.setInputMap(msg.inputMap);
+        break;
+    }
+  }
+
   // Output settings or geometry changed → re-apply output + send fresh state.
-  if (msg.t === 'setOutput' || msg.t === 'setKitTransform') {
+  if (msg.t === 'setOutput' || msg.t === 'setKitTransform' || msg.t === 'setKitOutputs') {
     host.reloadOutputSettings();
     broadcastJson(stateMessage());
     return;
