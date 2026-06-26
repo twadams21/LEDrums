@@ -3,6 +3,7 @@ import {
   makeNode,
   resolveGraphsForFire,
   sourceMatchesFire,
+  sourceMatchesPad,
   triggerSourceOf,
   type TriggerGraph,
   type TriggerSource,
@@ -53,6 +54,23 @@ describe('sourceMatchesFire', () => {
 
   it('an unbound source (undefined) matches nothing', () => {
     expect(sourceMatchesFire(undefined, { kind: 'midi', note: 36, value: 100 })).toBe(false);
+  });
+});
+
+// U4 — the pad-hit half of the source-match rule (drum sources match a physical hit; the
+// store's section resolution fires the active section's graphs whose drum source matches).
+describe('sourceMatchesPad', () => {
+  it('matches a drum source to a hit on the same drum + zone', () => {
+    const src: TriggerSource = { kind: 'drum', drumId: 'snare', zone: '0' };
+    expect(sourceMatchesPad(src, 'snare', '0')).toBe(true);
+    expect(sourceMatchesPad(src, 'snare', '2')).toBe(false); // wrong zone
+    expect(sourceMatchesPad(src, 'kick', '0')).toBe(false); // wrong drum
+  });
+
+  it('midi / osc / unbound sources never match a pad hit', () => {
+    expect(sourceMatchesPad({ kind: 'midi', note: 38 }, 'snare', '0')).toBe(false);
+    expect(sourceMatchesPad({ kind: 'osc', address: '/snare' }, 'snare', '0')).toBe(false);
+    expect(sourceMatchesPad(undefined, 'snare', '0')).toBe(false);
   });
 });
 

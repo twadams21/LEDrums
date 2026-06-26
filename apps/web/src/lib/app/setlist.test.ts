@@ -1,100 +1,105 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addGraph,
   addSection,
-  clearSlot,
-  emptySlots,
-  filledCount,
   graphUsageCount,
   isReused,
   makeSection,
   referencedGraphs,
+  removeGraph,
   renameSection,
-  setSlot,
-  slotsFor,
-  SLOTS_PER_DRUM,
+  setGraphs,
   type Song,
 } from './setlist';
 
-// Sections are keyed per PAD by padKey "drumId:zone" (two zones of one drum are two
-// distinct rows). The third arg of setSlot/clearSlot/slotsFor is a padKey; the graph
-// reference is a separate key (here named "g*" to keep the two roles unambiguous).
-const PADS = ['kick:0', 'snare:0', 'snare:2', 'tom1:0'];
+// A section is a FLAT ORDERED LIST of graph KEYS (U4). The graph reference is just a
+// store-graphs key (here named "g*"); pad graphs happen to be keyed by padKey "drumId:zone"
+// but the setlist model doesn't care — any key string is a reference.
 
 function song(): Song {
   return {
     id: 'song1',
     name: 'Set 1',
-    sections: [makeSection('intro', 'Intro', PADS), makeSection('verse', 'Verse', PADS)],
+    sections: [makeSection('intro', 'Intro'), makeSection('verse', 'Verse')],
   };
 }
 
-describe('emptySlots / makeSection', () => {
-  it('gives every pad exactly SLOTS_PER_DRUM empty slots', () => {
-    const slots = emptySlots(PADS);
-    for (const k of PADS) {
-      expect(slots[k]).toHaveLength(SLOTS_PER_DRUM);
-      expect(slots[k]!.every((s) => s === null)).toBe(true);
-    }
+describe('makeSection', () => {
+  it('starts empty by default', () => {
+    expect(makeSection('a', 'A').graphs).toEqual([]);
+  });
+  it('seeds + de-duplicates an initial ordered graph list', () => {
+    expect(makeSection('a', 'A', ['g1', 'g2', 'g1', 'g3']).graphs).toEqual(['g1', 'g2', 'g3']);
   });
 });
 
-describe('setSlot (immutable)', () => {
-  it('places a graph reference without mutating the input', () => {
+describe('addGraph (immutable, idempotent)', () => {
+  it('appends a graph reference without mutating the input', () => {
     const a = song();
-    const b = setSlot(a, 'intro', 'snare:0', 0, 'gSnare');
-    expect(slotsFor(b.sections[0]!, 'snare:0')[0]).toBe('gSnare');
-    expect(slotsFor(a.sections[0]!, 'snare:0')[0]).toBeNull(); // original untouched
+    const b = addGraph(a, 'intro', 'gSnare');
+    expect(b.sections[0]!.graphs).toEqual(['gSnare']);
+    expect(a.sections[0]!.graphs).toEqual([]); // original untouched
     expect(b).not.toBe(a);
   });
 
-  it('keys slots per pad — Edge and Centre of one drum are independent rows', () => {
-    let s = setSlot(song(), 'intro', 'snare:0', 0, 'gCentre');
-    s = setSlot(s, 'intro', 'snare:2', 0, 'gRim'); // different zone of the same drum
-    expect(slotsFor(s.sections[0]!, 'snare:0')[0]).toBe('gCentre');
-    expect(slotsFor(s.sections[0]!, 'snare:2')[0]).toBe('gRim'); // not clobbered by snare:0
+  it('appends in order; layering = two graphs in one section', () => {
+    let s = addGraph(song(), 'verse', 'gBase');
+    s = addGraph(s, 'verse', 'gLayer');
+    expect(s.sections[1]!.graphs).toEqual(['gBase', 'gLayer']);
   });
 
-  it('ignores out-of-range slot indices', () => {
-    const a = song();
-    expect(setSlot(a, 'intro', 'snare:0', 9, 'gSnare')).toBe(a);
+  it('is idempotent — adding a key already present is a no-op (same Song ref)', () => {
+    const a = addGraph(song(), 'intro', 'gSnare');
+    const b = addGraph(a, 'intro', 'gSnare');
+    expect(b).toBe(a); // unchanged ref
+    expect(b.sections[0]!.graphs).toEqual(['gSnare']);
   });
+});
 
-  it('clearSlot empties a slot', () => {
-    let s = setSlot(song(), 'verse', 'kick:0', 1, 'gKick');
-    expect(slotsFor(s.sections[1]!, 'kick:0')[1]).toBe('gKick');
-    s = clearSlot(s, 'verse', 'kick:0', 1);
-    expect(slotsFor(s.sections[1]!, 'kick:0')[1]).toBeNull();
+describe('removeGraph', () => {
+  it('removes a graph reference (no-op if absent)', () => {
+    let s = addGraph(song(), 'verse', 'gKick');
+    s = addGraph(s, 'verse', 'gSnare');
+    s = removeGraph(s, 'verse', 'gKick');
+    expect(s.sections[1]!.graphs).toEqual(['gSnare']);
+    expect(removeGraph(s, 'verse', 'absent')).toBe(s); // no-op keeps the ref
+  });
+});
+
+describe('setGraphs (reorder / replace)', () => {
+  it('replaces the whole list, de-duplicated, order preserved', () => {
+    const s = setGraphs(song(), 'intro', ['g3', 'g1', 'g3', 'g2']);
+    expect(s.sections[0]!.graphs).toEqual(['g3', 'g1', 'g2']);
   });
 });
 
 describe('reuse-by-reference', () => {
-  it('the same graph key can fill slots in multiple sections (reuse, not copy)', () => {
-    let s = song();
-    s = setSlot(s, 'intro', 'snare:0', 0, 'gSnare');
-    s = setSlot(s, 'verse', 'snare:0', 0, 'gSnare'); // SAME graph reused in Verse
+  it('the same graph key can appear in multiple sections (reuse, not copy)', () => {
+    let s = addGraph(song(), 'intro', 'gSnare');
+    s = addGraph(s, 'verse', 'gSnare'); // SAME graph reused in Verse
     expect(graphUsageCount(s, 'gSnare')).toBe(2);
     expect(isReused(s, 'gSnare')).toBe(true);
     expect(referencedGraphs(s)).toEqual(['gSnare']);
   });
 
   it('a single placement is not "reused"', () => {
-    const s = setSlot(song(), 'intro', 'kick:0', 0, 'gKick');
+    const s = addGraph(song(), 'intro', 'gKick');
     expect(isReused(s, 'gKick')).toBe(false);
     expect(graphUsageCount(s, 'gKick')).toBe(1);
   });
 
-  it('layering: a pad can stack a second graph in another slot (Verse = base + more)', () => {
-    let s = song();
-    s = setSlot(s, 'verse', 'snare:0', 0, 'gBase'); // the reused base graph
-    s = setSlot(s, 'verse', 'snare:0', 1, 'gLayer'); // a second, stacked layer on the SAME pad
-    expect(filledCount(s.sections[1]!, 'snare:0')).toBe(2);
-    expect(slotsFor(s.sections[1]!, 'snare:0')).toEqual(['gBase', 'gLayer', null]);
+  it('referencedGraphs lists every distinct key in first-appearance order', () => {
+    let s = addGraph(song(), 'intro', 'gA');
+    s = addGraph(s, 'intro', 'gB');
+    s = addGraph(s, 'verse', 'gB'); // reused
+    s = addGraph(s, 'verse', 'gC');
+    expect(referencedGraphs(s)).toEqual(['gA', 'gB', 'gC']);
   });
 });
 
 describe('section ops', () => {
   it('addSection appends; renameSection relabels', () => {
-    let s = addSection(song(), makeSection('chorus', 'Chorus', PADS));
+    let s = addSection(song(), makeSection('chorus', 'Chorus'));
     expect(s.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']);
     s = renameSection(s, 'chorus', 'Big Chorus');
     expect(s.sections.find((x) => x.id === 'chorus')!.name).toBe('Big Chorus');

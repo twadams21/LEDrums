@@ -1,7 +1,8 @@
 <script lang="ts">
-  /* Trigger Graph view — the Play Surface rail (triggers grouped by drum; pick one to
-     edit its graph, fire it to preview) beside an @xyflow/svelte canvas (the same
-     engine + look as the Patch graph). The store stays the source of truth and
+  /* Trigger Graph view — the ACTIVE SECTION's flat graph list rail (U4; replaces the old
+     drum-grouped Play Surface) beside an @xyflow/svelte canvas (the same engine + look as
+     the Patch graph). Click a graph in the rail to activate its section, open it on the
+     canvas, and highlight it. The store stays the source of truth and
      autosaves, so every canvas edit flows through its mutators; the xyflow arrays are
      a derived projection (rebuilt on graph switch / structure change), with xyflow
      owning live node positions during a drag. All per-node editing lives in the
@@ -20,7 +21,6 @@
   import '@xyflow/svelte/dist/style.css';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import type { Pad } from '../../trigger-lab/fixtures';
   import {
     graphToFlowEdges,
     graphToFlowNodes,
@@ -30,13 +30,12 @@
   import { GraphHover } from './graph-hover.svelte';
   import { nodeIdAtEvent } from './flow-dom';
   import { TRIGGER_STORE_KEY } from './trigger-context';
+  import { describeTriggerSource } from '../trigger-source-label';
   import TriggerNode from './TriggerNode.svelte';
   import WireEdge from './WireEdge.svelte';
   import TriggerPalette from './TriggerPalette.svelte';
   import TriggerFitView from './TriggerFitView.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
-  import IconButton from '../../ui/IconButton.svelte';
-  import Play from '@lucide/svelte/icons/play';
   import Plus from '@lucide/svelte/icons/plus';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -53,19 +52,24 @@
   const edgeTypes: EdgeTypes = { wire: WireEdge };
   const hover = new GraphHover();
 
-  const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
+  // ---- active section's graph list (replaces the old drum-grouped Play Surface) ----
+  // The rail is the ACTIVE section's flat graph list (U4): click a graph → it activates its
+  // section, opens on the canvas, and highlights here. Selecting + opening is one store call.
+  const activeSection = $derived(store.activeSection);
 
-  // ---- Play Surface rail ----------------------------------------------------
-  function pick(p: Pad): void {
-    store.selectedPadKey = padKey(p);
+  function openGraph(key: string): void {
+    const id = store.activeSectionId;
+    if (id) store.selectGraphInSection(id, key);
     shell.clearSelection(); // switching graphs clears the node inspector
   }
-  function pickKey(key: string): void {
-    store.selectedPadKey = key;
-    shell.clearSelection();
+  /** The graph's trigger-source sub line (e.g. "Kick · center", "MIDI note 38", "unbound"). */
+  function sourceSub(key: string): string {
+    return describeTriggerSource(store.triggerSource(key), store.drums).sub;
   }
+  /** Author a new graph, add it to the active section, and open it for editing. */
   function newGraph(): void {
-    store.createGraph();
+    const key = store.createGraph();
+    if (store.activeSectionId) store.addGraphToSection(store.activeSectionId, key);
     shell.clearSelection();
   }
 
@@ -166,38 +170,26 @@
 
 <div class="trigger-view">
   <aside class="surface">
-    <header class="shead"><Eyebrow>Play Surface</Eyebrow></header>
+    <header class="shead">
+      <Eyebrow>{activeSection?.name ?? 'Section'}</Eyebrow>
+    </header>
     <div class="scroll">
-      {#each store.drums as drum (drum.id)}
-        {@const pads = store.pads.filter((p) => p.drumId === drum.id)}
-        <div class="group">
-          <div class="ghead">{drum.label}</div>
-          {#each pads as p (padKey(p))}
-            <div class="trig" class:active={store.selectedPadKey === padKey(p)}>
-              <button class="trig-main" onclick={() => pick(p)}>
-                <span class="zone">{p.zoneLabel}</span>
-                <span class="root">{p.tree.kind}</span>
-              </button>
-              <IconButton icon={Play} label="Fire {drum.label} {p.zoneLabel}" size={13} onclick={() => store.hit(p)} />
-            </div>
-          {/each}
-        </div>
-      {/each}
-
-      <div class="group">
-        <div class="ghead">Authored</div>
-        {#each store.authoredGraphs as g (g.key)}
-          <div class="trig" class:active={store.selectedPadKey === g.key}>
-            <button class="trig-main" onclick={() => pickKey(g.key)}>
-              <span class="zone">{g.label}</span>
-              <span class="root">graph</span>
-            </button>
-          </div>
+      {#if activeSection}
+        {#each activeSection.graphs as key (key)}
+          <button class="trig" class:active={store.selectedPadKey === key} onclick={() => openGraph(key)}>
+            <span class="glabel">{store.graphLabel(key)}</span>
+            <span class="gsub">{sourceSub(key)}</span>
+          </button>
         {/each}
+        {#if activeSection.graphs.length === 0}
+          <p class="empty">No graphs in this section.</p>
+        {/if}
         <button class="newgraph" type="button" onclick={newGraph}>
           <Plus size={13} aria-hidden="true" /> New graph
         </button>
-      </div>
+      {:else}
+        <p class="empty">No active section.</p>
+      {/if}
     </div>
   </aside>
 
@@ -236,7 +228,7 @@
         <Controls />
       </SvelteFlow>
     {:else}
-      <p class="hint">Select a pad to edit its trigger graph.</p>
+      <p class="hint">Select a graph from the section to edit it.</p>
     {/if}
   </section>
 </div>
@@ -269,58 +261,55 @@
     flex-direction: column;
     gap: var(--space-2);
   }
-  .group {
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    padding: var(--space-2);
-    background: var(--surface-inset);
-  }
-  .ghead {
-    font-size: var(--text-2xs);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    color: var(--text-muted);
-    padding: 0 var(--space-1) var(--space-1);
-  }
   .trig {
     display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    border: 1px solid transparent;
+    flex-direction: column;
+    gap: 1px;
+    align-items: flex-start;
+    width: 100%;
+    min-width: 0;
+    padding: var(--space-2);
+    text-align: left;
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
     border-radius: var(--radius-1);
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+  .trig:hover {
+    border-color: var(--border-strong);
+  }
+  .trig:hover .glabel {
+    color: var(--ink);
   }
   .trig.active {
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
     background: var(--accent-soft);
   }
-  .trig-main {
-    display: flex;
-    flex: 1;
-    align-items: baseline;
-    gap: var(--space-2);
-    justify-content: flex-start;
-    padding: var(--space-2);
-    background: transparent;
-    border: none;
-    text-align: left;
-    min-width: 0;
-  }
-  .trig-main:hover .zone {
-    color: var(--ink);
-  }
-  .zone {
+  .glabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
     font-size: var(--text-sm);
     color: var(--text);
-    text-transform: capitalize;
   }
-  .trig.active .zone {
+  .trig.active .glabel {
     color: var(--ink);
   }
-  .root {
+  .gsub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
-    color: var(--accent);
-    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .empty {
+    margin: 0;
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
   }
   .newgraph {
     display: inline-flex;
