@@ -5,23 +5,20 @@
        Sensory Percussion → Trigger → Zone → Drum → Hoop → Data Line → Output → Controller
 
      input→trigger→zone→drum is the INPUT mapping; drum→hoop→dataline→output→
-     controller is the physical OUTPUT wiring. The graph is data-driven: drums +
-     per-drum zones come from the store, hoop counts from the canonical kit. All the
-     wiring lives in the pure `patch-topology` module; this view is just the
-     @xyflow/svelte surface + project-token styling. Selecting a node loads it into
-     the right-dock Inspector.
+     controller is the physical OUTPUT wiring. The input half is data-driven from the
+     store (drums + per-drum zones) with hoop counts from the canonical kit, via the
+     pure `patch-topology` module. Selecting a node loads it into the right-dock
+     Inspector.
 
-     EDITABLE WIRING (ephemeral): wires can be drawn, deleted and reconnected, and the
-     palette can drop local Data Line / Output nodes — but Patch has NO store-backed
-     device model yet, so all of this lives in this view's $state and is NOT persisted.
-     The real device-settings model (universes, ports, IP) is a separate later slice.
-
-     DATA-LINE / OUTPUT FLAG: the true hoop→dataline→output mapping (universes,
-     ports, cross-wiring) lives in the server's DMX map, which is not on the client
-     yet. For v1 the hoop chain is chunked into data lines by a fixed capacity (a
-     sensible default that demonstrates the real cross-wiring); wiring it to the
-     server `dmxMap` over the WS `state` message is the follow-up. We do NOT fake
-     precise universe/channel numbers. */
+     AUTHORITATIVE OUTPUT HALF (S3): the hoop→dataline→output→controller wiring is no
+     longer ephemeral — it is DERIVED from the server Project's `kit.outputs` (the real
+     PixLite patch order) via `outputsToPatch` (S2) + `buildOutputHalf`. A rewire
+     (connect / disconnect / reconnect / reorder-by-drag) is read back with
+     `routingFromGraph`, recompiled with `patchToOutputs`, and pushed via
+     `store.setRouting` → the server reroutes the live voice host and round-trips the
+     change in the next `state`. When the project declares no outputs yet, a
+     `defaultRouting` chunk seeds the graph so there is something to wire. */
+  import { untrack } from 'svelte';
   import {
     Background,
     BackgroundVariant,
@@ -40,13 +37,22 @@
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
     buildPatchTopology,
+    CONTROLLER_ID,
     NODE_H,
     NODE_W,
+    STAGE_ORDER,
     type PatchFlowEdge,
     type PatchFlowNode,
     type PatchStage,
     type TopologyDrum,
   } from '../patch-topology';
+  import { outputsToPatch, patchToOutputs } from '../patch-routing';
+  import {
+    buildOutputHalf,
+    defaultRouting,
+    routingFromGraph,
+    type OutputScalars,
+  } from '../patch-graph';
   import PatchNode from './PatchNode.svelte';
   import WireEdge from './WireEdge.svelte';
   import PatchFitView from './PatchFitView.svelte';
@@ -69,9 +75,9 @@
     output: 'var(--role-output)',
   };
   let deviceSeq = 0;
-  /** Drop a LOCAL, EPHEMERAL device node (Data Line / Output) at a flow-space centre.
-      Wiring-only Phase 4: these live in view state, are NOT persisted, and carry no
-      device settings — the real device model is a later slice. */
+  /** Drop a new device node (Data Line / Output) at a flow-space centre. It carries no
+      hoops until wired, so it contributes nothing to the routing on its own; the first
+      wire into/out of it is what materializes it (a new Output id) via commitRouting. */
   function addDevice(stage: 'dataline' | 'output', cx: number, cy: number): void {
     const n = ++deviceSeq;
     const label = stage === 'dataline' ? `Data Line ${n}` : `Output ${n}`;
@@ -81,7 +87,7 @@
       position: { x: cx - NODE_W / 2, y: cy - NODE_H / 2 },
       initialWidth: NODE_W,
       initialHeight: NODE_H,
-      data: { label, sub: 'local · not saved', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
+      data: { label, sub: 'new — wire it up', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
     };
     nodes = [...nodes, node];
   }
@@ -120,6 +126,24 @@
     if (stageOf(source) === 'controller' || stageOf(target) === 'input') return;
     if (onBeforeConnect({ source, target, sourceHandle: null, targetHandle: null }) === false) return;
     edges = hover.decorate([...edges, { id: `e:${source}->${target}:${++wireSeq}`, source, target, type: 'wire' }]);
+    commitRouting();
+  }
+
+  /** Re-point an existing wire (a reconnect-anchor drag). Rejects self / controller-as-
+      source / input-as-target, then updates the ephemeral edge in place + recompiles. */
+  function onReconnect(oldEdge: { id: string }, conn: Connection): void {
+    if (!conn.source || !conn.target || conn.source === conn.target) {
+      edges = hover.decorate([...edges]); // snap the anchor back to the unchanged wire
+      return;
+    }
+    if (stageOf(conn.source) === 'controller' || stageOf(conn.target) === 'input') {
+      edges = hover.decorate([...edges]);
+      return;
+    }
+    edges = hover.decorate(
+      edges.map((e) => (e.id === oldEdge.id ? { ...e, source: conn.source!, target: conn.target! } : e)),
+    );
+    commitRouting();
   }
 
   /** Physical sensor zones for a drum. The kick exposes only centre + shell; every
@@ -153,16 +177,70 @@
   }
 
   // Built ONCE, synchronously at mount, so the nodes exist for SvelteFlow's initial
-  // `fitView` (populating them later via an $effect fits an empty graph and leaves
-  // the viewport unfitted). The kit is static for a Patch-view session and the view
-  // remounts on re-entry, re-deriving from the store — so this stays data-driven
-  // without a reactive rebuild. SvelteFlow then owns the arrays (drag mutates node
-  // positions), hence $state.raw + two-way bind.
-  const initial = buildPatchTopology(buildTopoDrums());
-  let nodes = $state.raw<PatchFlowNode[]>(initial.nodes);
-  // wire type so every edge end is a reconnect anchor; edits are ephemeral view state
-  // (Patch has no store-backed graph — connect/delete/reconnect mutate this array).
-  let edges = $state.raw<PatchFlowEdge[]>(initial.edges.map((e) => ({ ...e, type: 'wire' })));
+  // `fitView` (populating them later via an $effect fits an empty graph and leaves the
+  // viewport unfitted). The view remounts on re-entry, re-deriving from the store (incl.
+  // the authoritative outputs) — so this stays data-driven without a reactive rebuild
+  // that would fight SvelteFlow's drag-owned arrays. Hence $state.raw + two-way bind.
+  const topoDrums = buildTopoDrums();
+  const full = buildPatchTopology(topoDrums);
+
+  // Layout anchors from the input half: column stride from the controller's x (it sits
+  // in the last stage column) and the vertical centre from its y.
+  const controllerNode = full.nodes.find((n) => n.data.stage === 'controller');
+  const ctrlIdx = STAGE_ORDER.indexOf('controller');
+  const midY = controllerNode?.position.y ?? 0;
+  const colW = controllerNode && ctrlIdx > 0 ? controllerNode.position.x / ctrlIdx : 240;
+  const colDataline = STAGE_ORDER.indexOf('dataline') * colW;
+  const colOutput = STAGE_ORDER.indexOf('output') * colW;
+
+  // Keep the input half (input→trigger→zone→drum→hoop) + the controller sink; drop the
+  // topology's DEFAULT chunked output half — the authoritative one replaces it below.
+  const keepStages = new Set<PatchStage>(['input', 'trigger', 'zone', 'drum', 'hoop', 'controller']);
+  const inputNodes = full.nodes.filter((n) => keepStages.has(n.data.stage));
+  const hoopIds = new Set(inputNodes.filter((n) => n.data.stage === 'hoop').map((n) => n.id));
+  const dropIds = new Set(
+    full.nodes.filter((n) => n.data.stage === 'dataline' || n.data.stage === 'output').map((n) => n.id),
+  );
+  const inputEdges = full.edges.filter((e) => !dropIds.has(e.source) && !dropIds.has(e.target));
+
+  // Output half DERIVED from the authoritative project outputs (S2 compiler), or a
+  // default chunk when the project declares none yet (offline / fresh project). Read
+  // once at mount (untrack) — the view remounts to re-derive, like the input half.
+  const initialOutputs = untrack(() => store.project?.kit.outputs) ?? [];
+  const initialRouting = initialOutputs.length ? outputsToPatch(initialOutputs) : defaultRouting(topoDrums);
+  const outHalf = buildOutputHalf(initialRouting, {
+    colDataline,
+    colOutput,
+    controllerId: CONTROLLER_ID,
+    midY,
+    hasHoop: (id) => hoopIds.has(id),
+  });
+
+  let nodes = $state.raw<PatchFlowNode[]>([...inputNodes, ...outHalf.nodes]);
+  // wire type so every edge end is a reconnect anchor.
+  let edges = $state.raw<PatchFlowEdge[]>(
+    hover.decorate([...inputEdges, ...outHalf.edges].map((e) => ({ ...e, type: 'wire' as const }))),
+  );
+
+  /** Per-output transport scalars the graph doesn't author — read from the authoritative
+      project so a rewire preserves them (S4's Output inspector edits them via setRouting). */
+  function scalarsFor(outputId: string): OutputScalars {
+    const o = store.project?.kit.outputs.find((x) => x.id === outputId);
+    return o
+      ? { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel }
+      : { startUniverse: 0, channelsPerPixel: 3 };
+  }
+
+  // Read the output half back into a routing, recompile to OutputConfig[], and push it —
+  // but only when the result actually changed (a hover or input-half drag is a no-op).
+  let lastSig = JSON.stringify(patchToOutputs(initialRouting));
+  function commitRouting(): void {
+    const outputs = patchToOutputs(routingFromGraph(nodes, edges, scalarsFor));
+    const sig = JSON.stringify(outputs);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    store.setRouting(outputs);
+  }
 </script>
 
 <div class="patch-view">
@@ -189,6 +267,10 @@
       onpaneclick={() => shell.clearSelection()}
       onnodepointerenter={({ node }) => onEnter(node.id)}
       onnodepointerleave={onLeave}
+      onconnect={() => commitRouting()}
+      onreconnect={onReconnect}
+      ondelete={() => commitRouting()}
+      onnodedragstop={() => commitRouting()}
       onconnectend={(event, conn) => {
         if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
         const toId = nodeIdAtEvent(event);

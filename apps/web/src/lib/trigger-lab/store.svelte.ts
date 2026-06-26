@@ -40,6 +40,7 @@ import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import type { SerializedModel } from '../ws/protocol-types';
+import type { InputMap, OutputConfig, Project } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { Song } from '../app/setlist';
@@ -222,6 +223,12 @@ export class TriggerLab {
       ITS model — previewing them on the local lab model misaligns every pixel. We
       adopt this for the preview while connected. null until the first state msg. */
   serverModel = $state<SerializedModel | null>(null);
+  /** The authoritative server `Project` (routing / geometry / input / transport),
+      adopted from the WS `state` message — the source of truth the Patch graph and
+      the per-node Inspector editors read + mutate. null until the first state msg
+      (offline / not yet connected). The thin mutators below optimistic-write here and
+      forward the edit over WS; the server round-trips the next `state` to confirm. */
+  project = $state<Project | null>(null);
 
   /** mutable effect registry — the effect creator appends here (synced to the sim). */
   effects = $state<EffectDef[]>([...EFFECTS]);
@@ -427,9 +434,11 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (_project, model) => {
-        // adopt the engine's real kit model so its frames map 1:1 in the preview
-        // (the server runs its own kit geometry/pixel count, not the lab kit).
+      onState: (project, model) => {
+        // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
+        // kit model so its frames map 1:1 in the preview (the server runs its own kit
+        // geometry/pixel count, not the lab kit).
+        this.project = project;
         this.serverModel = model;
       },
       onConnection: (state: ConnectionState) => {
@@ -609,6 +618,63 @@ export class TriggerLab {
     this.activeSectionId = sectionId;
     this.sim.recallSection(s);
     this.snapshot();
+  }
+
+  // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
+  // Each writes the edit into the local `project` optimistically (so the UI reflects it
+  // before the round-trip) AND forwards it to the server over WS. The server applies it
+  // to the live voice host (S1) and re-broadcasts `state`, which re-adopts above. Edits
+  // are NOT persisted to localStorage — the server Project is the source of truth, so
+  // routing/geometry survive a reload by coming back down in the next `state` message.
+  // No-op writes when offline (project null); the WS send is a no-op until the link is up.
+
+  /** Edit a drum's transform (origin/rotation/spin/start-angle/literal pixel count). */
+  setDrumTransform(
+    drumId: string,
+    partial: {
+      origin?: { x: number; y: number; z: number };
+      rotation?: { x: number; y: number; z: number };
+      localSpinDeg?: number;
+      startAngleDeg?: number;
+      pixelsPerHoop?: number;
+    },
+  ): void {
+    const p = this.project;
+    if (p) {
+      this.project = {
+        ...p,
+        kit: { ...p.kit, drums: p.kit.drums.map((d) => (d.id === drumId ? { ...d, ...partial } : d)) },
+      };
+    }
+    this.client.send({ t: 'setKitTransform', drumId, ...partial });
+  }
+
+  /** Replace the physical-output topology (a Patch graph rewire → PixLite patch order). */
+  setRouting(outputs: OutputConfig[]): void {
+    const p = this.project;
+    if (p) this.project = { ...p, kit: { ...p.kit, outputs } };
+    this.client.send({ t: 'setKitOutputs', outputs });
+  }
+
+  /** Replace the input map (zone-node MIDI note / OSC address routing). */
+  setInputMap(inputMap: InputMap): void {
+    const p = this.project;
+    if (p) this.project = { ...p, inputMap };
+    this.client.send({ t: 'setInputMap', inputMap });
+  }
+
+  /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */
+  setOutput(partial: {
+    state?: Project['output']['state'];
+    protocol?: Project['output']['protocol'];
+    host?: string;
+    rgbOrder?: Project['output']['rgbOrder'];
+    fps?: number;
+    broadcast?: boolean;
+  }): void {
+    const p = this.project;
+    if (p) this.project = { ...p, output: { ...p.output, ...partial } };
+    this.client.send({ t: 'setOutput', ...partial });
   }
 
   // --- setlist arranging (songs → sections → per-drum graph slots) ----------

@@ -7,6 +7,7 @@ import type {
   EngineStats,
   InputMap,
   Layer,
+  OutputConfig,
   Project,
   ParamSpec,
   Section,
@@ -49,7 +50,10 @@ export type ClientMessage =
       rotation?: { x: number; y: number; z: number };
       localSpinDeg?: number;
       startAngleDeg?: number;
+      pixelsPerHoop?: number;
     }
+  // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
+  | { t: 'setKitOutputs'; outputs: OutputConfig[] }
   | {
       t: 'setOutput';
       state?: Project['output']['state'];
