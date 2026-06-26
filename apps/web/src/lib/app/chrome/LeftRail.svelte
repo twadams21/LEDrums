@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* Author left rail: the section list (top) over the view navigation (bottom).
+  /* Author left rail: the view navigation (top) over the section list (bottom).
      View buttons drive the shell's workspace router; the active view is
      accent-bordered. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -25,10 +25,6 @@
 </script>
 
 <div class="rail">
-  <section class="songs">
-    <SongRail {store} />
-  </section>
-
   <nav class="views" aria-label="Views">
     <Eyebrow icon={Navigation}>Views</Eyebrow>
     {#each NAV as v (v.id)}
@@ -47,12 +43,16 @@
       </button>
     {/each}
   </nav>
+
+  <section class="songs">
+    <SongRail {store} />
+  </section>
 </div>
 
 <style>
   .rail {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: var(--space-3);
     min-height: 0;
     height: 100%;
