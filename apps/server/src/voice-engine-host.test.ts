@@ -164,4 +164,45 @@ describe('VoiceEngineHost', () => {
     host.stop();
     expect(fake.closed).toBe(true);
   });
+
+  it('setKitOutputs reorders the transmitted pixels live (dmxMap patch order)', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const model = host.getModel();
+    // Default kit declares no outputs → a flat map whose first transmitted pixel is id 0.
+    const before = host.getDmxMap().universes[0]!.pixelIds[0];
+    expect(before).toBe(0);
+
+    // A single output that reverses the drum order: the last drum is patched first.
+    const reversed = model.drums.map((d) => d.drumId).reverse();
+    host.setKitOutputs([
+      {
+        id: 'out0',
+        startUniverse: 0,
+        channelsPerPixel: 3,
+        segments: reversed.map((drumId) => ({
+          drumId,
+          hoopStart: 0,
+          hoopEnd: model.drumById.get(drumId)!.hoopCount - 1,
+        })),
+      },
+    ]);
+
+    const after = host.getDmxMap().universes[0]!.pixelIds[0];
+    expect(after).toBe(model.drumById.get(reversed[0]!)!.pixelStart);
+    expect(after).not.toBe(before);
+  });
+
+  it('setKitTransform with pixelsPerHoop changes the live model pixel count', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const before = host.getModel().pixelCount;
+    const kick = host.getModel().drumById.get('kick')!;
+    const target = kick.pixelsPerHoop + 10;
+
+    host.setKitTransform('kick', { pixelsPerHoop: target });
+
+    const after = host.getModel().drumById.get('kick')!;
+    expect(after.pixelsPerHoop).toBe(target);
+    // 4-hoop kick → +10 px/hoop adds exactly 40 pixels to the whole model.
+    expect(host.getModel().pixelCount).toBe(before + 10 * after.hoopCount);
+  });
 });
