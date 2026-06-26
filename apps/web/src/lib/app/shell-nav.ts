@@ -3,11 +3,12 @@
    testable in the node test env. `shell-store.svelte.ts` is a thin rune wrapper
    over this. Mirrors the show-builder split: pure core, reactive shell.
 
-   The invariants live here once (locality): switching views clears the Inspector
-   selection, and selecting anything surfaces the Inspector tab. */
+   The app is mode-less: there is no Perform/Author mode — it is simply whichever
+   `view` is selected (Perform being one of them). The invariants live here once
+   (locality): switching views clears the Inspector selection, and selecting
+   anything surfaces the Inspector tab. */
 
-export type Mode = 'perform' | 'author';
-export type View = 'trigger' | 'patch' | 'sections' | 'kit';
+export type View = 'trigger' | 'patch' | 'sections' | 'perform';
 export type DockTab = 'inspector' | 'monitor';
 
 /** A node id in the Patch Graph (device routing). These are stage-prefixed strings
@@ -24,27 +25,19 @@ export type Selection =
   | { kind: 'bus'; busId: string };
 
 export interface ShellNav {
-  mode: Mode;
   view: View;
   dock: DockTab;
   selection: Selection | null;
 }
 
-export const MODES: readonly Mode[] = ['perform', 'author'];
-export const VIEWS: readonly View[] = ['trigger', 'patch', 'sections', 'kit'];
+export const VIEWS: readonly View[] = ['trigger', 'patch', 'sections', 'perform'];
 
-export function initialNav(init: Partial<Pick<ShellNav, 'mode' | 'view'>> = {}): ShellNav {
+export function initialNav(init: Partial<Pick<ShellNav, 'view'>> = {}): ShellNav {
   return {
-    mode: init.mode ?? 'author',
     view: init.view ?? 'trigger',
     dock: 'inspector',
     selection: null,
   };
-}
-
-export function setMode(nav: ShellNav, mode: Mode): ShellNav {
-  if (mode === nav.mode) return nav;
-  return { ...nav, mode };
 }
 
 /** Switch the workspace view; resets the Inspector selection (wireframe:
@@ -84,20 +77,10 @@ export function isSelected(nav: ShellNav, sel: Selection): boolean {
   }
 }
 
-const MODE_ALIASES: Record<string, Mode> = {
-  perform: 'perform',
-  performance: 'perform', // legacy ?mode=performance deep-link
-  author: 'author',
-  authoring: 'author', // legacy ?mode=authoring deep-link
-};
-
-/** Parse mode/view deep-links from a query string (?mode=&view=), tolerating the
-    legacy `performance`/`authoring` mode spellings. Unknown values are dropped. */
-export function parseSearch(search: string): Partial<Pick<ShellNav, 'mode' | 'view'>> {
+/** Parse the view deep-link from a query string (?view=). Unknown values are dropped. */
+export function parseSearch(search: string): Partial<Pick<ShellNav, 'view'>> {
   const p = new URLSearchParams(search);
-  const out: Partial<Pick<ShellNav, 'mode' | 'view'>> = {};
-  const m = p.get('mode');
-  if (m && MODE_ALIASES[m]) out.mode = MODE_ALIASES[m];
+  const out: Partial<Pick<ShellNav, 'view'>> = {};
   const v = p.get('view');
   if (v && (VIEWS as readonly string[]).includes(v)) out.view = v as View;
   return out;

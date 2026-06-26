@@ -1,8 +1,11 @@
 <script lang="ts">
-  /* Authoring Workbench. Mirrors the wireframe: top bar · left rail (songs +
-     views) · center (workspace view ↑ + Layers/Buses dock ↓) · right dock
-     (Visualizer pinned ↑ + tabbed Inspector ⇄ Monitor ↓). The workspace swaps on
-     shell.view; the right-dock lower panel swaps on shell.dock. */
+  /* The unified shell. Mode-less: it is simply whichever view is selected. Mirrors
+     the wireframe: top bar · left rail (songs + views) · center (workspace view ↑ +
+     Layers/Buses dock ↓) · right dock (Visualizer pinned ↑ + tabbed Inspector ⇄
+     Monitor ↓). The workspace swaps on shell.view; the right-dock lower panel swaps
+     on shell.dock. The **Perform view** is the exception: it hides the Layers/Buses
+     drawer + the right dock and fills the center with PerformView for a focused
+     performance layout. */
   import type { TriggerLab } from '../trigger-lab/store.svelte';
   import type { ShellStore } from './shell-store.svelte';
   import type { DockTab } from './shell-nav';
@@ -15,7 +18,7 @@
   import TriggerGraphView from './views/TriggerGraphView.svelte';
   import PatchGraphView from './views/PatchGraphView.svelte';
   import SectionsView from './views/SectionsView.svelte';
-  import KitView from './views/KitView.svelte';
+  import PerformView from './views/PerformView.svelte';
   import Eyebrow from '../ui/Eyebrow.svelte';
   import Tabs from '../ui/Tabs.svelte';
   import Splitter from '../ui/Splitter.svelte';
@@ -24,6 +27,10 @@
   import LayersIcon from '@lucide/svelte/icons/layers';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
+
+  // Perform is a chrome-light view: the shell hides the Layers/Buses drawer + the
+  // right Inspector/Monitor dock and fills the center with PerformView.
+  const perform = $derived(shell.view === 'perform');
 
   const DOCK_TABS = [
     { value: 'inspector', label: 'Inspector', icon: SlidersHorizontal },
@@ -43,48 +50,54 @@
   };
 </script>
 
-<div class="author" style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px;">
+<div class="author" class:solo={perform} style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px;">
   <div class="top"><TopBar {store} {shell} /></div>
 
   <div class="rail"><LeftRail {store} {shell} /></div>
 
-  <div class="center">
-    <main class="workspace">
-      {#if shell.view === 'trigger'}
-        <TriggerGraphView {store} {shell} />
-      {:else if shell.view === 'patch'}
-        <PatchGraphView {store} {shell} />
-      {:else if shell.view === 'sections'}
-        <SectionsView {store} {shell} />
-      {:else}
-        <KitView {store} />
-      {/if}
+  {#if perform}
+    <main class="center solo-center">
+      <PerformView {store} {shell} />
     </main>
-
-    <section class="bottom">
-      <header class="dockhead"><Eyebrow icon={LayersIcon}>Layers / Buses</Eyebrow></header>
-      <LayersDock {store} {shell} />
-    </section>
-  </div>
-
-  <aside class="dock">
-    <section class="viz"><Visualizer {store} /></section>
-    <div class="lower">
-      <div class="tabstrip">
-        <Tabs value={shell.dock} tabs={DOCK_TABS} onChange={(v) => shell.setDock(v as DockTab)} ariaLabel="Inspector or Monitor" />
-      </div>
-      <div class="panel">
-        {#if shell.dock === 'inspector'}
-          <Inspector {store} {shell} />
+  {:else}
+    <div class="center">
+      <main class="workspace">
+        {#if shell.view === 'trigger'}
+          <TriggerGraphView {store} {shell} />
+        {:else if shell.view === 'patch'}
+          <PatchGraphView {store} {shell} />
         {:else}
-          <Monitor {store} />
+          <SectionsView {store} {shell} />
         {/if}
-      </div>
+      </main>
+
+      <section class="bottom">
+        <header class="dockhead"><Eyebrow icon={LayersIcon}>Layers / Buses</Eyebrow></header>
+        <LayersDock {store} {shell} />
+      </section>
     </div>
-  </aside>
+
+    <aside class="dock">
+      <section class="viz"><Visualizer {store} /></section>
+      <div class="lower">
+        <div class="tabstrip">
+          <Tabs value={shell.dock} tabs={DOCK_TABS} onChange={(v) => shell.setDock(v as DockTab)} ariaLabel="Inspector or Monitor" />
+        </div>
+        <div class="panel">
+          {#if shell.dock === 'inspector'}
+            <Inspector {store} {shell} />
+          {:else}
+            <Monitor {store} />
+          {/if}
+        </div>
+      </div>
+    </aside>
+  {/if}
 
   <!-- Resize handles, positioned on the grid divides (direct children of .author so
-       they paint above the panes — their ≥40px hit areas overhang each side). -->
+       they paint above the panes — their ≥40px hit areas overhang each side). The
+       rail handle is always live; the dock + layers handles only exist when their
+       panes are rendered (i.e. not in Perform). -->
   <Splitter
     orientation="vertical"
     size={railW}
@@ -94,26 +107,28 @@
     label="Resize left rail"
     style="top:var(--content-top); bottom:var(--pad); left:calc(var(--pad) + var(--rail-w) + var(--gap) / 2); transform:translateX(-50%);"
   />
-  <Splitter
-    orientation="vertical"
-    invert
-    size={dockW}
-    min={DOCK.min}
-    max={DOCK.max}
-    onResize={(v) => setPane(DOCK.key, v)}
-    label="Resize right dock"
-    style="top:var(--content-top); bottom:var(--pad); right:calc(var(--pad) + var(--dock-w) + var(--gap) / 2); transform:translateX(50%);"
-  />
-  <Splitter
-    orientation="horizontal"
-    invert
-    size={bottomH}
-    min={BOTTOM.min}
-    max={BOTTOM.max}
-    onResize={(v) => setPane(BOTTOM.key, v)}
-    label="Resize layers dock"
-    style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
-  />
+  {#if !perform}
+    <Splitter
+      orientation="vertical"
+      invert
+      size={dockW}
+      min={DOCK.min}
+      max={DOCK.max}
+      onResize={(v) => setPane(DOCK.key, v)}
+      label="Resize right dock"
+      style="top:var(--content-top); bottom:var(--pad); right:calc(var(--pad) + var(--dock-w) + var(--gap) / 2); transform:translateX(50%);"
+    />
+    <Splitter
+      orientation="horizontal"
+      invert
+      size={bottomH}
+      min={BOTTOM.min}
+      max={BOTTOM.max}
+      onResize={(v) => setPane(BOTTOM.key, v)}
+      label="Resize layers dock"
+      style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
+    />
+  {/if}
 </div>
 
 <style>
@@ -141,6 +156,13 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  /* Perform: no right dock — collapse to rail + center only. */
+  .author.solo {
+    grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr);
+    grid-template-areas:
+      'top top'
+      'rail center';
+  }
   .top {
     grid-area: top;
     min-width: 0;
@@ -156,6 +178,10 @@
     gap: var(--space-3);
     min-height: 0;
     min-width: 0;
+  }
+  /* Perform: the center is a single full-height region (no Layers/Buses row). */
+  .center.solo-center {
+    grid-template-rows: minmax(0, 1fr);
   }
   .workspace {
     min-height: 0;

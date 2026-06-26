@@ -1,17 +1,14 @@
 <script lang="ts">
-  /* Unified application shell. Owns the single engine store (TriggerLab — the
-     brain + WS engine link) and the shell navigation store, and crossfades
-     between the Perform and Author surfaces off shell.mode. Both surfaces render
-     over the SAME engine store, so switching mode never restarts the engine. */
+  /* Unified application shell. Owns the single engine store (TriggerLab — the brain
+     + WS engine link) and the shell navigation store, and renders the one mode-less
+     shell. The app is simply whichever view is selected (Perform being one of them);
+     there is no Perform/Author mode and no crossfade. */
   import { onMount } from 'svelte';
-  import { cubicOut } from 'svelte/easing';
-  import type { TransitionConfig } from 'svelte/transition';
   import { TriggerLab } from './lib/trigger-lab/store.svelte';
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
   import type { Pad } from './lib/trigger-lab/fixtures';
-  import AuthorShell from './lib/app/AuthorShell.svelte';
-  import PerformShell from './lib/app/PerformShell.svelte';
+  import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
 
   const store = new TriggerLab();
@@ -34,30 +31,13 @@
       store.hit(pad);
     }
   }
-
-  // mode transition — a fast fade+lift, instant under reduced-motion.
-  function shellReveal(_node: Element, { duration = 200 } = {}): TransitionConfig {
-    const reduce =
-      typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    return {
-      duration: reduce ? 0 : duration,
-      easing: cubicOut,
-      css: (t: number) => `opacity:${t}; transform: scale(${0.994 + t * 0.006});`,
-    };
-  }
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-{#key shell.mode}
-  <div class="shell-root" in:shellReveal>
-    {#if shell.mode === 'perform'}
-      <PerformShell {store} {shell} />
-    {:else}
-      <AuthorShell {store} {shell} />
-    {/if}
-  </div>
-{/key}
+<div class="shell-root">
+  <Shell {store} {shell} />
+</div>
 
 <Overlays {store} />
 

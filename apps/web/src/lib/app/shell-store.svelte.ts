@@ -1,14 +1,14 @@
 /* Reactive wrapper over the pure shell-nav reducer. Holds the navigation state
    as a single $state object and forwards every transition to shell-nav, so the
    invariants (view-switch clears selection, select surfaces the Inspector) have
-   exactly one home and stay unit-tested in node. Components read shell.mode /
-   shell.view / shell.dock / shell.selection and call the setters. */
+   exactly one home and stay unit-tested in node. Components read shell.view /
+   shell.dock / shell.selection and call the setters. */
 
 import * as nav from './shell-nav';
-import type { DockTab, Mode, Selection, ShellNav, View } from './shell-nav';
+import type { DockTab, Selection, ShellNav, View } from './shell-nav';
 import type { PatchRouting } from './patch-routing';
 
-export type { DockTab, Mode, PatchNodeId, Selection, View } from './shell-nav';
+export type { DockTab, PatchNodeId, Selection, View } from './shell-nav';
 
 export class ShellStore {
   private s = $state<ShellNav>(nav.initialNav());
@@ -21,13 +21,10 @@ export class ShellStore {
       (a patch node is only selectable from within it, so reads are always fresh). */
   private liveRouting = $state<PatchRouting | null>(null);
 
-  constructor(init?: Partial<Pick<ShellNav, 'mode' | 'view'>>) {
+  constructor(init?: Partial<Pick<ShellNav, 'view'>>) {
     this.s = nav.initialNav(init);
   }
 
-  get mode(): Mode {
-    return this.s.mode;
-  }
   get view(): View {
     return this.s.view;
   }
@@ -46,9 +43,6 @@ export class ShellStore {
     this.liveRouting = routing;
   }
 
-  setMode(mode: Mode): void {
-    this.s = nav.setMode(this.s, mode);
-  }
   setView(view: View): void {
     this.s = nav.setView(this.s, view);
   }
