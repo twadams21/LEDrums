@@ -11,13 +11,18 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { isReused } from '../setlist';
   import { describeTriggerSource } from '../trigger-source-label';
+  import CommitInput from '../../ui/CommitInput.svelte';
+  import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import Drawer from '../../ui/Drawer.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import Copy from '@lucide/svelte/icons/copy';
+  import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import Pencil from '@lucide/svelte/icons/pencil';
   import Plus from '@lucide/svelte/icons/plus';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
   import Workflow from '@lucide/svelte/icons/workflow';
 
@@ -31,6 +36,19 @@
   const pendingSection = $derived(
     pendingSectionId ? sections.find((s) => s.id === pendingSectionId) ?? null : null,
   );
+
+  // inline rename: the section whose header is in edit mode (or null)
+  let editingSectionId = $state<string | null>(null);
+
+  function commitRename(sectionId: string, name: string): void {
+    store.renameSection(sectionId, name);
+    editingSectionId = null;
+  }
+  /** Delete a section via the context menu; drop out of edit mode first if it was renaming. */
+  function deleteSection(sectionId: string): void {
+    if (editingSectionId === sectionId) editingSectionId = null;
+    store.removeSection(sectionId);
+  }
 
   /** The graph's source sub line (e.g. "Kick · center", "MIDI note 38") for a row + picker. */
   function sourceSub(key: string): string {
@@ -74,23 +92,48 @@
     <div class="cols">
       {#each sections as sec (sec.id)}
         {@const active = store.activeSectionId === sec.id}
+        {@const editing = editingSectionId === sec.id}
+        {@const actions = [
+          { label: 'Rename', icon: Pencil, onSelect: () => (editingSectionId = sec.id) },
+          { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSection(sec.id) },
+          { label: 'Delete', icon: Trash2, danger: true, onSelect: () => deleteSection(sec.id) },
+        ] satisfies ContextMenuAction[]}
         <section class="col" class:active>
-          <div class="colh-row">
-            <button class="colh" class:active onclick={() => store.setActiveSection(sec.id)}>
-              <span class="colname">{sec.name}</span>
-              <span class="colcount">{sec.graphs.length}</span>
-            </button>
-            <div class="colh-actions">
-              <IconButton icon={Copy} label="Copy section" size={13} onclick={() => store.copySection(sec.id)} />
-              <IconButton
-                icon={ClipboardPaste}
-                label="Paste section"
-                size={13}
-                disabled={!store.sectionClipboard}
-                onclick={() => store.pasteSection()}
-              />
+          <ContextMenu {actions}>
+            <div class="colh-row">
+              {#if editing}
+                <div class="colh-edit">
+                  <CommitInput
+                    value={sec.name}
+                    ariaLabel="Section name"
+                    onCommit={(name) => commitRename(sec.id, name)}
+                    onCancel={() => (editingSectionId = null)}
+                  />
+                </div>
+              {:else}
+                <button
+                  class="colh"
+                  class:active
+                  onclick={() => store.setActiveSection(sec.id)}
+                  ondblclick={() => (editingSectionId = sec.id)}
+                  title="Double-click or right-click to rename"
+                >
+                  <span class="colname">{sec.name}</span>
+                  <span class="colcount">{sec.graphs.length}</span>
+                </button>
+              {/if}
+              <div class="colh-actions">
+                <IconButton icon={Copy} label="Copy section" size={13} onclick={() => store.copySection(sec.id)} />
+                <IconButton
+                  icon={ClipboardPaste}
+                  label="Paste section"
+                  size={13}
+                  disabled={!store.sectionClipboard}
+                  onclick={() => store.pasteSection()}
+                />
+              </div>
             </div>
-          </div>
+          </ContextMenu>
 
           <div class="graphlist">
             {#each sec.graphs as key (key)}
@@ -215,6 +258,12 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
+  }
+  /* inline-rename slot — fills the header like .colh; CommitInput draws its own field */
+  .colh-edit {
+    display: flex;
+    flex: 1;
+    min-width: 0;
   }
   .colh {
     display: flex;
