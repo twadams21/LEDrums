@@ -44,7 +44,11 @@ shell-demode-perform (independent, parallel from start) ─► (TopBar settled f
 | crud-song | `docs/prompts/crud-song.md` | 2 | ctx-menu ✅ | crud-song-e0d2cc (parked) | wt/crud-song | ✅ MERGED | 116c31d | 5b9dcd7 |
 | crud-graph | `docs/prompts/crud-graph.md` | 2 | ctx-menu ✅, crud-section ✅ | crud-graph-a26adf (parked) | wt/crud-graph | ✅ MERGED | 44dd6fb | aff97c8 |
 | show-document-model | `docs/prompts/show-document-model.md` | 3 | CRUD batch ✅ | show-model-fb2df0 (parked) | wt/show-model | ✅ MERGED | f61e876 | 2e2793e |
-| show-browser-ui | `docs/prompts/show-browser-ui.md` | 3 | show-model ✅, ctx-menu ✅, shell ✅ | — | wt/show-ui (pre-staged @2e2793e, deps in) | ⏸ HELD for 04:40 5h reset (5h hit 96%) | — | — |
+| show-browser-ui | `docs/prompts/show-browser-ui.md` | 3 | show-model ✅, ctx-menu ✅, shell ✅ | show-ui-3737b3 (parked) | wt/show-ui | ✅ MERGED | cca344a | 2b2c651 |
+
+## ✅ ALL 7 SLICES MERGED — initiative COMPLETE (HEAD `2b2c651`, pushed)
+Final sweep green: typecheck 0 (2083 web files); **618 tests** (core 201 / io 13 / server 63 / web 341).
+GROW done: ROUTER updated + `mex log`. **OWED: live `:5173` spot-check** → `docs/handoff/2026-06-27-spot-check.md` (no agent drove a browser).
 
 ## Per-agent worktree launch recipe
 ```bash
