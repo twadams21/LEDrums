@@ -13,7 +13,7 @@
    version bump — bump VERSION only when an existing field changes incompatibly. */
 
 import type { Bus, EffectDef, Preset, TriggerGraph } from './sim';
-import type { Song } from '../app/setlist';
+import type { SetlistSection, Song } from '../app/setlist';
 
 /** localStorage key — carries the schema version so old payloads are namespaced
     (a future v2 writes to a different key, leaving v1 untouched). */
@@ -37,7 +37,10 @@ export interface AuthoredState {
   effects: EffectDef[];
   selectedPadKey: string | null;
   activeSongId: string;
-  arrangeSectionId: string | null;
+  /** The active section — the one you're playing AND editing (U4 merged the old
+      `activeSectionId`/`arrangeSectionId`). Older blobs carry the field under
+      `arrangeSectionId`; {@link deserializeAuthored} reads either. */
+  activeSectionId: string | null;
   bpm: number;
   velocity: number;
   beatsPerBar: number;
@@ -85,7 +88,10 @@ export function deserializeAuthored(raw: unknown): Partial<AuthoredState> | null
   // containers — included only when the expected shape (records vs arrays)
   if (isObject(data.graphs)) out.graphs = data.graphs as Record<string, TriggerGraph>;
   if (isObject(data.graphNames)) out.graphNames = data.graphNames as Record<string, string>;
-  if (Array.isArray(data.songs)) out.songs = data.songs as Song[];
+  // Songs are MIGRATED on the way in: a blob saved before U4 carries per-pad slot grids;
+  // migrateSongs flattens each section's `slots` into the flat `graphs` list (idempotent,
+  // so a U4 blob is untouched). See migrateSongs / sectionGraphList.
+  if (Array.isArray(data.songs)) out.songs = migrateSongs(data.songs);
   if (Array.isArray(data.buses)) out.buses = data.buses as Bus[];
   if (Array.isArray(data.presets)) out.presets = data.presets as Preset[];
   if (Array.isArray(data.effects)) out.effects = data.effects as EffectDef[];
@@ -97,12 +103,79 @@ export function deserializeAuthored(raw: unknown): Partial<AuthoredState> | null
     out.selectedPadKey = data.selectedPadKey as string | null;
   }
   if (typeof data.activeSongId === 'string') out.activeSongId = data.activeSongId;
-  if (typeof data.arrangeSectionId === 'string' || data.arrangeSectionId === null) {
-    out.arrangeSectionId = data.arrangeSectionId as string | null;
+  // activeSectionId (U4 merged active+arrange). Back-compat: an older blob stored it under
+  // `arrangeSectionId` — read that when the new key is absent so a returning user's focus
+  // survives the rename. Either may be an explicit null.
+  const rawActiveSection = data.activeSectionId !== undefined ? data.activeSectionId : data.arrangeSectionId;
+  if (typeof rawActiveSection === 'string' || rawActiveSection === null) {
+    out.activeSectionId = rawActiveSection;
   }
   if (isFiniteNumber(data.bpm)) out.bpm = data.bpm;
   if (isFiniteNumber(data.velocity)) out.velocity = data.velocity;
   if (isFiniteNumber(data.beatsPerBar)) out.beatsPerBar = data.beatsPerBar;
 
+  return out;
+}
+
+// ---- U4 back-compat: per-pad slots → flat graph list ------------------------
+
+/**
+ * The flat U4 graph list for a persisted section. A pre-U4 section carries a per-pad
+ * `slots` grid (`Record<padKey, (string|null)[]>`); flatten it by iterating pads in stored
+ * order, each slot in order, collecting the non-null graph keys de-duplicated (first
+ * occurrence wins) — so the order is "slot order across pads". A section already on the U4
+ * `graphs` list is returned (de-duplicated) untouched-in-spirit, making this idempotent;
+ * a malformed section yields `[]`. Same defensive back-fill spirit as the store's
+ * unionTriggerSources / unionEffects.
+ */
+export function sectionGraphList(section: unknown): string[] {
+  if (!isObject(section)) return [];
+  if (Array.isArray(section.graphs)) return dedupeStrings(section.graphs);
+  if (!isObject(section.slots)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const slots of Object.values(section.slots)) {
+    if (!Array.isArray(slots)) continue;
+    for (const key of slots) {
+      if (typeof key === 'string' && key && !seen.has(key)) {
+        seen.add(key);
+        out.push(key);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Migrate persisted songs to the U4 flat-graph-list section model (see {@link
+ * sectionGraphList}). Defensive: skips non-object songs/sections and coerces ids/names, so a
+ * partially-corrupt blob degrades to what survived rather than wedging boot. Idempotent on a
+ * blob that is already U4.
+ */
+export function migrateSongs(songs: readonly unknown[]): Song[] {
+  const out: Song[] = [];
+  for (const raw of songs) {
+    if (!isObject(raw)) continue;
+    const rawSections = Array.isArray(raw.sections) ? raw.sections : [];
+    const sections: SetlistSection[] = [];
+    for (const sec of rawSections) {
+      if (!isObject(sec)) continue;
+      sections.push({ id: String(sec.id ?? ''), name: String(sec.name ?? ''), graphs: sectionGraphList(sec) });
+    }
+    out.push({ id: String(raw.id ?? ''), name: String(raw.name ?? ''), sections });
+  }
+  return out;
+}
+
+/** De-duplicate the string entries of an unknown array, preserving first-appearance order. */
+function dedupeStrings(values: readonly unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (typeof v === 'string' && v && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
   return out;
 }

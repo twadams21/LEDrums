@@ -3,17 +3,19 @@ import {
   STORAGE_KEY,
   VERSION,
   deserializeAuthored,
+  migrateSongs,
+  sectionGraphList,
   serializeAuthored,
   type AuthoredState,
 } from './persistence';
 import { makeNode, type TriggerGraph } from './sim';
-import { makeSection, setSlot, type Song } from '../app/setlist';
+import { addGraph, makeSection, type Song } from '../app/setlist';
 
 const graph = (): TriggerGraph => ({ nodes: [makeNode('trigger', 'trigger')], edges: [] });
 
 function authored(): AuthoredState {
-  let song: Song = { id: 'set-1', name: 'Set 1', sections: [makeSection('intro', 'Intro', ['kick', 'snare'])] };
-  song = setSlot(song, 'intro', 'kick', 0, 'kick:1');
+  let song: Song = { id: 'set-1', name: 'Set 1', sections: [makeSection('intro', 'Intro')] };
+  song = addGraph(song, 'intro', 'kick:1');
   return {
     graphs: { 'kick:1': graph(), 'graph:1001': graph() },
     graphNames: { 'graph:1001': 'New graph 1' },
@@ -25,7 +27,7 @@ function authored(): AuthoredState {
     ],
     selectedPadKey: 'kick:1',
     activeSongId: 'set-1',
-    arrangeSectionId: 'intro',
+    activeSectionId: 'intro',
     bpm: 128,
     velocity: 0.7,
     beatsPerBar: 4,
@@ -101,9 +103,91 @@ describe('partial / wrong-typed tolerance', () => {
   it('keeps explicit null for the nullable ids', () => {
     const restored = deserializeAuthored({
       version: VERSION,
-      data: { selectedPadKey: null, arrangeSectionId: null },
+      data: { selectedPadKey: null, activeSectionId: null },
     });
-    expect(restored).toEqual({ selectedPadKey: null, arrangeSectionId: null });
+    expect(restored).toEqual({ selectedPadKey: null, activeSectionId: null });
+  });
+});
+
+describe('U4 back-compat — activeSectionId / arrangeSectionId', () => {
+  it('reads the legacy arrangeSectionId into activeSectionId when the new key is absent', () => {
+    const restored = deserializeAuthored({ version: VERSION, data: { arrangeSectionId: 'verse' } });
+    expect(restored).toEqual({ activeSectionId: 'verse' });
+  });
+
+  it('prefers the new activeSectionId over a legacy arrangeSectionId', () => {
+    const restored = deserializeAuthored({
+      version: VERSION,
+      data: { activeSectionId: 'chorus', arrangeSectionId: 'verse' },
+    });
+    expect(restored).toEqual({ activeSectionId: 'chorus' });
+  });
+
+  it('honours an explicit null in the legacy field', () => {
+    const restored = deserializeAuthored({ version: VERSION, data: { arrangeSectionId: null } });
+    expect(restored).toEqual({ activeSectionId: null });
+  });
+});
+
+describe('U4 back-compat — section slots → flat graphs migration', () => {
+  it('flattens a persisted per-pad slot grid into a deduped, order-preserving graph list', () => {
+    const section = {
+      id: 'intro',
+      name: 'Intro',
+      slots: {
+        'kick:0': ['kick:0', null],
+        'snare:0': ['snare:0', 'snare:2', null], // snare:0 layers snare:2 (a foreign-pad graph)
+        'snare:2': ['snare:2'], // snare:2's own graph — duplicate of the layer above, deduped
+      },
+    };
+    expect(sectionGraphList(section)).toEqual(['kick:0', 'snare:0', 'snare:2']);
+  });
+
+  it('is idempotent — a section already on flat graphs is returned (deduped) untouched', () => {
+    expect(sectionGraphList({ id: 'a', name: 'A', graphs: ['g1', 'g2', 'g1'] })).toEqual(['g1', 'g2']);
+  });
+
+  it('degrades a malformed section to an empty list', () => {
+    expect(sectionGraphList(null)).toEqual([]);
+    expect(sectionGraphList({ id: 'a', name: 'A' })).toEqual([]);
+    expect(sectionGraphList({ id: 'a', name: 'A', slots: 'nope' })).toEqual([]);
+  });
+
+  it('migrateSongs flattens every section across every song', () => {
+    const legacy = [
+      {
+        id: 'set-1',
+        name: 'Set 1',
+        sections: [
+          { id: 'intro', name: 'Intro', slots: { 'kick:0': ['kick:0'], 'snare:0': ['snare:0', null] } },
+          { id: 'verse', name: 'Verse', slots: { 'snare:0': ['snare:0', 'snare:2'] } },
+        ],
+      },
+    ];
+    expect(migrateSongs(legacy)).toEqual([
+      {
+        id: 'set-1',
+        name: 'Set 1',
+        sections: [
+          { id: 'intro', name: 'Intro', graphs: ['kick:0', 'snare:0'] },
+          { id: 'verse', name: 'Verse', graphs: ['snare:0', 'snare:2'] },
+        ],
+      },
+    ]);
+  });
+
+  it('deserializeAuthored migrates a legacy slots blob end-to-end', () => {
+    const restored = deserializeAuthored({
+      version: VERSION,
+      data: {
+        songs: [
+          { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] },
+        ],
+      },
+    });
+    expect(restored?.songs).toEqual([
+      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'] }] },
+    ]);
   });
 });
 

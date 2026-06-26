@@ -1,64 +1,59 @@
 <script lang="ts">
-  /* Sections / Setlist — the real model: a grid of reusable, layerable GRAPHS.
-     Columns = the active song's sections; rows = PADS (drum · zone), grouped under
-     each drum, with up to SLOTS_PER_DRUM graph slots (L1..L3) per pad. Slots are
-     keyed per pad by padKey, so each zone of a drum carries its own slot graphs
-     (Edge ≠ Centre). A slot references a trigger graph by key, so the same graph can
-     appear in many sections (reuse), and stacking a second graph in another slot
-     layers it (layer routing lives in the graph's buses). Clicking an empty slot
-     opens the graph picker; a filled slot can be edited (jumps to the Trigger Graph
-     view) or cleared. */
+  /* Sections / Setlist — the real model (U4): each section is a FLAT ORDERED LIST of
+     reusable GRAPHS. Columns = the active song's sections; each column is that section's
+     ordered graph list. A row references a trigger graph by key, so the same graph can
+     appear in many sections (reuse). Clicking a section header makes it the active section
+     (you play + edit it); clicking a graph row activates its section AND opens it in the
+     Trigger canvas (highlighted). The "+ graph" button opens the picker drawer to add a
+     graph (existing or new) to that section; the × removes it. Layering is now two graphs
+     in a section that share a trigger source — no per-pad slot grid. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { SLOTS_PER_DRUM, slotsFor, isReused } from '../setlist';
+  import { isReused } from '../setlist';
+  import { describeTriggerSource } from '../trigger-source-label';
   import Drawer from '../../ui/Drawer.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
-  import Pencil from '@lucide/svelte/icons/pencil';
   import Workflow from '@lucide/svelte/icons/workflow';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const song = $derived(store.activeSong);
   const sections = $derived(song?.sections ?? []);
-  const slotRows = Array.from({ length: SLOTS_PER_DRUM }, (_, i) => i);
 
-  /** padKey "drumId:zone" — the slot + graph identity used everywhere else. */
-  const padKey = (p: { drumId: string; zone: number }): string => `${p.drumId}:${p.zone}`;
-
-  /** Pads grouped under their drum (in kit drum order): the grid renders a drum
-      header then that drum's zone rows. Drums with no authored pads are dropped. */
-  const drumGroups = $derived(
-    store.drums
-      .map((d) => ({ drum: d, pads: store.pads.filter((p) => p.drumId === d.id) }))
-      .filter((g) => g.pads.length > 0),
+  // graph picker: the section awaiting a graph (or null when closed)
+  let pendingSectionId = $state<string | null>(null);
+  const pendingSection = $derived(
+    pendingSectionId ? sections.find((s) => s.id === pendingSectionId) ?? null : null,
   );
 
-  // graph picker: the slot awaiting a graph (or null when closed)
-  let pending = $state<{ sectionId: string; padKey: string; slot: number } | null>(null);
-
-  /** The pending slot's pad (for the picker context line + "in use" check). */
-  const pendingPad = $derived(pending ? store.pads.find((p) => padKey(p) === pending!.padKey) ?? null : null);
-
-  function place(graphKey: string): void {
-    if (!pending) return;
-    store.assignSlot(pending.sectionId, pending.padKey, pending.slot, graphKey);
-    pending = null;
+  /** The graph's source sub line (e.g. "Kick · center", "MIDI note 38") for a row + picker. */
+  function sourceSub(key: string): string {
+    return describeTriggerSource(store.triggerSource(key), store.drums).sub;
   }
-  function editSlot(graphKey: string): void {
-    store.editGraph(graphKey);
+
+  /** Open a graph: activate its section + open it on the canvas (highlighted), then navigate. */
+  function openGraph(sectionId: string, key: string): void {
+    store.selectGraphInSection(sectionId, key);
     shell.setView('trigger');
   }
-  /** Author a fresh graph, drop it into the pending slot, and jump to edit it. */
+  function place(graphKey: string): void {
+    if (!pendingSectionId) return;
+    store.addGraphToSection(pendingSectionId, graphKey);
+    pendingSectionId = null;
+  }
+  /** Author a fresh graph, add it to the pending section, activate + open it for editing. */
   function createAndPlace(): void {
-    if (!pending) return;
+    if (!pendingSectionId) return;
+    const sectionId = pendingSectionId;
     const key = store.createGraph();
-    store.assignSlot(pending.sectionId, pending.padKey, pending.slot, key);
-    pending = null;
-    shell.setView('trigger'); // createGraph selected it — land on the canvas to edit
+    store.addGraphToSection(sectionId, key);
+    store.selectGraphInSection(sectionId, key);
+    pendingSectionId = null;
+    shell.setView('trigger'); // land on the canvas to edit the new graph
   }
 </script>
 
@@ -74,71 +69,51 @@
   </header>
 
   {#if song}
-    <div class="gridwrap">
-      <div class="grid" style="--cols:{sections.length}">
-        <!-- header row -->
-        <div class="corner"></div>
-        <div class="corner"></div>
-        {#each sections as sec (sec.id)}
-          <button
-            class="colh"
-            class:active={store.arrangeSectionId === sec.id}
-            onclick={() => store.setArrangeSection(sec.id)}
-          >
-            {sec.name}
+    <div class="cols">
+      {#each sections as sec (sec.id)}
+        {@const active = store.activeSectionId === sec.id}
+        <section class="col" class:active>
+          <button class="colh" class:active onclick={() => store.setActiveSection(sec.id)}>
+            <span class="colname">{sec.name}</span>
+            <span class="colcount">{sec.graphs.length}</span>
           </button>
-        {/each}
 
-        <!-- one drum group: a full-width header, then each pad's SLOTS_PER_DRUM rows -->
-        {#each drumGroups as group (group.drum.id)}
-          <div class="drumgroup">{group.drum.label}</div>
-          {#each group.pads as pad (padKey(pad))}
-            {@const pk = padKey(pad)}
-            {#each slotRows as slot (slot)}
-              {#if slot === 0}
-                <div class="zoneh" style="grid-row: span {SLOTS_PER_DRUM}">{pad.zoneLabel}</div>
-              {/if}
-              <div class="sloth">L{slot + 1}</div>
-              {#each sections as sec (sec.id)}
-                {@const key = slotsFor(sec, pk)[slot] ?? null}
-                {#if key}
-                  {@const reused = isReused(song, key)}
-                  <div class="cell filled" class:reused class:dim={store.arrangeSectionId !== sec.id}>
-                    <button class="cell-main" title="Edit {store.graphLabel(key)}" onclick={() => editSlot(key)}>
-                      <Workflow size={12} aria-hidden="true" />
-                      <span class="cell-label">{store.graphLabel(key)}</span>
-                      {#if reused}<span class="reuse-dot" title="Reused in another section" aria-hidden="true"></span>{/if}
-                    </button>
-                    <div class="cell-actions">
-                      <IconButton icon={Pencil} label="Edit graph" size={12} onclick={() => editSlot(key)} />
-                      <IconButton icon={X} label="Clear slot" size={12} onclick={() => store.clearSlot(sec.id, pk, slot)} />
-                    </div>
-                  </div>
-                {:else}
-                  <button
-                    class="cell add"
-                    class:dim={store.arrangeSectionId !== sec.id}
-                    title="Place a graph"
-                    onclick={() => (pending = { sectionId: sec.id, padKey: pk, slot })}
-                  >
-                    <Plus size={13} aria-hidden="true" />
-                  </button>
-                {/if}
-              {/each}
+          <div class="graphlist">
+            {#each sec.graphs as key (key)}
+              {@const current = active && store.selectedPadKey === key}
+              {@const reused = isReused(song, key)}
+              <div class="grow" class:current class:reused>
+                <button class="grow-main" title="Open {store.graphLabel(key)}" onclick={() => openGraph(sec.id, key)}>
+                  <Workflow size={12} aria-hidden="true" />
+                  <span class="grow-text">
+                    <span class="grow-label">{store.graphLabel(key)}</span>
+                    <span class="grow-sub">{sourceSub(key)}</span>
+                  </span>
+                  {#if reused}<span class="reuse-dot" title="Reused in another section" aria-hidden="true"></span>{/if}
+                </button>
+                <div class="grow-actions">
+                  <IconButton icon={X} label="Remove from section" size={12} onclick={() => store.removeGraphFromSection(sec.id, key)} />
+                </div>
+              </div>
             {/each}
-          {/each}
-        {/each}
-      </div>
+
+            {#if sec.graphs.length === 0}
+              <p class="empty">No graphs yet.</p>
+            {/if}
+
+            <button class="addgraph" type="button" title="Add a graph" onclick={() => (pendingSectionId = sec.id)}>
+              <Plus size={13} aria-hidden="true" /> graph
+            </button>
+          </div>
+        </section>
+      {/each}
     </div>
   {/if}
 </div>
 
-<Drawer open={!!pending} onClose={() => (pending = null)} title="Place a graph" side="right" width="320px">
-  {#if pending}
-    <p class="picker-ctx">
-      {pendingPad?.drumLabel} · {pendingPad?.zoneLabel} · L{pending.slot + 1} ·
-      {sections.find((s) => s.id === pending!.sectionId)?.name}
-    </p>
+<Drawer open={!!pendingSection} onClose={() => (pendingSectionId = null)} title="Add a graph" side="right" width="320px">
+  {#if pendingSection}
+    <p class="picker-ctx">{pendingSection.name}</p>
     <div class="picker-list">
       <button class="picker-item new" onclick={createAndPlace}>
         <Plus size={14} aria-hidden="true" />
@@ -146,12 +121,14 @@
         <span class="picker-tag">empty</span>
       </button>
       {#each store.graphLibrary as g (g.key)}
-        <button class="picker-item" onclick={() => place(g.key)}>
+        {@const inSection = pendingSection.graphs.includes(g.key)}
+        <button class="picker-item" disabled={inSection} onclick={() => place(g.key)}>
           <Workflow size={14} aria-hidden="true" />
-          <span>{g.label}</span>
-          {#if isReused(song!, g.key) || (song && song.sections.some((s) => slotsFor(s, pending!.padKey).includes(g.key)))}
-            <span class="picker-tag">in use</span>
-          {/if}
+          <span class="picker-label">
+            <span>{g.label}</span>
+            <span class="picker-sub">{sourceSub(g.key)}</span>
+          </span>
+          {#if inSection}<span class="picker-tag">in section</span>{/if}
         </button>
       {/each}
     </div>
@@ -195,7 +172,10 @@
     padding: var(--space-1) var(--space-3);
     font-size: var(--text-xs);
   }
-  .gridwrap {
+  .cols {
+    display: flex;
+    gap: var(--space-2);
+    align-items: start;
     min-height: 0;
     overflow: auto;
     padding: var(--space-3);
@@ -203,27 +183,34 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
   }
-  .grid {
-    display: grid;
-    grid-template-columns: 64px 30px repeat(var(--cols), minmax(132px, 1fr));
-    gap: var(--space-1);
-    align-content: start;
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: 0 0 232px;
+    padding: var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    transition: border-color 120ms ease;
   }
-  .corner {
-    background: transparent;
+  .col.active {
+    border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
   }
   .colh {
-    position: sticky;
-    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     padding: var(--space-2);
     font-size: var(--text-xs);
     font-weight: 600;
     color: var(--text-muted);
-    text-align: center;
-    background: var(--surface-inset);
+    text-align: left;
+    background: var(--surface-2);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
-    transition: color 120ms ease, border-color 120ms ease;
+    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
   }
   .colh:hover {
     color: var(--ink);
@@ -234,76 +221,41 @@
     border-color: color-mix(in oklch, var(--accent) 55%, transparent);
     background: var(--accent-soft);
   }
-  .drumgroup {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    padding: var(--space-2) var(--space-1) var(--space-1);
-    margin-top: var(--space-1);
-    font-size: var(--text-sm);
-    font-weight: 700;
-    color: var(--ink);
-    border-bottom: 1px solid var(--border-faint);
+  .colname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .drumgroup:first-of-type {
-    margin-top: 0;
-  }
-  .zoneh {
-    display: flex;
-    align-items: center;
-    padding: 0 var(--space-1);
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: capitalize;
-  }
-  .sloth {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--text-2xs);
+  .colcount {
+    flex: none;
     font-family: var(--font-mono);
-    color: var(--text-faint);
     font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
   }
-  .cell {
+  .graphlist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .grow {
     display: flex;
     align-items: center;
-    min-height: 34px;
-    border-radius: var(--radius-2);
-    transition: border-color 120ms ease, background-color 120ms ease, opacity 120ms ease;
-  }
-  .cell.dim {
-    opacity: 0.62;
-  }
-  .cell.add {
-    justify-content: center;
-    color: var(--text-faint);
-    background: var(--surface-inset);
-    border: 1px dashed var(--border-strong);
-  }
-  .cell.add:hover {
-    color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
-    opacity: 1;
-  }
-  .cell.add:active {
-    scale: 0.97;
-  }
-  .cell.filled {
-    justify-content: space-between;
     gap: var(--space-1);
+    min-height: 38px;
     padding: 2px 4px 2px 2px;
     background: var(--surface-2);
-    border: 1px solid color-mix(in oklch, var(--accent) 40%, var(--border));
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    transition: border-color 120ms ease, background-color 120ms ease;
   }
-  .cell.filled.reused {
+  .grow.current {
     border-color: color-mix(in oklch, var(--accent) 60%, transparent);
+    background: var(--accent-soft);
   }
-  .cell-main {
+  .grow-main {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-2);
     flex: 1;
     min-width: 0;
     padding: 4px var(--space-1);
@@ -312,16 +264,31 @@
     text-align: left;
     color: var(--accent);
   }
-  .cell-main :global(svg) {
+  .grow-main :global(svg) {
     flex: none;
     opacity: 0.85;
   }
-  .cell-label {
+  .grow-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+  .grow-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--text-xs);
     color: var(--ink);
+  }
+  .grow-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
   }
   .reuse-dot {
     width: 5px;
@@ -330,14 +297,40 @@
     background: var(--accent);
     flex: none;
   }
-  .cell-actions {
+  .grow-actions {
     display: none;
     align-items: center;
-    gap: 1px;
     flex: none;
   }
-  .cell.filled:hover .cell-actions {
+  .grow:hover .grow-actions {
     display: inline-flex;
+  }
+  .empty {
+    margin: 0;
+    padding: var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+  }
+  .addgraph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    background: var(--surface-inset);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-2);
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+  .addgraph:hover {
+    color: var(--accent);
+    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+  }
+  .addgraph:active {
+    scale: 0.98;
   }
   /* picker drawer */
   .picker-ctx {
@@ -362,12 +355,15 @@
     text-align: left;
     color: var(--text);
   }
-  .picker-item:hover {
+  .picker-item:hover:not(:disabled) {
     border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
     color: var(--ink);
   }
-  .picker-item:active {
+  .picker-item:active:not(:disabled) {
     scale: 0.98;
+  }
+  .picker-item:disabled {
+    opacity: 0.5;
   }
   .picker-item.new {
     background: var(--surface-inset);
@@ -383,10 +379,20 @@
     color: var(--accent);
     flex: none;
   }
-  .picker-item span:first-of-type {
+  .picker-label {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
     flex: 1;
+    min-width: 0;
+  }
+  .picker-sub {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
   }
   .picker-tag {
+    flex: none;
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     text-transform: uppercase;
@@ -394,8 +400,10 @@
     color: var(--text-faint);
   }
   @media (prefers-reduced-motion: reduce) {
-    .cell,
-    .colh {
+    .grow,
+    .col,
+    .colh,
+    .addgraph {
       transition: none;
     }
   }

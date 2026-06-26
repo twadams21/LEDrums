@@ -11,7 +11,7 @@
 
 import { assertShowIntegrity, type voice } from '@ledrums/core';
 import { referencedGraphs, type Song } from '../app/setlist';
-import type { Bus, EffectDef, Preset, Section, TriggerGraph } from './sim';
+import { triggerSourceOf, type Bus, type EffectDef, type Preset, type Section, type TriggerGraph } from './sim';
 
 /** The slice of the store this adapter reads (kept narrow + read-only). */
 export interface ShowSource {
@@ -57,11 +57,34 @@ export function buildShow(source: ShowSource): voice.Show {
       sections: song.sections.map((sec) => ({
         id: sec.id,
         name: sec.name,
-        // slots are keyed per pad by padKey "drumId:zone" — passed through verbatim.
-        slots: Object.fromEntries(
-          Object.entries(sec.slots).map(([padKey, slotArr]) => [padKey, slotArr.slice()]),
-        ),
+        // U4: a section is a FLAT ordered graph list, but the engine still resolves a pad
+        // hit by a padKey-keyed slot grid — so bridge graphs → slots here (the explicit map
+        // this adapter's header promises). See sectionSlotsFromGraphs.
+        slots: sectionSlotsFromGraphs(sec.graphs, source.graphs),
       })),
     })),
   };
+}
+
+/**
+ * Reconstruct the engine's per-pad slot grid (`SlotRefs`) from a section's flat graph list
+ * (U4): group each graph under its `drum` source's padKey `"drumId:zone"`, preserving list
+ * order so layered same-source graphs keep their order. AUTHORED graphs with a `midi`/`osc`
+ * source (or no source / an unknown key) are NOT pad-bound, so they're omitted — the server
+ * fires those via direct trigger-source routing (U3), not the section slot path.
+ */
+function sectionSlotsFromGraphs(
+  graphs: readonly string[],
+  allGraphs: Record<string, TriggerGraph>,
+): Record<string, string[]> {
+  const slots: Record<string, string[]> = {};
+  for (const key of graphs) {
+    const g = allGraphs[key];
+    const src = g ? triggerSourceOf(g) : undefined;
+    if (src?.kind === 'drum') {
+      const pad = `${src.drumId}:${src.zone}`;
+      (slots[pad] ??= []).push(key);
+    }
+  }
+  return slots;
 }

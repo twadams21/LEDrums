@@ -323,6 +323,15 @@ export function sourceMatchesFire(source: TriggerSource | undefined, fire: RawTr
   return false;
 }
 
+/** Does a trigger source match a physical drum-zone hit? Only a `drum` source matches — its
+    `drumId` + `zone` must equal the hit's (zone compared as a string, the padKey form). The
+    pad-path counterpart to {@link sourceMatchesFire}: together they are the ONE source-match
+    rule the store's section hit-resolution shares with the engine. midi/osc sources never
+    match a pad hit (they fire via raw fires). */
+export function sourceMatchesPad(source: TriggerSource | undefined, drumId: string, zone: string): boolean {
+  return source?.kind === 'drum' && source.drumId === drumId && source.zone === zone;
+}
+
 /** Offline DIRECT resolution: the authored graphs a raw MIDI/OSC fire triggers by their
     trigger source, each with the fire's normalized 0..1 value (what eval routes on). The
     web mirror of the engine's `resolveDirectGraphs` — the zone-map precedence half is the

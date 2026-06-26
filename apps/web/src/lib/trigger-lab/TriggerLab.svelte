@@ -143,7 +143,7 @@
   <section class="sections">
     <span class="seclabel">Sections</span>
     {#each store.sections as s (s.id)}
-      <button class="scene" class:active={store.activeSectionId === s.id} onclick={() => store.recall(s.id)}>{s.name}</button>
+      <button class="scene" class:active={store.activeSectionId === s.id} onclick={() => store.setActiveSection(s.id)}>{s.name}</button>
     {/each}
   </section>
 

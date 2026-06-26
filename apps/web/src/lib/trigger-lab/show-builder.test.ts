@@ -4,7 +4,7 @@ import { buildShow, type ShowSource } from './show-builder';
 import { BUSES, DRUMS, PADS, PRESETS, SECTIONS, EFFECTS } from './fixtures';
 import { buildLabModel } from './kit';
 import { treeToGraph, type TriggerSource } from './sim';
-import { makeSection, setSlot, type Song } from '../app/setlist';
+import { makeSection, type Song } from '../app/setlist';
 
 /** A ShowSource mirroring how the store seeds itself from the fixtures (graphs are
     keyed by the padKey "drumId:zone" the store + server registry both use). */
@@ -85,23 +85,41 @@ describe('buildShow referential integrity', () => {
     expect(() => buildShow(src)).toThrow(/graph "tom:0" → drum "tom"/);
   });
 
-  it('throws when a setlist slot references a graph that does not exist', () => {
+  it('throws when a section references a graph that does not exist', () => {
     const src = fixtureSource();
-    const padKeys = PADS.map((p) => `${p.drumId}:${p.zone}`);
-    let song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', padKeys)] };
-    song = setSlot(song, 'a', 'kick:0', 0, 'kick:9'); // no graph keyed kick:9
+    const song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', ['kick:9'])] }; // no graph keyed kick:9
     src.songs = [song];
     expect(() => buildShow(src)).toThrow(/setlist slot → graph "kick:9"/);
   });
 
-  it('passes when setlist slots reference real graphs', () => {
+  it('passes when a section references real graphs', () => {
     const src = fixtureSource();
-    const padKeys = PADS.map((p) => `${p.drumId}:${p.zone}`);
     const realKey = `${PADS[0]!.drumId}:${PADS[0]!.zone}`;
-    let song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', padKeys)] };
-    song = setSlot(song, 'a', realKey, 0, realKey); // the pad's own graph (the seed case)
+    const song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', [realKey])] }; // the pad's own graph
     src.songs = [song];
     expect(() => buildShow(src)).not.toThrow();
+  });
+});
+
+// U4 bridge: the web section is a FLAT graph list, but the engine resolves a hit by a
+// padKey-keyed slot grid — buildShow reconstructs that grid from each graph's `drum` source.
+describe('buildShow bridges a section’s flat graphs → the engine slot grid', () => {
+  it('groups graphs under their drum-source padKey (order preserved); omits midi/osc', () => {
+    const src = fixtureSource();
+    const drumKey = `${PADS[0]!.drumId}:${PADS[0]!.zone}`; // a pad graph bound to its drum
+    const midiKey = `${PADS[1]!.drumId}:${PADS[1]!.zone}`; // re-bind this one to a raw MIDI input
+    const setSource = (key: string, source: TriggerSource): void => {
+      src.graphs[key]!.nodes.find((n) => n.kind === 'trigger')!.source = source;
+    };
+    setSource(drumKey, { kind: 'drum', drumId: PADS[0]!.drumId, zone: String(PADS[0]!.zone) });
+    setSource(midiKey, { kind: 'midi', note: 38 }); // direct MIDI binding — not pad-bound
+
+    const song: Song = { id: 's1', name: 'S1', sections: [makeSection('a', 'A', [drumKey, midiKey])] };
+    src.songs = [song];
+
+    const slots = buildShow(src).songs![0]!.sections[0]!.slots;
+    expect(slots[drumKey]).toEqual([drumKey]); // drum-source graph → its padKey slot
+    expect(Object.keys(slots)).toEqual([drumKey]); // MIDI-source graph omitted (fires via direct routing)
   });
 });
 

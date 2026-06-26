@@ -36,6 +36,8 @@ import {
   makeNode,
   nodeHasOutput,
   nodeHasInput,
+  sourceMatchesPad,
+  triggerSourceOf,
 } from './sim';
 import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, play, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
@@ -115,34 +117,22 @@ export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
 
 const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
 
-/** Seed one demo song from the fixture sections, filling each PAD's slot 0 with that
-    pad's OWN graph. Slots are keyed per pad by padKey, so the default arrangement
-    reproduces the pre-section per-zone behaviour exactly (hit a zone → its own graph
-    fires) while still being a real, editable arrangement. The same pad's graph in
-    every section makes reuse visible in the grid; Verse stacks a second graph on the
-    snare-centre pad to show layering. References are by graph key — the same key in
-    two sections is the same graph, not a copy. */
+/** Seed one demo song from the fixture sections, each section being the FLAT list of every
+    pad's graph key (U4). Each pad graph declares a `drum` source from its padKey (the
+    constructor's unionTriggerSources back-fill), so a hit fires only the matching pad's
+    graph — reproducing the pre-section per-zone behaviour exactly while every section is a
+    real, editable, reusable graph list. References are by graph key, so the same key in two
+    sections is the same graph, not a copy; layering a drum is now two graphs in the section
+    that share a source (each pad appears once in the seed). */
 function seedSongs(): Song[] {
   const padKeys = PADS.map(padKey);
-  let song: Song = {
-    id: 'set-1',
-    name: 'Set 1',
-    sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys)),
-  };
-  for (const sec of SECTIONS) {
-    for (const p of PADS) {
-      const key = padKey(p); // slot 0 of each pad = the pad's own graph
-      song = setlist.setSlot(song, sec.id, key, 0, key);
-    }
-  }
-  // a layered example: Verse stacks the snare-rim graph (zone 2) over the snare-centre
-  // pad, so hitting snare centre in Verse fires both layers.
-  const snareCentre = PADS.find((p) => p.drumId === 'snare' && p.zone === 0);
-  const snareRim = PADS.find((p) => p.drumId === 'snare' && p.zone === 2);
-  if (snareCentre && snareRim && SECTIONS.some((s) => s.id === 'verse')) {
-    song = setlist.setSlot(song, 'verse', padKey(snareCentre), 1, padKey(snareRim));
-  }
-  return [song];
+  return [
+    {
+      id: 'set-1',
+      name: 'Set 1',
+      sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys)),
+    },
+  ];
 }
 
 /** Union built-in effects with persisted USER-CREATED ones. Hydration must never
@@ -228,17 +218,17 @@ export class TriggerLab {
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
   creatorOpen = $state(false); // effect creator
 
-  // section recall (timed morph only)
-  activeSectionId = $state<string | null>(null);
-
-  // --- setlist (songs → sections → per-drum graph slots) -------------------
-  /** authored arrangement: songs, each with sections holding per-drum graph slots
-      that REFERENCE graphs by key (reuse-by-reference; stacked slots = layers). */
+  // --- setlist (songs → sections → flat ordered graph lists) ---------------
+  /** authored arrangement: songs, each with sections that hold a FLAT ordered list of
+      graph KEYS (reuse-by-reference; layering = two graphs sharing a source). */
   songs = $state<Song[]>(seedSongs());
   /** which song the Sections view + Songs rail show. */
   activeSongId = $state<string>('set-1');
-  /** which section column is focused for arranging (independent of look recall). */
-  arrangeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
+  /** The ONE active section (U4 merged the old `activeSectionId` look-recall +
+      `arrangeSectionId` arrange focus): the section you're playing IS the one you're
+      editing. Drives hit-resolution (its graphs fire), the look-morph recall, and the
+      Sections / Trigger views' highlight. Defaults to the first fixture section. */
+  activeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
 
   /** persisted shell pane sizes in px, keyed by a stable pane id (set by the
       resizable docks — step 3). Empty until the user drags a splitter. */
@@ -337,22 +327,21 @@ export class TriggerLab {
 
   selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
   selectedGraph = $derived(this.selectedPadKey ? this.graphs[this.selectedPadKey] ?? null : null);
-  activeSection = $derived(this.sections.find((s) => s.id === this.activeSectionId) ?? null);
   beatPhase = $derived((this.beat % 4) / 4);
 
   // setlist derived
   activeSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? this.songs[0] ?? null);
-  arrangeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.arrangeSectionId) ?? null);
+  /** The active section (SetlistSection) in the active song — the section you play + edit.
+      Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
+  activeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.activeSectionId) ?? null);
   /** The reusable graph library: every per-pad graph ("Drum · zone") plus every
       authored graph (its user/auto label), so the picker + slot labels see both. */
   graphLibrary = $derived([
     ...this.pads.map((p) => ({ key: padKey(p), label: `${p.drumLabel} · ${p.zoneLabel}` })),
     ...Object.keys(this.graphNames).map((key) => ({ key, label: this.graphNames[key]! })),
   ]);
-  /** Just the authored (non-pad) graphs, for the editor's "Authored" group. */
-  authoredGraphs = $derived(Object.keys(this.graphNames).map((key) => ({ key, label: this.graphNames[key]! })));
 
-  /** Human label for a graph key (for slot cells); falls back to the raw key. */
+  /** Human label for a graph key (for the section lists + picker); falls back to the raw key. */
   graphLabel(key: string): string {
     return this.graphLibrary.find((g) => g.key === key)?.label ?? key;
   }
@@ -418,7 +407,7 @@ export class TriggerLab {
       effects: this.effects,
       selectedPadKey: this.selectedPadKey,
       activeSongId: this.activeSongId,
-      arrangeSectionId: this.arrangeSectionId,
+      activeSectionId: this.activeSectionId,
       bpm: this.bpm,
       velocity: this.velocity,
       beatsPerBar: this.beatsPerBar,
@@ -443,7 +432,7 @@ export class TriggerLab {
     if (a.effects) this.effects = unionEffects(a.effects);
     if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
     if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
-    if (a.arrangeSectionId !== undefined) this.arrangeSectionId = a.arrangeSectionId;
+    if (a.activeSectionId !== undefined) this.activeSectionId = a.activeSectionId;
     if (typeof a.bpm === 'number') this.bpm = a.bpm;
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
@@ -510,9 +499,9 @@ export class TriggerLab {
           this.lastShowSig = this.showSig(show); // baseline so the first sync tick is a no-op
           this.lastSent = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
           this.client.send({ t: 'setTransport', ...this.lastSent });
-          // align the engine's active section with the store's current arrange focus
-          if (this.arrangeSectionId) {
-            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangeSectionId });
+          // align the engine's active section with the store's current active section
+          if (this.activeSectionId) {
+            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
           }
         } else {
           // a drop means our next open must re-send the transport + Show
@@ -560,8 +549,8 @@ export class TriggerLab {
     this.lastShowSig = sig;
     this.client.send({ t: 'setShow', show });
     // setShow reseeds the active section to the first song/section — restore focus.
-    if (this.arrangeSectionId) {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangeSectionId });
+    if (this.activeSectionId) {
+      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
     }
   }
 
@@ -594,28 +583,28 @@ export class TriggerLab {
   // --- play surface --------------------------------------------------------
 
   /**
-   * Resolve which graphs to fire locally for a pad hit — mirrors the engine's
-   * `resolveHitGraphs`. Slots are keyed per pad by padKey, so if the active song +
-   * arrange section has non-null slots for THIS pad, returns one entry per filled
-   * slot (layered). Falls back to the flat per-pad graph when there is no active
-   * section or no slots for this pad — so each zone fires its own graph.
+   * Resolve which graphs to fire locally for a pad hit — U4 model + U3 source filter.
+   * Candidate graphs = the ACTIVE section's flat graph list; a graph fires when its trigger
+   * `source` is a `drum` source matching this pad's drum+zone ({@link sourceMatchesPad}) — so
+   * each zone still fires only its own graph, and LAYERING is two section graphs sharing a
+   * source (both fire). Returns one entry per matching graph in section order (may be empty
+   * when the section doesn't use this pad). Falls back to the flat per-pad graph when there
+   * is NO active section — today's pre-section per-zone behaviour.
+   *
+   * (Raw MIDI/OSC direct bindings resolve via the sim's `resolveGraphsForFire` / the server
+   * input-router — U3 — not this pad path.)
    */
   private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string }> {
-    const song = this.activeSong;
-    if (song) {
-      const section = song.sections.find((s) => s.id === this.arrangeSectionId);
-      if (section) {
-        const slots = section.slots[padKey(pad)];
-        if (slots) {
-          const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
-          for (const key of slots) {
-            if (!key) continue;
-            const g = this.graphs[key];
-            if (g) resolved.push({ graph: g, label: this.graphLabel(key) });
-          }
-          if (resolved.length > 0) return resolved;
+    const section = this.activeSection;
+    if (section) {
+      const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
+      for (const key of section.graphs) {
+        const g = this.graphs[key];
+        if (g && sourceMatchesPad(triggerSourceOf(g), pad.drumId, String(pad.zone))) {
+          resolved.push({ graph: g, label: this.graphLabel(key) });
         }
       }
+      return resolved;
     }
     const g = this.graphs[padKey(pad)];
     return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}` }] : [];
@@ -669,14 +658,35 @@ export class TriggerLab {
     if (b) b.crossfadeMs = ms;
   }
 
-  // --- section recall (branch 3 — timed morph) -----------------------------
+  // --- active section (U4: merged look-recall + arrange focus) -------------
 
-  recall(sectionId: string): void {
-    const s = this.sections.find((x) => x.id === sectionId);
-    if (!s) return;
+  /**
+   * Activate a section — it becomes the one you're PLAYING and the one you're EDITING
+   * (U4 merged the old `recall` look-morph and `setArrangeSection` arrange focus). Sets
+   * `activeSectionId`, recalls the timed look-morph when a fixture look shares this id, and
+   * tells the engine to fire this section's graphs.
+   */
+  setActiveSection(sectionId: string): void {
     this.activeSectionId = sectionId;
-    this.sim.recallSection(s);
-    this.snapshot();
+    const look = this.sections.find((s) => s.id === sectionId);
+    if (look) {
+      this.sim.recallSection(look);
+      this.snapshot();
+    }
+    if (this.link === 'open') {
+      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
+    }
+  }
+
+  /**
+   * Select a graph within a section: make that section active (above) and open the graph in
+   * the canvas (highlighted via `selectedPadKey`). The Sections view and the Trigger view's
+   * section list both call this for select → activate + open + highlight. No-op-safe if the
+   * graph key is unknown.
+   */
+  selectGraphInSection(sectionId: string, graphKey: string): void {
+    this.setActiveSection(sectionId);
+    if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
   }
 
   // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
@@ -761,39 +771,33 @@ export class TriggerLab {
     if (!this.songs.some((s) => s.id === songId)) return;
     this.activeSongId = songId;
     const firstSectionId = this.songs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
-    this.arrangeSectionId = firstSectionId;
+    this.activeSectionId = firstSectionId;
     if (this.link === 'open' && firstSectionId) {
       this.client.send({ t: 'recallSection', songId, sectionId: firstSectionId });
     }
   }
 
-  setArrangeSection(sectionId: string): void {
-    this.arrangeSectionId = sectionId;
-    // Activating a section column drives playback — the engine fires its slot graphs.
-    if (this.link === 'open') {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
-    }
-  }
   /** Mutate the active song immutably via the pure setlist ops, then store it back. */
   private updateActiveSong(fn: (song: Song) => Song): void {
     const id = this.activeSongId;
     this.songs = this.songs.map((s) => (s.id === id ? fn(s) : s));
   }
-  assignSlot(sectionId: string, padKeyId: string, slotIndex: number, graphKey: string | null): void {
-    this.updateActiveSong((song) => setlist.setSlot(song, sectionId, padKeyId, slotIndex, graphKey));
+  /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
+  addGraphToSection(sectionId: string, graphKey: string): void {
+    this.updateActiveSong((song) => setlist.addGraph(song, sectionId, graphKey));
   }
-  clearSlot(sectionId: string, padKeyId: string, slotIndex: number): void {
-    this.updateActiveSong((song) => setlist.clearSlot(song, sectionId, padKeyId, slotIndex));
+  /** Remove a graph reference from a section's flat list. */
+  removeGraphFromSection(sectionId: string, graphKey: string): void {
+    this.updateActiveSong((song) => setlist.removeGraph(song, sectionId, graphKey));
+  }
+  /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
+  setSectionGraphs(sectionId: string, graphs: string[]): void {
+    this.updateActiveSong((song) => setlist.setGraphs(song, sectionId, graphs));
   }
   addSongSection(name: string): void {
-    const padKeys = this.pads.map(padKey);
     const id = nid('section');
-    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name, padKeys)));
-    this.arrangeSectionId = id;
-  }
-  /** Jump to the Trigger Graph editor for a slot's referenced graph (by pad key). */
-  editGraph(graphKey: string): void {
-    if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
+    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)));
+    this.activeSectionId = id;
   }
 
   /** Author a brand-new, empty trigger graph (just the implicit trigger input) and

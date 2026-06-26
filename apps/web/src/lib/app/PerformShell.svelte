@@ -74,7 +74,7 @@
   <div class="precall">
     <Eyebrow>Recall</Eyebrow>
     {#each store.sections as s (s.id)}
-      <button class="chip" class:on={store.activeSectionId === s.id} onclick={() => store.recall(s.id)}>{s.name}</button>
+      <button class="chip" class:on={store.activeSectionId === s.id} onclick={() => store.setActiveSection(s.id)}>{s.name}</button>
     {/each}
   </div>
 
