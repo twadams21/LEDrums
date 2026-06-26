@@ -7,6 +7,8 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
+  import { describeTriggerSource, zoneLabel } from '../trigger-source-label';
+  import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
     NODE_KINDS,
     type GraphNode,
@@ -15,6 +17,7 @@
     type ParamValue,
     type Polyphony,
     type SwitchOn,
+    type TriggerSource,
     type ValueMode,
   } from '../../trigger-lab/sim';
   import { busIcon, kindIcon, kindLabel, tint } from '../views/trigger-node-meta';
@@ -181,6 +184,61 @@
   ];
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
+  // --- Trigger-node source editor (U2) -------------------------------------------
+  // The trigger node (graph root) declares what input fires its graph — a drum zone, a
+  // raw MIDI note/CC, or an OSC address (U1's TriggerSource). Writes go through the U1
+  // mutator store.setTriggerSource(<graph key>, source); the readout + the node sub-line
+  // resolve via the pure describeTriggerSource helper. The graph key is store.selectedPadKey.
+  const SOURCE_OPTS: Array<{ value: TriggerSource['kind']; label: string }> = [
+    { value: 'drum', label: 'Drum' },
+    { value: 'midi', label: 'MIDI' },
+    { value: 'osc', label: 'OSC' },
+  ];
+  const MIDI_OPTS = [
+    { value: 'note', label: 'Note' },
+    { value: 'cc', label: 'CC' },
+  ];
+  const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
+
+  /** Zone <Select> options for a drum: the zones it exposes as pads (its hoops in use),
+      always including the current binding, falling back to all four hoop labels. */
+  function zoneOptsFor(drumId: string, current: string): Array<{ value: string; label: string }> {
+    const ids: string[] = []; // ≤4 zones — a plain unique-push is plenty (no reactive Set)
+    const add = (z: string): void => {
+      if (z && !ids.includes(z)) ids.push(z);
+    };
+    for (const p of store.pads) if (p.drumId === drumId) add(String(p.zone));
+    add(current);
+    ids.sort((a, b) => Number(a) - Number(b));
+    const list = ids.length ? ids : ZONE_LABELS.map((_, i) => String(i));
+    return list.map((z) => ({ value: z, label: zoneLabel(z) }));
+  }
+
+  /** Switch the trigger source to a new kind, carrying compatible fields and filling
+      least-surprising defaults (first drum + centre · middle MIDI note · empty address). */
+  function setSourceKind(gkey: string, cur: TriggerSource | undefined, kind: TriggerSource['kind']): void {
+    let next: TriggerSource;
+    if (kind === 'drum') next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId: store.drums[0]?.id ?? '', zone: '0' };
+    else if (kind === 'midi') next = cur?.kind === 'midi' ? cur : { kind: 'midi', note: 60 };
+    else next = cur?.kind === 'osc' ? cur : { kind: 'osc', address: '' };
+    store.setTriggerSource(gkey, next);
+  }
+
+  /** Flip a MIDI source between note and CC, carrying the current number across. */
+  function setMidiMode(gkey: string, cur: Extract<TriggerSource, { kind: 'midi' }>, mode: 'note' | 'cc'): void {
+    const n = cur.cc ?? cur.note ?? 0;
+    store.setTriggerSource(gkey, mode === 'cc' ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
+  }
+
+  /** Rename an AUTHORED graph from its trigger node (editable-node parity). Pad graphs
+      label from the kit; only `graph:<n>` keys live in graphNames. No store mutator owns
+      this (U1 owns store.svelte.ts), so write the reactive record directly — the authored
+      autosave persists it. An empty commit keeps the existing name. */
+  function renameGraph(gkey: string, raw: string): void {
+    const v = raw.trim();
+    if (v) store.graphNames = { ...store.graphNames, [gkey]: v };
+  }
+
   /** One-line description for the container/modifier kinds that take no extra control. */
   function kindBlurb(kind: NodeKind): string {
     switch (kind) {
@@ -206,15 +264,103 @@
 
 <div class="inspector">
   {#if node && node.kind === 'trigger'}
-    <!-- the graph's input — read-only (no kind change, no remove) -->
+    <!-- the graph's input — declares what fires it (source); kind/remove stay off-limits -->
+    {@const src = node.source}
+    {@const gkey = store.selectedPadKey}
+    {@const kindNow = src?.kind ?? 'drum'}
     <header class="ihead">
       <div class="titles">
-        <h3>{store.selectedPad ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}` : 'Trigger'}</h3>
+        <h3>
+          {store.selectedPad
+            ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
+            : gkey
+              ? store.graphLabel(gkey)
+              : 'Trigger'}
+        </h3>
         <span class="sub">graph input</span>
       </div>
     </header>
-    <div class="nodeinfo">
-      <p class="hint">Every hit enters here. Wire it to a block on the canvas to shape what plays.</p>
+    <div class="trigbody">
+      <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
+      <Field label="Trigger source">
+        <SegmentedControl
+          value={kindNow}
+          options={SOURCE_OPTS}
+          onChange={(v) => gkey && setSourceKind(gkey, src, v as TriggerSource['kind'])}
+          ariaLabel="Trigger source"
+        />
+      </Field>
+
+      {#if kindNow === 'drum'}
+        {@const drumId = src?.kind === 'drum' ? src.drumId : store.drums[0]?.id ?? ''}
+        {@const zone = src?.kind === 'drum' ? src.zone : '0'}
+        <Field label="Drum">
+          <Select
+            value={drumId}
+            options={DRUM_OPTS}
+            onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId: v, zone })}
+            ariaLabel="Drum"
+          />
+        </Field>
+        <Field label="Zone">
+          <Select
+            value={zone}
+            options={zoneOptsFor(drumId, zone)}
+            onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId, zone: v })}
+            ariaLabel="Zone"
+          />
+        </Field>
+      {:else if src?.kind === 'midi'}
+        {@const isCc = src.cc !== undefined}
+        <Field label="Type">
+          <SegmentedControl
+            value={isCc ? 'cc' : 'note'}
+            options={MIDI_OPTS}
+            onChange={(v) => gkey && setMidiMode(gkey, src, v as 'note' | 'cc')}
+            ariaLabel="MIDI note or CC"
+          />
+        </Field>
+        <Field label={isCc ? 'CC number' : 'Note number'} hint="0–127">
+          <CommitInput
+            type="number"
+            min={0}
+            max={127}
+            value={(isCc ? src.cc : src.note) ?? ''}
+            placeholder="0–127"
+            ariaLabel={isCc ? 'CC number' : 'Note number'}
+            onCommit={(v) =>
+              onNum(v, (n) => gkey && store.setTriggerSource(gkey, isCc ? { kind: 'midi', cc: n } : { kind: 'midi', note: n }))}
+          />
+        </Field>
+        <p class="hint">Channel comes from the patch device, not here.</p>
+      {:else if src?.kind === 'osc'}
+        <Field label="Address" hint="e.g. /kick">
+          <CommitInput
+            value={src.address}
+            mono
+            placeholder="/kick"
+            ariaLabel="OSC address"
+            onCommit={(v) => gkey && store.setTriggerSource(gkey, { kind: 'osc', address: v.trim() })}
+          />
+        </Field>
+        <p class="hint">Namespace / host comes from the patch device, not here.</p>
+      {/if}
+
+      <div class="readrow">
+        <span class="k">Resolves to</span>
+        <span class="rval">{describeTriggerSource(src, store.drums).sub}</span>
+      </div>
+
+      {#if gkey && gkey in store.graphNames}
+        <Field label="Name" hint="display label">
+          <CommitInput
+            value={store.graphNames[gkey] ?? ''}
+            placeholder="New graph"
+            ariaLabel="Graph name"
+            onCommit={(v) => renameGraph(gkey, v)}
+          />
+        </Field>
+      {/if}
     </div>
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
@@ -975,6 +1121,16 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+  }
+  /* trigger-node source editor (U2): segmented kind + per-mode fields + readout */
+  .trigbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+  .trigbody :global(.sel) {
+    width: 100%;
   }
   /* --- Patch graph per-node editors (S4) ----------------------------------- */
   .patchbody {

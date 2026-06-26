@@ -5,7 +5,8 @@
      title/sub/thumb stay reactive as the Inspector swaps effects or tweaks params.
 
        · play     → title = effect name, sub = preset, thumbnail = EffectThumb (right)
-       · trigger  → title = drum · zone, sub = "Trigger"  (source only)
+       · trigger  → title = "Trigger", sub = the resolved input source (drum · zone /
+                    MIDI note · CC / OSC address, or "unbound" when not yet bound)
        · others   → title = kind label, sub = a short summary (chance 45%, switch on…)
 
      Handles: left target if the kind takes input, right source if it emits — so the
@@ -18,6 +19,7 @@
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import { kindIcon, tint, kindLabel, kindSummary } from './trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
+  import { describeTriggerSource } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
 
   let { id, data, selected }: NodeProps = $props();
@@ -43,13 +45,14 @@
 
   const title = $derived.by(() => {
     if (!node) return '';
-    if (node.kind === 'trigger') return `${store.selectedPad?.drumLabel ?? ''} · ${store.selectedPad?.zoneLabel ?? ''}`;
+    if (node.kind === 'trigger') return 'Trigger';
     if (node.kind === 'play') return eff?.name ?? 'effect';
     return kindLabel[node.kind];
   });
   const sub = $derived.by(() => {
     if (!node) return '';
-    if (node.kind === 'trigger') return 'Trigger';
+    // the resolved input source — drum · zone / MIDI note·CC / OSC address, or "unbound"
+    if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
     if (node.kind === 'play') return store.presetById(node.presetId)?.name ?? '';
     return kindSummary(node);
   });
