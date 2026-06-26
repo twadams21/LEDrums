@@ -3,7 +3,7 @@ import { DEFAULT_KIT, defaultProject, ReferentialIntegrityError } from '@ledrums
 import { buildShow, type ShowSource } from './show-builder';
 import { BUSES, DRUMS, PADS, PRESETS, SECTIONS, EFFECTS } from './fixtures';
 import { buildLabModel } from './kit';
-import { treeToGraph } from './sim';
+import { treeToGraph, type TriggerSource } from './sim';
 import { makeSection, setSlot, type Song } from '../app/setlist';
 
 /** A ShowSource mirroring how the store seeds itself from the fixtures (graphs are
@@ -46,6 +46,32 @@ describe('buildShow', () => {
     const show = buildShow(src);
     show.buses.push({ id: 'extra', name: 'Extra', polyphony: 'poly', crossfadeMs: 0 });
     expect(src.buses).toHaveLength(BUSES.length); // source untouched
+  });
+});
+
+// Trigger-source structural identity (U1): a graph whose trigger node carries a `source`
+// must round-trip through buildShow unchanged. Because buildShow returns a voice.Show,
+// reading `.source` off the result ALSO proves the core mirror field exists and matches
+// shape — a web↔core divergence would fail typecheck here, not just at runtime.
+describe('buildShow carries the trigger source (web↔core structural identity)', () => {
+  it('round-trips each source variant through to the voice.Show', () => {
+    const src = fixtureSource();
+    const k0 = `${PADS[0]!.drumId}:${PADS[0]!.zone}`;
+    const k1 = `${PADS[1]!.drumId}:${PADS[1]!.zone}`;
+    const k2 = `${PADS[2]!.drumId}:${PADS[2]!.zone}`;
+    const setSource = (key: string, source: TriggerSource): void => {
+      const trig = src.graphs[key]!.nodes.find((n) => n.kind === 'trigger')!;
+      trig.source = source;
+    };
+    setSource(k0, { kind: 'drum', drumId: PADS[0]!.drumId, zone: String(PADS[0]!.zone) });
+    setSource(k1, { kind: 'midi', note: 38 });
+    setSource(k2, { kind: 'osc', address: '/snare' });
+
+    const show = buildShow(src);
+    const sourceOf = (key: string) => show.graphs[key]!.nodes.find((n) => n.kind === 'trigger')!.source;
+    expect(sourceOf(k0)).toEqual({ kind: 'drum', drumId: PADS[0]!.drumId, zone: String(PADS[0]!.zone) });
+    expect(sourceOf(k1)).toEqual({ kind: 'midi', note: 38 });
+    expect(sourceOf(k2)).toEqual({ kind: 'osc', address: '/snare' });
   });
 });
 
