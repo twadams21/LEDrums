@@ -7,6 +7,9 @@ const drum = (
   label: string,
   color: string,
   diameterIn: number,
+  /** Literal LED count per hoop — the authoritative count for the physical rig
+      (docs/kit-hoop-pixel-counts.md); every hoop on a drum shares it. */
+  pixelsPerHoop: number,
   origin: { x: number; y: number; z: number },
   rotation: { x: number; y: number; z: number },
 ) => ({
@@ -15,6 +18,7 @@ const drum = (
   color,
   diameterIn,
   hoopSpacingMm: 60,
+  pixelsPerHoop,
   localSpinDeg: 270,
   startAngleDeg: 0,
   origin,
@@ -34,10 +38,10 @@ export const DEFAULT_KIT: KitConfig = parseKit({
   units: 'mm',
   global: { ledDensityPxPerM: 30, hoopCount: 4, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096 },
   drums: [
-    drum('kick', 'Kick', '#5bbcff', 21, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
-    drum('snare', 'Snare', '#72d572', 12, { x: -230, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
-    drum('tom1', 'Tom 1', '#ff8e72', 12, { x: -120, y: 300, z: 840 }, { x: 18, y: 0, z: 4 }),
-    drum('tom2', 'Tom 2', '#d69cff', 15, { x: 360, y: 40, z: 620 }, { x: 0, y: 0, z: 0 }),
+    drum('kick', 'Kick', '#5bbcff', 21, 196, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
+    drum('snare', 'Snare', '#72d572', 12, 108, { x: -230, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
+    drum('tom1', 'Tom 1', '#ff8e72', 12, 108, { x: -120, y: 300, z: 840 }, { x: 18, y: 0, z: 4 }),
+    drum('tom2', 'Tom 2', '#d69cff', 15, 136, { x: 360, y: 40, z: 620 }, { x: 0, y: 0, z: 0 }),
   ],
   outputs: [],
 });
