@@ -57,7 +57,9 @@ function makeShow(drumId: string, zone: string): voice.Show {
     bands: [0.5],
     p: 1,
     ...extra,
-  });
+    // `extra` is a Partial, so spreading it widens required keys (e.g. valueMode) to
+    // `| undefined`; the literal is structurally complete, so re-assert the full type.
+  } as voice.GraphNode);
   const graph: voice.TriggerGraph = {
     nodes: [
       node('trig', 'trigger'),
