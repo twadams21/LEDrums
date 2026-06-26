@@ -696,6 +696,7 @@ export class TriggerLab {
       localSpinDeg?: number;
       startAngleDeg?: number;
       pixelsPerHoop?: number;
+      hoopSpacingMm?: number;
     },
   ): void {
     const p = this.project;

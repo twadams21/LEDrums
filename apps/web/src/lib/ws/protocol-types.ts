@@ -51,6 +51,7 @@ export type ClientMessage =
       localSpinDeg?: number;
       startAngleDeg?: number;
       pixelsPerHoop?: number;
+      hoopSpacingMm?: number;
     }
   // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
   | { t: 'setKitOutputs'; outputs: OutputConfig[] }

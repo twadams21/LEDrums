@@ -675,6 +675,17 @@
               onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { pixelsPerHoop: n }))}
             />
           </Field>
+          <Field label="Hoop spacing" hint="vertical gap between hoops">
+            <CommitInput
+              type="number"
+              min={1}
+              value={drum.hoopSpacingMm}
+              disabled={!project}
+              suffix="mm"
+              ariaLabel="Hoop spacing"
+              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { hoopSpacingMm: n }))}
+            />
+          </Field>
           {@render renameField(sel.nodeId, d.title)}
         {:else if editor.kind === 'hoop' && patchDrum}
           {@const drum = patchDrum}

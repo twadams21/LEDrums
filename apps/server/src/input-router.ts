@@ -70,6 +70,7 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.rotation !== undefined ? { rotation: msg.rotation } : {}),
         ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
+        ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
       });
       return { structural: true };
     case 'setOutput':

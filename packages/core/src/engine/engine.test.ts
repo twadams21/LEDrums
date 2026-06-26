@@ -90,6 +90,16 @@ describe('Engine', () => {
     expect(e.getProject().composition.layers.find((l) => l.id === 'trigger')!.activeClipId).toBe('chase');
   });
 
+  it('setKitTransform({ hoopSpacingMm }) rebuilds geometry with the new hoop gap', () => {
+    const e = new Engine(velocityMeterProject());
+    // local.z of a hoop = hoopIndex * hoopSpacingMm (independent of origin/rotation).
+    const zOf = (hoop: number): number => e.getModel().pixels.find((p) => p.hoopIndex === hoop)!.local.z;
+    expect(zOf(1)).toBeCloseTo(50, 6); // initial spacing 50mm
+    e.setKitTransform('d', { hoopSpacingMm: 120 });
+    expect(zOf(1)).toBeCloseTo(120, 6); // rebuilt with the new gap
+    expect(zOf(2)).toBeCloseTo(240, 6);
+  });
+
   it('renders the full default kit within frame budget', () => {
     const e = new Engine(defaultProject());
     // warm up
