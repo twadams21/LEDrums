@@ -1,17 +1,18 @@
 <script lang="ts">
-  /* Author top bar: brand · mode switch · setlist context · transport · engine
-     status · output pill. The setlist control is a readout for now (open/save/new
+  /* Top bar: brand · setlist context · transport · engine status · output pill.
+     The setlist control is a readout for now (open/save/new
      needs a project-persistence seam the engine store doesn't have yet — a later
      milestone); it shows the live section context so the bar isn't hollow. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import ModeSwitch from './ModeSwitch.svelte';
   import Transport from './Transport.svelte';
   import OutputPill from './OutputPill.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
 
-  let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
+  // `shell` stays in the props type (the shell passes it) but is unused for now —
+  // the ModeSwitch that consumed it is gone; a later slice adds the show-title here.
+  let { store }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const activeName = $derived(store.activeSection?.name ?? '—');
 </script>
@@ -21,8 +22,6 @@
     <span class="mark" aria-hidden="true"></span>
     <span class="word">LEDrums</span>
   </div>
-
-  <ModeSwitch {shell} />
 
   <div class="setlist" title="Setlist (open / save / new — coming in a later slice)">
     <ListMusic size={15} aria-hidden="true" />

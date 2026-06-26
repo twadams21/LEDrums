@@ -11,7 +11,7 @@
   import Workflow from '@lucide/svelte/icons/workflow';
   import Cable from '@lucide/svelte/icons/cable';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Box from '@lucide/svelte/icons/box';
+  import Radio from '@lucide/svelte/icons/radio';
   import Navigation from '@lucide/svelte/icons/navigation';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -20,7 +20,7 @@
     { id: 'trigger', label: 'Trigger Graph', icon: Workflow },
     { id: 'patch', label: 'Patch Graph', icon: Cable, sub: 'inputs · devices' },
     { id: 'sections', label: 'Sections', icon: LayoutGrid },
-    { id: 'kit', label: 'Kit', icon: Box },
+    { id: 'perform', label: 'Perform', icon: Radio },
   ];
 </script>
 
