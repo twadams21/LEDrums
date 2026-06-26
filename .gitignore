@@ -11,3 +11,14 @@ coverage/
 .env.*
 !.env.example
 projects/*.local.json
+
+# Local AI/agent tooling (per-machine, not project state)
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.impeccable/
+
+# Server runtime project state (autosaved per-machine)
+apps/server/projects/
