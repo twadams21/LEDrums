@@ -90,6 +90,28 @@ describe('setInputMap / setOutput', () => {
     expect(store.project!.output.protocol).toBe('sacn');
     expect(sent).toContainEqual({ t: 'setOutput', fps: 60, protocol: 'sacn' });
   });
+
+  it('setOutput carries the standard transport fields priority/port/iface (S5c)', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setOutput({ priority: 150, port: 5569, iface: '10.0.0.9' });
+    expect(store.project!.output).toMatchObject({ priority: 150, port: 5569, iface: '10.0.0.9' });
+    expect(sent).toContainEqual({ t: 'setOutput', priority: 150, port: 5569, iface: '10.0.0.9' });
+  });
+});
+
+describe('setPatchLabel (the Patch node rename override the node face + Inspector render, S5a)', () => {
+  it('sets, overrides, trims, and clears a per-node label — UI-only, never over WS', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setPatchLabel('output:1', '  Front Truss  ');
+    expect(store.patchLabels['output:1']).toBe('Front Truss'); // trimmed
+    store.setPatchLabel('output:1', 'Stage Left');
+    expect(store.patchLabels['output:1']).toBe('Stage Left'); // override wins
+    store.setPatchLabel('output:1', '   ');
+    expect(store.patchLabels['output:1']).toBeUndefined(); // blank clears back to the derived label
+    expect(sent).toEqual([]); // the override is local/persisted, not part of the server Project
+  });
 });
 
 describe('offline (project null)', () => {
