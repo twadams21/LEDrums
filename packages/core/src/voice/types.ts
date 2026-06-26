@@ -142,6 +142,37 @@ export type TriggerSource =
   | { kind: 'midi'; note?: number; cc?: number }
   | { kind: 'osc'; address: string };
 
+/**
+ * A raw fire from one of the three trigger sources, in that source's native units.
+ * Normalized to the trigger's 0..1 value by {@link normalizeTriggerValue} — the single
+ * value the switch `value` mode (gate/bands) routes on, identical across all sources.
+ * Structurally IDENTICAL to the web sim's `TriggerFire`.
+ */
+export type TriggerFire =
+  | { kind: 'drum'; velocity: number } // Sensory Percussion velocity, already 0..1
+  | { kind: 'midi'; value: number } //   MIDI note-on velocity OR CC value, 0..127
+  | { kind: 'osc'; arg: number }; //     OSC float argument (clamped to 0..1)
+
+const clampUnit = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+/**
+ * Normalize a raw fire to the trigger's 0..1 value — the ONE seam every source feeds so
+ * they route through the switch `value` mode identically. Pure: drum velocity passes
+ * through (already 0..1), MIDI note-velocity / CC divides by 127, OSC arg is taken as-is;
+ * all clamped to 0..1. Byte-identical to the web sim's `normalizeTriggerValue` so the two
+ * value pipelines can never drift.
+ */
+export function normalizeTriggerValue(fire: TriggerFire): number {
+  switch (fire.kind) {
+    case 'drum':
+      return clampUnit(fire.velocity);
+    case 'midi':
+      return clampUnit(fire.value / 127);
+    case 'osc':
+      return clampUnit(fire.arg);
+  }
+}
+
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
 export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle';

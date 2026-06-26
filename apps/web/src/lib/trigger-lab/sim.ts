@@ -298,6 +298,49 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
   }
 }
 
+/** A raw input for offline DIRECT resolution: the identity to match a trigger source
+    against, plus the value in that source's native units ({@link normalizeTriggerValue}
+    normalizes it). The web mirror of the engine's raw `InputEvent`. */
+export type RawTriggerInput =
+  | { kind: 'midi'; note?: number; cc?: number; value: number } // value 0..127
+  | { kind: 'osc'; address: string; arg: number };
+
+/** A graph's declared input source — its `trigger` node's `source`, or undefined for a
+    graph authored before the source model / with none bound. Mirrors core `engine`. */
+export function triggerSourceOf(graph: TriggerGraph): TriggerSource | undefined {
+  return graph.nodes.find((n) => n.kind === 'trigger')?.source;
+}
+
+/** Does a trigger source match a raw MIDI/OSC fire? `drum` sources are pad-bound and
+    never match a raw midi/osc fire (they fire via the padKey path). A note fire matches
+    a `note` source; a CC fire matches a `cc` source. */
+export function sourceMatchesFire(source: TriggerSource | undefined, fire: RawTriggerInput): boolean {
+  if (!source) return false;
+  if (fire.kind === 'osc') return source.kind === 'osc' && source.address === fire.address;
+  if (source.kind !== 'midi') return false;
+  if (fire.note !== undefined) return source.note !== undefined && source.note === fire.note;
+  if (fire.cc !== undefined) return source.cc !== undefined && source.cc === fire.cc;
+  return false;
+}
+
+/** Offline DIRECT resolution: the authored graphs a raw MIDI/OSC fire triggers by their
+    trigger source, each with the fire's normalized 0..1 value (what eval routes on). The
+    web mirror of the engine's `resolveDirectGraphs` — the zone-map precedence half is the
+    store's padKey path; this is the second half. Pure (stable key order). */
+export function resolveGraphsForFire(
+  graphs: Record<string, TriggerGraph>,
+  fire: RawTriggerInput,
+): Array<{ key: string; graph: TriggerGraph; value: number }> {
+  const value = normalizeTriggerValue(
+    fire.kind === 'osc' ? { kind: 'osc', arg: fire.arg } : { kind: 'midi', value: fire.value },
+  );
+  const out: Array<{ key: string; graph: TriggerGraph; value: number }> = [];
+  for (const [key, graph] of Object.entries(graphs)) {
+    if (sourceMatchesFire(triggerSourceOf(graph), fire)) out.push({ key, graph, value });
+  }
+  return out;
+}
+
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
 export type NodeKind = 'trigger' | BlockKind;

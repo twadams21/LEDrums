@@ -24,6 +24,7 @@ import {
 } from './compositor';
 import {
   emptyShow,
+  normalizeTriggerValue,
   padKey,
   type Bus,
   type EffectDef,
@@ -38,6 +39,7 @@ import {
   type Show,
   type SwitchOn,
   type TriggerGraph,
+  type TriggerSource,
   type Voice,
 } from './types';
 
@@ -202,30 +204,66 @@ class VoiceBusEngine implements RenderEngine {
       this.activeSectionId = e.sectionId ?? null;
       return;
     }
-    // noteOn / key both fire a pad's graph; noteOff currently has no engine effect
-    // (voices decay on their own envelope). osc with only an address is unmapped.
-    if (e.kind === 'noteOn' || e.kind === 'key' || e.kind === 'osc') {
-      const drumId = e.drumId;
-      if (!drumId) return;
-      const zone = e.zone ?? '';
-      const velocity = clamp01(e.kind === 'osc' ? e.value ?? 0 : e.velocity ?? 1);
-      const ctx: TriggerCtx = {
-        velocity,
-        sectionIndex: this.sectionIndex,
-        sectionCount: this.show.sections.length,
-        beatPhase: this.beatPhase(),
-        sourceDrumId: drumId,
-      };
-      // Section-aware resolution: fire each non-null slot graph for THIS pad.
-      // Slots are keyed per (drum, zone) by padKey, so a hit fires only the active
-      // section's graphs for the struck pad — Edge, Rim and Centre each fire their
-      // own slot graph. Fallback to the flat padKey graph when there is no active
-      // section or this pad has no slots in the active section.
-      const toFire = this.resolveHitGraphs(drumId, zone);
-      for (const { graph, statePrefix } of toFire) {
-        this.fireGraph(graph, statePrefix, ctx);
-      }
+    // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
+    // (voices decay on their own envelope).
+    if (e.kind !== 'noteOn' && e.kind !== 'key' && e.kind !== 'osc') return;
+
+    // The normalized 0..1 value that drives eval (ctx.velocity), via the ONE seam every
+    // source feeds so the switch `value` mode routes identically. At this boundary MIDI
+    // note-velocity is already 0..1 (the server divided by 127 through the same seam), so
+    // a key/noteOn hit passes through as a `drum` fire; OSC carries its raw arg.
+    const value =
+      e.kind === 'osc'
+        ? normalizeTriggerValue({ kind: 'osc', arg: e.value ?? 0 })
+        : normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 });
+
+    // PINNED precedence — no double-fire. A zone-mapped hit arrives already resolved to a
+    // (drumId, zone) pad (the server's patch inputMap claimed it, or it is a native `key`
+    // hit): fire its pad-bound graph(s) via the padKey path and STOP. Only an event with
+    // NO pad — a raw MIDI note / OSC address the zone-map did not claim — falls through to
+    // DIRECT trigger-source bindings. Exactly one branch runs, so an event never fires
+    // both a zone-mapped pad graph and a same-input direct binding.
+    const toFire = e.drumId
+      ? this.resolveHitGraphs(e.drumId, e.zone ?? '')
+      : this.resolveDirectGraphs(e);
+    if (toFire.length === 0) return;
+
+    const ctx: TriggerCtx = {
+      velocity: value,
+      sectionIndex: this.sectionIndex,
+      sectionCount: this.show.sections.length,
+      beatPhase: this.beatPhase(),
+      sourceDrumId: e.drumId ?? '',
+    };
+    for (const { graph, statePrefix } of toFire) {
+      this.fireGraph(graph, statePrefix, ctx);
     }
+  }
+
+  /**
+   * DIRECT trigger-source resolution — the second half of the PINNED precedence, reached
+   * only when the server's zone-map did NOT claim the event (no `drumId`). Matches each
+   * authored graph's trigger-node `source` against the raw input: a MIDI note event fires
+   * graphs whose source is `{ kind:'midi', note }`; an OSC event fires `{ kind:'osc',
+   * address }`. `drum` sources are pad-bound and never match here (they fire via the
+   * padKey path). The state prefix is the graph KEY, so each direct-bound graph keeps its
+   * own deterministic eval state. Pure + deterministic (iterates a stable key order).
+   *
+   * CC sources await a CC input event — there is no CC `InputEvent` kind yet, so only
+   * `note` sources are reachable from a raw MIDI note here.
+   */
+  private resolveDirectGraphs(e: InputEvent): Array<{ graph: TriggerGraph; statePrefix: string }> {
+    const out: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
+    for (const [key, graph] of Object.entries(this.show.graphs)) {
+      const src = triggerSourceOf(graph);
+      if (!src) continue;
+      const match =
+        e.kind === 'osc'
+          ? src.kind === 'osc' && e.address !== undefined && src.address === e.address
+          : src.kind === 'midi' && src.note !== undefined && src.note === e.note;
+      if (match) out.push({ graph, statePrefix: key });
+    }
+    return out;
   }
 
   /**
@@ -653,7 +691,11 @@ export function createNullEngine(): RenderEngine {
 
 // ---- helpers ----------------------------------------------------------------
 
-const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+/** A trigger graph's declared input source — the `trigger` node's `source`, or undefined
+    for a graph authored before the source model / with none bound. Mirrors the web sim. */
+function triggerSourceOf(graph: TriggerGraph): TriggerSource | undefined {
+  return graph.nodes.find((n) => n.kind === 'trigger')?.source;
+}
 
 function modeWord(m: PlayMode): string {
   return m === 'oneshot' ? 'One-shot' : m === 'loop' ? 'Loop' : 'Hold';
