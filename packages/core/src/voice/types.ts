@@ -8,7 +8,11 @@
 // ---- Enumerations -----------------------------------------------------------
 
 export type PlayMode = 'oneshot' | 'loop' | 'hold';
-export type SwitchOn = 'velocity' | 'section' | 'beat' | 'value';
+/** What a switch routes on. `value` (gate/bands) is the canonical intensity-routing
+    mode; the older `velocity` mode was folded into it and removed (web migrates any
+    persisted `velocity` switch to `value`+bands). `section`/`beat` are count-based and
+    unchanged. Mirrors the web sim's `SwitchOn`. */
+export type SwitchOn = 'section' | 'beat' | 'value';
 /** Sub-mode of a `value` switch: a single pass/block gate, or N value bands. */
 export type ValueMode = 'gate' | 'bands';
 export type Scope = 'drum' | 'kit';

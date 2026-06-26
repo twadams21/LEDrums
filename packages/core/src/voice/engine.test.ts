@@ -3,7 +3,7 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type TriggerGraph } from './types';
+import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type SwitchOn, type TriggerGraph } from './types';
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -55,7 +55,7 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     env: {},
     linked: false,
     noRepeat: true,
-    on: 'velocity',
+    on: 'value',
     valueMode: 'gate',
     threshold: 0.5,
     invert: false,
@@ -876,13 +876,15 @@ describe('VoiceBusEngine — value switch (back-compat + additive parity)', () =
     expect(e.stats().busLevels.base).toBeGreaterThan(0); // ≤0.5 → passes (defaults to gate)
   });
 
-  it('leaves the velocity switch unchanged (additive: value branch never fires here)', () => {
-    // low velocity → first child by count; the additive value branch must not affect this.
-    const kids = [playOn('a', 'base', -40), playOn('b', 'lead', 40)];
-    const wires: GraphEdge[] = [
-      { id: 'e0', from: 'sw', to: 'a' },
-      { id: 'e1', from: 'sw', to: 'b' },
-    ];
-    expect(firedBuses({ on: 'velocity' }, kids, wires, 0.2)).toEqual(['base']);
+  it('treats a stray on:velocity switch as value defensively (no throw / no mis-route)', () => {
+    // `velocity` was dropped from SwitchOn (web migrates persisted graphs), but core must
+    // never throw on an un-migrated stray. It routes through value eval: with the default
+    // ≤0.5 gate, a low value passes the wired child, a high value blocks.
+    const kids = [playOn('a', 'base', 0)];
+    const wires: GraphEdge[] = [{ id: 'e1', from: 'sw', to: 'a' }];
+    const stray = { on: 'velocity' as unknown as SwitchOn };
+    expect(() => firedBuses(stray, kids, wires, 0.3)).not.toThrow();
+    expect(firedBuses(stray, kids, wires, 0.3)).toEqual(['base']); // ≤0.5 gate → passes
+    expect(firedBuses(stray, kids, wires, 0.8)).toEqual([]); // >0.5 → blocks
   });
 });

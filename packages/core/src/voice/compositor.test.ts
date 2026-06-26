@@ -55,7 +55,7 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     env: {},
     linked: false,
     noRepeat: true,
-    on: 'velocity',
+    on: 'value',
     valueMode: 'gate',
     threshold: 0.5,
     invert: false,

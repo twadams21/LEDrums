@@ -369,7 +369,13 @@ class VoiceBusEngine implements RenderEngine {
         return this.evalNode(graph, pad, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
       }
       case 'switch': {
-        if (node.on === 'value') return this.evalValueSwitch(graph, pad, node, ctx, label, seen2);
+        // `value` (gate/bands) is canonical. `velocity` was folded into `value` and dropped
+        // from SwitchOn — web migrates persisted graphs on hydrate, but core must never throw
+        // or mis-route on a stray legacy `velocity` (un-migrated in-flight data), so anything
+        // that isn't an explicit count-based mode (`section`/`beat`) routes through value eval.
+        if (node.on !== 'section' && node.on !== 'beat') {
+          return this.evalValueSwitch(graph, pad, node, ctx, label, seen2);
+        }
         if (kids.length === 0) return [];
         const i = switchIndexN(kids.length, node.on, ctx);
         return this.evalNode(graph, pad, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
@@ -653,11 +659,11 @@ function modeWord(m: PlayMode): string {
   return m === 'oneshot' ? 'One-shot' : m === 'loop' ? 'Loop' : 'Hold';
 }
 
+/** Count-based child index for the `section`/`beat` switch modes (the only modes that
+    reach here — `value` is handled by {@link VoiceBusEngine.evalValueSwitch}). */
 function switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
-  let frac = 0;
-  if (on === 'velocity') frac = ctx.velocity;
-  else if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-  else if (on === 'beat') frac = ctx.beatPhase;
+  if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
+  const frac = on === 'beat' ? ctx.beatPhase : 0;
   return Math.min(n - 1, Math.floor(frac * n));
 }
 

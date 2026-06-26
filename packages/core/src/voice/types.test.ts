@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyShow, type GraphNode, type Show, type TriggerGraph, type TriggerSource } from './types';
+import { emptyShow, type GraphNode, type Show, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
 
 /* Core mirror of the trigger-source field (U1 T1). Core only carries the `source` shape
    so web graphs pass through `buildShow` structurally — resolution lives in a later slice.
@@ -21,7 +21,7 @@ function triggerNode(source?: TriggerSource): GraphNode {
     env: {},
     linked: false,
     noRepeat: true,
-    on: 'velocity',
+    on: 'value',
     valueMode: 'gate',
     threshold: 0.5,
     invert: false,
@@ -49,5 +49,15 @@ describe('core voice TriggerSource mirror', () => {
     // it survives a structural (JSON) round-trip — pure data, no behaviour attached
     const clone = JSON.parse(JSON.stringify(show)) as Show;
     expect(clone.graphs['kick:0']!.nodes[0]!.source).toEqual({ kind: 'osc', address: '/kick' });
+  });
+});
+
+describe('SwitchOn — velocity folded into value', () => {
+  it('no longer accepts velocity (type-level); the canonical modes remain', () => {
+    // @ts-expect-error velocity was folded into `value` and removed from SwitchOn.
+    const folded: SwitchOn = 'velocity';
+    void folded;
+    const ok: SwitchOn[] = ['section', 'beat', 'value'];
+    expect(ok).toEqual(['section', 'beat', 'value']);
   });
 });
