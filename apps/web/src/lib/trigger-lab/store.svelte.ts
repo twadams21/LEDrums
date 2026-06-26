@@ -201,6 +201,12 @@ export class TriggerLab {
       resizable docks — step 3). Empty until the user drags a splitter. */
   paneSizes = $state<Record<string, number>>({});
 
+  /** Patch-graph per-node display-label overrides, keyed by flow-node id (the Inspector's
+      rename field). UI-only — the device topology node ids aren't part of the server
+      Project — so it persists via the authored-state autosave, not over WS. Empty until a
+      node is renamed. */
+  patchLabels = $state<Record<string, string>>({});
+
   // transient snapshot
   voices = $state<Voice[]>([]);
   log = $state<LogEntry[]>([]);
@@ -366,6 +372,7 @@ export class TriggerLab {
       velocity: this.velocity,
       beatsPerBar: this.beatsPerBar,
       paneSizes: this.paneSizes,
+      patchLabels: this.patchLabels,
     }) as AuthoredState;
   }
 
@@ -390,6 +397,7 @@ export class TriggerLab {
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
     if (a.paneSizes) this.paneSizes = a.paneSizes;
+    if (a.patchLabels) this.patchLabels = a.patchLabels;
   }
 
   /** Begin reactively autosaving authored changes (debounced). Idempotent; a
@@ -675,6 +683,18 @@ export class TriggerLab {
     const p = this.project;
     if (p) this.project = { ...p, output: { ...p.output, ...partial } };
     this.client.send({ t: 'setOutput', ...partial });
+  }
+
+  /** Set or clear a Patch node's display-label override (the Inspector's rename field).
+      A blank label clears the override (back to the derived title). Purely local + UI-only
+      — the device topology ids aren't server state — so this persists via the authored
+      autosave, never over WS. */
+  setPatchLabel(nodeId: string, label: string): void {
+    const trimmed = label.trim();
+    const next = { ...this.patchLabels };
+    if (trimmed) next[nodeId] = trimmed;
+    else delete next[nodeId];
+    this.patchLabels = next;
   }
 
   // --- setlist arranging (songs → sections → per-drum graph slots) ----------

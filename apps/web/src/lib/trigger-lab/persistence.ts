@@ -44,6 +44,10 @@ export interface AuthoredState {
   /** Persisted shell pane sizes in px (keyed by a stable pane id) — added for the
       resizable docks (step 3); tolerated when absent so older blobs still load. */
   paneSizes?: Record<string, number>;
+  /** Per-node display-label overrides for the Patch graph, keyed by flow-node id —
+      a UI-only rename (the device topology ids aren't server state), so it lives here
+      beside the other authored prefs. Tolerated when absent (older blobs). */
+  patchLabels?: Record<string, string>;
 }
 
 /** Versioned envelope written to storage. */
@@ -86,6 +90,7 @@ export function deserializeAuthored(raw: unknown): Partial<AuthoredState> | null
   if (Array.isArray(data.presets)) out.presets = data.presets as Preset[];
   if (Array.isArray(data.effects)) out.effects = data.effects as EffectDef[];
   if (isObject(data.paneSizes)) out.paneSizes = data.paneSizes as Record<string, number>;
+  if (isObject(data.patchLabels)) out.patchLabels = data.patchLabels as Record<string, string>;
 
   // scalars — typeof-gated; the nullable ids also accept an explicit null
   if (typeof data.selectedPadKey === 'string' || data.selectedPadKey === null) {
