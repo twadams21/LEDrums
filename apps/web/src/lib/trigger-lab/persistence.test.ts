@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   STORAGE_KEY,
+  SHOWS_STORAGE_KEY,
+  SHOWS_VERSION,
   VERSION,
   deserializeAuthored,
+  deserializeShowLibrary,
+  loadShowLibrary,
   migrateSongs,
   sectionGraphList,
   serializeAuthored,
+  serializeShowLibrary,
   type AuthoredState,
+  type ShowLibrary,
 } from './persistence';
 import { makeNode, type TriggerGraph } from './sim';
 import { addGraph, makeSection, type Song } from '../app/setlist';
@@ -194,5 +200,130 @@ describe('U4 back-compat — section slots → flat graphs migration', () => {
 describe('storage key', () => {
   it('namespaces the schema version into the key', () => {
     expect(STORAGE_KEY).toContain('v1');
+  });
+});
+
+// ---- show document model ----------------------------------------------------
+
+function library(): ShowLibrary {
+  return {
+    shows: {
+      a: { id: 'a', name: 'Main Set', authored: authored() },
+      b: { id: 'b', name: 'B-sides', authored: { ...authored(), bpm: 90 } },
+    },
+    activeShowId: 'b',
+  };
+}
+
+describe('show library — serialize / deserialize round-trip', () => {
+  it('preserves every show + the active pointer through serialize → JSON → parse → deserialize', () => {
+    const lib = library();
+    const restored = deserializeShowLibrary(JSON.parse(JSON.stringify(serializeShowLibrary(lib))));
+    expect(restored).toEqual(lib);
+  });
+
+  it('stamps the current SHOWS_VERSION into the envelope', () => {
+    expect(serializeShowLibrary(library()).version).toBe(SHOWS_VERSION);
+  });
+
+  it('namespaces the schema version into the library key', () => {
+    expect(SHOWS_STORAGE_KEY).toContain('v1');
+  });
+});
+
+describe('show library — version gate + malformed tolerance', () => {
+  it('returns null on a version mismatch (so a stale blob never wedges boot)', () => {
+    const env = serializeShowLibrary(library());
+    expect(deserializeShowLibrary({ ...env, version: SHOWS_VERSION + 1 })).toBeNull();
+    expect(deserializeShowLibrary({ ...env, version: 0 })).toBeNull();
+  });
+
+  it('returns null for non-objects, a missing shows record, or zero surviving shows', () => {
+    expect(deserializeShowLibrary(null)).toBeNull();
+    expect(deserializeShowLibrary('nope')).toBeNull();
+    expect(deserializeShowLibrary({ version: SHOWS_VERSION, data: {} })).toBeNull(); // no shows record
+    expect(deserializeShowLibrary({ version: SHOWS_VERSION, data: { shows: {}, activeShowId: 'x' } })).toBeNull(); // empty
+    expect(deserializeShowLibrary({ version: SHOWS_VERSION, data: { shows: { a: 42 }, activeShowId: 'a' } })).toBeNull(); // all malformed
+  });
+
+  it('drops a malformed show but keeps valid siblings', () => {
+    const restored = deserializeShowLibrary({
+      version: SHOWS_VERSION,
+      data: { shows: { good: { id: 'good', name: 'G', authored: { bpm: 100 } }, bad: 42 }, activeShowId: 'good' },
+    });
+    expect(Object.keys(restored!.shows)).toEqual(['good']);
+    expect(restored!.shows.good!.authored).toEqual({ bpm: 100 });
+  });
+
+  it('re-points a missing/dangling activeShowId to the first surviving show', () => {
+    const restored = deserializeShowLibrary({
+      version: SHOWS_VERSION,
+      data: { shows: { only: { id: 'only', name: 'O', authored: {} } }, activeShowId: 'gone' },
+    });
+    expect(restored!.activeShowId).toBe('only');
+  });
+
+  it('coerces each show authored — defaults a missing name + migrates legacy section slots', () => {
+    const restored = deserializeShowLibrary({
+      version: SHOWS_VERSION,
+      data: {
+        shows: {
+          s: {
+            id: 's',
+            authored: {
+              songs: [{ id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] }],
+            },
+          },
+        },
+        activeShowId: 's',
+      },
+    });
+    expect(restored!.shows.s!.name).toBe('Untitled Show'); // missing name defaulted
+    expect(restored!.shows.s!.authored.songs).toEqual([
+      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'] }] }, // slots → flat graphs, per show
+    ]);
+  });
+});
+
+describe('loadShowLibrary — boot migration', () => {
+  it('wraps a legacy single AuthoredState blob as one active "Default Show"', () => {
+    const single = serializeAuthored(authored());
+    const lib = loadShowLibrary(null, single, () => 'show-1');
+    expect(Object.keys(lib.shows)).toEqual(['show-1']);
+    expect(lib.activeShowId).toBe('show-1');
+    expect(lib.shows['show-1']!.name).toBe('Default Show');
+    expect(lib.shows['show-1']!.authored).toEqual(authored()); // full authored carried through
+  });
+
+  it('is idempotent — once a library exists it wins; the single blob + newId are ignored', () => {
+    const single = serializeAuthored(authored());
+    const first = loadShowLibrary(null, single, () => 'show-1');
+    const again = loadShowLibrary(serializeShowLibrary(first), single, () => 'show-2'); // would mint 'show-2' if re-wrapped
+    expect(again).toEqual(first); // same ids + content, no re-wrap
+  });
+
+  it('seeds a fresh active "Untitled Show" with empty authored when neither blob exists', () => {
+    const lib = loadShowLibrary(null, null, () => 'show-1');
+    expect(Object.keys(lib.shows)).toEqual(['show-1']);
+    expect(lib.shows['show-1']!.name).toBe('Untitled Show');
+    expect(lib.shows['show-1']!.authored).toEqual({});
+    expect(lib.activeShowId).toBe('show-1');
+  });
+
+  it('falls back to a fresh library on malformed blobs (never throws)', () => {
+    const lib = loadShowLibrary({ junk: true }, { also: 'junk' }, () => 'show-1');
+    expect(Object.keys(lib.shows)).toEqual(['show-1']);
+    expect(lib.shows['show-1']!.name).toBe('Untitled Show');
+  });
+
+  it('migrates a legacy single blob carrying pre-U4 section slots into the wrapped show', () => {
+    const single = {
+      version: VERSION,
+      data: { songs: [{ id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] }] },
+    };
+    const lib = loadShowLibrary(null, single, () => 'show-1');
+    expect(lib.shows['show-1']!.authored.songs).toEqual([
+      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'] }] },
+    ]);
   });
 });
