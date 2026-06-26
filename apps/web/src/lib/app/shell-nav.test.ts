@@ -1,24 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
+  VIEWS,
   clearSelection,
   initialNav,
   isSelected,
   parseSearch,
   select,
   setDock,
-  setMode,
   setView,
   type Selection,
 } from './shell-nav';
 
 describe('initialNav', () => {
-  it('defaults to author / trigger / inspector with nothing selected', () => {
+  it('defaults to trigger / inspector with nothing selected', () => {
     const nav = initialNav();
-    expect(nav).toEqual({ mode: 'author', view: 'trigger', dock: 'inspector', selection: null });
+    expect(nav).toEqual({ view: 'trigger', dock: 'inspector', selection: null });
   });
 
-  it('honours seeded mode + view', () => {
-    expect(initialNav({ mode: 'perform', view: 'patch' })).toMatchObject({ mode: 'perform', view: 'patch' });
+  it('honours a seeded view', () => {
+    expect(initialNav({ view: 'patch' })).toMatchObject({ view: 'patch' });
+  });
+});
+
+describe('VIEWS', () => {
+  it('is the mode-less rail order — trigger · patch · sections · perform (no kit)', () => {
+    expect(VIEWS).toEqual(['trigger', 'patch', 'sections', 'perform']);
   });
 });
 
@@ -54,11 +60,11 @@ describe('select', () => {
   });
 });
 
-describe('setMode / setDock preserve selection', () => {
-  it('switching mode keeps the current view + selection', () => {
+describe('setDock preserves view + selection', () => {
+  it('switching dock keeps the current view + selection', () => {
     const nav = select(initialNav({ view: 'sections' }), { kind: 'bus', busId: 'effect' });
-    const next = setMode(nav, 'perform');
-    expect(next.mode).toBe('perform');
+    const next = setDock(nav, 'monitor');
+    expect(next.dock).toBe('monitor');
     expect(next.view).toBe('sections');
     expect(next.selection).toEqual({ kind: 'bus', busId: 'effect' });
   });
@@ -77,14 +83,15 @@ describe('isSelected', () => {
 });
 
 describe('parseSearch', () => {
-  it('reads mode + view', () => {
-    expect(parseSearch('?mode=perform&view=kit')).toEqual({ mode: 'perform', view: 'kit' });
+  it('reads the view deep-link', () => {
+    expect(parseSearch('?view=patch')).toEqual({ view: 'patch' });
+    expect(parseSearch('?view=perform')).toEqual({ view: 'perform' });
   });
-  it('accepts legacy mode spellings', () => {
-    expect(parseSearch('?mode=performance')).toEqual({ mode: 'perform' });
-    expect(parseSearch('?mode=authoring')).toEqual({ mode: 'author' });
+  it('drops unknown / retired views (kit is gone)', () => {
+    expect(parseSearch('?view=nope')).toEqual({});
+    expect(parseSearch('?view=kit')).toEqual({});
   });
-  it('drops unknown values', () => {
-    expect(parseSearch('?mode=bogus&view=nope')).toEqual({});
+  it('ignores the retired mode param', () => {
+    expect(parseSearch('?mode=perform&view=sections')).toEqual({ view: 'sections' });
   });
 });
