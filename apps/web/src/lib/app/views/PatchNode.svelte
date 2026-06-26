@@ -6,8 +6,9 @@
      sink). The selected ring + hover accent are the card's; clicking also loads it
      into the Inspector (handled by the view). */
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
-  import type { Component } from 'svelte';
+  import { getContext, type Component } from 'svelte';
   import type { PatchNodeData, PatchStage } from '../patch-topology';
+  import { PATCH_STORE_KEY, type PatchStoreContext } from './patch-context';
   import NodeCard from './NodeCard.svelte';
   import Activity from '@lucide/svelte/icons/activity';
   import Zap from '@lucide/svelte/icons/zap';
@@ -18,10 +19,14 @@
   import Plug from '@lucide/svelte/icons/plug';
   import Cpu from '@lucide/svelte/icons/cpu';
 
-  let { data, selected }: NodeProps = $props();
+  let { id, data, selected }: NodeProps = $props();
   // xyflow types node data as Record<string, unknown> in the registry; this graph
   // only ever mounts PatchNode for `patch` nodes, whose data is PatchNodeData.
   const d = $derived(data as PatchNodeData);
+  const store = getContext<PatchStoreContext>(PATCH_STORE_KEY);
+  // Prefer the Inspector rename override on the face (reactive — a rename updates it
+  // live); fall back to the derived stage label. Mirrors the Inspector's patchLabel().
+  const label = $derived(store.patchLabels[id]?.trim() || d.label);
 
   const STAGE_ICON: Record<PatchStage, Component> = {
     input: Activity,
@@ -40,7 +45,7 @@
   <Handle type="target" position={Position.Left} />
 {/if}
 
-<NodeCard icon={Icon} title={d.label} sub={d.sub} tint={d.role} selected={!!selected} />
+<NodeCard icon={Icon} title={label} sub={d.sub} tint={d.role} selected={!!selected} />
 
 {#if d.stage !== 'controller'}
   <Handle type="source" position={Position.Right} />

@@ -18,7 +18,7 @@
      `store.setRouting` → the server reroutes the live voice host and round-trips the
      change in the next `state`. When the project declares no outputs yet, a
      `defaultRouting` chunk seeds the graph so there is something to wire. */
-  import { untrack } from 'svelte';
+  import { setContext, untrack } from 'svelte';
   import {
     Background,
     BackgroundVariant,
@@ -54,6 +54,7 @@
     type OutputScalars,
   } from '../patch-graph';
   import PatchNode from './PatchNode.svelte';
+  import { PATCH_STORE_KEY } from './patch-context';
   import WireEdge from './WireEdge.svelte';
   import PatchFitView from './PatchFitView.svelte';
   import PatchPalette from './PatchPalette.svelte';
@@ -63,6 +64,14 @@
   import Cable from '@lucide/svelte/icons/cable';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
+
+  // Hand the live store down to the xyflow custom nodes so a PatchNode can prefer the
+  // rename override (store.patchLabels[id]) on its face. The store is a stable instance
+  // for the view's life — capture once through untrack (mirrors the Trigger graph).
+  setContext(
+    PATCH_STORE_KEY,
+    untrack(() => store),
+  );
 
   const nodeTypes: NodeTypes = { patch: PatchNode };
   // wire = the reconnectable custom edge (its ends are drag anchors)
