@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyShow, type GraphNode, type Show, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
+import { emptyShow, normalizeTriggerValue, type GraphNode, type Show, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
 
 /* Core mirror of the trigger-source field (U1 T1). Core only carries the `source` shape
    so web graphs pass through `buildShow` structurally — resolution lives in a later slice.
@@ -49,6 +49,41 @@ describe('core voice TriggerSource mirror', () => {
     // it survives a structural (JSON) round-trip — pure data, no behaviour attached
     const clone = JSON.parse(JSON.stringify(show)) as Show;
     expect(clone.graphs['kick:0']!.nodes[0]!.source).toEqual({ kind: 'osc', address: '/kick' });
+  });
+});
+
+describe('normalizeTriggerValue — core mirror of the one 0..1 seam (U3)', () => {
+  // Byte-identical to the web sim's seam: drum/key velocity passthrough · MIDI ÷127 ·
+  // OSC arg as-is, all clamped. This is what `ctx.velocity` is fed from so all three
+  // sources route through the switch `value` mode identically.
+  it('drum velocity passes through (already 0..1)', () => {
+    expect(normalizeTriggerValue({ kind: 'drum', velocity: 0 })).toBe(0);
+    expect(normalizeTriggerValue({ kind: 'drum', velocity: 0.5 })).toBe(0.5);
+    expect(normalizeTriggerValue({ kind: 'drum', velocity: 1 })).toBe(1);
+  });
+
+  it('MIDI note-velocity / CC divides by 127', () => {
+    expect(normalizeTriggerValue({ kind: 'midi', value: 0 })).toBe(0);
+    expect(normalizeTriggerValue({ kind: 'midi', value: 127 })).toBe(1);
+    expect(normalizeTriggerValue({ kind: 'midi', value: 64 })).toBeCloseTo(64 / 127);
+  });
+
+  it('OSC arg is taken as-is (0..1 float)', () => {
+    expect(normalizeTriggerValue({ kind: 'osc', arg: 0 })).toBe(0);
+    expect(normalizeTriggerValue({ kind: 'osc', arg: 0.42 })).toBe(0.42);
+  });
+
+  it('clamps every source to 0..1', () => {
+    expect(normalizeTriggerValue({ kind: 'drum', velocity: 1.5 })).toBe(1);
+    expect(normalizeTriggerValue({ kind: 'midi', value: 200 })).toBe(1);
+    expect(normalizeTriggerValue({ kind: 'midi', value: -5 })).toBe(0);
+    expect(normalizeTriggerValue({ kind: 'osc', arg: -3 })).toBe(0);
+  });
+
+  it('parity: a half-strength hit reads 0.5 as drum / MIDI / OSC alike', () => {
+    expect(normalizeTriggerValue({ kind: 'drum', velocity: 0.5 })).toBe(0.5);
+    expect(normalizeTriggerValue({ kind: 'midi', value: 63.5 })).toBeCloseTo(0.5);
+    expect(normalizeTriggerValue({ kind: 'osc', arg: 0.5 })).toBe(0.5);
   });
 });
 

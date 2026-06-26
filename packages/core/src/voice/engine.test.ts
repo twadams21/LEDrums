@@ -3,7 +3,7 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type SwitchOn, type TriggerGraph } from './types';
+import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -886,5 +886,114 @@ describe('VoiceBusEngine — value switch (back-compat + additive parity)', () =
     expect(() => firedBuses(stray, kids, wires, 0.3)).not.toThrow();
     expect(firedBuses(stray, kids, wires, 0.3)).toEqual(['base']); // ≤0.5 gate → passes
     expect(firedBuses(stray, kids, wires, 0.8)).toEqual([]); // >0.5 → blocks
+  });
+});
+
+// ---- U3: direct trigger-source resolution -----------------------------------
+// PINNED precedence: a zone-mapped hit (drumId present) fires its pad graph and STOPS;
+// a raw MIDI note / OSC address with NO pad falls through to authored graphs bound to it
+// by their trigger SOURCE. No double-fire — exactly one path runs. Each graph's play
+// lands on its own bus so busLevels tells us which graph fired.
+
+/** trigger(source) → play on `busId` — an authored graph bound by its trigger source. */
+function sourcedGraph(source: TriggerSource, busId: string): TriggerGraph {
+  return {
+    nodes: [node('trigger', 'trigger', { y: 0, source }), playOn('p', busId, 0)],
+    edges: [{ id: 'e-t', from: 'trigger', to: 'p' }],
+  };
+}
+
+/** A show from an explicit graphs map (every play references fxA, on its node's bus). */
+function showOf(graphs: Record<string, TriggerGraph>): Show {
+  return { buses: buses(), graphs, sections: [], effects: [effect('fxA')], presets: [] };
+}
+
+/** Fire one event into a fresh engine; return the buses that lit (which graph fired). */
+function firedBusesFor(graphs: Record<string, TriggerGraph>, ev: InputEvent): string[] {
+  const e = createVoiceBusEngine();
+  e.setModel(testModel());
+  e.setShow(showOf(graphs));
+  e.applyInput(ev);
+  e.tick(5, 5, transport(5));
+  e.tick(40, 35, transport(40)); // age past attack so bus levels register
+  const { busLevels } = e.stats();
+  return Object.keys(busLevels)
+    .filter((b) => (busLevels[b] ?? 0) > 0)
+    .sort();
+}
+
+describe('VoiceBusEngine — direct trigger-source resolution (U3)', () => {
+  it('a raw MIDI note fires the authored graph bound to that note (midi source)', () => {
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };
+    expect(firedBusesFor(graphs, { kind: 'noteOn', note: 60, velocity: 1, timeMs: 0 })).toEqual(['base']);
+  });
+
+  it('a raw MIDI note with no matching source fires nothing (and does not throw)', () => {
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };
+    expect(firedBusesFor(graphs, { kind: 'noteOn', note: 61, velocity: 1, timeMs: 0 })).toEqual([]);
+  });
+
+  it('a raw OSC address fires the authored graph bound to that address (osc source)', () => {
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'osc', address: '/kick' }, 'lead') };
+    expect(firedBusesFor(graphs, { kind: 'osc', address: '/kick', value: 1, timeMs: 0 })).toEqual(['lead']);
+    expect(firedBusesFor(graphs, { kind: 'osc', address: '/nope', value: 1, timeMs: 0 })).toEqual([]);
+  });
+
+  it('no double-fire: a zone-mapped hit fires only its pad graph, not a same-note direct binding', () => {
+    const graphs = {
+      [padKey('kick', '')]: sourcedGraph({ kind: 'drum', drumId: 'kick', zone: '' }, 'base'), // pad → base
+      'graph:1': sourcedGraph({ kind: 'midi', note: 36 }, 'lead'), // raw note 36 → lead
+    };
+    // Zone-mapped: the server attached (drumId, zone) AND kept the raw note. Pad wins, stop.
+    expect(
+      firedBusesFor(graphs, { kind: 'noteOn', drumId: 'kick', zone: '', note: 36, velocity: 1, timeMs: 0 }),
+    ).toEqual(['base']);
+    // The same note as a RAW input (zone-map miss → no pad) fires the direct binding instead.
+    expect(firedBusesFor(graphs, { kind: 'noteOn', note: 36, velocity: 1, timeMs: 0 })).toEqual(['lead']);
+  });
+
+  it('the source value drives eval — a direct-bound graph routes through a value gate', () => {
+    const graph: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger', { y: 0, source: { kind: 'midi', note: 50 } }),
+        node('switch', 'sw', { y: 0, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false }),
+        playOn('p', 'base', 0),
+      ],
+      edges: [
+        { id: 'e-t', from: 'trigger', to: 'sw' },
+        { id: 'e1', from: 'sw', to: 'p' },
+      ],
+    };
+    const graphs = { 'graph:1': graph };
+    // velocity is already 0..1 at the engine boundary (server ÷127): 0.4 ≤ 0.5 → passes.
+    expect(firedBusesFor(graphs, { kind: 'noteOn', note: 50, velocity: 0.4, timeMs: 0 })).toEqual(['base']);
+    // 0.6 > 0.5 → blocked.
+    expect(firedBusesFor(graphs, { kind: 'noteOn', note: 50, velocity: 0.6, timeMs: 0 })).toEqual([]);
+  });
+
+  it('back-compat: a graph with no trigger source never fires on a raw input', () => {
+    const plain: TriggerGraph = {
+      nodes: [node('trigger', 'trigger', { y: 0 }), playOn('p', 'base', 0)], // no source
+      edges: [{ id: 'e-t', from: 'trigger', to: 'p' }],
+    };
+    expect(firedBusesFor({ 'graph:1': plain }, { kind: 'noteOn', note: 36, velocity: 1, timeMs: 0 })).toEqual([]);
+    expect(firedBusesFor({ 'graph:1': plain }, { kind: 'osc', address: '/x', value: 1, timeMs: 0 })).toEqual([]);
+  });
+
+  it('is deterministic on the direct path (two engines → byte-identical frames)', () => {
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };
+    const run = (): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(showOf(graphs));
+      e.applyInput({ kind: 'noteOn', note: 60, velocity: 0.7, timeMs: 5 });
+      let now = 0;
+      for (let i = 0; i < 10; i++) {
+        now += 16;
+        e.tick(now, 16, transport(now));
+      }
+      return Array.from(e.frame());
+    };
+    expect(run()).toEqual(run());
   });
 });
