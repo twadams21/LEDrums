@@ -18,7 +18,9 @@ import type { EffectCategory } from '@ledrums/core';
 // ---- Block tree (branch 2) --------------------------------------------------
 
 export type PlayMode = 'oneshot' | 'loop' | 'hold';
-export type SwitchOn = 'velocity' | 'section' | 'beat';
+export type SwitchOn = 'velocity' | 'section' | 'beat' | 'value';
+/** Sub-mode of a `value` switch: a single pass/block gate, or N value bands. */
+export type ValueMode = 'gate' | 'bands';
 export type Scope = 'drum' | 'kit';
 export type BlockKind = Block['kind'];
 
@@ -276,6 +278,15 @@ export interface GraphNode {
   noRepeat: boolean;
   // switch
   on: SwitchOn;
+  /** value-switch sub-mode (only meaningful when on==='value'). */
+  valueMode: ValueMode;
+  /** gate cutoff 0..1 (value-switch gate). */
+  threshold: number;
+  /** gate direction: false → pass when value ≤ threshold; true → pass when value > threshold. */
+  invert: boolean;
+  /** ascending band cutoffs 0..1 (value-switch bands). N bands = N−1 cutoffs; the
+      last band is "the rest" (value above the final cutoff). */
+  bands: number[];
   // chance
   p: number;
 }
@@ -284,6 +295,9 @@ export interface GraphEdge {
   id: string;
   from: string; // source node id (output port)
   to: string; // target node id (input port)
+  /** source handle id this edge leaves from. undefined = the node's default single
+      output (back-compat). For a value+bands switch, band i's handle is `band-${i}`. */
+  fromPort?: string;
 }
 
 export interface TriggerGraph {
@@ -321,9 +335,23 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     linked: false,
     noRepeat: true,
     on: 'velocity',
+    valueMode: 'gate',
+    threshold: 0.5,
+    invert: false,
+    bands: [0.5],
     p: 0.5,
     ...over,
   };
+}
+
+/** Resolve which band a 0..1 value lands in against ascending cutoffs. N cutoffs →
+    N+1 bands: value ≤ cutoffs[0] → 0; ≤ cutoffs[1] → 1; …; value above the last
+    cutoff → the final band (index = cutoffs.length). Empty cutoffs → band 0. */
+export function bandIndex(value: number, cutoffs: readonly number[]): number {
+  for (let i = 0; i < cutoffs.length; i++) {
+    if (value <= cutoffs[i]!) return i;
+  }
+  return cutoffs.length;
 }
 
 function nodeFromBlock(b: Block): GraphNode {
@@ -622,6 +650,16 @@ export class Sim {
       .sort((a, b) => a.y - b.y);
   }
 
+  /** Children wired from a specific source handle (value+bands switch). Mirrors
+      {@link childrenOf} but filters by `fromPort`, still y-sorted for determinism. */
+  private childrenViaPort(graph: TriggerGraph, node: GraphNode, port: string): GraphNode[] {
+    return graph.edges
+      .filter((e) => e.from === node.id && e.fromPort === port)
+      .map((e) => graph.nodes.find((n) => n.id === e.to))
+      .filter((n): n is GraphNode => !!n)
+      .sort((a, b) => a.y - b.y);
+  }
+
   private evalNode(graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx, viaPrefix: string, seen: Set<string>): Action[] {
     if (seen.has(node.id)) return []; // cycle guard
     const seen2 = new Set(seen).add(node.id);
@@ -664,6 +702,7 @@ export class Sim {
         return this.evalNode(graph, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
       }
       case 'switch': {
+        if (node.on === 'value') return this.evalValueSwitch(graph, node, ctx, label, seen2);
         if (kids.length === 0) return [];
         const i = this.switchIndexN(kids.length, node.on, ctx);
         return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
@@ -697,6 +736,34 @@ export class Sim {
     else if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
     else if (on === 'beat') frac = ctx.beatPhase;
     return Math.min(n - 1, Math.floor(frac * n));
+  }
+
+  /** Evaluate an on:'value' switch (value source = ctx.velocity, normalized 0..1).
+      New fields are defaulted defensively so graphs persisted before value-mode
+      existed (which lack them) still evaluate. */
+  private evalValueSwitch(
+    graph: TriggerGraph,
+    node: GraphNode,
+    ctx: TriggerCtx,
+    label: (s: string) => string,
+    seen: Set<string>,
+  ): Action[] {
+    const value = ctx.velocity;
+    const mode = node.valueMode ?? 'gate';
+    if (mode === 'gate') {
+      const threshold = node.threshold ?? 0.5;
+      const invert = node.invert ?? false;
+      const pass = invert ? value > threshold : value <= threshold;
+      if (!pass) return [];
+      const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
+      return this.childrenOf(graph, node).flatMap((c) => this.evalNode(graph, c, ctx, label(gateVia), seen));
+    }
+    const cutoffs = node.bands ?? [0.5];
+    const b = bandIndex(value, cutoffs);
+    const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
+    return this.childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
+      this.evalNode(graph, c, ctx, label(bandVia), seen),
+    );
   }
 
   /** Resolve a Play block's live params (linked → shared preset, else instance). */
