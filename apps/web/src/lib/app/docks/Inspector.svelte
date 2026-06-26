@@ -27,9 +27,8 @@
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Field from '../../ui/Field.svelte';
   import CommitInput from './CommitInput.svelte';
-  import { drumHoopCount, type DrumConfig, type KitConfig, type RgbOrder } from '@ledrums/core';
-  import { outputsToPatch, pixelRanges, type HoopRef, type PatchRouting, type PixelSpan } from '../patch-routing';
-  import { defaultRouting } from '../patch-graph';
+  import type { DrumConfig, KitConfig, RgbOrder } from '@ledrums/core';
+  import { pixelRanges, type HoopRef, type PatchRouting, type PixelSpan } from '../patch-routing';
   import {
     hoopPixelSpan,
     orderedDataLines,
@@ -70,26 +69,23 @@
   // --- Patch graph per-node editors (S4) -----------------------------------------
   // Each Patch node edits the real device setting it represents: geometry/input read from
   // the authoritative store.project and write back through the S3 mutators. Read-outs
-  // (first/last pixel, ordering) derive from the COMMITTED outputs — the Inspector has no
-  // handle on the live graph wiring — falling back to the same default chunk the Patch view
-  // draws when the project declares no outputs yet. No-op-safe while offline (project null).
+  // (first/last pixel, ordering) derive from the LIVE graph routing the patch view publishes
+  // (shell.patchRouting) — keyed by the actual graph node ids — so a just-added palette data
+  // line or an un-remounted reorder reads correctly (S5b). No-op-safe while offline (project
+  // null): pixelsForHoop returns 0 without a kit, so spans simply don't resolve.
   const patchId = $derived(sel?.kind === 'patch' ? sel.nodeId : null);
   const ed = $derived<PatchEditor | null>(patchId ? patchEditorFor(patchId) : null);
   const project = $derived(store.project);
   const kit = $derived<KitConfig | null>(project?.kit ?? null);
   const outputCfg = $derived(project?.output ?? null);
 
-  const patchRouting = $derived.by<PatchRouting | null>(() => {
-    if (!kit) return null;
-    if (kit.outputs.length) return outputsToPatch(kit.outputs);
-    return defaultRouting(kit.drums.map((d) => ({ id: d.id, hoopCount: drumHoopCount(kit, d) })));
-  });
+  const liveRouting = $derived<PatchRouting | null>(shell.patchRouting);
   function pixelsForHoop(h: HoopRef): number {
     const d = kit?.drums.find((x) => x.id === h.drumId);
     return d && kit ? pixelsPerHoopForDrum(d, kit) : 0;
   }
-  const ranges = $derived(patchRouting ? pixelRanges(patchRouting, pixelsForHoop) : null);
-  const orderedLines = $derived(patchRouting ? orderedDataLines(patchRouting) : []);
+  const ranges = $derived(liveRouting ? pixelRanges(liveRouting, pixelsForHoop) : null);
+  const orderedLines = $derived(liveRouting ? orderedDataLines(liveRouting) : []);
 
   // the drum behind a drum / hoop / zone selection; the OutputConfig behind an output one.
   const patchDrum = $derived.by<DrumConfig | null>(() => {
@@ -522,7 +518,7 @@
           {@render renameField(sel.nodeId, d.title)}
         {:else if editor.kind === 'hoop' && patchDrum}
           {@const drum = patchDrum}
-          {@const span = patchRouting ? hoopPixelSpan(patchRouting, { drumId: drum.id, hoop: editor.hoop }, pixelsForHoop) : null}
+          {@const span = liveRouting ? hoopPixelSpan(liveRouting, { drumId: drum.id, hoop: editor.hoop }, pixelsForHoop) : null}
           <Field label="Pixels per hoop" hint="literal count · applies to every hoop on this drum">
             <CommitInput
               type="number"
@@ -538,7 +534,7 @@
           {#if !span}<p class="hint">Wire this hoop into a data line on the canvas to give it pixels.</p>{/if}
           {@render renameField(sel.nodeId, d.title)}
         {:else if editor.kind === 'dataline'}
-          {@const entry = editor.index !== null ? orderedLines[editor.index - 1] : undefined}
+          {@const entry = orderedLines.find((o) => o.line.id === sel.nodeId)}
           {#if entry}
             <div class="readrow"><span class="k">Order</span><span class="rval">#{entry.pos} in transmit order</span></div>
             <div class="readrow">

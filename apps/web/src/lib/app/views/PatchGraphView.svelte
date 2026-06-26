@@ -18,7 +18,7 @@
      `store.setRouting` → the server reroutes the live voice host and round-trips the
      change in the next `state`. When the project declares no outputs yet, a
      `defaultRouting` chunk seeds the graph so there is something to wire. */
-  import { setContext, untrack } from 'svelte';
+  import { onDestroy, setContext, untrack } from 'svelte';
   import {
     Background,
     BackgroundVariant,
@@ -250,6 +250,19 @@
     lastSig = sig;
     store.setRouting(outputs);
   }
+
+  // The LIVE routing, datalines/outputs keyed by their graph NODE id (recomputed whenever
+  // nodes/edges change: add, wire, reorder-by-drag, delete).
+  const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor));
+  // Publish it to the shell so the Inspector's first/last-pixel read-out reflects the current
+  // wiring — including a just-added palette data line and an un-remounted reorder — instead of
+  // a re-chunked snapshot of committed outputs whose synthetic ids never match the selected
+  // node. Syncing a derived to an external store is exactly what $effect is for; cleared on
+  // unmount so a stale routing never outlives the view.
+  $effect(() => {
+    shell.setPatchRouting(liveRouting);
+  });
+  onDestroy(() => shell.setPatchRouting(null));
 </script>
 
 <div class="patch-view">

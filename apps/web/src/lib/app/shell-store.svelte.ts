@@ -6,11 +6,20 @@
 
 import * as nav from './shell-nav';
 import type { DockTab, Mode, Selection, ShellNav, View } from './shell-nav';
+import type { PatchRouting } from './patch-routing';
 
 export type { DockTab, Mode, PatchNodeId, Selection, View } from './shell-nav';
 
 export class ShellStore {
   private s = $state<ShellNav>(nav.initialNav());
+
+  /** The LIVE Patch-graph routing (graph-node-id-keyed datalines + outputs), published by
+      PatchGraphView while the patch view is mounted, so the Inspector's first/last-pixel
+      read-out reflects the live wiring — including just-added palette lines and un-remounted
+      reorders — rather than a re-chunked snapshot of committed outputs (whose synthetic
+      dataline ids never match the selected node id). null when no patch view is mounted
+      (a patch node is only selectable from within it, so reads are always fresh). */
+  private liveRouting = $state<PatchRouting | null>(null);
 
   constructor(init?: Partial<Pick<ShellNav, 'mode' | 'view'>>) {
     this.s = nav.initialNav(init);
@@ -27,6 +36,14 @@ export class ShellStore {
   }
   get selection(): Selection | null {
     return this.s.selection;
+  }
+  /** The live Patch-graph routing for the Inspector read-out (see {@link liveRouting}). */
+  get patchRouting(): PatchRouting | null {
+    return this.liveRouting;
+  }
+  /** PatchGraphView publishes its live routing here (null on unmount). */
+  setPatchRouting(routing: PatchRouting | null): void {
+    this.liveRouting = routing;
   }
 
   setMode(mode: Mode): void {

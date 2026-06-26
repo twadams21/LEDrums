@@ -9,7 +9,7 @@ import {
   routingFromGraph,
   type OutputHalfLayout,
 } from './patch-graph';
-import { patchToOutputs, type PatchRouting } from './patch-routing';
+import { patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
 
 /* The pure Patch-graph ⇄ routing seam (S3). Covers the 0-based-core ⇄ 1-based-node hoop
@@ -181,5 +181,64 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
       return { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel };
     });
     expect(patchToOutputs(readBack)).toEqual(patchToOutputs(routing));
+  });
+});
+
+describe('live read-out (S5b): pixelRanges over routingFromGraph keys spans by graph node id', () => {
+  /* The Inspector's first/last-pixel read-out derives from the LIVE graph routing, not from
+     a re-chunked snapshot of committed outputs. routingFromGraph keeps each DataLine.id and
+     each output id equal to the selected node's id (a dataline node verbatim, an output via
+     parseOutputNodeId), so pixelRanges' byDataLine/byOutput resolve for a just-added palette
+     line ('dataline:new-N') and stay correct after an un-remounted drag-reorder — exactly the
+     cases the old '${outputId}:dl${n}' snapshot ids could never match. */
+  const px = (): number => 10; // every hoop = 10px
+
+  it('resolves a span for a palette data line by its node id', () => {
+    const nodes: PatchFlowNode[] = [
+      node('hoop:a:1', 'hoop', 0, 0),
+      node('hoop:a:2', 'hoop', 10, 0),
+      node('dataline:new-1', 'dataline', 5, 1000), // palette-added id — never matches a re-chunked id
+      node('output:new-1', 'output', 5, 1200),
+      node('controller', 'controller', 5, 1400),
+    ];
+    const edges = [
+      edge('hoop:a:1', 'dataline:new-1'),
+      edge('hoop:a:2', 'dataline:new-1'),
+      edge('dataline:new-1', 'output:new-1'),
+      edge('output:new-1', 'controller'),
+    ];
+    const { byDataLine, byOutput } = pixelRanges(routingFromGraph(nodes, edges), px);
+    expect(byDataLine['dataline:new-1']).toEqual({ first: 0, last: 19 });
+    expect(byOutput['new-1']).toEqual({ first: 0, last: 19 }); // output id = parseOutputNodeId('output:new-1')
+  });
+
+  it('updates a data line span after a drag-reorder without a remount (y-order swap)', () => {
+    // Two data lines feeding one output; each carries one hoop. Reordering them by vertical
+    // position swaps their transmit order — and therefore their pixel spans — with no remount.
+    const graph = (dl1Y: number, dl2Y: number): { nodes: PatchFlowNode[]; edges: PatchFlowEdge[] } => ({
+      nodes: [
+        node('hoop:a:1', 'hoop', dl1Y, 0),
+        node('hoop:b:1', 'hoop', dl2Y, 0),
+        node('dataline:1', 'dataline', dl1Y, 1000),
+        node('dataline:2', 'dataline', dl2Y, 1000),
+        node('output:1', 'output', (dl1Y + dl2Y) / 2, 1200),
+      ],
+      edges: [
+        edge('hoop:a:1', 'dataline:1'),
+        edge('hoop:b:1', 'dataline:2'),
+        edge('dataline:1', 'output:1'),
+        edge('dataline:2', 'output:1'),
+      ],
+    });
+
+    const before = graph(0, 20); // dataline:1 above dataline:2 → transmits first
+    const r1 = pixelRanges(routingFromGraph(before.nodes, before.edges), px);
+    expect(r1.byDataLine['dataline:1']).toEqual({ first: 0, last: 9 });
+    expect(r1.byDataLine['dataline:2']).toEqual({ first: 10, last: 19 });
+
+    const after = graph(20, 0); // drag dataline:2 ABOVE dataline:1 → it now transmits first
+    const r2 = pixelRanges(routingFromGraph(after.nodes, after.edges), px);
+    expect(r2.byDataLine['dataline:2']).toEqual({ first: 0, last: 9 });
+    expect(r2.byDataLine['dataline:1']).toEqual({ first: 10, last: 19 });
   });
 });
