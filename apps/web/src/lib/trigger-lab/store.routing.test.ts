@@ -53,7 +53,7 @@ describe('setRouting', () => {
     const store = connected(sent);
     const drumId = store.project!.kit.drums[0]!.id;
     const outputs: OutputConfig[] = [
-      { id: '1', startUniverse: 0, channelsPerPixel: 3, segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] },
+      { id: '1', channelsPerPixel: 3, dataLines: [{ id: '1:dl0', segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] }] },
     ];
     store.setRouting(outputs);
     expect(store.project!.kit.outputs).toBe(outputs);

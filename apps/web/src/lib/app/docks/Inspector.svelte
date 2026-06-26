@@ -28,7 +28,7 @@
   import Field from '../../ui/Field.svelte';
   import CommitInput from './CommitInput.svelte';
   import type { DrumConfig, KitConfig, RgbOrder } from '@ledrums/core';
-  import { pixelRanges, type HoopRef, type PatchRouting, type PixelSpan } from '../patch-routing';
+  import { patchToOutputs, pixelRanges, type HoopRef, type PatchRouting, type PixelSpan } from '../patch-routing';
   import {
     hoopPixelSpan,
     orderedDataLines,
@@ -117,11 +117,26 @@
     const d = kit?.drums.find((x) => x.id === drumId);
     if (d) store.setDrumTransform(drumId, { [field]: { ...d[field], [axis]: n } });
   }
-  /** Rebuild the outputs array with one port's transport scalars changed → setRouting. */
+  /** Rebuild the outputs array with one port's transport scalars changed → setRouting.
+      A blank `startUniverse` (undefined) clears the snap → the port packs dense. */
   function setOutputScalar(outputId: string, partial: { startUniverse?: number; channelsPerPixel?: number }): void {
     if (!kit) return;
     store.setRouting(kit.outputs.map((o) => (o.id === outputId ? { ...o, ...partial } : o)));
   }
+  /** Set (or clear, when undefined) a data line's optional startUniverse snap, keyed by its
+      graph node id — edits the LIVE routing and recompiles → setRouting. Blank = dense. */
+  function setDataLineUniverse(lineNodeId: string, startUniverse: number | undefined): void {
+    if (!liveRouting) return;
+    const updated: PatchRouting = {
+      outputs: liveRouting.outputs.map((o) => ({
+        ...o,
+        dataLines: o.dataLines.map((dl) => (dl.id === lineNodeId ? { ...dl, startUniverse } : dl)),
+      })),
+    };
+    store.setRouting(patchToOutputs(updated));
+  }
+  /** A universe-snap read-out: an explicit universe, or "dense" when the line/port auto-packs. */
+  const uLabel = (u: number | undefined): string => (u === undefined ? 'dense' : `u${u}`);
   function setZoneNote(drumId: string, slot: number, note: number | null): void {
     if (project) store.setInputMap(setZoneMidiNote(project.inputMap, drumId, slot, note));
   }
@@ -539,11 +554,23 @@
             <div class="readrow"><span class="k">Order</span><span class="rval">#{entry.pos} in transmit order</span></div>
             <div class="readrow">
               <span class="k">Output</span>
-              <span class="rval">{patchLabel(`output:${entry.output.id}`, 'Output')} · u{entry.output.startUniverse}</span>
+              <span class="rval">{patchLabel(`output:${entry.output.id}`, 'Output')} · {uLabel(entry.output.startUniverse)}</span>
             </div>
             {@render pixelRow('First / last pixel', ranges?.byDataLine[entry.line.id])}
+            <Field label="Start universe" hint="blank = dense / auto">
+              <CommitInput
+                type="number"
+                min={0}
+                value={entry.line.startUniverse ?? ''}
+                placeholder="dense"
+                disabled={!project}
+                ariaLabel="Data line start universe"
+                onCommit={(v) =>
+                  v === '' ? setDataLineUniverse(sel.nodeId, undefined) : onNum(v, (n) => setDataLineUniverse(sel.nodeId, n))}
+              />
+            </Field>
             <p class="hint">
-              {entry.line.hoops.length} hoops. Re-order or re-wire on the Patch canvas — data-line boundaries are cosmetic; only pixel order is transmitted.
+              {entry.line.hoops.length} hoops. Re-order or re-wire on the Patch canvas — pixel order is what transmits; a start universe snaps this line to a hard boundary.
             </p>
           {:else}
             <p class="hint">
@@ -554,15 +581,17 @@
         {:else if editor.kind === 'output'}
           {#if patchOutput}
             {@const cfg = patchOutput}
-            <p class="grouphint">A physical controller port. The controller owns universe offsets — this sets where the port starts.</p>
-            <Field label="Start universe">
+            <p class="grouphint">A physical controller port. The controller owns universe offsets — leave blank to pack dense, or snap the port to a universe.</p>
+            <Field label="Start universe" hint="blank = dense / auto">
               <CommitInput
                 type="number"
                 min={0}
-                value={cfg.startUniverse}
+                value={cfg.startUniverse ?? ''}
+                placeholder="dense"
                 disabled={!project}
                 ariaLabel="Start universe"
-                onCommit={(v) => onNum(v, (n) => setOutputScalar(cfg.id, { startUniverse: n }))}
+                onCommit={(v) =>
+                  v === '' ? setOutputScalar(cfg.id, { startUniverse: undefined }) : onNum(v, (n) => setOutputScalar(cfg.id, { startUniverse: n }))}
               />
             </Field>
             <Field label="Channels / pixel" hint="3 = RGB · 4 = RGBW">

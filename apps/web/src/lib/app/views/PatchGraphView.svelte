@@ -232,19 +232,25 @@
   );
 
   /** Per-output transport scalars the graph doesn't author — read from the authoritative
-      project so a rewire preserves them (S4's Output inspector edits them via setRouting). */
+      project so a rewire preserves them (S4's Output inspector edits them via setRouting).
+      `startUniverse` is optional: a project output without one packs dense. */
   function scalarsFor(outputId: string): OutputScalars {
     const o = store.project?.kit.outputs.find((x) => x.id === outputId);
-    return o
-      ? { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel }
-      : { startUniverse: 0, channelsPerPixel: 3 };
+    return o ? { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel } : { channelsPerPixel: 3 };
+  }
+
+  /** A data line's optional `startUniverse` snap — recovered from the authoritative project
+      by its owning output id + index within that output (the S6 data-line Inspector edits it
+      via setRouting), so a set boundary survives a rewire. Absent → the line packs dense. */
+  function lineUniverseFor(outputId: string, lineIndex: number): number | undefined {
+    return store.project?.kit.outputs.find((x) => x.id === outputId)?.dataLines[lineIndex]?.startUniverse;
   }
 
   // Read the output half back into a routing, recompile to OutputConfig[], and push it —
   // but only when the result actually changed (a hover or input-half drag is a no-op).
   let lastSig = JSON.stringify(patchToOutputs(initialRouting));
   function commitRouting(): void {
-    const outputs = patchToOutputs(routingFromGraph(nodes, edges, scalarsFor));
+    const outputs = patchToOutputs(routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor));
     const sig = JSON.stringify(outputs);
     if (sig === lastSig) return;
     lastSig = sig;
@@ -253,7 +259,7 @@
 
   // The LIVE routing, datalines/outputs keyed by their graph NODE id (recomputed whenever
   // nodes/edges change: add, wire, reorder-by-drag, delete).
-  const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor));
+  const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor));
   // Publish it to the shell so the Inspector's first/last-pixel read-out reflects the current
   // wiring — including a just-added palette data line and an un-remounted reorder — instead of
   // a re-chunked snapshot of committed outputs whose synthetic ids never match the selected

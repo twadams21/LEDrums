@@ -191,18 +191,22 @@ export function buildOutputHalf(
 
 // --- graph → routing (the rewire read-back) ----------------------------------------
 
-/** Per-output transport scalars the graph does NOT author (universe / channels) —
-    supplied from the authoritative project so a rewire preserves them. */
-export type OutputScalars = { startUniverse: number; channelsPerPixel: number };
+/** Per-output transport scalars the graph does NOT author (channels + an optional
+    universe snap) — supplied from the authoritative project so a rewire preserves them.
+    `startUniverse` is optional: absent → the output packs dense/contiguous. */
+export type OutputScalars = { startUniverse?: number; channelsPerPixel: number };
 
-/** Sensible defaults for an output the project hasn't seen yet (a fresh palette node). */
-export const DEFAULT_OUTPUT_SCALARS: OutputScalars = { startUniverse: 0, channelsPerPixel: 3 };
+/** Sensible defaults for an output the project hasn't seen yet (a fresh palette node):
+    3 channels/pixel, dense (no universe snap). */
+export const DEFAULT_OUTPUT_SCALARS: OutputScalars = { channelsPerPixel: 3 };
 
 /**
  * Read the live flow graph's output half back into a `PatchRouting`. Outputs, their
  * data lines, and each line's hoops are ordered by vertical (y) position — the visual
  * top→bottom order IS the transmit order. `getScalars` supplies the per-output
- * universe/channel settings the graph doesn't carry (keyed by `OutputConfig.id`).
+ * universe/channel settings the graph doesn't carry (keyed by `OutputConfig.id`);
+ * `getLineUniverse` supplies a data line's optional `startUniverse` snap (keyed by its
+ * owning output id + its index within that output, so a set boundary survives a rewire).
  *
  * Only stage-correct edges contribute: dataline→output for an output's lines,
  * hoop→dataline for a line's hoops. Stray / mis-staged wires are ignored, so a sloppy
@@ -212,6 +216,7 @@ export function routingFromGraph(
   nodes: ReadonlyArray<PatchFlowNode>,
   edges: ReadonlyArray<PatchFlowEdge>,
   getScalars: (outputId: string) => OutputScalars = () => DEFAULT_OUTPUT_SCALARS,
+  getLineUniverse: (outputId: string, lineIndex: number) => number | undefined = () => undefined,
 ): PatchRouting {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const stageOf = (id: string): PatchStage | undefined => byId.get(id)?.data.stage;
@@ -232,16 +237,19 @@ export function routingFromGraph(
 
   const outputs: PatchOutput[] = outputNodeIds.map((oNodeId) => {
     const id = parseOutputNodeId(oNodeId) ?? oNodeId;
-    const dataLines: DataLine[] = sourcesInto(oNodeId, 'dataline').map((lineId) => {
+    const dataLines: DataLine[] = sourcesInto(oNodeId, 'dataline').map((lineId, lineIndex) => {
       const hoops: HoopRef[] = [];
       for (const hId of sourcesInto(lineId, 'hoop')) {
         const ref = parseHoopNodeId(hId);
         if (ref) hoops.push(ref);
       }
-      return { id: lineId, hoops };
+      const startUniverse = getLineUniverse(id, lineIndex);
+      return startUniverse === undefined ? { id: lineId, hoops } : { id: lineId, startUniverse, hoops };
     });
     const { startUniverse, channelsPerPixel } = getScalars(id);
-    return { id, startUniverse, channelsPerPixel, dataLines };
+    return startUniverse === undefined
+      ? { id, channelsPerPixel, dataLines }
+      : { id, startUniverse, channelsPerPixel, dataLines };
   });
 
   return { outputs };
@@ -276,7 +284,8 @@ export function defaultRouting(
   for (let i = 0, n = 0; i < chain.length; i += size, n++) {
     const hoops = chain.slice(i, i + size);
     const id = String(n + 1);
-    outputs.push({ id, startUniverse: 0, channelsPerPixel: 3, dataLines: [{ id: `${id}:dl0`, hoops }] });
+    // No startUniverse → the synthesized chain packs dense/contiguous from universe 0.
+    outputs.push({ id, channelsPerPixel: 3, dataLines: [{ id: `${id}:dl0`, hoops }] });
   }
   return { outputs };
 }

@@ -125,15 +125,38 @@ describe('routingFromGraph', () => {
     ];
     // hoop→output skips the dataline stage → not a valid routing edge → dropped
     const r = routingFromGraph(nodes, [edge('hoop:a:1', 'output:1')]);
-    expect(r.outputs).toEqual([{ id: '1', startUniverse: 0, channelsPerPixel: 3, dataLines: [] }]);
+    // default scalars are dense — no startUniverse emitted.
+    expect(r.outputs).toEqual([{ id: '1', channelsPerPixel: 3, dataLines: [] }]);
   });
 
-  it('reads per-output scalars via getScalars (else a sensible default)', () => {
+  it('reads per-output scalars via getScalars (default = dense, no startUniverse)', () => {
     const nodes = [node('output:7', 'output', 0, 1200)];
     const r = routingFromGraph(nodes, [], (id) =>
-      id === '7' ? { startUniverse: 5, channelsPerPixel: 4 } : { startUniverse: 0, channelsPerPixel: 3 },
+      id === '7' ? { startUniverse: 5, channelsPerPixel: 4 } : { channelsPerPixel: 3 },
     );
     expect(r.outputs[0]).toMatchObject({ id: '7', startUniverse: 5, channelsPerPixel: 4 });
+  });
+
+  it('recovers a data line startUniverse via getLineUniverse (by output id + line index)', () => {
+    const nodes: PatchFlowNode[] = [
+      node('hoop:a:1', 'hoop', 0, 0),
+      node('hoop:a:2', 'hoop', 20, 0),
+      node('dataline:1', 'dataline', 0, 1000), // index 0 within output:1
+      node('dataline:2', 'dataline', 20, 1000), // index 1 within output:1
+      node('output:1', 'output', 10, 1200),
+    ];
+    const edges = [
+      edge('hoop:a:1', 'dataline:1'),
+      edge('hoop:a:2', 'dataline:2'),
+      edge('dataline:1', 'output:1'),
+      edge('dataline:2', 'output:1'),
+    ];
+    // only the second line (index 1) carries a snap.
+    const r = routingFromGraph(nodes, edges, undefined, (outputId, i) =>
+      outputId === '1' && i === 1 ? 7 : undefined,
+    );
+    expect(r.outputs[0]!.dataLines[0]!.startUniverse).toBeUndefined();
+    expect(r.outputs[0]!.dataLines[1]!.startUniverse).toBe(7);
   });
 });
 
@@ -155,7 +178,7 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
     return out;
   }
 
-  it('recompiles to the identical OutputConfig[] (contiguous, drum-boundary, multi-output)', () => {
+  it('recompiles to the identical OutputConfig[] (data lines 1:1, drum-boundary, multi-output)', () => {
     const routing: PatchRouting = {
       outputs: [
         {
@@ -180,7 +203,13 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
       const o = routing.outputs.find((x) => x.id === id)!;
       return { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel };
     });
-    expect(patchToOutputs(readBack)).toEqual(patchToOutputs(routing));
+    // buildOutputHalf re-mints data-line node ids, so compare modulo the cosmetic line id:
+    // the load-bearing invariant is the per-output, per-line SEGMENT stream + line count/order.
+    const norm = (cfgs: ReturnType<typeof patchToOutputs>) =>
+      cfgs.map((c) => ({ ...c, dataLines: c.dataLines.map((d, i) => ({ ...d, id: i })) }));
+    expect(norm(patchToOutputs(readBack))).toEqual(norm(patchToOutputs(routing)));
+    // ...and the data-line count is preserved 1:1 (wire-in-N-stays-N).
+    expect(patchToOutputs(readBack).flatMap((c) => c.dataLines)).toHaveLength(3);
   });
 });
 

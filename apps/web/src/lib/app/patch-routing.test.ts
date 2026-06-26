@@ -1,205 +1,188 @@
 import { describe, expect, it } from 'vitest';
 import type { OutputConfig } from '@ledrums/core';
 import {
-  DEFAULT_HOOPS_PER_DATALINE,
   outputsToPatch,
   patchToOutputs,
   pixelRanges,
+  type DataLine,
   type HoopRef,
   type PatchOutput,
   type PatchRouting,
 } from './patch-routing';
 
-/** Build a single-dataline output (the common case) from a flat hoop list. */
+const h = (drumId: string, hoop: number): HoopRef => ({ drumId, hoop });
+
+/** A data line of hoops, with an optional startUniverse snap. */
+const dl = (id: string, hoops: HoopRef[], startUniverse?: number): DataLine =>
+  startUniverse === undefined ? { id, hoops } : { id, startUniverse, hoops };
+
+/** An output from a list of data lines (ids `${id}:dl<n>`), optional transport extras. */
 function output(
   id: string,
-  hoops: HoopRef[],
+  lines: HoopRef[][],
   extra: Partial<Pick<PatchOutput, 'startUniverse' | 'channelsPerPixel'>> = {},
 ): PatchOutput {
   return {
     id,
-    startUniverse: extra.startUniverse ?? 0,
     channelsPerPixel: extra.channelsPerPixel ?? 3,
-    dataLines: [{ id: `${id}:dl0`, hoops }],
+    ...(extra.startUniverse !== undefined ? { startUniverse: extra.startUniverse } : {}),
+    dataLines: lines.map((hoops, i) => dl(`${id}:dl${i}`, hoops)),
   };
 }
 
-const h = (drumId: string, hoop: number): HoopRef => ({ drumId, hoop });
-
-describe('patchToOutputs — segment coalescing', () => {
-  it('coalesces same-drum ascending-contiguous hoops into one segment', () => {
-    const routing: PatchRouting = {
-      outputs: [output('o1', [h('A', 0), h('A', 1), h('A', 2)])],
-    };
-    expect(patchToOutputs(routing)[0]!.segments).toEqual([
+describe('patchToOutputs — per-line coalescing, data lines 1:1', () => {
+  it('coalesces same-drum ascending-contiguous hoops within a line', () => {
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 1), h('A', 2)]])] };
+    expect(patchToOutputs(routing)[0]!.dataLines[0]!.segments).toEqual([
       { drumId: 'A', hoopStart: 0, hoopEnd: 2 },
     ]);
   });
 
-  it('splits on a drum boundary', () => {
-    const routing: PatchRouting = {
-      outputs: [output('o1', [h('A', 0), h('A', 1), h('B', 0), h('B', 1)])],
-    };
-    expect(patchToOutputs(routing)[0]!.segments).toEqual([
+  it('splits on a drum boundary within a line', () => {
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 1), h('B', 0), h('B', 1)]])] };
+    expect(patchToOutputs(routing)[0]!.dataLines[0]!.segments).toEqual([
       { drumId: 'A', hoopStart: 0, hoopEnd: 1 },
       { drumId: 'B', hoopStart: 0, hoopEnd: 1 },
     ]);
   });
 
-  it('splits on a non-contiguous (gapped) hoop of the same drum', () => {
-    const routing: PatchRouting = {
-      outputs: [output('o1', [h('A', 0), h('A', 2), h('A', 3)])],
-    };
-    expect(patchToOutputs(routing)[0]!.segments).toEqual([
+  it('splits on a non-contiguous (gapped) or descending hoop (never merges non-ascending)', () => {
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 2), h('A', 1)]])] };
+    expect(patchToOutputs(routing)[0]!.dataLines[0]!.segments).toEqual([
       { drumId: 'A', hoopStart: 0, hoopEnd: 0 },
-      { drumId: 'A', hoopStart: 2, hoopEnd: 3 },
+      { drumId: 'A', hoopStart: 2, hoopEnd: 2 },
+      { drumId: 'A', hoopStart: 1, hoopEnd: 1 },
     ]);
   });
 
-  it('splits on a descending/duplicate hoop (never merges non-ascending)', () => {
+  it('maps multiple data lines 1:1 — a line boundary is NOT flattened away', () => {
+    // A1 and A2 sit on DIFFERENT lines: they must stay two segments on two lines, never
+    // merged into a single A0..2 run (the old flatten behaviour). 8-stays-8 in miniature.
     const routing: PatchRouting = {
-      outputs: [output('o1', [h('A', 0), h('A', 1), h('A', 0)])],
+      outputs: [output('o1', [[h('A', 0), h('A', 1)], [h('A', 2), h('B', 0)]])],
     };
-    // The trailing A0 must be its own segment — core expands ascending, so merging
-    // would silently reorder the transmit stream.
-    expect(patchToOutputs(routing)[0]!.segments).toEqual([
-      { drumId: 'A', hoopStart: 0, hoopEnd: 1 },
-      { drumId: 'A', hoopStart: 0, hoopEnd: 0 },
+    const cfg = patchToOutputs(routing)[0]!;
+    expect(cfg.dataLines).toHaveLength(2);
+    expect(cfg.dataLines[0]!.segments).toEqual([{ drumId: 'A', hoopStart: 0, hoopEnd: 1 }]);
+    expect(cfg.dataLines[1]!.segments).toEqual([
+      { drumId: 'A', hoopStart: 2, hoopEnd: 2 },
+      { drumId: 'B', hoopStart: 0, hoopEnd: 0 },
     ]);
   });
 
-  it('carries id / startUniverse / channelsPerPixel through unchanged', () => {
+  it('carries output id / startUniverse / channelsPerPixel and per-line startUniverse through', () => {
     const routing: PatchRouting = {
-      outputs: [output('port-3', [h('A', 0)], { startUniverse: 10, channelsPerPixel: 4 })],
+      outputs: [
+        {
+          id: 'port-3',
+          startUniverse: 10,
+          channelsPerPixel: 4,
+          dataLines: [dl('port-3:dl0', [h('A', 0)], 7)],
+        },
+      ],
     };
     const cfg = patchToOutputs(routing)[0]!;
     expect(cfg.id).toBe('port-3');
     expect(cfg.startUniverse).toBe(10);
     expect(cfg.channelsPerPixel).toBe(4);
+    expect(cfg.dataLines[0]!.startUniverse).toBe(7);
+  });
+
+  it('omits startUniverse entirely when blank (dense)', () => {
+    const cfg = patchToOutputs({ outputs: [output('o1', [[h('A', 0)]])] })[0]!;
+    expect(cfg).not.toHaveProperty('startUniverse');
+    expect(cfg.dataLines[0]!).not.toHaveProperty('startUniverse');
   });
 
   it('preserves output order across multiple outputs', () => {
     const routing: PatchRouting = {
-      outputs: [
-        output('o1', [h('A', 0)]),
-        output('o2', [h('B', 0)]),
-        output('o3', [h('C', 0)]),
-      ],
+      outputs: [output('o1', [[h('A', 0)]]), output('o2', [[h('B', 0)]]), output('o3', [[h('C', 0)]])],
     };
     expect(patchToOutputs(routing).map((o) => o.id)).toEqual(['o1', 'o2', 'o3']);
   });
 
-  it('flattens multiple datalines in order before coalescing', () => {
+  it('skips empty data lines and outputs left with no non-empty lines', () => {
     const routing: PatchRouting = {
       outputs: [
-        {
-          id: 'o1',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [
-            { id: 'o1:dl0', hoops: [h('A', 0), h('A', 1)] },
-            { id: 'o1:dl1', hoops: [h('A', 2), h('B', 0)] },
-          ],
-        },
-      ],
-    };
-    // Dataline boundary between A1 and A2 does NOT break the run — only drum/order does.
-    expect(patchToOutputs(routing)[0]!.segments).toEqual([
-      { drumId: 'A', hoopStart: 0, hoopEnd: 2 },
-      { drumId: 'B', hoopStart: 0, hoopEnd: 0 },
-    ]);
-  });
-
-  it('skips outputs that carry no hoops', () => {
-    const routing: PatchRouting = {
-      outputs: [
-        output('empty', []),
-        output('o2', [h('A', 0)]),
-        { id: 'empty2', startUniverse: 0, channelsPerPixel: 3, dataLines: [] },
+        { id: 'empty', channelsPerPixel: 3, dataLines: [dl('empty:dl0', [])] },
+        output('o2', [[h('A', 0)]]),
+        { id: 'blank', channelsPerPixel: 3, dataLines: [] },
       ],
     };
     expect(patchToOutputs(routing).map((o) => o.id)).toEqual(['o2']);
   });
 });
 
-describe('round-trip — patchToOutputs ∘ outputsToPatch ∘ patchToOutputs is stable', () => {
-  const cases: Record<string, PatchRouting> = {
-    'contiguous coalescing': {
-      outputs: [output('o1', [h('A', 0), h('A', 1), h('A', 2), h('A', 3)])],
-    },
-    'drum-boundary splits': {
-      outputs: [output('o1', [h('A', 0), h('A', 1), h('B', 0), h('C', 0), h('C', 1)])],
-    },
-    'multi-output ordering': {
-      outputs: [
-        output('o1', [h('A', 0), h('A', 1)], { startUniverse: 0 }),
-        output('o2', [h('B', 0), h('B', 1), h('B', 2)], { startUniverse: 5, channelsPerPixel: 4 }),
-      ],
-    },
-    'gapped + descending mix': {
-      outputs: [output('o1', [h('A', 0), h('A', 2), h('A', 1), h('B', 0)])],
-    },
-    'empty output present': {
-      outputs: [output('empty', []), output('o2', [h('A', 0), h('A', 1)])],
-    },
-    'long run that re-chunks across datalines': {
-      // 9 hoops > DEFAULT_HOOPS_PER_DATALINE (6): forces re-chunking on the way back.
-      outputs: [
-        output(
-          'o1',
-          Array.from({ length: 9 }, (_, i) => h('A', i)),
-        ),
-      ],
-    },
-  };
+describe('outputsToPatch — 1:1 inverse (no re-chunk)', () => {
+  it('expands each line back to hoops, preserving line count / ids / startUniverse', () => {
+    const cfgs: OutputConfig[] = [
+      {
+        id: 'o1',
+        startUniverse: 2,
+        channelsPerPixel: 3,
+        dataLines: [
+          { id: 'o1:dl0', segments: [{ drumId: 'A', hoopStart: 0, hoopEnd: 2 }] },
+          { id: 'o1:dl1', startUniverse: 9, segments: [{ drumId: 'B', hoopStart: 0, hoopEnd: 0 }] },
+        ],
+      },
+    ];
+    const back = outputsToPatch(cfgs);
+    expect(back.outputs[0]!.startUniverse).toBe(2);
+    expect(back.outputs[0]!.dataLines).toHaveLength(2);
+    expect(back.outputs[0]!.dataLines[0]!.hoops).toEqual([h('A', 0), h('A', 1), h('A', 2)]);
+    expect(back.outputs[0]!.dataLines[1]!.startUniverse).toBe(9);
+    expect(back.outputs[0]!.dataLines[1]!.hoops).toEqual([h('B', 0)]);
+  });
 
-  for (const [name, routing] of Object.entries(cases)) {
-    it(name, () => {
+  it('wiring 8 data lines round-trips as 8 (no collapse, no re-chunk)', () => {
+    // 4 outputs × 2 lines, each line a distinct hoop run.
+    const routing: PatchRouting = {
+      outputs: Array.from({ length: 4 }, (_, o) =>
+        output(String(o + 1), [[h('k', o * 2)], [h('k', o * 2 + 1)]]),
+      ),
+    };
+    const cfgs = patchToOutputs(routing);
+    const lineCount = cfgs.reduce((n, c) => n + c.dataLines.length, 0);
+    expect(lineCount).toBe(8);
+    const back = outputsToPatch(cfgs);
+    expect(back.outputs.reduce((n, o) => n + o.dataLines.length, 0)).toBe(8);
+    // ...and recompiling the round-trip is identical (order + boundaries preserved).
+    expect(patchToOutputs(back)).toEqual(cfgs);
+  });
+
+  const roundTrips: Record<string, PatchRouting> = {
+    'contiguous coalescing': { outputs: [output('o1', [[h('A', 0), h('A', 1), h('A', 2), h('A', 3)]])] },
+    'multi-line drum-boundary splits': {
+      outputs: [output('o1', [[h('A', 0), h('A', 1)], [h('B', 0), h('C', 0), h('C', 1)]])],
+    },
+    'multi-output with startUniverse snaps': {
+      outputs: [
+        output('o1', [[h('A', 0), h('A', 1)]]),
+        { id: 'o2', startUniverse: 5, channelsPerPixel: 4, dataLines: [dl('o2:dl0', [h('B', 0), h('B', 1)], 5)] },
+      ],
+    },
+    'gapped + descending mix on one line': { outputs: [output('o1', [[h('A', 0), h('A', 2), h('A', 1), h('B', 0)]])] },
+  };
+  for (const [name, routing] of Object.entries(roundTrips)) {
+    it(`stable round-trip: ${name}`, () => {
       const once = patchToOutputs(routing);
       const twice = patchToOutputs(outputsToPatch(once));
       expect(twice).toEqual(once);
     });
   }
-
-  it('default re-chunk size is honoured by outputsToPatch', () => {
-    const cfgs = patchToOutputs({
-      outputs: [output('o1', Array.from({ length: 13 }, (_, i) => h('A', i)))],
-    });
-    const back = outputsToPatch(cfgs);
-    const lines = back.outputs[0]!.dataLines;
-    // 13 hoops / 6 per line → 6, 6, 1
-    expect(lines.map((l) => l.hoops.length)).toEqual([6, 6, 1]);
-    expect(DEFAULT_HOOPS_PER_DATALINE).toBe(6);
-  });
-
-  it('respects a custom hoopsPerDataLine while preserving pixel order', () => {
-    const cfgs = patchToOutputs({
-      outputs: [output('o1', Array.from({ length: 5 }, (_, i) => h('A', i)))],
-    });
-    const back = outputsToPatch(cfgs, { hoopsPerDataLine: 2 });
-    expect(back.outputs[0]!.dataLines.map((l) => l.hoops.length)).toEqual([2, 2, 1]);
-    // order still round-trips through the compiler
-    expect(patchToOutputs(back)).toEqual(cfgs);
-  });
 });
 
 describe('pixelRanges', () => {
   // Hand-computed: A0 (50px) → 0..49, A1 (50px) → 50..99, B0 (30px) → 100..129.
-  const px = (hp: HoopRef): number =>
-    hp.drumId === 'A' ? 50 : hp.drumId === 'B' ? 30 : 0;
+  const px = (hp: HoopRef): number => (hp.drumId === 'A' ? 50 : hp.drumId === 'B' ? 30 : 0);
 
   it('matches the hand-computed example with one hoop per dataline', () => {
     const routing: PatchRouting = {
       outputs: [
         {
           id: 'o1',
-          startUniverse: 0,
           channelsPerPixel: 3,
-          dataLines: [
-            { id: 'dlA0', hoops: [h('A', 0)] },
-            { id: 'dlA1', hoops: [h('A', 1)] },
-            { id: 'dlB0', hoops: [h('B', 0)] },
-          ],
+          dataLines: [dl('dlA0', [h('A', 0)]), dl('dlA1', [h('A', 1)]), dl('dlB0', [h('B', 0)])],
         },
       ],
     };
@@ -213,21 +196,8 @@ describe('pixelRanges', () => {
   it('aggregates multiple hoops on one dataline and across outputs', () => {
     const routing: PatchRouting = {
       outputs: [
-        {
-          id: 'o1',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [
-            { id: 'dl1', hoops: [h('A', 0), h('A', 1)] }, // 0..99
-            { id: 'dl2', hoops: [h('B', 0)] }, // 100..129
-          ],
-        },
-        {
-          id: 'o2',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [{ id: 'dl3', hoops: [h('A', 2)] }], // 130..179
-        },
+        { id: 'o1', channelsPerPixel: 3, dataLines: [dl('dl1', [h('A', 0), h('A', 1)]), dl('dl2', [h('B', 0)])] },
+        { id: 'o2', channelsPerPixel: 3, dataLines: [dl('dl3', [h('A', 2)])] },
       ],
     };
     const { byDataLine, byOutput } = pixelRanges(routing, px);
@@ -241,16 +211,8 @@ describe('pixelRanges', () => {
   it('omits zero-pixel datalines and outputs', () => {
     const routing: PatchRouting = {
       outputs: [
-        {
-          id: 'o1',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [
-            { id: 'empty', hoops: [h('Z', 0)] }, // 0px → omitted
-            { id: 'real', hoops: [h('A', 0)] }, // 0..49
-          ],
-        },
-        { id: 'blank', startUniverse: 0, channelsPerPixel: 3, dataLines: [] },
+        { id: 'o1', channelsPerPixel: 3, dataLines: [dl('empty', [h('Z', 0)]), dl('real', [h('A', 0)])] },
+        { id: 'blank', channelsPerPixel: 3, dataLines: [] },
       ],
     };
     const { byDataLine, byOutput } = pixelRanges(routing, px);
@@ -262,16 +224,13 @@ describe('pixelRanges', () => {
 });
 
 describe('compiled output matches core OutputConfig shape', () => {
-  it('emits exactly the OutputConfig fields core consumes', () => {
-    const cfgs: OutputConfig[] = patchToOutputs({
-      outputs: [output('o1', [h('A', 0), h('A', 1)])],
-    });
+  it('emits exactly the OutputConfig fields core consumes (dataLines + segments)', () => {
+    const cfgs: OutputConfig[] = patchToOutputs({ outputs: [output('o1', [[h('A', 0), h('A', 1)]])] });
     expect(cfgs).toEqual([
       {
         id: 'o1',
-        startUniverse: 0,
         channelsPerPixel: 3,
-        segments: [{ drumId: 'A', hoopStart: 0, hoopEnd: 1 }],
+        dataLines: [{ id: 'o1:dl0', segments: [{ drumId: 'A', hoopStart: 0, hoopEnd: 1 }] }],
       },
     ]);
   });
