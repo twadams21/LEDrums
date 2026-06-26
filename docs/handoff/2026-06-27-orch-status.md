@@ -38,13 +38,13 @@ shell-demode-perform (independent, parallel from start) ─► (TopBar settled f
 ## Status table
 | Slice | Brief | Wave | Depends on | Agent id | wt branch | Status | Commit | Merged |
 |---|---|---|---|---|---|---|---|---|
-| ctx-menu-primitive | `docs/prompts/ctx-menu-primitive.md` | 1 | — | — | wt/ctx-menu | PENDING | — | — |
-| shell-demode-perform | `docs/prompts/shell-demode-perform.md` | 1 | — | — | wt/shell | PENDING | — | — |
-| crud-section | `docs/prompts/crud-section.md` | 2 | ctx-menu | — | wt/crud-section | PENDING | — | — |
-| crud-song | `docs/prompts/crud-song.md` | 2 | ctx-menu | — | wt/crud-song | PENDING | — | — |
-| crud-graph | `docs/prompts/crud-graph.md` | 2 | ctx-menu, crud-section | — | wt/crud-graph | PENDING | — | — |
-| show-document-model | `docs/prompts/show-document-model.md` | 3 | CRUD batch | — | wt/show-model | PENDING | — | — |
-| show-browser-ui | `docs/prompts/show-browser-ui.md` | 3 | show-model, ctx-menu, shell | — | wt/show-ui | PENDING | — | — |
+| ctx-menu-primitive | `docs/prompts/ctx-menu-primitive.md` | 1 | — | ctx-menu-60e42a (parked) | wt/ctx-menu | ✅ MERGED | f346569 | 47f2b9c |
+| shell-demode-perform | `docs/prompts/shell-demode-perform.md` | 1 | — | shell-f0a260 (parked) | wt/shell | ✅ MERGED | 1347968 | f088e67 |
+| crud-section | `docs/prompts/crud-section.md` | 2 | ctx-menu ✅ | crud-section-314c5b (parked) | wt/crud-section | ✅ MERGED | f9cef20 | 8897aec |
+| crud-song | `docs/prompts/crud-song.md` | 2 | ctx-menu ✅ | crud-song-e0d2cc (parked) | wt/crud-song | ✅ MERGED | 116c31d | 5b9dcd7 |
+| crud-graph | `docs/prompts/crud-graph.md` | 2 | ctx-menu ✅, crud-section ✅ | crud-graph-a26adf (parked) | wt/crud-graph | ✅ MERGED | 44dd6fb | aff97c8 |
+| show-document-model | `docs/prompts/show-document-model.md` | 3 | CRUD batch ✅ | show-model-fb2df0 (parked) | wt/show-model | ✅ MERGED | f61e876 | 2e2793e |
+| show-browser-ui | `docs/prompts/show-browser-ui.md` | 3 | show-model ✅, ctx-menu ✅, shell ✅ | — | wt/show-ui (pre-staged @2e2793e, deps in) | ⏸ HELD for 04:40 5h reset (5h hit 96%) | — | — |
 
 ## Per-agent worktree launch recipe
 ```bash
