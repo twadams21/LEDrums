@@ -185,3 +185,84 @@ describe('hit resolution = active section graphs whose drum source matches the p
     expect(store.log[0]!.pad).toBe('Kick · center');
   });
 });
+
+describe('rename / delete section', () => {
+  it('renameSection relabels the section (no-op-safe on an unknown id)', () => {
+    const store = new TriggerLab(fakeClient);
+    const id = store.activeSong!.sections[0]!.id;
+    store.renameSection(id, 'Big Chorus');
+    expect(store.activeSong!.sections.find((s) => s.id === id)!.name).toBe('Big Chorus');
+
+    const names = store.activeSong!.sections.map((s) => s.name);
+    store.renameSection('no-such-section', 'X'); // no-op
+    expect(store.activeSong!.sections.map((s) => s.name)).toEqual(names);
+  });
+
+  it('removeSection drops the section (no-op-safe on an unknown id)', () => {
+    const store = new TriggerLab(fakeClient);
+    const before = store.activeSong!.sections.length;
+    const id = store.activeSong!.sections[1]!.id; // a non-active section
+    store.removeSection(id);
+    expect(store.activeSong!.sections.map((s) => s.id)).not.toContain(id);
+    expect(store.activeSong!.sections).toHaveLength(before - 1);
+
+    const after = store.activeSong!.sections.length;
+    store.removeSection('no-such-section'); // no-op
+    expect(store.activeSong!.sections).toHaveLength(after);
+  });
+
+  it('deleting the active section re-points activeSectionId to its left neighbour', () => {
+    const store = new TriggerLab(fakeClient);
+    store.addSongSection('A');
+    const a = store.activeSectionId!;
+    store.addSongSection('B');
+    const b = store.activeSectionId!;
+    store.addSongSection('C'); // a, b, c are consecutive at the tail
+    store.setActiveSection(b);
+    store.removeSection(b);
+    expect(store.activeSectionId).toBe(a); // moved one to the left
+  });
+
+  it('deleting the active FIRST section re-points to the new first', () => {
+    const store = new TriggerLab(fakeClient);
+    const first = store.activeSong!.sections[0]!.id;
+    const second = store.activeSong!.sections[1]!.id;
+    store.setActiveSection(first);
+    store.removeSection(first);
+    expect(store.activeSectionId).toBe(second); // the new first section
+  });
+
+  it('clears activeSectionId once the last section is removed', () => {
+    const store = new TriggerLab(fakeClient);
+    for (const s of [...store.activeSong!.sections]) store.removeSection(s.id);
+    expect(store.activeSong!.sections).toHaveLength(0);
+    expect(store.activeSectionId).toBeNull();
+  });
+
+  it('persists a rename + delete across a reload (autosave → hydrate)', () => {
+    // Drive the real autosave: start() registers the persist $effect; a no-op RAF keeps the
+    // render loop from running in node. stop() flushes the serialized authored slice to
+    // localStorage synchronously. Constructing a fresh store = a reload (it hydrates).
+    const raf = globalThis.requestAnimationFrame;
+    const caf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+    try {
+      const store = new TriggerLab(fakeClient);
+      store.start();
+      store.addSongSection('Victim'); // a guaranteed extra section, now active
+      const victim = store.activeSectionId!;
+      const keep = store.activeSong!.sections[0]!.id;
+      store.renameSection(keep, 'Persisted');
+      store.removeSection(victim);
+      store.stop(); // flush authored → localStorage
+
+      const reloaded = new TriggerLab(fakeClient);
+      expect(reloaded.activeSong!.sections.find((s) => s.id === keep)!.name).toBe('Persisted');
+      expect(reloaded.activeSong!.sections.map((s) => s.id)).not.toContain(victim);
+    } finally {
+      globalThis.requestAnimationFrame = raf;
+      globalThis.cancelAnimationFrame = caf;
+    }
+  });
+});

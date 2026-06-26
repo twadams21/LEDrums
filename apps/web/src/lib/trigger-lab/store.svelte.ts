@@ -804,6 +804,26 @@ export class TriggerLab {
     this.activeSectionId = id;
   }
 
+  /** Rename a section of the active song (no-op-safe on an unknown id). Persists via the
+      authored autosave like every other section edit. */
+  renameSection(sectionId: string, name: string): void {
+    this.updateActiveSong((song) => setlist.renameSection(song, sectionId, name));
+  }
+
+  /** Delete a section from the active song. When it was the ACTIVE section, re-point
+      `activeSectionId` to a sensible neighbour — the section to its left, else the new
+      first section, else `null` once none remain. No-op on an unknown id. Persists via the
+      authored autosave. */
+  removeSection(sectionId: string): void {
+    const idx = (this.activeSong?.sections ?? []).findIndex((s) => s.id === sectionId);
+    if (idx < 0) return; // not a section of the active song
+    this.updateActiveSong((song) => setlist.removeSection(song, sectionId));
+    if (this.activeSectionId === sectionId) {
+      const remaining = this.activeSong?.sections ?? [];
+      this.activeSectionId = (remaining[idx - 1] ?? remaining[0])?.id ?? null;
+    }
+  }
+
   /** Copy a section of the active song onto the clipboard (a deep, non-reactive copy via
       {@link setlist.cloneSection}, so later edits to the source never bleed into it). No-op
       if the id isn't a section of the active song. */

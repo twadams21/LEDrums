@@ -68,6 +68,13 @@ export function addSection(song: Song, section: SetlistSection): Song {
   return { ...song, sections: [...song.sections, section] };
 }
 
+/** Drop a section from the song (mirror of {@link addSection}). Immutable; the remaining
+    sections keep their order. No-op — returns the SAME Song ref — when the id is absent. */
+export function removeSection(song: Song, sectionId: string): Song {
+  if (!song.sections.some((s) => s.id === sectionId)) return song;
+  return { ...song, sections: song.sections.filter((s) => s.id !== sectionId) };
+}
+
 /** Deep-copy a section under a NEW id (name defaults to "<name> copy"). The `graphs` list is
     copied so the clone is an INDEPENDENT section — editing one section's list never touches
     the other. The keys themselves stay references into store.graphs, so the copy shares the
