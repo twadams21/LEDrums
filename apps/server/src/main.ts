@@ -11,7 +11,9 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
 import { applyClientMessage, oscToEvent } from './input-router';
-import { listProjects, loadProject, projectExists, saveProject } from './projects';
+import { listProjects, loadProject, projectExists, saveProject, saveProjectAsync } from './projects';
+import { createAutosaver } from './autosave';
+import { SingleClientLock } from './client-lock';
 import { serveStatic } from './static-host';
 import {
   decodeClient,
@@ -30,21 +32,35 @@ const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
 
 // --- project + host ---------------------------------------------------------
 
+/** The single live project slot. Every authoritative mutation debounce-autosaves here,
+ * and {@link initialProject} loads it on boot — so the persisted file is the source of
+ * truth across restarts (a crash mid-flight recovers cleanly on the next boot). It is
+ * machine-local runtime state, so it uses the repo's `.local` convention and is
+ * gitignored (see apps/server/.gitignore) — never committed, never a hand-edited seed. */
+const LIVE_PROJECT = 'default.local';
+
 function initialProject(): Project {
-  // Seed-from-core: with no saved 'default', the default project is computed from
-  // the canonical in-code definition (defaultProject → DEFAULT_KIT), so there is no
-  // hand-edited file to drift from the engine/lab kit. A saved 'default' (if the
-  // user saved one) is loaded + integrity-checked, and fails loudly on dangling refs.
-  if (!projectExists('default')) return defaultProject();
-  return loadProject('default');
+  // Boot recovery: the live project file is authoritative — load + integrity-check it if
+  // present (failing loudly on dangling refs). Only on a truly fresh machine (no saved
+  // file) do we seed from the canonical in-code definition (defaultProject → DEFAULT_KIT),
+  // so there is no hand-edited file to drift from the engine/lab kit. Once any edit lands,
+  // the autosaver writes this slot and it is what subsequent boots restore.
+  if (!projectExists(LIVE_PROJECT)) return defaultProject();
+  return loadProject(LIVE_PROJECT);
 }
 
 const project0 = initialProject();
 const host = new EngineHost(project0);
 /** Voice-bus host, only constructed in voice mode. It owns the live render + output;
  * the legacy `host` still backs the `state` message and the structural reducer so the
- * existing UI/project surface keeps working. */
+ * existing UI/project surface keeps working. Both hosts share the same `project0` object
+ * by reference, so the voice host's in-place geometry/routing edits are visible through
+ * `host.engine.getProject()` — which is what the autosaver persists. */
 const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
+
+/** Live persistence: debounce-autosave the authoritative project to {@link LIVE_PROJECT}
+ * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
+const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()));
 
 // --- HTTP + static + WS -----------------------------------------------------
 
@@ -53,7 +69,9 @@ const server = createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server, path: WS_PATH });
-const clients = new Set<WebSocket>();
+/** Exactly one live client (newest wins) — a new connection supersedes the old. The
+ * engine/output loop runs independently, so client churn never stops transmission. */
+const clients = new SingleClientLock<WebSocket>();
 
 function broadcastJson(msg: ServerMessage): void {
   const data = encodeServer(msg);
@@ -86,7 +104,9 @@ if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
 else host.onFrame = (rgb) => broadcastBinary(rgb);
 
 wss.on('connection', (ws) => {
-  clients.add(ws);
+  // Single-client lock: admitting this socket cleanly closes any prior one (newest wins),
+  // so a reconnect after a crash replaces the dead socket without wedging.
+  clients.admit(ws);
   ws.send(encodeServer(stateMessage()));
 
   ws.on('message', (raw, isBinary) => {
@@ -106,8 +126,8 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => clients.delete(ws));
-  ws.on('error', () => clients.delete(ws));
+  ws.on('close', () => clients.remove(ws));
+  ws.on('error', () => clients.remove(ws));
 });
 
 type ClientMessage = ReturnType<typeof decodeClient>;
@@ -119,6 +139,7 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
     host.engine.setProject(loaded);
     host.reloadOutputSettings();
     broadcastJson(stateMessage());
+    autosaver.markDirty(); // the loaded project is now the live state — persist it
     return;
   }
   if (msg.t === 'saveProject') {
@@ -208,14 +229,18 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
   }
 
   // Output settings or geometry changed → re-apply output + send fresh state.
+  // (setKitOutputs has no legacy reducer case, so it never sets result.structural; mark
+  // dirty here so the output-topology reorder is persisted too.)
   if (msg.t === 'setOutput' || msg.t === 'setKitTransform' || msg.t === 'setKitOutputs') {
     host.reloadOutputSettings();
     broadcastJson(stateMessage());
+    autosaver.markDirty();
     return;
   }
 
   if (result.structural) {
     broadcastJson(stateMessage());
+    autosaver.markDirty();
   }
   if (result.monitor) {
     broadcastJson({ t: 'input', kind: result.monitor.kind, label: result.monitor.label, value: result.monitor.value });
@@ -290,7 +315,7 @@ server.listen(port, () => {
 // --- shutdown ---------------------------------------------------------------
 
 let shuttingDown = false;
-function shutdown(): void {
+async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(statsTimer);
@@ -306,8 +331,11 @@ function shutdown(): void {
   }
   wss.close();
   server.close();
+  // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
+  // never rejects (write errors are logged), but guard exit-on-error just in case.
+  await autosaver.flush().catch(() => {});
   process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());
