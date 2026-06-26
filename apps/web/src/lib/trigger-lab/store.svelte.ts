@@ -781,6 +781,64 @@ export class TriggerLab {
     }
   }
 
+  /** Create a new, empty song (one empty section), append it to `songs`, make it the
+      active song, and return its id. Name defaults to "New song N" (first unused). Persists
+      via the authored-state autosave (`songs` is part of the snapshot). */
+  createSong(name?: string): string {
+    let id = nid('song');
+    while (this.songs.some((s) => s.id === id)) id = nid('song'); // global uniqueness (survives reload)
+    const label = name?.trim() || this.nextSongName();
+    this.songs = [...this.songs, setlist.makeSong(id, label)];
+    this.setActiveSong(id); // points activeSectionId at the new song's first section
+    return id;
+  }
+
+  /** Smallest unused "New song N" label, so auto-named songs stay distinct. */
+  private nextSongName(): string {
+    const used = new Set(this.songs.map((s) => s.name));
+    let n = 1;
+    while (used.has(`New song ${n}`)) n++;
+    return `New song ${n}`;
+  }
+
+  /** Rename a song. No-op if the id is unknown or the trimmed name is empty (a blank rename
+      keeps the old name rather than clearing it). Persists via autosave. */
+  renameSong(id: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.songs = this.songs.map((s) => (s.id === id ? { ...s, name: trimmed } : s));
+  }
+
+  /** Duplicate a song: append an independent "<name> copy" (every section deep-copied under
+      a fresh id, so the clone's arrangement edits without touching the source — graph KEYS
+      stay shared, i.e. reuse) and make it active. Returns the new id, or null if `id` is
+      unknown. */
+  duplicateSong(id: string): string | null {
+    const src = this.songs.find((s) => s.id === id);
+    if (!src) return null;
+    let newId = nid('song');
+    while (this.songs.some((s) => s.id === newId)) newId = nid('song');
+    const sections = src.sections.map((sec) => setlist.cloneSection(sec, nid('section'), sec.name));
+    this.songs = [...this.songs, setlist.makeSong(newId, `${src.name} copy`, sections)];
+    this.setActiveSong(newId);
+    return newId;
+  }
+
+  /** Remove a song. When the removed song was active, re-points `activeSongId` to a sensible
+      neighbour (the next song, else the new last). Guards the LAST song: removing the only
+      song is a no-op, so the app always has a song to show + edit. Persists via autosave. */
+  removeSong(id: string): void {
+    if (this.songs.length <= 1) return; // never delete the last song (activeSong would go null)
+    const idx = this.songs.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const wasActive = this.activeSongId === id;
+    this.songs = this.songs.filter((s) => s.id !== id);
+    if (wasActive) {
+      const next = this.songs[idx] ?? this.songs[this.songs.length - 1]!;
+      this.setActiveSong(next.id);
+    }
+  }
+
   /** Mutate the active song immutably via the pure setlist ops, then store it back. */
   private updateActiveSong(fn: (song: Song) => Song): void {
     const id = this.activeSongId;

@@ -31,6 +31,19 @@ export function makeSection(id: string, name: string, graphs: readonly string[] 
   return { id, name, graphs: dedupe(graphs) };
 }
 
+/** A fresh song. Defaults to ONE empty section (id derived from the song id so it is
+    pure + collision-free) — a brand-new song the performer can immediately arrange,
+    mirroring how a seeded song is always a non-empty list of sections. Pass an explicit
+    `sections` to wrap existing ones (e.g. a duplicate's cloned sections). Mirrors
+    {@link makeSection}: a pure constructor, no id generation of its own. */
+export function makeSong(
+  id: string,
+  name: string,
+  sections: SetlistSection[] = [makeSection(`${id}-s1`, 'Section 1')],
+): Song {
+  return { id, name, sections };
+}
+
 // ---- immutable section/song edits ------------------------------------------
 
 function mapSection(song: Song, sectionId: string, fn: (s: SetlistSection) => SetlistSection): Song {

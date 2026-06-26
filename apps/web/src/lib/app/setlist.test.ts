@@ -6,6 +6,7 @@ import {
   graphUsageCount,
   isReused,
   makeSection,
+  makeSong,
   referencedGraphs,
   removeGraph,
   renameSection,
@@ -31,6 +32,25 @@ describe('makeSection', () => {
   });
   it('seeds + de-duplicates an initial ordered graph list', () => {
     expect(makeSection('a', 'A', ['g1', 'g2', 'g1', 'g3']).graphs).toEqual(['g1', 'g2', 'g3']);
+  });
+});
+
+describe('makeSong', () => {
+  it('wraps id + name with one empty section by default', () => {
+    const s = makeSong('song-1', 'My Song');
+    expect(s.id).toBe('song-1');
+    expect(s.name).toBe('My Song');
+    expect(s.sections).toHaveLength(1);
+    expect(s.sections[0]!.graphs).toEqual([]);
+  });
+  it('derives the default section id from the song id (pure + collision-free)', () => {
+    expect(makeSong('song-9', 'X').sections[0]!.id).toBe('song-9-s1');
+  });
+  it('wraps an explicit sections list as-is', () => {
+    const secs = [makeSection('a', 'A', ['g1']), makeSection('b', 'B')];
+    const s = makeSong('song-2', 'Two', secs);
+    expect(s.sections).toBe(secs);
+    expect(s.sections.map((x) => x.id)).toEqual(['a', 'b']);
   });
 });
 
