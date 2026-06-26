@@ -9,6 +9,7 @@ import {
   makeSong,
   referencedGraphs,
   removeGraph,
+  removeSection,
   renameSection,
   setGraphs,
   type Song,
@@ -124,6 +125,29 @@ describe('section ops', () => {
     expect(s.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']);
     s = renameSection(s, 'chorus', 'Big Chorus');
     expect(s.sections.find((x) => x.id === 'chorus')!.name).toBe('Big Chorus');
+  });
+});
+
+describe('removeSection (immutable)', () => {
+  it('drops the named section, preserving the order of the rest', () => {
+    let s = addSection(song(), makeSection('chorus', 'Chorus')); // intro, verse, chorus
+    const before = s;
+    s = removeSection(s, 'verse');
+    expect(s.sections.map((x) => x.id)).toEqual(['intro', 'chorus']);
+    expect(before.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']); // original untouched
+    expect(s).not.toBe(before);
+  });
+
+  it('is a no-op (same Song ref) when the section id is absent', () => {
+    const s = song();
+    expect(removeSection(s, 'nope')).toBe(s);
+  });
+
+  it('can empty the song down to zero sections', () => {
+    let s = song(); // intro, verse
+    s = removeSection(s, 'intro');
+    s = removeSection(s, 'verse');
+    expect(s.sections).toEqual([]);
   });
 });
 
