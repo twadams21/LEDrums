@@ -25,6 +25,7 @@ import {
   type Scope,
   type Section,
   type SwitchOn,
+  type ValueMode,
   type Voice,
   type GraphNode,
   type NodeKind,
@@ -78,6 +79,8 @@ function writeStored(payload: PersistedAuthored): void {
 
 let idSeq = 1000;
 const nid = (k: string) => `${k}-${idSeq++}`;
+
+const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 /** Build a fresh block of a given kind (leaves use the effect's Default preset). */
 export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
@@ -734,16 +737,20 @@ export class TriggerLab {
     if (this.envTarget?.block.id === node.id) this.envTarget = null;
   }
 
-  /** Wire a node's output to another's input (rejects dup / cycle / bad direction). */
-  connect(fromId: string, toId: string): void {
+  /** Wire a node's output to another's input (rejects dup / cycle / bad direction).
+      `fromPort` is the source handle the wire leaves (a value+bands switch's `band-${i}`);
+      undefined = the node's default single output. */
+  connect(fromId: string, toId: string, fromPort?: string): void {
     const g = this.selectedGraph;
     if (!g || fromId === toId) return;
     const from = g.nodes.find((n) => n.id === fromId);
     const to = g.nodes.find((n) => n.id === toId);
     if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return;
-    if (g.edges.some((e) => e.from === fromId && e.to === toId)) return;
+    // dup is per source-port: two different bands MAY route to the same child, but the
+    // same (source-port → target) wire is rejected.
+    if (g.edges.some((e) => e.from === fromId && e.to === toId && (e.fromPort ?? null) === (fromPort ?? null))) return;
     if (this.reaches(g, toId, fromId)) return; // would form a cycle
-    g.edges.push({ id: nid('e'), from: fromId, to: toId });
+    g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort });
   }
   disconnect(edgeId: string): void {
     const g = this.selectedGraph;
@@ -753,7 +760,7 @@ export class TriggerLab {
       exactly as connect() does — but ignoring the edge being moved — and leaves the
       wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
       reconnect drag snaps back instead of deleting the wire. */
-  reconnect(edgeId: string, fromId: string, toId: string): void {
+  reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string): void {
     const g = this.selectedGraph;
     if (!g || fromId === toId) return;
     const edge = g.edges.find((e) => e.id === edgeId);
@@ -761,11 +768,12 @@ export class TriggerLab {
     const from = g.nodes.find((n) => n.id === fromId);
     const to = g.nodes.find((n) => n.id === toId);
     if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return;
-    if (g.edges.some((e) => e.id !== edgeId && e.from === fromId && e.to === toId)) return; // dup
+    if (g.edges.some((e) => e.id !== edgeId && e.from === fromId && e.to === toId && (e.fromPort ?? null) === (fromPort ?? null))) return; // dup
     // cycle check over the graph WITHOUT the edge being moved
     if (this.reaches({ nodes: g.nodes, edges: g.edges.filter((e) => e.id !== edgeId) }, toId, fromId)) return;
     edge.from = fromId;
     edge.to = toId;
+    edge.fromPort = fromPort;
   }
   private reaches(g: TriggerGraph, startId: string, targetId: string): boolean {
     const seen = new Set<string>();
@@ -808,7 +816,94 @@ export class TriggerLab {
     if (node.kind === 'chance') node.p = p;
   }
   setSwitchOn(node: GraphNode, on: SwitchOn): void {
-    if (node.kind === 'switch') node.on = on;
+    if (node.kind !== 'switch') return;
+    node.on = on;
+    // backfill value-mode fields the first time a node becomes a value switch (a graph
+    // persisted before value-mode lacks them); leaving value collapses band wires.
+    if (on === 'value') this.ensureValueDefaults(node);
+    else this.stripBandPorts(node);
+  }
+
+  // --- value switch (gate + bands) -----------------------------------------
+
+  /** Backfill value-switch fields for a node that lacks them (older persisted graph). */
+  private ensureValueDefaults(node: GraphNode): void {
+    node.valueMode = node.valueMode ?? 'gate';
+    node.threshold = node.threshold ?? 0.5;
+    node.invert = node.invert ?? false;
+    node.bands = Array.isArray(node.bands) && node.bands.length > 0 ? node.bands : [0.5];
+  }
+
+  /** Drop per-band source ports from a node's outgoing edges, collapsing them to the
+      default output — so leaving bands mode never strands a wire on a handle the node
+      no longer renders (which xyflow can't draw). */
+  private stripBandPorts(node: GraphNode): void {
+    const g = this.selectedGraph;
+    if (!g) return;
+    for (const e of g.edges) if (e.from === node.id && e.fromPort !== undefined) e.fromPort = undefined;
+  }
+
+  setValueMode(node: GraphNode, mode: ValueMode): void {
+    if (node.kind !== 'switch' || node.on !== 'value') return;
+    node.valueMode = mode;
+    // gate has a single output; collapse any band wires so they fire as default children.
+    if (mode === 'gate') this.stripBandPorts(node);
+  }
+  setThreshold(node: GraphNode, threshold: number): void {
+    if (node.kind !== 'switch' || node.on !== 'value') return;
+    node.threshold = clamp01(threshold);
+  }
+  setInvert(node: GraphNode, invert: boolean): void {
+    if (node.kind !== 'switch' || node.on !== 'value') return;
+    node.invert = invert;
+  }
+  /** Append a band by splitting the final "rest" band (a new cutoff between the last
+      cutoff and 1). Appending never disturbs existing band ports. */
+  addBand(node: GraphNode): void {
+    if (node.kind !== 'switch' || node.on !== 'value') return;
+    const bands = Array.isArray(node.bands) && node.bands.length ? node.bands : [0.5];
+    const last = bands[bands.length - 1] ?? 0.5;
+    node.bands = [...bands, clamp01((last + 1) / 2)];
+  }
+  /** Remove cutoff `cutoffIndex` (merging band cutoffIndex+1 down into it), keeping at
+      least one cutoff (≥2 bands). Remaps the outgoing band ports to match. */
+  removeBand(node: GraphNode, cutoffIndex: number): void {
+    if (node.kind !== 'switch' || node.on !== 'value') return;
+    const bands = node.bands ?? [0.5];
+    if (bands.length <= 1 || cutoffIndex < 0 || cutoffIndex >= bands.length) return;
+    node.bands = bands.filter((_, i) => i !== cutoffIndex);
+    this.remapBandPorts(node, cutoffIndex);
+  }
+  /** Set cutoff `cutoffIndex`, clamped WITHIN its neighbours so cutoffs stay ascending
+      without reordering — reordering would scramble which band each port maps to. */
+  setBandCutoff(node: GraphNode, cutoffIndex: number, value: number): void {
+    if (node.kind !== 'switch' || node.on !== 'value') return;
+    const bands = [...(node.bands ?? [0.5])];
+    if (cutoffIndex < 0 || cutoffIndex >= bands.length) return;
+    const lo = cutoffIndex > 0 ? bands[cutoffIndex - 1]! : 0;
+    const hi = cutoffIndex < bands.length - 1 ? bands[cutoffIndex + 1]! : 1;
+    bands[cutoffIndex] = Math.min(hi, Math.max(lo, clamp01(value)));
+    node.bands = bands;
+  }
+  /** After cutoff `removed` is dropped, band (removed+1) merges into `removed` and every
+      higher band shifts down one — remap edge ports to match, then drop any duplicate
+      (target, port) wires the merge collided. */
+  private remapBandPorts(node: GraphNode, removed: number): void {
+    const g = this.selectedGraph;
+    if (!g) return;
+    const seen = new Set<string>();
+    const kept: typeof g.edges = [];
+    for (const e of g.edges) {
+      if (e.from === node.id && e.fromPort?.startsWith('band-')) {
+        const b = Number(e.fromPort.slice('band-'.length));
+        if (Number.isFinite(b) && b > removed) e.fromPort = `band-${b - 1}`;
+        const key = `${e.to}|${e.fromPort}`;
+        if (seen.has(key)) continue; // merge collided two wires onto the same band+target
+        seen.add(key);
+      }
+      kept.push(e);
+    }
+    g.edges = kept;
   }
 
   // --- effect / preset / params / envelopes --------------------------------
