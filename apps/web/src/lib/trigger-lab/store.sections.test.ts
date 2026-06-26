@@ -92,6 +92,63 @@ describe('section graph-list mutators', () => {
   });
 });
 
+describe('copy / paste section (clipboard)', () => {
+  it('paste appends an independent clone (fresh id, "<name> copy") and activates it', () => {
+    const store = new TriggerLab(fakeClient);
+    const src = store.activeSong!.sections[0]!;
+    const before = store.activeSong!.sections.length;
+
+    store.copySection(src.id);
+    expect(store.sectionClipboard).not.toBeNull();
+    store.pasteSection();
+
+    const sections = store.activeSong!.sections;
+    expect(sections).toHaveLength(before + 1);
+    const pasted = sections[sections.length - 1]!;
+    expect(pasted.id).not.toBe(src.id); // fresh id
+    expect(pasted.name).toBe(`${src.name} copy`);
+    expect(pasted.graphs).toEqual(src.graphs); // same graph references (reuse), copied list
+    expect(store.activeSectionId).toBe(pasted.id); // the new section is now active
+  });
+
+  it('the pasted section is independent — editing one does not touch the other', () => {
+    const store = new TriggerLab(fakeClient);
+    const src = store.activeSong!.sections[0]!;
+    const key = src.graphs[0]!;
+    store.duplicateSection(src.id);
+    const pasted = store.activeSong!.sections.at(-1)!;
+
+    // remove a graph from the COPY → the original section keeps it
+    store.removeGraphFromSection(pasted.id, key);
+    expect(store.activeSong!.sections.find((s) => s.id === pasted.id)!.graphs).not.toContain(key);
+    expect(store.activeSong!.sections.find((s) => s.id === src.id)!.graphs).toContain(key);
+  });
+
+  it('the clipboard is a snapshot — editing the source after copy does not change a later paste', () => {
+    const store = new TriggerLab(fakeClient);
+    const src = store.activeSong!.sections[0]!;
+    const key = src.graphs[0]!;
+    store.copySection(src.id);
+    store.removeGraphFromSection(src.id, key); // mutate the source AFTER copying
+    store.pasteSection();
+    expect(store.activeSong!.sections.at(-1)!.graphs).toContain(key); // paste reflects copy-time list
+  });
+
+  it('paste with an empty clipboard is a no-op', () => {
+    const store = new TriggerLab(fakeClient);
+    const before = store.activeSong!.sections.length;
+    expect(store.sectionClipboard).toBeNull();
+    store.pasteSection();
+    expect(store.activeSong!.sections).toHaveLength(before); // nothing added
+  });
+
+  it('copySection ignores an id that is not a section of the active song', () => {
+    const store = new TriggerLab(fakeClient);
+    store.copySection('no-such-section');
+    expect(store.sectionClipboard).toBeNull();
+  });
+});
+
 describe('hit resolution = active section graphs whose drum source matches the pad', () => {
   it('fires only the matching pad graph (each zone fires its own)', () => {
     const store = new TriggerLab(fakeClient);

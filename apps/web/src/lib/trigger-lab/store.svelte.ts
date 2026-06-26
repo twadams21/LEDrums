@@ -47,7 +47,7 @@ import type { SerializedModel } from '../ws/protocol-types';
 import type { InputMap, OutputConfig, Project } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
-import type { Song } from '../app/setlist';
+import type { SetlistSection, Song } from '../app/setlist';
 import {
   STORAGE_KEY,
   deserializeAuthored,
@@ -229,6 +229,10 @@ export class TriggerLab {
       editing. Drives hit-resolution (its graphs fire), the look-morph recall, and the
       Sections / Trigger views' highlight. Defaults to the first fixture section. */
   activeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
+  /** Section copy/paste scratch — a deep copy of the last-copied section (id+name+graph
+      list), or null when nothing is on the clipboard. Transient (NOT persisted): a fresh
+      session starts with an empty clipboard. `pasteSection` clones this under a new id. */
+  sectionClipboard = $state<SetlistSection | null>(null);
 
   /** persisted shell pane sizes in px, keyed by a stable pane id (set by the
       resizable docks — step 3). Empty until the user drags a splitter. */
@@ -798,6 +802,36 @@ export class TriggerLab {
     const id = nid('section');
     this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)));
     this.activeSectionId = id;
+  }
+
+  /** Copy a section of the active song onto the clipboard (a deep, non-reactive copy via
+      {@link setlist.cloneSection}, so later edits to the source never bleed into it). No-op
+      if the id isn't a section of the active song. */
+  copySection(sectionId: string): void {
+    const sec = this.activeSong?.sections.find((s) => s.id === sectionId);
+    if (!sec) return;
+    // clone under its own id/name → a plain snapshot; pasteSection re-clones with a fresh id.
+    this.sectionClipboard = setlist.cloneSection(sec, sec.id, sec.name);
+  }
+
+  /** Paste the clipboard as a NEW section appended to the active song (fresh id, name
+      "<name> copy"), and make it active. No-op when the clipboard is empty. The clone is
+      independent — its graph list is a copy, though the graph keys still reference the same
+      underlying graphs (reuse). Autosave persists the new section with the rest of `songs`. */
+  pasteSection(): void {
+    const clip = this.sectionClipboard;
+    if (!clip) return;
+    const id = nid('section');
+    const clone = setlist.cloneSection(clip, id);
+    this.updateActiveSong((song) => setlist.addSection(song, clone));
+    this.activeSectionId = id;
+  }
+
+  /** Duplicate a section in one step (copy + paste): appends an independent "<name> copy"
+      after the song's sections and activates it. */
+  duplicateSection(sectionId: string): void {
+    this.copySection(sectionId);
+    this.pasteSection();
   }
 
   /** Author a brand-new, empty trigger graph (just the implicit trigger input) and
