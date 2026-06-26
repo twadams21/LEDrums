@@ -52,6 +52,7 @@
   import PatchFitView from './PatchFitView.svelte';
   import PatchPalette from './PatchPalette.svelte';
   import { GraphHover } from './graph-hover.svelte';
+  import { nodeIdAtEvent } from './flow-dom';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Cable from '@lucide/svelte/icons/cable';
 
@@ -187,9 +188,10 @@
       onpaneclick={() => shell.clearSelection()}
       onnodepointerenter={({ node }) => onEnter(node.id)}
       onnodepointerleave={onLeave}
-      onconnectend={(_e, conn) => {
-        if (conn.toHandle || !conn.fromHandle || !conn.toNode) return;
-        dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.toNode.id);
+      onconnectend={(event, conn) => {
+        if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+        const toId = nodeIdAtEvent(event);
+        if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
       }}
     >
       <PatchFitView padding={0.15} />

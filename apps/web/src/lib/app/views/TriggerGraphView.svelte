@@ -29,6 +29,7 @@
     type TriggerFlowNode,
   } from './graph-to-flow';
   import { GraphHover } from './graph-hover.svelte';
+  import { nodeIdAtEvent } from './flow-dom';
   import { TRIGGER_STORE_KEY } from './trigger-context';
   import TriggerNode from './TriggerNode.svelte';
   import WireEdge from './WireEdge.svelte';
@@ -206,9 +207,10 @@
           for (const n of moved) syncPos(n);
         }}
         onconnect={onConnect}
-        onconnectend={(_e, conn) => {
-          if (conn.toHandle || !conn.fromHandle || !conn.toNode) return;
-          dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.toNode.id);
+        onconnectend={(event, conn) => {
+          if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+          const toId = nodeIdAtEvent(event);
+          if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
         }}
         onreconnect={onReconnect}
         ondelete={({ edges: removed }) => onDeleteEdges(removed)}
