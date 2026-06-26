@@ -11,6 +11,11 @@
      @xyflow/svelte surface + project-token styling. Selecting a node loads it into
      the right-dock Inspector.
 
+     EDITABLE WIRING (ephemeral): wires can be drawn, deleted and reconnected, and the
+     palette can drop local Data Line / Output nodes — but Patch has NO store-backed
+     device model yet, so all of this lives in this view's $state and is NOT persisted.
+     The real device-settings model (universes, ports, IP) is a separate later slice.
+
      DATA-LINE / OUTPUT FLAG: the true hoop→dataline→output mapping (universes,
      ports, cross-wiring) lives in the server's DMX map, which is not on the client
      yet. For v1 the hoop chain is chunked into data lines by a fixed capacity (a
@@ -22,7 +27,10 @@
     BackgroundVariant,
     Controls,
     MiniMap,
+    Panel,
     SvelteFlow,
+    type Connection,
+    type EdgeTypes,
     type NodeTypes,
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
@@ -32,12 +40,17 @@
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
     buildPatchTopology,
+    NODE_H,
+    NODE_W,
     type PatchFlowEdge,
     type PatchFlowNode,
+    type PatchStage,
     type TopologyDrum,
   } from '../patch-topology';
   import PatchNode from './PatchNode.svelte';
+  import WireEdge from './WireEdge.svelte';
   import PatchFitView from './PatchFitView.svelte';
+  import PatchPalette from './PatchPalette.svelte';
   import { GraphHover } from './graph-hover.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Cable from '@lucide/svelte/icons/cable';
@@ -45,6 +58,40 @@
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const nodeTypes: NodeTypes = { patch: PatchNode };
+  // wire = the reconnectable custom edge (its ends are drag anchors)
+  const edgeTypes: EdgeTypes = { wire: WireEdge };
+
+  // Signal-flow role colour for the two device kinds the palette can add (kept in
+  // step with patch-topology's STAGE_ROLE — only these two are user-addable).
+  const DEVICE_ROLE: Record<'dataline' | 'output', string> = {
+    dataline: 'var(--role-effect)',
+    output: 'var(--role-output)',
+  };
+  let deviceSeq = 0;
+  /** Drop a LOCAL, EPHEMERAL device node (Data Line / Output) at a flow-space centre.
+      Wiring-only Phase 4: these live in view state, are NOT persisted, and carry no
+      device settings — the real device model is a later slice. */
+  function addDevice(stage: 'dataline' | 'output', cx: number, cy: number): void {
+    const n = ++deviceSeq;
+    const label = stage === 'dataline' ? `Data Line ${n}` : `Output ${n}`;
+    const node: PatchFlowNode = {
+      id: `${stage}:new-${n}`,
+      type: 'patch',
+      position: { x: cx - NODE_W / 2, y: cy - NODE_H / 2 },
+      initialWidth: NODE_W,
+      initialHeight: NODE_H,
+      data: { label, sub: 'local · not saved', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
+    };
+    nodes = [...nodes, node];
+  }
+
+  /** Reject self-loops and exact duplicate wires; otherwise accept (xyflow applies
+      the default `wire` type so the new edge is reconnectable). */
+  function onBeforeConnect(c: Connection): Connection | false {
+    if (!c.source || !c.target || c.source === c.target) return false;
+    if (edges.some((e) => e.source === c.source && e.target === c.target)) return false;
+    return c;
+  }
 
   /* Hover → lift the node (nudge its xyflow position so handles + edges follow) and
      accent every wire one level connected to it. Selection rings the node but does
@@ -101,7 +148,9 @@
   // positions), hence $state.raw + two-way bind.
   const initial = buildPatchTopology(buildTopoDrums());
   let nodes = $state.raw<PatchFlowNode[]>(initial.nodes);
-  let edges = $state.raw<PatchFlowEdge[]>(initial.edges);
+  // wire type so every edge end is a reconnect anchor; edits are ephemeral view state
+  // (Patch has no store-backed graph — connect/delete/reconnect mutate this array).
+  let edges = $state.raw<PatchFlowEdge[]>(initial.edges.map((e) => ({ ...e, type: 'wire' })));
 </script>
 
 <div class="patch-view">
@@ -115,10 +164,14 @@
       bind:nodes
       bind:edges
       {nodeTypes}
+      {edgeTypes}
+      defaultEdgeOptions={{ type: 'wire' }}
       fitView
       fitViewOptions={{ padding: 0.15 }}
-      nodesConnectable={false}
+      nodesConnectable
       minZoom={0.2}
+      deleteKey={['Delete', 'Backspace']}
+      onbeforeconnect={onBeforeConnect}
       onnodeclick={({ node }) => shell.select({ kind: 'patch', nodeId: node.id })}
       onpaneclick={() => shell.clearSelection()}
       onnodepointerenter={({ node }) => onEnter(node.id)}
@@ -127,6 +180,7 @@
       onnodedragstop={() => hover.dragStop()}
     >
       <PatchFitView padding={0.15} />
+      <Panel position="top-left"><PatchPalette add={addDevice} /></Panel>
       <Background variant={BackgroundVariant.Dots} />
       <Controls />
       <MiniMap />
@@ -196,15 +250,24 @@
   .canvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
+  /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
   .canvas :global(.svelte-flow__handle) {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     background: var(--surface-2);
     border: 1.5px solid var(--border-strong);
   }
-  /* read-only graph: handles are wiring affordances we don't expose for editing */
-  .canvas :global(.svelte-flow__handle) {
-    pointer-events: none;
+  .canvas :global(.svelte-flow__handle:hover),
+  .canvas :global(.svelte-flow__handle.connectingfrom),
+  .canvas :global(.svelte-flow__handle.connectingto) {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  /* the in-progress connection line */
+  .canvas :global(.svelte-flow__connectionline .svelte-flow__connection-path) {
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-dasharray: 5 4;
   }
   .canvas :global(.svelte-flow__controls) {
     background: var(--surface);
