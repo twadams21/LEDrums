@@ -7,7 +7,16 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
-  import type { GraphNode, ParamSpec, ParamValue, Polyphony } from '../../trigger-lab/sim';
+  import {
+    NODE_KINDS,
+    type GraphNode,
+    type NodeKind,
+    type ParamSpec,
+    type ParamValue,
+    type Polyphony,
+    type SwitchOn,
+  } from '../../trigger-lab/sim';
+  import { busIcon, kindIcon, kindLabel, tint } from '../views/trigger-node-meta';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../ui/Slider.svelte';
   import Select from '../../ui/Select.svelte';
@@ -17,6 +26,10 @@
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import Spline from '@lucide/svelte/icons/spline';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Zap from '@lucide/svelte/icons/zap';
+  import Repeat from '@lucide/svelte/icons/repeat';
+  import Hand from '@lucide/svelte/icons/hand';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -36,12 +49,14 @@
 
   const bus = $derived(sel?.kind === 'bus' ? store.buses.find((b) => b.id === sel.busId) ?? null : null);
 
+  // iconed play-mode + layer groups (Zap/Repeat/Hand · Disc3/Activity/Wand2) — same
+  // SegmentedControl, just an icon per option (ported from the old node header).
   const MODE_OPTS = [
-    { value: 'oneshot', label: 'One-shot' },
-    { value: 'loop', label: 'Loop' },
-    { value: 'hold', label: 'Hold' },
+    { value: 'oneshot', label: 'One-shot', icon: Zap },
+    { value: 'loop', label: 'Loop', icon: Repeat },
+    { value: 'hold', label: 'Hold', icon: Hand },
   ];
-  const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name })));
+  const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
   const LINK_OPTS = [
     { value: 'instance', label: 'Instance' },
     { value: 'linked', label: 'Linked' },
@@ -50,6 +65,28 @@
     { value: 'mono', label: 'mono' },
     { value: 'poly', label: 'poly' },
   ];
+
+  // kind selector (every node but the trigger root) + switch routing options.
+  const KIND_OPTS = NODE_KINDS.map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
+  const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
+    { value: 'velocity', label: 'velocity' },
+    { value: 'section', label: 'section' },
+    { value: 'beat', label: 'beat' },
+  ];
+
+  /** One-line description for the container/modifier kinds that take no extra control. */
+  function kindBlurb(kind: NodeKind): string {
+    switch (kind) {
+      case 'all':
+        return 'Plays every wired child at once.';
+      case 'sequence':
+        return 'Plays the next wired child on each hit, in order.';
+      case 'toggle':
+        return 'Alternates its child on / off with each hit.';
+      default:
+        return 'A container — wire its children on the canvas.';
+    }
+  }
 
   function num(v: ParamValue | undefined, d: number): number {
     return typeof v === 'number' ? v : d;
@@ -61,77 +98,127 @@
 </script>
 
 <div class="inspector">
-  {#if node && node.kind === 'play' && eff}
+  {#if node && node.kind === 'trigger'}
+    <!-- the graph's input — read-only (no kind change, no remove) -->
     <header class="ihead">
-      <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} w={72} h={40} /></div>
       <div class="titles">
-        <h3>{eff.name}</h3>
-        <span class="sub">{eff.pattern} · {eff.scope}</span>
+        <h3>{store.selectedPad ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}` : 'Trigger'}</h3>
+        <span class="sub">graph input</span>
       </div>
-      <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
+    </header>
+    <div class="nodeinfo">
+      <p class="hint">Every hit enters here. Wire it to a block on the canvas to shape what plays.</p>
+    </div>
+  {:else if node}
+    <!-- shared header for every editable node: change its kind + remove it -->
+    <header class="nodehead">
+      <span class="kindsel">
+        <Select value={node.kind} options={KIND_OPTS} onChange={(v) => store.changeKind(node, v as NodeKind)} ariaLabel="Node type" />
+      </span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
 
-    <div class="bar">
-      <label class="lblrow">
-        <span class="k">Preset</span>
-        <Select value={node.presetId} options={presetOptions} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
-      </label>
-      <SegmentedControl
-        value={node.linked ? 'linked' : 'instance'}
-        options={LINK_OPTS}
-        onChange={(v) => {
-          if ((v === 'linked') !== node.linked) store.toggleLink(node);
-        }}
-        ariaLabel="Instance or linked preset"
-      />
-    </div>
+    {#if node.kind === 'play'}
+      {#if eff}
+        <header class="ihead">
+          <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} w={72} h={40} /></div>
+          <div class="titles">
+            <h3>{eff.name}</h3>
+            <span class="sub">{eff.pattern} · {eff.scope}</span>
+          </div>
+          <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
+        </header>
 
-    <div class="seg2">
-      <SegmentedControl value={node.mode} options={MODE_OPTS} onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop' | 'hold')} ariaLabel="Play mode" />
-      <SegmentedControl value={store.busOf(node)} options={LAYER_OPTS} onChange={(v) => store.setBus(node, v)} ariaLabel="Layer" />
-    </div>
-
-    <div class="params">
-      {#each eff.params as spec (spec.key)}
-        {@const enveloped = store.isEnveloped(node, spec.key)}
-        <div class="prow">
-          <span class="plabel">{spec.label}</span>
-          {#if spec.kind === 'number'}
-            <Slider
-              value={num(live[spec.key], 0)}
-              min={spec.min}
-              max={spec.max}
-              step={spec.step}
-              disabled={enveloped}
-              format={(v) => (enveloped ? 'swept' : fmt(spec, v))}
-              onChange={(v) => store.setParam(node, spec.key, v)}
-              ariaLabel={spec.label}
-            />
-          {:else}
-            <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
-          {/if}
-          {#if spec.envable}
-            <button class="envbtn" class:on={enveloped} onclick={() => store.openEnv(node, spec.key)} title="Assign envelope">
-              <Spline size={12} aria-hidden="true" />
-              {store.envKind(node, spec.key)}
-            </button>
-          {:else}
-            <span class="envspace"></span>
-          {/if}
+        <div class="bar">
+          <label class="lblrow">
+            <span class="k">Preset</span>
+            <Select value={node.presetId} options={presetOptions} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
+          </label>
+          <SegmentedControl
+            value={node.linked ? 'linked' : 'instance'}
+            options={LINK_OPTS}
+            onChange={(v) => {
+              if ((v === 'linked') !== node.linked) store.toggleLink(node);
+            }}
+            ariaLabel="Instance or linked preset"
+          />
         </div>
-      {/each}
-    </div>
 
-    <p class="foot">
-      {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.
-    </p>
-  {:else if node}
-    <div class="nodeinfo">
-      <Eyebrow>{node.kind} node</Eyebrow>
-      <p class="hint">
-        {#if node.kind === 'trigger'}This is the graph's input — every hit enters here.{:else}A {node.kind} container. Wire it on the canvas; its leaf Play nodes carry the effect settings.{/if}
-      </p>
-    </div>
+        <div class="seg2">
+          <SegmentedControl value={node.mode} options={MODE_OPTS} onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop' | 'hold')} ariaLabel="Play mode" />
+          <SegmentedControl value={store.busOf(node)} options={LAYER_OPTS} onChange={(v) => store.setBus(node, v)} ariaLabel="Layer" />
+        </div>
+
+        <div class="params">
+          {#each eff.params as spec (spec.key)}
+            {@const enveloped = store.isEnveloped(node, spec.key)}
+            <div class="prow">
+              <span class="plabel">{spec.label}</span>
+              {#if spec.kind === 'number'}
+                <Slider
+                  value={num(live[spec.key], 0)}
+                  min={spec.min}
+                  max={spec.max}
+                  step={spec.step}
+                  disabled={enveloped}
+                  format={(v) => (enveloped ? 'swept' : fmt(spec, v))}
+                  onChange={(v) => store.setParam(node, spec.key, v)}
+                  ariaLabel={spec.label}
+                />
+              {:else}
+                <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
+              {/if}
+              {#if spec.envable}
+                <button class="envbtn" class:on={enveloped} onclick={() => store.openEnv(node, spec.key)} title="Assign envelope">
+                  <Spline size={12} aria-hidden="true" />
+                  {store.envKind(node, spec.key)}
+                </button>
+              {:else}
+                <span class="envspace"></span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+
+        <p class="foot">
+          {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.
+        </p>
+      {:else}
+        <div class="kindbody">
+          <p class="hint">This play node has no effect yet — change its kind above, or pick an effect from the canvas.</p>
+        </div>
+      {/if}
+    {:else if node.kind === 'random'}
+      <div class="kindbody">
+        <label class="check">
+          <input type="checkbox" checked={node.noRepeat} onchange={(e) => store.setNoRepeat(node, e.currentTarget.checked)} />
+          No-repeat
+        </label>
+        <p class="hint">Picks a random wired child on each hit{node.noRepeat ? ', never the same one twice running' : ''}.</p>
+      </div>
+    {:else if node.kind === 'switch'}
+      <div class="kindbody">
+        <label class="lblrow">
+          <span class="k">On</span>
+          <Select value={node.on} options={SWITCH_OPTS} onChange={(v) => store.setSwitchOn(node, v as SwitchOn)} ariaLabel="Switch on" />
+        </label>
+        <p class="hint">Routes to a wired child by {node.on}.</p>
+      </div>
+    {:else if node.kind === 'chance'}
+      <div class="kindbody">
+        <label class="lblrow">
+          <span class="k">Chance</span>
+          <span class="sld">
+            <Slider min={0} max={1} step={0.05} value={node.p} onChange={(v) => store.setChance(node, v)} format={(v) => `${Math.round(v * 100)}%`} />
+          </span>
+        </label>
+        <p class="hint">Plays its wired child {Math.round(node.p * 100)}% of the time.</p>
+      </div>
+    {:else}
+      <div class="kindbody">
+        <p class="hint">{kindBlurb(node.kind)}</p>
+      </div>
+    {/if}
   {:else if bus}
     <header class="ihead">
       <div class="titles">
@@ -251,6 +338,40 @@
     flex: 1;
     text-align: center;
     justify-content: center;
+  }
+  /* shared node header: kind selector (grows) + remove button */
+  .nodehead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .kindsel {
+    display: inline-flex;
+    flex: 1;
+    min-width: 0;
+  }
+  .kindsel :global(.sel-trigger) {
+    font-weight: 700;
+    color: var(--ink);
+  }
+  /* per-kind body (random / switch / chance / container blurb) */
+  .kindbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .kindbody .lblrow {
+    justify-content: space-between;
+  }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text);
   }
   .params {
     padding: var(--space-3);
