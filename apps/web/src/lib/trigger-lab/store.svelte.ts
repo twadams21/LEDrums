@@ -50,33 +50,47 @@ import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
 import {
   STORAGE_KEY,
-  deserializeAuthored,
-  serializeAuthored,
+  SHOWS_STORAGE_KEY,
+  loadShowLibrary,
+  serializeShowLibrary,
   type AuthoredState,
-  type PersistedAuthored,
+  type Show,
+  type ShowLibrary,
+  type PersistedShowLibrary,
 } from './persistence';
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 
-/** Read + parse the persisted authored blob. Guards SSR / no-localStorage /
-    quota / malformed JSON — any failure yields null (boot keeps the seed). */
-function readStored(): unknown {
+/** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
+    malformed JSON — any failure yields null (boot keeps the seed). */
+function readStoredKey(key: string): unknown {
   if (typeof localStorage === 'undefined') return null;
   try {
-    const s = localStorage.getItem(STORAGE_KEY);
+    const s = localStorage.getItem(key);
     return s ? JSON.parse(s) : null;
   } catch {
     return null;
   }
 }
 
-/** Write the versioned envelope. Best-effort — quota / private-mode failures are
+/** The persisted show library (the live document store). */
+function readStoredLibrary(): unknown {
+  return readStoredKey(SHOWS_STORAGE_KEY);
+}
+
+/** The legacy single-blob authored state — read once at boot to migrate a returning user's
+    implicit work into the library (see {@link loadShowLibrary}). */
+function readLegacyAuthored(): unknown {
+  return readStoredKey(STORAGE_KEY);
+}
+
+/** Write the versioned library envelope. Best-effort — quota / private-mode failures are
     swallowed (persistence must never throw into the render loop or lifecycle). */
-function writeStored(payload: PersistedAuthored): void {
+function writeStoredLibrary(payload: PersistedShowLibrary): void {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* ignore */
   }
@@ -143,6 +157,35 @@ function seedSongs(): Song[] {
   ];
 }
 
+/** The pad-derived trigger graphs, keyed by padKey — the kit's built-in graph set, seeded
+    fresh for a blank document (each pad's tree compiled to a graph). */
+function seedGraphs(): Record<string, TriggerGraph> {
+  return Object.fromEntries(PADS.map((p) => [padKey(p), treeToGraph(p.tree)]));
+}
+
+/** A blank document's authored content — the clean-slate seed a fresh/new show starts from,
+    and the reset target when SWITCHING shows (so no field of the outgoing show bleeds into the
+    incoming one). Mirrors the authored `$state` field initializers on TriggerLab; keep the two
+    in sync. */
+function seedAuthored(): AuthoredState {
+  return {
+    graphs: seedGraphs(),
+    graphNames: {},
+    songs: seedSongs(),
+    buses: BUSES.map((b) => ({ ...b })),
+    presets: structuredClone(PRESETS),
+    effects: [...EFFECTS],
+    selectedPadKey: padKey(PADS[2]!),
+    activeSongId: 'set-1',
+    activeSectionId: SECTIONS[0]?.id ?? null,
+    bpm: 120,
+    velocity: 0.85,
+    beatsPerBar: 4,
+    paneSizes: {},
+    patchLabels: {},
+  };
+}
+
 /** Union built-in effects with persisted USER-CREATED ones. Hydration must never
     drop new built-ins: a user's blob saved before the 41 generator effects existed
     would otherwise overwrite the fresh registry and hide them forever. So start from
@@ -205,7 +248,7 @@ export class TriggerLab {
   /** per-pad freeform trigger graphs (keyed by padKey) — the editable model.
       Authored (non-pad) graphs created via createGraph() live here too, keyed
       `graph:<n>`, with their display labels in `graphNames`. */
-  graphs = $state<Record<string, TriggerGraph>>(Object.fromEntries(PADS.map((p) => [padKey(p), treeToGraph(p.tree)])));
+  graphs = $state<Record<string, TriggerGraph>>(seedGraphs());
   /** display labels for AUTHORED graph keys (pad graphs label from the kit). */
   graphNames = $state<Record<string, string>>({});
   sections = $state<Section[]>(structuredClone(SECTIONS));
@@ -251,6 +294,14 @@ export class TriggerLab {
       Project — so it persists via the authored-state autosave, not over WS. Empty until a
       node is renamed. */
   patchLabels = $state<Record<string, string>>({});
+
+  // --- shows (the authored document as a named, multi-show library) ---------
+  /** Every show by id — the persisted library. The ACTIVE show's `authored` is a stale cache
+      (the authored runes above are the live source of truth while it's active); INACTIVE shows
+      hold their last-saved authored verbatim. Seeded in the constructor from storage. */
+  private showLibrary = $state<Record<string, Show>>({});
+  /** Which show is live — its `authored` is what the authored runes above mirror. */
+  activeShowId = $state<string>('');
 
   // transient snapshot
   voices = $state<Voice[]>([]);
@@ -317,22 +368,23 @@ export class TriggerLab {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(makeClient: () => WSClient = () => new WSClient()) {
-    // Hydrate AUTHORED state from storage BEFORE the sim is built and the engine
-    // link opens, so the sim's bus/preset/effect registries and the first
-    // setShow/recallSection all reflect the restored content. A missing / stale /
-    // corrupt blob is ignored by deserializeAuthored, so the seed stands.
-    this.hydrate();
-    // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its
-    // padKey) — seed or restored, idempotent, authored graphs left unset. See
-    // unionTriggerSources: this is the trigger-source back-compat default.
-    this.graphs = unionTriggerSources(this.graphs, new Set(Object.keys(this.graphNames)));
-    // Fold any legacy `on:'velocity'` switch (seed or a returning user's persisted graph)
-    // into the canonical `value`+`bands` form, preserving routing exactly. Idempotent —
-    // a no-op once migrated — so it runs unconditionally, like unionTriggerSources.
-    this.graphs = foldVelocitySwitches(this.graphs);
-    // Build the sim from the (possibly restored) arrays — it snapshots `buses` by
-    // reference and indexes `effects`/`presets` into maps at construction, so it
-    // must see the hydrated arrays, not the fixture defaults.
+    // Load the show library from storage BEFORE the sim is built and the engine link opens,
+    // so the sim's registries and the first setShow/recallSection reflect the ACTIVE show's
+    // restored content. loadShowLibrary never throws: a valid library wins; else a legacy
+    // single blob is migrated to one "Default Show"; else a fresh "Untitled Show" is seeded.
+    const lib = loadShowLibrary(readStoredLibrary(), readLegacyAuthored(), () => nid('show'));
+    this.showLibrary = lib.shows;
+    this.activeShowId = lib.activeShowId;
+    // Mirror the active show's authored over the seed defaults — exactly as the old single-blob
+    // hydrate did, but sourced from the active show. A migrated/fresh slice is partial, so the
+    // seed fills any absent field.
+    this.applyAuthored($state.snapshot(this.showLibrary[this.activeShowId]!.authored));
+    // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
+    // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
+    // restored, idempotent, authored graphs left unset.
+    this.normalizeGraphs();
+    // Build the sim from the (possibly restored) arrays — it snapshots `buses` by reference and
+    // indexes `effects`/`presets` into maps at construction, so it must see the hydrated arrays.
     this.sim = new Sim(this.buses, this.effects, this.presets);
     this.client = makeClient();
   }
@@ -340,6 +392,12 @@ export class TriggerLab {
   selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
   selectedGraph = $derived(this.selectedPadKey ? this.graphs[this.selectedPadKey] ?? null : null);
   beatPhase = $derived((this.beat % 4) / 4);
+
+  // show derived
+  /** The show list for the browser UI — `{ id, name }` in insertion order. */
+  shows = $derived(Object.values(this.showLibrary).map((s) => ({ id: s.id, name: s.name })));
+  /** The active show (id + name + its cached authored). null only before construction completes. */
+  activeShow = $derived(this.showLibrary[this.activeShowId] ?? null);
 
   // setlist derived
   activeSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? this.songs[0] ?? null);
@@ -399,13 +457,52 @@ export class TriggerLab {
     this.stopAutosave();
   }
 
-  // --- live persistence (authored state ⇄ localStorage) --------------------
+  // --- live persistence (show library ⇄ localStorage) ----------------------
 
-  /** Apply a persisted blob over the seed defaults. Runs in the constructor,
-      before the sim exists — touches runes only. */
-  private hydrate(): void {
-    const slice = deserializeAuthored(readStored());
-    if (slice) this.applyAuthored(slice);
+  /** Make every pad-bound graph's trigger source explicit + fold legacy velocity switches —
+      the graph back-compat the constructor and every show load run (idempotent). */
+  private normalizeGraphs(): void {
+    this.graphs = unionTriggerSources(this.graphs, new Set(Object.keys(this.graphNames)));
+    this.graphs = foldVelocitySwitches(this.graphs);
+  }
+
+  /** Reset every authored rune to the blank-document seed (via {@link seedAuthored}) — the
+      clean baseline a show SWITCH starts from, so no field of the outgoing show survives. */
+  private resetAuthoredToSeed(): void {
+    this.applyAuthored(seedAuthored());
+  }
+
+  /** Load a show's authored content into the live runes: reset to the blank seed, apply the
+      show's (partial-tolerant, detached) authored over it, then re-run the graph normalizers.
+      A FULL swap — no field of the previously-active show bleeds through. */
+  private applyShow(show: Show): void {
+    this.resetAuthoredToSeed();
+    this.applyAuthored($state.snapshot(show.authored));
+    this.normalizeGraphs();
+  }
+
+  /** Write the live authored runes back into the active show's library slot, so its edits are
+      captured before we switch away (or persist). No-op if the active id is unknown. */
+  private flushActiveToLibrary(): void {
+    const active = this.showLibrary[this.activeShowId];
+    if (!active) return;
+    this.showLibrary = {
+      ...this.showLibrary,
+      [this.activeShowId]: { ...active, authored: this.toAuthored() },
+    };
+  }
+
+  /** The library to persist: every show, with the ACTIVE show's `authored` refreshed from the
+      live runes (inactive shows carried verbatim). Built fresh each autosave tick so the
+      written blob is always current without churning the showLibrary rune on every edit. */
+  private currentLibrary(): ShowLibrary {
+    const lib = $state.snapshot(this.showLibrary) as Record<string, Show>;
+    const active = lib[this.activeShowId];
+    const name = active?.name ?? 'Untitled Show';
+    return {
+      shows: { ...lib, [this.activeShowId]: { id: this.activeShowId, name, authored: this.toAuthored() } },
+      activeShowId: this.activeShowId,
+    };
   }
 
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped). */
@@ -452,15 +549,16 @@ export class TriggerLab {
     if (a.patchLabels) this.patchLabels = a.patchLabels;
   }
 
-  /** Begin reactively autosaving authored changes (debounced). Idempotent; a
-      no-op without localStorage (SSR / node tests). The $effect deep-reads the
-      whole authored slice via toAuthored(), so any nested edit re-schedules. */
+  /** Begin reactively autosaving the show library (debounced). Idempotent; a no-op without
+      localStorage (SSR / node tests). The $effect deep-reads the active show's authored runes
+      AND the showLibrary + activeShowId (via currentLibrary), so any authored edit, show
+      add/rename/delete, or switch re-schedules a save. */
   private startAutosave(): void {
     if (this.persistDispose || typeof localStorage === 'undefined') return;
     this.persistDispose = $effect.root(() => {
       $effect(() => {
-        const snap = this.toAuthored();
-        this.scheduleSave(snap);
+        const lib = this.currentLibrary();
+        this.scheduleSave(lib);
       });
     });
   }
@@ -473,20 +571,133 @@ export class TriggerLab {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    writeStored(serializeAuthored(this.toAuthored()));
+    writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
     this.persistDispose();
     this.persistDispose = null;
   }
 
-  private scheduleSave(snap: AuthoredState): void {
+  private scheduleSave(lib: ShowLibrary): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      writeStored(serializeAuthored(snap));
-      // Same debounced tick re-syncs the authored Show to the engine (guarded so it
-      // only sends on a real change) — so live edits actually reach the server.
+      writeStoredLibrary(serializeShowLibrary(lib));
+      // Same debounced tick re-syncs the active show's authored Show to the engine (guarded so
+      // it only sends on a real change) — so live edits AND show switches reach the server.
       this.syncShowToServer();
     }, SAVE_DEBOUNCE_MS);
+  }
+
+  // --- show document lifecycle (new / open / save / save-as / rename / delete / close) ---
+  // A show is the authored content given identity; the live authored runes mirror the ACTIVE
+  // show. Every switch flushes the outgoing show's edits into its library slot, then fully
+  // swaps the runes via applyShow (no cross-show bleed). The new active content reaches the
+  // engine through the same debounced autosave path as any other authored edit (the swap
+  // mutates the authored runes, so syncShowToServer fires on the next tick). The server
+  // `Project` (routing/geometry/output) is orthogonal and never touched here.
+
+  /** Create a blank show (seed content) and switch to it. Name defaults to the first unused
+      "Untitled Show [N]". The previous show's edits are flushed to its slot first. Returns the
+      new id. */
+  newShow(name?: string): string {
+    this.flushActiveToLibrary();
+    const id = this.freshShowId();
+    const label = name?.trim() || this.nextShowName();
+    this.resetAuthoredToSeed();
+    this.normalizeGraphs();
+    this.showLibrary = { ...this.showLibrary, [id]: { id, name: label, authored: this.toAuthored() } };
+    this.activeShowId = id;
+    return id;
+  }
+
+  /** Switch to a saved show: flush the current show's edits, then load the target's authored
+      into the runes (full swap). No-op for an unknown id or the already-active show. */
+  openShow(id: string): void {
+    if (id === this.activeShowId || !this.showLibrary[id]) return;
+    this.flushActiveToLibrary();
+    this.activeShowId = id;
+    this.applyShow(this.showLibrary[id]!);
+  }
+
+  /** Deliberately persist the active show NOW (flush runes → slot → storage). Autosave already
+      covers this on a debounce; saveShow is the explicit, immediate write/confirmation. */
+  saveShow(): void {
+    this.flushActiveToLibrary();
+    writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
+  }
+
+  /** Clone the current authored content under a new id + name and switch to the clone — the
+      source show keeps its content. Name defaults to the first unused "Untitled Show [N]".
+      Returns the new id. */
+  saveShowAs(name: string): string {
+    this.flushActiveToLibrary();
+    const id = this.freshShowId();
+    const label = name.trim() || this.nextShowName();
+    // The clone's content == the current live runes, so no reload is needed after the switch.
+    this.showLibrary = { ...this.showLibrary, [id]: { id, name: label, authored: this.toAuthored() } };
+    this.activeShowId = id;
+    return id;
+  }
+
+  /** Rename a show. No-op on an unknown id or a blank name (keeps the old name, mirrors
+      {@link renameSong}). */
+  renameShow(id: string, name: string): void {
+    const show = this.showLibrary[id];
+    if (!show) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.showLibrary = { ...this.showLibrary, [id]: { ...show, name: trimmed } };
+  }
+
+  /** Delete a show. Never leaves zero shows — deleting the last one seeds a fresh "Untitled
+      Show". When the ACTIVE show is deleted, re-points to its left neighbour (else the new
+      first) and swaps that show's authored into the runes. No-op on an unknown id. */
+  deleteShow(id: string): void {
+    if (!this.showLibrary[id]) return;
+    const ids = Object.keys(this.showLibrary);
+    const next = { ...this.showLibrary };
+    delete next[id];
+
+    if (Object.keys(next).length === 0) {
+      // deleted the only show → start over from a blank Untitled (mirrors closeShow's reset).
+      const freshId = this.freshShowId();
+      this.resetAuthoredToSeed();
+      this.normalizeGraphs();
+      this.showLibrary = { [freshId]: { id: freshId, name: 'Untitled Show', authored: this.toAuthored() } };
+      this.activeShowId = freshId;
+      return;
+    }
+
+    this.showLibrary = next;
+    if (this.activeShowId === id) {
+      const idx = ids.indexOf(id);
+      const leftId = idx > 0 ? ids[idx - 1]! : null;
+      const neighbourId = leftId && next[leftId] ? leftId : Object.keys(next)[0]!;
+      this.activeShowId = neighbourId;
+      this.applyShow(next[neighbourId]!);
+    }
+  }
+
+  /** Close the active show: it's already saved in the library, so just switch to a fresh blank
+      "Untitled Show" (a clean slate to start over). */
+  closeShow(): void {
+    this.newShow();
+  }
+
+  /** Smallest unused show id (survives reload — the global nid counter + the live library). */
+  private freshShowId(): string {
+    let id = nid('show');
+    while (this.showLibrary[id]) id = nid('show');
+    return id;
+  }
+
+  /** First unused "Untitled Show" / "Untitled Show 2" … label, so blank shows stay distinct. */
+  private nextShowName(): string {
+    const base = 'Untitled Show';
+    const used = new Set(Object.values(this.showLibrary).map((s) => s.name));
+    if (!used.has(base)) return base;
+    let n = 2;
+    while (used.has(`${base} ${n}`)) n++;
+    return `${base} ${n}`;
   }
 
   // --- engine link plumbing ------------------------------------------------

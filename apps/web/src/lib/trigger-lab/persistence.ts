@@ -80,8 +80,20 @@ const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Num
 export function deserializeAuthored(raw: unknown): Partial<AuthoredState> | null {
   if (!isObject(raw)) return null;
   if (raw.version !== VERSION) return null;
-  const data = raw.data;
-  if (!isObject(data)) return null;
+  if (!isObject(raw.data)) return null;
+  return coerceAuthored(raw.data);
+}
+
+/**
+ * Field-level coercion of an authored slice — the body of {@link deserializeAuthored}
+ * WITHOUT the versioned-envelope gate. Split out so the per-show `authored` payload inside
+ * a {@link ShowLibrary} (stored bare, not separately enveloped) gets the SAME defensive
+ * field-by-field validation + U4 song migration as the single-blob path. Returns `{}` for a
+ * non-object; otherwise each field is included only when present and the right
+ * container/primitive type, so a partially-corrupt slice degrades to what survived.
+ */
+export function coerceAuthored(data: unknown): Partial<AuthoredState> {
+  if (!isObject(data)) return {};
 
   const out: Partial<AuthoredState> = {};
 
@@ -178,4 +190,104 @@ function dedupeStrings(values: readonly unknown[]): string[] {
     }
   }
   return out;
+}
+
+// ---- show document model: a named, multi-show library -----------------------
+
+/* A SHOW is the authored content ({@link AuthoredState}) given an identity. The library
+   wraps every show by id plus an active-show pointer; the store's live authored runes mirror
+   the ACTIVE show's `authored`, and autosave writes the active show back. The server `Project`
+   (routing/geometry/output) is orthogonal — shows are authored-state documents only. This
+   module owns the persisted shape + its versioned envelope + the boot migration; the store
+   (store.svelte.ts) owns the localStorage I/O + the live runes + the show lifecycle API. */
+
+/** localStorage key for the show library — supersedes the single-blob {@link STORAGE_KEY}
+    (which is now read once, at boot, only to migrate a returning user's implicit work). */
+export const SHOWS_STORAGE_KEY = 'ledrums:shows:v1';
+
+/** Library schema version (independent of {@link VERSION}; same bump-only-on-incompatible
+    rule). The per-show `authored` payload is validated field-by-field via {@link
+    coerceAuthored}, so an additive authored field never needs a library bump. */
+export const SHOWS_VERSION = 1;
+
+/** A named show — the authored document given identity. `authored` is the SAME shape the
+    single-blob path persists (reused, never duplicated). */
+export interface Show {
+  id: string;
+  name: string;
+  authored: AuthoredState;
+}
+
+/** The persisted library: every show by id + which one is active. */
+export interface ShowLibrary {
+  shows: Record<string, Show>;
+  activeShowId: string;
+}
+
+/** Versioned envelope written to storage (mirrors {@link PersistedAuthored}). */
+export interface PersistedShowLibrary {
+  version: number;
+  data: ShowLibrary;
+}
+
+/** Wrap a library in the versioned envelope (JSON-safe; the caller stringifies). */
+export function serializeShowLibrary(lib: ShowLibrary): PersistedShowLibrary {
+  return { version: SHOWS_VERSION, data: lib };
+}
+
+/**
+ * Validate a parsed library blob. Returns null when the envelope is unusable — not an
+ * object, a version other than SHOWS_VERSION, no `shows` record, or zero surviving shows —
+ * so the caller falls back to migration / a fresh library (never wedges boot). Otherwise it
+ * is defensive per show: malformed shows are dropped, each show's `authored` runs through
+ * {@link coerceAuthored} (so legacy per-show payloads migrate exactly like the single blob),
+ * and a dangling `activeShowId` is re-pointed to the first surviving show.
+ */
+export function deserializeShowLibrary(raw: unknown): ShowLibrary | null {
+  if (!isObject(raw)) return null;
+  if (raw.version !== SHOWS_VERSION) return null;
+  const data = raw.data;
+  if (!isObject(data) || !isObject(data.shows)) return null;
+
+  const shows: Record<string, Show> = {};
+  for (const [id, rawShow] of Object.entries(data.shows)) {
+    if (!isObject(rawShow)) continue;
+    const showId = typeof rawShow.id === 'string' && rawShow.id ? rawShow.id : id;
+    const name = typeof rawShow.name === 'string' && rawShow.name ? rawShow.name : 'Untitled Show';
+    // The store applies this over its seed defaults, so a partial (defensively-coerced)
+    // authored slice is fine — the AuthoredState cast mirrors deserializeAuthored's contract.
+    const authored = coerceAuthored(rawShow.authored) as AuthoredState;
+    shows[showId] = { id: showId, name, authored };
+  }
+  if (Object.keys(shows).length === 0) return null; // all shows malformed → fall back
+
+  const activeShowId =
+    typeof data.activeShowId === 'string' && shows[data.activeShowId]
+      ? data.activeShowId
+      : Object.keys(shows)[0]!; // re-point a missing/dangling active pointer to the first show
+  return { shows, activeShowId };
+}
+
+/**
+ * Build the boot library from the two storage blobs. Pure, defensive, idempotent — never
+ * throws:
+ *  1. a valid library blob → that library (the steady state, so a re-run after migration is
+ *     a no-op: the library wins and `newId` is never called again);
+ *  2. else a legacy single {@link AuthoredState} blob → wrap it as one "Default Show", active
+ *     (the one-time upgrade of a returning user's implicit work);
+ *  3. else a fresh library with a single empty "Untitled Show".
+ * `newId` is injected so the caller controls id minting (and tests stay deterministic).
+ */
+export function loadShowLibrary(rawLibrary: unknown, rawSingle: unknown, newId: () => string): ShowLibrary {
+  const lib = deserializeShowLibrary(rawLibrary);
+  if (lib) return lib;
+
+  const id = newId();
+  const migrated = deserializeAuthored(rawSingle); // legacy single blob → partial slice, or null
+  if (migrated) {
+    return { shows: { [id]: { id, name: 'Default Show', authored: migrated as AuthoredState } }, activeShowId: id };
+  }
+  // Empty authored — the store merges it over its seed, so a fresh show boots exactly like the
+  // pre-show empty-storage case did. Cast mirrors coerceAuthored's partial-as-AuthoredState contract.
+  return { shows: { [id]: { id, name: 'Untitled Show', authored: {} as AuthoredState } }, activeShowId: id };
 }
