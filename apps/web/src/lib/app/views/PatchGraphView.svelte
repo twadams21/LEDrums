@@ -31,7 +31,7 @@
     type NodeTypes,
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
-  import { DEFAULT_KIT, drumHoopCount } from '@ledrums/core';
+  import { DEFAULT_KIT, drumHoopCount, type OutputConfig } from '@ledrums/core';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
@@ -50,7 +50,9 @@
   import {
     buildOutputHalf,
     defaultRouting,
+    outputsSignature,
     routingFromGraph,
+    routingSignature,
     type OutputScalars,
   } from '../patch-graph';
   import PatchNode from './PatchNode.svelte';
@@ -248,18 +250,72 @@
 
   // Read the output half back into a routing, recompile to OutputConfig[], and push it —
   // but only when the result actually changed (a hover or input-half drag is a no-op).
-  let lastSig = JSON.stringify(patchToOutputs(initialRouting));
+  // `lastSig` is the canonical signature of the routing we last drew/committed/adopted; the
+  // adopt $effect below compares it against the project's outputs to skip our own echo.
+  let lastSig = routingSignature(initialRouting);
   function commitRouting(): void {
-    const outputs = patchToOutputs(routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor));
-    const sig = JSON.stringify(outputs);
+    const routing = routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor);
+    const sig = routingSignature(routing);
     if (sig === lastSig) return;
     lastSig = sig;
-    store.setRouting(outputs);
+    store.setRouting(patchToOutputs(routing));
   }
 
   // The LIVE routing, datalines/outputs keyed by their graph NODE id (recomputed whenever
   // nodes/edges change: add, wire, reorder-by-drag, delete).
   const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor));
+
+  const isOutHalf = (s: PatchStage): boolean => s === 'dataline' || s === 'output';
+  /** Rebuild ONLY the output half (dataline → output → controller) from an authoritative
+      `OutputConfig[]`, leaving the input half + controller sink and their edges intact. The
+      position of any surviving output-half node (same id) is preserved so adopting an external
+      change doesn't fight a layout the user has nudged (memory: locked graph UX). */
+  function adoptOutputs(outputs: OutputConfig[]): void {
+    const rebuilt = buildOutputHalf(outputsToPatch(outputs), {
+      colDataline,
+      colOutput,
+      controllerId: CONTROLLER_ID,
+      midY,
+      hasHoop: (id) => hoopIds.has(id),
+    });
+    const posById = new Map(nodes.filter((n) => isOutHalf(n.data.stage)).map((n) => [n.id, n.position]));
+    const oldOutIds = new Set(nodes.filter((n) => isOutHalf(n.data.stage)).map((n) => n.id));
+    const outNodes = rebuilt.nodes.map((n) => {
+      const prev = posById.get(n.id);
+      return prev ? { ...n, position: prev } : n;
+    });
+    nodes = [...nodes.filter((n) => !isOutHalf(n.data.stage)), ...outNodes];
+    edges = hover.decorate([
+      ...edges.filter((e) => !oldOutIds.has(e.source) && !oldOutIds.has(e.target)),
+      ...rebuilt.edges.map((e) => ({ ...e, type: 'wire' as const })),
+    ]);
+  }
+
+  // COLD-LOAD ADOPT: the output half is seeded ONCE at mount from `untrack`ed outputs — null on
+  // a cold load → the default chunk — but the server's real `kit.outputs` only arrive in a later
+  // WS `state`. This $effect tracks ONLY `store.project.kit.outputs`; when their canonical
+  // signature differs from BOTH what we last drew/committed (`lastSig`) AND what's literally on
+  // the canvas now (`liveRouting`, read untracked so a drag doesn't re-run us), it rebuilds the
+  // output half from them. So: the first arrival adopts; the echo of the user's own just-committed
+  // rewire (the optimistic write + its server round-trip) is a no-op; a genuine external change
+  // (reconnect to a server with different outputs) adopts — without clobbering an in-progress local
+  // rewire (uncommitted, so `store.project` hasn't changed to trigger us yet).
+  $effect(() => {
+    const outputs = store.project?.kit.outputs;
+    if (!outputs || outputs.length === 0) return; // no authoritative routing yet (offline / fresh)
+    const incomingSig = outputsSignature(outputs);
+    if (incomingSig === lastSig) return; // already in sync — incl. the echo of our own edit
+    untrack(() => {
+      // Matches what's literally drawn (a just-committed / in-progress rewire)? Adopt the sig only.
+      if (incomingSig === routingSignature(liveRouting)) {
+        lastSig = incomingSig;
+        return;
+      }
+      adoptOutputs(outputs);
+      lastSig = incomingSig;
+    });
+  });
+
   // Publish it to the shell so the Inspector's first/last-pixel read-out reflects the current
   // wiring — including a just-added palette data line and an un-remounted reorder — instead of
   // a re-chunked snapshot of committed outputs whose synthetic ids never match the selected

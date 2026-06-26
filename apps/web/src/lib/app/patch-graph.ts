@@ -21,6 +21,7 @@
    (`dmx-map.ts` validates `0..hoopCount-1`). The id helpers below bridge that seam so
    the two never leak into each other. */
 
+import type { OutputConfig } from '@ledrums/core';
 import {
   CONTROLLER_ID,
   NODE_H,
@@ -33,6 +34,8 @@ import {
 } from './patch-topology';
 import {
   DEFAULT_HOOPS_PER_DATALINE,
+  outputsToPatch,
+  patchToOutputs,
   type DataLine,
   type HoopRef,
   type PatchOutput,
@@ -253,6 +256,27 @@ export function routingFromGraph(
   });
 
   return { outputs };
+}
+
+// --- canonical signature (the cold-load adopt discriminator) ------------------------
+
+/**
+ * Canonical signature of an output-half routing, projected into core's `OutputConfig[]`
+ * normal form (segment-coalesced, fixed key order) via {@link patchToOutputs}. A routing
+ * DRAWN in the graph, the server's stored `kit.outputs`, and a freshly compiled rewire all
+ * collapse to ONE string here — so the Patch view can tell the echo of the user's own edit
+ * (signature unchanged) from a genuine external change (signature differs) when deciding
+ * whether to re-adopt the project's outputs on a cold load. `patchToOutputs ∘ outputsToPatch`
+ * is idempotent on a canonical `OutputConfig[]`, so the project's outputs and a live rewire
+ * compare apples-to-apples.
+ */
+export function routingSignature(routing: PatchRouting): string {
+  return JSON.stringify(patchToOutputs(routing));
+}
+
+/** {@link routingSignature} for a core `OutputConfig[]` (e.g. the project's `kit.outputs`). */
+export function outputsSignature(outputs: OutputConfig[]): string {
+  return routingSignature(outputsToPatch(outputs));
 }
 
 // --- fallback routing (when the project carries no authored outputs) ----------------

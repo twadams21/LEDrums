@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import type { OutputConfig } from '@ledrums/core';
 import {
   buildOutputHalf,
   defaultRouting,
   hoopNodeId,
   outputNodeId,
+  outputsSignature,
   parseHoopNodeId,
   parseOutputNodeId,
   routingFromGraph,
+  routingSignature,
   type OutputHalfLayout,
 } from './patch-graph';
-import { patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
+import { outputsToPatch, patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
 
 /* The pure Patch-graph ⇄ routing seam (S3). Covers the 0-based-core ⇄ 1-based-node hoop
@@ -210,6 +213,58 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
     expect(norm(patchToOutputs(readBack))).toEqual(norm(patchToOutputs(routing)));
     // ...and the data-line count is preserved 1:1 (wire-in-N-stays-N).
     expect(patchToOutputs(readBack).flatMap((c) => c.dataLines)).toHaveLength(3);
+  });
+});
+
+describe('routingSignature / outputsSignature (the cold-load adopt discriminator)', () => {
+  /* The Patch view re-adopts the server's `kit.outputs` only when their canonical signature
+     differs from what's already drawn — so a routing and the OutputConfig[] it compiles to MUST
+     share one signature (else the echo of the user's own rewire would snap the graph back). */
+  const routing: PatchRouting = {
+    outputs: [
+      {
+        id: '1',
+        channelsPerPixel: 3,
+        dataLines: [
+          { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
+          { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
+        ],
+      },
+      {
+        id: '2',
+        startUniverse: 4,
+        channelsPerPixel: 4,
+        dataLines: [{ id: 'c', startUniverse: 5, hoops: [{ drumId: 'tom1', hoop: 0 }] }],
+      },
+    ],
+  };
+
+  it('a routing and the OutputConfig[] it compiles to share one signature (echo = no-op)', () => {
+    expect(outputsSignature(patchToOutputs(routing))).toBe(routingSignature(routing));
+  });
+
+  it('is stable across a repeated outputs → routing → outputs round-trip (canonical normal form)', () => {
+    const once = patchToOutputs(routing);
+    const twice = patchToOutputs(outputsToPatch(once));
+    expect(outputsSignature(twice)).toBe(outputsSignature(once));
+  });
+
+  it('is insensitive to OutputConfig key order (same wiring → same signature)', () => {
+    const canonical: OutputConfig[] = [
+      { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 1 }] }] },
+    ];
+    // same wiring, keys inserted in a different order (as a re-serializing server might)
+    const reordered: OutputConfig[] = [
+      { dataLines: [{ segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 1 }], id: 'a' }], channelsPerPixel: 3, id: '1' },
+    ];
+    expect(outputsSignature(reordered)).toBe(outputsSignature(canonical));
+  });
+
+  it('a genuine external change yields a different signature (so adopt fires)', () => {
+    const external: PatchRouting = {
+      outputs: [{ id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }] }] }],
+    };
+    expect(routingSignature(external)).not.toBe(routingSignature(routing));
   });
 });
 
