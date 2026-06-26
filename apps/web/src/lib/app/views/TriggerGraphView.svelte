@@ -11,7 +11,6 @@
     Background,
     BackgroundVariant,
     Controls,
-    MiniMap,
     Panel,
     SvelteFlow,
     type Connection,
@@ -198,6 +197,7 @@
         fitViewOptions={{ padding: 0.2 }}
         nodesConnectable
         minZoom={0.2}
+        proOptions={{ hideAttribution: true }}
         deleteKey={['Delete', 'Backspace']}
         onnodeclick={({ node }) => shell.select({ kind: 'node', nodeId: node.id })}
         onpaneclick={() => shell.clearSelection()}
@@ -219,7 +219,6 @@
         <Panel position="top-left"><TriggerPalette {store} /></Panel>
         <Background variant={BackgroundVariant.Dots} />
         <Controls />
-        <MiniMap />
       </SvelteFlow>
     {:else}
       <p class="hint">Select a pad to edit its trigger graph.</p>
@@ -427,20 +426,5 @@
   .canvas :global(.svelte-flow__controls-button:hover) {
     background: var(--surface-2);
     color: var(--ink);
-  }
-  .canvas :global(.svelte-flow__minimap) {
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-  }
-  .canvas :global(.svelte-flow__minimap-mask) {
-    fill: color-mix(in oklch, var(--bg) 62%, transparent);
-  }
-  .canvas :global(.svelte-flow__attribution) {
-    background: color-mix(in oklch, var(--surface) 70%, transparent);
-    color: var(--text-faint);
-  }
-  .canvas :global(.svelte-flow__attribution a) {
-    color: var(--text-muted);
   }
 </style>

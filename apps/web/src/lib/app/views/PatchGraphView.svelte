@@ -182,6 +182,7 @@
       fitViewOptions={{ padding: 0.15 }}
       nodesConnectable
       minZoom={0.2}
+      proOptions={{ hideAttribution: true }}
       deleteKey={['Delete', 'Backspace']}
       onbeforeconnect={onBeforeConnect}
       onnodeclick={({ node }) => shell.select({ kind: 'patch', nodeId: node.id })}
@@ -308,12 +309,5 @@
   }
   .canvas :global(.svelte-flow__minimap-mask) {
     fill: color-mix(in oklch, var(--bg) 62%, transparent);
-  }
-  .canvas :global(.svelte-flow__attribution) {
-    background: color-mix(in oklch, var(--surface) 70%, transparent);
-    color: var(--text-faint);
-  }
-  .canvas :global(.svelte-flow__attribution a) {
-    color: var(--text-muted);
   }
 </style>
