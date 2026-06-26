@@ -130,6 +130,15 @@
     for (const e of removed) store.disconnect(e.id);
     rebuildEdges();
   }
+  /** A wire dropped on a node body (not a handle): wire it to that node's input — or
+      its output if the drag began at an input. `store.connect` validates direction /
+      cycle / dup, so a drop that can't be accepted is simply ignored. */
+  function dropConnect(fromId: string, fromType: 'source' | 'target' | null, toId: string): void {
+    if (fromId === toId) return;
+    if (fromType === 'target') store.connect(toId, fromId);
+    else store.connect(fromId, toId);
+    rebuildEdges();
+  }
 </script>
 
 <div class="trigger-view">
@@ -183,14 +192,16 @@
         deleteKey={['Delete', 'Backspace']}
         onnodeclick={({ node }) => shell.select({ kind: 'node', nodeId: node.id })}
         onpaneclick={() => shell.clearSelection()}
-        onnodepointerenter={({ node }) => (nodes = hover.enter(node.id, nodes))}
-        onnodepointerleave={() => (nodes = hover.leave(nodes))}
-        onnodedragstart={() => (nodes = hover.dragStart(nodes))}
+        onnodepointerenter={({ node }) => hover.enter(node.id)}
+        onnodepointerleave={() => hover.leave()}
         onnodedragstop={({ nodes: moved }) => {
-          hover.dragStop();
           for (const n of moved) syncPos(n);
         }}
         onconnect={onConnect}
+        onconnectend={(_e, conn) => {
+          if (conn.toHandle || !conn.fromHandle || !conn.toNode) return;
+          dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.toNode.id);
+        }}
         onreconnect={onReconnect}
         ondelete={({ edges: removed }) => onDeleteEdges(removed)}
       >

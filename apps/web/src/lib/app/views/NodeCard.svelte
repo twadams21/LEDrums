@@ -62,9 +62,6 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
     box-shadow: var(--shadow-1);
-    transition:
-      border-color 140ms ease,
-      box-shadow 140ms ease;
   }
   /* with a right-side thumbnail: add the third column + grow to fit it */
   .card.has-thumb {
@@ -128,10 +125,5 @@
     align-items: center;
     margin-left: var(--space-1);
     line-height: 0;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .card {
-      transition: none;
-    }
   }
 </style>

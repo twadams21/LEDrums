@@ -93,21 +93,32 @@
     return c;
   }
 
-  /* Hover → lift the node (nudge its xyflow position so handles + edges follow) and
-     accent every wire one level connected to it. Selection rings the node but does
-     NOT light its wires. Shared with the Trigger graph. */
+  /* Hover accents the node (border, via CSS) + every wire one level connected to it.
+     Selection rings the node but does NOT light its wires. Shared with the Trigger
+     graph (no node lift — it fought wiring). */
   const hover = new GraphHover();
   function onEnter(id: string): void {
-    nodes = hover.enter(id, nodes);
+    hover.enter(id);
     edges = hover.decorate(edges);
   }
   function onLeave(): void {
-    nodes = hover.leave(nodes);
+    hover.leave();
     edges = hover.decorate(edges);
   }
-  function onDragStart(): void {
-    nodes = hover.dragStart(nodes);
-    edges = hover.decorate(edges);
+
+  let wireSeq = 0;
+  const stageOf = (id: string): PatchStage | undefined => nodes.find((n) => n.id === id)?.data.stage;
+  /** A wire dropped on a node body (not a handle): wire it to that node — to its input
+      if the drag began at an output, or vice versa. Mirrors PatchNode's handle rules by
+      stage (the input source has no target handle; the controller sink has no source)
+      and runs the same dup/self guard, then adds the ephemeral local edge. */
+  function dropConnect(fromId: string, fromType: 'source' | 'target' | null, toId: string): void {
+    if (fromId === toId) return;
+    const source = fromType === 'target' ? toId : fromId;
+    const target = fromType === 'target' ? fromId : toId;
+    if (stageOf(source) === 'controller' || stageOf(target) === 'input') return;
+    if (onBeforeConnect({ source, target, sourceHandle: null, targetHandle: null }) === false) return;
+    edges = hover.decorate([...edges, { id: `e:${source}->${target}:${++wireSeq}`, source, target, type: 'wire' }]);
   }
 
   /** Physical sensor zones for a drum. The kick exposes only centre + shell; every
@@ -176,8 +187,10 @@
       onpaneclick={() => shell.clearSelection()}
       onnodepointerenter={({ node }) => onEnter(node.id)}
       onnodepointerleave={onLeave}
-      onnodedragstart={onDragStart}
-      onnodedragstop={() => hover.dragStop()}
+      onconnectend={(_e, conn) => {
+        if (conn.toHandle || !conn.fromHandle || !conn.toNode) return;
+        dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.toNode.id);
+      }}
     >
       <PatchFitView padding={0.15} />
       <Panel position="top-left"><PatchPalette add={addDevice} /></Panel>
