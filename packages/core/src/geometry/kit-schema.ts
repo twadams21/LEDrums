@@ -18,6 +18,8 @@ export const drumSchema = z.object({
   hoopCount: z.number().int().positive().optional(),
   /** Per-drum override of the global LED density (px/m). */
   ledDensityPxPerM: z.number().positive().optional(),
+  /** Literal pixels per hoop. When set, overrides the density computation entirely. */
+  pixelsPerHoop: z.number().int().positive().optional(),
   /** Rotates where pixel index 0 sits around the hoop. */
   localSpinDeg: z.number().default(0),
   startAngleDeg: z.number().default(0),

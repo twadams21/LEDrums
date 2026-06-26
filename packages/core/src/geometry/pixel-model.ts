@@ -65,6 +65,8 @@ export interface PixelModel {
 }
 
 function pixelsPerHoop(kit: KitConfig, drum: DrumConfig): number {
+  // A literal per-drum count is authoritative — return it verbatim, ignoring density.
+  if (drum.pixelsPerHoop !== undefined) return drum.pixelsPerHoop;
   const diameterMm = drum.diameterIn * MM_PER_INCH;
   const circumferenceM = (Math.PI * diameterMm) / 1000;
   return Math.max(1, Math.round(circumferenceM * drumDensity(kit, drum)));
