@@ -76,7 +76,16 @@
   /** Structure signatures — drive reactive rebuilds. Node positions are deliberately
       NOT in the node signature (a drag must not retrigger a rebuild mid-move); edge
       endpoints ARE, so a reconnect re-derives. */
-  const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map((n) => `${n.id}:${n.kind}`).join('|'));
+  const nodeSig = $derived(
+    (store.selectedGraph?.nodes ?? [])
+      .map((n) =>
+        // a value+bands switch's handle COUNT depends on its mode + band count — fold
+        // that into the signature so adding/removing a band rebuilds the node and xyflow
+        // re-measures its handles (a position-only drag still never rebuilds).
+        n.kind === 'switch' ? `${n.id}:switch:${n.on}:${n.valueMode}:${n.bands?.length ?? 0}` : `${n.id}:${n.kind}`,
+      )
+      .join('|'),
+  );
   const edgeSig = $derived(
     (store.selectedGraph?.edges ?? []).map((e) => `${e.id}:${e.from}>${e.to}`).join('|'),
   );
@@ -127,11 +136,11 @@
     if (sn) store.moveNode(sn, fn.position.x, fn.position.y);
   }
   function onConnect(c: Connection): void {
-    store.connect(c.source, c.target); // store validates (dup / cycle / direction)
+    store.connect(c.source, c.target, c.sourceHandle ?? undefined); // store validates (dup / cycle / direction)
     rebuildEdges(); // drop any edge xyflow added optimistically that the store rejected
   }
   function onReconnect(oldEdge: { id: string }, c: Connection): void {
-    store.reconnect(oldEdge.id, c.source, c.target);
+    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined);
     rebuildEdges(); // revert the anchor's optimistic move if the store rejected it
   }
   function onDeleteEdges(removed: ReadonlyArray<{ id: string }>): void {
@@ -140,11 +149,17 @@
   }
   /** A wire dropped on a node body (not a handle): wire it to that node's input — or
       its output if the drag began at an input. `store.connect` validates direction /
-      cycle / dup, so a drop that can't be accepted is simply ignored. */
-  function dropConnect(fromId: string, fromType: 'source' | 'target' | null, toId: string): void {
+      cycle / dup, so a drop that can't be accepted is simply ignored. When the drag
+      began at a source handle, carry its id (a switch band) so the band wire lands. */
+  function dropConnect(
+    fromId: string,
+    fromType: 'source' | 'target' | null,
+    fromPort: string | null | undefined,
+    toId: string,
+  ): void {
     if (fromId === toId) return;
     if (fromType === 'target') store.connect(toId, fromId);
-    else store.connect(fromId, toId);
+    else store.connect(fromId, toId, fromPort ?? undefined);
     rebuildEdges();
   }
 </script>
@@ -210,7 +225,7 @@
         onconnectend={(event, conn) => {
           if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
           const toId = nodeIdAtEvent(event);
-          if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
+          if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
         }}
         onreconnect={onReconnect}
         ondelete={({ edges: removed }) => onDeleteEdges(removed)}

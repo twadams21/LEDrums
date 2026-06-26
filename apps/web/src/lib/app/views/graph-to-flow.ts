@@ -27,9 +27,17 @@ export function graphToFlowNodes(graph: TriggerGraph): TriggerFlowNode[] {
   }));
 }
 
-/** Map the store graph's edges to xyflow edges (from→source, to→target). */
+/** Map the store graph's edges to xyflow edges (from→source, to→target). An edge's
+    `fromPort` becomes the xyflow `sourceHandle` (a value+bands switch's `band-${i}`);
+    undefined leaves it on the node's default output. */
 export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
-  return graph.edges.map((e) => ({ id: e.id, source: e.from, target: e.to, type: 'wire' }));
+  return graph.edges.map((e) => ({
+    id: e.id,
+    source: e.from,
+    target: e.to,
+    sourceHandle: e.fromPort,
+    type: 'wire',
+  }));
 }
 
 /** Both arrays at once. */

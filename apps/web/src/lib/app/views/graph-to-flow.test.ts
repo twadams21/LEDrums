@@ -52,6 +52,14 @@ describe('graphToFlowEdges', () => {
   it('emits no edges for an empty graph', () => {
     expect(graphToFlowEdges({ nodes: [], edges: [] })).toEqual([]);
   });
+
+  it("maps an edge's fromPort to the xyflow sourceHandle (a value+bands switch band)", () => {
+    const g: TriggerGraph = {
+      nodes: [makeNode('switch', 's', 0, 0, { on: 'value', valueMode: 'bands' }), makeNode('play', 'p', 300, 0)],
+      edges: [{ id: 'e0', from: 's', to: 'p', fromPort: 'band-1' }],
+    };
+    expect(graphToFlowEdges(g)[0]!.sourceHandle).toBe('band-1');
+  });
 });
 
 describe('graphToFlow + applyFlowPositions round-trip', () => {
