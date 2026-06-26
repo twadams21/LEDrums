@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -9,7 +9,7 @@ import {
   defaultProject,
   ReferentialIntegrityError,
 } from '@ledrums/core';
-import { listProjects, loadProject, projectExists, saveProject } from './projects';
+import { listProjects, loadProject, projectExists, saveProject, saveProjectAsync } from './projects';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ledrums-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -53,5 +53,43 @@ describe('projects', () => {
     saveProject('dangling', dangling, tmp);
     expect(() => loadProject('dangling', tmp)).toThrow(ReferentialIntegrityError);
     expect(() => loadProject('dangling', tmp)).toThrow(/drum "ghost"/);
+  });
+});
+
+describe('atomic writes (temp + rename)', () => {
+  it('saveProject leaves only the final file — no temp residue', () => {
+    saveProject('atomic', defaultProject(), tmp);
+    expect(readdirSync(tmp).filter((f) => f.startsWith('atomic'))).toEqual(['atomic.json']);
+    expect(loadProject('atomic', tmp)).toEqual(defaultProject());
+  });
+
+  it('saveProjectAsync writes atomically and round-trips', async () => {
+    await saveProjectAsync('atomic-async', defaultProject(), tmp);
+    expect(readdirSync(tmp).filter((f) => f.startsWith('atomic-async'))).toEqual(['atomic-async.json']);
+    expect(loadProject('atomic-async', tmp)).toEqual(defaultProject());
+  });
+
+  it('overwriting an existing project leaves a single valid file', async () => {
+    saveProject('over', defaultProject(), tmp);
+    await saveProjectAsync('over', { ...defaultProject(), name: 'Edited' }, tmp);
+    expect(readdirSync(tmp).filter((f) => f.startsWith('over'))).toEqual(['over.json']);
+    expect(loadProject('over', tmp).name).toBe('Edited');
+  });
+
+  // Acceptance: a routing/geometry/output mutation survives a save + reload (the disk
+  // round-trip behind live persistence).
+  it('restores a routing/geometry/output mutation after save + reload', async () => {
+    const p = defaultProject();
+    p.output.host = '10.0.0.7';
+    p.output.priority = 175;
+    p.kit.drums[0]!.pixelsPerHoop = 244;
+    p.kit.drums[0]!.startAngleDeg = 33;
+    p.kit.outputs = [...p.kit.outputs].reverse(); // reorder the transmit topology
+    await saveProjectAsync('mutated', p, tmp);
+
+    const reloaded = loadProject('mutated', tmp);
+    expect(reloaded).toEqual(p);
+    expect(reloaded.kit.drums[0]!.pixelsPerHoop).toBe(244);
+    expect(reloaded.output.priority).toBe(175);
   });
 });
