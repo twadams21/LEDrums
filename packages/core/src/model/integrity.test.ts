@@ -4,6 +4,7 @@ import {
   assertProjectIntegrity,
   assertShowIntegrity,
   drumIdOfPadKey,
+  isAuthoredGraphKey,
   kitDrumIds,
   ReferentialIntegrityError,
 } from './integrity';
@@ -74,6 +75,47 @@ describe('assertShowIntegrity', () => {
     expect(() =>
       assertShowIntegrity({ drumIds, graphKeys: ['kick:0'], slotRefs: ['snare:9'] }),
     ).toThrow(/setlist slot → graph "snare:9"/);
+  });
+
+  it('accepts authored (non-pad) graph keys — fired by their trigger source, not a pad', () => {
+    // U2/U3: store.createGraph mints `graph-<n>`; some content/docs use the `graph:<n>` form.
+    // Both are standalone graphs (midi/osc-triggered), so neither resolves to a kit drum.
+    expect(() =>
+      assertShowIntegrity({ drumIds, graphKeys: ['graph:1', 'graph-2'] }),
+    ).not.toThrow();
+  });
+
+  it('accepts authored graph keys alongside real pad graphs', () => {
+    expect(() =>
+      assertShowIntegrity({ drumIds, graphKeys: ['kick:0', 'graph:1', 'snare:0', 'graph-2'] }),
+    ).not.toThrow();
+  });
+
+  it('still throws for a genuinely-dangling padKey even with authored graphs present', () => {
+    // The authored carve-out must NOT swallow real drift: a `drumId:zone` whose drum
+    // is not in the kit still fails.
+    expect(() =>
+      assertShowIntegrity({ drumIds, graphKeys: ['graph:1', 'unknownDrum:center'] }),
+    ).toThrow(/graph "unknownDrum:center" → drum "unknownDrum"/);
+  });
+
+  it('lets a setlist slot reference an authored graph', () => {
+    expect(() =>
+      assertShowIntegrity({ drumIds, graphKeys: ['graph:1'], slotRefs: ['graph:1'] }),
+    ).not.toThrow();
+  });
+});
+
+describe('isAuthoredGraphKey', () => {
+  it('matches authored graph keys in both separator forms', () => {
+    expect(isAuthoredGraphKey('graph:1')).toBe(true);
+    expect(isAuthoredGraphKey('graph-2')).toBe(true);
+  });
+
+  it('does not match pad keys', () => {
+    expect(isAuthoredGraphKey('kick:0')).toBe(false);
+    expect(isAuthoredGraphKey('unknownDrum:center')).toBe(false);
+    expect(isAuthoredGraphKey('kick')).toBe(false);
   });
 });
 
