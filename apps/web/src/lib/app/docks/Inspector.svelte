@@ -15,6 +15,7 @@
     type ParamValue,
     type Polyphony,
     type SwitchOn,
+    type ValueMode,
   } from '../../trigger-lab/sim';
   import { busIcon, kindIcon, kindLabel, tint } from '../views/trigger-node-meta';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
@@ -30,6 +31,7 @@
   import Zap from '@lucide/svelte/icons/zap';
   import Repeat from '@lucide/svelte/icons/repeat';
   import Hand from '@lucide/svelte/icons/hand';
+  import Plus from '@lucide/svelte/icons/plus';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -72,7 +74,13 @@
     { value: 'velocity', label: 'velocity' },
     { value: 'section', label: 'section' },
     { value: 'beat', label: 'beat' },
+    { value: 'value', label: 'value' },
   ];
+  const VALUEMODE_OPTS: Array<{ value: ValueMode; label: string }> = [
+    { value: 'gate', label: 'Gate' },
+    { value: 'bands', label: 'Bands' },
+  ];
+  const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
   /** One-line description for the container/modifier kinds that take no extra control. */
   function kindBlurb(kind: NodeKind): string {
@@ -202,7 +210,49 @@
           <span class="k">On</span>
           <Select value={node.on} options={SWITCH_OPTS} onChange={(v) => store.setSwitchOn(node, v as SwitchOn)} ariaLabel="Switch on" />
         </label>
-        <p class="hint">Routes to a wired child by {node.on}.</p>
+        {#if node.on === 'value'}
+          {@const mode = node.valueMode ?? 'gate'}
+          <SegmentedControl value={mode} options={VALUEMODE_OPTS} onChange={(v) => store.setValueMode(node, v as ValueMode)} ariaLabel="Value mode" />
+          {#if mode === 'gate'}
+            {@const threshold = node.threshold ?? 0.5}
+            {@const invert = node.invert ?? false}
+            <label class="lblrow">
+              <span class="k">Threshold</span>
+              <span class="sld"><Slider min={0} max={1} step={0.01} value={threshold} onChange={(v) => store.setThreshold(node, v)} format={pct} ariaLabel="Gate threshold" /></span>
+            </label>
+            <label class="lblrow">
+              <span class="k">Invert</span>
+              <Toggle pressed={invert} onChange={(v) => store.setInvert(node, v)} ariaLabel="Invert gate" />
+            </label>
+            <p class="hint">
+              {invert
+                ? `Passes when value > ${pct(threshold)} — does nothing below.`
+                : `Passes when value ≤ ${pct(threshold)} — does nothing above.`}
+            </p>
+          {:else}
+            {@const cuts = node.bands && node.bands.length ? node.bands : [0.5]}
+            <div class="bandlist">
+              {#each cuts as cut, i (i)}
+                <div class="bandrow">
+                  <span class="bnum">{i + 1}</span>
+                  <span class="k">≤</span>
+                  <span class="sld"><Slider min={0} max={1} step={0.01} value={cut} onChange={(v) => store.setBandCutoff(node, i, v)} format={pct} ariaLabel={`Band ${i + 1} cutoff`} /></span>
+                  <IconButton icon={Trash2} label="Remove band" variant="soft" size={13} disabled={cuts.length <= 1} onclick={() => store.removeBand(node, i)} />
+                </div>
+              {/each}
+              <div class="bandrow rest">
+                <span class="bnum">{cuts.length + 1}</span>
+                <span class="restlabel">&gt; {pct(cuts[cuts.length - 1]!)} — the rest</span>
+              </div>
+              <button class="addband" type="button" onclick={() => store.addBand(node)}>
+                <Plus size={13} aria-hidden="true" /> Add band
+              </button>
+            </div>
+            <p class="hint">{cuts.length + 1} bands — wire a child to each band's handle on the node.</p>
+          {/if}
+        {:else}
+          <p class="hint">Routes to a wired child by {node.on}.</p>
+        {/if}
       </div>
     {:else if node.kind === 'chance'}
       <div class="kindbody">
@@ -372,6 +422,70 @@
     gap: var(--space-2);
     font-size: var(--text-xs);
     color: var(--text);
+  }
+  /* value-switch band editor (one row per cutoff + the implicit "rest" band) */
+  .bandlist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .bandrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .bandrow .sld {
+    flex: 1;
+    max-width: none;
+  }
+  .bnum {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-pill);
+  }
+  .bandrow.rest {
+    color: var(--text-faint);
+  }
+  .restlabel {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
+  }
+  .addband {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-1);
+    transition:
+      color 120ms ease,
+      border-color 120ms ease;
+  }
+  .addband:hover {
+    color: var(--accent);
+    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+  }
+  .addband:active {
+    scale: 0.98;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .addband {
+      transition: none;
+    }
   }
   .params {
     padding: var(--space-3);
