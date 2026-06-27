@@ -54,6 +54,7 @@ import {
   SHOWS_STORAGE_KEY,
   loadShowLibrary,
   serializeShowLibrary,
+  deserializeShowLibrary,
   type AuthoredState,
   type Show,
   type ShowLibrary,
@@ -658,10 +659,13 @@ export class TriggerLab {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      writeStoredLibrary(serializeShowLibrary(lib));
+      writeStoredLibrary(serializeShowLibrary(lib)); // localStorage cache (write-through)
       // Same debounced tick re-syncs the active show's authored Show to the engine (guarded so
       // it only sends on a real change) — so live edits AND show switches reach the server.
       this.syncShowToServer();
+      // …and pushes the authored show library to the server (the source of truth), so a
+      // browser-storage clear no longer loses shows. Sig-guarded; no-op until the first state.
+      this.syncLibraryToServer();
     }, SAVE_DEBOUNCE_MS);
   }
 
@@ -783,12 +787,17 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model) => {
+      onState: (project, model, _effects, _projects, _output, showLibrary) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
         this.project = project;
         this.serverModel = model;
+        // Cold-load adopt of the server-authoritative show library (server wins on first state;
+        // seeds the server from our cache when it has none). Set serverStateSeen first so the
+        // seed-push isn't gated off. See reconcileServerLibrary.
+        this.serverStateSeen = true;
+        this.reconcileServerLibrary(showLibrary);
       },
       onConnection: (state: ConnectionState) => {
         // map the client's 'closed' to the lab's 'offline'; others pass through
@@ -853,6 +862,66 @@ export class TriggerLab {
     if (this.activeSectionId) {
       this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
     }
+  }
+
+  // --- server-authoritative show library (S7 cold-load adopt + write-through) -----------
+  // The server owns the authored show library (like the routing Project): it persists the
+  // library and broadcasts it on the `state` message. The web ADOPTS it once, on the first
+  // state of a cold load (server wins); thereafter the web is the source and pushes every
+  // authored change up via setShowLibrary. localStorage is a fast cache (offline / first paint).
+
+  /** Signature of the library last synchronized with the server (adopted or pushed). null until
+      the FIRST `state` is reconciled — the gate that makes cold-load adopt happen exactly once
+      and never clobber later in-session edits. */
+  private lastLibrarySig: string | null = null;
+  /** Set once the first `state` message has been reconciled. Gates {@link syncLibraryToServer}
+      so a debounced push that races the connect handshake can't pre-empt the cold-load adopt. */
+  private serverStateSeen = false;
+
+  /** Stable signature of a library envelope (for echo/no-op suppression). */
+  private librarySig(lib: ShowLibrary): string {
+    return JSON.stringify(serializeShowLibrary(lib));
+  }
+
+  /** Reconcile the server's library against ours on a `state` message. Runs the cold-load adopt
+      exactly once (first state of the session): if the server HAS a library, the server wins —
+      adopt it into the runes (full swap, no clobber after this point); if it has none, push our
+      cached library up to seed the server. Later states no-op (lastLibrarySig is set), so
+      in-flight edits are never clobbered and a re-broadcast can't re-adopt. */
+  private reconcileServerLibrary(raw: unknown): void {
+    if (this.lastLibrarySig !== null) return; // already synced this session — never clobber
+    const incoming = deserializeShowLibrary(raw);
+    if (incoming) {
+      this.adoptLibrary(incoming);
+      // The server already holds this library, so mark synced WITHOUT echoing it back. A later
+      // authored edit diverges the signature and pushes normally.
+      this.lastLibrarySig = this.librarySig(this.currentLibrary());
+      return;
+    }
+    // Server has no library yet → seed it from our localStorage cache.
+    this.syncLibraryToServer();
+  }
+
+  /** Swap the live runes to the adopted server library (mirrors the constructor's hydrate, but
+      as a runtime switch): replace the library + active pointer, then load the active show's
+      authored over the blank seed and re-normalize. A FULL swap — no field of the prior library
+      bleeds through. */
+  private adoptLibrary(lib: ShowLibrary): void {
+    this.showLibrary = lib.shows;
+    this.activeShowId = lib.activeShowId;
+    this.applyShow(lib.shows[lib.activeShowId]!);
+  }
+
+  /** Push the current library to the server when it actually changed (sig-guarded so an
+      unchanged library isn't re-sent every autosave tick). Gated on the first `state` having
+      been seen, so the cold-load adopt always wins the race against the debounced autosave. */
+  private syncLibraryToServer(): void {
+    if (this.link !== 'open' || !this.serverStateSeen) return;
+    const envelope = serializeShowLibrary(this.currentLibrary());
+    const sig = JSON.stringify(envelope);
+    if (sig === this.lastLibrarySig) return;
+    this.lastLibrarySig = sig;
+    this.client.send({ t: 'setShowLibrary', library: envelope });
   }
 
   /** Send setTransport to the server iff bpm/playing/beatsPerBar changed. */

@@ -83,6 +83,9 @@ export type ClientMessage =
   | { t: 'setInputMap'; inputMap: InputMap }
   // Voice-bus engine (additive, voice mode only) — keep in sync with the server.
   | { t: 'setShow'; show: voice.Show }
+  // Server-authoritative show library: push the authored library (an opaque versioned blob)
+  // on every authored change; the server persists it and rebroadcasts it on the state message.
+  | { t: 'setShowLibrary'; library: ShowLibraryBlob }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
   | { t: 'recallSection'; songId: string; sectionId: string }
   | { t: 'loadProject'; name: string }
@@ -92,6 +95,14 @@ export type ClientMessage =
 // ---------------------------------------------------------------------------
 // Server → Client (JSON, plus a separate binary frame channel)
 // ---------------------------------------------------------------------------
+
+/** The authored show library on the wire: the server stores + rebroadcasts it as an opaque
+    versioned blob (its schema, the trigger-lab `PersistedShowLibrary` envelope, is web-owned —
+    `data` is validated via `deserializeShowLibrary` on adopt, never by the protocol layer). */
+export interface ShowLibraryBlob {
+  version: number;
+  data: unknown;
+}
 
 export interface SerializedDrum {
   id: string;
@@ -146,6 +157,9 @@ export type ServerMessage =
       effects: EffectSpec[];
       projects: string[];
       output: OutputStatus;
+      // The server's persisted authored show library (opaque versioned blob), or null when the
+      // server has none yet — the web adopts it on cold load.
+      showLibrary: ShowLibraryBlob | null;
     }
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
