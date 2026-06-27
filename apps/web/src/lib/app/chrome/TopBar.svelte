@@ -10,6 +10,7 @@
   import OutputPill from './OutputPill.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ShowBrowser from './ShowBrowser.svelte';
+  import SaveIndicator from './SaveIndicator.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
@@ -50,6 +51,7 @@
       {/if}
       <span class="set-sub">{store.sections.length} sections · {activeName}</span>
     </span>
+    <SaveIndicator {store} />
   </div>
 
   <div class="transport-slot"><Transport {store} /></div>

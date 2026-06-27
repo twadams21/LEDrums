@@ -60,6 +60,7 @@ import {
   type ShowLibrary,
   type PersistedShowLibrary,
 } from './persistence';
+import { SaveStatusController, type SaveStatus } from './save-status';
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
@@ -402,6 +403,15 @@ export class TriggerLab {
   private persistDispose: (() => void) | null = null;
   /** pending debounced-save timer (plain field — must NOT be reactive). */
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Reactive save status for the TopBar indicator ('idle' | 'saving' | 'saved'),
+      driven by the autosave path through {@link saveStatusCtl}. */
+  saveStatus = $state<SaveStatus>('idle');
+  /** Timing controller behind {@link saveStatus} — enforces the min-visible 'saving'
+      window + 'saved' hold so the indicator reads even when a flush is instant. */
+  private saveStatusCtl = new SaveStatusController((s) => (this.saveStatus = s));
+  /** Skips the indicator for the autosave $effect's initial (mount) run, so the app
+      doesn't flash "Saving…/Saved" on load; armed by the first scheduleSave. */
+  private autosaveArmed = false;
 
   constructor(makeClient: () => WSClient = () => new WSClient()) {
     // Load the show library from storage BEFORE the sim is built and the engine link opens,
@@ -653,9 +663,16 @@ export class TriggerLab {
     writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
     this.persistDispose();
     this.persistDispose = null;
+    // Cancel any pending indicator transition and re-arm the mount guard for a future start().
+    this.saveStatusCtl.dispose();
+    this.autosaveArmed = false;
   }
 
   private scheduleSave(lib: ShowLibrary): void {
+    // Show "Saving…" the moment an edit schedules a write — but skip the autosave $effect's
+    // first (mount) run, which fires with no user edit and shouldn't blip the indicator.
+    if (this.autosaveArmed) this.saveStatusCtl.saving();
+    else this.autosaveArmed = true;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
@@ -666,6 +683,9 @@ export class TriggerLab {
       // …and pushes the authored show library to the server (the source of truth), so a
       // browser-storage clear no longer loses shows. Sig-guarded; no-op until the first state.
       this.syncLibraryToServer();
+      // The write (local cache + server push) has flushed → settle to "Saved" (held at
+      // "Saving…" for the min-visible window first). A no-op for the skipped mount save.
+      this.saveStatusCtl.saved();
     }, SAVE_DEBOUNCE_MS);
   }
 
