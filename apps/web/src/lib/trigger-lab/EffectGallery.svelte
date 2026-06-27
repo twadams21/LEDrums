@@ -25,7 +25,9 @@
 
   // Snap the scope tab to the block being edited whenever the gallery opens.
   $effect(() => {
-    if (block?.kind === 'play') tab = block.scope;
+    // Effects only carry an intrinsic drum/kit scope; a hoop-scoped node draws from
+    // the drum-scoped pool (a hoop is a sub-region of a drum), so clamp hoop → drum.
+    if (block?.kind === 'play') tab = block.scope === 'hoop' ? 'drum' : block.scope;
   });
 
   const shown = $derived.by(() => {
@@ -82,7 +84,7 @@
             type="button"
             onclick={() => pick(eff.id)}
           >
-            <EffectThumb pattern={eff.pattern} params={previewParams(eff.id)} w={170} h={92} />
+            <EffectThumb pattern={eff.pattern} params={previewParams(eff.id)} generatorId={eff.generatorId} labModel={store.labModel} w={170} h={92} />
             <span class="name">{eff.name}</span>
             <span class="meta">{eff.pattern} · {eff.busId}</span>
           </button>

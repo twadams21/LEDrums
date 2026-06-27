@@ -3,17 +3,21 @@
      3D kit uses, mapped onto a small 2D grid (x ≈ hoop angle, y ≈ hoop height).
      Driven by the effect's pattern + the instance/preset params. Throwaway. */
   import type { ParamValues, Pattern } from './sim';
-  import type { PixelAttrs } from './kit';
+  import type { LabModel, PixelAttrs } from './kit';
   import { sampleWith } from './render';
   import { hueToRgb } from './kit';
+  import { renderGeneratorThumbFrame } from './effect-thumb-render';
+  import { tryGetEffect } from '@ledrums/core';
 
   interface Props {
     pattern: Pattern;
     params: ParamValues;
+    generatorId?: string;
+    labModel?: LabModel;
     w?: number;
     h?: number;
   }
-  let { pattern, params, w = 64, h = 36 }: Props = $props();
+  let { pattern, params, generatorId, labModel, w = 64, h = 36 }: Props = $props();
 
   const num = (v: number | boolean | undefined, d: number) => (typeof v === 'number' ? v : d);
 
@@ -42,6 +46,21 @@
   })();
 
   let canvas = $state<HTMLCanvasElement>();
+  let genState = $state<any>(null);
+
+  $effect(() => {
+    // Initialize generator state when a generator effect is first rendered with its lab model.
+    if (generatorId && labModel && !genState) {
+      const gen = tryGetEffect(generatorId);
+      if (gen?.createState) {
+        genState = gen.createState(labModel.pm);
+      }
+    }
+    // Reset state if switching away from generator effects.
+    if (!generatorId || !labModel) {
+      genState = null;
+    }
+  });
 
   $effect(() => {
     const cv = canvas;
@@ -55,6 +74,8 @@
     // read params reactively so the thumb updates as the preset changes
     const p = params;
     const pat = pattern;
+    const genId = generatorId;
+    const lab = labModel;
     const hue = num(p.hue, 0);
     const bright = num(p.brightness, 1);
     const t0 = performance.now();
@@ -62,17 +83,38 @@
 
     const draw = (now: number): void => {
       const t = (now - t0) / 1000;
+      const tMs = (now - t0);
       ctx.fillStyle = '#0a0d12';
       ctx.fillRect(0, 0, w, h);
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const i = r * COLS + c;
-          const [si, hoff] = sampleWith(pat, t, i, attrs, p);
-          const amp = si * bright;
-          if (amp <= 0.02) continue;
-          const [R, G, B] = hueToRgb(hue + hoff, amp);
-          ctx.fillStyle = `rgb(${R},${G},${B})`;
-          ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
+
+      // Branch: generator-backed vs pattern effect
+      if (genId && lab) {
+        const pixels = renderGeneratorThumbFrame(genId, p, tMs, lab.pm, genState);
+        if (pixels) {
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              const i = r * COLS + c;
+              const [inten, hoff] = pixels[i]!;
+              const amp = inten * bright;
+              if (amp <= 0.02) continue;
+              const [R, G, B] = hueToRgb(hue + hoff, amp);
+              ctx.fillStyle = `rgb(${R},${G},${B})`;
+              ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
+            }
+          }
+        }
+      } else {
+        // Pattern-backed effect (original fast path)
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const i = r * COLS + c;
+            const [si, hoff] = sampleWith(pat, t, i, attrs, p);
+            const amp = si * bright;
+            if (amp <= 0.02) continue;
+            const [R, G, B] = hueToRgb(hue + hoff, amp);
+            ctx.fillStyle = `rgb(${R},${G},${B})`;
+            ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
+          }
         }
       }
       raf = requestAnimationFrame(draw);
