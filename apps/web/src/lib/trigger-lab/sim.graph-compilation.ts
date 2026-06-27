@@ -5,16 +5,19 @@
    the Block-tree → graph compiler (treeToGraph), and the legacy velocity → value
    switch fold migration. Pure — no behaviour change. Part of the throwaway lab.
 
-   NOTE (for S4.4 — canonical graph types): the graph TYPES below
-   (`NodeKind`, `GraphNode`, `GraphEdge`, `TriggerGraph`) are the local sim
-   mirror of the engine's graph types. S4.4 re-points these to `@ledrums/core`;
-   left as-is here. The block-tree types they consume (`Block`, `BlockKind`,
-   `PlayMode`, `Scope`, `SwitchOn`, `ValueMode`) still live in `./sim`.
+   NOTE (S4.4 — canonical graph types, DONE): the graph types `NodeKind` /
+   `GraphNode` / `GraphEdge` / `TriggerGraph` are now CANONICAL in `@ledrums/core`
+   (`voice/types.ts`) and re-exported here as type aliases (`voice.*`) so the
+   public `./sim` surface is unchanged — they are no longer declared locally.
+   `GraphNode.source` is `voice.TriggerSource` (also aliased in
+   `./sim.trigger-source`). Type-only import — adds NO runtime dependency on core
+   (core stays pure). The block-tree types they consume (`Block`, `BlockKind`)
+   still live in `./sim`.
    ============================================================================= */
 
-import { cloneEnvelope, type EnvMap, type ParamValues } from './sim.envelopes';
-import type { Block, BlockKind, PlayMode, Scope, SwitchOn, ValueMode } from './sim';
-import type { TriggerSource } from './sim.trigger-source';
+import type { voice } from '@ledrums/core';
+import { cloneEnvelope, type EnvMap } from './sim.envelopes';
+import type { Block, BlockKind } from './sim';
 
 // ---- Block-tree traversal ---------------------------------------------------
 
@@ -35,60 +38,14 @@ export function blockChildren(b: Block): Block[] {
 
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
-export type NodeKind = 'trigger' | BlockKind;
-
-/** A node in the freeform trigger graph. Carries every kind's fields (only the
-    ones for its `kind` are meaningful) so the editor + dialogs need no narrowing. */
-export interface GraphNode {
-  id: string;
-  kind: NodeKind;
-  x: number;
-  y: number;
-  // play
-  mode: PlayMode;
-  scope: Scope;
-  effectId: string;
-  presetId: string;
-  /** layer/bus override for this node ('' → the effect's default bus). */
-  busId: string;
-  params: ParamValues;
-  env: EnvMap;
-  linked: boolean;
-  // random
-  noRepeat: boolean;
-  // switch
-  on: SwitchOn;
-  /** value-switch sub-mode (only meaningful when on==='value'). */
-  valueMode: ValueMode;
-  /** gate cutoff 0..1 (value-switch gate). */
-  threshold: number;
-  /** gate direction: false → pass when value ≤ threshold; true → pass when value > threshold. */
-  invert: boolean;
-  /** ascending band cutoffs 0..1 (value-switch bands). N bands = N−1 cutoffs; the
-      last band is "the rest" (value above the final cutoff). */
-  bands: number[];
-  // chance
-  p: number;
-  // trigger (only meaningful on the `trigger` node)
-  /** What input fires this graph. Optional + additive: graphs persisted before the
-      trigger-source model lack it — the store hydrate back-fills a `drum` source from
-      the pad key for pad-bound graphs; authored graphs stay unset until bound. */
-  source?: TriggerSource;
-}
-
-export interface GraphEdge {
-  id: string;
-  from: string; // source node id (output port)
-  to: string; // target node id (input port)
-  /** source handle id this edge leaves from. undefined = the node's default single
-      output (back-compat). For a value+bands switch, band i's handle is `band-${i}`. */
-  fromPort?: string;
-}
-
-export interface TriggerGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
+/* Canonical in `@ledrums/core` (`voice/types.ts`) — re-exported here as type
+   aliases so the `./sim` surface is unchanged. `GraphNode` carries every kind's
+   fields (only the ones for its `kind` are meaningful) so editors need no
+   narrowing; `GraphNode.source` is `voice.TriggerSource`. See the header NOTE. */
+export type NodeKind = voice.NodeKind;
+export type GraphNode = voice.GraphNode;
+export type GraphEdge = voice.GraphEdge;
+export type TriggerGraph = voice.TriggerGraph;
 
 /** Block kinds a user can add as graph nodes (the trigger input is implicit). */
 export const NODE_KINDS: BlockKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle'];

@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import type { EffectCategory } from '@ledrums/core';
+import type { EffectCategory, voice } from '@ledrums/core';
 import { cloneEnvelope, type EnvMap, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
@@ -55,10 +55,12 @@ export type PlayMode = 'oneshot' | 'loop' | 'hold';
 /** What a switch routes on. `value` (gate/bands) is the canonical intensity-routing
     mode; the older `velocity` mode was a near-duplicate (even count split on the same
     normalized intensity) and was folded into `value` and removed — see
-    {@link foldVelocitySwitch}. `section`/`beat` are count-based and unchanged. */
-export type SwitchOn = 'section' | 'beat' | 'value';
-/** Sub-mode of a `value` switch: a single pass/block gate, or N value bands. */
-export type ValueMode = 'gate' | 'bands';
+    {@link foldVelocitySwitch}. `section`/`beat` are count-based and unchanged.
+    CANONICAL in core `voice/types.ts` — re-exported here as a type alias (S4.4). */
+export type SwitchOn = voice.SwitchOn;
+/** Sub-mode of a `value` switch: a single pass/block gate, or N value bands.
+    CANONICAL in core `voice/types.ts` — re-exported here as a type alias (S4.4). */
+export type ValueMode = voice.ValueMode;
 export type Scope = 'drum' | 'kit';
 export type BlockKind = Block['kind'];
 

@@ -6,18 +6,17 @@
    byte-for-byte. Pure — no behaviour change. Part of the throwaway lab.
    ============================================================================= */
 
+import type { voice } from '@ledrums/core';
 import { clampUnit } from './sim.envelopes';
 import type { TriggerGraph } from './sim.graph-compilation';
 
 /** What input fires a trigger graph — declared on the graph's `trigger` node. A tagged
-    union: `drum` is the existing implicit padKey binding (`"drumId:zone"`) made explicit;
-    `midi` (a note OR a CC) and `osc` (an address) are direct bindings for AUTHORED graphs
-    that have no physical drum zone. The MIDI channel and OSC host/namespace live on the
-    patch device, NOT here. Mirrored byte-for-byte in core `voice/types.ts`. */
-export type TriggerSource =
-  | { kind: 'drum'; drumId: string; zone: string }
-  | { kind: 'midi'; note?: number; cc?: number }
-  | { kind: 'osc'; address: string };
+    union: `drum` is the implicit padKey binding (`"drumId:zone"`) made explicit; `midi`
+    (a note OR a CC) and `osc` (an address) are direct bindings for AUTHORED graphs that
+    have no physical drum zone. The MIDI channel and OSC host/namespace live on the patch
+    device, NOT here. CANONICAL in core `voice/types.ts`; re-exported here as a type alias
+    (S4.4) so the `./sim` surface is unchanged. Type-only — no runtime dep on core added. */
+export type TriggerSource = voice.TriggerSource;
 
 /** A raw fire from one of the three trigger sources, in that source's native units.
     Normalized to the trigger's 0..1 value by {@link normalizeTriggerValue} — the single

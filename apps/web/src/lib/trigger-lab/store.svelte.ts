@@ -44,7 +44,7 @@ import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
 import type { SerializedModel } from '../ws/protocol-types';
-import type { InputMap, OutputConfig, Project } from '@ledrums/core';
+import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
@@ -118,7 +118,7 @@ export class TriggerLab {
       distinction: pad graphs (keyed `drumId:zone`) and graphs minted via createGraph()
       / duplicateGraph() (keyed `graph-<n>`) are all first-class, generic graphs that
       rename / duplicate / delete uniformly. */
-  graphs = $state<Record<string, TriggerGraph>>(seedGraphs());
+  graphs = $state<Record<string, voice.TriggerGraph>>(seedGraphs());
   /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
       e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
@@ -135,8 +135,8 @@ export class TriggerLab {
   selectedPadKey = $state<string | null>(padKey(PADS[2]!));
 
   // popups (targets are play nodes from the active graph)
-  galleryBlock = $state<GraphNode | null>(null); // effect swap
-  settingsBlock = $state<GraphNode | null>(null); // preset + params + envelopes
+  galleryBlock = $state<voice.GraphNode | null>(null); // effect swap
+  settingsBlock = $state<voice.GraphNode | null>(null); // preset + params + envelopes
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
   creatorOpen = $state(false); // effect creator
 
@@ -275,7 +275,7 @@ export class TriggerLab {
   }
 
   selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
-  selectedGraph = $derived(this.selectedPadKey ? this.graphs[this.selectedPadKey] ?? null : null);
+  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.graphs[this.selectedPadKey] ?? null : null);
   beatPhase = $derived((this.beat % 4) / 4);
 
   // show derived
@@ -1126,7 +1126,7 @@ export class TriggerLab {
     return this.presets.find((p) => p.id === id);
   }
   /** Live params shown for a play node (linked → shared preset, else instance). */
-  liveParams(node: GraphNode) {
+  liveParams(node: GraphNode): voice.ParamValues {
     if (node.kind !== 'play') return {};
     return node.linked ? this.presetById(node.presetId)?.params ?? node.params : node.params;
   }
