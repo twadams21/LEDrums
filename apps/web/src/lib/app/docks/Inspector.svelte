@@ -1,69 +1,35 @@
 <script lang="ts">
-  /* Right-dock Inspector — contextual settings for whatever is selected in the
-     shell (a trigger-graph node, a layer/bus, or a Patch device). There is no
-     separate Settings page; switching views resets the selection. Effect Gallery,
-     Envelope Editor and Effect Creator stay as summoned overlays — opened from
-     here via the engine store. */
+  /* Right-dock Inspector — contextual settings for whatever is selected in the shell (a
+     trigger-graph node, a layer/bus, a Patch device, or a setlist section). There is no
+     separate Settings page; switching views resets the selection. This is the thin
+     dispatcher: it resolves the selection to a primary object and hands off to a focused
+     per-kind editor under `inspectors/`. The shared chrome it owns is the node header (kind
+     selector + remove) and the Patch header / offline banner. Effect Gallery, Envelope Editor
+     and Effect Creator stay as summoned overlays, opened from the editors via the engine store. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
-  import { describeTriggerSource, zoneLabel } from '../trigger-source-label';
-  import { isReservedCc, RESERVED_CC, sectionRecall } from '../recall';
-  import { ZONE_LABELS } from '../../trigger-lab/fixtures';
-  import {
-    type GraphNode,
-    type NodeKind,
-    type Polyphony,
-    type SwitchOn,
-    type TriggerSource,
-    type ValueMode,
-  } from '../../trigger-lab/sim';
-  import { busIcon } from '../views/trigger-node-meta';
-  import {
-    PROTOCOL_OPTS,
-    RGB_OPTS,
-    MODE_OPTS,
-    LINK_OPTS,
-    POLY_OPTS,
-    KIND_OPTS,
-    SWITCH_OPTS,
-    VALUEMODE_OPTS,
-    SOURCE_OPTS,
-    MIDI_OPTS,
-    pct,
-    num,
-    fmt,
-    fmtSpan,
-    uLabel,
-  } from '../views/node-options';
-  import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
-  import Slider from '../../ui/Slider.svelte';
+  import { sectionRecall } from '../recall';
+  import { type GraphNode, type NodeKind } from '../../trigger-lab/sim';
+  import { KIND_OPTS } from '../views/node-options';
+  import { patchEditorFor, type PatchEditor } from './patch-inspector';
+  import { patchLabel } from './inspectors/forms';
   import Select from '../../ui/Select.svelte';
-  import SegmentedControl from '../../ui/SegmentedControl.svelte';
-  import Toggle from '../../ui/Toggle.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
-  import Field from '../../ui/Field.svelte';
-  import CommitInput from '../../ui/CommitInput.svelte';
-  import type { DrumConfig, KitConfig, RgbOrder } from '@ledrums/core';
-  import { patchToOutputs, pixelRanges, type HoopRef, type PatchRouting, type PixelSpan } from '../patch-routing';
-  import {
-    hoopPixelSpan,
-    orderedDataLines,
-    patchEditorFor,
-    pixelsPerHoopForDrum,
-    setZoneMidiNote,
-    setZoneOscAddress,
-    zoneMidiNote,
-    zoneOscAddress,
-    type PatchEditor,
-  } from './patch-inspector';
-  import CopyPlus from '@lucide/svelte/icons/copy-plus';
-  import Replace from '@lucide/svelte/icons/replace';
-  import Spline from '@lucide/svelte/icons/spline';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Plus from '@lucide/svelte/icons/plus';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+  import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
+  import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
+  import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
+  import BusInspector from './inspectors/BusInspector.svelte';
+  import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
+  import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
+  import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
+  import PatchDataLineInspector from './inspectors/PatchDataLineInspector.svelte';
+  import PatchOutputInspector from './inspectors/PatchOutputInspector.svelte';
+  import PatchControllerInspector from './inspectors/PatchControllerInspector.svelte';
+  import SectionInspector from './inspectors/SectionInspector.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -74,17 +40,10 @@
     if (sel?.kind !== 'node') return null;
     return store.selectedGraph?.nodes.find((n) => n.id === sel.nodeId) ?? null;
   });
-  const eff = $derived(node && node.kind === 'play' ? store.effectOf(node) : undefined);
-  const live = $derived(node && node.kind === 'play' ? store.liveParams(node) : {});
-  const presetOptions = $derived(
-    eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : [],
-  );
 
   const bus = $derived(sel?.kind === 'bus' ? store.buses.find((b) => b.id === sel.busId) ?? null : null);
 
   // --- Section selection (transport recall) --------------------------------------
-  // A selected setlist section drives a small panel: an inline rename + the read-only
-  // recall strings (OSC + MIDI CC#0 for the section, Program Change for its parent song).
   // Resolve the section, its parent song, and their setlist indices — searching ALL songs
   // (not just the active one) so the panel stays correct if the active song changes while a
   // section is inspected. The recall indices match the server's convention (song index in
@@ -100,255 +59,17 @@
   });
 
   // --- Patch graph per-node editors (S4) -----------------------------------------
-  // Each Patch node edits the real device setting it represents: geometry/input read from
-  // the authoritative store.project and write back through the S3 mutators. Read-outs
-  // (first/last pixel, ordering) derive from the LIVE graph routing the patch view publishes
-  // (shell.patchRouting) — keyed by the actual graph node ids — so a just-added palette data
-  // line or an un-remounted reorder reads correctly (S5b). No-op-safe while offline (project
-  // null): pixelsForHoop returns 0 without a kit, so spans simply don't resolve.
+  // Decode the selected Patch node into the editor it opens; the editor reads the
+  // authoritative store.project + the live patch routing itself. `project` here only gates
+  // the shared offline banner.
   const patchId = $derived(sel?.kind === 'patch' ? sel.nodeId : null);
   const ed = $derived<PatchEditor | null>(patchId ? patchEditorFor(patchId) : null);
   const project = $derived(store.project);
-  const kit = $derived<KitConfig | null>(project?.kit ?? null);
-  const outputCfg = $derived(project?.output ?? null);
-
-  const liveRouting = $derived<PatchRouting | null>(shell.patchRouting);
-  function pixelsForHoop(h: HoopRef): number {
-    const d = kit?.drums.find((x) => x.id === h.drumId);
-    return d && kit ? pixelsPerHoopForDrum(d, kit) : 0;
-  }
-  const ranges = $derived(liveRouting ? pixelRanges(liveRouting, pixelsForHoop) : null);
-  const orderedLines = $derived(liveRouting ? orderedDataLines(liveRouting) : []);
-
-  // the drum behind a drum / hoop / zone selection; the OutputConfig behind an output one.
-  const patchDrum = $derived.by<DrumConfig | null>(() => {
-    if (!kit || !ed || !('drumId' in ed)) return null;
-    return kit.drums.find((x) => x.id === ed.drumId) ?? null;
-  });
-  const patchOutput = $derived.by(() => {
-    if (!kit || ed?.kind !== 'output') return null;
-    return kit.outputs.find((o) => o.id === ed.outputId) ?? null;
-  });
-
-  function patchLabel(id: string, fallback: string): string {
-    return store.patchLabels[id]?.trim() || fallback;
-  }
-  function commitLabel(id: string, fallback: string, raw: string): void {
-    const v = raw.trim();
-    store.setPatchLabel(id, v && v !== fallback ? v : '');
-  }
-  function drumName(drumId: string): string {
-    return store.drums.find((x) => x.id === drumId)?.label ?? drumId;
-  }
-  /** Apply a finite parsed number from a CommitInput; a cleared ('') field is ignored. */
-  function onNum(raw: string, apply: (n: number) => void): void {
-    if (raw === '') return;
-    const n = Number(raw);
-    if (Number.isFinite(n)) apply(n);
-  }
-  function setAxis(drumId: string, field: 'origin' | 'rotation', axis: 'x' | 'y' | 'z', n: number): void {
-    const d = kit?.drums.find((x) => x.id === drumId);
-    if (d) store.setDrumTransform(drumId, { [field]: { ...d[field], [axis]: n } });
-  }
-  /** Rebuild the outputs array with one port's transport scalars changed → setRouting.
-      A blank `startUniverse` (undefined) clears the snap → the port packs dense. */
-  function setOutputScalar(outputId: string, partial: { startUniverse?: number; channelsPerPixel?: number }): void {
-    if (!kit) return;
-    store.setRouting(kit.outputs.map((o) => (o.id === outputId ? { ...o, ...partial } : o)));
-  }
-  /** Set (or clear, when undefined) a data line's optional startUniverse snap, keyed by its
-      graph node id — edits the LIVE routing and recompiles → setRouting. Blank = dense. */
-  function setDataLineUniverse(lineNodeId: string, startUniverse: number | undefined): void {
-    if (!liveRouting) return;
-    const updated: PatchRouting = {
-      outputs: liveRouting.outputs.map((o) => ({
-        ...o,
-        dataLines: o.dataLines.map((dl) => (dl.id === lineNodeId ? { ...dl, startUniverse } : dl)),
-      })),
-    };
-    store.setRouting(patchToOutputs(updated));
-  }
-  function setZoneNote(drumId: string, slot: number, note: number | null): void {
-    if (project) store.setInputMap(setZoneMidiNote(project.inputMap, drumId, slot, note));
-  }
-  function setZoneOsc(drumId: string, slot: number, address: string | null): void {
-    if (project) store.setInputMap(setZoneOscAddress(project.inputMap, drumId, slot, address));
-  }
-
-  // Store-bound option array stays here (reactive over the live buses); the static option
-  // lists (MODE/LINK/POLY/KIND/SWITCH/VALUEMODE/SOURCE/MIDI/PROTOCOL/RGB) and the value
-  // formatters (pct/num/fmt/fmtSpan/uLabel) live in the shared `node-options` module.
-  const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
-
-  // --- Trigger-node source editor (U2) -------------------------------------------
-  // The trigger node (graph root) declares what input fires its graph — a drum zone, a
-  // raw MIDI note/CC, or an OSC address (U1's TriggerSource). Writes go through the U1
-  // mutator store.setTriggerSource(<graph key>, source); the readout + the node sub-line
-  // resolve via the pure describeTriggerSource helper. The graph key is store.selectedPadKey.
-  const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
-
-  /** Zone <Select> options for a drum: the zones it exposes as pads (its hoops in use),
-      always including the current binding, falling back to all four hoop labels. */
-  function zoneOptsFor(drumId: string, current: string): Array<{ value: string; label: string }> {
-    const ids: string[] = []; // ≤4 zones — a plain unique-push is plenty (no reactive Set)
-    const add = (z: string): void => {
-      if (z && !ids.includes(z)) ids.push(z);
-    };
-    for (const p of store.pads) if (p.drumId === drumId) add(String(p.zone));
-    add(current);
-    ids.sort((a, b) => Number(a) - Number(b));
-    const list = ids.length ? ids : ZONE_LABELS.map((_, i) => String(i));
-    return list.map((z) => ({ value: z, label: zoneLabel(z) }));
-  }
-
-  /** Switch the trigger source to a new kind, carrying compatible fields and filling
-      least-surprising defaults (first drum + centre · middle MIDI note · empty address). */
-  function setSourceKind(gkey: string, cur: TriggerSource | undefined, kind: TriggerSource['kind']): void {
-    let next: TriggerSource;
-    if (kind === 'drum') next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId: store.drums[0]?.id ?? '', zone: '0' };
-    else if (kind === 'midi') next = cur?.kind === 'midi' ? cur : { kind: 'midi', note: 60 };
-    else next = cur?.kind === 'osc' ? cur : { kind: 'osc', address: '' };
-    store.setTriggerSource(gkey, next);
-  }
-
-  /** Flip a MIDI source between note and CC, carrying the current number across. CC 0 is
-      reserved for global section recall, so switching to CC nudges off it (→ 1). */
-  function setMidiMode(gkey: string, cur: Extract<TriggerSource, { kind: 'midi' }>, mode: 'note' | 'cc'): void {
-    const n = cur.cc ?? cur.note ?? 0;
-    if (mode === 'cc') store.setTriggerSource(gkey, { kind: 'midi', cc: isReservedCc(n) ? RESERVED_CC + 1 : n });
-    else store.setTriggerSource(gkey, { kind: 'midi', note: n });
-  }
-
-  /** Commit a CC number for a trigger source, rejecting the reserved controller (no write —
-      CC 0 stays bound to global section recall). Note numbers pass straight through. */
-  function commitMidiNumber(gkey: string, isCc: boolean, n: number): void {
-    if (isCc && isReservedCc(n)) return; // CC 0 reserved — ignore
-    store.setTriggerSource(gkey, isCc ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
-  }
-
-  /** One-line description for the container/modifier kinds that take no extra control. */
-  function kindBlurb(kind: NodeKind): string {
-    switch (kind) {
-      case 'all':
-        return 'Plays every wired child at once.';
-      case 'sequence':
-        return 'Plays the next wired child on each hit, in order.';
-      case 'toggle':
-        return 'Alternates its child on / off with each hit.';
-      default:
-        return 'A container — wire its children on the canvas.';
-    }
-  }
-
 </script>
 
 <div class="inspector">
   {#if node && node.kind === 'trigger'}
-    <!-- the graph's input — declares what fires it (source); kind/remove stay off-limits -->
-    {@const src = node.source}
-    {@const gkey = store.selectedPadKey}
-    {@const kindNow = src?.kind ?? 'drum'}
-    <header class="ihead">
-      <div class="titles">
-        <h3>
-          {store.selectedPad
-            ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
-            : gkey
-              ? store.graphLabel(gkey)
-              : 'Trigger'}
-        </h3>
-        <span class="sub">graph input</span>
-      </div>
-      {#if gkey}
-        <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
-      {/if}
-    </header>
-    <div class="trigbody">
-      <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
-      <Field label="Trigger source">
-        <SegmentedControl
-          value={kindNow}
-          options={SOURCE_OPTS}
-          onChange={(v) => gkey && setSourceKind(gkey, src, v as TriggerSource['kind'])}
-          ariaLabel="Trigger source"
-        />
-      </Field>
-
-      {#if kindNow === 'drum'}
-        {@const drumId = src?.kind === 'drum' ? src.drumId : store.drums[0]?.id ?? ''}
-        {@const zone = src?.kind === 'drum' ? src.zone : '0'}
-        <Field label="Drum">
-          <Select
-            value={drumId}
-            options={DRUM_OPTS}
-            onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId: v, zone })}
-            ariaLabel="Drum"
-          />
-        </Field>
-        <Field label="Zone">
-          <Select
-            value={zone}
-            options={zoneOptsFor(drumId, zone)}
-            onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId, zone: v })}
-            ariaLabel="Zone"
-          />
-        </Field>
-      {:else if src?.kind === 'midi'}
-        {@const isCc = src.cc !== undefined}
-        <Field label="Type">
-          <SegmentedControl
-            value={isCc ? 'cc' : 'note'}
-            options={MIDI_OPTS}
-            onChange={(v) => gkey && setMidiMode(gkey, src, v as 'note' | 'cc')}
-            ariaLabel="MIDI note or CC"
-          />
-        </Field>
-        <Field label={isCc ? 'CC number' : 'Note number'} hint={isCc ? '1–127' : '0–127'}>
-          <CommitInput
-            type="number"
-            min={isCc ? RESERVED_CC + 1 : 0}
-            max={127}
-            value={(isCc ? src.cc : src.note) ?? ''}
-            placeholder={isCc ? '1–127' : '0–127'}
-            ariaLabel={isCc ? 'CC number' : 'Note number'}
-            onCommit={(v) => onNum(v, (n) => gkey && commitMidiNumber(gkey, isCc, n))}
-          />
-        </Field>
-        {#if isCc}
-          <p class="hint">CC 0 reserved for section recall.</p>
-        {/if}
-        <p class="hint">Channel comes from the patch device, not here.</p>
-      {:else if src?.kind === 'osc'}
-        <Field label="Address" hint="e.g. /kick">
-          <CommitInput
-            value={src.address}
-            mono
-            autofocus={false}
-            placeholder="/kick"
-            ariaLabel="OSC address"
-            onCommit={(v) => gkey && store.setTriggerSource(gkey, { kind: 'osc', address: v.trim() })}
-          />
-        </Field>
-        <p class="hint">Namespace / host comes from the patch device, not here.</p>
-      {/if}
-
-      <div class="readrow">
-        <span class="k">Resolves to</span>
-        <span class="rval">{describeTriggerSource(src, store.drums).sub}</span>
-      </div>
-
-      {#if gkey && gkey in store.graphs}
-        <Field label="Name" hint="display label">
-          <CommitInput
-            value={store.graphLabel(gkey)}
-            autofocus={false}
-            placeholder="New graph"
-            ariaLabel="Graph name"
-            onCommit={(v) => store.renameGraph(gkey, v)}
-          />
-        </Field>
-      {/if}
-    </div>
+    <TriggerSourceInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">
@@ -357,204 +78,20 @@
       </span>
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
-
     {#if node.kind === 'play'}
-      {#if eff}
-        <header class="ihead">
-          <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} w={72} h={40} /></div>
-          <div class="titles">
-            <h3>{eff.name}</h3>
-            <span class="sub">{eff.pattern} · {eff.scope}</span>
-          </div>
-          <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
-        </header>
-
-        <div class="bar">
-          <label class="lblrow">
-            <span class="k">Preset</span>
-            <Select value={node.presetId} options={presetOptions} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
-          </label>
-          <SegmentedControl
-            value={node.linked ? 'linked' : 'instance'}
-            options={LINK_OPTS}
-            onChange={(v) => {
-              if ((v === 'linked') !== node.linked) store.toggleLink(node);
-            }}
-            ariaLabel="Instance or linked preset"
-          />
-        </div>
-
-        <div class="seg2">
-          <SegmentedControl value={node.mode} options={MODE_OPTS} onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop' | 'hold')} ariaLabel="Play mode" />
-          <SegmentedControl value={store.busOf(node)} options={LAYER_OPTS} onChange={(v) => store.setBus(node, v)} ariaLabel="Layer" />
-        </div>
-
-        <div class="params">
-          {#each eff.params as spec (spec.key)}
-            {@const enveloped = store.isEnveloped(node, spec.key)}
-            <div class="prow">
-              <span class="plabel">{spec.label}</span>
-              {#if spec.kind === 'number'}
-                <Slider
-                  value={num(live[spec.key], 0)}
-                  min={spec.min}
-                  max={spec.max}
-                  step={spec.step}
-                  disabled={enveloped}
-                  format={(v) => (enveloped ? 'swept' : fmt(spec, v))}
-                  onChange={(v) => store.setParam(node, spec.key, v)}
-                  ariaLabel={spec.label}
-                />
-              {:else}
-                <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
-              {/if}
-              {#if spec.envable}
-                <button class="envbtn" class:on={enveloped} onclick={() => store.openEnv(node, spec.key)} title="Assign envelope">
-                  <Spline size={12} aria-hidden="true" />
-                  {store.envKind(node, spec.key)}
-                </button>
-              {:else}
-                <span class="envspace"></span>
-              {/if}
-            </div>
-          {/each}
-        </div>
-
-        <p class="foot">
-          {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.
-        </p>
-      {:else}
-        <div class="kindbody">
-          <p class="hint">This play node has no effect yet — change its kind above, or pick an effect from the canvas.</p>
-        </div>
-      {/if}
-    {:else if node.kind === 'random'}
-      <div class="kindbody">
-        <label class="check">
-          <input type="checkbox" checked={node.noRepeat} onchange={(e) => store.setNoRepeat(node, e.currentTarget.checked)} />
-          No-repeat
-        </label>
-        <p class="hint">Picks a random wired child on each hit{node.noRepeat ? ', never the same one twice running' : ''}.</p>
-      </div>
-    {:else if node.kind === 'switch'}
-      <div class="kindbody">
-        <label class="lblrow">
-          <span class="k">On</span>
-          <Select value={node.on} options={SWITCH_OPTS} onChange={(v) => store.setSwitchOn(node, v as SwitchOn)} ariaLabel="Switch on" />
-        </label>
-        {#if node.on === 'value'}
-          {@const mode = node.valueMode ?? 'gate'}
-          <SegmentedControl value={mode} options={VALUEMODE_OPTS} onChange={(v) => store.setValueMode(node, v as ValueMode)} ariaLabel="Value mode" />
-          {#if mode === 'gate'}
-            {@const threshold = node.threshold ?? 0.5}
-            {@const invert = node.invert ?? false}
-            <label class="lblrow">
-              <span class="k">Threshold</span>
-              <span class="sld"><Slider min={0} max={1} step={0.01} value={threshold} onChange={(v) => store.setThreshold(node, v)} format={pct} ariaLabel="Gate threshold" /></span>
-            </label>
-            <label class="lblrow">
-              <span class="k">Invert</span>
-              <Toggle pressed={invert} onChange={(v) => store.setInvert(node, v)} ariaLabel="Invert gate" />
-            </label>
-            <p class="hint">
-              {invert
-                ? `Passes when value > ${pct(threshold)} — does nothing below.`
-                : `Passes when value ≤ ${pct(threshold)} — does nothing above.`}
-            </p>
-          {:else}
-            {@const cuts = node.bands && node.bands.length ? node.bands : [0.5]}
-            <div class="bandlist">
-              {#each cuts as cut, i (i)}
-                <div class="bandrow">
-                  <span class="bnum">{i + 1}</span>
-                  <span class="k">≤</span>
-                  <span class="sld"><Slider min={0} max={1} step={0.01} value={cut} onChange={(v) => store.setBandCutoff(node, i, v)} format={pct} ariaLabel={`Band ${i + 1} cutoff`} /></span>
-                  <IconButton icon={Trash2} label="Remove band" variant="soft" size={13} disabled={cuts.length <= 1} onclick={() => store.removeBand(node, i)} />
-                </div>
-              {/each}
-              <div class="bandrow rest">
-                <span class="bnum">{cuts.length + 1}</span>
-                <span class="restlabel">&gt; {pct(cuts[cuts.length - 1]!)} — the rest</span>
-              </div>
-              <button class="addband" type="button" onclick={() => store.addBand(node)}>
-                <Plus size={13} aria-hidden="true" /> Add band
-              </button>
-            </div>
-            <p class="hint">{cuts.length + 1} bands — wire a child to each band's handle on the node.</p>
-          {/if}
-        {:else}
-          <p class="hint">Routes to a wired child by {node.on}.</p>
-        {/if}
-      </div>
-    {:else if node.kind === 'chance'}
-      <div class="kindbody">
-        <label class="lblrow">
-          <span class="k">Chance</span>
-          <span class="sld">
-            <Slider min={0} max={1} step={0.05} value={node.p} onChange={(v) => store.setChance(node, v)} format={(v) => `${Math.round(v * 100)}%`} />
-          </span>
-        </label>
-        <p class="hint">Plays its wired child {Math.round(node.p * 100)}% of the time.</p>
-      </div>
+      <PlayNodeInspector {store} {node} />
     {:else}
-      <div class="kindbody">
-        <p class="hint">{kindBlurb(node.kind)}</p>
-      </div>
+      <ContainerNodeInspector {store} {node} />
     {/if}
   {:else if bus}
-    <header class="ihead">
-      <div class="titles">
-        <h3>{bus.name}</h3>
-        <span class="sub">voice bus · layer</span>
-      </div>
-    </header>
-    <div class="busbody">
-      <label class="lblrow">
-        <span class="k">Polyphony</span>
-        <SegmentedControl value={bus.polyphony} options={POLY_OPTS} onChange={(v) => store.setPolyphony(bus.id, v as Polyphony)} ariaLabel="Polyphony" />
-      </label>
-      <label class="lblrow">
-        <span class="k">Crossfade</span>
-        <span class="sld"><Slider min={60} max={2000} step={20} value={bus.crossfadeMs} onChange={(v) => store.setCrossfade(bus.id, v)} format={(v) => `${Math.round(v)}ms`} /></span>
-      </label>
-      <div class="meterrow">
-        <span class="k">Level</span>
-        <span class="meter" aria-hidden="true"><span style="transform:scaleX({store.busLevels[bus.id] ?? 0})"></span></span>
-      </div>
-      <p class="foot">
-        {bus.polyphony === 'mono'
-          ? 'Mono — a new voice steals + crossfades over the old (looks).'
-          : 'Poly — voices stack and decay (transients).'}
-      </p>
-    </div>
+    <BusInspector {store} {bus} />
   {:else if sel?.kind === 'patch' && ed}
     {@const editor = ed}
     {@const d = describePatchNode(sel.nodeId, store.drums)}
-
-    {#snippet renameField(id: string, fallback: string)}
-      <Field label="Name" hint="display label">
-        <CommitInput
-          value={patchLabel(id, fallback)}
-          autofocus={false}
-          allowEmpty
-          placeholder={fallback}
-          ariaLabel="Node name"
-          onCommit={(v) => commitLabel(id, fallback, v)}
-        />
-      </Field>
-    {/snippet}
-
-    {#snippet pixelRow(label: string, span: PixelSpan | null | undefined)}
-      <div class="readrow">
-        <span class="k">{label}</span>
-        <span class="rval">{fmtSpan(span)}</span>
-      </div>
-    {/snippet}
-
     <header class="ihead">
       <div class="titles">
         <Eyebrow>{d.stage}</Eyebrow>
-        <h3 class="patch-title">{patchLabel(sel.nodeId, d.title)}</h3>
+        <h3 class="patch-title">{patchLabel(store, sel.nodeId, d.title)}</h3>
         <span class="sub">{d.sub}</span>
       </div>
     </header>
@@ -574,338 +111,30 @@
         {/if}
 
         {#if editor.kind === 'zone'}
-          {@const note = project ? zoneMidiNote(project.inputMap, editor.drumId, editor.slot) : null}
-          {@const addr = project ? zoneOscAddress(project.inputMap, editor.drumId, editor.slot) : null}
-          <p class="grouphint">What fires this zone — <b>{drumName(editor.drumId)}</b> · slot {editor.slot}.</p>
-          <Field label="MIDI note" hint="0–127">
-            <CommitInput
-              type="number"
-              min={0}
-              max={127}
-              value={note ?? ''}
-              placeholder="none"
-              disabled={!project}
-              ariaLabel="MIDI note"
-              onCommit={(v) =>
-                v === '' ? setZoneNote(editor.drumId, editor.slot, null) : onNum(v, (n) => setZoneNote(editor.drumId, editor.slot, n))}
-            />
-          </Field>
-          <Field label="OSC address" hint="Sensory Percussion / Ableton">
-            <CommitInput
-              value={addr ?? ''}
-              mono
-              autofocus={false}
-              allowEmpty
-              placeholder="/drum/zone"
-              disabled={!project}
-              ariaLabel="OSC address"
-              onCommit={(v) => setZoneOsc(editor.drumId, editor.slot, v.trim() ? v : null)}
-            />
-          </Field>
-          {@render renameField(sel.nodeId, d.title)}
-        {:else if editor.kind === 'drum' && patchDrum}
-          {@const drum = patchDrum}
-          <div class="vgroup">
-            <span class="glabel">Origin <em>mm</em></span>
-            <div class="axes">
-              {#each ['x', 'y', 'z'] as const as ax (ax)}
-                <CommitInput
-                  type="number"
-                  value={drum.origin[ax]}
-                  disabled={!project}
-                  suffix={ax}
-                  ariaLabel={`Origin ${ax}`}
-                  onCommit={(v) => onNum(v, (n) => setAxis(drum.id, 'origin', ax, n))}
-                />
-              {/each}
-            </div>
-          </div>
-          <div class="vgroup">
-            <span class="glabel">Rotation <em>deg</em></span>
-            <div class="axes">
-              {#each ['x', 'y', 'z'] as const as ax (ax)}
-                <CommitInput
-                  type="number"
-                  value={drum.rotation[ax]}
-                  disabled={!project}
-                  suffix={ax}
-                  ariaLabel={`Rotation ${ax}`}
-                  onCommit={(v) => onNum(v, (n) => setAxis(drum.id, 'rotation', ax, n))}
-                />
-              {/each}
-            </div>
-          </div>
-          <Field label="Starting angle" hint="all 4 hoops">
-            <CommitInput
-              type="number"
-              value={drum.startAngleDeg}
-              disabled={!project}
-              suffix="°"
-              ariaLabel="Starting angle"
-              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { startAngleDeg: n }))}
-            />
-          </Field>
-          <Field label="Spin" hint="rotates pixel 0 around the hoop">
-            <CommitInput
-              type="number"
-              value={drum.localSpinDeg}
-              disabled={!project}
-              suffix="°"
-              ariaLabel="Spin"
-              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { localSpinDeg: n }))}
-            />
-          </Field>
-          <Field label="Pixels per hoop" hint="literal LED count">
-            <CommitInput
-              type="number"
-              min={1}
-              value={pixelsForHoop({ drumId: drum.id, hoop: 0 })}
-              disabled={!project}
-              suffix="px"
-              ariaLabel="Pixels per hoop"
-              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { pixelsPerHoop: n }))}
-            />
-          </Field>
-          <Field label="Hoop spacing" hint="vertical gap between hoops">
-            <CommitInput
-              type="number"
-              min={1}
-              value={drum.hoopSpacingMm}
-              disabled={!project}
-              suffix="mm"
-              ariaLabel="Hoop spacing"
-              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { hoopSpacingMm: n }))}
-            />
-          </Field>
-          <Field label="Diameter" hint="drum size — sets ring radius">
-            <CommitInput
-              type="number"
-              min={1}
-              value={drum.diameterIn}
-              disabled={!project}
-              suffix="in"
-              ariaLabel="Diameter"
-              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { diameterIn: n }))}
-            />
-          </Field>
-          {@render renameField(sel.nodeId, d.title)}
-        {:else if editor.kind === 'hoop' && patchDrum}
-          {@const drum = patchDrum}
-          {@const span = liveRouting ? hoopPixelSpan(liveRouting, { drumId: drum.id, hoop: editor.hoop }, pixelsForHoop) : null}
-          <Field label="Pixels per hoop" hint="literal count · applies to every hoop on this drum">
-            <CommitInput
-              type="number"
-              min={1}
-              value={pixelsForHoop({ drumId: drum.id, hoop: editor.hoop })}
-              disabled={!project}
-              suffix="px"
-              ariaLabel="Pixels per hoop"
-              onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { pixelsPerHoop: n }))}
-            />
-          </Field>
-          {@render pixelRow('First / last pixel', span)}
-          {#if !span}<p class="hint">Wire this hoop into a data line on the canvas to give it pixels.</p>{/if}
-          {@render renameField(sel.nodeId, d.title)}
+          <PatchZoneInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'drum'}
+          <PatchDrumInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'hoop'}
+          <PatchHoopInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'dataline'}
-          {@const entry = orderedLines.find((o) => o.line.id === sel.nodeId)}
-          {#if entry}
-            <div class="readrow"><span class="k">Order</span><span class="rval">#{entry.pos} in transmit order</span></div>
-            <div class="readrow">
-              <span class="k">Output</span>
-              <span class="rval">{patchLabel(`output:${entry.output.id}`, 'Output')} · {uLabel(entry.output.startUniverse)}</span>
-            </div>
-            {@render pixelRow('First / last pixel', ranges?.byDataLine[entry.line.id])}
-            <Field label="Start universe" hint="blank = dense / auto">
-              <CommitInput
-                type="number"
-                min={0}
-                value={entry.line.startUniverse ?? ''}
-                placeholder="dense"
-                disabled={!project}
-                ariaLabel="Data line start universe"
-                onCommit={(v) =>
-                  v === '' ? setDataLineUniverse(sel.nodeId, undefined) : onNum(v, (n) => setDataLineUniverse(sel.nodeId, n))}
-              />
-            </Field>
-            <p class="hint">
-              {entry.line.hoops.length} hoops. Re-order or re-wire on the Patch canvas — pixel order is what transmits; a start universe snaps this line to a hard boundary.
-            </p>
-          {:else}
-            <p class="hint">
-              A data line carries an ordered run of hoops to one output. Wire hoops into it on the canvas; its pixel span appears once the routing is saved.
-            </p>
-          {/if}
-          {@render renameField(sel.nodeId, d.title)}
+          <PatchDataLineInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'output'}
-          {#if patchOutput}
-            {@const cfg = patchOutput}
-            <p class="grouphint">A physical controller port. The controller owns universe offsets — leave blank to pack dense, or snap the port to a universe.</p>
-            <Field label="Start universe" hint="blank = dense / auto">
-              <CommitInput
-                type="number"
-                min={0}
-                value={cfg.startUniverse ?? ''}
-                placeholder="dense"
-                disabled={!project}
-                ariaLabel="Start universe"
-                onCommit={(v) =>
-                  v === '' ? setOutputScalar(cfg.id, { startUniverse: undefined }) : onNum(v, (n) => setOutputScalar(cfg.id, { startUniverse: n }))}
-              />
-            </Field>
-            <Field label="Channels / pixel" hint="3 = RGB · 4 = RGBW">
-              <CommitInput
-                type="number"
-                min={1}
-                max={4}
-                value={cfg.channelsPerPixel}
-                disabled={!project}
-                ariaLabel="Channels per pixel"
-                onCommit={(v) => onNum(v, (n) => setOutputScalar(cfg.id, { channelsPerPixel: n }))}
-              />
-            </Field>
-            {@render pixelRow('First / last pixel', ranges?.byOutput[cfg.id])}
-          {:else}
-            <p class="hint">
-              A new output port. Wire data lines into it on the canvas to give it pixels — then its universe + channel settings appear here.
-            </p>
-          {/if}
-          {@render renameField(sel.nodeId, d.title)}
-        {:else if editor.kind === 'controller' && outputCfg}
-          {@const out = outputCfg}
-          <p class="grouphint">Art-Net / sACN transport — where the pixel stream is sent.</p>
-          <Field label="Protocol">
-            <Select
-              value={out.protocol}
-              options={PROTOCOL_OPTS}
-              disabled={!project}
-              onChange={(v) => store.setOutput({ protocol: v as 'artnet' | 'sacn' })}
-              ariaLabel="Protocol"
-            />
-          </Field>
-          <Field label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
-            <CommitInput
-              value={out.host}
-              mono
-              autofocus={false}
-              placeholder="255.255.255.255"
-              disabled={!project}
-              ariaLabel="Host / IP"
-              onCommit={(v) => v.trim() && store.setOutput({ host: v.trim() })}
-            />
-          </Field>
-          <div class="tworow">
-            <Field label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
-              <CommitInput
-                type="number"
-                min={1}
-                max={65535}
-                value={out.port ?? ''}
-                placeholder={out.protocol === 'sacn' ? '5568' : '6454'}
-                disabled={!project}
-                ariaLabel="Output port"
-                onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
-              />
-            </Field>
-            <Field label="Interface" hint="source NIC · blank = default">
-              <CommitInput
-                value={out.iface ?? ''}
-                mono
-                autofocus={false}
-                allowEmpty
-                placeholder="0.0.0.0"
-                disabled={!project}
-                ariaLabel="Source interface"
-                onCommit={(v) => store.setOutput({ iface: v.trim() })}
-              />
-            </Field>
-          </div>
-          <div class="tworow">
-            <Field label="RGB order">
-              <Select
-                value={out.rgbOrder}
-                options={RGB_OPTS}
-                disabled={!project}
-                onChange={(v) => store.setOutput({ rgbOrder: v as RgbOrder })}
-                ariaLabel="RGB order"
-              />
-            </Field>
-            <Field label="FPS" hint="≤ 120">
-              <CommitInput
-                type="number"
-                min={1}
-                max={120}
-                value={out.fps}
-                disabled={!project}
-                suffix="fps"
-                ariaLabel="Output FPS"
-                onCommit={(v) => onNum(v, (n) => store.setOutput({ fps: n }))}
-              />
-            </Field>
-          </div>
-          <label class="checkrow">
-            <Toggle
-              pressed={out.broadcast}
-              disabled={!project}
-              onChange={(v) => store.setOutput({ broadcast: v })}
-              ariaLabel={out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}
-            />
-            <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
-          </label>
-          {#if out.protocol === 'sacn'}
-            <Field label="Priority" hint="1–200 · higher wins at a merge">
-              <CommitInput
-                type="number"
-                min={1}
-                max={200}
-                value={out.priority}
-                disabled={!project}
-                ariaLabel="sACN priority"
-                onCommit={(v) => onNum(v, (n) => store.setOutput({ priority: n }))}
-              />
-            </Field>
-          {/if}
-          {@render renameField(sel.nodeId, d.title)}
+          <PatchOutputInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'controller'}
+          <PatchControllerInspector {store} nodeId={sel.nodeId} title={d.title} />
         {/if}
       </div>
     {/if}
   {:else if sectionSel}
     {@const ss = sectionSel}
-    {@const rc = ss.recall}
-    <header class="ihead">
-      <div class="titles">
-        <Eyebrow>Section</Eyebrow>
-        <h3>{ss.section.name}</h3>
-        <span class="sub">{ss.song.name} · #{ss.sectionIdx + 1}</span>
-      </div>
-    </header>
-    <div class="sectionbody">
-      <Field label="Name" hint="display label">
-        <CommitInput
-          value={ss.section.name}
-          placeholder="Section"
-          ariaLabel="Section name"
-          onCommit={(v) => store.renameSection(ss.section.id, v)}
-        />
-      </Field>
-
-      <div class="recall">
-        <Eyebrow>Recall via</Eyebrow>
-        <p class="grouphint">Global transport messages — read-only. Send these from a DAW or controller to recall this section.</p>
-        <div class="recall-row">
-          <span class="k">OSC</span>
-          <code class="rcode">{rc.osc}</code>
-        </div>
-        <div class="recall-row">
-          <span class="k">MIDI CC</span>
-          <code class="rcode">{rc.midiSection}</code>
-        </div>
-        <div class="recall-row">
-          <span class="k">Program Change</span>
-          <code class="rcode">{rc.midiSong}</code>
-        </div>
-        <p class="hint">Program Change selects this section's song; CC #0 and the OSC argument pick the section by its index.</p>
-      </div>
-    </div>
+    <SectionInspector
+      {store}
+      sectionId={ss.section.id}
+      sectionName={ss.section.name}
+      songName={ss.song.name}
+      sectionIdx={ss.sectionIdx}
+      recall={ss.recall}
+    />
   {:else}
     <div class="empty">
       <MousePointerClick size={22} aria-hidden="true" />
@@ -929,13 +158,6 @@
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-faint);
   }
-  .thumb {
-    line-height: 0;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    padding: 2px;
-    flex: none;
-  }
   .titles {
     flex: 1;
     min-width: 0;
@@ -950,46 +172,6 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-faint);
-  }
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .lblrow {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    flex: 1;
-    min-width: 0;
-  }
-  .k {
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    font-size: var(--text-2xs);
-  }
-  .seg2 {
-    display: flex;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .seg2 :global(.seg) {
-    flex: 1;
-  }
-  .seg2 :global(.seg-row) {
-    display: flex;
-    width: 100%;
-  }
-  .seg2 :global(.seg-btn) {
-    flex: 1;
-    text-align: center;
-    justify-content: center;
   }
   /* shared node header: kind selector (grows) + remove button */
   .nodehead {
@@ -1008,214 +190,12 @@
     font-weight: 700;
     color: var(--ink);
   }
-  /* per-kind body (random / switch / chance / container blurb) */
-  .kindbody {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-3);
-  }
-  .kindbody .lblrow {
-    justify-content: space-between;
-  }
-  .check {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text);
-  }
-  /* value-switch band editor (one row per cutoff + the implicit "rest" band) */
-  .bandlist {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .bandrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .bandrow .sld {
-    flex: 1;
-    max-width: none;
-  }
-  .bnum {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    flex: none;
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-pill);
-  }
-  .bandrow.rest {
-    color: var(--text-faint);
-  }
-  .restlabel {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-  }
-  .addband {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    background: var(--surface-2);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-1);
-    transition:
-      color 120ms ease,
-      border-color 120ms ease;
-  }
-  .addband:hover {
-    color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
-  }
-  .addband:active {
-    scale: 0.98;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .addband {
-      transition: none;
-    }
-  }
-  .params {
-    padding: var(--space-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .prow {
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .plabel {
-    font-size: var(--text-xs);
-    color: var(--text);
-  }
-  .prow :global(.boolcell) {
-    justify-self: start;
-  }
-  .envbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px var(--space-2);
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    text-transform: capitalize;
-  }
-  .envbtn.on {
-    color: var(--ink);
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-    background: var(--accent-soft);
-  }
-  .envspace {
-    width: 1px;
-  }
-  .foot {
-    margin: 0;
-    padding: var(--space-3);
-    border-top: 1px solid var(--border-faint);
-    font-size: var(--text-2xs);
-    color: var(--text-faint);
-  }
-  .busbody {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-3);
-  }
-  .busbody .lblrow {
-    justify-content: space-between;
-  }
-  .sld {
-    display: flex;
-    flex: 1;
-    max-width: 60%;
-  }
-  .meterrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .meter {
-    flex: 1;
-    height: 6px;
-    background: var(--surface-inset);
-    border-radius: var(--radius-pill);
-    overflow: hidden;
-  }
-  .meter span {
-    display: block;
-    height: 100%;
-    width: 100%;
-    transform-origin: left;
-    background: linear-gradient(90deg, var(--accent-dim), var(--accent));
-    transition: transform 60ms linear;
-  }
   .nodeinfo {
     padding: var(--space-3);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
   }
-  /* trigger-node source editor (U2): segmented kind + per-mode fields + readout */
-  .trigbody {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-3);
-  }
-  .trigbody :global(.sel) {
-    width: 100%;
-  }
-  /* --- Section selection panel (rename + read-only transport recall) -------- */
-  .sectionbody {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-3);
-  }
-  .recall {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .recall-row {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-  /* the literal message — selectable in one click so the operator can copy it whole */
-  .rcode {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--ink);
-    padding: var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    overflow-wrap: anywhere;
-    user-select: all;
-  }
-  /* --- Patch graph per-node editors (S4) ----------------------------------- */
   .patchbody {
     display: flex;
     flex-direction: column;
@@ -1233,71 +213,6 @@
     background: var(--surface-2);
     border: 1px dashed var(--border);
     border-radius: var(--radius-2);
-  }
-  .grouphint {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    line-height: var(--leading-normal);
-  }
-  .grouphint b {
-    color: var(--text);
-    font-weight: 600;
-  }
-  .vgroup {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-width: 0;
-  }
-  .glabel {
-    font-size: var(--text-2xs);
-    font-weight: 500;
-    color: var(--text-muted);
-  }
-  .glabel em {
-    font-style: normal;
-    color: var(--text-faint);
-    margin-left: 4px;
-  }
-  .axes {
-    display: flex;
-    gap: var(--space-2);
-  }
-  .axes :global(.ci) {
-    flex: 1;
-    min-width: 0;
-  }
-  .tworow {
-    display: flex;
-    gap: var(--space-3);
-  }
-  .tworow :global(.field) {
-    flex: 1;
-    min-width: 0;
-  }
-  .readrow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding: 4px 0;
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .rval {
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    min-width: 0;
-  }
-  .checkrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text);
   }
   .hint {
     margin: 0;
@@ -1320,10 +235,5 @@
     margin: 0;
     font-size: var(--text-xs);
     max-width: 28ch;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .meter span {
-      transition: none;
-    }
   }
 </style>

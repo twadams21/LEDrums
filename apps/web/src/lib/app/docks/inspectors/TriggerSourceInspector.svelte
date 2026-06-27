@@ -1,0 +1,207 @@
+<script lang="ts">
+  /* Trigger-node source editor (U2). The trigger node (graph root) declares what input
+     fires its graph — a drum zone, a raw MIDI note/CC, or an OSC address (U1's
+     TriggerSource). Writes go through store.setTriggerSource(<graph key>, source); the
+     readout + node sub-line resolve via the pure describeTriggerSource helper. The graph
+     key is store.selectedPadKey. */
+  import type { TriggerLab } from '../../../trigger-lab/store.svelte';
+  import type { GraphNode, TriggerSource } from '../../../trigger-lab/sim';
+  import { describeTriggerSource, zoneLabel } from '../../trigger-source-label';
+  import { isReservedCc, RESERVED_CC } from '../../recall';
+  import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
+  import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
+  import SegmentedControl from '../../../ui/SegmentedControl.svelte';
+  import Select from '../../../ui/Select.svelte';
+  import Field from '../../../ui/Field.svelte';
+  import CommitInput from '../../../ui/CommitInput.svelte';
+  import IconButton from '../../../ui/IconButton.svelte';
+  import CopyPlus from '@lucide/svelte/icons/copy-plus';
+  import ReadRow from './ReadRow.svelte';
+  import { onNum } from './forms';
+
+  let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
+
+  const src = $derived(node.source);
+  const gkey = $derived(store.selectedPadKey);
+  const kindNow = $derived(src?.kind ?? 'drum');
+
+  const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
+
+  /** Zone <Select> options for a drum: the zones it exposes as pads (its hoops in use),
+      always including the current binding, falling back to all four hoop labels. */
+  function zoneOptsFor(drumId: string, current: string): Array<{ value: string; label: string }> {
+    const ids: string[] = []; // ≤4 zones — a plain unique-push is plenty (no reactive Set)
+    const add = (z: string): void => {
+      if (z && !ids.includes(z)) ids.push(z);
+    };
+    for (const p of store.pads) if (p.drumId === drumId) add(String(p.zone));
+    add(current);
+    ids.sort((a, b) => Number(a) - Number(b));
+    const list = ids.length ? ids : ZONE_LABELS.map((_, i) => String(i));
+    return list.map((z) => ({ value: z, label: zoneLabel(z) }));
+  }
+
+  /** Switch the trigger source to a new kind, carrying compatible fields and filling
+      least-surprising defaults (first drum + centre · middle MIDI note · empty address). */
+  function setSourceKind(g: string, cur: TriggerSource | undefined, kind: TriggerSource['kind']): void {
+    let next: TriggerSource;
+    if (kind === 'drum') next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId: store.drums[0]?.id ?? '', zone: '0' };
+    else if (kind === 'midi') next = cur?.kind === 'midi' ? cur : { kind: 'midi', note: 60 };
+    else next = cur?.kind === 'osc' ? cur : { kind: 'osc', address: '' };
+    store.setTriggerSource(g, next);
+  }
+
+  /** Flip a MIDI source between note and CC, carrying the current number across. CC 0 is
+      reserved for global section recall, so switching to CC nudges off it (→ 1). */
+  function setMidiMode(g: string, cur: Extract<TriggerSource, { kind: 'midi' }>, mode: 'note' | 'cc'): void {
+    const n = cur.cc ?? cur.note ?? 0;
+    if (mode === 'cc') store.setTriggerSource(g, { kind: 'midi', cc: isReservedCc(n) ? RESERVED_CC + 1 : n });
+    else store.setTriggerSource(g, { kind: 'midi', note: n });
+  }
+
+  /** Commit a CC number for a trigger source, rejecting the reserved controller (no write —
+      CC 0 stays bound to global section recall). Note numbers pass straight through. */
+  function commitMidiNumber(g: string, isCc: boolean, n: number): void {
+    if (isCc && isReservedCc(n)) return; // CC 0 reserved — ignore
+    store.setTriggerSource(g, isCc ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
+  }
+</script>
+
+<header class="ihead">
+  <div class="titles">
+    <h3>
+      {store.selectedPad
+        ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
+        : gkey
+          ? store.graphLabel(gkey)
+          : 'Trigger'}
+    </h3>
+    <span class="sub">graph input</span>
+  </div>
+  {#if gkey}
+    <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
+  {/if}
+</header>
+<div class="trigbody">
+  <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
+  <Field label="Trigger source">
+    <SegmentedControl
+      value={kindNow}
+      options={SOURCE_OPTS}
+      onChange={(v) => gkey && setSourceKind(gkey, src, v as TriggerSource['kind'])}
+      ariaLabel="Trigger source"
+    />
+  </Field>
+
+  {#if kindNow === 'drum'}
+    {@const drumId = src?.kind === 'drum' ? src.drumId : store.drums[0]?.id ?? ''}
+    {@const zone = src?.kind === 'drum' ? src.zone : '0'}
+    <Field label="Drum">
+      <Select
+        value={drumId}
+        options={DRUM_OPTS}
+        onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId: v, zone })}
+        ariaLabel="Drum"
+      />
+    </Field>
+    <Field label="Zone">
+      <Select
+        value={zone}
+        options={zoneOptsFor(drumId, zone)}
+        onChange={(v) => gkey && store.setTriggerSource(gkey, { kind: 'drum', drumId, zone: v })}
+        ariaLabel="Zone"
+      />
+    </Field>
+  {:else if src?.kind === 'midi'}
+    {@const isCc = src.cc !== undefined}
+    <Field label="Type">
+      <SegmentedControl
+        value={isCc ? 'cc' : 'note'}
+        options={MIDI_OPTS}
+        onChange={(v) => gkey && setMidiMode(gkey, src, v as 'note' | 'cc')}
+        ariaLabel="MIDI note or CC"
+      />
+    </Field>
+    <Field label={isCc ? 'CC number' : 'Note number'} hint={isCc ? '1–127' : '0–127'}>
+      <CommitInput
+        type="number"
+        min={isCc ? RESERVED_CC + 1 : 0}
+        max={127}
+        value={(isCc ? src.cc : src.note) ?? ''}
+        placeholder={isCc ? '1–127' : '0–127'}
+        ariaLabel={isCc ? 'CC number' : 'Note number'}
+        onCommit={(v) => onNum(v, (n) => gkey && commitMidiNumber(gkey, isCc, n))}
+      />
+    </Field>
+    {#if isCc}
+      <p class="hint">CC 0 reserved for section recall.</p>
+    {/if}
+    <p class="hint">Channel comes from the patch device, not here.</p>
+  {:else if src?.kind === 'osc'}
+    <Field label="Address" hint="e.g. /kick">
+      <CommitInput
+        value={src.address}
+        mono
+        autofocus={false}
+        placeholder="/kick"
+        ariaLabel="OSC address"
+        onCommit={(v) => gkey && store.setTriggerSource(gkey, { kind: 'osc', address: v.trim() })}
+      />
+    </Field>
+    <p class="hint">Namespace / host comes from the patch device, not here.</p>
+  {/if}
+
+  <ReadRow label="Resolves to" value={describeTriggerSource(src, store.drums).sub} />
+
+  {#if gkey && gkey in store.graphs}
+    <Field label="Name" hint="display label">
+      <CommitInput
+        value={store.graphLabel(gkey)}
+        autofocus={false}
+        placeholder="New graph"
+        ariaLabel="Graph name"
+        onCommit={(v) => store.renameGraph(gkey, v)}
+      />
+    </Field>
+  {/if}
+</div>
+
+<style>
+  .ihead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .titles {
+    flex: 1;
+    min-width: 0;
+  }
+  h3 {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .sub {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
+  }
+  .trigbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+  .trigbody :global(.sel) {
+    width: 100%;
+  }
+  .hint {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    line-height: var(--leading-normal);
+  }
+</style>
