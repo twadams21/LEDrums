@@ -46,14 +46,14 @@
   :global(.lab-drawer-overlay) {
     position: fixed;
     inset: 0;
-    z-index: 75;
-    background: oklch(0.1 0.01 256 / 0.5);
+    z-index: var(--z-overlay);
+    background: var(--overlay);
     backdrop-filter: blur(2px);
     animation: dw-fade 140ms ease;
   }
   :global(.lab-drawer) {
     position: fixed;
-    z-index: 76;
+    z-index: calc(var(--z-overlay) + 1);
     display: flex;
     flex-direction: column;
     background: var(--surface);
@@ -107,8 +107,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: var(--control-icon-size);
+    height: var(--control-icon-size);
     padding: 0;
     background: transparent;
     border: none;

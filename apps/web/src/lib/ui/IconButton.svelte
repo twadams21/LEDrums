@@ -47,8 +47,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: var(--control-icon-size);
+    height: var(--control-icon-size);
     padding: 0;
     border-radius: var(--radius-2);
     line-height: 0;
