@@ -25,11 +25,6 @@ function showLibraryPath(dir: string): string {
   return join(dir, SHOW_LIBRARY_FILE);
 }
 
-/** True when a persisted show-library file exists. */
-export function showLibraryExists(dir: string = PROJECTS_DIR): boolean {
-  return existsSync(showLibraryPath(dir));
-}
-
 /**
  * Boot-recover the persisted show library, or `null` when it is absent, unreadable, or not a
  * versioned envelope. Defensive by design: a missing or junk file means "no library yet" (the

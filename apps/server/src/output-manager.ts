@@ -98,7 +98,7 @@ export class OutputManager {
 
   private teardown(dmxMap: DmxMap, settings: OutputSettings): void {
     if (this.output) {
-      this.blackout(dmxMap, settings.rgbOrder);
+      this.blackout(dmxMap);
       this.output.close();
       this.output = null;
       this.signature = '';
@@ -122,12 +122,12 @@ export class OutputManager {
       }
     } catch (err) {
       this.lastError = String(err);
-      this.blackout(dmxMap, s.rgbOrder);
+      this.blackout(dmxMap);
     }
   }
 
   /** Transmit an all-zero frame across every universe (failsafe). */
-  blackout(dmxMap: DmxMap, rgbOrder: RgbOrder): void {
+  blackout(dmxMap: DmxMap): void {
     if (!this.output) return;
     try {
       this.output.nextFrame();
@@ -138,7 +138,6 @@ export class OutputManager {
     } catch (err) {
       this.lastError = String(err);
     }
-    void rgbOrder;
   }
 
   status(): OutputStatus {

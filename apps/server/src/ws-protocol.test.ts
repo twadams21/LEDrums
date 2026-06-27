@@ -3,7 +3,6 @@ import { buildPixelModel, parseKit } from '@ledrums/core';
 import {
   decodeClient,
   effectSpecs,
-  encodeClient,
   frameToRgbBytes,
   serializeModel,
   type ClientMessage,
@@ -29,7 +28,7 @@ const samples: ClientMessage[] = [
 describe('ws-protocol', () => {
   it('round-trips every client message type', () => {
     for (const msg of samples) {
-      expect(decodeClient(encodeClient(msg))).toEqual(msg);
+      expect(decodeClient(JSON.stringify(msg))).toEqual(msg);
     }
   });
 

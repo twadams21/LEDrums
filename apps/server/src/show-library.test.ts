@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,6 @@ import {
   loadShowLibrary,
   saveShowLibrary,
   saveShowLibraryAsync,
-  showLibraryExists,
   SHOW_LIBRARY_FILE,
   type ShowLibraryBlob,
 } from './show-library';
@@ -33,14 +32,14 @@ describe('show-library persistence', () => {
   it('round-trips save -> load, preserving the opaque blob verbatim', () => {
     const blob = sampleBlob();
     saveShowLibrary(blob, tmp);
-    expect(showLibraryExists(tmp)).toBe(true);
+    expect(existsSync(join(tmp, SHOW_LIBRARY_FILE))).toBe(true);
     expect(loadShowLibrary(tmp)).toEqual(blob);
   });
 
   it('reports no library + loads null in a fresh dir (boot falls back to "no library yet")', () => {
     const fresh = mkdtempSync(join(tmpdir(), 'ledrums-shows-fresh-'));
     try {
-      expect(showLibraryExists(fresh)).toBe(false);
+      expect(existsSync(join(fresh, SHOW_LIBRARY_FILE))).toBe(false);
       expect(loadShowLibrary(fresh)).toBeNull();
     } finally {
       rmSync(fresh, { recursive: true, force: true });
@@ -94,9 +93,9 @@ describe('autosave + boot-recover + shutdown-flush (mirrors the project autosave
       const a = createAutosaver(() => (live ? saveShowLibraryAsync(live, dir) : Promise.resolve()), 10_000);
       live = sampleBlob();
       a.markDirty();
-      expect(showLibraryExists(dir)).toBe(false); // debounced (10s) — not on disk yet
+      expect(existsSync(join(dir, SHOW_LIBRARY_FILE))).toBe(false); // debounced (10s) — not on disk yet
       await a.flush(); // shutdown-flush forces the write
-      expect(showLibraryExists(dir)).toBe(true);
+      expect(existsSync(join(dir, SHOW_LIBRARY_FILE))).toBe(true);
       expect(loadShowLibrary(dir)).toEqual(sampleBlob());
       a.dispose();
     } finally {

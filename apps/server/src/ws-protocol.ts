@@ -70,10 +70,6 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'loadProject', 'saveProject', 'listProjects',
 ]);
 
-export function encodeClient(msg: ClientMessage): string {
-  return JSON.stringify(msg);
-}
-
 export function decodeClient(raw: string): ClientMessage {
   const obj = JSON.parse(raw);
   if (!obj || typeof obj.t !== 'string' || !CLIENT_TYPES.has(obj.t)) {
