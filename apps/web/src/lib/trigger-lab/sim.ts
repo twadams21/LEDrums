@@ -756,6 +756,11 @@ export class Sim {
   registerPreset(p: Preset): void {
     this.presetsById.set(p.id, p);
   }
+  /** Deregister a preset (preset delete) — drop it from the id-map the resolvers read.
+      No effect-unregister: effects are foundational and never deletable. */
+  unregisterPreset(id: string): void {
+    this.presetsById.delete(id);
+  }
 
   // --- triggering ----------------------------------------------------------
 
