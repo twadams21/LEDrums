@@ -33,6 +33,27 @@
   // right Inspector/Monitor dock and fills the center with PerformView.
   const perform = $derived(shell.view === 'perform');
 
+  // Keep the Inspector's selection consistent with the active model so it never shows stale
+  // info after the focus moves out from under it. The Inspector's deriveds are reactive, but
+  // the selection lives in the shell store while the active song / section / graph live in the
+  // engine store — the two are otherwise decoupled, so e.g. changing songs re-points
+  // `activeSectionId` (to the new song's first section) without the section the Inspector still
+  // shows knowing. This bridge re-syncs:
+  //  · a SECTION selection follows the active section (song switch, recall);
+  //  · a NODE selection is dropped once it no longer exists in the open graph (graph switch,
+  //    node removed / swapped) so the Inspector clears instead of describing a gone node.
+  $effect(() => {
+    const sel = shell.selection;
+    if (!sel) return;
+    if (sel.kind === 'section') {
+      const active = store.activeSectionId;
+      if (active && active !== sel.sectionId) shell.select({ kind: 'section', sectionId: active });
+    } else if (sel.kind === 'node') {
+      const g = store.selectedGraph;
+      if (!g || !g.nodes.some((n) => n.id === sel.nodeId)) shell.clearSelection();
+    }
+  });
+
   const DOCK_TABS = [
     { value: 'inspector', label: 'Inspector', icon: SlidersHorizontal },
     { value: 'monitor', label: 'Monitor', icon: Terminal },

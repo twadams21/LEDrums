@@ -109,17 +109,22 @@
     border-radius: var(--radius-2);
     background: var(--surface-2);
     color: var(--text-faint);
+    /* Fixed footprint so a longer/shorter show name never reflows the transport
+       + status cluster to its right. The name truncates within (see .set-name). */
     flex: none;
+    min-width: 300px;
   }
   .set-labels {
     display: flex;
     flex-direction: column;
     line-height: 1.15;
+    flex: 1;
+    min-width: 0;
   }
   /* the show name is an in-place editable title: a bare button that reveals a CommitInput */
   .set-name {
     align-self: flex-start;
-    max-width: 22ch;
+    max-width: 100%;
     margin: -2px -4px;
     padding: 2px 4px;
     background: transparent;
