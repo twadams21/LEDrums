@@ -1,43 +1,33 @@
 <script lang="ts">
-  /* Objects — a master-detail index of every authored object. Left: the object TYPES
-     (Songs · Effects · Graphs · Presets), styled like the view rail; right: the objects of the
-     selected type, each row carrying per-type CRUD via the right-click ContextMenu (plus hover
-     quick-actions), wired to the store's tested CRUD. Songs activate on click; graphs open in the
-     Trigger editor; effects are rename/duplicate only (foundational — never deletable); presets
-     add delete, gated to an unused, non-`:default` preset (the store enforces the same guard, and
-     `objects-view.ts` mirrors it into `deletable` so the menu disables Delete in lockstep). */
+  /* Objects — a master-detail index of every authored object. Left rail: the object TYPES
+     (Songs · Effects · Graphs · Presets); right: the objects of the selected type, each row
+     a per-type sub-component (SongRow / EffectRow / GraphRow / PresetRow) carrying its own
+     CRUD via the right-click ContextMenu + hover quick-actions. Songs activate on click;
+     graphs open in the Trigger editor; effects are rename/duplicate only (foundational);
+     presets add delete, gated to an unused, non-`:default` preset (the row trusts the
+     view-model's `deletable`, which mirrors the store guard). Layout via the MasterDetail
+     primitive; rows via EditableRow. */
   import type { Component } from 'svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { type ObjectTypeId, type PresetRow, effectRows, graphRows, presetRows } from './objects-view';
-  import { describeTriggerSource } from '../trigger-source-label';
-  import CommitInput from '../../ui/CommitInput.svelte';
-  import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
+  import { type ObjectTypeId, effectRows, graphRows, presetRows } from './objects-view';
+  import MasterDetail from '../../ui/MasterDetail.svelte';
+  import ListItem from '../../ui/ListItem.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
-  import IconButton from '../../ui/IconButton.svelte';
+  import SongRow from './SongRow.svelte';
+  import EffectRow from './EffectRow.svelte';
+  import GraphRow from './GraphRow.svelte';
+  import PresetRow from './PresetRow.svelte';
   import Boxes from '@lucide/svelte/icons/boxes';
   import Bookmark from '@lucide/svelte/icons/bookmark';
-  import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import ListMusic from '@lucide/svelte/icons/list-music';
-  import Pencil from '@lucide/svelte/icons/pencil';
-  import Play from '@lucide/svelte/icons/play';
   import Sparkles from '@lucide/svelte/icons/sparkles';
-  import SquarePen from '@lucide/svelte/icons/square-pen';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
   import Workflow from '@lucide/svelte/icons/workflow';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   let type = $state<ObjectTypeId>('songs');
-  let editingId = $state<string | null>(null); // the row being renamed (song.id / effect.id / preset.id / graph key)
   let selectedId = $state<string | null>(null); // local highlight for effect/preset rows (no nav target of their own)
-
-  function setType(t: ObjectTypeId): void {
-    if (t === type) return;
-    type = t;
-    editingId = null;
-    selectedId = null;
-  }
 
   // derived row lists — recompute as the underlying store collections change (presetRows reads
   // presetUsageCount, which depends on `graphs`, so usage stays live).
@@ -63,9 +53,10 @@
   const activeType = $derived(TYPES.find((t) => t.id === type)!);
   const HeadIcon = $derived(activeType.icon);
 
-  /** The graph's source sub line (e.g. "Kick · center", "MIDI note 38"). */
-  function sourceSub(key: string): string {
-    return describeTriggerSource(store.triggerSource(key), store.drums).sub;
+  /** Select a type in the rail; reset the local effect/preset highlight on a real change. */
+  function selectType(select: (t: ObjectTypeId) => void, t: ObjectTypeId): void {
+    if (t !== type) selectedId = null;
+    select(t);
   }
 
   /** Open a graph in the Trigger editor (it need not belong to a section). */
@@ -73,74 +64,24 @@
     store.selectedPadKey = key;
     shell.setView('trigger');
   }
-
-  function removeSong(id: string): void {
-    if (editingId === id) editingId = null;
-    store.removeSong(id);
-  }
-  function removeGraph(key: string): void {
-    if (editingId === key) editingId = null;
-    store.deleteGraph(key);
-  }
-
-  // --- per-type right-click verbs (the required CRUD surface) ----------------
-  function songActions(id: string): ContextMenuAction[] {
-    return [
-      { label: 'Activate', icon: Play, onSelect: () => store.setActiveSong(id) },
-      { label: 'Rename', icon: Pencil, onSelect: () => (editingId = id) },
-      { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSong(id) },
-      { label: 'Delete', icon: Trash2, danger: true, disabled: store.songs.length <= 1, onSelect: () => removeSong(id) },
-    ];
-  }
-  function graphActions(key: string): ContextMenuAction[] {
-    return [
-      { label: 'Open', icon: SquarePen, onSelect: () => openGraph(key) },
-      { label: 'Rename', icon: Pencil, onSelect: () => (editingId = key) },
-      { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(key) },
-      { label: 'Delete', icon: Trash2, danger: true, onSelect: () => removeGraph(key) },
-    ];
-  }
-  function effectActions(id: string): ContextMenuAction[] {
-    // effects are foundational — rename + duplicate only, never delete.
-    return [
-      { label: 'Rename', icon: Pencil, onSelect: () => (editingId = id) },
-      { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateEffect(id) },
-    ];
-  }
-  function presetActions(row: PresetRow): ContextMenuAction[] {
-    return [
-      { label: 'Rename', icon: Pencil, onSelect: () => (editingId = row.id) },
-      { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicatePreset(row.id) },
-      {
-        label: 'Delete',
-        icon: Trash2,
-        danger: true,
-        disabled: !row.deletable, // unused AND not a live effect's `:default`
-        onSelect: () => store.deletePreset(row.id),
-      },
-    ];
-  }
 </script>
 
-<div class="objects-view">
-  <nav class="typerail" aria-label="Object types">
+<MasterDetail bind:selected={type} railLabel="Object types" railWidth="210px">
+  {#snippet master({ selected, select })}
     <Eyebrow icon={Boxes}>Objects</Eyebrow>
     {#each TYPES as t (t.id)}
-      {@const I = t.icon}
-      <button
-        class="typeitem"
-        class:active={type === t.id}
-        aria-pressed={type === t.id}
-        onclick={() => setType(t.id)}
+      <ListItem
+        icon={t.icon}
+        label={t.label}
+        active={selected === t.id}
+        onclick={() => selectType(select, t.id)}
       >
-        <I size={16} aria-hidden="true" />
-        <span class="typelabel">{t.label}</span>
-        <span class="typecount">{countOf(t.id)}</span>
-      </button>
+        {#snippet trailing()}<span class="typecount">{countOf(t.id)}</span>{/snippet}
+      </ListItem>
     {/each}
-  </nav>
+  {/snippet}
 
-  <section class="detail">
+  {#snippet detail()}
     <header class="detail-head">
       <Eyebrow icon={HeadIcon}>{activeType.label}</Eyebrow>
       <span class="detail-count">{countOf(type)}</span>
@@ -149,255 +90,46 @@
     <div class="objlist">
       {#if type === 'songs'}
         {#each songs as song (song.id)}
-          {@const active = store.activeSongId === song.id}
-          <ContextMenu actions={songActions(song.id)}>
-            <div class="objrow" class:active>
-              {#if editingId === song.id}
-                <div class="row-edit">
-                  <CommitInput
-                    value={song.name}
-                    ariaLabel="Song name"
-                    onCommit={(name) => {
-                      store.renameSong(song.id, name);
-                      editingId = null;
-                    }}
-                    onCancel={() => (editingId = null)}
-                  />
-                </div>
-              {:else}
-                <button
-                  class="row-main"
-                  onclick={() => store.setActiveSong(song.id)}
-                  ondblclick={() => (editingId = song.id)}
-                  title="Activate · double-click to rename"
-                >
-                  <ListMusic size={14} aria-hidden="true" />
-                  <span class="row-text">
-                    <span class="row-name">{song.name}</span>
-                    <span class="row-sub">{song.sections.length} {song.sections.length === 1 ? 'section' : 'sections'}</span>
-                  </span>
-                  {#if active}<span class="dot" title="Active song" aria-hidden="true"></span>{/if}
-                </button>
-                <div class="row-actions">
-                  <IconButton icon={Pencil} label="Rename song" size={13} onclick={() => (editingId = song.id)} />
-                  <IconButton icon={CopyPlus} label="Duplicate song" size={13} onclick={() => store.duplicateSong(song.id)} />
-                  <IconButton
-                    icon={Trash2}
-                    label="Delete song"
-                    size={13}
-                    disabled={store.songs.length <= 1}
-                    onclick={() => removeSong(song.id)}
-                  />
-                </div>
-              {/if}
-            </div>
-          </ContextMenu>
+          <SongRow {store} {song} />
         {/each}
         {#if songs.length === 0}<p class="empty">No songs yet.</p>{/if}
       {:else if type === 'effects'}
-        {#each effects as e (e.id)}
-          {@const active = selectedId === e.id}
-          <ContextMenu actions={effectActions(e.id)}>
-            <div class="objrow" class:active>
-              {#if editingId === e.id}
-                <div class="row-edit">
-                  <CommitInput
-                    value={e.name}
-                    ariaLabel="Effect name"
-                    onCommit={(name) => {
-                      store.renameEffect(e.id, name);
-                      editingId = null;
-                    }}
-                    onCancel={() => (editingId = null)}
-                  />
-                </div>
-              {:else}
-                <button
-                  class="row-main"
-                  onclick={() => (selectedId = e.id)}
-                  ondblclick={() => (editingId = e.id)}
-                  title="Right-click for actions · double-click to rename"
-                >
-                  <Sparkles size={14} aria-hidden="true" />
-                  <span class="row-text">
-                    <span class="row-name">{e.name}</span>
-                    <span class="row-sub">{e.presetCount} {e.presetCount === 1 ? 'preset' : 'presets'}</span>
-                  </span>
-                </button>
-                <div class="row-actions">
-                  <IconButton icon={Pencil} label="Rename effect" size={13} onclick={() => (editingId = e.id)} />
-                  <IconButton icon={CopyPlus} label="Duplicate effect" size={13} onclick={() => store.duplicateEffect(e.id)} />
-                </div>
-              {/if}
-            </div>
-          </ContextMenu>
+        {#each effects as effect (effect.id)}
+          <EffectRow {store} {effect} active={selectedId === effect.id} onSelect={() => (selectedId = effect.id)} />
         {/each}
         {#if effects.length === 0}<p class="empty">No effects yet.</p>{/if}
       {:else if type === 'graphs'}
-        {#each graphs as g (g.key)}
-          {@const active = store.selectedPadKey === g.key}
-          <ContextMenu actions={graphActions(g.key)}>
-            <div class="objrow" class:active>
-              {#if editingId === g.key}
-                <div class="row-edit">
-                  <CommitInput
-                    value={store.graphLabel(g.key)}
-                    ariaLabel="Graph name"
-                    onCommit={(name) => {
-                      store.renameGraph(g.key, name);
-                      editingId = null;
-                    }}
-                    onCancel={() => (editingId = null)}
-                  />
-                </div>
-              {:else}
-                <button class="row-main" onclick={() => openGraph(g.key)} title="Open {g.label}">
-                  <Workflow size={14} aria-hidden="true" />
-                  <span class="row-text">
-                    <span class="row-name">{g.label}</span>
-                    <span class="row-sub">{sourceSub(g.key)}</span>
-                  </span>
-                </button>
-                <div class="row-actions">
-                  <IconButton icon={Pencil} label="Rename graph" size={13} onclick={() => (editingId = g.key)} />
-                  <IconButton icon={CopyPlus} label="Duplicate graph" size={13} onclick={() => store.duplicateGraph(g.key)} />
-                  <IconButton icon={Trash2} label="Delete graph" size={13} onclick={() => removeGraph(g.key)} />
-                </div>
-              {/if}
-            </div>
-          </ContextMenu>
+        {#each graphs as graph (graph.key)}
+          <GraphRow {store} {graph} active={store.selectedPadKey === graph.key} onOpen={openGraph} />
         {/each}
         {#if graphs.length === 0}<p class="empty">No graphs yet.</p>{/if}
       {:else}
-        {#each presets as p (p.id)}
-          {@const active = selectedId === p.id}
-          <ContextMenu actions={presetActions(p)}>
-            <div class="objrow" class:active>
-              {#if editingId === p.id}
-                <div class="row-edit">
-                  <CommitInput
-                    value={p.name}
-                    ariaLabel="Preset name"
-                    onCommit={(name) => {
-                      store.renamePreset(p.id, name);
-                      editingId = null;
-                    }}
-                    onCancel={() => (editingId = null)}
-                  />
-                </div>
-              {:else}
-                <button
-                  class="row-main"
-                  onclick={() => (selectedId = p.id)}
-                  ondblclick={() => (editingId = p.id)}
-                  title="Right-click for actions · double-click to rename"
-                >
-                  <Bookmark size={14} aria-hidden="true" />
-                  <span class="row-text">
-                    <span class="row-name">{p.name}</span>
-                    <span class="row-sub">
-                      {p.effectName} · {p.usage === 0 ? 'unused' : `used ${p.usage}×`}{p.isDefault ? ' · default' : ''}
-                    </span>
-                  </span>
-                </button>
-                <div class="row-actions">
-                  <IconButton icon={Pencil} label="Rename preset" size={13} onclick={() => (editingId = p.id)} />
-                  <IconButton icon={CopyPlus} label="Duplicate preset" size={13} onclick={() => store.duplicatePreset(p.id)} />
-                  <IconButton
-                    icon={Trash2}
-                    label={p.deletable ? 'Delete preset' : 'In use — can’t delete'}
-                    size={13}
-                    disabled={!p.deletable}
-                    onclick={() => store.deletePreset(p.id)}
-                  />
-                </div>
-              {/if}
-            </div>
-          </ContextMenu>
+        {#each presets as preset (preset.id)}
+          <PresetRow {store} {preset} active={selectedId === preset.id} onSelect={() => (selectedId = preset.id)} />
         {/each}
         {#if presets.length === 0}<p class="empty">No presets yet.</p>{/if}
       {/if}
     </div>
-  </section>
-</div>
+  {/snippet}
+</MasterDetail>
 
 <style>
-  .objects-view {
-    display: grid;
-    grid-template-columns: 210px minmax(0, 1fr);
-    gap: var(--space-3);
-    height: 100%;
-    min-height: 0;
-    -webkit-font-smoothing: antialiased;
-  }
-  .typerail {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-3);
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-    min-height: 0;
-    overflow: auto;
-  }
-  .typerail :global(.eyebrow) {
+  /* rail eyebrow spacing (mirrors the old .typerail header gap) */
+  :global(.md-rail) > :global(.eyebrow) {
     margin-bottom: var(--space-1);
   }
-  .typeitem {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    justify-content: flex-start;
-    padding: var(--space-2) var(--space-3);
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-    text-align: left;
-  }
-  .typeitem:hover {
-    background: var(--surface-2);
-    color: var(--text);
-  }
-  .typeitem.active {
-    background: var(--accent-soft);
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-    color: var(--ink);
-  }
-  .typeitem.active :global(svg) {
-    color: var(--accent);
-  }
-  .typeitem :global(svg) {
-    flex: none;
-    color: var(--text-faint);
-  }
-  .typelabel {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .typecount {
-    flex: none;
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
   }
 
-  .detail {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-  }
   .detail-head {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    flex: none;
     padding: var(--space-3) var(--space-3) var(--space-2);
   }
   .detail-count {
@@ -411,98 +143,14 @@
     flex-direction: column;
     gap: var(--space-1);
     min-height: 0;
+    flex: 1;
     overflow: auto;
     padding: 0 var(--space-3) var(--space-3);
-  }
-  .objrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-height: 40px;
-    padding: 2px 4px 2px 2px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    transition:
-      border-color 120ms ease,
-      background-color 120ms ease;
-  }
-  .objrow.active {
-    border-color: color-mix(in oklch, var(--accent) 60%, transparent);
-    background: var(--accent-soft);
-  }
-  /* inline-rename slot — fills the row; CommitInput draws its own field */
-  .row-edit {
-    display: flex;
-    flex: 1;
-    min-width: 0;
-    padding: 2px;
-  }
-  .row-main {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 1;
-    min-width: 0;
-    padding: var(--space-1) var(--space-2);
-    background: transparent;
-    border: none;
-    text-align: left;
-    color: var(--text);
-  }
-  .row-main :global(svg) {
-    flex: none;
-    color: var(--text-faint);
-  }
-  .objrow.active .row-main :global(svg) {
-    color: var(--accent);
-  }
-  .row-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-    flex: 1;
-  }
-  .row-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-xs);
-    color: var(--ink);
-  }
-  .row-sub {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-  }
-  .dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent);
-    flex: none;
-  }
-  .row-actions {
-    display: none;
-    align-items: center;
-    flex: none;
-  }
-  .objrow:hover .row-actions {
-    display: inline-flex;
   }
   .empty {
     margin: 0;
     padding: var(--space-3) var(--space-2);
     font-size: var(--text-2xs);
     color: var(--text-faint);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .objrow {
-      transition: none;
-    }
   }
 </style>

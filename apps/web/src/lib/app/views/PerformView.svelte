@@ -10,9 +10,13 @@
   import type { Pad } from '../../trigger-lab/fixtures';
   import Visualizer from '../docks/Visualizer.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
+  import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import Splitter from '../../ui/Splitter.svelte';
 
   let { store, shell: _shell }: { store: TriggerLab; shell: ShellStore } = $props();
+
+  // section-recall strip → a single-select SegmentedControl (replaces the bespoke oklch chips).
+  const recallOptions = $derived(store.sections.map((s) => ({ value: s.id, label: s.name })));
 
   // one big pad per drum → fires that drum's first authored zone (preview/live).
   const drumPads = $derived(
@@ -40,9 +44,12 @@
 <div class="perform-view">
   <div class="precall">
     <Eyebrow>Recall</Eyebrow>
-    {#each store.sections as s (s.id)}
-      <button class="chip" class:on={store.activeSectionId === s.id} onclick={() => store.setActiveSection(s.id)}>{s.name}</button>
-    {/each}
+    <SegmentedControl
+      value={store.activeSectionId ?? ''}
+      options={recallOptions}
+      onChange={(id) => store.setActiveSection(id)}
+      ariaLabel="Recall section"
+    />
   </div>
 
   <div class="pviz" bind:clientWidth={pvizW} style="grid-template-columns:{pvizCols}; --pviz-l:{pvizLeft ?? 0}px;">
@@ -89,25 +96,6 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
     overflow-x: auto;
-  }
-  .chip {
-    padding: var(--space-1) var(--space-4);
-    font-size: var(--text-sm);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    white-space: nowrap;
-    flex: none;
-  }
-  .chip:hover {
-    color: var(--ink);
-    border-color: var(--border-strong);
-  }
-  .chip.on {
-    color: var(--ink);
-    background: var(--accent-soft);
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
   }
   .pviz {
     position: relative;
