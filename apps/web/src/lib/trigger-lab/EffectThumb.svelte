@@ -1,13 +1,17 @@
 <script lang="ts">
   /* Animated thumbnail of an effect, rendered with the SAME pattern sampler the
      3D kit uses, mapped onto a small 2D grid (x ≈ hoop angle, y ≈ hoop height).
-     Driven by the effect's pattern + the instance/preset params. Throwaway. */
+     Driven by the effect's pattern + the instance/preset params.
+
+     Powered by a shared ticker (one rAF loop for all thumbnails), with
+     IntersectionObserver pause when offscreen and prefers-reduced-motion support. */
   import type { ParamValues, Pattern } from './sim';
   import type { LabModel, PixelAttrs } from './kit';
   import { sampleWith } from './render';
   import { hueToRgb } from './kit';
   import { renderGeneratorThumbFrame } from './effect-thumb-render';
   import { tryGetEffect } from '@ledrums/core';
+  import { ticker } from './effect-thumb-ticker';
 
   interface Props {
     pattern: Pattern;
@@ -47,49 +51,92 @@
 
   let canvas = $state<HTMLCanvasElement>();
   let genState = $state<any>(null);
+  let genStateId = $state<string | null>(null); // Track which generatorId the state belongs to
+  let isVisible = $state(true); // IntersectionObserver: is the thumb visible?
+  let prefersReduced = $state(false); // prefers-reduced-motion
 
+  // Initialize or reset generator state when generatorId changes.
   $effect(() => {
-    // Initialize generator state when a generator effect is first rendered with its lab model.
-    if (generatorId && labModel && !genState) {
+    if (generatorId && labModel && generatorId !== genStateId) {
       const gen = tryGetEffect(generatorId);
       if (gen?.createState) {
         genState = gen.createState(labModel.pm);
+        genStateId = generatorId;
       }
-    }
-    // Reset state if switching away from generator effects.
-    if (!generatorId || !labModel) {
+    } else if (!generatorId || !labModel) {
       genState = null;
+      genStateId = null;
     }
   });
 
+  // IntersectionObserver: detect when the canvas enters/leaves the viewport.
+  $effect(() => {
+    const cv = canvas;
+    if (!cv) return;
+
+    const observer =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(([entry]) => {
+            if (entry) {
+              isVisible = entry.isIntersecting;
+            }
+          })
+        : null;
+
+    if (observer) {
+      observer.observe(cv);
+      return () => observer.disconnect();
+    }
+  });
+
+  // Monitor prefers-reduced-motion media query.
+  $effect(() => {
+    const mq = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+    if (!mq) return;
+
+    const handler = () => {
+      prefersReduced = mq.matches;
+    };
+    handler(); // Set initial value
+
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  });
+
+  // Drawing logic: shared ticker subscription, gated by visibility and reduced-motion.
   $effect(() => {
     const cv = canvas;
     if (!cv) return;
     const ctx = cv.getContext('2d');
     if (!ctx) return;
+
     cv.width = w;
     cv.height = h;
     const cw = w / COLS;
     const ch = h / ROWS;
-    // read params reactively so the thumb updates as the preset changes
+
+    // Snapshot reactive props for the draw closure.
     const p = params;
     const pat = pattern;
     const genId = generatorId;
     const lab = labModel;
     const hue = num(p.hue, 0);
     const bright = num(p.brightness, 1);
-    const t0 = performance.now();
-    let raf = 0;
 
     const draw = (now: number): void => {
-      const t = (now - t0) / 1000;
-      const tMs = (now - t0);
+      const t = (now - 0) / 1000;
+      const tMs = now;
+
       ctx.fillStyle = '#0a0d12';
       ctx.fillRect(0, 0, w, h);
 
+      // Use a static frame (t=400ms) if reduced-motion is enabled.
+      const effectiveT = prefersReduced ? 0.4 : t;
+      const effectiveTms = prefersReduced ? 400 : tMs;
+
       // Branch: generator-backed vs pattern effect
       if (genId && lab) {
-        const pixels = renderGeneratorThumbFrame(genId, p, tMs, lab.pm, genState);
+        const pixels = renderGeneratorThumbFrame(genId, p, effectiveTms, lab.pm, genState);
         if (pixels) {
           for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
@@ -108,7 +155,7 @@
         for (let r = 0; r < ROWS; r++) {
           for (let c = 0; c < COLS; c++) {
             const i = r * COLS + c;
-            const [si, hoff] = sampleWith(pat, t, i, attrs, p);
+            const [si, hoff] = sampleWith(pat, effectiveT, i, attrs, p);
             const amp = si * bright;
             if (amp <= 0.02) continue;
             const [R, G, B] = hueToRgb(hue + hoff, amp);
@@ -117,10 +164,17 @@
           }
         }
       }
-      raf = requestAnimationFrame(draw);
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+
+    // Subscribe to the shared ticker only if visible and not in reduced-motion mode.
+    // For reduced-motion, render once and don't subscribe.
+    if (prefersReduced) {
+      // Render a single static frame at t=400ms
+      draw(400);
+    } else if (isVisible) {
+      const unsub = ticker.subscribe(draw);
+      return unsub;
+    }
   });
 </script>
 

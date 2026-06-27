@@ -44,7 +44,7 @@
 
 {#if eff}
   <header class="ihead">
-    <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} w={72} h={40} /></div>
+    <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} generatorId={eff.generatorId} labModel={store.labModel} w={72} h={40} /></div>
     <div class="titles">
       <h3>{eff.name}</h3>
       <span class="sub">{eff.pattern} · {node.scope}</span>
