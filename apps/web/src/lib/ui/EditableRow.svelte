@@ -8,13 +8,13 @@
      "Rename" verb (and double-clicking the row) enters edit mode and focuses the input;
      pass extra verbs (Duplicate, Delete=`danger`, …) via `actions` and they are appended.
 
-     `editing` is bindable so the parent can drive edit mode externally; `oncommit(value)`
+     `editing` is bindable so the parent can drive edit mode externally; `onCommit(value)`
      fires once with the trimmed, changed name (CommitInput reverts blank / unchanged via
-     `oncancel`). This mirrors the hand-rolled SongRail / ShowBrowser rename rows.
+     `onCancel`). This mirrors the hand-rolled SongRail / ShowBrowser rename rows.
 
      Usage:
        <EditableRow icon={ListMusic} label={song.name} active={song.id === activeId}
-         onclick={() => select(song.id)} oncommit={(name) => store.renameSong(song.id, name)}
+         onclick={() => select(song.id)} onCommit={(name) => store.renameSong(song.id, name)}
          actions={[
            { label: 'Duplicate', icon: Copy, onSelect: () => store.duplicateSong(song.id) },
            { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.removeSong(song.id) },
@@ -34,9 +34,9 @@
     /** Edit-mode control — bindable so a parent can open/close it. */
     editing?: boolean;
     /** Fires with the trimmed, changed name when the rename commits. */
-    oncommit: (value: string) => void;
+    onCommit: (value: string) => void;
     /** Fires when the rename is reverted (Escape / blank / unchanged). */
-    oncancel?: () => void;
+    onCancel?: () => void;
     /** Extra right-click verbs, appended after the built-in Rename. */
     actions?: ContextMenuAction[];
     /** aria-label / placeholder context for the rename input. */
@@ -52,8 +52,8 @@
     active,
     onclick,
     editing = $bindable(false),
-    oncommit,
-    oncancel,
+    onCommit,
+    onCancel,
     actions,
     renameLabel = 'Rename',
     disabled = false,
@@ -67,11 +67,11 @@
   }
   function commit(value: string): void {
     editing = false;
-    oncommit(value);
+    onCommit(value);
   }
   function cancel(): void {
     editing = false;
-    oncancel?.();
+    onCancel?.();
   }
 
   const menuActions = $derived<ContextMenuAction[]>([

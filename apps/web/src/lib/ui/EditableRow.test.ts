@@ -6,7 +6,7 @@ import EditableRow from './EditableRow.svelte';
 describe('EditableRow', () => {
   it('renders as a selectable row when not editing', () => {
     const { container, queryByLabelText } = render(EditableRow, {
-      props: { label: 'Verse', oncommit: vi.fn() },
+      props: { label: 'Verse', onCommit: vi.fn() },
     });
     expect(container.querySelector('.lab')?.textContent).toBe('Verse');
     // the row is wrapped in the ContextMenu trigger and shows no rename input yet
@@ -16,7 +16,7 @@ describe('EditableRow', () => {
 
   it('enters edit mode on double-click and seeds the input with the label', async () => {
     const { container, findByLabelText } = render(EditableRow, {
-      props: { label: 'Verse', oncommit: vi.fn() },
+      props: { label: 'Verse', onCommit: vi.fn() },
     });
     await fireEvent.dblClick(container.querySelector('.li-main')!);
     const input = (await findByLabelText('Rename')) as HTMLInputElement;
@@ -24,42 +24,42 @@ describe('EditableRow', () => {
   });
 
   it('commits a changed name on Enter and leaves edit mode', async () => {
-    const oncommit = vi.fn();
+    const onCommit = vi.fn();
     const { findByLabelText, queryByLabelText } = render(EditableRow, {
-      props: { label: 'Verse', editing: true, oncommit },
+      props: { label: 'Verse', editing: true, onCommit },
     });
     const input = (await findByLabelText('Rename')) as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'Chorus' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
-    expect(oncommit).toHaveBeenCalledTimes(1);
-    expect(oncommit).toHaveBeenCalledWith('Chorus');
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith('Chorus');
     await waitFor(() => expect(queryByLabelText('Rename')).toBeNull());
   });
 
   it('reverts on Escape without committing', async () => {
-    const oncommit = vi.fn();
-    const oncancel = vi.fn();
+    const onCommit = vi.fn();
+    const onCancel = vi.fn();
     const { findByLabelText, queryByLabelText } = render(EditableRow, {
-      props: { label: 'Verse', editing: true, oncommit, oncancel },
+      props: { label: 'Verse', editing: true, onCommit, onCancel },
     });
     const input = (await findByLabelText('Rename')) as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'Chorus' } });
     await fireEvent.keyDown(input, { key: 'Escape' });
-    expect(oncommit).not.toHaveBeenCalled();
-    expect(oncancel).toHaveBeenCalledOnce();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledOnce();
     await waitFor(() => expect(queryByLabelText('Rename')).toBeNull());
   });
 
   it('treats an unchanged name as a revert, not a commit', async () => {
-    const oncommit = vi.fn();
-    const oncancel = vi.fn();
+    const onCommit = vi.fn();
+    const onCancel = vi.fn();
     const { findByLabelText } = render(EditableRow, {
-      props: { label: 'Verse', editing: true, oncommit, oncancel },
+      props: { label: 'Verse', editing: true, onCommit, onCancel },
     });
     const input = (await findByLabelText('Rename')) as HTMLInputElement;
     await fireEvent.blur(input); // blur with the value untouched
-    expect(oncommit).not.toHaveBeenCalled();
-    expect(oncancel).toHaveBeenCalledOnce();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 
   it('surfaces extra context-menu verbs alongside the built-in Rename', () => {
@@ -67,7 +67,7 @@ describe('EditableRow', () => {
     const { container } = render(EditableRow, {
       props: {
         label: 'Verse',
-        oncommit: vi.fn(),
+        onCommit: vi.fn(),
         actions: [{ label: 'Delete', danger: true, onSelect }],
       },
     });

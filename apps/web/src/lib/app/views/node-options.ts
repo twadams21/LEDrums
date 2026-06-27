@@ -34,7 +34,7 @@ export const RGB_OPTS = (['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'] as const).ma
 // --- Play-node options (iconed play-mode + link + layer-poly) --------------------
 // iconed play-mode group (Zap/Repeat/Hand) — same SegmentedControl, just an icon per
 // option (ported from the old node header).
-export const MODE_OPTS: Array<{ value: string; label: string; icon: Component }> = [
+export const MODE_OPTS: Array<{ value: 'oneshot' | 'loop' | 'hold'; label: string; icon: Component }> = [
   { value: 'oneshot', label: 'One-shot', icon: Zap },
   { value: 'loop', label: 'Loop', icon: Repeat },
   { value: 'hold', label: 'Hold', icon: Hand },

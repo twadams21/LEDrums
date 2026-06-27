@@ -396,7 +396,7 @@
             icon={Layers}
             label={layerName}
             bind:editing={rowEditing}
-            oncommit={(v) => (layerName = v)}
+            onCommit={(v) => (layerName = v)}
             actions={rowActions}
             renameLabel="Layer name"
             onclick={() => {}}
