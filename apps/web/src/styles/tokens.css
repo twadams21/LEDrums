@@ -134,18 +134,6 @@
   --dur-2: 150ms; /* most transitions                                          */
   --dur-3: 220ms; /* panel / mode reveals                                      */
   --dur-4: 320ms; /* the stage ⇄ studio mode crossfade                         */
-
-  /* ===== Backward-compat aliases (old token names → new values) =============
-     Lets the existing panels render on the new palette during migration.
-     Remove a line once every consumer has moved to the new token. */
-  --panel: var(--surface);
-  --panel-solid: var(--surface);
-  --panel-raised: var(--surface-2);
-  --border-bright: var(--border-strong);
-  --text-dim: var(--text-muted);
-  --shadow: var(--shadow-2);
-  --mono: var(--font-mono);
-  --sans: var(--font-sans);
 }
 
 /* ===== Accent candidates (styleguide preview; pick one) ===================== */
