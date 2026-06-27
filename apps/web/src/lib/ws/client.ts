@@ -7,6 +7,7 @@ import {
   type SerializedModel,
   type ServerMessage,
   type ShowLibraryBlob,
+  type VoiceStats,
 } from './protocol-types';
 import type { EngineStats, Project } from '@ledrums/core';
 
@@ -36,7 +37,7 @@ export interface WSCallbacks {
     showLibrary: ShowLibraryBlob | null,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
-  onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus) => void;
+  onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (kind: 'midi' | 'osc', label: string, value: number) => void;
   onProjects?: (names: string[]) => void;
   onError?: (message: string) => void;
@@ -154,7 +155,7 @@ export class WSClient {
         this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary);
         break;
       case 'stats':
-        this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output);
+        this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
         break;
       case 'input':
         this.cb.onInput?.(msg.kind, msg.label, msg.value);
