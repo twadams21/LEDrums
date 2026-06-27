@@ -12,7 +12,7 @@ import { WSClient, type ConnectionState } from '../ws/client';
 import {
   initMidi,
   type MidiInitResult,
-  type MidiNoteEvent,
+  type MidiEvent,
 } from '../midi/webmidi';
 import type {
   ClientMessage,
@@ -126,7 +126,7 @@ class AppStore {
 
   private async initMidiAccess(): Promise<void> {
     try {
-      this.midiHandle = await initMidi((ev) => this.onMidiNote(ev));
+      this.midiHandle = await initMidi((ev) => this.onMidiInput(ev));
     } catch {
       this.midiHandle = null;
     }
@@ -141,8 +141,20 @@ class AppStore {
     this.midiReason = null;
   }
 
-  private onMidiNote(ev: MidiNoteEvent): void {
-    this.ws.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on });
+  /** Forward a parsed MIDI event to the server: notes as `midi`, Control Change as `cc`,
+   * Program Change as `programChange` (the latter two drive global transport recall). */
+  private onMidiInput(ev: MidiEvent): void {
+    switch (ev.kind) {
+      case 'note':
+        this.ws.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on });
+        return;
+      case 'cc':
+        this.ws.send({ t: 'cc', controller: ev.controller, value: ev.value });
+        return;
+      case 'programChange':
+        this.ws.send({ t: 'programChange', value: ev.value });
+        return;
+    }
   }
 
   private pushHit(kind: 'midi' | 'osc', label: string, value: number): void {

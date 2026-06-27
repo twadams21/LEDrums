@@ -8,6 +8,7 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
   import { describeTriggerSource, zoneLabel } from '../trigger-source-label';
+  import { isReservedCc, RESERVED_CC } from '../recall';
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
     NODE_KINDS,
@@ -224,10 +225,19 @@
     store.setTriggerSource(gkey, next);
   }
 
-  /** Flip a MIDI source between note and CC, carrying the current number across. */
+  /** Flip a MIDI source between note and CC, carrying the current number across. CC 0 is
+      reserved for global section recall, so switching to CC nudges off it (→ 1). */
   function setMidiMode(gkey: string, cur: Extract<TriggerSource, { kind: 'midi' }>, mode: 'note' | 'cc'): void {
     const n = cur.cc ?? cur.note ?? 0;
-    store.setTriggerSource(gkey, mode === 'cc' ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
+    if (mode === 'cc') store.setTriggerSource(gkey, { kind: 'midi', cc: isReservedCc(n) ? RESERVED_CC + 1 : n });
+    else store.setTriggerSource(gkey, { kind: 'midi', note: n });
+  }
+
+  /** Commit a CC number for a trigger source, rejecting the reserved controller (no write —
+      CC 0 stays bound to global section recall). Note numbers pass straight through. */
+  function commitMidiNumber(gkey: string, isCc: boolean, n: number): void {
+    if (isCc && isReservedCc(n)) return; // CC 0 reserved — ignore
+    store.setTriggerSource(gkey, isCc ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
   }
 
   /** One-line description for the container/modifier kinds that take no extra control. */
@@ -311,18 +321,20 @@
             ariaLabel="MIDI note or CC"
           />
         </Field>
-        <Field label={isCc ? 'CC number' : 'Note number'} hint="0–127">
+        <Field label={isCc ? 'CC number' : 'Note number'} hint={isCc ? '1–127' : '0–127'}>
           <CommitInput
             type="number"
-            min={0}
+            min={isCc ? RESERVED_CC + 1 : 0}
             max={127}
             value={(isCc ? src.cc : src.note) ?? ''}
-            placeholder="0–127"
+            placeholder={isCc ? '1–127' : '0–127'}
             ariaLabel={isCc ? 'CC number' : 'Note number'}
-            onCommit={(v) =>
-              onNum(v, (n) => gkey && store.setTriggerSource(gkey, isCc ? { kind: 'midi', cc: n } : { kind: 'midi', note: n }))}
+            onCommit={(v) => onNum(v, (n) => gkey && commitMidiNumber(gkey, isCc, n))}
           />
         </Field>
+        {#if isCc}
+          <p class="hint">CC 0 reserved for section recall.</p>
+        {/if}
         <p class="hint">Channel comes from the patch device, not here.</p>
       {:else if src?.kind === 'osc'}
         <Field label="Address" hint="e.g. /kick">
