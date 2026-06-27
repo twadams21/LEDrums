@@ -30,7 +30,7 @@
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Field from '../../ui/Field.svelte';
-  import CommitInput from './CommitInput.svelte';
+  import CommitInput from '../../ui/CommitInput.svelte';
   import type { DrumConfig, KitConfig, RgbOrder } from '@ledrums/core';
   import { patchToOutputs, pixelRanges, type HoopRef, type PatchRouting, type PixelSpan } from '../patch-routing';
   import {
@@ -362,6 +362,7 @@
           <CommitInput
             value={src.address}
             mono
+            autofocus={false}
             placeholder="/kick"
             ariaLabel="OSC address"
             onCommit={(v) => gkey && store.setTriggerSource(gkey, { kind: 'osc', address: v.trim() })}
@@ -379,6 +380,7 @@
         <Field label="Name" hint="display label">
           <CommitInput
             value={store.graphLabel(gkey)}
+            autofocus={false}
             placeholder="New graph"
             ariaLabel="Graph name"
             onCommit={(v) => store.renameGraph(gkey, v)}
@@ -572,6 +574,8 @@
       <Field label="Name" hint="display label">
         <CommitInput
           value={patchLabel(id, fallback)}
+          autofocus={false}
+          allowEmpty
           placeholder={fallback}
           ariaLabel="Node name"
           onCommit={(v) => commitLabel(id, fallback, v)}
@@ -629,6 +633,8 @@
             <CommitInput
               value={addr ?? ''}
               mono
+              autofocus={false}
+              allowEmpty
               placeholder="/drum/zone"
               disabled={!project}
               ariaLabel="OSC address"
@@ -819,6 +825,7 @@
             <CommitInput
               value={out.host}
               mono
+              autofocus={false}
               placeholder="255.255.255.255"
               disabled={!project}
               ariaLabel="Host / IP"
@@ -842,6 +849,8 @@
               <CommitInput
                 value={out.iface ?? ''}
                 mono
+                autofocus={false}
+                allowEmpty
                 placeholder="0.0.0.0"
                 disabled={!project}
                 ariaLabel="Source interface"
