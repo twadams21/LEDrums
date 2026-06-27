@@ -12,6 +12,7 @@ import type {
   voice,
 } from '@ledrums/core';
 import { listEffects } from '@ledrums/core';
+import type { ShowLibraryBlob } from './show-library';
 
 // ---------------------------------------------------------------------------
 // Client → Server (JSON)
@@ -50,6 +51,10 @@ export type ClientMessage =
   // native pad-hit input (drum + zone), and a section recall (activates a song's
   // section so subsequent hits fire its slot graphs).
   | { t: 'setShow'; show: voice.Show }
+  // Server-authoritative show library: the client pushes the authored library (an opaque
+  // versioned blob — its schema is web-owned) on every authored change; the server persists
+  // it and rebroadcasts it on cold load via the `state` message. Mode-independent.
+  | { t: 'setShowLibrary'; library: ShowLibraryBlob }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
   | { t: 'recallSection'; songId: string; sectionId: string }
   | { t: 'loadProject'; name: string }
@@ -61,7 +66,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
-  'setShow', 'key', 'recallSection',
+  'setShow', 'setShowLibrary', 'key', 'recallSection',
   'loadProject', 'saveProject', 'listProjects',
 ]);
 
@@ -117,7 +122,9 @@ export interface VoiceStats {
 }
 
 export type ServerMessage =
-  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus }
+  // `showLibrary` carries the server's persisted authored show library (the opaque versioned
+  // blob), or null when the server has none yet — the web adopts it on cold load.
+  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null }
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
   | { t: 'projects'; names: string[] }

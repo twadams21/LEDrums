@@ -21,6 +21,7 @@ import {
   type RecallTarget,
 } from './input-router';
 import { listProjects, loadProject, projectExists, saveProject, saveProjectAsync } from './projects';
+import { loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { createAutosaver } from './autosave';
 import { SingleClientLock } from './client-lock';
 import { serveStatic } from './static-host';
@@ -71,6 +72,20 @@ const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
  * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
 const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()));
 
+/** Server-authoritative show library: the authored show library (web-defined schema, persisted
+ * as an opaque versioned blob) is owned by the server exactly like the routing project —
+ * boot-recovered here, rebroadcast on cold load via {@link stateMessage}, autosaved on every
+ * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
+ * has no file yet); the web then seeds the server from its localStorage cache on connect. */
+let liveShowLibrary: ShowLibraryBlob | null = loadShowLibrary();
+
+/** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
+ * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
+ * yet) is a no-op. */
+const showLibraryAutosaver = createAutosaver(() =>
+  liveShowLibrary ? saveShowLibraryAsync(liveShowLibrary) : Promise.resolve(),
+);
+
 // --- HTTP + static + WS -----------------------------------------------------
 
 const server = createServer((req, res) => {
@@ -115,6 +130,7 @@ function stateMessage(): ServerMessage {
     effects: effectSpecs(),
     projects: listProjects(),
     output: (voiceHost ?? host).getOutputStatus(),
+    showLibrary: liveShowLibrary,
   };
 }
 
@@ -167,6 +183,18 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
   }
   if (msg.t === 'listProjects') {
     ws.send(encodeServer({ t: 'projects', names: listProjects() }));
+    return;
+  }
+  // Show-library persistence is mode-independent (authored content, not an engine input): the
+  // client pushes its authored library on every change; the server adopts it as the live slot
+  // and debounce-autosaves it. No broadcast back — the single client is the source, so an echo
+  // would be redundant; cold-load adopt happens via the `state` message on (re)connect.
+  if (msg.t === 'setShowLibrary') {
+    const lib = msg.library;
+    if (lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number') {
+      liveShowLibrary = lib as ShowLibraryBlob;
+      showLibraryAutosaver.markDirty();
+    }
     return;
   }
 
@@ -387,8 +415,12 @@ async function shutdown(): Promise<void> {
   wss.close();
   server.close();
   // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
-  // never rejects (write errors are logged), but guard exit-on-error just in case.
-  await autosaver.flush().catch(() => {});
+  // never rejects (write errors are logged), but guard exit-on-error just in case. Both the
+  // project and the show library are flushed (independent slots).
+  await Promise.all([
+    autosaver.flush().catch(() => {}),
+    showLibraryAutosaver.flush().catch(() => {}),
+  ]);
   process.exit(0);
 }
 

@@ -1,0 +1,96 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { PROJECTS_DIR } from './projects';
+
+/** Machine-local show-library file, written alongside the project autosave slot. Like the
+ * live project it follows the repo's `.local.json` convention (gitignored runtime state, never
+ * a hand-edited seed) — see apps/server/.gitignore. */
+export const SHOW_LIBRARY_FILE = 'default.shows.local.json';
+
+/** Monotonic suffix so two writers (e.g. a debounced autosave racing a flush) never collide
+ * on the same temp file. Mirrors the project writer. */
+let tmpSeq = 0;
+
+/**
+ * The authored show library is WEB-OWNED state — its schema (`ShowLibrary`, `AuthoredState`)
+ * lives in apps/web and the server can't import it. So the server persists it as an OPAQUE
+ * versioned blob: it stores + rebroadcasts the JSON verbatim and never interprets `data`. The
+ * web (de)serializes/validates it on adopt. This mirrors the web's `PersistedShowLibrary`
+ * envelope: a `version` gate plus the bare library under `data`.
+ */
+export interface ShowLibraryBlob {
+  version: number;
+  data: unknown;
+}
+
+/** Resolve the final + a unique temp path for an atomic write of the library file. */
+function writePaths(dir: string): { final: string; tmp: string } {
+  const final = join(dir, SHOW_LIBRARY_FILE);
+  return { final, tmp: `${final}.${process.pid}.${tmpSeq++}.tmp` };
+}
+
+/** True when a persisted show-library file exists. */
+export function showLibraryExists(dir: string = PROJECTS_DIR): boolean {
+  return existsSync(join(dir, SHOW_LIBRARY_FILE));
+}
+
+/**
+ * Boot-recover the persisted show library, or `null` when it is absent, unreadable, or not a
+ * versioned envelope. Defensive by design: a missing or junk file means "no library yet" (the
+ * web re-seeds the server from its localStorage cache on connect), so this NEVER throws on
+ * boot — a corrupt file can't wedge startup. The opaque `data` is not validated here; the web
+ * runs `deserializeShowLibrary` on adopt.
+ */
+export function loadShowLibrary(dir: string = PROJECTS_DIR): ShowLibraryBlob | null {
+  const file = join(dir, SHOW_LIBRARY_FILE);
+  if (!existsSync(file)) return null;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    return isBlob(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A parsed value is a usable blob iff it is an object carrying a numeric `version`. */
+function isBlob(v: unknown): v is ShowLibraryBlob {
+  return typeof v === 'object' && v !== null && typeof (v as { version?: unknown }).version === 'number';
+}
+
+/**
+ * Atomically persist the library blob to {@link SHOW_LIBRARY_FILE} — write a unique temp file
+ * and `rename` into place, so a crash never leaves a half-written file (the temp lives in the
+ * same dir/filesystem as the target, making the rename atomic). Synchronous; used for the
+ * shutdown flush.
+ */
+export function saveShowLibrary(blob: ShowLibraryBlob, dir: string = PROJECTS_DIR): void {
+  const data = JSON.stringify(blob, null, 2);
+  mkdirSync(dir, { recursive: true });
+  const { final, tmp } = writePaths(dir);
+  try {
+    writeFileSync(tmp, data, 'utf8');
+    renameSync(tmp, final);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
+/**
+ * Async, atomic library write (temp file + `rename`) — same atomicity as
+ * {@link saveShowLibrary}, but the disk IO is off the main tick, so the debounced autosaver
+ * never blocks the engine/render loop.
+ */
+export async function saveShowLibraryAsync(blob: ShowLibraryBlob, dir: string = PROJECTS_DIR): Promise<void> {
+  const data = JSON.stringify(blob, null, 2);
+  await mkdir(dir, { recursive: true });
+  const { final, tmp } = writePaths(dir);
+  try {
+    await writeFile(tmp, data, 'utf8');
+    await rename(tmp, final);
+  } catch (err) {
+    await rm(tmp, { force: true }).catch(() => {});
+    throw err;
+  }
+}
