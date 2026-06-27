@@ -18,6 +18,7 @@
   import NodeCard from './NodeCard.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import { kindIcon, tint, kindLabel, kindSummary } from './trigger-node-meta';
+  import { pct } from './node-options';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
   import { describeTriggerSource } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
@@ -39,7 +40,6 @@
   const bandLabels = $derived.by(() => {
     if (!node) return [];
     const cuts = node.bands && node.bands.length ? node.bands : [0.5];
-    const pct = (x: number): string => `${Math.round(x * 100)}%`;
     return [...cuts.map((c) => `≤ ${pct(c)}`), `> ${pct(cuts[cuts.length - 1]!)}`];
   });
 
