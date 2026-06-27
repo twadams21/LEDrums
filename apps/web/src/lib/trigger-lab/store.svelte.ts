@@ -131,13 +131,9 @@ export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
 
 const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
 
-/** True for AUTHORED graph keys — the ones `createGraph` mints via `nid('graph')` (`graph-<n>`;
-    legacy persisted blobs may carry the older `graph:<n>` form). Pad graphs are keyed
-    `drumId:zone` (e.g. "kick:0") and derive their label/identity from the kit, so they're never
-    renamable/deletable — only authored graphs are. A pure key test (no store state). */
-export function isAuthoredGraphKey(key: string): boolean {
-  return key.startsWith('graph-') || key.startsWith('graph:');
-}
+/** Kit-derived display label for a pad ("Kick · center") — the friendly name a pad-keyed graph
+    starts from (used by pad-label hydration + the graphLabel fallback). */
+const padLabel = (p: Pad): string => `${p.drumLabel} · ${p.zoneLabel}`;
 
 /** Seed one demo song from the fixture sections, each section being the FLAT list of every
     pad's graph key (U4). Each pad graph declares a `drum` source from its padKey (the
@@ -208,23 +204,46 @@ function unionPresets(persisted: readonly Preset[]): Preset[] {
   return [...persisted, ...PRESETS.filter((p) => !persistedIds.has(p.id))];
 }
 
-/** Back-fill an explicit `drum` trigger source on every PAD-BOUND graph that lacks one —
-    the implicit padKey binding (`"drumId:zone"`) made explicit, so a graph now declares
-    what fires it. Mirrors {@link unionEffects}/{@link unionPresets}: a blob saved before
-    the trigger-source model has no `source`, and we fill the least-surprising default
-    rather than dropping anything. Idempotent (a trigger node that already carries a
-    `source` is left untouched) and immutable (only changed graphs are rebuilt). AUTHORED
-    graphs (`graph:<n>`, listed in `authoredKeys`) have NO pad, so they keep `source`
-    unset = behave exactly as today until the user binds a MIDI/OSC source. */
+/** Back-fill an explicit `drum` trigger source on every PAD-BOUND graph (a key matching a real
+    pad) that lacks one — the implicit padKey binding (`"drumId:zone"`) made explicit, so a graph
+    now declares what fires it. Mirrors {@link unionEffects}/{@link unionPresets}: a blob saved
+    before the trigger-source model has no `source`, and we fill the least-surprising default
+    rather than dropping anything. Idempotent (a trigger node that already carries a `source` is
+    left untouched) and immutable (only changed graphs are rebuilt). NON-pad graphs (authored
+    `graph-`/`graph:` keys, or any other) are left untouched — they keep `source` unset until the
+    user binds a drum/MIDI/OSC source. Keyed off the actual pad-key set rather than "not named",
+    because graphNames now labels pad keys too (so it can't proxy "authored"). */
 function unionTriggerSources(
   graphs: Record<string, TriggerGraph>,
-  authoredKeys: ReadonlySet<string>,
+  padKeys: ReadonlySet<string>,
 ): Record<string, TriggerGraph> {
   const out: Record<string, TriggerGraph> = {};
   for (const [key, graph] of Object.entries(graphs)) {
-    out[key] = authoredKeys.has(key) ? graph : withDrumSource(graph, key);
+    out[key] = padKeys.has(key) ? withDrumSource(graph, key) : graph;
   }
   return out;
+}
+
+/** Ensure every PAD-keyed graph carries a friendly display name in `graphNames`
+    ("Kick · center"), so renames start from a nice label and a restored show never surfaces a
+    raw "kick:0" key. Idempotent + non-destructive: a pad key the user already renamed (present
+    in `names`) is left untouched — only missing pad-key names are filled. Returns the SAME
+    reference when nothing changes (alias-stable, mirrors {@link withDrumSource}). Authored keys
+    are named at create/duplicate time, not here. */
+function hydratePadNames(
+  graphs: Record<string, TriggerGraph>,
+  names: Record<string, string>,
+  pads: readonly Pad[],
+): Record<string, string> {
+  let out: Record<string, string> | null = null;
+  for (const p of pads) {
+    const key = padKey(p);
+    if (key in graphs && !(key in names)) {
+      out ??= { ...names };
+      out[key] = padLabel(p);
+    }
+  }
+  return out ?? names;
 }
 
 /** Ensure a pad graph's trigger node carries a `drum` source derived from its padKey
@@ -245,11 +264,13 @@ export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
   pads = $state<Pad[]>(structuredClone(PADS));
-  /** per-pad freeform trigger graphs (keyed by padKey) — the editable model.
-      Authored (non-pad) graphs created via createGraph() live here too, keyed
-      `graph:<n>`, with their display labels in `graphNames`. */
+  /** Every trigger graph, keyed by graph key — the editable model. No authored/pad
+      distinction: pad graphs (keyed `drumId:zone`) and graphs minted via createGraph()
+      / duplicateGraph() (keyed `graph-<n>`) are all first-class, generic graphs that
+      rename / duplicate / delete uniformly. */
   graphs = $state<Record<string, TriggerGraph>>(seedGraphs());
-  /** display labels for AUTHORED graph keys (pad graphs label from the kit). */
+  /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
+      e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
   sections = $state<Section[]>(structuredClone(SECTIONS));
   /** mutable presets — linked instances read these live. */
@@ -404,16 +425,24 @@ export class TriggerLab {
   /** The active section (SetlistSection) in the active song — the section you play + edit.
       Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
   activeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.activeSectionId) ?? null);
-  /** The reusable graph library: every per-pad graph ("Drum · zone") plus every
-      authored graph (its user/auto label), so the picker + slot labels see both. */
-  graphLibrary = $derived([
-    ...this.pads.map((p) => ({ key: padKey(p), label: `${p.drumLabel} · ${p.zoneLabel}` })),
-    ...Object.keys(this.graphNames).map((key) => ({ key, label: this.graphNames[key]! })),
-  ]);
+  /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
+      and authored graphs alike, no distinction — in graph insertion order (pads first, then
+      created/duplicated graphs). Drives the section picker + slot labels. A deleted graph drops
+      out (it's no longer in `graphs`). */
+  graphLibrary = $derived(Object.keys(this.graphs).map((key) => ({ key, label: this.graphLabel(key) })));
 
-  /** Human label for a graph key (for the section lists + picker); falls back to the raw key. */
+  /** Human label for a graph key (for the section lists + picker): the stored display name
+      (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
+      label, else the raw key. */
   graphLabel(key: string): string {
-    return this.graphLibrary.find((g) => g.key === key)?.label ?? key;
+    return this.graphNames[key] ?? this.padLabelFor(key) ?? key;
+  }
+
+  /** Kit-derived "Drum · zone" label for a pad key, or null when `key` is not a pad — the
+      graphLabel fallback for a pad graph whose name hasn't been hydrated yet. */
+  private padLabelFor(key: string): string | null {
+    const p = this.pads.find((pad) => padKey(pad) === key);
+    return p ? padLabel(p) : null;
   }
 
   // --- lifecycle -----------------------------------------------------------
@@ -459,11 +488,14 @@ export class TriggerLab {
 
   // --- live persistence (show library ⇄ localStorage) ----------------------
 
-  /** Make every pad-bound graph's trigger source explicit + fold legacy velocity switches —
-      the graph back-compat the constructor and every show load run (idempotent). */
+  /** Make every pad-bound graph's trigger source explicit, fold legacy velocity switches, and
+      hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
+      constructor and every show load run (idempotent). */
   private normalizeGraphs(): void {
-    this.graphs = unionTriggerSources(this.graphs, new Set(Object.keys(this.graphNames)));
+    const padKeys = new Set(this.pads.map(padKey));
+    this.graphs = unionTriggerSources(this.graphs, padKeys);
     this.graphs = foldVelocitySwitches(this.graphs);
+    this.graphNames = hydratePadNames(this.graphs, this.graphNames, this.pads);
   }
 
   /** Reset every authored rune to the blank-document seed (via {@link seedAuthored}) — the
@@ -1153,23 +1185,44 @@ export class TriggerLab {
     return `New graph ${n}`;
   }
 
-  /** Rename an AUTHORED graph — its display label in `graphNames`. The autosave-consistent
-      wrapper the Inspector's rename field now calls (it used to write `graphNames` directly).
-      Pad graphs label from the kit, so a non-authored / unknown key is a no-op. A blank name
-      keeps the existing label (mirrors {@link renameSong}). Persists via the authored autosave. */
+  /** Rename ANY graph — its display label in `graphNames`. Works on every graph key (pad graphs
+      included — pad-label hydration seeds their names). The autosave-consistent wrapper the
+      Inspector + Sections rename fields call. A blank name keeps the existing label (mirrors
+      {@link renameSong}); an unknown key (not in `graphs`) is a no-op. Persists via autosave. */
   renameGraph(key: string, name: string): void {
-    if (!isAuthoredGraphKey(key) || !(key in this.graphNames)) return;
+    if (!(key in this.graphs)) return;
     const trimmed = name.trim();
     if (!trimmed) return;
     this.graphNames = { ...this.graphNames, [key]: trimmed };
   }
 
-  /** Delete an AUTHORED graph everywhere: drop it from `graphs` + `graphNames`, and purge its
-      key from EVERY section across ALL songs (no dangling references). Pad graphs derive from
-      the kit, so a non-authored / unknown key is a no-op. When the deleted graph was the
-      open/selected one, clear the selection. Persists via the authored autosave. */
+  /** Duplicate ANY graph under a fresh authored key: deep-clone its nodes/edges (independent of
+      the source), label it "<name> copy", and select it for editing. Mirrors
+      {@link duplicateSong}/{@link duplicateSection}. Returns the new key, or null if `key` is
+      unknown. The clone is a first-class generic graph (`graph-<n>` key) regardless of whether
+      the source was a pad or authored graph; its trigger source is copied verbatim, so a
+      duplicated pad graph keeps firing the same drum until rebound. NOT added to any section —
+      the user places it where they want (reuse is by reference). Persists via autosave. */
+  duplicateGraph(key: string): string | null {
+    const src = this.graphs[key];
+    if (!src) return null;
+    let newKey = nid('graph');
+    while (this.graphs[newKey]) newKey = nid('graph'); // global uniqueness (survives reload)
+    const clone = structuredClone($state.snapshot(src)) as TriggerGraph;
+    this.graphs = { ...this.graphs, [newKey]: clone };
+    this.graphNames = { ...this.graphNames, [newKey]: `${this.graphLabel(key)} copy` };
+    this.selectedPadKey = newKey;
+    return newKey;
+  }
+
+  /** Delete ANY graph everywhere: drop it from `graphs` + `graphNames`, and purge its key from
+      EVERY section across ALL songs (no dangling references). Works on every graph key — a pad
+      graph is deletable too; a deleted pad graph leaves its pad SILENT (no respawn) until a
+      graph with a matching trigger source exists again (hit-resolution is by source). When the
+      deleted graph was the open/selected one, clear the selection. An unknown key (not in
+      `graphs`) is a no-op. Persists via the authored autosave. */
   deleteGraph(key: string): void {
-    if (!isAuthoredGraphKey(key) || !(key in this.graphNames)) return;
+    if (!(key in this.graphs)) return;
     const graphs = { ...this.graphs };
     delete graphs[key];
     this.graphs = graphs;
