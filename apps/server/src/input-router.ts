@@ -1,4 +1,4 @@
-import { SLOT_LABELS, type Engine, type InputEvent, type InputMap } from '@ledrums/core';
+import { SLOT_LABELS, type Engine, type InputEvent, type InputMap, type voice } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
 import type { ClientMessage } from './ws-protocol';
 
@@ -49,6 +49,80 @@ export function midiToEvent(note: number, velocity: number, on: boolean, timeMs:
 export function oscToEvent(e: OscEvent, timeMs: number): InputEvent | null {
   const first = e.args.find((a) => typeof a === 'number');
   return { kind: 'osc', address: e.address, value: typeof first === 'number' ? first : 1, timeMs };
+}
+
+// ---------------------------------------------------------------------------
+// Global transport recall (PINNED precedence STEP 0 — runs BEFORE the zone-map)
+// ---------------------------------------------------------------------------
+//
+// A DAW/controller drives the set via GLOBAL conventions, not per-section bindings:
+//   • Program Change value n   → select song n in the active setlist, recall its first section
+//   • CC #0 value v            → recall section v in the ACTIVE song
+//   • OSC /ledrums/song_<n>/section  (arg = section index) → select song n + that section
+// Each maps an index → the song/section ids in the live Show and reuses the engine's
+// existing `recallSection` input. Out-of-range indices are NO-OPS (return null). These
+// helpers are PURE (Show in → ids out) so they unit-test without the engine; the server
+// wires them at the input boundary before per-trigger resolution.
+
+/** Controller number reserved for global section recall — no trigger may bind it. */
+export const SECTION_RECALL_CC = 0;
+
+/** The song + section ids a transport-recall resolves to. */
+export interface RecallTarget {
+  songId: string;
+  sectionId: string;
+}
+
+/**
+ * OSC section-recall address: `/ledrums/song_<n>/section`, where `<n>` is the setlist
+ * song index and the OSC argument carries the section index. Kept byte-identical to the
+ * web's `oscForSection` display helper (apps/web/src/lib/app/recall.ts).
+ */
+const SECTION_RECALL_ADDR = /^\/ledrums\/song_(\d+)\/section$/;
+
+/** The song index encoded in a section-recall OSC address, or null if it isn't one. */
+export function parseSectionRecallAddress(address: string): number | null {
+  const m = SECTION_RECALL_ADDR.exec(address);
+  return m ? Number(m[1]) : null;
+}
+
+/** Resolve a song + section by their setlist indices (no-op → null if out of range). */
+function targetForIndices(show: voice.Show | null | undefined, songIndex: number, sectionIndex: number): RecallTarget | null {
+  const song = show?.songs?.[songIndex];
+  const section = song?.sections[sectionIndex];
+  return song && section ? { songId: song.id, sectionId: section.id } : null;
+}
+
+/** Program Change → recall song `program`'s FIRST section (no-op if out of range). */
+export function programChangeRecall(show: voice.Show | null | undefined, program: number): RecallTarget | null {
+  return targetForIndices(show, program, 0);
+}
+
+/**
+ * CC #0 value → recall section `index` in the ACTIVE song (the last song recalled, or
+ * the first song when none has been recalled yet). No-op if out of range.
+ */
+export function sectionIndexRecall(
+  show: voice.Show | null | undefined,
+  activeSongId: string | null,
+  index: number,
+): RecallTarget | null {
+  const songs = show?.songs;
+  if (!songs?.length) return null;
+  const song = songs.find((s) => s.id === activeSongId) ?? songs[0]!;
+  const section = song.sections[index];
+  return section ? { songId: song.id, sectionId: section.id } : null;
+}
+
+/**
+ * OSC `/ledrums/song_<n>/section` + value → recall song n / section value. Returns null
+ * when the address isn't a section-recall address OR the indices are out of range (so the
+ * caller falls through to the normal zone-map / direct-binding OSC path).
+ */
+export function oscRecall(show: voice.Show | null | undefined, address: string, value: number): RecallTarget | null {
+  const songIndex = parseSectionRecallAddress(address);
+  if (songIndex === null) return null;
+  return targetForIndices(show, songIndex, Math.floor(value));
 }
 
 /**

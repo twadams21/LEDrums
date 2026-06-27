@@ -11,6 +11,8 @@ import {
 
 const samples: ClientMessage[] = [
   { t: 'midi', note: 38, velocity: 100, on: true },
+  { t: 'cc', controller: 0, value: 5 },
+  { t: 'programChange', value: 2 },
   { t: 'osc', address: '/ledrums/volume', value: 0.5 },
   { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
   { t: 'setLayer', layerId: 'base', opacity: 0.5, activeClipId: 'swirl' },

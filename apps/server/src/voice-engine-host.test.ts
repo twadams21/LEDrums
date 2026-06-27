@@ -281,6 +281,30 @@ describe('VoiceEngineHost', () => {
     expect(litBuses(host)).toEqual(['direct']);
   });
 
+  it('retains the show + tracks the active song for global transport recall', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const show: voice.Show = {
+      ...routingShow({}, ['main']),
+      songs: [
+        { id: 'songA', name: 'A', sections: [{ id: 'a0', name: 'A0', slots: {} }] },
+        { id: 'songB', name: 'B', sections: [{ id: 'b0', name: 'B0', slots: {} }] },
+      ],
+    };
+    host.setShow(show);
+    // setShow retains the show + seeds the active song from the first entry.
+    expect(host.getShow()).toBe(show);
+    expect(host.getActiveSongId()).toBe('songA');
+
+    // A recall that names a song (UI- or transport-driven) updates the active song, so a
+    // subsequent CC#0 section recall resolves against it.
+    host.applyInput({ kind: 'recallSection', songId: 'songB', sectionId: 'b0' });
+    expect(host.getActiveSongId()).toBe('songB');
+
+    // A sectionId-only recall leaves the active song unchanged.
+    host.applyInput({ kind: 'recallSection', sectionId: 'b0' });
+    expect(host.getActiveSongId()).toBe('songB');
+  });
+
   it('setKitTransform with pixelsPerHoop changes the live model pixel count', () => {
     const { host } = makeHost(voice.createNullEngine());
     const before = host.getModel().pixelCount;
