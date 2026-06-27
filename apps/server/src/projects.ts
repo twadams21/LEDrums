@@ -1,25 +1,20 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertProjectIntegrity, parseProject, type Project } from '@ledrums/core';
+import { writeFileAtomic, writeFileAtomicSync } from './atomic-file';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PROJECTS_DIR = join(here, '..', 'projects');
-
-/** Monotonic suffix so two writers (e.g. an explicit save + a debounced autosave)
- * never collide on the same temp file. */
-let tmpSeq = 0;
 
 /** Validate + serialize a project to its on-disk JSON form. Throws on invalid input. */
 function serializeProject(project: Project): string {
   return JSON.stringify(parseProject(project), null, 2);
 }
 
-/** Resolve the final + a unique temp path for an atomic `<name>.json` write. */
-function writePaths(name: string, dir: string): { final: string; tmp: string } {
-  const final = join(dir, `${name}.json`);
-  return { final, tmp: `${final}.${process.pid}.${tmpSeq++}.tmp` };
+/** Resolve the final path for a persisted `<name>.json` project. */
+function projectPath(name: string, dir: string): string {
+  return join(dir, `${name}.json`);
 }
 
 /** List saved project names (filenames without the `.json` extension). */
@@ -33,7 +28,7 @@ export function listProjects(dir: string = PROJECTS_DIR): string[] {
 
 /** True when a saved project file exists for `name`. */
 export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean {
-  return existsSync(join(dir, `${name}.json`));
+  return existsSync(projectPath(name, dir));
 }
 
 /**
@@ -44,7 +39,7 @@ export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean
  * going dark downstream.
  */
 export function loadProject(name: string, dir: string = PROJECTS_DIR): Project {
-  const raw = readFileSync(join(dir, `${name}.json`), 'utf8');
+  const raw = readFileSync(projectPath(name, dir), 'utf8');
   const project = parseProject(JSON.parse(raw));
   assertProjectIntegrity(project);
   return project;
@@ -57,16 +52,7 @@ export function loadProject(name: string, dir: string = PROJECTS_DIR): Project {
  * target. Synchronous; used for explicit saves and the shutdown flush.
  */
 export function saveProject(name: string, project: Project, dir: string = PROJECTS_DIR): void {
-  const data = serializeProject(project);
-  mkdirSync(dir, { recursive: true });
-  const { final, tmp } = writePaths(name, dir);
-  try {
-    writeFileSync(tmp, data, 'utf8');
-    renameSync(tmp, final);
-  } catch (err) {
-    rmSync(tmp, { force: true });
-    throw err;
-  }
+  writeFileAtomicSync(projectPath(name, dir), serializeProject(project));
 }
 
 /**
@@ -80,14 +66,5 @@ export async function saveProjectAsync(
   project: Project,
   dir: string = PROJECTS_DIR,
 ): Promise<void> {
-  const data = serializeProject(project);
-  await mkdir(dir, { recursive: true });
-  const { final, tmp } = writePaths(name, dir);
-  try {
-    await writeFile(tmp, data, 'utf8');
-    await rename(tmp, final);
-  } catch (err) {
-    await rm(tmp, { force: true }).catch(() => {});
-    throw err;
-  }
+  await writeFileAtomic(projectPath(name, dir), serializeProject(project));
 }
