@@ -210,7 +210,8 @@ describe('VoiceEngineHost', () => {
     ({
       id: 'trig', kind: 'trigger', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '',
       presetId: '', busId: '', params: {}, env: {}, linked: false, noRepeat: false, on: 'value',
-      valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1, source,
+      valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
+      delayMode: 'time', ms: 0, division: '1/8', source,
     }) as voice.GraphNode;
 
   const playNode = (busId: string): voice.GraphNode =>
@@ -218,6 +219,7 @@ describe('VoiceEngineHost', () => {
       id: 'play', kind: 'play', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
       presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {}, linked: false,
       noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
+      delayMode: 'time', ms: 0, division: '1/8',
     }) as voice.GraphNode;
 
   const trigGraph = (source: voice.TriggerSource | undefined, busId: string): voice.TriggerGraph => ({

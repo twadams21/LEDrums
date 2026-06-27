@@ -18,6 +18,7 @@ import type {
   SwitchOn,
   TriggerGraph,
 } from './types';
+import { computeDelayMs } from './delay';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -41,7 +42,41 @@ export interface StopAction {
   voiceId: string;
   via: string;
 }
-export type Action = PlayAction | StopAction;
+
+/**
+ * A deferred child-eval descriptor emitted by a delay node. The engine converts it to a
+ * `PendingFire` (adding an absolute `fireAtMs = timeMs + relativeDelayMs`) and drains it
+ * inside `tick()`. Carries everything needed to reproduce an immediate fire
+ * deterministically: the graph + pad state prefix (so PRNG/sequence/toggle buckets match),
+ * the ctx snapshot (velocity/bpm/section/beat at enqueue time), and the cycle guard.
+ * Structurally exported so the engine and the web-mirror slice can share the same drain
+ * flow; the engine's `PendingFire` adds `fireAtMs` + `enqueueOrder`.
+ */
+export interface PendingDescriptor {
+  /** Relative delay from the current engine time at enqueue. The engine adds its `timeMs`
+      to produce the absolute `fireAtMs`. Snapshot-stable — later bpm changes do NOT alter
+      it because the value was resolved at enqueue time. */
+  relativeDelayMs: number;
+  graph: TriggerGraph;
+  /** State-prefix key (`${graphKey}#${slotIndex}` or bare padKey). */
+  pad: string;
+  /** Full trigger context snapshotted at enqueue time (velocity + bpm + section + beat). */
+  ctx: TriggerCtx;
+  /** Node ids of the delay node's wired children to evaluate when the fire comes due. */
+  childIds: string[];
+  /** Label prefix for the via-chain (e.g. `'Delay 250ms'`). */
+  viaPrefix: string;
+  /** Cycle guard: the seen-set at enqueue time — includes the delay node's own id so a
+      self-referencing delay cannot loop forever. */
+  seen: Set<string>;
+}
+
+export interface PendingAction {
+  kind: 'pending';
+  descriptor: PendingDescriptor;
+}
+
+export type Action = PlayAction | StopAction | PendingAction;
 
 export interface TriggerCtx {
   velocity: number;
@@ -49,6 +84,10 @@ export interface TriggerCtx {
   sectionCount: number;
   beatPhase: number;
   sourceDrumId: string;
+  /** Transport BPM at the moment the trigger fired — used by delay nodes to resolve
+      musical divisions into milliseconds. Snapshotted at enqueue time; later bpm changes
+      must NOT affect already-enqueued fires (the resolved `relativeDelayMs` is stored). */
+  bpm: number;
 }
 
 /**
@@ -177,6 +216,34 @@ function evalNode(
       if (firstPlay) firstPlay.latchKey = sk;
       return actions;
     }
+    case 'delay': {
+      // Compute the delay at enqueue time from the snapshotted bpm — later transport
+      // changes must NOT alter the resolved fire time.
+      const delayMs = computeDelayMs(
+        node.delayMode ?? 'time',
+        node.ms ?? 0,
+        node.division ?? '1/8',
+        ctx.bpm,
+      );
+      const delayLabel = label(`Delay ${Math.round(delayMs)}ms`);
+      if (delayMs <= 0) {
+        // Zero / negative → fire children immediately, no enqueue.
+        return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, delayLabel, seen2));
+      }
+      // Deferred: emit a PendingDescriptor; the engine enqueues it and drains at the right
+      // tick. `seen2` (which already includes this delay node's id) becomes the cycle guard
+      // for the drain path, so a self-referencing delay cannot loop.
+      const descriptor: PendingDescriptor = {
+        relativeDelayMs: delayMs,
+        graph,
+        pad,
+        ctx,
+        childIds: kids.map((c) => c.id),
+        viaPrefix: delayLabel,
+        seen: seen2,
+      };
+      return [{ kind: 'pending', descriptor }];
+    }
   }
 }
 
@@ -231,6 +298,30 @@ function switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
   if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
   const frac = on === 'beat' ? ctx.beatPhase : 0;
   return Math.min(n - 1, Math.floor(frac * n));
+}
+
+/**
+ * Evaluate a list of child nodes by id — the pending-fire drain entry point.
+ * Used by the engine to re-enter the SAME eval path as an immediate trigger fire, so
+ * nested delays and cycle guards behave identically. `seen` must include the parent
+ * delay node's id (set at enqueue time, carried in the {@link PendingDescriptor}).
+ *
+ * An unknown child id (graph was mutated between enqueue and drain) is silently
+ * skipped — deterministic, never throws.
+ */
+export function evalChildren(
+  state: EvalState,
+  graph: TriggerGraph,
+  pad: string,
+  childIds: string[],
+  ctx: TriggerCtx,
+  viaPrefix: string,
+  seen: Set<string>,
+): Action[] {
+  return childIds.flatMap((id) => {
+    const child = graph.nodes.find((n) => n.id === id);
+    return child ? evalNode(state, graph, pad, child, ctx, viaPrefix, seen) : [];
+  });
 }
 
 /** Resolve which band a 0..1 value lands in against ascending cutoffs. N cutoffs →

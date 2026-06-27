@@ -27,6 +27,9 @@ function triggerNode(source?: TriggerSource): GraphNode {
     invert: false,
     bands: [0.5],
     p: 0.5,
+    delayMode: 'time',
+    ms: 0,
+    division: '1/8',
     source,
   };
 }

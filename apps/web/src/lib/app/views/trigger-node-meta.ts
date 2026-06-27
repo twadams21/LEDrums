@@ -15,6 +15,7 @@ import Power from '@lucide/svelte/icons/power';
 import Disc3 from '@lucide/svelte/icons/disc-3';
 import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
+import Timer from '@lucide/svelte/icons/timer';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
 /** Icon per node kind (add palette, node card chip, kind selector). */
@@ -27,6 +28,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   switch: GitBranch,
   chance: Dices,
   toggle: Power,
+  delay: Timer,
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -46,6 +48,7 @@ export const tint: Record<NodeKind, string> = {
   switch: 'var(--role-input)',
   chance: 'var(--role-mod)',
   toggle: 'var(--accent)',
+  delay: 'var(--role-mod)',
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -58,6 +61,7 @@ export const kindLabel: Record<NodeKind, string> = {
   switch: 'Switch',
   chance: 'Chance',
   toggle: 'Toggle',
+  delay: 'Delay',
 };
 
 /** One-line summary for a container/modifier node's card sub line. Play + trigger

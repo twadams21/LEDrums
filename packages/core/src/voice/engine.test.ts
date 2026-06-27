@@ -61,6 +61,9 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     invert: false,
     bands: [0.5],
     p: 0.5,
+    delayMode: 'time',
+    ms: 0,
+    division: '1/8',
     ...over,
   };
 }
@@ -989,6 +992,283 @@ describe('VoiceBusEngine — direct trigger-source resolution (U3)', () => {
       e.applyInput({ kind: 'noteOn', note: 60, velocity: 0.7, timeMs: 5 });
       let now = 0;
       for (let i = 0; i < 10; i++) {
+        now += 16;
+        e.tick(now, 16, transport(now));
+      }
+      return Array.from(e.frame());
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
+// ---- delay node tests --------------------------------------------------------
+// A long-lived show effect so voices remain active across the delay window.
+
+function longEffect(id: string, over: Partial<EffectDef> = {}): EffectDef {
+  return effect(id, { attackMs: 0, sustainMs: 10000, releaseMs: 100, ...over });
+}
+
+/** A show whose graph map holds one trigger graph on the kick pad with long-lived effects. */
+function delayShow(graph: TriggerGraph, effectIds: string[], busList = buses()): ReturnType<typeof show> {
+  return {
+    buses: busList,
+    graphs: { [padKey('kick', '')]: graph },
+    sections: [],
+    effects: effectIds.map((id) => longEffect(id)),
+    presets: [],
+  };
+}
+
+describe('VoiceBusEngine — delay node (before/after ordering)', () => {
+  it('a child behind a delay fires ONLY after delayMs — no output before', () => {
+    // trigger → delay(200ms) → play. Nothing spawns until 200ms have elapsed.
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('delay', 'dly', { delayMode: 'time', ms: 200 }),
+        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'dly' },
+        { id: 'e1', from: 'dly', to: 'pa' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA']));
+    e.applyInput(hit('kick', 0));
+    // tick just past the hit — delay enqueued at fireAtMs=5+200=205, not yet due
+    e.tick(5, 5, transport(5, 0, 120));
+    expect(e.stats().voiceCount).toBe(0);
+    // tick past the delay: fireAtMs=205 ≤ 210 → pending fire drains → voice spawns
+    e.tick(210, 205, transport(210, 0, 120));
+    expect(e.stats().voiceCount).toBe(1);
+  });
+
+  it('an immediate child fires at the trigger; a delayed child fires only after delayMs', () => {
+    // trigger → all → [play_immediate(base), delay(200ms) → play_deferred(lead)]
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('all', 'all'),
+        node('play', 'pi', { y: 0, effectId: 'fxA', busId: 'base', params: { brightness: 1 } }),
+        node('delay', 'dly', { y: 100, delayMode: 'time', ms: 200 }),
+        node('play', 'pd', { effectId: 'fxB', busId: 'lead', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'all' },
+        { id: 'e1', from: 'all', to: 'pi' },
+        { id: 'e2', from: 'all', to: 'dly' },
+        { id: 'e3', from: 'dly', to: 'pd' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA', 'fxB']));
+    e.applyInput(hit('kick', 0));
+    // tick past the hit: immediate play spawns (voiceCount=1), delay not yet fired
+    e.tick(5, 5, transport(5, 0, 120));
+    expect(e.stats().voiceCount).toBe(1); // only the immediate play
+    // tick past the delay (fireAtMs=5+200=205): deferred play spawns → 2 voices total
+    e.tick(210, 205, transport(210, 0, 120));
+    expect(e.stats().voiceCount).toBe(2);
+  });
+});
+
+describe('VoiceBusEngine — delay node (bpm snapshot)', () => {
+  it('enqueue at 120bpm, change to 60bpm — fire still occurs at the originally-computed time', () => {
+    // delay(beats '1/8'): at 120bpm → 250ms. Hit drains at t=5 → fireAtMs=5+250=255.
+    // Switching to 60bpm at t=20 must NOT move the pending fire.
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('delay', 'dly', { delayMode: 'beats', division: '1/8' }),
+        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'dly' },
+        { id: 'e1', from: 'dly', to: 'pa' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA']));
+    e.applyInput(hit('kick', 0));
+    // Drain at 120bpm → delayMs=250, fireAtMs=5+250=255
+    e.tick(5, 5, transport(5, 0, 120));
+    expect(e.stats().voiceCount).toBe(0);
+    // Change bpm to 60 — pending fire time must not change
+    e.tick(20, 15, transport(20, 0, 60));
+    expect(e.stats().voiceCount).toBe(0);
+    // fireAtMs=255 ≤ 260 → fires despite 60bpm
+    e.tick(260, 240, transport(260, 0, 60));
+    expect(e.stats().voiceCount).toBe(1);
+  });
+});
+
+describe('VoiceBusEngine — delay node (nested delays)', () => {
+  it('nested delay: delay1(100ms) → delay2(150ms) → play fires at sum (250ms after drain)', () => {
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('delay', 'd1', { delayMode: 'time', ms: 100 }),
+        node('delay', 'd2', { delayMode: 'time', ms: 150 }),
+        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'd1' },
+        { id: 'e1', from: 'd1', to: 'd2' },
+        { id: 'e2', from: 'd2', to: 'pa' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA']));
+    // Hit at t=0; drain at tick(5) → d1 enqueued at fireAtMs=5+100=105
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(0);
+    // tick(110) → d1 fires → evalChildren(d2) → d2 enqueued at fireAtMs=110+150=260
+    e.tick(110, 105, transport(110));
+    expect(e.stats().voiceCount).toBe(0); // d2 still pending
+    // tick(265) → d2 fires → evalChildren(play) → voice spawned
+    e.tick(265, 155, transport(265));
+    expect(e.stats().voiceCount).toBe(1);
+  });
+});
+
+describe('VoiceBusEngine — delay node (zero / negative → immediate)', () => {
+  it('delay with ms=0 fires children immediately (no enqueue)', () => {
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('delay', 'dly', { delayMode: 'time', ms: 0 }),
+        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'dly' },
+        { id: 'e1', from: 'dly', to: 'pa' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA']));
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(1); // immediate
+  });
+
+  it('delay with ms<0 fires children immediately (no enqueue)', () => {
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('delay', 'dly', { delayMode: 'time', ms: -50 }),
+        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'dly' },
+        { id: 'e1', from: 'dly', to: 'pa' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA']));
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(1); // immediate
+  });
+});
+
+describe('VoiceBusEngine — delay node (multiple fires drain in time order)', () => {
+  it('two delays with different durations drain in ascending time order', () => {
+    // trigger → all → [delay(300ms) → play_late, delay(100ms) → play_early]
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('all', 'all'),
+        node('delay', 'd_late', { y: 0, delayMode: 'time', ms: 300 }),
+        node('delay', 'd_early', { y: 100, delayMode: 'time', ms: 100 }),
+        node('play', 'p_late', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('play', 'p_early', { effectId: 'fxB', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'all' },
+        { id: 'e1', from: 'all', to: 'd_late' },
+        { id: 'e2', from: 'all', to: 'd_early' },
+        { id: 'e3', from: 'd_late', to: 'p_late' },
+        { id: 'e4', from: 'd_early', to: 'p_early' },
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, ['fxA', 'fxB']));
+    e.applyInput(hit('kick', 0));
+    // Drain hit at t=5 → d_early enqueued at fireAtMs=105, d_late at fireAtMs=305
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voiceCount).toBe(0);
+    // t=110: d_early (100ms) fires — d_late (300ms) still pending
+    e.tick(110, 105, transport(110));
+    expect(e.stats().voiceCount).toBe(1);
+    // t=310: d_late (300ms) fires — both voices active
+    e.tick(310, 200, transport(310));
+    expect(e.stats().voiceCount).toBe(2);
+  });
+});
+
+describe('VoiceBusEngine — delay node (cycle guard)', () => {
+  it('self-referencing delay never infinite-loops and spawns no voices', () => {
+    // delay → itself: the `seen` set at enqueue time includes the delay node id, so on
+    // drain evalChildren → evalNode(delay) → cycle guard returns [] immediately.
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('delay', 'dly', { delayMode: 'time', ms: 50 }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'dly' },
+        { id: 'e1', from: 'dly', to: 'dly' }, // self-referencing
+      ],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(delayShow(g, []));
+    e.applyInput(hit('kick', 0));
+    expect(() => {
+      for (let i = 0; i < 50; i++) {
+        e.tick(i * 10, 10, transport(i * 10));
+      }
+    }).not.toThrow();
+    expect(e.stats().voiceCount).toBe(0);
+  });
+});
+
+describe('VoiceBusEngine — delay node (determinism)', () => {
+  it('identical graph fired identically twice → identical fire times + byte-identical outputs', () => {
+    // Mixed graph: an immediate play + a delay → another play. Exercises both paths.
+    const g: TriggerGraph = {
+      nodes: [
+        node('trigger', 'trigger'),
+        node('all', 'all'),
+        node('play', 'pb', { y: 100, effectId: 'fxB', params: { brightness: 1 } }),
+        node('delay', 'dly', { y: 0, delayMode: 'time', ms: 80 }),
+        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'all' },
+        { id: 'e1', from: 'all', to: 'dly' },
+        { id: 'e2', from: 'dly', to: 'pa' },
+        { id: 'e3', from: 'all', to: 'pb' },
+      ],
+    };
+    const events: InputEvent[] = [hit('kick', 5, 0.8), hit('kick', 200, 0.6)];
+    const run = (): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow({ buses: buses(), graphs: { [padKey('kick', '')]: g }, sections: [],
+        effects: [effect('fxA'), effect('fxB')], presets: [] });
+      for (const ev of events) e.applyInput(ev);
+      let now = 0;
+      for (let i = 0; i < 30; i++) {
         now += 16;
         e.tick(now, 16, transport(now));
       }

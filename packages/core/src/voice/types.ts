@@ -175,7 +175,7 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
 
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
-export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle';
+export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
 export type NodeKind = 'trigger' | BlockKind;
 
 /**
@@ -220,6 +220,15 @@ export interface GraphNode {
   bands: number[];
   // chance
   p: number;
+  // delay (only meaningful on the `delay` node)
+  /** `'time'` → fire after an absolute `ms` offset; `'beats'` → resolve `division` against
+      the current bpm at enqueue time. */
+  delayMode: 'time' | 'beats';
+  /** Absolute delay in milliseconds (used when `delayMode === 'time'`). */
+  ms: number;
+  /** Musical division string (used when `delayMode === 'beats'`). Full set defined by
+      `DELAY_DIVISIONS` in `delay.ts`: `'1/4'|'1/8'|'1/16'` plus dotted + triplet variants. */
+  division: string;
   // trigger (only meaningful on the `trigger` node)
   /** What input fires this graph (the explicit binding). Optional + additive — graphs
       authored before the source model carry none. Resolution lives in a later slice;

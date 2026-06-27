@@ -61,6 +61,9 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     invert: false,
     bands: [0.5],
     p: 0.5,
+    delayMode: 'time',
+    ms: 0,
+    division: '1/8',
     ...over,
   };
 }

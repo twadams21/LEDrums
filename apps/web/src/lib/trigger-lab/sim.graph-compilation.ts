@@ -82,6 +82,10 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     invert: false,
     bands: [0.5],
     p: 0.5,
+    // delay (only meaningful when kind === 'delay'; defaults mirror the core engine defaults)
+    delayMode: 'time',
+    ms: 0,
+    division: '1/8',
     ...over,
   };
 }

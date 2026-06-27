@@ -22,7 +22,14 @@ import {
   type Compositor,
   type PixelAttrs,
 } from './compositor';
-import { evalGraph, type EvalState, type TriggerCtx } from './eval-graph';
+import {
+  evalGraph,
+  evalChildren,
+  type Action,
+  type EvalState,
+  type TriggerCtx,
+  type PendingDescriptor,
+} from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import {
@@ -108,6 +115,19 @@ class VoiceBusEngine implements RenderEngine {
   private sectionIndex = 0;
 
   /**
+   * Pending-fire queue for delay nodes. Each entry holds an absolute `fireAtMs`
+   * (computed at enqueue from `timeMs + relativeDelayMs`) and an `enqueueOrder`
+   * counter for stable secondary sorting. Drained in `tick()` after `drainQueue()`.
+   * Cleared on `setShow()` so a fresh show starts with no lingering deferred fires.
+   */
+  private pendingFires: Array<{
+    fireAtMs: number;
+    enqueueOrder: number;
+    descriptor: PendingDescriptor;
+  }> = [];
+  private pendingFireCounter = 0;
+
+  /**
    * Active song/section for slot-aware hit resolution. Set via `recallSection`
    * input events (queued + drained deterministically, never mutated outside the
    * queue drain). `setShow` seeds from the first song/section and clears on
@@ -136,6 +156,8 @@ class VoiceBusEngine implements RenderEngine {
     this.latched.clear();
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
+    this.pendingFires = [];
+    this.pendingFireCounter = 0;
     // Seed active section from the first song/section (a recallSection event can
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
@@ -193,6 +215,7 @@ class VoiceBusEngine implements RenderEngine {
       sectionCount: this.show.sections.length,
       beatPhase: this.beatPhase(),
       sourceDrumId: e.drumId ?? '',
+      bpm: this.bpm,
     };
     for (const { graph, statePrefix } of toFire) {
       this.fireGraph(graph, statePrefix, ctx);
@@ -290,10 +313,23 @@ class VoiceBusEngine implements RenderEngine {
 
   private fireGraph(graph: TriggerGraph, pad: string, ctx: TriggerCtx): void {
     const actions = evalGraph(this.evalState(), graph, pad, ctx);
+    this.applyActions(actions, ctx);
+  }
+
+  /**
+   * Apply a flat action list produced by graph eval (or by draining a pending fire).
+   * `PlayAction`s spawn voices; `StopAction`s release them; `PendingAction`s enqueue a
+   * deferred fire at `timeMs + relativeDelayMs`. Shared between the immediate fire path
+   * (`fireGraph`) and the drain path (`drainPendingFires`) so nested delays work
+   * identically to immediate fires.
+   */
+  private applyActions(actions: Action[], ctx: TriggerCtx): void {
     for (const a of actions) {
       if (a.kind === 'stop') {
         const v = this.voices.findActiveVoice(a.voiceId);
         if (v) releaseVoice(v, this.timeMs);
+      } else if (a.kind === 'pending') {
+        this.enqueuePendingFire(a.descriptor);
       } else {
         this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
           effectsById: this.effectsById,
@@ -302,6 +338,37 @@ class VoiceBusEngine implements RenderEngine {
           timeMs: this.timeMs,
         });
       }
+    }
+  }
+
+  /** Enqueue a pending fire from a delay node. `fireAtMs` is absolute (engine timeMs +
+      relative delay) and is snapshot-stable — the bpm at enqueue is already baked into
+      `relativeDelayMs` inside the descriptor. */
+  private enqueuePendingFire(descriptor: PendingDescriptor): void {
+    this.pendingFires.push({
+      fireAtMs: this.timeMs + descriptor.relativeDelayMs,
+      enqueueOrder: this.pendingFireCounter++,
+      descriptor,
+    });
+  }
+
+  /**
+   * Drain pending fires whose `fireAtMs ≤ this.timeMs`. Called in `tick()` right after
+   * `drainQueue()`. Fires are processed in ascending (fireAtMs, enqueueOrder) order for
+   * stable determinism across ticks. Each drained fire re-enters the SAME eval path via
+   * `evalChildren` + `applyActions`, so nested delays re-enqueue correctly and the
+   * cycle/seen-set guard from the original eval is preserved.
+   */
+  private drainPendingFires(): void {
+    if (this.pendingFires.length === 0) return;
+    const due = this.pendingFires.filter((f) => f.fireAtMs <= this.timeMs);
+    if (due.length === 0) return;
+    this.pendingFires = this.pendingFires.filter((f) => f.fireAtMs > this.timeMs);
+    due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
+    for (const f of due) {
+      const { graph, pad, ctx, childIds, viaPrefix, seen } = f.descriptor;
+      const actions = evalChildren(this.evalState(), graph, pad, childIds, ctx, viaPrefix, seen);
+      this.applyActions(actions, ctx);
     }
   }
 
@@ -314,6 +381,7 @@ class VoiceBusEngine implements RenderEngine {
     this.sectionIndex = this.show.sections.length > 0 ? transport.bar % this.show.sections.length : 0;
 
     this.drainQueue();
+    this.drainPendingFires();
 
     // Advance voice envelopes, then reap dead voices back into the pool.
     advanceEnvelopes(this.voices.pool, this.timeMs, this.busById);

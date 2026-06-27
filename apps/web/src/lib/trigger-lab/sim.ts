@@ -466,6 +466,11 @@ export class Sim {
         if (firstPlay) firstPlay.latchKey = node.id;
         return actions;
       }
+      case 'delay':
+        // Web mirror deferred to the next slice — sim fires delay children immediately
+        // as a no-op passthrough so the local preview stays functional. The core engine
+        // handles real deferred firing via its pending-fire queue.
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay (sim)'), seen2));
     }
   }
 
