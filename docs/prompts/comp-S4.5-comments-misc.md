@@ -14,6 +14,9 @@ flagged.
   and other internal codenames) that no longer match the shipped model, and update/remove them. Comments
   only — no behaviour change. (`git grep -n "U4\|S7\|velocity"` in `apps/web/src` + `packages/core/src` as a
   starting net; use judgment — keep accurate references.)
+  **Known stale comments from the P0 reap (fix these specifically):** doc-comments naming now-deleted
+  components — `lib/trigger-lab/StatusBar.svelte:3` (names the deleted `StatusCluster`), and the `NodeCanvas`
+  mentions in `lib/app/views/TriggerPalette.svelte` + `lib/app/views/trigger-node-meta.ts`.
 - **Dark-pixel RGB:** `Pixels.svelte` uses normalized `DARK_R/G/B` (0.05,0.05,0.07) while `Pixels2D.svelte`
   uses `[18,22,30]` (8-bit) — extract one shared constant (one unit) used by both.
 - **`--radius-card` — KEEP (Trent, decided):** leave the token in place (value `0px`, square) so a future
