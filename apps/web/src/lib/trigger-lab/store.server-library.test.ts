@@ -75,7 +75,7 @@ const MODEL: SerializedModel = {
   drums: [],
   bounds: { center: [0, 0, 0], size: 0 },
 };
-const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null };
+const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
 
 /** Drive the real autosave: start() registers the persist $effect; a no-op RAF keeps the render
     loop from running in node; stop() flushes synchronously. */

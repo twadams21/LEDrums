@@ -29,6 +29,9 @@ importers:
       '@ledrums/io':
         specifier: workspace:*
         version: link:../../packages/io
+      '@ledrums/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       ws:
         specifier: ^8.18.0
         version: 8.21.0
@@ -60,6 +63,9 @@ importers:
       '@ledrums/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@ledrums/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@lucide/svelte':
         specifier: ^1.21.0
         version: 1.21.0(svelte@5.56.3)
@@ -124,6 +130,22 @@ importers:
         version: 2.1.9(@types/node@22.19.21)(jsdom@29.1.1)
 
   packages/io:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.21)(jsdom@29.1.1)
+
+  packages/protocol:
+    dependencies:
+      '@ledrums/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
