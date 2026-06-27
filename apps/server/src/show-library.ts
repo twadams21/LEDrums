@@ -1,16 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECTS_DIR } from './projects';
+import { writeFileAtomic, writeFileAtomicSync } from './atomic-file';
 
 /** Machine-local show-library file, written alongside the project autosave slot. Like the
  * live project it follows the repo's `.local.json` convention (gitignored runtime state, never
  * a hand-edited seed) — see apps/server/.gitignore. */
 export const SHOW_LIBRARY_FILE = 'default.shows.local.json';
-
-/** Monotonic suffix so two writers (e.g. a debounced autosave racing a flush) never collide
- * on the same temp file. Mirrors the project writer. */
-let tmpSeq = 0;
 
 /**
  * The authored show library is WEB-OWNED state — its schema (`ShowLibrary`, `AuthoredState`)
@@ -24,15 +20,14 @@ export interface ShowLibraryBlob {
   data: unknown;
 }
 
-/** Resolve the final + a unique temp path for an atomic write of the library file. */
-function writePaths(dir: string): { final: string; tmp: string } {
-  const final = join(dir, SHOW_LIBRARY_FILE);
-  return { final, tmp: `${final}.${process.pid}.${tmpSeq++}.tmp` };
+/** Resolve the final path for the machine-local show library file. */
+function showLibraryPath(dir: string): string {
+  return join(dir, SHOW_LIBRARY_FILE);
 }
 
 /** True when a persisted show-library file exists. */
 export function showLibraryExists(dir: string = PROJECTS_DIR): boolean {
-  return existsSync(join(dir, SHOW_LIBRARY_FILE));
+  return existsSync(showLibraryPath(dir));
 }
 
 /**
@@ -43,7 +38,7 @@ export function showLibraryExists(dir: string = PROJECTS_DIR): boolean {
  * runs `deserializeShowLibrary` on adopt.
  */
 export function loadShowLibrary(dir: string = PROJECTS_DIR): ShowLibraryBlob | null {
-  const file = join(dir, SHOW_LIBRARY_FILE);
+  const file = showLibraryPath(dir);
   if (!existsSync(file)) return null;
   try {
     const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
@@ -65,16 +60,7 @@ function isBlob(v: unknown): v is ShowLibraryBlob {
  * shutdown flush.
  */
 export function saveShowLibrary(blob: ShowLibraryBlob, dir: string = PROJECTS_DIR): void {
-  const data = JSON.stringify(blob, null, 2);
-  mkdirSync(dir, { recursive: true });
-  const { final, tmp } = writePaths(dir);
-  try {
-    writeFileSync(tmp, data, 'utf8');
-    renameSync(tmp, final);
-  } catch (err) {
-    rmSync(tmp, { force: true });
-    throw err;
-  }
+  writeFileAtomicSync(showLibraryPath(dir), JSON.stringify(blob, null, 2));
 }
 
 /**
@@ -83,14 +69,5 @@ export function saveShowLibrary(blob: ShowLibraryBlob, dir: string = PROJECTS_DI
  * never blocks the engine/render loop.
  */
 export async function saveShowLibraryAsync(blob: ShowLibraryBlob, dir: string = PROJECTS_DIR): Promise<void> {
-  const data = JSON.stringify(blob, null, 2);
-  await mkdir(dir, { recursive: true });
-  const { final, tmp } = writePaths(dir);
-  try {
-    await writeFile(tmp, data, 'utf8');
-    await rename(tmp, final);
-  } catch (err) {
-    await rm(tmp, { force: true }).catch(() => {});
-    throw err;
-  }
+  await writeFileAtomic(showLibraryPath(dir), JSON.stringify(blob, null, 2));
 }
