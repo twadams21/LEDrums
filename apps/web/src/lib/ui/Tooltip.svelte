@@ -45,7 +45,7 @@
     border-radius: var(--radius-2);
     box-shadow: var(--shadow-3);
     transform-origin: var(--bits-tooltip-content-transform-origin);
-    animation: tt-in 110ms cubic-bezier(0.2, 0, 0, 1);
+    animation: tt-in 110ms var(--ease-control);
   }
   @keyframes -global-tt-in {
     from {

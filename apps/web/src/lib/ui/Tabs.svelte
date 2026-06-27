@@ -48,7 +48,7 @@
     color: var(--text-faint);
     font-size: var(--text-xs);
     cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease, scale 120ms ease;
+    transition: color var(--dur-120) ease, border-color var(--dur-120) ease, scale var(--dur-120) ease;
   }
   .tabs :global(.tabs-trigger:hover) {
     color: var(--text);

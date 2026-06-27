@@ -80,7 +80,7 @@
     border-radius: var(--radius-2);
     cursor: pointer;
     transition-property: border-color, scale;
-    transition-duration: 120ms;
+    transition-duration: var(--dur-120);
     transition-timing-function: ease;
   }
   .sel :global(.sel-trigger[data-state='open']) {
@@ -121,7 +121,7 @@
     border-radius: var(--radius-2);
     box-shadow: var(--shadow-3);
     transform-origin: top center;
-    animation: sel-pop 130ms cubic-bezier(0.2, 0, 0, 1);
+    animation: sel-pop 130ms var(--ease-control);
   }
   @keyframes -global-sel-pop {
     from {

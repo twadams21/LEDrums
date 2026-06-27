@@ -130,10 +130,12 @@
 
   /* ---- Motion ------------------------------------------------------------- */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
-  --dur-1: 90ms; /* state flips (hover/active)                                 */
-  --dur-2: 150ms; /* most transitions                                          */
-  --dur-3: 220ms; /* panel / mode reveals                                      */
-  --dur-4: 320ms; /* the stage ⇄ studio mode crossfade                         */
+  --ease-control: cubic-bezier(0.2, 0, 0, 1); /* control in/out (snappy settle) */
+  --dur-90: 90ms; /* state flips (hover/active)                                 */
+  --dur-120: 120ms; /* dominant control transition (hover/focus/swatch)        */
+  --dur-150: 150ms; /* most transitions                                          */
+  --dur-220: 220ms; /* panel / mode reveals                                      */
+  --dur-320: 320ms; /* the stage ⇄ studio mode crossfade                         */
 }
 
 /* ===== Accent candidates (styleguide preview; pick one) ===================== */
@@ -167,9 +169,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-1: 0ms;
-    --dur-2: 0ms;
-    --dur-3: 0ms;
-    --dur-4: 0ms;
+    --dur-90: 0ms;
+    --dur-120: 0ms;
+    --dur-150: 0ms;
+    --dur-220: 0ms;
+    --dur-320: 0ms;
   }
 }

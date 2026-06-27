@@ -361,7 +361,7 @@
     fill: var(--ink);
     stroke: var(--accent);
     stroke-width: 2;
-    transition: stroke 120ms ease;
+    transition: stroke var(--dur-120) ease;
   }
   .handle:hover .dot {
     stroke: var(--accent-bright);
@@ -377,7 +377,7 @@
     letter-spacing: var(--tracking-label);
     pointer-events: none;
     opacity: 0;
-    transition: opacity 120ms ease;
+    transition: opacity var(--dur-120) ease;
   }
   .handle:hover .cap,
   .handle.active .cap {
@@ -434,7 +434,7 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
-    transition: color 120ms ease;
+    transition: color var(--dur-120) ease;
     white-space: nowrap;
   }
   .remove:hover {

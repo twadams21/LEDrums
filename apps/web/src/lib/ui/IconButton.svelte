@@ -53,10 +53,10 @@
     border-radius: var(--radius-2);
     line-height: 0;
     transition:
-      background-color 120ms ease,
-      border-color 120ms ease,
-      color 120ms ease,
-      scale 120ms ease;
+      background-color var(--dur-120) ease,
+      border-color var(--dur-120) ease,
+      color var(--dur-120) ease,
+      scale var(--dur-120) ease;
   }
   .ib:active {
     scale: 0.94;

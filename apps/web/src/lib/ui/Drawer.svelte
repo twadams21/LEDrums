@@ -66,14 +66,14 @@
     right: 0;
     height: 100vh;
     border-radius: var(--radius-3) 0 0 var(--radius-3);
-    animation: dw-in-right 200ms cubic-bezier(0.2, 0, 0, 1);
+    animation: dw-in-right 200ms var(--ease-control);
   }
   :global(.lab-drawer.dw-left) {
     top: 0;
     left: 0;
     height: 100vh;
     border-radius: 0 var(--radius-3) var(--radius-3) 0;
-    animation: dw-in-left 200ms cubic-bezier(0.2, 0, 0, 1);
+    animation: dw-in-left 200ms var(--ease-control);
   }
   :global(.lab-drawer.dw-bottom) {
     left: 0;
@@ -81,7 +81,7 @@
     bottom: 0;
     max-height: 80vh;
     border-radius: var(--radius-3) var(--radius-3) 0 0;
-    animation: dw-in-bottom 200ms cubic-bezier(0.2, 0, 0, 1);
+    animation: dw-in-bottom 200ms var(--ease-control);
   }
   :global(.lab-drawer:focus-visible) {
     outline: none;
@@ -114,7 +114,7 @@
     border: none;
     color: var(--text-faint);
     border-radius: var(--radius-2);
-    transition: color 120ms ease, background-color 120ms ease, scale 120ms ease;
+    transition: color var(--dur-120) ease, background-color var(--dur-120) ease, scale var(--dur-120) ease;
   }
   .dw-close:hover {
     color: var(--ink);

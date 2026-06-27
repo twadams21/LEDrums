@@ -160,7 +160,7 @@
     margin-inline-start: auto;
     padding-inline-end: var(--space-2);
     opacity: 0;
-    transition: opacity 120ms ease;
+    transition: opacity var(--dur-120) ease;
   }
   .li:hover .li-actions,
   .li:focus-within .li-actions {

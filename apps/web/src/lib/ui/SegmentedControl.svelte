@@ -76,7 +76,7 @@
     cursor: pointer;
     white-space: nowrap;
     transition-property: background-color, color, scale;
-    transition-duration: 120ms;
+    transition-duration: var(--dur-120);
     transition-timing-function: ease;
   }
   .seg :global(.seg-btn.icononly) {

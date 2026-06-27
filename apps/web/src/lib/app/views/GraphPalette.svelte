@@ -90,8 +90,8 @@
     border-radius: var(--radius-1);
     cursor: pointer;
     transition:
-      border-color 120ms ease,
-      color 120ms ease;
+      border-color var(--dur-120) ease,
+      color var(--dur-120) ease;
   }
   .palette-btn:hover {
     border-color: var(--border-strong);

@@ -91,7 +91,7 @@
     background: var(--surface-inset);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
-    transition: border-color 120ms ease;
+    transition: border-color var(--dur-120) ease;
   }
   .col.active {
     border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
@@ -125,8 +125,8 @@
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-2);
     transition:
-      color 120ms ease,
-      border-color 120ms ease;
+      color var(--dur-120) ease,
+      border-color var(--dur-120) ease;
   }
   .addgraph:hover {
     color: var(--accent);

@@ -96,8 +96,8 @@
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-1);
     transition:
-      color 120ms ease,
-      border-color 120ms ease;
+      color var(--dur-120) ease,
+      border-color var(--dur-120) ease;
   }
   .newgraph:hover {
     color: var(--accent);

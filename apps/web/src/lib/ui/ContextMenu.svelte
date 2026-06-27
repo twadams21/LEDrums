@@ -86,7 +86,7 @@
     border-radius: var(--radius-2);
     box-shadow: var(--shadow-3);
     transform-origin: var(--bits-context-menu-content-transform-origin);
-    animation: ctx-pop 120ms cubic-bezier(0.2, 0, 0, 1);
+    animation: ctx-pop var(--dur-120) var(--ease-control);
   }
   @keyframes -global-ctx-pop {
     from {

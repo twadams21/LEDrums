@@ -45,7 +45,7 @@
     background: var(--surface-inset);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    transition: border-color 120ms ease;
+    transition: border-color var(--dur-120) ease;
   }
   .tf.mono {
     font-family: var(--font-mono);

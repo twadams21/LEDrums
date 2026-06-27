@@ -141,7 +141,7 @@
     inset: 0;
     border-radius: 2px;
     background: var(--border-faint);
-    transition: background-color 120ms ease, box-shadow 120ms ease;
+    transition: background-color var(--dur-120) ease, box-shadow var(--dur-120) ease;
   }
   .splitter:hover::after {
     background: var(--border-strong);
