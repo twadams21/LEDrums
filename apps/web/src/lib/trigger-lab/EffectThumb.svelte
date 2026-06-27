@@ -3,10 +3,15 @@
      3D kit uses, mapped onto a small 2D grid (x ≈ hoop angle, y ≈ hoop height).
      Driven by the effect's pattern + the instance/preset params.
 
+     Generator effects render on a small synthetic PixelModel (26×13) so their
+     output maps 1:1 onto the grid — pixel index i ↔ grid cell i. Colours come
+     directly from the Framebuffer (no hue round-trip).
+
      Powered by a shared ticker (one rAF loop for all thumbnails), with
      IntersectionObserver pause when offscreen and prefers-reduced-motion support. */
   import type { ParamValues, Pattern } from './sim';
   import type { LabModel, PixelAttrs } from './kit';
+  import { buildThumbPixelModel } from './kit';
   import { sampleWith } from './render';
   import { hueToRgb } from './kit';
   import { renderGeneratorThumbFrame } from './effect-thumb-render';
@@ -17,11 +22,13 @@
     pattern: Pattern;
     params: ParamValues;
     generatorId?: string;
+    /** Accepted for caller compatibility but not used; generators render on the
+        internal thumb model (buildThumbPixelModel). */
     labModel?: LabModel;
     w?: number;
     h?: number;
   }
-  let { pattern, params, generatorId, labModel, w = 64, h = 36 }: Props = $props();
+  let { pattern, params, generatorId, w = 64, h = 36 }: Props = $props();
 
   const num = (v: number | boolean | undefined, d: number) => (typeof v === 'number' ? v : d);
 
@@ -50,35 +57,47 @@
   })();
 
   let canvas = $state<HTMLCanvasElement>();
-  let genState = $state<any>(null);
+  let genState = $state<unknown>(null);
   let genStateId = $state<string | null>(null); // Track which generatorId the state belongs to
-  let isVisible = $state(true); // IntersectionObserver: is the thumb visible?
+  let isVisible = $state(true); // starts visible; observer only pauses after confirmed visible
   let prefersReduced = $state(false); // prefers-reduced-motion
 
   // Initialize or reset generator state when generatorId changes.
+  // Uses the small thumb model (not labModel) so state geometry matches rendering.
   $effect(() => {
-    if (generatorId && labModel && generatorId !== genStateId) {
+    if (generatorId && generatorId !== genStateId) {
       const gen = tryGetEffect(generatorId);
       if (gen?.createState) {
-        genState = gen.createState(labModel.pm);
+        genState = gen.createState(buildThumbPixelModel());
         genStateId = generatorId;
       }
-    } else if (!generatorId || !labModel) {
+    } else if (!generatorId) {
       genState = null;
       genStateId = null;
     }
   });
 
   // IntersectionObserver: detect when the canvas enters/leaves the viewport.
+  // Guard: only allow setting isVisible=false once we've confirmed the element
+  // was visible at least once — pre-layout false fires from portaled dialogs are
+  // ignored so the initial isVisible=true keeps the ticker subscription alive.
   $effect(() => {
     const cv = canvas;
     if (!cv) return;
+
+    let hasBeenVisible = false;
 
     const observer =
       typeof IntersectionObserver !== 'undefined'
         ? new IntersectionObserver(([entry]) => {
             if (entry) {
-              isVisible = entry.isIntersecting;
+              if (entry.isIntersecting) {
+                hasBeenVisible = true;
+                isVisible = true;
+              } else if (hasBeenVisible) {
+                isVisible = false;
+              }
+              // Pre-layout false: hasBeenVisible is still false → leave isVisible=true.
             }
           })
         : null;
@@ -119,7 +138,6 @@
     const p = params;
     const pat = pattern;
     const genId = generatorId;
-    const lab = labModel;
     const hue = num(p.hue, 0);
     const bright = num(p.brightness, 1);
 
@@ -135,16 +153,19 @@
       const effectiveTms = prefersReduced ? 400 : tMs;
 
       // Branch: generator-backed vs pattern effect
-      if (genId && lab) {
-        const pixels = renderGeneratorThumbFrame(genId, p, effectiveTms, lab.pm, genState);
+      if (genId) {
+        // Render the generator on the internal 26×13 thumb model.
+        // pixels[i] is [r,g,b] in 0..1, directly from the Framebuffer.
+        const pixels = renderGeneratorThumbFrame(genId, p, effectiveTms, genState);
         if (pixels) {
           for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
               const i = r * COLS + c;
-              const [inten, hoff] = pixels[i]!;
-              const amp = inten * bright;
-              if (amp <= 0.02) continue;
-              const [R, G, B] = hueToRgb(hue + hoff, amp);
+              const [rv, gv, bv] = pixels[i]!;
+              const R = Math.round(rv * bright * 255);
+              const G = Math.round(gv * bright * 255);
+              const B = Math.round(bv * bright * 255);
+              if (R === 0 && G === 0 && B === 0) continue;
               ctx.fillStyle = `rgb(${R},${G},${B})`;
               ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
             }

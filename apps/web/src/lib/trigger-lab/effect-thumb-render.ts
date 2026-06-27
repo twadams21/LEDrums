@@ -1,52 +1,57 @@
-/* Renders a single frame of a generator-backed effect into a small thumbnail grid
+/* Renders a single frame of a generator-backed effect into the thumbnail grid
    (26×13 pixels). Used by EffectThumb.svelte to display live previews of generator
    effects, mirroring the approach used in render.ts for full voice rendering.
 
-   Caches Framebuffer and default params per generator to minimize allocations. */
+   Uses a small synthetic PixelModel (`buildThumbPixelModel`) so generator output
+   maps cleanly onto the 26×13 canvas — pixel index i ↔ grid cell i, no remapping.
+   Returns actual per-pixel RGB read straight from the Framebuffer so colours are
+   faithful (no rgbToHue round-trip). */
 
 import {
   Framebuffer,
   defaultParams as genDefaultParams,
   tryGetEffect,
-  type PixelModel,
   type RenderContext,
   type ResolvedParams,
   type Trigger,
 } from '@ledrums/core';
 import type { ParamValues } from './sim';
+import { buildThumbPixelModel } from './kit';
 
-const num = (v: number | boolean | undefined, d: number) => (typeof v === 'number' ? v : d);
-
-// ---- Generator caching and state -------------------------------------------
+// ---- Generator caching -------------------------------------------------------
 const genCache = new Map<string, Framebuffer>();
 const genDefaults = new Map<string, ResolvedParams>();
 const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
 const genTriggers: Trigger[] = [genTrigger];
 
 /**
- * Render one frame of a generator effect onto a thumbnail grid.
+ * Render one frame of a generator effect onto the thumbnail grid (26×13 = 338 pixels).
  *
- * @param generatorId - The generator's registered ID (e.g. "plasma", "fire")
- * @param params - Voice parameters (number/bool only; color/enum fallback to generator defaults)
- * @param tMs - Absolute time in milliseconds
- * @param pm - The underlying PixelModel (provides pixelCount and geometry for the generator)
- * @param state - Generator state object; caller should initialize via `gen.createState(pm)` and maintain across frames
- * @returns Per-pixel [intensity 0..1, hueOffset deg] tuple, or null if generator not found
+ * Returns per-pixel [r, g, b] in 0..1 in row-major grid order so that
+ * `pixels[r * 26 + c]` is the RGB for grid cell (column c, row r).
+ * Returns null if the generator is not registered.
+ *
+ * @param generatorId  The generator's registered ID (e.g. "plasma", "fire")
+ * @param params       Voice parameters (numeric/bool only; color/enum fall back to defaults)
+ * @param tMs          Absolute time in milliseconds
+ * @param state        Generator state; caller should create with `gen.createState(buildThumbPixelModel())`
  */
 export function renderGeneratorThumbFrame(
   generatorId: string,
   params: ParamValues,
   tMs: number,
-  pm: PixelModel,
-  state?: any,
-): [number, number][] | null {
+  state?: unknown,
+): [number, number, number][] | null {
   const gen = tryGetEffect(generatorId);
   if (!gen) return null;
 
+  const pm = buildThumbPixelModel();
+  const pixelCount = pm.pixelCount; // 26 × 13 = 338
+
   // Reuse or create Framebuffer for this generator.
   let buf = genCache.get(generatorId);
-  if (!buf || buf.pixelCount !== pm.pixelCount) {
-    buf = new Framebuffer(pm.pixelCount);
+  if (!buf || buf.pixelCount !== pixelCount) {
+    buf = new Framebuffer(pixelCount);
     genCache.set(generatorId, buf);
   }
 
@@ -83,41 +88,12 @@ export function renderGeneratorThumbFrame(
   buf.clear();
   gen.render(ctx, resolvedParams, buf, state);
 
-  // Read back RGBA as [intensity, hueOffset] per pixel.
+  // Read back raw RGB — the generator owns its colours; no hue conversion.
   const src = buf.rgba;
-  const result: [number, number][] = [];
-  for (let i = 0; i < pm.pixelCount; i++) {
+  const result: [number, number, number][] = [];
+  for (let i = 0; i < pixelCount; i++) {
     const j4 = i * 4;
-    const r = src[j4]!;
-    const g = src[j4 + 1]!;
-    const b = src[j4 + 2]!;
-    // Compute intensity as max(r, g, b) and hue from RGB.
-    const intensity = Math.max(r, g, b);
-    const hue = rgbToHue(r, g, b);
-    result.push([intensity, hue]);
+    result.push([src[j4]!, src[j4 + 1]!, src[j4 + 2]!]);
   }
   return result;
-}
-
-/**
- * Convert RGB (0..1) to hue in degrees (0..360).
- * Returns 0 if the color is achromatic (gray).
- */
-function rgbToHue(r: number, g: number, b: number): number {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-
-  if (delta < 0.001) return 0; // achromatic
-
-  let hue = 0;
-  if (max === r) {
-    hue = (60 * (((g - b) / delta) % 6)) % 360;
-  } else if (max === g) {
-    hue = (60 * ((b - r) / delta + 2)) % 360;
-  } else {
-    hue = (60 * ((r - g) / delta + 4)) % 360;
-  }
-
-  return hue < 0 ? hue + 360 : hue;
 }

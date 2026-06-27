@@ -2,8 +2,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import EffectThumb from './EffectThumb.svelte';
+import { renderGeneratorThumbFrame } from './effect-thumb-render';
 import { ticker } from './effect-thumb-ticker';
-import type { LabModel } from './kit';
 import type { ParamValues, Pattern } from './sim';
 
 /**
@@ -80,19 +80,12 @@ describe('EffectThumb', () => {
     expect(canvas).toBeInstanceOf(HTMLCanvasElement);
   });
 
-  it('renders a generator-backed effect without throwing', () => {
-    const mockLabModel = {
-      pm: {
-        pixelCount: 338,
-      },
-    } as unknown as LabModel;
-
+  it('renders a generator-backed effect without throwing (no labModel required)', () => {
     const { container } = render(EffectThumb, {
       props: {
         pattern: 'flash' as Pattern,
         params: { hue: 0, brightness: 1 } as ParamValues,
         generatorId: 'plasma',
-        labModel: mockLabModel,
         w: 64,
         h: 36,
       },
@@ -148,6 +141,45 @@ describe('EffectThumb', () => {
     } finally {
       (globalThis as any).matchMedia = originalMatchMedia;
     }
+  });
+});
+
+/**
+ * Unit tests for renderGeneratorThumbFrame.
+ */
+describe('renderGeneratorThumbFrame', () => {
+  it('returns null for an unknown generator id', () => {
+    const result = renderGeneratorThumbFrame('non-existent-xyz', {}, 0);
+    expect(result).toBeNull();
+  });
+
+  it('returns exactly 26×13=338 RGB tuples for a known generator', () => {
+    // 'solid-base' is always registered and renders a simple uniform colour.
+    const result = renderGeneratorThumbFrame('solid-base', {}, 400);
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(26 * 13);
+  });
+
+  it('each returned tuple contains three numbers in 0..1', () => {
+    const result = renderGeneratorThumbFrame('solid-base', {}, 400);
+    expect(result).not.toBeNull();
+    for (const [r, g, b] of result!) {
+      expect(typeof r).toBe('number');
+      expect(typeof g).toBe('number');
+      expect(typeof b).toBe('number');
+      expect(r).toBeGreaterThanOrEqual(0);
+      expect(r).toBeLessThanOrEqual(1);
+      expect(g).toBeGreaterThanOrEqual(0);
+      expect(g).toBeLessThanOrEqual(1);
+      expect(b).toBeGreaterThanOrEqual(0);
+      expect(b).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('returns the same length regardless of tMs', () => {
+    const r0 = renderGeneratorThumbFrame('solid-base', {}, 0);
+    const r1 = renderGeneratorThumbFrame('solid-base', {}, 1000);
+    expect(r0!.length).toBe(r1!.length);
   });
 });
 

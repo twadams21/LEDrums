@@ -2,7 +2,17 @@
    engine/IO) and serialises it into the shape the visualiser's <Scene> wants.
    Throwaway — gives the Trigger Lab the same kit preview the app has. */
 
-import { buildPixelModel, DEFAULT_KIT, type PixelModel } from '@ledrums/core';
+import {
+  buildPixelModel,
+  classifyZone,
+  DEFAULT_KIT,
+  DEG2RAD,
+  type Bounds,
+  type DrumInfo,
+  type Pixel,
+  type PixelModel,
+  type Vec3,
+} from '@ledrums/core';
 import type { SerializedModel } from '../ws/protocol-types';
 
 /** Per-pixel attributes the pattern renderer samples (kept parallel to the frame). */
@@ -88,6 +98,98 @@ export function buildLabModel(): LabModel {
   };
 
   return { model, attrs: { drumIndex, angle01, norm01, nx, ny, nz }, pm };
+}
+
+// ---- Thumbnail PixelModel (26×13 synthetic drum) ----------------------------
+
+const THUMB_COLS = 26;
+const THUMB_ROWS = 13;
+/** Radius of the synthetic thumbnail drum, mm. */
+const THUMB_RADIUS_MM = 100;
+/** Spacing between hoops, mm. */
+const THUMB_SPACING_MM = 12;
+
+let _thumbPm: PixelModel | null = null;
+
+/**
+ * Return (and lazily build) a tiny synthetic PixelModel sized exactly to the
+ * thumbnail grid: 26 columns (hoop angle) × 13 rows (hoop height) = 338 pixels.
+ *
+ * Pixel `r * 26 + c` maps 1:1 to grid cell (col=c, row=r), so generator output
+ * indexes straight onto the canvas. Geometry matches the `attrs` arrays EffectThumb
+ * already computes for the pattern path:
+ *   angleDeg = (c/26)*360, normHoop = r/12, world xyz in a 100mm-radius cylinder.
+ */
+export function buildThumbPixelModel(): PixelModel {
+  if (_thumbPm) return _thumbPm;
+
+  const COLS = THUMB_COLS;
+  const ROWS = THUMB_ROWS;
+  const N = COLS * ROWS;
+  const RADIUS = THUMB_RADIUS_MM;
+  const SPACING = THUMB_SPACING_MM;
+  const segLen = (2 * Math.PI * RADIUS) / COLS;
+
+  const pixels: Pixel[] = [];
+
+  for (let r = 0; r < ROWS; r++) {
+    const normHoop = ROWS > 1 ? r / (ROWS - 1) : 0;
+    const zone = classifyZone(normHoop);
+    const localZ = r * SPACING;
+    for (let c = 0; c < COLS; c++) {
+      const angleDeg = (c / COLS) * 360;
+      const a = angleDeg * DEG2RAD;
+      const cosA = Math.cos(a);
+      const sinA = Math.sin(a);
+      const world: Vec3 = { x: RADIUS * cosA, y: RADIUS * sinA, z: localZ };
+      pixels.push({
+        id: r * COLS + c,
+        drumId: 'thumb',
+        hoopIndex: r,
+        indexInHoop: c,
+        angleDeg,
+        normHoop,
+        zone,
+        uv: { u: c / COLS, v: normHoop },
+        local: { x: world.x, y: world.y, z: world.z },
+        world,
+        tangent: { x: -sinA, y: cosA, z: 0 },
+        normal: { x: cosA, y: sinA, z: 0 },
+        segmentLengthMm: segLen,
+      });
+    }
+  }
+
+  const halfZ = ((ROWS - 1) * SPACING) / 2;
+
+  const thumbDrum: DrumInfo = {
+    drumId: 'thumb',
+    label: 'Thumbnail',
+    color: '#ffffff',
+    pixelStart: 0,
+    pixelCount: N,
+    pixelsPerHoop: COLS,
+    hoopCount: ROWS,
+    radiusMm: RADIUS,
+    effectOriginWorld: { x: 0, y: 0, z: halfZ },
+  };
+
+  const bounds: Bounds = {
+    min: { x: -RADIUS, y: -RADIUS, z: 0 },
+    max: { x: RADIUS, y: RADIUS, z: (ROWS - 1) * SPACING },
+    center: { x: 0, y: 0, z: halfZ },
+    size: RADIUS * 2,
+  };
+
+  _thumbPm = {
+    pixels,
+    drums: [thumbDrum],
+    drumById: new Map([['thumb', thumbDrum]]),
+    bounds,
+    pixelCount: N,
+  };
+
+  return _thumbPm;
 }
 
 /** HSL-ish hue (deg) → sRGB 0..255, brightness scaled by `level` (additive on black). */
