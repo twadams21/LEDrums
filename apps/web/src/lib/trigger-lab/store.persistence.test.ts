@@ -52,7 +52,10 @@ describe('TriggerLab hydration (restore on reload)', () => {
   it('starts from the seed when storage is empty', () => {
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
-    expect(Object.keys(store.graphNames)).toHaveLength(0);
+    // pad-label hydration names every seeded pad graph; the seed has NO authored graphs.
+    expect(store.graphNames['kick:0']).toBe('Kick · center');
+    expect(Object.keys(store.graphNames).every((k) => k in store.graphs)).toBe(true);
+    expect(Object.keys(store.graphNames).some((k) => k.startsWith('graph-') || k.startsWith('graph:'))).toBe(false);
   });
 
   it('restores persisted scalar fields on construction', () => {

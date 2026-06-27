@@ -7,7 +7,7 @@
      Trigger canvas (highlighted). The "+ graph" button opens the picker drawer to add a
      graph (existing or new) to that section; the × removes it. Layering is now two graphs
      in a section that share a trigger source — no per-pad slot grid. */
-  import { isAuthoredGraphKey, type TriggerLab } from '../../trigger-lab/store.svelte';
+  import { type TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { isReused } from '../setlist';
   import { describeTriggerSource } from '../trigger-source-label';
@@ -50,15 +50,15 @@
     store.removeSection(sectionId);
   }
 
-  // inline rename for an AUTHORED graph row — which row (section + key) is editing, or null.
-  // Keyed by section too so the field opens only in the right-clicked row when a graph is reused.
+  // inline rename for a graph row — which row (section + key) is editing, or null. Keyed by
+  // section too so the field opens only in the right-clicked row when a graph is reused.
   let editingGraph = $state<{ sectionId: string; key: string } | null>(null);
 
   function commitGraphRename(key: string, name: string): void {
     store.renameGraph(key, name);
     editingGraph = null;
   }
-  /** Delete an authored graph everywhere via the context menu; leave edit mode if it was renaming. */
+  /** Delete a graph everywhere via the context menu; leave edit mode if it was renaming. */
   function deleteGraph(key: string): void {
     if (editingGraph?.key === key) editingGraph = null;
     store.deleteGraph(key);
@@ -154,13 +154,11 @@
               {@const current = active && store.selectedPadKey === key}
               {@const reused = isReused(song, key)}
               {@const rowEditing = editingGraph?.sectionId === sec.id && editingGraph?.key === key}
-              {@const authored = isAuthoredGraphKey(key)}
               {@const rowActions = [
-                ...(authored
-                  ? [{ label: 'Rename', icon: Pencil, onSelect: () => (editingGraph = { sectionId: sec.id, key }) }]
-                  : []),
+                { label: 'Rename', icon: Pencil, onSelect: () => (editingGraph = { sectionId: sec.id, key }) },
+                { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(key) },
                 { label: 'Remove from section', icon: X, onSelect: () => store.removeGraphFromSection(sec.id, key) },
-                ...(authored ? [{ label: 'Delete graph', icon: Trash2, danger: true, onSelect: () => deleteGraph(key) }] : []),
+                { label: 'Delete graph', icon: Trash2, danger: true, onSelect: () => deleteGraph(key) },
               ] satisfies ContextMenuAction[]}
               <ContextMenu actions={rowActions}>
                 <div class="grow" class:current class:reused>
@@ -367,7 +365,7 @@
     border-color: color-mix(in oklch, var(--accent) 60%, transparent);
     background: var(--accent-soft);
   }
-  /* inline-rename slot for an authored graph row — fills the row; CommitInput draws its field */
+  /* inline-rename slot for a graph row — fills the row; CommitInput draws its field */
   .grow-edit {
     display: flex;
     flex: 1;

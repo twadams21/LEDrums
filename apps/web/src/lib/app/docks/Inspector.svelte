@@ -43,6 +43,7 @@
     zoneOscAddress,
     type PatchEditor,
   } from './patch-inspector';
+  import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Replace from '@lucide/svelte/icons/replace';
   import Spline from '@lucide/svelte/icons/spline';
   import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -270,6 +271,9 @@
         </h3>
         <span class="sub">graph input</span>
       </div>
+      {#if gkey}
+        <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
+      {/if}
     </header>
     <div class="trigbody">
       <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
@@ -342,10 +346,10 @@
         <span class="rval">{describeTriggerSource(src, store.drums).sub}</span>
       </div>
 
-      {#if gkey && gkey in store.graphNames}
+      {#if gkey && gkey in store.graphs}
         <Field label="Name" hint="display label">
           <CommitInput
-            value={store.graphNames[gkey] ?? ''}
+            value={store.graphLabel(gkey)}
             placeholder="New graph"
             ariaLabel="Graph name"
             onCommit={(v) => store.renameGraph(gkey, v)}
