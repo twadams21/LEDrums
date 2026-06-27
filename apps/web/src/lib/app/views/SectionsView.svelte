@@ -44,6 +44,12 @@
     store.renameSection(sectionId, name);
     editingSectionId = null;
   }
+  /** Click a section header: make it the active (played + edited) section AND load it into
+      the right-dock Inspector (inline rename + read-only transport-recall info). */
+  function selectSection(sectionId: string): void {
+    store.setActiveSection(sectionId);
+    shell.select({ kind: 'section', sectionId });
+  }
   /** Delete a section via the context menu; drop out of edit mode first if it was renaming. */
   function deleteSection(sectionId: string): void {
     if (editingSectionId === sectionId) editingSectionId = null;
@@ -128,7 +134,7 @@
                 <button
                   class="colh"
                   class:active
-                  onclick={() => store.setActiveSection(sec.id)}
+                  onclick={() => selectSection(sec.id)}
                   ondblclick={() => (editingSectionId = sec.id)}
                   title="Double-click or right-click to rename"
                 >

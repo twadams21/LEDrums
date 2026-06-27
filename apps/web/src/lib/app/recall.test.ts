@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isReservedCc, midiForSection, midiForSong, oscForSection, RESERVED_CC } from './recall';
+import {
+  isReservedCc,
+  midiForSection,
+  midiForSong,
+  oscForSection,
+  RESERVED_CC,
+  sectionRecall,
+} from './recall';
 
 describe('recall strings', () => {
   it('formats the OSC section-recall message (address + section arg)', () => {
@@ -21,6 +28,28 @@ describe('recall strings', () => {
   it('formats the MIDI CC#0 message for a section', () => {
     expect(midiForSection(0)).toBe('CC 0 value 0');
     expect(midiForSection(2)).toBe('CC 0 value 2');
+  });
+});
+
+describe('sectionRecall (the section Inspector read-out)', () => {
+  it('composes the OSC + CC#0 + Program Change messages for a song/section pair', () => {
+    expect(sectionRecall(0, 0)).toEqual({
+      osc: '/ledrums/song_0/section 0',
+      midiSection: 'CC 0 value 0',
+      midiSong: 'Program Change 0',
+    });
+    expect(sectionRecall(2, 3)).toEqual({
+      osc: '/ledrums/song_2/section 3',
+      midiSection: 'CC 0 value 3',
+      midiSong: 'Program Change 2',
+    });
+  });
+
+  it('agrees with the per-message helpers it composes', () => {
+    const r = sectionRecall(1, 4);
+    expect(r.osc).toBe(oscForSection(1, 4));
+    expect(r.midiSection).toBe(midiForSection(4));
+    expect(r.midiSong).toBe(midiForSong(1));
   });
 });
 

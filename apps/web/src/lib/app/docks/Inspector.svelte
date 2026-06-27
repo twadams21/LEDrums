@@ -8,7 +8,7 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
   import { describeTriggerSource, zoneLabel } from '../trigger-source-label';
-  import { isReservedCc, RESERVED_CC } from '../recall';
+  import { isReservedCc, RESERVED_CC, sectionRecall } from '../recall';
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
     NODE_KINDS,
@@ -70,6 +70,23 @@
   );
 
   const bus = $derived(sel?.kind === 'bus' ? store.buses.find((b) => b.id === sel.busId) ?? null : null);
+
+  // --- Section selection (transport recall) --------------------------------------
+  // A selected setlist section drives a small panel: an inline rename + the read-only
+  // recall strings (OSC + MIDI CC#0 for the section, Program Change for its parent song).
+  // Resolve the section, its parent song, and their setlist indices — searching ALL songs
+  // (not just the active one) so the panel stays correct if the active song changes while a
+  // section is inspected. The recall indices match the server's convention (song index in
+  // the setlist · section index in the song); the strings come from the pure helper.
+  const sectionSel = $derived.by(() => {
+    if (sel?.kind !== 'section') return null;
+    const songIdx = store.songs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
+    if (songIdx < 0) return null;
+    const song = store.songs[songIdx]!;
+    const sectionIdx = song.sections.findIndex((sec) => sec.id === sel.sectionId);
+    const section = song.sections[sectionIdx]!;
+    return { song, songIdx, section, sectionIdx, recall: sectionRecall(songIdx, sectionIdx) };
+  });
 
   // --- Patch graph per-node editors (S4) -----------------------------------------
   // Each Patch node edits the real device setting it represents: geometry/input read from
@@ -881,10 +898,48 @@
         {/if}
       </div>
     {/if}
+  {:else if sectionSel}
+    {@const ss = sectionSel}
+    {@const rc = ss.recall}
+    <header class="ihead">
+      <div class="titles">
+        <Eyebrow>Section</Eyebrow>
+        <h3>{ss.section.name}</h3>
+        <span class="sub">{ss.song.name} · #{ss.sectionIdx + 1}</span>
+      </div>
+    </header>
+    <div class="sectionbody">
+      <Field label="Name" hint="display label">
+        <CommitInput
+          value={ss.section.name}
+          placeholder="Section"
+          ariaLabel="Section name"
+          onCommit={(v) => store.renameSection(ss.section.id, v)}
+        />
+      </Field>
+
+      <div class="recall">
+        <Eyebrow>Recall via</Eyebrow>
+        <p class="grouphint">Global transport messages — read-only. Send these from a DAW or controller to recall this section.</p>
+        <div class="recall-row">
+          <span class="k">OSC</span>
+          <code class="rcode">{rc.osc}</code>
+        </div>
+        <div class="recall-row">
+          <span class="k">MIDI CC</span>
+          <code class="rcode">{rc.midiSection}</code>
+        </div>
+        <div class="recall-row">
+          <span class="k">Program Change</span>
+          <code class="rcode">{rc.midiSong}</code>
+        </div>
+        <p class="hint">Program Change selects this section's song; CC #0 and the OSC argument pick the section by its index.</p>
+      </div>
+    </div>
   {:else}
     <div class="empty">
       <MousePointerClick size={22} aria-hidden="true" />
-      <p>Select a node, a bus, or a device to edit it here.</p>
+      <p>Select a node, a bus, a device, or a section to edit it here.</p>
     </div>
   {/if}
 </div>
@@ -1160,6 +1215,35 @@
   }
   .trigbody :global(.sel) {
     width: 100%;
+  }
+  /* --- Section selection panel (rename + read-only transport recall) -------- */
+  .sectionbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+  .recall {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .recall-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  /* the literal message — selectable in one click so the operator can copy it whole */
+  .rcode {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink);
+    padding: var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    overflow-wrap: anywhere;
+    user-select: all;
   }
   /* --- Patch graph per-node editors (S4) ----------------------------------- */
   .patchbody {

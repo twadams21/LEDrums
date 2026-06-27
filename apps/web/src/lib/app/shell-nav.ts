@@ -18,11 +18,13 @@ export type DockTab = 'inspector' | 'monitor';
 export type PatchNodeId = string;
 
 /** What is loaded into the right-dock Inspector: a node in the active trigger
-    graph, a Patch-graph device node, or a layer/bus. `null` = nothing selected. */
+    graph, a Patch-graph device node, a layer/bus, or a setlist section (rename +
+    read-only transport-recall info). `null` = nothing selected. */
 export type Selection =
   | { kind: 'node'; nodeId: string }
   | { kind: 'patch'; nodeId: PatchNodeId }
-  | { kind: 'bus'; busId: string };
+  | { kind: 'bus'; busId: string }
+  | { kind: 'section'; sectionId: string };
 
 export interface ShellNav {
   view: View;
@@ -74,6 +76,8 @@ export function isSelected(nav: ShellNav, sel: Selection): boolean {
       return s.nodeId === (sel as { nodeId: PatchNodeId }).nodeId;
     case 'bus':
       return s.busId === (sel as { busId: string }).busId;
+    case 'section':
+      return s.sectionId === (sel as { sectionId: string }).sectionId;
   }
 }
 

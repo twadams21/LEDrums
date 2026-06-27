@@ -33,3 +33,27 @@ export function midiForSong(songIdx: number): string {
 export function midiForSection(sectionIdx: number): string {
   return `CC 0 value ${sectionIdx}`;
 }
+
+/** The three read-only recall messages the section Inspector shows for one section. */
+export interface SectionRecall {
+  /** OSC message that recalls this song + section in one shot. */
+  osc: string;
+  /** MIDI CC #0 message that recalls this section in the active song. */
+  midiSection: string;
+  /** MIDI Program Change that selects this section's parent song. */
+  midiSong: string;
+}
+
+/**
+ * The recall messages for the section at `sectionIdx` in the song at `songIdx` — the OSC
+ * one-shot, the CC #0 section recall, and the parent song's Program Change. A thin compose
+ * over the per-message helpers so the Inspector reads one object and the wording stays
+ * pinned in one place.
+ */
+export function sectionRecall(songIdx: number, sectionIdx: number): SectionRecall {
+  return {
+    osc: oscForSection(songIdx, sectionIdx),
+    midiSection: midiForSection(sectionIdx),
+    midiSong: midiForSong(songIdx),
+  };
+}
