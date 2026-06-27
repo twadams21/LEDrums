@@ -110,7 +110,7 @@
     border: 2px solid var(--accent);
     box-shadow: var(--shadow-1);
     cursor: grab;
-    transition: box-shadow 120ms ease, border-color 120ms ease;
+    transition: box-shadow var(--dur-120) ease, border-color var(--dur-120) ease;
   }
   .slider :global(.thumb:hover) {
     border-color: color-mix(in oklch, var(--accent) 70%, var(--ink));

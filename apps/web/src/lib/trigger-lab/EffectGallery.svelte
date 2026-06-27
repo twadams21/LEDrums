@@ -140,7 +140,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     text-align: left;
-    transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    transition: border-color var(--dur-120) ease, transform var(--dur-120) ease, box-shadow var(--dur-120) ease;
   }
   .cell:hover {
     border-color: var(--border-strong);
@@ -171,7 +171,7 @@
   }
   @media (prefers-reduced-motion: no-preference) {
     .cell {
-      animation: cell-in 220ms cubic-bezier(0.2, 0, 0, 1) both;
+      animation: cell-in 220ms var(--ease-control) both;
       animation-delay: calc(min(var(--i), 16) * 22ms);
     }
     @keyframes cell-in {

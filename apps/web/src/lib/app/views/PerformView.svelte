@@ -123,7 +123,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
     color: var(--ink);
-    transition: border-color 120ms ease, background-color 120ms ease, scale 90ms ease;
+    transition: border-color var(--dur-120) ease, background-color var(--dur-120) ease, scale 90ms ease;
   }
   .bigpad:hover {
     border-color: var(--border-strong);

@@ -153,7 +153,7 @@
     border: none;
     color: var(--text-faint);
     border-radius: var(--radius-2);
-    transition: color 120ms ease, background-color 120ms ease, scale 120ms ease;
+    transition: color var(--dur-120) ease, background-color var(--dur-120) ease, scale var(--dur-120) ease;
   }
   .close:hover {
     color: var(--ink);
@@ -215,7 +215,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     text-transform: capitalize;
-    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease, scale 120ms ease;
+    transition: color var(--dur-120) ease, border-color var(--dur-120) ease, background-color var(--dur-120) ease, scale var(--dur-120) ease;
   }
   .envbtn:active {
     scale: 0.96;

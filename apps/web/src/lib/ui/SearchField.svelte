@@ -47,7 +47,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-pill, 999px);
     color: var(--text-faint);
-    transition: border-color 120ms ease, color 120ms ease;
+    transition: border-color var(--dur-120) ease, color var(--dur-120) ease;
   }
   .search:focus-within {
     border-color: var(--accent);
@@ -85,7 +85,7 @@
     border: none;
     border-radius: var(--radius-pill, 999px);
     color: var(--text-faint);
-    transition: color 120ms ease, background-color 120ms ease, scale 120ms ease;
+    transition: color var(--dur-120) ease, background-color var(--dur-120) ease, scale var(--dur-120) ease;
   }
   .search-clear:hover {
     color: var(--ink);

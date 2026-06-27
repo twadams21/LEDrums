@@ -67,7 +67,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
     box-shadow: var(--shadow-3);
-    animation: dlg-content-in 160ms cubic-bezier(0.2, 0, 0, 1);
+    animation: dlg-content-in 160ms var(--ease-control);
   }
   :global(.lab-dialog-content:focus-visible) {
     outline: none;

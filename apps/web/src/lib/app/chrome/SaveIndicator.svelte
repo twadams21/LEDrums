@@ -39,7 +39,7 @@
     flex: none;
     color: var(--text-faint);
     opacity: 0;
-    transition: opacity 160ms cubic-bezier(0.2, 0, 0, 1);
+    transition: opacity 160ms var(--ease-control);
   }
   .save-indicator.visible {
     opacity: 1;
@@ -63,9 +63,9 @@
     transform: scale(0.25);
     filter: blur(4px);
     transition:
-      opacity 200ms cubic-bezier(0.2, 0, 0, 1),
-      transform 200ms cubic-bezier(0.2, 0, 0, 1),
-      filter 200ms cubic-bezier(0.2, 0, 0, 1);
+      opacity 200ms var(--ease-control),
+      transform 200ms var(--ease-control),
+      filter 200ms var(--ease-control);
   }
   .ico.on {
     opacity: 1;

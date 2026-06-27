@@ -52,7 +52,7 @@
     color: var(--text-muted);
     white-space: nowrap;
     transition-property: color, border-color, background-color;
-    transition-duration: var(--dur-2);
+    transition-duration: var(--dur-150);
   }
   .pill-ok {
     color: var(--ok);

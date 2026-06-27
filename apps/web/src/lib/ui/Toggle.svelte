@@ -45,7 +45,7 @@
     color: var(--text-faint);
     cursor: pointer;
     transition-property: background-color, color, border-color, scale;
-    transition-duration: 120ms;
+    transition-duration: var(--dur-120);
     transition-timing-function: ease;
   }
   .tgl :global(.tgl-btn:hover) {

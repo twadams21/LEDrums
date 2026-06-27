@@ -180,8 +180,8 @@
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-1);
     transition:
-      color var(--dur-2) ease,
-      border-color var(--dur-2) ease;
+      color var(--dur-150) ease,
+      border-color var(--dur-150) ease;
   }
   .addband:hover {
     color: var(--accent);

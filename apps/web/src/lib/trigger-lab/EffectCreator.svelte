@@ -249,10 +249,10 @@
     border-radius: var(--radius-2);
     cursor: pointer;
     transition:
-      border-color var(--dur-1) var(--ease-out-quart),
-      background-color var(--dur-1) var(--ease-out-quart),
-      translate var(--dur-1) var(--ease-out-quart),
-      scale var(--dur-1) var(--ease-out-quart);
+      border-color var(--dur-90) var(--ease-out-quart),
+      background-color var(--dur-90) var(--ease-out-quart),
+      translate var(--dur-90) var(--ease-out-quart),
+      scale var(--dur-90) var(--ease-out-quart);
   }
   .tile:hover {
     border-color: var(--border-strong);
@@ -304,7 +304,7 @@
     padding: var(--space-1) var(--space-2);
     border: 1px dashed var(--border-faint);
     border-radius: var(--radius-2);
-    transition: border-color var(--dur-1) var(--ease-out-quart);
+    transition: border-color var(--dur-90) var(--ease-out-quart);
   }
   .prow:hover {
     border-color: var(--border);
