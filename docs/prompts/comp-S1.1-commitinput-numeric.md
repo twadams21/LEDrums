@@ -3,6 +3,8 @@
 PRD §S1.1. Overlay PR **#16**. Branch base `feat/unified-shell` (worktree — read `_worktree-note.md`).
 **Foundation slice (additive-ish); land before the adoption slices.**
 
+**Blocked by:** none — can start immediately.
+
 ## What this delivers
 One canonical inline-edit primitive. Today there are TWO divergent `CommitInput`s:
 - `lib/ui/CommitInput.svelte` (89) — text inline-rename: commit on Enter/blur, revert on Esc, autofocus+select.

@@ -4,6 +4,9 @@ PRD §S3.2. Overlay PRs **#7** (split store), **#21** (show-library sync control
 (domain ID factory — optional), **#13** (legacy-sections cleanup — RESCOPED). Branch base
 `feat/unified-shell` (worktree — read `_worktree-note.md`). **Independent worktree — API-preserving.**
 
+**Blocked by:** none — can start immediately (own worktree; owns all of `store.svelte.ts`, incl. the
+`makeBlock` removal folded in from S0.3).
+
 ## What this delivers
 `store.svelte.ts` (1888) — a god-store — becomes a thin reactive `TriggerLab` rune wrapper delegating to
 ~10 pure reducer slices, each guarded by its existing `store.*.test.ts`. **The public `TriggerLab` class API
@@ -22,6 +25,8 @@ is unchanged, so no UI file changes** — this is internal structure only. **Kee
   the wrapper. Keep `save-status.ts` behaviour.
 - **#12 (optional):** if it keeps the diff clean, centralize the scattered `nid()`/id generation into one
   `store/ids.ts` (8 domains use ad-hoc ids). Skip if it bloats the slice — note your choice.
+- **Dead export (folded from S0.3):** remove the unused exported **`makeBlock`** (`store.svelte.ts:108`,
+  no caller — grep-confirm) as part of the split, so all `store.svelte.ts` edits live in this one slice.
 - **#13 (RESCOPED — careful):** `store.sections` is **LIVE, not dead** (the #13 PR's premise is wrong).
   Only remove legacy section state AFTER grep-confirming every caller has migrated to the flat-graph (U4)
   model. If any live caller remains, leave it and note what blocks removal. **Do not break the app.**

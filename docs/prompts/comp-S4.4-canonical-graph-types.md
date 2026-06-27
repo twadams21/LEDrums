@@ -4,6 +4,8 @@ PRD §A4. Overlay PR **#22** (architecturally significant). Branch base `feat/un
 `_worktree-note.md`). **DECISION D2 = LOCKED → Option A (CORE-CANONICAL).** **Depends on S3.3** (sim split)
 so the type re-point lands on the slimmer modules. Independent worktree otherwise.
 
+**Blocked by:** S3.3 (sim split) — re-point the graph types on the slimmer sim modules.
+
 ## What this delivers
 Ends the web⇄core model duplication: `apps/web/.../sim.ts` currently re-declares core's `GraphNode` /
 `GraphEdge` / `TriggerGraph` / `TriggerSource` byte-for-byte (kept aligned only by structural typing). Per

@@ -5,6 +5,8 @@ PRD finding (complements #19/S4.1). **Foundation slice.** Touches `tokens.css`, 
 and `Styleguide.svelte` — coordinate ordering with S4.1 (token sweep) so they don't both edit the same
 `<style>` lines.
 
+**Blocked by:** none — can start immediately (coordinate `tokens.css` ordering with S0.3/S4.1; see tracker).
+
 ## What this delivers
 Adds the missing tokens the primitives need, adopts `--z-*` inside `lib/ui`, and makes the living styleguide
 document the REAL `lib/ui` primitives (it currently shows raw HTML `<button>`/`<input>`/`<select>` and omits

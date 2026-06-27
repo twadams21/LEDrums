@@ -5,6 +5,8 @@ PRD §S3.1. Overlay PR **#8** (exact match). Branch base `feat/unified-shell` (w
 `lib/app/docks/Inspector.svelte` — nothing else touches it, so conflict-free in its own worktree.
 **API-preserving refactor — no behaviour change.**
 
+**Blocked by:** S1.1 (CommitInput) + S1.3 (form-options). Owns `Inspector.svelte` alone → conflict-free.
+
 ## What this delivers
 The single biggest live file (`Inspector.svelte`, 1359) — a ~12-branch if/else over every selection kind —
 becomes a thin container (~200 lines) dispatching to focused per-kind editor sub-components, each adopting

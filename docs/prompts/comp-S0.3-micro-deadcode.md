@@ -3,11 +3,14 @@
 PRD §S0.3. Branch base `feat/unified-shell` (worktree — read `_worktree-note.md`). **PR mapping:** PRD
 finding. **Independent worktree.** Small, surgical removals only — verify each with a grep before deleting.
 
+**Blocked by:** none — can start immediately.
+
 ## What this delivers
 Removes a handful of grep-confirmed unused exports/params and verifies-then-prunes underused tokens.
 
 ## Scope (verify each with a reference grep first; if any live caller appears, SKIP + note it)
-- `apps/web/src/lib/trigger-lab/store.svelte.ts` — remove the unused exported **`makeBlock`** (no caller).
+- *(Note: the unused `store.svelte.ts` export `makeBlock` is removed by **S3.2**, not here — that slice
+  owns `store.svelte.ts`, so folding it there avoids a same-wave edit collision.)*
 - `apps/server/src/ws-protocol.ts` — remove **`encodeClient`** (only used by its own test; drop or fold the
   test assertion). Symmetry-only export.
 - `apps/server/src/show-library.ts` — remove **`showLibraryExists`** (test-only).

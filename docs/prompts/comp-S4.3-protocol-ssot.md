@@ -4,6 +4,8 @@ PRD §S4.3. Overlay PR **#4** (app-shared slice — **NOT core**, per D2). Branc
 (worktree — read `_worktree-note.md`). **Independent worktree.** Note #1 (voice-stats on WS callbacks) is
 already merged — build on it.
 
+**Blocked by:** none — can start immediately (own worktree; distinct from S4.4's core-model boundary).
+
 ## What this delivers
 Removes the drift between the web client's protocol types and the server's, so the wire contract has one
 authoritative definition (app-shared, not in pure `packages/core`).

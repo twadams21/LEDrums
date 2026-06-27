@@ -5,6 +5,8 @@ finding (god-file). **Independent worktree — API-preserving.** Pairs with **S4
 do the split here; S4.4 then re-points sim's graph types to core. Keep them sequential (S3.3 → S4.4) or note
 overlap.
 
+**Blocked by:** none — can start immediately (own worktree). S4.4 (canonical types) runs AFTER this.
+
 ## What this delivers
 `sim.ts` (1169) — the local trigger-eval simulator — split by concern along its existing `sim.*.test.ts`
 seams, keeping the public sim API used by the store unchanged.

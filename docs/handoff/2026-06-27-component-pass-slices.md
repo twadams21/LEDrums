@@ -37,20 +37,46 @@ the 23-PR overlay (`docs/plans/2026-06-27-pr-overlay-direction.md`). Branch
 | **S3.1** Inspector split | `comp-S3.1-inspector-split.md` | #8 | S1.1,S1.3 | L | D (own worktree, API-preserving) |
 | **S3.2** store split | `comp-S3.2-store-split.md` | #7,#21,#12,#13 | — | L | D (own worktree) |
 | **S3.3** sim split | `comp-S3.3-sim-split.md` | (PRD) | — | M–L | D (own worktree) |
-| **S3.4** server/core splits | `comp-S3.4-server-core-splits.md` | #5 (#2 done) | — | M | D (own worktree) |
+| **S3.4** server main split | `comp-S3.4-server-core-splits.md` | #5 (#2 done) | — | M | D (own worktree) |
+| **S3.5** core engine/compositor split | `comp-S3.5-core-engine-split.md` | (PRD) | — | M | D (own worktree) |
 | **S4.1** token aliases + hardcodes | `comp-S4.1-token-aliases.md` | #19 | S0.1 | M | E (last; tree-wide sweep) |
 | **S4.3** protocol SSOT | `comp-S4.3-protocol-ssot.md` | #4 | — | M | E (independent) |
 | **S4.4** canonical graph types | `comp-S4.4-canonical-graph-types.md` | #22 | S3.3 | M | E (D2; independent) |
 | **S4.5** comments + misc | `comp-S4.5-comments-misc.md` | #20 | — | S | E |
 
-## Build order (when approved)
-1. **Wave A (immediate, parallel):** S0.1, S0.2, S0.3 — deletions, plus S3.2/S3.3/S3.4/S4.3 can
-   start concurrently (API-preserving / independent boundaries).
-2. **Wave B:** S1.1–S1.6 foundation primitives (additive; land before adoption).
-3. **Wave C:** S2.1 / S2.2 / S2.3 adoption — mutually parallel (disjoint dirs) after Wave B.
-4. **Wave D:** S3.1 Inspector split (after S1.1/S1.3) — own worktree.
-5. **Wave E:** S4.1 token sweep LAST (after deletions + adoptions so no doomed/rewritten file is
-   migrated twice); S4.4 canonical types after S3.3.
+## Build cadence (Trent: **staged P0 → P1, then parallelize when appropriate**)
+1. **Stage P0 first (review before proceeding):** S0.1, S0.2, S0.3 — deletions (parallel among
+   themselves). Reap the dead code + retire the lab before building on the tree.
+2. **Then P1:** S1.1–S1.6 foundation primitives (additive; land before adoption).
+3. **Then parallelize** once P0+P1 are reviewed/merged:
+   - **Wave C:** S2.1 / S2.2 / S2.3 adoption — mutually parallel (disjoint dirs) after P1.
+   - **Wave D (concurrent, own worktrees, API-preserving):** S3.1 Inspector (after S1.1/S1.3) ·
+     S3.2 store · S3.3 sim · S3.4 server · S3.5 core · S4.3 protocol — all independent boundaries,
+     can run alongside Wave C.
+   - **Wave E (last):** S4.1 token sweep (after deletions + adoptions so no doomed/rewritten file is
+     migrated twice) · S4.4 canonical types (after S3.3) · S4.5 comments.
+
+## Shared-file serialization points (do NOT parallelize these)
+- **`apps/web/src/lib/trigger-lab/store.svelte.ts`** — owned solely by **S3.2** (the `makeBlock`
+  dead-export removal was folded in from S0.3 to keep all edits in one slice).
+- **`apps/web/src/styles/tokens.css`** — touched by S0.3 (prune, P0), S1.6 (add tokens, P1), S4.1
+  (drop aliases, P4). They live in different waves → sequential by design; never run two at once.
+- **`apps/web/src/main.ts`** — only S0.2 (removes `?proto=trigger`).
+- **`lib/app/views/`** — S2.2 (Sections/Objects/Perform) and S2.3 (graph views + nodes) are
+  file-disjoint, so they parallelize safely.
+
+## Construction review (to-prd / to-issues pass — 2026-06-27)
+Reviewed against both skills. Verdict: **well-constructed as worktree-implementer briefs.** Justified
+divergences from the generic templates (noted for the record): (a) the plan is **layered (reap → prims →
+adopt → split)**, not vertical tracer-bullets — correct for a refactor/componentisation pass, and
+to-issues explicitly endorses "prefactoring first"; the whole pass is one big prefactor with no
+user-facing behavior, so there are no user-story tracer slices. (b) Briefs carry **file paths** (the
+templates say avoid them) — intentional: these are scope fences for worktree agents, not durable tracker
+issues; if any are filed as real GitHub issues, trim paths to module-level. Strongest dimension: every
+split reuses an **existing test suite as the contract** (highest/fewest seams — the to-prd seam rule),
+and every open PR maps to exactly one slice. Fixes applied this pass: store.svelte.ts edit-collision
+resolved; over-coarse S3.4 split into S3.4 (server) + S3.5 (core); explicit **Blocked by:** added to
+every brief.
 
 Each brief notes its PR(s) so Trent can close Draft PRs as slices land. Orchestrator merges
 worktree branches into `feat/unified-shell` + runs the full sweep per merge; ROUTER updated

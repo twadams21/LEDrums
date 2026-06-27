@@ -4,6 +4,8 @@ PRD §S1.2. Overlay PR **#14** (the **highest-impact duplication** — ≥5 file
 `feat/unified-shell` (worktree — read `_worktree-note.md`). **Foundation slice; prioritize — the adoption
 slices (S2.1, S2.2) depend on it.** This slice ONLY creates the primitives + tests; adoption is separate.
 
+**Blocked by:** none — can start immediately (uses S1.1's CommitInput if merged; else the existing one).
+
 ## What this delivers
 The single most-repeated UI pattern as shared `lib/ui` components: a selectable list row with icon +
 label/sub + hover-revealed actions + active/hover states, and an editable variant adding inline-rename +

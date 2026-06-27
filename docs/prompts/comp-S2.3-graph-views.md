@@ -6,6 +6,8 @@ and the **#17** `LayersDock.busIcon` remnant. Branch base `feat/unified-shell` (
 `_worktree-note.md`). **Depends on S0.2** (lab/NodeCanvas gone). Owns the graph views — disjoint from
 S2.1/S2.2.
 
+**Blocked by:** S0.2 (lab/NodeCanvas gone first). File-disjoint from S2.1 + S2.2 → parallel.
+
 ## What this delivers
 PatchGraphView + TriggerGraphView stop duplicating SvelteFlow canvas/palette/fit boilerplate, share it, fix
 a real geometry bug, and get their view-orchestration tidied.

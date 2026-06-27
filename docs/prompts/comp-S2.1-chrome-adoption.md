@@ -4,6 +4,8 @@ PRD §S2.1. Branch base `feat/unified-shell` (worktree — read `_worktree-note.
 (S1.1 CommitInput, S1.2 EditableRow/ListItem, S1.4 StatusPill). **PR mapping:** the S2 adoption work; #3
 (TopBar dead prop) already merged. Owns `lib/app/chrome/*` — disjoint from S2.2/S2.3.
 
+**Blocked by:** S1.1, S1.2, S1.4 (the primitives it adopts).
+
 ## What this delivers
 The app chrome stops hand-rolling rows / inline-rename / status pills and adopts the Wave-B primitives, so
 the chrome's look & feel is editable in one place.

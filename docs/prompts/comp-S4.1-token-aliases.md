@@ -4,6 +4,9 @@ PRD §S4.1 + §S4.2. Overlay PR **#19** (counts verified). Branch base `feat/uni
 `_worktree-note.md`). **RUN LAST** — after S0.1 (so no doomed file is migrated) and ideally after the
 adoption/split slices (so rewritten files aren't migrated twice). Tree-wide style sweep.
 
+**Blocked by:** S0.1 (don't migrate doomed files); run AFTER P2/P3 adoption+splits so rewritten files
+aren't migrated twice. Effectively the last slice.
+
 ## What this delivers
 Drops the 8 backward-compat alias tokens and tokenises the remaining hardcoded style values, so the token
 system is the single source of styling truth.

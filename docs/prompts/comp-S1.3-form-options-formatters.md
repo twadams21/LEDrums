@@ -4,6 +4,8 @@ PRD §A2 (componentise). Overlay PR **#15**. Branch base `feat/unified-shell` (w
 `_worktree-note.md`). **Foundation slice.** Runs AFTER **S0.2** (the lab's `NodeCanvas` — one of the two
 dup sources — is deleted there), so extract from the live remainder.
 
+**Blocked by:** S0.2 (the lab `NodeCanvas` — one dup source — is deleted there first).
+
 ## What this delivers
 A single home for the option lists + value formatters that were duplicated between `Inspector.svelte` and
 the (now-deleted) lab `NodeCanvas.svelte`: play-mode / layer / switch-mode `SegmentedControl` option arrays

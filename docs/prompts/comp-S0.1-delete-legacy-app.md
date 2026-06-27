@@ -4,6 +4,8 @@ PRD: `docs/plans/2026-06-27-componentisation-prd.md` (§S0.1). Overlay: `docs/pl
 Branch base `feat/unified-shell` (worktree — read `docs/prompts/_worktree-note.md`). **PR mapping:** PRD
 finding (no PR). **Independent — touches only confirmed-dead files; run in its own worktree, first.**
 
+**Blocked by:** none — can start immediately.
+
 ## What this delivers
 Removes the entire superseded legacy control app. A static reachability crawl from all three real
 entries (`App.svelte`, `?style`, `?proto=trigger`) found these unreachable; each was re-confirmed by a

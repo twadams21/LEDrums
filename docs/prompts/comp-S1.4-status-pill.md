@@ -3,6 +3,8 @@
 PRD §S1.3 / §A2. Branch base `feat/unified-shell` (worktree — read `_worktree-note.md`). **PR mapping:**
 PRD finding. **Foundation slice (additive — new file + later adoption).**
 
+**Blocked by:** none — can start immediately.
+
 ## What this delivers
 A shared status-indicator family for the recurring "state → label + animated coloured dot" pattern. Today
 `OutputPill.svelte` (LIVE/SYNC/LOCAL link state) and `SaveIndicator.svelte` (idle/saving/saved) hand-roll

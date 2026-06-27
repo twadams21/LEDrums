@@ -4,6 +4,8 @@ PRD §S0.2. Overlay PR **#17 + #18** (resolved by this deletion). Branch base `f
 (worktree — read `_worktree-note.md`). **DECISION D1 = GO** (Trent confirmed the trigger-model branches
 are settled). **Independent worktree.**
 
+**Blocked by:** none — can start immediately.
+
 ## What this delivers
 Removes the throwaway `?proto=trigger` model lab (~1,667 lines). The lab was the model probe kept only
 while the trigger-model branches were undecided; they're now settled, so it goes. **The live brain stays** —

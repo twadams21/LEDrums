@@ -5,6 +5,8 @@ PRD §S2.2. Branch base `feat/unified-shell` (worktree — read `_worktree-note.
 `lib/app/views/{SectionsView,ObjectsView,PerformView}.svelte` — disjoint from S2.1 (chrome) and S2.3
 (graph views).
 
+**Blocked by:** S1.2, S1.3, S1.5 (the primitives it adopts). File-disjoint from S2.1 + S2.3 → parallel.
+
 ## What this delivers
 The two big CRUD views (SectionsView 535, ObjectsView 508) adopt `MasterDetail` + `EditableRow` and extract
 their row sub-components, collapsing each toward ~150–300 lines while keeping behaviour identical.

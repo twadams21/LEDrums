@@ -3,6 +3,8 @@
 PRD §S1.5 / §A2. Branch base `feat/unified-shell` (worktree — read `_worktree-note.md`). **PR mapping:**
 PRD finding. **Foundation slice; S2.2 (views adoption) depends on it.**
 
+**Blocked by:** none — can start immediately.
+
 ## What this delivers
 The shared master-detail scaffold that `SectionsView` and `ObjectsView` both hand-roll: a left selector
 rail (type/section list) + a scrollable detail pane of rows, with row rendering delegated to a slot. Extract
