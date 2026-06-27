@@ -5,7 +5,6 @@
      browser (New / Open / Save / Save-As / Close / Rename / Delete). The live section
      context rides underneath so the bar still reads at a glance. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { ShellStore } from '../shell-store.svelte';
   import Transport from './Transport.svelte';
   import OutputPill from './OutputPill.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
@@ -15,12 +14,11 @@
   import CommitInput from '../../ui/CommitInput.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
 
-  // `shell` stays in the props type (the shell passes it) but is unused — the ModeSwitch
-  // that consumed it is gone, and the show title reads straight from the store.
-  let { store }: { store: TriggerLab; shell: ShellStore } = $props();
+  let { store }: { store: TriggerLab } = $props();
 
   const activeName = $derived(store.activeSection?.name ?? '—');
   const showName = $derived(store.activeShow?.name ?? 'Untitled show');
+  const sectionCount = $derived(store.activeSong?.sections.length ?? 0);
 
   let browserOpen = $state(false);
   let editingName = $state(false);
@@ -49,7 +47,7 @@
           {showName}
         </button>
       {/if}
-      <span class="set-sub">{store.sections.length} sections · {activeName}</span>
+      <span class="set-sub">{sectionCount} sections · {activeName}</span>
     </span>
     <SaveIndicator {store} />
   </div>
