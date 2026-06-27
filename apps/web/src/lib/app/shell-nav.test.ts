@@ -58,6 +58,13 @@ describe('select', () => {
     expect(nav.selection).toBeNull();
     expect(nav.dock).toBe('inspector');
   });
+
+  it('exposes a selected section to the Inspector (rename + recall panel)', () => {
+    const nav = setDock(initialNav({ view: 'sections' }), 'monitor');
+    const next = select(nav, { kind: 'section', sectionId: 'sec-2' });
+    expect(next.dock).toBe('inspector');
+    expect(next.selection).toEqual({ kind: 'section', sectionId: 'sec-2' });
+  });
 });
 
 describe('setDock preserves view + selection', () => {
@@ -76,6 +83,8 @@ describe('isSelected', () => {
     [{ kind: 'node', nodeId: 'a' }, { kind: 'node', nodeId: 'b' }, false],
     [{ kind: 'bus', busId: 'base' }, { kind: 'bus', busId: 'base' }, true],
     [{ kind: 'patch', nodeId: 'midi' }, { kind: 'bus', busId: 'midi' }, false],
+    [{ kind: 'section', sectionId: 's1' }, { kind: 'section', sectionId: 's1' }, true],
+    [{ kind: 'section', sectionId: 's1' }, { kind: 'section', sectionId: 's2' }, false],
   ];
   it.each(cases)('compares %o vs %o → %s', (current, probe, expected) => {
     expect(isSelected(select(initialNav(), current), probe)).toBe(expected);
