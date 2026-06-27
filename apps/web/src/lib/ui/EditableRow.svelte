@@ -19,7 +19,7 @@
            { label: 'Duplicate', icon: Copy, onSelect: () => store.duplicateSong(song.id) },
            { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.removeSong(song.id) },
          ]} /> */
-  import type { Component } from 'svelte';
+  import type { Component, Snippet } from 'svelte';
   import ListItem from './ListItem.svelte';
   import CommitInput from './CommitInput.svelte';
   import ContextMenu, { type ContextMenuAction } from './ContextMenu.svelte';
@@ -39,6 +39,10 @@
     onCancel?: () => void;
     /** Extra right-click verbs, appended after the built-in Rename. */
     actions?: ContextMenuAction[];
+    /** Hover-revealed quick-action buttons (mirror of the context-menu verbs). */
+    quickActions?: Snippet;
+    /** Always-visible trailing indicators (status/reuse dots). */
+    trailing?: Snippet;
     /** aria-label / placeholder context for the rename input. */
     renameLabel?: string;
     disabled?: boolean;
@@ -55,6 +59,8 @@
     onCommit,
     onCancel,
     actions,
+    quickActions,
+    trailing,
     renameLabel = 'Rename',
     disabled = false,
     class: klass,
@@ -86,7 +92,18 @@
   </div>
 {:else}
   <ContextMenu actions={menuActions} {disabled}>
-    <ListItem {icon} {label} {secondary} {active} {onclick} ondblclick={startEditing} {disabled} class={klass} />
+    <ListItem
+      {icon}
+      {label}
+      {secondary}
+      {active}
+      {onclick}
+      ondblclick={startEditing}
+      {disabled}
+      actions={quickActions}
+      {trailing}
+      class={klass}
+    />
   </ContextMenu>
 {/if}
 

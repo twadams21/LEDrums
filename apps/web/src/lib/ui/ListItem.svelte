@@ -33,6 +33,8 @@
     disabled?: boolean;
     /** Trailing actions, revealed on row hover / focus-within. */
     actions?: Snippet;
+    /** Always-visible trailing content (status/indicator dots), before `actions`. */
+    trailing?: Snippet;
     class?: string;
   };
 
@@ -45,6 +47,7 @@
     ondblclick,
     disabled = false,
     actions,
+    trailing,
     class: klass,
   }: Props = $props();
 </script>
@@ -64,6 +67,9 @@
       {#if secondary}<span class="sub">{secondary}</span>{/if}
     </span>
   </button>
+  {#if trailing}
+    <span class="li-trailing">{@render trailing()}</span>
+  {/if}
   {#if actions}
     <span class="li-actions">{@render actions()}</span>
   {/if}
@@ -130,6 +136,20 @@
   .sub {
     font-size: var(--text-2xs);
     color: var(--text-faint);
+  }
+
+  /* always-visible trailing indicators (status dots), pushed to the trailing edge */
+  .li-trailing {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+    margin-inline-start: auto;
+    padding-inline-end: var(--space-2);
+  }
+  /* when both are present the trailing block owns the auto margin; actions sit after it */
+  .li-trailing + .li-actions {
+    margin-inline-start: 0;
   }
 
   /* trailing actions — hidden until the row is hovered or holds focus */

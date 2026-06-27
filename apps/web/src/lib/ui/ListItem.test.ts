@@ -53,4 +53,14 @@ describe('ListItem', () => {
     const { getByTestId } = render(ListItem, { props: { label: 'Verse', actions } });
     expect(getByTestId('row-action')).toBeTruthy();
   });
+
+  it('renders the always-visible trailing snippet (status/indicator dots)', () => {
+    const trailing = createRawSnippet(() => ({
+      render: () => `<span data-testid="row-dot">●</span>`,
+    }));
+    const { container, getByTestId } = render(ListItem, { props: { label: 'Verse', trailing } });
+    expect(getByTestId('row-dot')).toBeTruthy();
+    // trailing content lives in its own slot, distinct from the hover actions slot
+    expect(container.querySelector('.li-trailing [data-testid="row-dot"]')).not.toBeNull();
+  });
 });

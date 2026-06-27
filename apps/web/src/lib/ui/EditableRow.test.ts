@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import EditableRow from './EditableRow.svelte';
 
 describe('EditableRow', () => {
@@ -74,5 +75,26 @@ describe('EditableRow', () => {
     // the row renders inside the right-click ContextMenu trigger; the verb list
     // (built-in Rename + the supplied Delete) is wired without throwing.
     expect(container.querySelector('.ctx-anchor .li')).not.toBeNull();
+  });
+
+  it('forwards the quickActions snippet to the row as hover quick-actions', () => {
+    const quickActions = createRawSnippet(() => ({
+      render: () => `<button data-testid="quick">Duplicate</button>`,
+    }));
+    const { container, getByTestId } = render(EditableRow, {
+      props: { label: 'Verse', onCommit: vi.fn(), quickActions },
+    });
+    expect(getByTestId('quick')).toBeTruthy();
+    expect(container.querySelector('.li-actions [data-testid="quick"]')).not.toBeNull();
+  });
+
+  it('forwards the trailing snippet to the row as an always-visible indicator', () => {
+    const trailing = createRawSnippet(() => ({
+      render: () => `<span data-testid="dot">●</span>`,
+    }));
+    const { container } = render(EditableRow, {
+      props: { label: 'Verse', onCommit: vi.fn(), trailing },
+    });
+    expect(container.querySelector('.li-trailing [data-testid="dot"]')).not.toBeNull();
   });
 });
