@@ -23,8 +23,8 @@ describe('initialNav', () => {
 });
 
 describe('VIEWS', () => {
-  it('is the mode-less rail order — trigger · patch · sections · perform (no kit)', () => {
-    expect(VIEWS).toEqual(['trigger', 'patch', 'sections', 'perform']);
+  it('is the rail order — perform · objects · sections · trigger · patch (no kit)', () => {
+    expect(VIEWS).toEqual(['perform', 'objects', 'sections', 'trigger', 'patch']);
   });
 });
 
@@ -86,6 +86,7 @@ describe('parseSearch', () => {
   it('reads the view deep-link', () => {
     expect(parseSearch('?view=patch')).toEqual({ view: 'patch' });
     expect(parseSearch('?view=perform')).toEqual({ view: 'perform' });
+    expect(parseSearch('?view=objects')).toEqual({ view: 'objects' });
   });
   it('drops unknown / retired views (kit is gone)', () => {
     expect(parseSearch('?view=nope')).toEqual({});

@@ -8,7 +8,7 @@
    (locality): switching views clears the Inspector selection, and selecting
    anything surfaces the Inspector tab. */
 
-export type View = 'trigger' | 'patch' | 'sections' | 'perform';
+export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'patch';
 export type DockTab = 'inspector' | 'monitor';
 
 /** A node id in the Patch Graph (device routing). These are stage-prefixed strings
@@ -30,7 +30,7 @@ export interface ShellNav {
   selection: Selection | null;
 }
 
-export const VIEWS: readonly View[] = ['trigger', 'patch', 'sections', 'perform'];
+export const VIEWS: readonly View[] = ['perform', 'objects', 'sections', 'trigger', 'patch'];
 
 export function initialNav(init: Partial<Pick<ShellNav, 'view'>> = {}): ShellNav {
   return {
