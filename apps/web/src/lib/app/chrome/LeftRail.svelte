@@ -8,6 +8,7 @@
   import type { Component } from 'svelte';
   import SongRail from './SongRail.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
+  import ListItem from '../../ui/ListItem.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
   import Cable from '@lucide/svelte/icons/cable';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -30,19 +31,13 @@
   <nav class="views" aria-label="Views">
     <Eyebrow icon={Navigation}>Views</Eyebrow>
     {#each NAV as v (v.id)}
-      {@const I = v.icon}
-      <button
-        class="navitem"
-        class:active={shell.view === v.id}
-        aria-pressed={shell.view === v.id}
+      <ListItem
+        icon={v.icon}
+        label={v.label}
+        secondary={v.sub}
+        active={shell.view === v.id}
         onclick={() => shell.setView(v.id)}
-      >
-        <I size={16} aria-hidden="true" />
-        <span class="labels">
-          <span class="lab">{v.label}</span>
-          {#if v.sub}<span class="sub">{v.sub}</span>{/if}
-        </span>
-      </button>
+      />
     {/each}
   </nav>
 
@@ -83,48 +78,5 @@
   }
   .views :global(.eyebrow) {
     margin-bottom: var(--space-1);
-  }
-  .navitem {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    justify-content: flex-start;
-    padding: var(--space-2) var(--space-3);
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-    text-align: left;
-  }
-  .navitem:hover {
-    background: var(--surface-2);
-    color: var(--text);
-  }
-  .navitem.active {
-    background: var(--accent-soft);
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-    color: var(--ink);
-  }
-  .navitem.active :global(svg) {
-    color: var(--accent);
-  }
-  .navitem :global(svg) {
-    flex: none;
-    color: var(--text-faint);
-  }
-  .labels {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.15;
-    min-width: 0;
-  }
-  .lab {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    color: var(--text-faint);
   }
 </style>
