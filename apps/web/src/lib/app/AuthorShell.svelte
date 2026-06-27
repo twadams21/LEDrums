@@ -52,7 +52,7 @@
 </script>
 
 <div class="author" class:solo={perform} style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px;">
-  <div class="top"><TopBar {store} {shell} /></div>
+  <div class="top"><TopBar {store} /></div>
 
   <div class="rail"><LeftRail {store} {shell} /></div>
 
