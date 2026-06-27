@@ -6,6 +6,7 @@ import {
   type OutputStatus,
   type SerializedModel,
   type ServerMessage,
+  type ShowLibraryBlob,
 } from './protocol-types';
 import type { EngineStats, Project } from '@ledrums/core';
 
@@ -32,6 +33,7 @@ export interface WSCallbacks {
     effects: EffectSpec[],
     projects: string[],
     output: OutputStatus,
+    showLibrary: ShowLibraryBlob | null,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus) => void;
@@ -149,7 +151,7 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary);
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output);
