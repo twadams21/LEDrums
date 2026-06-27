@@ -1,8 +1,9 @@
 /**
  * Outer seam — the host ↔ brain interface for the trigger-graph / voice-bus lighting
  * model. {@link RenderEngine} is the small, host-facing surface; behind it sit graph
- * eval, an object-pooled voice store, transport-driven envelopes, and the inner
- * {@link Compositor} seam (voices → pixels). Ported from `trigger-lab/sim.ts`.
+ * eval (`eval-graph.ts`), an object-pooled voice store (`voice-pool.ts`), transport-
+ * driven envelopes (`envelope-tick.ts`), and the inner {@link Compositor} seam
+ * (voices → pixels). Ported from `trigger-lab/sim.ts`.
  *
  * Purity / determinism (non-negotiable): `tick` is a pure function of (state, time,
  * inputs). No `Math.random` / `Date.now` — all randomness is a seeded {@link Prng}
@@ -13,7 +14,6 @@ import type { Framebuffer } from '../engine/framebuffer';
 import { Framebuffer as Fb } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
-import { cloneEnvelope } from './envelope';
 import { Prng } from './prng';
 import {
   buildPixelAttrs,
@@ -22,25 +22,19 @@ import {
   type Compositor,
   type PixelAttrs,
 } from './compositor';
+import { evalGraph, type EvalState, type TriggerCtx } from './eval-graph';
+import { VoicePool, releaseVoice } from './voice-pool';
+import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import {
   emptyShow,
   normalizeTriggerValue,
   padKey,
   type Bus,
   type EffectDef,
-  type EnvMap,
-  type GraphNode,
-  type ParamSpec,
-  type ParamValues,
-  type PlayMode,
   type Preset,
-  type Scope,
-  type Section,
   type Show,
-  type SwitchOn,
   type TriggerGraph,
   type TriggerSource,
-  type Voice,
 } from './types';
 
 // ---- Public seam ------------------------------------------------------------
@@ -76,36 +70,6 @@ export interface RenderEngine {
   stats(): EngineStats;
 }
 
-// ---- Eval actions (engine-internal) -----------------------------------------
-
-interface PlayAction {
-  kind: 'play';
-  effectId: string;
-  mode: PlayMode;
-  scope: Scope;
-  /** layer/bus override ('' → the effect's default bus). */
-  busId: string;
-  params: ParamValues;
-  env: EnvMap;
-  via: string;
-  latchKey: string | null;
-}
-interface StopAction {
-  kind: 'stop';
-  voiceId: string;
-  via: string;
-}
-type Action = PlayAction | StopAction;
-
-interface TriggerCtx {
-  velocity: number;
-  sectionIndex: number;
-  sectionCount: number;
-  beatPhase: number;
-  sourceDrumId: string;
-}
-
-const VOICE_CAP = 256;
 const PRNG_SEED = 0x1a2b3c4d;
 
 // ---- Production adapter ------------------------------------------------------
@@ -126,9 +90,8 @@ class VoiceBusEngine implements RenderEngine {
   private effectsById = new Map<string, EffectDef>();
   private presetsById = new Map<string, Preset>();
 
-  // Object-pooled voices. `pool` is fixed-size; `active` marks occupancy.
-  private readonly pool: Voice[] = [];
-  private voiceSeq = 0;
+  // Object-pooled voices (fixed-size slab; `acquire`/`release`/`spawn` in voice-pool.ts).
+  private readonly voices = new VoicePool();
 
   // Per-node graph eval state (keyed by `${statePrefix}#${nodeId}`, where the prefix
   // is a per-slot or pad key, so layers/pads don't collide).
@@ -153,10 +116,6 @@ class VoiceBusEngine implements RenderEngine {
   private activeSongId: string | null = null;
   private activeSectionId: string | null = null;
 
-  constructor() {
-    for (let i = 0; i < VOICE_CAP; i++) this.pool.push(makeVoiceSlot());
-  }
-
   // --- lifecycle ---------------------------------------------------------
 
   setModel(model: PixelModel): void {
@@ -171,7 +130,7 @@ class VoiceBusEngine implements RenderEngine {
     this.effectsById = new Map(show.effects.map((e) => [e.id, e] as const));
     this.presetsById = new Map(show.presets.map((p) => [p.id, p] as const));
     // Authored content changed: clear live state so eval starts clean & deterministic.
-    for (const v of this.pool) v.active = false;
+    this.voices.reset();
     this.seqIndex.clear();
     this.lastPick.clear();
     this.latched.clear();
@@ -314,254 +273,36 @@ class VoiceBusEngine implements RenderEngine {
     return this.beat - Math.floor(this.beat);
   }
 
-  // --- graph eval (ported from sim.evalGraph/evalNode) -------------------
+  // --- graph eval (delegated to eval-graph.ts) ---------------------------
+
+  /** The engine-owned eval state bundle handed to the pure graph evaluator. Built per
+      fire so it always sees the current `presetsById` (reassigned on `setShow`). */
+  private evalState(): EvalState {
+    return {
+      seqIndex: this.seqIndex,
+      lastPick: this.lastPick,
+      latched: this.latched,
+      prng: this.prng,
+      presetsById: this.presetsById,
+      isVoiceAlive: (id) => this.voices.isVoiceAlive(id),
+    };
+  }
 
   private fireGraph(graph: TriggerGraph, pad: string, ctx: TriggerCtx): void {
-    const actions = this.evalGraph(graph, pad, ctx);
+    const actions = evalGraph(this.evalState(), graph, pad, ctx);
     for (const a of actions) {
       if (a.kind === 'stop') {
-        const v = this.findActiveVoice(a.voiceId);
-        if (v) this.release(v);
+        const v = this.voices.findActiveVoice(a.voiceId);
+        if (v) releaseVoice(v, this.timeMs);
       } else {
-        this.spawn(a, ctx.sourceDrumId, ctx.velocity);
+        this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
+          effectsById: this.effectsById,
+          busById: this.busById,
+          latched: this.latched,
+          timeMs: this.timeMs,
+        });
       }
     }
-  }
-
-  private evalGraph(graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
-    const trig = graph.nodes.find((n) => n.kind === 'trigger');
-    if (!trig) return [];
-    return this.evalNode(graph, pad, trig, ctx, '', new Set());
-  }
-
-  /** A node's wired children, ordered top→bottom (visual y) for determinism. */
-  private childrenOf(graph: TriggerGraph, node: GraphNode): GraphNode[] {
-    return graph.edges
-      .filter((e) => e.from === node.id)
-      .map((e) => graph.nodes.find((n) => n.id === e.to))
-      .filter((n): n is GraphNode => !!n)
-      .sort((a, b) => a.y - b.y);
-  }
-
-  /** Children wired from a specific source handle (value+bands switch). Mirrors
-      {@link childrenOf} but filters by `fromPort`, still y-sorted for determinism. */
-  private childrenViaPort(graph: TriggerGraph, node: GraphNode, port: string): GraphNode[] {
-    return graph.edges
-      .filter((e) => e.from === node.id && e.fromPort === port)
-      .map((e) => graph.nodes.find((n) => n.id === e.to))
-      .filter((n): n is GraphNode => !!n)
-      .sort((a, b) => a.y - b.y);
-  }
-
-  private nodeStateKey(pad: string, nodeId: string): string {
-    return `${pad}#${nodeId}`;
-  }
-
-  private evalNode(
-    graph: TriggerGraph,
-    pad: string,
-    node: GraphNode,
-    ctx: TriggerCtx,
-    viaPrefix: string,
-    seen: Set<string>,
-  ): Action[] {
-    if (seen.has(node.id)) return []; // cycle guard
-    const seen2 = new Set(seen).add(node.id);
-    const label = (s: string): string => (viaPrefix ? `${viaPrefix} → ${s}` : s);
-    const kids = this.childrenOf(graph, node);
-    const sk = this.nodeStateKey(pad, node.id);
-    switch (node.kind) {
-      case 'trigger':
-        return kids.flatMap((c) => this.evalNode(graph, pad, c, ctx, viaPrefix, seen2));
-      case 'play':
-        if (!node.effectId) return [];
-        return [
-          {
-            kind: 'play',
-            effectId: node.effectId,
-            mode: node.mode,
-            scope: node.scope,
-            busId: node.busId,
-            params: this.resolveNodeParams(node),
-            env: node.env,
-            via: label(modeWord(node.mode)),
-            latchKey: null,
-          },
-        ];
-      case 'all':
-        return kids.flatMap((c) => this.evalNode(graph, pad, c, ctx, label('All'), seen2));
-      case 'random': {
-        if (kids.length === 0) return [];
-        let i = this.prng.nextInt(kids.length);
-        if (node.noRepeat && kids.length > 1) {
-          const prev = this.lastPick.get(sk);
-          while (i === prev) i = this.prng.nextInt(kids.length);
-        }
-        this.lastPick.set(sk, i);
-        return this.evalNode(graph, pad, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2);
-      }
-      case 'sequence': {
-        if (kids.length === 0) return [];
-        const i = (this.seqIndex.get(sk) ?? 0) % kids.length;
-        this.seqIndex.set(sk, i + 1);
-        return this.evalNode(graph, pad, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
-      }
-      case 'switch': {
-        // `value` (gate/bands) is canonical. `velocity` was folded into `value` and dropped
-        // from SwitchOn — web migrates persisted graphs on hydrate, but core must never throw
-        // or mis-route on a stray legacy `velocity` (un-migrated in-flight data), so anything
-        // that isn't an explicit count-based mode (`section`/`beat`) routes through value eval.
-        if (node.on !== 'section' && node.on !== 'beat') {
-          return this.evalValueSwitch(graph, pad, node, ctx, label, seen2);
-        }
-        if (kids.length === 0) return [];
-        const i = switchIndexN(kids.length, node.on, ctx);
-        return this.evalNode(graph, pad, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
-      }
-      case 'chance': {
-        if (this.prng.next() > node.p) return [];
-        return kids.flatMap((c) =>
-          this.evalNode(graph, pad, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2),
-        );
-      }
-      case 'toggle': {
-        const current = this.latched.get(sk);
-        const alive = current ? this.isVoiceAlive(current) : false;
-        if (alive && current) {
-          this.latched.set(sk, null);
-          return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
-        }
-        const actions = kids.flatMap((c) => this.evalNode(graph, pad, c, ctx, label('Toggle on'), seen2));
-        const firstPlay = actions.find((a): a is PlayAction => a.kind === 'play');
-        if (firstPlay) firstPlay.latchKey = sk;
-        return actions;
-      }
-    }
-  }
-
-  /**
-   * Evaluate an `on:'value'` switch (value source = `ctx.velocity`, normalized 0..1).
-   * New value-fields are defaulted defensively so graphs persisted before value-mode
-   * existed (which lack them) still evaluate. Mirrors `sim.evalValueSwitch`.
-   *  - gate: pass when value ≤ threshold (or > when inverted); pass → eval the default
-   *    children, else nothing.
-   *  - bands: resolve which band the value lands in (ascending cutoffs) → eval the
-   *    children wired from that band's handle (`band-${i}`); other bands stay silent.
-   */
-  private evalValueSwitch(
-    graph: TriggerGraph,
-    pad: string,
-    node: GraphNode,
-    ctx: TriggerCtx,
-    label: (s: string) => string,
-    seen: Set<string>,
-  ): Action[] {
-    const value = ctx.velocity;
-    const mode = node.valueMode ?? 'gate';
-    if (mode === 'gate') {
-      const threshold = node.threshold ?? 0.5;
-      const invert = node.invert ?? false;
-      const pass = invert ? value > threshold : value <= threshold;
-      if (!pass) return [];
-      const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
-      return this.childrenOf(graph, node).flatMap((c) => this.evalNode(graph, pad, c, ctx, label(gateVia), seen));
-    }
-    const cutoffs = node.bands ?? [0.5];
-    const b = bandIndex(value, cutoffs);
-    const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
-    return this.childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
-      this.evalNode(graph, pad, c, ctx, label(bandVia), seen),
-    );
-  }
-
-  private resolveNodeParams(node: GraphNode): ParamValues {
-    if (node.linked) return this.presetsById.get(node.presetId)?.params ?? node.params;
-    return node.params;
-  }
-
-  // --- voice lifecycle (object-pooled; ported from sim.spawn/release/tick) ----
-
-  private spawn(a: PlayAction, sourceDrumId: string | null, velocity: number): Voice | null {
-    const effect = this.effectsById.get(a.effectId);
-    if (!effect) return null;
-    const bus = this.busById.get(a.busId || effect.busId);
-    if (!bus) return null;
-
-    if (bus.polyphony === 'mono') {
-      for (const v of this.pool) {
-        if (v.active && v.busId === bus.id && v.phase !== 'release') this.release(v);
-      }
-    }
-
-    const slot = this.acquireSlot();
-    if (!slot) return null;
-
-    slot.active = true;
-    slot.id = `v${++this.voiceSeq}`;
-    slot.effectId = a.effectId;
-    slot.pattern = effect.pattern;
-    slot.busId = bus.id;
-    slot.mode = a.mode;
-    slot.scope = a.scope;
-    slot.sourceDrumId = sourceDrumId;
-    slot.velocity = velocity;
-    // Generator-backed effects host a legacy EffectGenerator; the compositor reads
-    // `generatorId` + `genState`. Reset state on (re)spawn so a reused pool slot never
-    // inherits a previous voice's accumulation buffers / RNG cursor.
-    slot.generatorId = effect.generatorId ?? null;
-    slot.genState = null;
-    slot.params = { ...a.params };
-    slot.specs = effect.params;
-    slot.env = cloneEnvMap(a.env);
-    slot.attackMs = effect.attackMs;
-    slot.sustainMs = effect.sustainMs;
-    slot.releaseMs = effect.releaseMs;
-    slot.phase = 'attack';
-    slot.level = 0;
-    slot.bornAtMs = this.timeMs;
-    slot.releaseAtMs = null;
-    slot.releaseFromLevel = 1;
-    slot.via = a.via;
-    slot.deckGain = 1;
-
-    if (a.latchKey) this.latched.set(a.latchKey, slot.id);
-    return slot;
-  }
-
-  /**
-   * Find a free pool slot; if the pool is saturated, steal the oldest releasing
-   * voice, else the oldest voice overall (voice-capped, no GC churn).
-   */
-  private acquireSlot(): Voice | null {
-    let free: Voice | null = null;
-    let oldestReleasing: Voice | null = null;
-    let oldest: Voice | null = null;
-    for (const v of this.pool) {
-      if (!v.active) {
-        free = v;
-        break;
-      }
-      if (v.phase === 'release' && (!oldestReleasing || v.bornAtMs < oldestReleasing.bornAtMs)) {
-        oldestReleasing = v;
-      }
-      if (!oldest || v.bornAtMs < oldest.bornAtMs) oldest = v;
-    }
-    return free ?? oldestReleasing ?? oldest;
-  }
-
-  private release(v: Voice): void {
-    if (v.phase === 'release') return;
-    v.phase = 'release';
-    v.releaseAtMs = this.timeMs;
-    v.releaseFromLevel = v.level;
-  }
-
-  private findActiveVoice(id: string): Voice | null {
-    for (const v of this.pool) if (v.active && v.id === id) return v;
-    return null;
-  }
-  private isVoiceAlive(id: string): boolean {
-    return this.findActiveVoice(id) != null;
   }
 
   // --- tick --------------------------------------------------------------
@@ -574,43 +315,22 @@ class VoiceBusEngine implements RenderEngine {
 
     this.drainQueue();
 
-    // Advance voice envelopes (ported from sim.tick).
-    for (const v of this.pool) {
-      if (!v.active) continue;
-      const age = this.timeMs - v.bornAtMs;
-      if (v.phase === 'attack') {
-        v.level = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
-        if (v.level >= 1) v.phase = 'sustain';
-      } else if (v.phase === 'sustain') {
-        if (v.mode === 'oneshot') {
-          v.level = 1;
-          if (age >= v.attackMs + v.sustainMs) this.release(v);
-        } else {
-          v.level = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480));
-        }
-      } else {
-        const bus = this.busById.get(v.busId);
-        const ramp = Math.max(60, v.mode === 'oneshot' ? v.releaseMs : bus?.crossfadeMs ?? v.releaseMs);
-        const since = this.timeMs - (v.releaseAtMs ?? this.timeMs);
-        v.level = Math.max(0, v.releaseFromLevel * (1 - since / ramp));
-      }
-    }
-
-    // Reap dead voices back into the pool (no allocation, no array churn).
-    for (const v of this.pool) {
-      if (v.active && v.phase === 'release' && v.level <= 0.001) {
-        v.active = false;
-        // Clear any latch still pointing at this voice.
-        for (const [k, id] of this.latched) if (id === v.id) this.latched.set(k, null);
-      }
-    }
+    // Advance voice envelopes, then reap dead voices back into the pool.
+    advanceEnvelopes(this.voices.pool, this.timeMs, this.busById);
+    reapDeadVoices(this.voices.pool, this.latched);
 
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.attrs && this.finalFb) {
-      for (const v of this.pool) {
+      for (const v of this.voices.pool) {
         if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm);
       }
-      this.compositor.render(this.pool, this.model, this.attrs, { timeMs: this.timeMs, dt, transport }, this.finalFb);
+      this.compositor.render(
+        this.voices.pool,
+        this.model,
+        this.attrs,
+        { timeMs: this.timeMs, dt, transport },
+        this.finalFb,
+      );
     }
   }
 
@@ -625,7 +345,7 @@ class VoiceBusEngine implements RenderEngine {
     const busLevels: Record<string, number> = {};
     for (const b of this.show.buses) busLevels[b.id] = this.busLevel(b);
     let voiceCount = 0;
-    for (const v of this.pool) if (v.active) voiceCount++;
+    for (const v of this.voices.pool) if (v.active) voiceCount++;
     return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels };
   }
 
@@ -633,7 +353,7 @@ class VoiceBusEngine implements RenderEngine {
     let count = 0;
     let sum = 0;
     let mx = 0;
-    for (const v of this.pool) {
+    for (const v of this.voices.pool) {
       if (!v.active || v.busId !== bus.id) continue;
       const lvl = v.level * v.deckGain;
       count++;
@@ -697,64 +417,6 @@ function triggerSourceOf(graph: TriggerGraph): TriggerSource | undefined {
   return graph.nodes.find((n) => n.kind === 'trigger')?.source;
 }
 
-function modeWord(m: PlayMode): string {
-  return m === 'oneshot' ? 'One-shot' : m === 'loop' ? 'Loop' : 'Hold';
-}
-
-/** Count-based child index for the `section`/`beat` switch modes (the only modes that
-    reach here — `value` is handled by {@link VoiceBusEngine.evalValueSwitch}). */
-function switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
-  if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-  const frac = on === 'beat' ? ctx.beatPhase : 0;
-  return Math.min(n - 1, Math.floor(frac * n));
-}
-
-/** Resolve which band a 0..1 value lands in against ascending cutoffs. N cutoffs →
-    N+1 bands: value ≤ cutoffs[0] → 0; ≤ cutoffs[1] → 1; …; value above the last
-    cutoff → the final band (index = cutoffs.length). Empty cutoffs → band 0.
-    Mirrors `sim.bandIndex`. */
-export function bandIndex(value: number, cutoffs: readonly number[]): number {
-  for (let i = 0; i < cutoffs.length; i++) {
-    if (value <= cutoffs[i]!) return i;
-  }
-  return cutoffs.length;
-}
-
-function cloneEnvMap(env: EnvMap): EnvMap {
-  const out: EnvMap = {};
-  for (const k of Object.keys(env)) out[k] = cloneEnvelope(env[k]!);
-  return out;
-}
-
-/** Pre-allocated voice pool slot (inactive). */
-function makeVoiceSlot(): Voice {
-  return {
-    active: false,
-    id: '',
-    effectId: '',
-    pattern: 'flash',
-    busId: '',
-    mode: 'oneshot',
-    scope: 'kit',
-    sourceDrumId: null,
-    velocity: 1,
-    generatorId: null,
-    genState: null,
-    params: {},
-    liveParams: {},
-    specs: EMPTY_SPECS,
-    env: {},
-    attackMs: 0,
-    sustainMs: 0,
-    releaseMs: 0,
-    phase: 'attack',
-    level: 0,
-    bornAtMs: 0,
-    releaseAtMs: null,
-    releaseFromLevel: 1,
-    via: '',
-    deckGain: 1,
-  };
-}
-
-const EMPTY_SPECS: ParamSpec[] = [];
+// `bandIndex` lives in eval-graph.ts (graph eval owns band resolution). Re-exported here
+// so the public `./engine` import surface — which the engine tests consume — is unchanged.
+export { bandIndex } from './eval-graph';
