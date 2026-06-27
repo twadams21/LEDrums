@@ -109,10 +109,10 @@
     border-radius: var(--radius-2);
     background: var(--surface-2);
     color: var(--text-faint);
-    /* Fixed footprint so a longer/shorter show name never reflows the transport
-       + status cluster to its right. The name truncates within (see .set-name). */
-    flex: none;
-    min-width: 300px;
+    /* Fixed 300px footprint (basis, no grow/shrink) so a longer/shorter show name never
+       reflows the transport + status cluster to its right — the name truncates within
+       (.set-labels flex:1/min-width:0 + .set-name max-width:100%). */
+    flex: 0 0 300px;
   }
   .set-labels {
     display: flex;
