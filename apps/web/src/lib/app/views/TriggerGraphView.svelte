@@ -8,19 +8,11 @@
      owning live node positions during a drag. All per-node editing lives in the
      right-dock Inspector — the nodes here are display-only. */
   import { setContext, untrack } from 'svelte';
-  import {
-    Background,
-    BackgroundVariant,
-    Controls,
-    Panel,
-    SvelteFlow,
-    type Connection,
-    type EdgeTypes,
-    type NodeTypes,
-  } from '@xyflow/svelte';
-  import '@xyflow/svelte/dist/style.css';
+  import type { Connection, EdgeTypes, NodeTypes } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
+  import { NODE_KINDS, NODE_W, type BlockKind } from '../../trigger-lab/sim';
+  import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
     graphToFlowNodes,
@@ -33,10 +25,9 @@
   import { describeTriggerSource } from '../trigger-source-label';
   import TriggerNode from './TriggerNode.svelte';
   import WireEdge from './WireEdge.svelte';
-  import TriggerPalette from './TriggerPalette.svelte';
-  import TriggerFitView from './TriggerFitView.svelte';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
-  import Plus from '@lucide/svelte/icons/plus';
+  import GraphCanvas from './GraphCanvas.svelte';
+  import GraphPalette from './GraphPalette.svelte';
+  import GraphListRail from './GraphListRail.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -71,6 +62,20 @@
     const key = store.createGraph();
     if (store.activeSectionId) store.addGraphToSection(store.activeSectionId, key);
     shell.clearSelection();
+  }
+
+  // ---- add-node palette (shared GraphPalette) -------------------------------
+  // One palette item per node kind (icon / tint / label from the shared node metadata).
+  const PALETTE_ITEMS = NODE_KINDS.map((kind) => ({
+    key: kind,
+    label: kindLabel[kind],
+    icon: kindIcon[kind],
+    tint: tint[kind],
+    title: `Add ${kindLabel[kind]} node`,
+  }));
+  /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
+  function addNodeAt(kind: BlockKind, cx: number, cy: number): void {
+    store.addNode(kind, cx - NODE_W / 2, cy - 40);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -130,7 +135,7 @@
   // flashes at the previous graph's viewport — revealed instantly once fitted.
   let fitted = $state(false);
   $effect(() => {
-    store.selectedPadKey; // a switch hides the canvas until TriggerFitView reports back
+    store.selectedPadKey; // a switch hides the canvas until GraphFitView reports back
     fitted = false;
   });
 
@@ -169,68 +174,49 @@
 </script>
 
 <div class="trigger-view">
-  <aside class="surface">
-    <header class="shead">
-      <Eyebrow>{activeSection?.name ?? 'Section'}</Eyebrow>
-    </header>
-    <div class="scroll">
-      {#if activeSection}
-        {#each activeSection.graphs as key (key)}
-          <button class="trig" class:active={store.selectedPadKey === key} onclick={() => openGraph(key)}>
-            <span class="glabel">{store.graphLabel(key)}</span>
-            <span class="gsub">{sourceSub(key)}</span>
-          </button>
-        {/each}
-        {#if activeSection.graphs.length === 0}
-          <p class="empty">No graphs in this section.</p>
-        {/if}
-        <button class="newgraph" type="button" onclick={newGraph}>
-          <Plus size={13} aria-hidden="true" /> New graph
-        </button>
-      {:else}
-        <p class="empty">No active section.</p>
-      {/if}
-    </div>
-  </aside>
+  <GraphListRail
+    title={activeSection?.name ?? 'Section'}
+    graphs={activeSection?.graphs ?? null}
+    selectedKey={store.selectedPadKey}
+    labelFor={(key) => store.graphLabel(key)}
+    subFor={sourceSub}
+    onOpen={openGraph}
+    onNew={newGraph}
+  />
 
-  <section class="canvas" class:swapping={!fitted}>
-    {#if store.selectedGraph}
-      <SvelteFlow
-        bind:nodes
-        bind:edges
-        {nodeTypes}
-        {edgeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        nodesConnectable
-        minZoom={0.2}
-        proOptions={{ hideAttribution: true }}
-        deleteKey={['Delete', 'Backspace']}
-        onnodeclick={({ node }) => shell.select({ kind: 'node', nodeId: node.id })}
-        onpaneclick={() => shell.clearSelection()}
-        onnodepointerenter={({ node }) => hover.enter(node.id)}
-        onnodepointerleave={() => hover.leave()}
-        onnodedragstop={({ nodes: moved }) => {
-          for (const n of moved) syncPos(n);
-        }}
-        onconnect={onConnect}
-        onconnectend={(event, conn) => {
-          if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
-          const toId = nodeIdAtEvent(event);
-          if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
-        }}
-        onreconnect={onReconnect}
-        ondelete={({ edges: removed }) => onDeleteEdges(removed)}
-      >
-        <TriggerFitView padding={0.2} watch={store.selectedPadKey} onfitted={() => (fitted = true)} />
-        <Panel position="top-left"><TriggerPalette {store} /></Panel>
-        <Background variant={BackgroundVariant.Dots} />
-        <Controls />
-      </SvelteFlow>
-    {:else}
-      <p class="hint">Select a graph from the section to edit it.</p>
-    {/if}
-  </section>
+  <GraphCanvas
+    bind:nodes
+    bind:edges
+    {nodeTypes}
+    {edgeTypes}
+    fitPadding={0.2}
+    fitWatch={store.selectedPadKey}
+    onFitted={() => (fitted = true)}
+    ready={!!store.selectedGraph}
+    swapping={!fitted}
+    onNodeClick={(id) => shell.select({ kind: 'node', nodeId: id })}
+    onPaneClick={() => shell.clearSelection()}
+    onNodeEnter={(id) => hover.enter(id)}
+    onNodeLeave={() => hover.leave()}
+    onNodeDragStop={({ nodes: moved }) => {
+      for (const n of moved) syncPos(n);
+    }}
+    onConnect={onConnect}
+    onConnectEnd={(event, conn) => {
+      if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+      const toId = nodeIdAtEvent(event);
+      if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
+    }}
+    onReconnect={onReconnect}
+    onDelete={({ edges: removed }) => onDeleteEdges(removed)}
+  >
+    {#snippet palette()}
+      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} />
+    {/snippet}
+    {#snippet empty()}
+      <p class="thint">Select a graph from the section to edit it.</p>
+    {/snippet}
+  </GraphCanvas>
 </div>
 
 <style>
@@ -241,194 +227,10 @@
     min-height: 0;
     height: 100%;
   }
-  .surface {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-  }
-  .shead {
-    padding: var(--space-2) var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .scroll {
-    overflow: auto;
-    min-height: 0;
-    padding: var(--space-2);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .trig {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    align-items: flex-start;
-    width: 100%;
-    min-width: 0;
-    padding: var(--space-2);
-    text-align: left;
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-1);
-    transition: border-color 120ms ease, background-color 120ms ease;
-  }
-  .trig:hover {
-    border-color: var(--border-strong);
-  }
-  .trig:hover .glabel {
-    color: var(--ink);
-  }
-  .trig.active {
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-    background: var(--accent-soft);
-  }
-  .glabel {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
-    font-size: var(--text-sm);
-    color: var(--text);
-  }
-  .trig.active .glabel {
-    color: var(--ink);
-  }
-  .gsub {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-  }
-  .empty {
+  /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
+  .thint {
     margin: 0;
-    padding: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-faint);
-  }
-  .newgraph {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    width: 100%;
-    margin-top: var(--space-1);
-    padding: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    background: var(--surface-2);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-1);
-    transition:
-      color 120ms ease,
-      border-color 120ms ease;
-  }
-  .newgraph:hover {
-    color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
-  }
-  .newgraph:active {
-    scale: 0.98;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .newgraph {
-      transition: none;
-    }
-  }
-  .canvas {
-    position: relative;
-    min-height: 0;
-    min-width: 0;
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-    overflow: hidden;
-    /* matches the flow bg so the brief swap blank shows no colour blink */
-    background: var(--bg-perform);
-  }
-  .hint {
-    position: absolute;
-    inset: 0;
-    margin: 0;
-    display: grid;
-    place-items: center;
     color: var(--text-faint);
     font-size: var(--text-sm);
-  }
-
-  /* --- @xyflow/svelte on the project tokens (shared theming with PatchGraphView) -- */
-  .canvas :global(.svelte-flow) {
-    background: var(--bg-perform);
-  }
-  /* during a graph switch, hide the flow until it's re-fitted (no flash, instant) */
-  .canvas.swapping :global(.svelte-flow) {
-    opacity: 0;
-  }
-  /* custom `trigger` nodes bring their own card — strip xyflow's default chrome */
-  .canvas :global(.svelte-flow__node-trigger) {
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    width: auto;
-    box-shadow: none;
-    color: inherit;
-    font-family: inherit;
-  }
-  /* the selection ring is drawn by the node card itself (NodeCard .card.sel) */
-  .canvas :global(.svelte-flow__node-trigger.selected) {
-    box-shadow: none;
-  }
-  .canvas :global(.svelte-flow__edge-path) {
-    stroke: var(--border-strong);
-    stroke-width: 1.6;
-  }
-  .canvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
-  .canvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
-    stroke: var(--accent);
-  }
-  /* a wire one level connected to the hovered node lights up (see graph-hover) */
-  .canvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
-    stroke: var(--accent);
-  }
-  /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
-  .canvas :global(.svelte-flow__handle) {
-    width: 8px;
-    height: 8px;
-    background: var(--surface-2);
-    border: 1.5px solid var(--border-strong);
-  }
-  .canvas :global(.svelte-flow__handle:hover),
-  .canvas :global(.svelte-flow__handle.connectingfrom),
-  .canvas :global(.svelte-flow__handle.connectingto) {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-  /* the in-progress connection line */
-  .canvas :global(.svelte-flow__connectionline .svelte-flow__connection-path) {
-    stroke: var(--accent);
-    stroke-width: 2;
-    stroke-dasharray: 5 4;
-  }
-  .canvas :global(.svelte-flow__controls) {
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    box-shadow: var(--shadow-2);
-    overflow: hidden;
-  }
-  .canvas :global(.svelte-flow__controls-button) {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border-faint);
-    color: var(--text-muted);
-    fill: currentColor;
-  }
-  .canvas :global(.svelte-flow__controls-button:hover) {
-    background: var(--surface-2);
-    color: var(--ink);
   }
 </style>

@@ -15,6 +15,7 @@
    human summary for the Inspector. Output shape is typed for `@xyflow/svelte`. */
 
 import type { Edge, Node } from '@xyflow/svelte';
+import { drumHoopCount, type KitConfig } from '@ledrums/core';
 
 /** The eight left→right stages of the device-routing topology. */
 export type PatchStage =
@@ -222,6 +223,26 @@ export function buildPatchTopology(drums: TopologyDrum[], opts: TopologyOptions 
   }
 
   return { nodes, edges };
+}
+
+/**
+ * Resolve the input half's `TopologyDrum[]` from a kit + the lab's drum list. The hoop
+ * count for each drum derives from the SUPPLIED kit (per-drum override or the kit global)
+ * — so a non-default project kit renders the right number of hoop nodes upstream, the same
+ * way the OUTPUT half is already project-authoritative (#11; the old view read hoop counts
+ * from `DEFAULT_KIT`). `zonesForDrum` stays a view concern (it unions a drum's physical +
+ * authored sensor zones), so it is injected rather than derived here.
+ */
+export function topoDrumsFromKit(
+  kit: KitConfig,
+  drums: ReadonlyArray<{ id: string; label: string }>,
+  zonesForDrum: (drumId: string) => string[],
+): TopologyDrum[] {
+  return drums.map((d) => {
+    const kitDrum = kit.drums.find((k) => k.id === d.id);
+    const hoopCount = kitDrum ? drumHoopCount(kit, kitDrum) : kit.global.hoopCount;
+    return { id: d.id, label: d.label, zones: zonesForDrum(d.id), hoopCount };
+  });
 }
 
 /** A human-readable summary of a patch node id, for the Inspector (no built graph

@@ -19,24 +19,14 @@
      change in the next `state`. When the project declares no outputs yet, a
      `defaultRouting` chunk seeds the graph so there is something to wire. */
   import { onDestroy, setContext, untrack } from 'svelte';
-  import {
-    Background,
-    BackgroundVariant,
-    Controls,
-    MiniMap,
-    Panel,
-    SvelteFlow,
-    type Connection,
-    type EdgeTypes,
-    type NodeTypes,
-  } from '@xyflow/svelte';
-  import '@xyflow/svelte/dist/style.css';
-  import { DEFAULT_KIT, drumHoopCount, type OutputConfig } from '@ledrums/core';
+  import type { Connection, EdgeTypes, NodeTypes } from '@xyflow/svelte';
+  import { DEFAULT_KIT, type OutputConfig } from '@ledrums/core';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
     buildPatchTopology,
+    topoDrumsFromKit,
     CONTROLLER_ID,
     NODE_H,
     NODE_W,
@@ -44,7 +34,6 @@
     type PatchFlowEdge,
     type PatchFlowNode,
     type PatchStage,
-    type TopologyDrum,
   } from '../patch-topology';
   import { outputsToPatch, patchToOutputs } from '../patch-routing';
   import {
@@ -58,12 +47,13 @@
   import PatchNode from './PatchNode.svelte';
   import { PATCH_STORE_KEY } from './patch-context';
   import WireEdge from './WireEdge.svelte';
-  import PatchFitView from './PatchFitView.svelte';
-  import PatchPalette from './PatchPalette.svelte';
+  import GraphCanvas from './GraphCanvas.svelte';
+  import GraphPalette from './GraphPalette.svelte';
   import { GraphHover } from './graph-hover.svelte';
   import { nodeIdAtEvent } from './flow-dom';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Cable from '@lucide/svelte/icons/cable';
+  import Plug from '@lucide/svelte/icons/plug';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -102,6 +92,13 @@
     };
     nodes = [...nodes, node];
   }
+
+  // The two user-addable device kinds for the shared GraphPalette. `add` hands back the
+  // flow-space centre; addDevice centres the new node on it (local, not persisted).
+  const PALETTE_ITEMS = [
+    { key: 'dataline', label: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, title: 'Add Data Line — local, not saved' },
+    { key: 'output', label: 'Output', icon: Plug, tint: DEVICE_ROLE.output, title: 'Add Output — local, not saved' },
+  ] as const;
 
   /** Reject self-loops and exact duplicate wires; otherwise accept (xyflow applies
       the default `wire` type so the new edge is reconnectable). */
@@ -172,27 +169,17 @@
     return [...ordered, ...extras];
   }
 
-  /** Hoop count for a drum, from the canonical kit (per-drum override or global). */
-  function hoopCountFor(drumId: string): number {
-    const kitDrum = DEFAULT_KIT.drums.find((d) => d.id === drumId);
-    return kitDrum ? drumHoopCount(DEFAULT_KIT, kitDrum) : DEFAULT_KIT.global.hoopCount;
-  }
-
-  function buildTopoDrums(): TopologyDrum[] {
-    return store.drums.map((d) => ({
-      id: d.id,
-      label: d.label,
-      zones: zonesForDrum(d.id),
-      hoopCount: hoopCountFor(d.id),
-    }));
-  }
-
   // Built ONCE, synchronously at mount, so the nodes exist for SvelteFlow's initial
   // `fitView` (populating them later via an $effect fits an empty graph and leaves the
   // viewport unfitted). The view remounts on re-entry, re-deriving from the store (incl.
   // the authoritative outputs) — so this stays data-driven without a reactive rebuild
   // that would fight SvelteFlow's drag-owned arrays. Hence $state.raw + two-way bind.
-  const topoDrums = buildTopoDrums();
+  // #11: the input half's hoop counts derive from the authoritative project kit (per-drum
+  // override or global), like the output half — not from DEFAULT_KIT. Falls back to
+  // DEFAULT_KIT only when offline (no project yet). See `topoDrumsFromKit`.
+  const topoDrums = untrack(() =>
+    topoDrumsFromKit(store.project?.kit ?? DEFAULT_KIT, store.drums, zonesForDrum),
+  );
   const full = buildPatchTopology(topoDrums);
 
   // Layout anchors from the input half: column stride from the controller's x (it sits
@@ -333,41 +320,33 @@
     <span class="hint">input → trigger → zone → drum → hoop → data line → output → controller</span>
   </header>
 
-  <div class="canvas">
-    <SvelteFlow
-      bind:nodes
-      bind:edges
-      {nodeTypes}
-      {edgeTypes}
-      defaultEdgeOptions={{ type: 'wire' }}
-      fitView
-      fitViewOptions={{ padding: 0.15 }}
-      nodesConnectable
-      minZoom={0.2}
-      proOptions={{ hideAttribution: true }}
-      deleteKey={['Delete', 'Backspace']}
-      onbeforeconnect={onBeforeConnect}
-      onnodeclick={({ node }) => shell.select({ kind: 'patch', nodeId: node.id })}
-      onpaneclick={() => shell.clearSelection()}
-      onnodepointerenter={({ node }) => onEnter(node.id)}
-      onnodepointerleave={onLeave}
-      onconnect={() => commitRouting()}
-      onreconnect={onReconnect}
-      ondelete={() => commitRouting()}
-      onnodedragstop={() => commitRouting()}
-      onconnectend={(event, conn) => {
-        if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
-        const toId = nodeIdAtEvent(event);
-        if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
-      }}
-    >
-      <PatchFitView padding={0.15} />
-      <Panel position="top-left"><PatchPalette add={addDevice} /></Panel>
-      <Background variant={BackgroundVariant.Dots} />
-      <Controls />
-      <MiniMap />
-    </SvelteFlow>
-  </div>
+  <GraphCanvas
+    bind:nodes
+    bind:edges
+    {nodeTypes}
+    {edgeTypes}
+    defaultEdgeOptions={{ type: 'wire' }}
+    fitPadding={0.15}
+    minimap
+    onBeforeConnect={onBeforeConnect}
+    onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
+    onPaneClick={() => shell.clearSelection()}
+    onNodeEnter={onEnter}
+    onNodeLeave={onLeave}
+    onConnect={() => commitRouting()}
+    onReconnect={onReconnect}
+    onDelete={() => commitRouting()}
+    onNodeDragStop={() => commitRouting()}
+    onConnectEnd={(event, conn) => {
+      if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+      const toId = nodeIdAtEvent(event);
+      if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
+    }}
+  >
+    {#snippet palette()}
+      <GraphPalette items={PALETTE_ITEMS} add={addDevice} ariaLabel="Add device (local, not saved)" />
+    {/snippet}
+  </GraphCanvas>
 </div>
 
 <style>
@@ -392,88 +371,5 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-faint);
-  }
-  .canvas {
-    min-height: 0;
-    min-width: 0;
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-    overflow: hidden;
-  }
-
-  /* --- @xyflow/svelte on the project tokens --------------------------------- */
-  .canvas :global(.svelte-flow) {
-    background: var(--bg-perform);
-  }
-  /* custom `patch` nodes bring their own card — strip xyflow's default chrome */
-  .canvas :global(.svelte-flow__node-patch) {
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    width: auto;
-    box-shadow: none;
-    color: inherit;
-    font-family: inherit;
-  }
-  /* the canvas selection ring is drawn by the node card itself (NodeCard .card.sel) */
-  .canvas :global(.svelte-flow__node-patch.selected) {
-    box-shadow: none;
-  }
-  .canvas :global(.svelte-flow__edge-path) {
-    stroke: var(--border-strong);
-    stroke-width: 1.6;
-  }
-  .canvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
-  .canvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
-    stroke: var(--accent);
-  }
-  /* a wire one level connected to the hovered node lights up (see graph-hover) */
-  .canvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
-    stroke: var(--accent);
-  }
-  /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
-  .canvas :global(.svelte-flow__handle) {
-    width: 8px;
-    height: 8px;
-    background: var(--surface-2);
-    border: 1.5px solid var(--border-strong);
-  }
-  .canvas :global(.svelte-flow__handle:hover),
-  .canvas :global(.svelte-flow__handle.connectingfrom),
-  .canvas :global(.svelte-flow__handle.connectingto) {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-  /* the in-progress connection line */
-  .canvas :global(.svelte-flow__connectionline .svelte-flow__connection-path) {
-    stroke: var(--accent);
-    stroke-width: 2;
-    stroke-dasharray: 5 4;
-  }
-  .canvas :global(.svelte-flow__controls) {
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    box-shadow: var(--shadow-2);
-    overflow: hidden;
-  }
-  .canvas :global(.svelte-flow__controls-button) {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border-faint);
-    color: var(--text-muted);
-    fill: currentColor;
-  }
-  .canvas :global(.svelte-flow__controls-button:hover) {
-    background: var(--surface-2);
-    color: var(--ink);
-  }
-  .canvas :global(.svelte-flow__minimap) {
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-  }
-  .canvas :global(.svelte-flow__minimap-mask) {
-    fill: color-mix(in oklch, var(--bg) 62%, transparent);
   }
 </style>
