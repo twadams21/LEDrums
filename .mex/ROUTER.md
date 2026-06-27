@@ -114,12 +114,22 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 - **Deferred (explicit next):** the **componentisation pass** — inspect all UI, maximize componentisation on bits-ui — gets its own explore (haiku fan-out) → scope → plan → build cycle. And renaming "Graphs" stays a vault exploration only (`~/TWA/Personal/Projects/LEDrums/Naming - rethinking 'Graphs'.md`; top picks Cue / Gesture / Reaction).
 - **OWED: a live `:5173` spot-check** (no agent drove a browser) — checklist `docs/handoff/2026-06-27-spot-check-2.md`; especially the MIDI/OSC recall path end-to-end (voice mode) + the server-persisted-show cold-load/storage-clear. The two prior spot-checks remain separately owed.
 
+**Componentisation pass (✅ COMPLETE — 2026-06-27, branch `feat/unified-shell`, HEAD `6c41172`):** the deferred "inspect-all-UI, maximize componentisation on bits-ui" initiative, run as a 5-phase implement→review pipeline of ~21 twux git-worktree slices (orchestrator-merged, `/code-review` per phase — all Clean). Designed via a 13-explorer reachability map (262 files) → PRD (`docs/plans/2026-06-27-componentisation-prd.md`) → file-bounded briefs (`docs/prompts/comp-*.md`; tracker `docs/handoff/2026-06-27-component-pass-slices.md`). Final: typecheck 0 (5 pkgs); **791 tests** (core 201 / io 13 / protocol 1 / server 80 / web 496).
+- **P0 Reap (−6,065 lines):** deleted the dead legacy app (`lib/shell` + `lib/store/app-store` + `lib/panels` + old `lib/views` + `lib/routing` + unused `lib/ui` Card/Rail/Sidebar) + retired the `?proto=trigger` lab (`NodeCanvas`/`TriggerLab`); micro dead-code (server `encodeClient`/`showLibraryExists`, `makeBlock`, 4 unused tokens).
+- **P1 Primitives:** new shared `lib/ui` — unified `CommitInput` (text+number), `ListItem`/`EditableRow`, `StatusPill`/`StatusDot`, `MasterDetail`, shared `node-options`; tokens `--overlay`/`--control-icon-size`; component-test infra (jsdom + @testing-library/svelte); Styleguide demos the real primitives.
+- **P2 Adopt:** chrome + object/section views + graph views adopt the primitives (ObjectsView −69%, SectionsView −77%; shared `GraphCanvas`/`GraphPalette`/`GraphFitView`). Bug fixed: Patch INPUT-half hoop counts now derive from `store.project.kit` not `DEFAULT_KIT` (`topoDrumsFromKit`).
+- **P3 Splits (API-preserving, contracts untouched):** `store.svelte.ts` 1888→1516 + 11 pure slices under `trigger-lab/store/`; `sim.ts` 1169→4 modules; `Inspector.svelte` 1359→239 + 11 per-kind editors under `docks/inspectors/`; server `main.ts` 428→277 (handlers/boot); core `voice/engine.ts` 760→422 + `compositor.ts` 388→154.
+- **P4 Consistency:** new `packages/protocol` (`@ledrums/protocol`) single-sources the WS wire contract (out of pure core); web graph types core-canonical (type-only from `@ledrums/core`, D2); dropped the 8 backward-compat token aliases; motion tokens `--dur-120`/`--ease-control` + value-based `--dur` scale (120ms now reduced-motion-aware); comment hygiene + shared `dark-pixel` const.
+- **Live-spot-check fixes:** TopBar setlist fixed 300px (no reflow); Inspector follows the active context (AuthorShell `$effect` bridge — section follows active section, node selection clears when gone); computer-keyboard plays the active section's graph list (keys 1–9/0 → graphs 1–10, via `store.fireSectionGraph`).
+- **OWED: a live `:5173` spot-check** of the rewired shell (all prior initiatives' spot-checks also still owed).
+- **Next (handed to a fresh feature-orch, 2026-06-27):** Trigger/Effects features — delay node, per-effect scope (kit/drum/hoop)+target-by-id, better effect thumbnails. Brief: `docs/handoff/2026-06-27-feature-initiative-handoff.md`.
+
 **Not yet built (redesign):**
 - `packages/core` model refactor: Content vs Effect split + per-instance Clip presets.
 - Unified-shell view internals: Patch freeform node canvas. (Setlist/show persistence ✅ done via the show document model, 2026-06-27; Kit geometry editing lives in the Patch Inspector — the standalone Kit view was removed.)
 
 **Known issues:**
-- Existing panels still use legacy token names via aliases; migrate per-view, then drop aliases.
+- (Resolved 2026-06-27 by the componentisation pass: the legacy panels were deleted and the 8 backward-compat token aliases dropped.)
 
 ## Routing Table
 
