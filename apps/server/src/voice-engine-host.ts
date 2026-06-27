@@ -89,6 +89,13 @@ export class VoiceEngineHost {
   /** Preview frame sink (wired by `main` to broadcast over WS). */
   onFrame?: (rgb: Uint8Array) => void;
 
+  /** The live Show (retained so the global transport-recall handler can map a
+   * Program Change / CC#0 / OSC index → song & section ids). null until first setShow. */
+  private currentShow: voice.Show | null = null;
+  /** The active song id for index-relative recalls (CC#0). Seeded from the first song on
+   * setShow, updated whenever a recallSection names a song (web- or transport-driven). */
+  private activeSongId: string | null = null;
+
   constructor(
     project: Project,
     engine: voice.RenderEngine = voice.createVoiceBusEngine(),
@@ -165,9 +172,22 @@ export class VoiceEngineHost {
     this.reloadOutputSettings();
   }
 
-  /** Replace the show the engine runs (authored voice-bus content). */
+  /** Replace the show the engine runs (authored voice-bus content). Retains it + reseeds
+   * the active song so transport recall maps indices against the current arrangement. */
   setShow(show: voice.Show): void {
+    this.currentShow = show;
+    this.activeSongId = show.songs?.[0]?.id ?? null;
     this.engine.setShow(show);
+  }
+
+  /** The live Show, for the global transport-recall index→id mapping (null before setShow). */
+  getShow(): voice.Show | null {
+    return this.currentShow;
+  }
+
+  /** The active song id CC#0 section recalls resolve against (null before setShow). */
+  getActiveSongId(): string | null {
+    return this.activeSongId;
   }
 
   // --- input ---------------------------------------------------------------
@@ -183,6 +203,9 @@ export class VoiceEngineHost {
    */
   applyInput(partial: VoicePartialInput): void {
     this.pendingInputWall = nowWall();
+    // Track the active song so index-relative recalls (CC#0) resolve against whatever was
+    // last recalled — whether by the UI or by a global transport recall.
+    if (partial.kind === 'recallSection' && partial.songId) this.activeSongId = partial.songId;
     const ev = this.toInputEvent(partial);
     if (ev) this.engine.applyInput(ev);
   }

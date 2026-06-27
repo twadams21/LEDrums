@@ -19,6 +19,11 @@ import { listEffects } from '@ledrums/core';
 
 export type ClientMessage =
   | { t: 'midi'; note: number; velocity: number; on: boolean }
+  // Global transport recall (voice mode): a Control Change (cc) and a Program Change.
+  // The server's global recall handler intercepts cc#0 + programChange BEFORE the
+  // per-trigger zone-map; other controllers are currently no-ops.
+  | { t: 'cc'; controller: number; value: number }
+  | { t: 'programChange'; value: number }
   | { t: 'osc'; address: string; value: number }
   | { t: 'setParam'; layerId: string; clipId: string; key: string; value: number | string | boolean }
   | { t: 'setLayer'; layerId: string; blendMode?: Layer['blendMode']; opacity?: number; activeClipId?: string | null; name?: string }
@@ -52,7 +57,7 @@ export type ClientMessage =
   | { t: 'listProjects' };
 
 const CLIENT_TYPES = new Set<ClientMessage['t']>([
-  'midi', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
+  'midi', 'cc', 'programChange', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',

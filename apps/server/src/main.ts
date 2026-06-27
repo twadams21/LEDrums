@@ -10,7 +10,16 @@ import { OscInput, OSC_DEFAULT_PORT } from '@ledrums/io';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
-import { applyClientMessage, oscToEvent } from './input-router';
+import {
+  applyClientMessage,
+  oscToEvent,
+  oscRecall,
+  parseSectionRecallAddress,
+  programChangeRecall,
+  sectionIndexRecall,
+  SECTION_RECALL_CC,
+  type RecallTarget,
+} from './input-router';
 import { listProjects, loadProject, projectExists, saveProject, saveProjectAsync } from './projects';
 import { createAutosaver } from './autosave';
 import { SingleClientLock } from './client-lock';
@@ -86,6 +95,15 @@ function broadcastBinary(rgb: Uint8Array): void {
   }
 }
 
+/** Apply a resolved global transport recall to the voice engine + echo it to the input
+ * monitor. Reuses the engine's existing `recallSection` input (which also activates the
+ * song), so a Program Change / CC#0 / OSC recall drives the same path the UI does. */
+function applyTransportRecall(target: RecallTarget, monitor: { kind: 'midi' | 'osc'; label: string; value: number }): void {
+  if (!voiceHost) return;
+  voiceHost.applyInput({ kind: 'recallSection', songId: target.songId, sectionId: target.sectionId });
+  broadcastJson({ t: 'input', kind: monitor.kind, label: monitor.label, value: monitor.value });
+}
+
 /** Build the full `state` message reflecting the current engine/project. In voice mode
  * the voice host owns the live geometry, so its model is authoritative for the wire. */
 function stateMessage(): ServerMessage {
@@ -154,6 +172,21 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
 
   // --- voice-mode inputs (only meaningful when the voice host is running) ---
   if (voiceHost) {
+    // Global transport recall — STEP 0, before the per-trigger zone-map. A Program Change
+    // selects a song (+ its first section); CC#0 recalls a section in the active song.
+    if (msg.t === 'programChange') {
+      const target = programChangeRecall(voiceHost.getShow(), msg.value);
+      if (target) applyTransportRecall(target, { kind: 'midi', label: `PC ${msg.value}`, value: msg.value });
+      return;
+    }
+    if (msg.t === 'cc') {
+      if (msg.controller === SECTION_RECALL_CC) {
+        const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
+        if (target) applyTransportRecall(target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
+      }
+      // Other controllers have no engine path yet — consume without falling through.
+      return;
+    }
     if (msg.t === 'setShow') {
       voiceHost.setShow(msg.show);
       return;
@@ -177,11 +210,25 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
       return;
     }
     if (msg.t === 'osc') {
+      // A section-recall address is a reserved global convention: it is ALWAYS consumed
+      // here (recall on a valid index, no-op when out of range) and never falls through to
+      // the zone-map. Any other address is a normal OSC input.
+      if (parseSectionRecallAddress(msg.address) !== null) {
+        const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
+        if (target) applyTransportRecall(target, { kind: 'osc', label: msg.address, value: msg.value });
+        return;
+      }
       voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
       broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
       return;
     }
-  } else if (msg.t === 'setShow' || msg.t === 'key' || msg.t === 'recallSection') {
+  } else if (
+    msg.t === 'setShow' ||
+    msg.t === 'key' ||
+    msg.t === 'recallSection' ||
+    msg.t === 'cc' ||
+    msg.t === 'programChange'
+  ) {
     // These only apply to the voice engine; ignore in legacy mode.
     return;
   }
@@ -254,6 +301,14 @@ oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
   if (!event || event.kind !== 'osc') return;
   if (voiceHost) {
+    // A section-recall address (e.g. from a show-control system) is always consumed by the
+    // recall handler before the zone-map, exactly like the WS osc path; anything else is a
+    // normal OSC input.
+    if (parseSectionRecallAddress(event.address) !== null) {
+      const target = oscRecall(voiceHost.getShow(), event.address, event.value);
+      if (target) applyTransportRecall(target, { kind: 'osc', label: event.address, value: event.value });
+      return;
+    }
     voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
   } else {
     host.markInput();

@@ -43,6 +43,7 @@ import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, play, type Pad } from '
 import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
+import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
 import type { SerializedModel } from '../ws/protocol-types';
 import type { InputMap, OutputConfig, Project } from '@ledrums/core';
 import { buildShow } from './show-builder';
@@ -389,6 +390,9 @@ export class TriggerLab {
       defaults to the real auto-reconnecting client. Created in start(), closed
       in stop(). */
   private readonly client: WSClient;
+  /** WebMIDI access handle (real hardware → WS). Browser-only, opened in start(),
+      released in stop(); null when MIDI is unavailable or not yet requested. */
+  private midiHandle: MidiInitResult | null = null;
   /** last transport tuple we sent the server — guards against re-sending every
       frame (we only push setTransport when one of these actually changes). */
   private lastSent: { bpm: number; playing: boolean; beatsPerBar: number } | null = null;
@@ -462,6 +466,9 @@ export class TriggerLab {
     this.startAutosave();
     this.wireClient();
     this.client.connect();
+    // Request hardware MIDI and forward it to the server (notes + transport recall).
+    // Fire-and-forget: degrades to a no-op when the browser has no WebMIDI / in tests.
+    void this.initMidiInput();
     this.last = performance.now();
     this.fpsLast = this.last;
     this.fpsFrames = 0;
@@ -491,9 +498,38 @@ export class TriggerLab {
   stop(): void {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.midiHandle?.stop();
+    this.midiHandle = null;
     this.client.close();
     this.lastSent = null;
     this.stopAutosave();
+  }
+
+  /** Open WebMIDI (browser-only) and forward every parsed event to the server. Never
+      throws: an absent API / denied access resolves to an unavailable handle. */
+  private async initMidiInput(): Promise<void> {
+    try {
+      this.midiHandle = await initMidi((ev) => this.forwardMidi(ev));
+    } catch {
+      this.midiHandle = null;
+    }
+  }
+
+  /** Forward a parsed MIDI event over the engine link: notes as `midi`, Control Change as
+      `cc`, Program Change as `programChange` (the latter two drive global transport recall —
+      the server maps them to song/section recall before the per-trigger zone-map). */
+  private forwardMidi(ev: MidiEvent): void {
+    switch (ev.kind) {
+      case 'note':
+        this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on });
+        return;
+      case 'cc':
+        this.client.send({ t: 'cc', controller: ev.controller, value: ev.value });
+        return;
+      case 'programChange':
+        this.client.send({ t: 'programChange', value: ev.value });
+        return;
+    }
   }
 
   // --- live persistence (show library ⇄ localStorage) ----------------------

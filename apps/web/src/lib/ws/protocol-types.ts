@@ -22,6 +22,10 @@ import type {
 
 export type ClientMessage =
   | { t: 'midi'; note: number; velocity: number; on: boolean }
+  // Global transport recall (voice mode): Control Change + Program Change. The server
+  // intercepts cc#0 + programChange as section/song recall before the zone-map.
+  | { t: 'cc'; controller: number; value: number }
+  | { t: 'programChange'; value: number }
   | { t: 'osc'; address: string; value: number }
   | {
       t: 'setParam';
