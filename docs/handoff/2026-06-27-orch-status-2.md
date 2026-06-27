@@ -30,13 +30,17 @@ recall-transport ┴─► section-inspector
 ## Status table
 | Slice | Brief | Wave | Depends on | Agent | wt branch | Status | Commit | Merged |
 |---|---|---|---|---|---|---|---|---|
-| graphs-generic | `docs/prompts/graphs-generic.md` | 1 | — | — | wt/graphs-generic | PENDING | — | — |
-| objects-crud | `docs/prompts/objects-crud.md` | 1 | — | — | wt/objects-crud | PENDING | — | — |
-| recall-transport | `docs/prompts/recall-transport.md` | 1 | — | — | wt/recall-transport | PENDING | — | — |
-| section-inspector | `docs/prompts/section-inspector.md` | 2 | recall-transport, graphs-generic | — | wt/section-inspector | PENDING | — | — |
-| shows-server-persist | `docs/prompts/shows-server-persist.md` | 2 | graphs-generic, objects-crud | — | wt/shows-server-persist | PENDING | — | — |
-| objects-view | `docs/prompts/objects-view.md` | 2 | graphs-generic, objects-crud | — | wt/objects-view | PENDING | — | — |
-| save-indicator | `docs/prompts/save-indicator.md` | 3 | shows-server-persist | — | wt/save-indicator | PENDING | — | — |
+| graphs-generic | `docs/prompts/graphs-generic.md` | 1 | — | graphs-generic-0c3b5e (parked) | wt/graphs-generic | ✅ MERGED | 4278fe2 | 6b7e9eb |
+| objects-crud | `docs/prompts/objects-crud.md` | 1 | — | objects-crud-7f411e (parked) | wt/objects-crud | ✅ MERGED | 0cb5b50 | ad9c093 |
+| recall-transport | `docs/prompts/recall-transport.md` | 1 | — | recall-transport-fc09c8 (parked) | wt/recall-transport | ✅ MERGED | af7576a | 6c9ba2e |
+| section-inspector | `docs/prompts/section-inspector.md` | 2 | recall-transport ✅, graphs-generic ✅ | section-inspector-0b5869 (parked) | wt/section-inspector | ✅ MERGED | 76e8d8f | 880e195 |
+| shows-server-persist | `docs/prompts/shows-server-persist.md` | 2 | graphs-generic ✅, objects-crud ✅ | shows-server-persist-eceb98 (parked) | wt/shows-server-persist | ✅ MERGED | 594baae | 0c06266 |
+| objects-view | `docs/prompts/objects-view.md` | 2 | graphs-generic ✅, objects-crud ✅ | objects-view-feb9cf (parked) | wt/objects-view | ✅ MERGED | a1bb6d3 | d176eca |
+| save-indicator | `docs/prompts/save-indicator.md` | 3 | shows-server-persist ✅ | save-indicator-272a56 (parked) | wt/save-indicator | ✅ MERGED | 913675c | 8227e6d |
+
+## ✅ ALL 7 SLICES MERGED — initiative 2 COMPLETE (HEAD `8227e6d`, pushed)
+Final sweep green: typecheck 0 (2097 web files); **699 tests** (core 201 / io 13 / server 80 / web 405).
+GROW done: ROUTER + `mex log`. **OWED: live `:5173` spot-check** → `docs/handoff/2026-06-27-spot-check-2.md` (recall path end-to-end + server-persisted-show cold-load especially). **Next: componentisation pass** (its own explore→scope→plan→build).
 
 ## Recipes (same as initiative 1)
 - Launch: `git worktree add ../ledrums-wt-<slug> -b wt/<slug> feat/unified-shell` → `(cd … && pnpm install --prefer-offline)` → `twux launch --name <slug> --split right --model opus --effort xhigh --cwd ../ledrums-wt-<slug> --role impl --doc docs/prompts/<brief>.md --read docs/prompts/_worktree-note.md`.
