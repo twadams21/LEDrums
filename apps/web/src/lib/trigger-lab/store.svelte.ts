@@ -1,6 +1,13 @@
 /* Reactive bridge over the throwaway Sim. Owns editable config + the effect/preset
    registries as runes, drives the sim from a rAF loop, and snapshots transient
-   voice/log state each frame. Throwaway — see ./NOTES.md. */
+   voice/log state each frame. Throwaway — see ./NOTES.md.
+
+   THIN WRAPPER (S3.2): the domain logic lives in pure reducer slices under `store/`
+   (ids · seed · hydrate · graphs · graph-wiring · value-switch · objects ·
+   trigger-routing · shows · show-library-sync · transport) + the existing pure modules
+   (persistence · save-status · setlist · show-builder). This class holds the runes +
+   sim/client lifecycle and delegates each domain to its slice — mirroring
+   setlist.ts / shell-nav.ts. The public TriggerLab API is unchanged. */
 
 import {
   Sim,
@@ -8,17 +15,13 @@ import {
   defaultEnvelope,
   adsrToPoints,
   type AdsrShape,
-  type Block,
-  type BlockKind,
   type Bus,
   type EffectDef,
   type Envelope,
   type EnvKind,
   type EnvPoint,
   type LogEntry,
-  type ParamSpec,
   type ParamValue,
-  type Pattern,
   type PlayMode,
   type Polyphony,
   type Preset,
@@ -31,15 +34,11 @@ import {
   type NodeKind,
   type TriggerGraph,
   type TriggerSource,
-  treeToGraph,
-  foldVelocitySwitches,
   makeNode,
-  nodeHasOutput,
-  nodeHasInput,
   sourceMatchesPad,
   triggerSourceOf,
 } from './sim';
-import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, play, type Pad } from './fixtures';
+import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
@@ -54,13 +53,25 @@ import {
   SHOWS_STORAGE_KEY,
   loadShowLibrary,
   serializeShowLibrary,
-  deserializeShowLibrary,
   type AuthoredState,
   type Show,
   type ShowLibrary,
   type PersistedShowLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
+
+// --- pure domain slices (S3.2) --------------------------------------------------
+import { nid, freshId } from './store/ids';
+import { padKey, seedGraphs, seedSongs, seedAuthored, seedLookSections } from './store/seed';
+import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
+import * as graphsLib from './store/graphs';
+import { canConnect, canReconnect } from './store/graph-wiring';
+import * as vsw from './store/value-switch';
+import * as objects from './store/objects';
+import * as routing from './store/trigger-routing';
+import * as showsLib from './store/shows';
+import { ShowLibrarySync } from './store/show-library-sync';
+import { EngineLinkSync } from './store/transport';
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
@@ -99,180 +110,6 @@ function writeStoredLibrary(payload: PersistedShowLibrary): void {
   }
 }
 
-let idSeq = 1000;
-const nid = (k: string) => `${k}-${idSeq++}`;
-
-const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
-
-/** Build a fresh block of a given kind (leaves use the effect's Default preset). */
-export function makeBlock(kind: BlockKind, firstEffectId: string): Block {
-  switch (kind) {
-    case 'play':
-      return play(firstEffectId, 'oneshot');
-    case 'all':
-      return { id: nid('all'), kind: 'all', children: [play(firstEffectId)] };
-    case 'random':
-      return { id: nid('random'), kind: 'random', noRepeat: true, children: [play(firstEffectId), play(firstEffectId)] };
-    case 'sequence':
-      return { id: nid('sequence'), kind: 'sequence', children: [play(firstEffectId), play(firstEffectId)] };
-    case 'switch':
-      // value+bands by default (canonical): 2 children → band-0 / band-1, one cutoff at 0.5.
-      return {
-        id: nid('switch'),
-        kind: 'switch',
-        on: 'value',
-        valueMode: 'bands',
-        bands: [0.5],
-        children: [play(firstEffectId), play(firstEffectId)],
-      };
-    case 'chance':
-      return { id: nid('chance'), kind: 'chance', p: 0.5, child: play(firstEffectId) };
-    case 'toggle':
-      return { id: nid('toggle'), kind: 'toggle', child: play(firstEffectId, 'loop') };
-  }
-}
-
-const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
-
-/** Kit-derived display label for a pad ("Kick · center") — the friendly name a pad-keyed graph
-    starts from (used by pad-label hydration + the graphLabel fallback). */
-const padLabel = (p: Pad): string => `${p.drumLabel} · ${p.zoneLabel}`;
-
-/** Seed one demo song from the fixture sections, each section being the FLAT list of every
-    pad's graph key (U4). Each pad graph declares a `drum` source from its padKey (the
-    constructor's unionTriggerSources back-fill), so a hit fires only the matching pad's
-    graph — reproducing the pre-section per-zone behaviour exactly while every section is a
-    real, editable, reusable graph list. References are by graph key, so the same key in two
-    sections is the same graph, not a copy; layering a drum is now two graphs in the section
-    that share a source (each pad appears once in the seed). */
-function seedSongs(): Song[] {
-  const padKeys = PADS.map(padKey);
-  return [
-    {
-      id: 'set-1',
-      name: 'Set 1',
-      sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys)),
-    },
-  ];
-}
-
-/** The pad-derived trigger graphs, keyed by padKey — the kit's built-in graph set, seeded
-    fresh for a blank document (each pad's tree compiled to a graph). */
-function seedGraphs(): Record<string, TriggerGraph> {
-  return Object.fromEntries(PADS.map((p) => [padKey(p), treeToGraph(p.tree)]));
-}
-
-/** A blank document's authored content — the clean-slate seed a fresh/new show starts from,
-    and the reset target when SWITCHING shows (so no field of the outgoing show bleeds into the
-    incoming one). Mirrors the authored `$state` field initializers on TriggerLab; keep the two
-    in sync. */
-function seedAuthored(): AuthoredState {
-  return {
-    graphs: seedGraphs(),
-    graphNames: {},
-    songs: seedSongs(),
-    buses: BUSES.map((b) => ({ ...b })),
-    presets: structuredClone(PRESETS),
-    effects: [...EFFECTS],
-    selectedPadKey: padKey(PADS[2]!),
-    activeSongId: 'set-1',
-    activeSectionId: SECTIONS[0]?.id ?? null,
-    bpm: 120,
-    velocity: 0.85,
-    beatsPerBar: 4,
-    paneSizes: {},
-    patchLabels: {},
-  };
-}
-
-/** Union built-in effects with persisted USER-CREATED ones. Hydration must never
-    drop new built-ins: a user's blob saved before the 41 generator effects existed
-    would otherwise overwrite the fresh registry and hide them forever. So start from
-    the fixture EFFECTS (every built-in, always current) and append only persisted
-    effects whose id isn't a built-in — the user's own createEffect() additions.
-    Built-ins are immutable from the UI, so re-taking the fresh def loses nothing. */
-function unionEffects(persisted: readonly EffectDef[]): EffectDef[] {
-  const overrideById = new Map(persisted.map((e) => [e.id, e] as const));
-  const builtinIds = new Set(EFFECTS.map((e) => e.id));
-  // Built-ins are re-taken FRESH (so new params/pattern/generator defs always surface), but a
-  // persisted RENAME of a built-in wins — `name` is the only field the UI lets you edit on an
-  // effect (rename + duplicate; never delete), so a renamed "Swirl" survives a reload. Mirrors
-  // {@link unionPresets} letting a persisted built-in preset win. Then append the user's own
-  // createEffect/duplicateEffect additions.
-  const builtins = EFFECTS.map((e) => {
-    const o = overrideById.get(e.id);
-    return o && o.name !== e.name ? { ...e, name: o.name } : e;
-  });
-  return [...builtins, ...persisted.filter((e) => !builtinIds.has(e.id))];
-}
-
-/** Union persisted presets with the built-ins (mirrors {@link unionEffects}). Keeps
-    the user's persisted presets first — so edits to a built-in preset (linked mode)
-    survive — then re-adds any built-in preset the stored slice LACKS. Without this a
-    pre-generator localStorage blob silently drops the 41 generator `${id}:default`
-    presets, so swapping a play node to a generator effect leaves `presetId` dangling:
-    the node sub goes blank AND the engine can't resolve the effect (frozen preview). */
-function unionPresets(persisted: readonly Preset[]): Preset[] {
-  const persistedIds = new Set(persisted.map((p) => p.id));
-  return [...persisted, ...PRESETS.filter((p) => !persistedIds.has(p.id))];
-}
-
-/** Back-fill an explicit `drum` trigger source on every PAD-BOUND graph (a key matching a real
-    pad) that lacks one — the implicit padKey binding (`"drumId:zone"`) made explicit, so a graph
-    now declares what fires it. Mirrors {@link unionEffects}/{@link unionPresets}: a blob saved
-    before the trigger-source model has no `source`, and we fill the least-surprising default
-    rather than dropping anything. Idempotent (a trigger node that already carries a `source` is
-    left untouched) and immutable (only changed graphs are rebuilt). NON-pad graphs (authored
-    `graph-`/`graph:` keys, or any other) are left untouched — they keep `source` unset until the
-    user binds a drum/MIDI/OSC source. Keyed off the actual pad-key set rather than "not named",
-    because graphNames now labels pad keys too (so it can't proxy "authored"). */
-function unionTriggerSources(
-  graphs: Record<string, TriggerGraph>,
-  padKeys: ReadonlySet<string>,
-): Record<string, TriggerGraph> {
-  const out: Record<string, TriggerGraph> = {};
-  for (const [key, graph] of Object.entries(graphs)) {
-    out[key] = padKeys.has(key) ? withDrumSource(graph, key) : graph;
-  }
-  return out;
-}
-
-/** Ensure every PAD-keyed graph carries a friendly display name in `graphNames`
-    ("Kick · center"), so renames start from a nice label and a restored show never surfaces a
-    raw "kick:0" key. Idempotent + non-destructive: a pad key the user already renamed (present
-    in `names`) is left untouched — only missing pad-key names are filled. Returns the SAME
-    reference when nothing changes (alias-stable, mirrors {@link withDrumSource}). Authored keys
-    are named at create/duplicate time, not here. */
-function hydratePadNames(
-  graphs: Record<string, TriggerGraph>,
-  names: Record<string, string>,
-  pads: readonly Pad[],
-): Record<string, string> {
-  let out: Record<string, string> | null = null;
-  for (const p of pads) {
-    const key = padKey(p);
-    if (key in graphs && !(key in names)) {
-      out ??= { ...names };
-      out[key] = padLabel(p);
-    }
-  }
-  return out ?? names;
-}
-
-/** Ensure a pad graph's trigger node carries a `drum` source derived from its padKey
-    `"drumId:zone"`. Returns the SAME graph reference when nothing changes (idempotent +
-    alias-stable), so an already-sourced or non-pad-keyed graph is untouched. */
-function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
-  const i = graph.nodes.findIndex((n) => n.kind === 'trigger');
-  if (i < 0 || graph.nodes[i]!.source) return graph; // no trigger node, or already explicit
-  const sep = key.indexOf(':');
-  if (sep < 0) return graph; // not a "drumId:zone" key → leave unset
-  const source: TriggerSource = { kind: 'drum', drumId: key.slice(0, sep), zone: key.slice(sep + 1) };
-  const nodes = graph.nodes.slice();
-  nodes[i] = { ...nodes[i]!, source };
-  return { nodes, edges: graph.edges };
-}
-
 export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
@@ -285,7 +122,7 @@ export class TriggerLab {
   /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
       e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
-  sections = $state<Section[]>(structuredClone(SECTIONS));
+  sections = $state<Section[]>(seedLookSections());
   /** mutable presets — linked instances read these live. */
   presets = $state<Preset[]>(structuredClone(PRESETS));
 
@@ -395,9 +232,6 @@ export class TriggerLab {
   /** WebMIDI access handle (real hardware → WS). Browser-only, opened in start(),
       released in stop(); null when MIDI is unavailable or not yet requested. */
   private midiHandle: MidiInitResult | null = null;
-  /** last transport tuple we sent the server — guards against re-sending every
-      frame (we only push setTransport when one of these actually changes). */
-  private lastSent: { bpm: number; playing: boolean; beatsPerBar: number } | null = null;
 
   /** disposes the autosave $effect.root (null while persistence is not running). */
   private persistDispose: (() => void) | null = null;
@@ -412,6 +246,11 @@ export class TriggerLab {
   /** Skips the indicator for the autosave $effect's initial (mount) run, so the app
       doesn't flash "Saving…/Saved" on load; armed by the first scheduleSave. */
   private autosaveArmed = false;
+
+  /** Engine-link change-detection (per-frame transport push + authored-Show resend). */
+  private readonly engineSync = new EngineLinkSync();
+  /** Server-authoritative show-library controller (cold-load adopt + write-through). */
+  private readonly libSync = new ShowLibrarySync();
 
   constructor(makeClient: () => WSClient = () => new WSClient()) {
     // Load the show library from storage BEFORE the sim is built and the engine link opens,
@@ -460,14 +299,7 @@ export class TriggerLab {
       (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
       label, else the raw key. */
   graphLabel(key: string): string {
-    return this.graphNames[key] ?? this.padLabelFor(key) ?? key;
-  }
-
-  /** Kit-derived "Drum · zone" label for a pad key, or null when `key` is not a pad — the
-      graphLabel fallback for a pad graph whose name hasn't been hydrated yet. */
-  private padLabelFor(key: string): string | null {
-    const p = this.pads.find((pad) => padKey(pad) === key);
-    return p ? padLabel(p) : null;
+    return graphsLib.graphLabelOf(this.graphNames, key, this.pads);
   }
 
   // --- lifecycle -----------------------------------------------------------
@@ -512,7 +344,7 @@ export class TriggerLab {
     this.midiHandle?.stop();
     this.midiHandle = null;
     this.client.close();
-    this.lastSent = null;
+    this.engineSync.reset();
     this.stopAutosave();
   }
 
@@ -547,12 +379,11 @@ export class TriggerLab {
 
   /** Make every pad-bound graph's trigger source explicit, fold legacy velocity switches, and
       hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
-      constructor and every show load run (idempotent). */
+      constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
   private normalizeGraphs(): void {
-    const padKeys = new Set(this.pads.map(padKey));
-    this.graphs = unionTriggerSources(this.graphs, padKeys);
-    this.graphs = foldVelocitySwitches(this.graphs);
-    this.graphNames = hydratePadNames(this.graphs, this.graphNames, this.pads);
+    const { graphs, graphNames } = hydrateGraphs(this.graphs, this.graphNames, this.pads);
+    this.graphs = graphs;
+    this.graphNames = graphNames;
   }
 
   /** Reset every authored rune to the blank-document seed (via {@link seedAuthored}) — the
@@ -703,10 +534,10 @@ export class TriggerLab {
   newShow(name?: string): string {
     this.flushActiveToLibrary();
     const id = this.freshShowId();
-    const label = name?.trim() || this.nextShowName();
+    const label = name?.trim() || showsLib.nextShowName(this.showLibrary);
     this.resetAuthoredToSeed();
     this.normalizeGraphs();
-    this.showLibrary = { ...this.showLibrary, [id]: { id, name: label, authored: this.toAuthored() } };
+    this.showLibrary = showsLib.withShow(this.showLibrary, { id, name: label, authored: this.toAuthored() });
     this.activeShowId = id;
     return id;
   }
@@ -733,9 +564,9 @@ export class TriggerLab {
   saveShowAs(name: string): string {
     this.flushActiveToLibrary();
     const id = this.freshShowId();
-    const label = name.trim() || this.nextShowName();
+    const label = name.trim() || showsLib.nextShowName(this.showLibrary);
     // The clone's content == the current live runes, so no reload is needed after the switch.
-    this.showLibrary = { ...this.showLibrary, [id]: { id, name: label, authored: this.toAuthored() } };
+    this.showLibrary = showsLib.withShow(this.showLibrary, { id, name: label, authored: this.toAuthored() });
     this.activeShowId = id;
     return id;
   }
@@ -743,40 +574,27 @@ export class TriggerLab {
   /** Rename a show. No-op on an unknown id or a blank name (keeps the old name, mirrors
       {@link renameSong}). */
   renameShow(id: string, name: string): void {
-    const show = this.showLibrary[id];
-    if (!show) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    this.showLibrary = { ...this.showLibrary, [id]: { ...show, name: trimmed } };
+    this.showLibrary = showsLib.renameShowIn(this.showLibrary, id, name);
   }
 
   /** Delete a show. Never leaves zero shows — deleting the last one seeds a fresh "Untitled
       Show". When the ACTIVE show is deleted, re-points to its left neighbour (else the new
       first) and swaps that show's authored into the runes. No-op on an unknown id. */
   deleteShow(id: string): void {
-    if (!this.showLibrary[id]) return;
-    const ids = Object.keys(this.showLibrary);
-    const next = { ...this.showLibrary };
-    delete next[id];
-
-    if (Object.keys(next).length === 0) {
+    const plan = showsLib.planDeleteShow(this.showLibrary, this.activeShowId, id);
+    if (plan.kind === 'noop') return;
+    if (plan.kind === 'reseed') {
       // deleted the only show → start over from a blank Untitled (mirrors closeShow's reset).
-      const freshId = this.freshShowId();
+      const freshShowId = this.freshShowId();
       this.resetAuthoredToSeed();
       this.normalizeGraphs();
-      this.showLibrary = { [freshId]: { id: freshId, name: 'Untitled Show', authored: this.toAuthored() } };
-      this.activeShowId = freshId;
+      this.showLibrary = { [freshShowId]: { id: freshShowId, name: 'Untitled Show', authored: this.toAuthored() } };
+      this.activeShowId = freshShowId;
       return;
     }
-
-    this.showLibrary = next;
-    if (this.activeShowId === id) {
-      const idx = ids.indexOf(id);
-      const leftId = idx > 0 ? ids[idx - 1]! : null;
-      const neighbourId = leftId && next[leftId] ? leftId : Object.keys(next)[0]!;
-      this.activeShowId = neighbourId;
-      this.applyShow(next[neighbourId]!);
-    }
+    this.showLibrary = plan.library;
+    this.activeShowId = plan.activeShowId;
+    if (plan.reload) this.applyShow(plan.reload);
   }
 
   /** Close the active show: it's already saved in the library, so just switch to a fresh blank
@@ -787,19 +605,7 @@ export class TriggerLab {
 
   /** Smallest unused show id (survives reload — the global nid counter + the live library). */
   private freshShowId(): string {
-    let id = nid('show');
-    while (this.showLibrary[id]) id = nid('show');
-    return id;
-  }
-
-  /** First unused "Untitled Show" / "Untitled Show 2" … label, so blank shows stay distinct. */
-  private nextShowName(): string {
-    const base = 'Untitled Show';
-    const used = new Set(Object.values(this.showLibrary).map((s) => s.name));
-    if (!used.has(base)) return base;
-    let n = 2;
-    while (used.has(`${base} ${n}`)) n++;
-    return `${base} ${n}`;
+    return freshId('show', (id) => id in this.showLibrary);
   }
 
   // --- engine link plumbing ------------------------------------------------
@@ -814,10 +620,19 @@ export class TriggerLab {
         this.project = project;
         this.serverModel = model;
         // Cold-load adopt of the server-authoritative show library (server wins on first state;
-        // seeds the server from our cache when it has none). Set serverStateSeen first so the
-        // seed-push isn't gated off. See reconcileServerLibrary.
-        this.serverStateSeen = true;
-        this.reconcileServerLibrary(showLibrary);
+        // seeds the server from our cache when it has none). markServerStateSeen first so the
+        // seed-push isn't gated off. See the ShowLibrarySync controller.
+        this.libSync.markServerStateSeen();
+        const plan = this.libSync.planReconcile(showLibrary);
+        if (plan.kind === 'adopt') {
+          this.adoptLibrary(plan.library);
+          // The server already holds this library, so mark synced WITHOUT echoing it back. A
+          // later authored edit diverges the signature and pushes normally.
+          this.libSync.noteSynced(this.libSync.librarySig(this.currentLibrary()));
+        } else if (plan.kind === 'seed') {
+          // Server has no library yet → seed it from our localStorage cache.
+          this.syncLibraryToServer();
+        }
       },
       onConnection: (state: ConnectionState) => {
         // map the client's 'closed' to the lab's 'offline'; others pass through
@@ -826,17 +641,17 @@ export class TriggerLab {
           // hand the server the authored content, then the current transport
           const show = buildShow(this);
           this.client.send({ t: 'setShow', show });
-          this.lastShowSig = this.showSig(show); // baseline so the first sync tick is a no-op
-          this.lastSent = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
-          this.client.send({ t: 'setTransport', ...this.lastSent });
+          this.engineSync.baselineShow(show); // baseline so the first sync tick is a no-op
+          const cur = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
+          this.engineSync.baselineTransport(cur);
+          this.client.send({ t: 'setTransport', ...cur });
           // align the engine's active section with the store's current active section
           if (this.activeSectionId) {
             this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
           }
         } else {
           // a drop means our next open must re-send the transport + Show
-          this.lastSent = null;
-          this.lastShowSig = null;
+          this.engineSync.reset();
         }
       },
       onStats: (stats, latencyMs, fps) => {
@@ -862,21 +677,15 @@ export class TriggerLab {
       (swap effect, tweak params/preset, rewire a graph, edit slots/buses) take
       effect live — without this the server runs whatever Show it got at connect
       time and keeps firing the original effects. Driven off the debounced autosave
-      tick. A signature guard skips no-op fires AND pure node-position (x/y) drags,
-      so dragging the graph doesn't needlessly reset engine voices; transport lives
-      on a separate message so tempo edits never resend the Show. NOTE: setShow
-      reseeds the engine (voices clear) — acceptable for authoring; a finer-grained
-      live-update message is a future refinement. */
-  private lastShowSig: string | null = null;
-  private showSig(show: ReturnType<typeof buildShow>): string {
-    return JSON.stringify(show, (k, v) => (k === 'x' || k === 'y' ? 0 : v));
-  }
+      tick. The {@link EngineLinkSync} signature guard skips no-op fires AND pure
+      node-position (x/y) drags, so dragging the graph doesn't needlessly reset engine
+      voices; transport lives on a separate message so tempo edits never resend the
+      Show. NOTE: setShow reseeds the engine (voices clear) — acceptable for authoring;
+      a finer-grained live-update message is a future refinement. */
   private syncShowToServer(): void {
     if (this.link !== 'open') return;
     const show = buildShow(this);
-    const sig = this.showSig(show);
-    if (sig === this.lastShowSig) return;
-    this.lastShowSig = sig;
+    if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
     // setShow reseeds the active section to the first song/section — restore focus.
     if (this.activeSectionId) {
@@ -889,38 +698,7 @@ export class TriggerLab {
   // library and broadcasts it on the `state` message. The web ADOPTS it once, on the first
   // state of a cold load (server wins); thereafter the web is the source and pushes every
   // authored change up via setShowLibrary. localStorage is a fast cache (offline / first paint).
-
-  /** Signature of the library last synchronized with the server (adopted or pushed). null until
-      the FIRST `state` is reconciled — the gate that makes cold-load adopt happen exactly once
-      and never clobber later in-session edits. */
-  private lastLibrarySig: string | null = null;
-  /** Set once the first `state` message has been reconciled. Gates {@link syncLibraryToServer}
-      so a debounced push that races the connect handshake can't pre-empt the cold-load adopt. */
-  private serverStateSeen = false;
-
-  /** Stable signature of a library envelope (for echo/no-op suppression). */
-  private librarySig(lib: ShowLibrary): string {
-    return JSON.stringify(serializeShowLibrary(lib));
-  }
-
-  /** Reconcile the server's library against ours on a `state` message. Runs the cold-load adopt
-      exactly once (first state of the session): if the server HAS a library, the server wins —
-      adopt it into the runes (full swap, no clobber after this point); if it has none, push our
-      cached library up to seed the server. Later states no-op (lastLibrarySig is set), so
-      in-flight edits are never clobbered and a re-broadcast can't re-adopt. */
-  private reconcileServerLibrary(raw: unknown): void {
-    if (this.lastLibrarySig !== null) return; // already synced this session — never clobber
-    const incoming = deserializeShowLibrary(raw);
-    if (incoming) {
-      this.adoptLibrary(incoming);
-      // The server already holds this library, so mark synced WITHOUT echoing it back. A later
-      // authored edit diverges the signature and pushes normally.
-      this.lastLibrarySig = this.librarySig(this.currentLibrary());
-      return;
-    }
-    // Server has no library yet → seed it from our localStorage cache.
-    this.syncLibraryToServer();
-  }
+  // The once-per-session gate + echo suppression live in the ShowLibrarySync controller.
 
   /** Swap the live runes to the adopted server library (mirrors the constructor's hydrate, but
       as a runtime switch): replace the library + active pointer, then load the active show's
@@ -936,11 +714,9 @@ export class TriggerLab {
       unchanged library isn't re-sent every autosave tick). Gated on the first `state` having
       been seen, so the cold-load adopt always wins the race against the debounced autosave. */
   private syncLibraryToServer(): void {
-    if (this.link !== 'open' || !this.serverStateSeen) return;
+    if (this.link !== 'open') return;
     const envelope = serializeShowLibrary(this.currentLibrary());
-    const sig = JSON.stringify(envelope);
-    if (sig === this.lastLibrarySig) return;
-    this.lastLibrarySig = sig;
+    if (!this.libSync.planPush(envelope)) return;
     this.client.send({ t: 'setShowLibrary', library: envelope });
   }
 
@@ -948,11 +724,7 @@ export class TriggerLab {
   private syncTransport(): void {
     if (this.link !== 'open') return;
     const cur = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
-    const prev = this.lastSent;
-    if (prev && prev.bpm === cur.bpm && prev.playing === cur.playing && prev.beatsPerBar === cur.beatsPerBar) {
-      return;
-    }
-    this.lastSent = cur;
+    if (!this.engineSync.planTransportPush(cur)) return;
     this.client.send({ t: 'setTransport', ...cur });
   }
 
@@ -1086,58 +858,29 @@ export class TriggerLab {
   // are NOT persisted to localStorage — the server Project is the source of truth, so
   // routing/geometry survive a reload by coming back down in the next `state` message.
   // No-op writes when offline (project null); the WS send is a no-op until the link is up.
+  // The pure immutable Project transforms live in the trigger-routing slice.
 
   /** Edit a drum's transform (origin/rotation/spin/start-angle/literal pixel count). */
-  setDrumTransform(
-    drumId: string,
-    partial: {
-      origin?: { x: number; y: number; z: number };
-      rotation?: { x: number; y: number; z: number };
-      localSpinDeg?: number;
-      startAngleDeg?: number;
-      pixelsPerHoop?: number;
-      hoopSpacingMm?: number;
-      diameterIn?: number;
-    },
-  ): void {
-    const p = this.project;
-    if (p) {
-      this.project = {
-        ...p,
-        kit: { ...p.kit, drums: p.kit.drums.map((d) => (d.id === drumId ? { ...d, ...partial } : d)) },
-      };
-    }
+  setDrumTransform(drumId: string, partial: routing.DrumTransformPartial): void {
+    if (this.project) this.project = routing.applyDrumTransform(this.project, drumId, partial);
     this.client.send({ t: 'setKitTransform', drumId, ...partial });
   }
 
   /** Replace the physical-output topology (a Patch graph rewire → PixLite patch order). */
   setRouting(outputs: OutputConfig[]): void {
-    const p = this.project;
-    if (p) this.project = { ...p, kit: { ...p.kit, outputs } };
+    if (this.project) this.project = routing.applyRouting(this.project, outputs);
     this.client.send({ t: 'setKitOutputs', outputs });
   }
 
   /** Replace the input map (zone-node MIDI note / OSC address routing). */
   setInputMap(inputMap: InputMap): void {
-    const p = this.project;
-    if (p) this.project = { ...p, inputMap };
+    if (this.project) this.project = routing.applyInputMap(this.project, inputMap);
     this.client.send({ t: 'setInputMap', inputMap });
   }
 
   /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */
-  setOutput(partial: {
-    state?: Project['output']['state'];
-    protocol?: Project['output']['protocol'];
-    host?: string;
-    rgbOrder?: Project['output']['rgbOrder'];
-    fps?: number;
-    broadcast?: boolean;
-    priority?: number;
-    port?: number;
-    iface?: string;
-  }): void {
-    const p = this.project;
-    if (p) this.project = { ...p, output: { ...p.output, ...partial } };
+  setOutput(partial: routing.OutputPartial): void {
+    if (this.project) this.project = routing.applyOutput(this.project, partial);
     this.client.send({ t: 'setOutput', ...partial });
   }
 
@@ -1146,11 +889,7 @@ export class TriggerLab {
       — the device topology ids aren't server state — so this persists via the authored
       autosave, never over WS. */
   setPatchLabel(nodeId: string, label: string): void {
-    const trimmed = label.trim();
-    const next = { ...this.patchLabels };
-    if (trimmed) next[nodeId] = trimmed;
-    else delete next[nodeId];
-    this.patchLabels = next;
+    this.patchLabels = routing.setPatchLabel(this.patchLabels, nodeId, label);
   }
 
   // --- setlist arranging (songs → sections → per-drum graph slots) ----------
@@ -1171,8 +910,7 @@ export class TriggerLab {
       active song, and return its id. Name defaults to "New song N" (first unused). Persists
       via the authored-state autosave (`songs` is part of the snapshot). */
   createSong(name?: string): string {
-    let id = nid('song');
-    while (this.songs.some((s) => s.id === id)) id = nid('song'); // global uniqueness (survives reload)
+    const id = freshId('song', (k) => this.songs.some((s) => s.id === k)); // global uniqueness (survives reload)
     const label = name?.trim() || this.nextSongName();
     this.songs = [...this.songs, setlist.makeSong(id, label)];
     this.setActiveSong(id); // points activeSectionId at the new song's first section
@@ -1202,8 +940,7 @@ export class TriggerLab {
   duplicateSong(id: string): string | null {
     const src = this.songs.find((s) => s.id === id);
     if (!src) return null;
-    let newId = nid('song');
-    while (this.songs.some((s) => s.id === newId)) newId = nid('song');
+    const newId = freshId('song', (k) => this.songs.some((s) => s.id === k));
     const sections = src.sections.map((sec) => setlist.cloneSection(sec, nid('section'), sec.name));
     this.songs = [...this.songs, setlist.makeSong(newId, `${src.name} copy`, sections)];
     this.setActiveSong(newId);
@@ -1302,22 +1039,12 @@ export class TriggerLab {
       select it for editing. Returns its key. The label defaults to "New graph N"
       (first unused N). Persisted via the authored-state autosave. */
   createGraph(name?: string): string {
-    let key = nid('graph');
-    while (this.graphs[key]) key = nid('graph'); // global uniqueness (survives reload)
-    const graph: TriggerGraph = { nodes: [makeNode('trigger', 'trigger')], edges: [] };
-    const label = name?.trim() || this.nextGraphName();
-    this.graphs = { ...this.graphs, [key]: graph };
+    const key = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
+    const label = name?.trim() || graphsLib.nextGraphName(this.graphNames);
+    this.graphs = { ...this.graphs, [key]: graphsLib.buildEmptyGraph() };
     this.graphNames = { ...this.graphNames, [key]: label };
     this.selectedPadKey = key;
     return key;
-  }
-
-  /** Smallest unused "New graph N" label, so auto-named graphs stay distinct. */
-  private nextGraphName(): string {
-    const used = new Set(Object.values(this.graphNames));
-    let n = 1;
-    while (used.has(`New graph ${n}`)) n++;
-    return `New graph ${n}`;
   }
 
   /** Rename ANY graph — its display label in `graphNames`. Works on every graph key (pad graphs
@@ -1341,9 +1068,8 @@ export class TriggerLab {
   duplicateGraph(key: string): string | null {
     const src = this.graphs[key];
     if (!src) return null;
-    let newKey = nid('graph');
-    while (this.graphs[newKey]) newKey = nid('graph'); // global uniqueness (survives reload)
-    const clone = structuredClone($state.snapshot(src)) as TriggerGraph;
+    const newKey = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
+    const clone = graphsLib.cloneGraph($state.snapshot(src) as TriggerGraph);
     this.graphs = { ...this.graphs, [newKey]: clone };
     this.graphNames = { ...this.graphNames, [newKey]: `${this.graphLabel(key)} copy` };
     this.selectedPadKey = newKey;
@@ -1358,16 +1084,10 @@ export class TriggerLab {
       `graphs`) is a no-op. Persists via the authored autosave. */
   deleteGraph(key: string): void {
     if (!(key in this.graphs)) return;
-    const graphs = { ...this.graphs };
-    delete graphs[key];
-    this.graphs = graphs;
-    const names = { ...this.graphNames };
-    delete names[key];
-    this.graphNames = names;
-    // sweep every section of every song, reusing the pure setlist op (no-op per untouched song).
-    this.songs = this.songs.map((song) =>
-      song.sections.reduce((acc, sec) => setlist.removeGraph(acc, sec.id, key), song),
-    );
+    const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
+    this.graphs = next.graphs;
+    this.graphNames = next.graphNames;
+    this.songs = next.songs;
     if (this.selectedPadKey === key) this.selectedPadKey = null;
   }
 
@@ -1393,10 +1113,7 @@ export class TriggerLab {
 
   // --- registries / lookups ------------------------------------------------
 
-  private firstEffectId(): string {
-    return this.effects.find((e) => e.scope === 'drum')?.id ?? this.effects[0]!.id;
-  }
-  effectsForScope(scope: Scope): typeof EFFECTS {
+  effectsForScope(scope: Scope): EffectDef[] {
     return this.effects.filter((e) => e.scope === scope);
   }
   effectOf(node: GraphNode) {
@@ -1422,14 +1139,7 @@ export class TriggerLab {
     if (!g || kind === 'trigger') return null;
     let node: GraphNode;
     if (kind === 'play') {
-      const effId = this.firstEffectId();
-      const eff = this.effects.find((e) => e.id === effId)!;
-      node = makeNode('play', nid('n'), x, y, {
-        scope: eff.scope,
-        effectId: effId,
-        presetId: `${effId}:default`,
-        params: { ...(this.presetById(`${effId}:default`)?.params ?? defaultParams(eff)) },
-      });
+      node = makeNode('play', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
@@ -1457,14 +1167,7 @@ export class TriggerLab {
       undefined = the node's default single output. */
   connect(fromId: string, toId: string, fromPort?: string): void {
     const g = this.selectedGraph;
-    if (!g || fromId === toId) return;
-    const from = g.nodes.find((n) => n.id === fromId);
-    const to = g.nodes.find((n) => n.id === toId);
-    if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return;
-    // dup is per source-port: two different bands MAY route to the same child, but the
-    // same (source-port → target) wire is rejected.
-    if (g.edges.some((e) => e.from === fromId && e.to === toId && (e.fromPort ?? null) === (fromPort ?? null))) return;
-    if (this.reaches(g, toId, fromId)) return; // would form a cycle
+    if (!g || !canConnect(g, fromId, toId, fromPort)) return;
     g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort });
   }
   disconnect(edgeId: string): void {
@@ -1477,30 +1180,11 @@ export class TriggerLab {
       reconnect drag snaps back instead of deleting the wire. */
   reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string): void {
     const g = this.selectedGraph;
-    if (!g || fromId === toId) return;
-    const edge = g.edges.find((e) => e.id === edgeId);
-    if (!edge) return;
-    const from = g.nodes.find((n) => n.id === fromId);
-    const to = g.nodes.find((n) => n.id === toId);
-    if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return;
-    if (g.edges.some((e) => e.id !== edgeId && e.from === fromId && e.to === toId && (e.fromPort ?? null) === (fromPort ?? null))) return; // dup
-    // cycle check over the graph WITHOUT the edge being moved
-    if (this.reaches({ nodes: g.nodes, edges: g.edges.filter((e) => e.id !== edgeId) }, toId, fromId)) return;
+    if (!g || !canReconnect(g, edgeId, fromId, toId, fromPort)) return;
+    const edge = g.edges.find((e) => e.id === edgeId)!;
     edge.from = fromId;
     edge.to = toId;
     edge.fromPort = fromPort;
-  }
-  private reaches(g: TriggerGraph, startId: string, targetId: string): boolean {
-    const seen = new Set<string>();
-    const stack = [startId];
-    while (stack.length) {
-      const cur = stack.pop()!;
-      if (cur === targetId) return true;
-      if (seen.has(cur)) continue;
-      seen.add(cur);
-      for (const e of g.edges) if (e.from === cur) stack.push(e.to);
-    }
-    return false;
   }
 
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */
@@ -1509,12 +1193,11 @@ export class TriggerLab {
     node.kind = kind;
     if (kind === 'play') {
       if (!node.effectId) {
-        const effId = this.firstEffectId();
-        const eff = this.effects.find((e) => e.id === effId)!;
-        node.effectId = effId;
-        node.scope = eff.scope;
-        node.presetId = `${effId}:default`;
-        node.params = { ...(this.presetById(`${effId}:default`)?.params ?? defaultParams(eff)) };
+        const init = graphsLib.playNodeInit(this.effects, (id) => this.presetById(id));
+        node.effectId = init.effectId;
+        node.scope = init.scope;
+        node.presetId = init.presetId;
+        node.params = init.params;
       }
       const g = this.selectedGraph;
       if (g) g.edges = g.edges.filter((e) => e.from !== node.id);
@@ -1543,10 +1226,11 @@ export class TriggerLab {
 
   /** Backfill value-switch fields for a node that lacks them (older persisted graph). */
   private ensureValueDefaults(node: GraphNode): void {
-    node.valueMode = node.valueMode ?? 'gate';
-    node.threshold = node.threshold ?? 0.5;
-    node.invert = node.invert ?? false;
-    node.bands = Array.isArray(node.bands) && node.bands.length > 0 ? node.bands : [0.5];
+    const d = vsw.valueDefaults(node);
+    node.valueMode = d.valueMode;
+    node.threshold = d.threshold;
+    node.invert = d.invert;
+    node.bands = d.bands;
   }
 
   /** Drop per-band source ports from a node's outgoing edges, collapsing them to the
@@ -1555,7 +1239,7 @@ export class TriggerLab {
   private stripBandPorts(node: GraphNode): void {
     const g = this.selectedGraph;
     if (!g) return;
-    for (const e of g.edges) if (e.from === node.id && e.fromPort !== undefined) e.fromPort = undefined;
+    g.edges = vsw.stripBandPorts(g.edges, node.id);
   }
 
   setValueMode(node: GraphNode, mode: ValueMode): void {
@@ -1566,7 +1250,7 @@ export class TriggerLab {
   }
   setThreshold(node: GraphNode, threshold: number): void {
     if (node.kind !== 'switch' || node.on !== 'value') return;
-    node.threshold = clamp01(threshold);
+    node.threshold = vsw.clamp01(threshold);
   }
   setInvert(node: GraphNode, invert: boolean): void {
     if (node.kind !== 'switch' || node.on !== 'value') return;
@@ -1576,29 +1260,23 @@ export class TriggerLab {
       cutoff and 1). Appending never disturbs existing band ports. */
   addBand(node: GraphNode): void {
     if (node.kind !== 'switch' || node.on !== 'value') return;
-    const bands = Array.isArray(node.bands) && node.bands.length ? node.bands : [0.5];
-    const last = bands[bands.length - 1] ?? 0.5;
-    node.bands = [...bands, clamp01((last + 1) / 2)];
+    node.bands = vsw.addBand(node.bands);
   }
   /** Remove cutoff `cutoffIndex` (merging band cutoffIndex+1 down into it), keeping at
       least one cutoff (≥2 bands). Remaps the outgoing band ports to match. */
   removeBand(node: GraphNode, cutoffIndex: number): void {
     if (node.kind !== 'switch' || node.on !== 'value') return;
-    const bands = node.bands ?? [0.5];
-    if (bands.length <= 1 || cutoffIndex < 0 || cutoffIndex >= bands.length) return;
-    node.bands = bands.filter((_, i) => i !== cutoffIndex);
+    if (!vsw.canRemoveBand(node.bands, cutoffIndex)) return;
+    node.bands = vsw.removeBandAt(node.bands, cutoffIndex);
     this.remapBandPorts(node, cutoffIndex);
   }
   /** Set cutoff `cutoffIndex`, clamped WITHIN its neighbours so cutoffs stay ascending
       without reordering — reordering would scramble which band each port maps to. */
   setBandCutoff(node: GraphNode, cutoffIndex: number, value: number): void {
     if (node.kind !== 'switch' || node.on !== 'value') return;
-    const bands = [...(node.bands ?? [0.5])];
+    const bands = node.bands ?? [0.5];
     if (cutoffIndex < 0 || cutoffIndex >= bands.length) return;
-    const lo = cutoffIndex > 0 ? bands[cutoffIndex - 1]! : 0;
-    const hi = cutoffIndex < bands.length - 1 ? bands[cutoffIndex + 1]! : 1;
-    bands[cutoffIndex] = Math.min(hi, Math.max(lo, clamp01(value)));
-    node.bands = bands;
+    node.bands = vsw.setBandCutoff(bands, cutoffIndex, value);
   }
   /** After cutoff `removed` is dropped, band (removed+1) merges into `removed` and every
       higher band shifts down one — remap edge ports to match, then drop any duplicate
@@ -1606,19 +1284,7 @@ export class TriggerLab {
   private remapBandPorts(node: GraphNode, removed: number): void {
     const g = this.selectedGraph;
     if (!g) return;
-    const seen = new Set<string>();
-    const kept: typeof g.edges = [];
-    for (const e of g.edges) {
-      if (e.from === node.id && e.fromPort?.startsWith('band-')) {
-        const b = Number(e.fromPort.slice('band-'.length));
-        if (Number.isFinite(b) && b > removed) e.fromPort = `band-${b - 1}`;
-        const key = `${e.to}|${e.fromPort}`;
-        if (seen.has(key)) continue; // merge collided two wires onto the same band+target
-        seen.add(key);
-      }
-      kept.push(e);
-    }
-    g.edges = kept;
+    g.edges = vsw.remapBandPorts(g.edges, node.id, removed);
   }
 
   // --- effect / preset / params / envelopes --------------------------------
@@ -1648,42 +1314,13 @@ export class TriggerLab {
     this.creatorOpen = false;
   }
 
-  /** Mint a fresh, unused effect id from a name (slug + `-N` de-dup). Shared by
-      {@link createEffect} and {@link duplicateEffect}. */
-  private freshEffectId(name: string): string {
-    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'effect';
-    let id = base;
-    let n = 2;
-    while (this.effects.some((e) => e.id === id)) id = `${base}-${n++}`;
-    return id;
-  }
-
   /** Author a new effect at runtime: register it + seed a Default preset. Returns its id. */
-  createEffect(input: {
-    name: string;
-    pattern: Pattern;
-    scope: Scope;
-    busId: string;
-    attackMs: number;
-    sustainMs: number;
-    releaseMs: number;
-    params: ParamSpec[];
-  }): string {
-    const id = this.freshEffectId(input.name);
-    const eff: EffectDef = {
-      id,
-      name: input.name.trim() || 'Untitled',
-      pattern: input.pattern,
-      busId: input.busId,
-      scope: input.scope,
-      attackMs: input.attackMs,
-      sustainMs: input.sustainMs,
-      releaseMs: input.releaseMs,
-      params: input.params,
-    };
+  createEffect(input: objects.NewEffectInput): string {
+    const id = objects.freshEffectId(this.effects, input.name);
+    const eff = objects.buildEffect(input, id);
     this.effects.push(eff);
     this.sim.registerEffect(eff);
-    const preset: Preset = { id: `${id}:default`, name: 'Default', effectId: id, params: defaultParams(eff) };
+    const preset = objects.defaultPresetFor(eff);
     this.presets.push(preset);
     this.sim.registerPreset(preset);
     return id;
@@ -1693,9 +1330,8 @@ export class TriggerLab {
   // Effects are foundational: rename + duplicate ONLY, never delete. Presets add delete,
   // gated to usage-count 0 (and never a live effect's `:default`). Each keeps the sim's
   // registries in sync so the live preview reflects the edit, and persists via the authored
-  // autosave (effects/presets are part of the snapshot). Mirrors createEffect's
-  // store-array + sim-register pattern; renames mutate in place (the sim shares the object
-  // by reference, like setParam does for a linked preset).
+  // autosave (effects/presets are part of the snapshot). The pure builders + gating live in
+  // the objects slice; the sim-registry sync stays here.
 
   /** Rename an effect (its display name) — the only edit effects allow. No-op on an unknown id
       or a blank name (keeps the old name, mirrors {@link renameSong}). Replaces the EffectDef
@@ -1722,11 +1358,11 @@ export class TriggerLab {
     const src = this.effects.find((e) => e.id === id);
     if (!src) return null;
     const name = `${src.name} copy`;
-    const newId = this.freshEffectId(name);
-    const eff: EffectDef = { ...($state.snapshot(src) as EffectDef), id: newId, name };
+    const newId = objects.freshEffectId(this.effects, name);
+    const eff = objects.cloneEffect($state.snapshot(src) as EffectDef, newId, name);
     this.effects.push(eff);
     this.sim.registerEffect(eff);
-    const preset: Preset = { id: `${newId}:default`, name: 'Default', effectId: newId, params: defaultParams(eff) };
+    const preset = objects.defaultPresetFor(eff);
     this.presets.push(preset);
     this.sim.registerPreset(preset);
     return newId;
@@ -1753,9 +1389,8 @@ export class TriggerLab {
   duplicatePreset(id: string): string | null {
     const src = this.presetById(id);
     if (!src) return null;
-    let newId = nid('preset');
-    while (this.presets.some((p) => p.id === newId)) newId = nid('preset'); // global uniqueness (survives reload)
-    const preset: Preset = { id: newId, name: `${src.name} copy`, effectId: src.effectId, params: { ...src.params } };
+    const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
+    const preset = objects.clonePreset(src, newId);
     this.presets.push(preset);
     this.sim.registerPreset(preset);
     return newId;
@@ -1766,13 +1401,7 @@ export class TriggerLab {
       keeping `presetId` as the origin). Pure read: gates {@link deletePreset} and is shown in
       the Objects view. */
   presetUsageCount(id: string): number {
-    let count = 0;
-    for (const graph of Object.values(this.graphs)) {
-      for (const node of graph.nodes) {
-        if (node.kind === 'play' && node.presetId === id) count++;
-      }
-    }
-    return count;
+    return objects.presetUsageCount(this.graphs, id);
   }
 
   /** Delete a preset — ONLY when it is used nowhere ({@link presetUsageCount} === 0) and it is
@@ -1782,9 +1411,8 @@ export class TriggerLab {
       is a live effect's `:default`. Persists via the authored autosave. */
   deletePreset(id: string): boolean {
     const pr = this.presetById(id);
-    if (!pr) return false;
-    if (this.presetUsageCount(id) > 0) return false;
-    if (id.endsWith(':default') && this.effects.some((e) => e.id === pr.effectId)) return false;
+    const usage = pr ? objects.presetUsageCount(this.graphs, id) : 0;
+    if (!objects.canDeletePreset(pr, usage, this.effects)) return false;
     this.presets = this.presets.filter((p) => p.id !== id);
     this.sim.unregisterPreset(id);
     return true;
