@@ -14,6 +14,7 @@ import {
   applyClientMessage,
   oscToEvent,
   oscRecall,
+  parseSectionRecallAddress,
   programChangeRecall,
   sectionIndexRecall,
   SECTION_RECALL_CC,
@@ -209,11 +210,12 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
       return;
     }
     if (msg.t === 'osc') {
-      // A section-recall address resolves before the zone-map; anything else is a normal
-      // OSC input forwarded through the patch zone-map / direct binding.
-      const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
-      if (target) {
-        applyTransportRecall(target, { kind: 'osc', label: msg.address, value: msg.value });
+      // A section-recall address is a reserved global convention: it is ALWAYS consumed
+      // here (recall on a valid index, no-op when out of range) and never falls through to
+      // the zone-map. Any other address is a normal OSC input.
+      if (parseSectionRecallAddress(msg.address) !== null) {
+        const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
+        if (target) applyTransportRecall(target, { kind: 'osc', label: msg.address, value: msg.value });
         return;
       }
       voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
@@ -299,11 +301,12 @@ oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
   if (!event || event.kind !== 'osc') return;
   if (voiceHost) {
-    // A section-recall address (e.g. from a show-control system) recalls before the
-    // zone-map, exactly like the WS osc path; anything else is a normal OSC input.
-    const target = oscRecall(voiceHost.getShow(), event.address, event.value);
-    if (target) {
-      applyTransportRecall(target, { kind: 'osc', label: event.address, value: event.value });
+    // A section-recall address (e.g. from a show-control system) is always consumed by the
+    // recall handler before the zone-map, exactly like the WS osc path; anything else is a
+    // normal OSC input.
+    if (parseSectionRecallAddress(event.address) !== null) {
+      const target = oscRecall(voiceHost.getShow(), event.address, event.value);
+      if (target) applyTransportRecall(target, { kind: 'osc', label: event.address, value: event.value });
       return;
     }
     voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
