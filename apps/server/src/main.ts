@@ -1,5 +1,4 @@
 import { createServer } from 'node:http';
-import { networkInterfaces } from 'node:os';
 import {
   defaultProject,
   WS_PATH,
@@ -15,21 +14,21 @@ import {
   oscToEvent,
   oscRecall,
   parseSectionRecallAddress,
-  programChangeRecall,
-  sectionIndexRecall,
-  SECTION_RECALL_CC,
-  type RecallTarget,
 } from './input-router';
-import { listProjects, loadProject, projectExists, saveProject, saveProjectAsync } from './projects';
+import { listProjects, loadProject, projectExists, saveProjectAsync } from './projects';
 import { loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { createAutosaver } from './autosave';
 import { SingleClientLock } from './client-lock';
 import { serveStatic } from './static-host';
+import { boot } from './boot';
+import { handleProjectMessage } from './handlers/projects';
+import { applyTransportRecall, handleVoiceInput, propagateToVoiceHost } from './handlers/voice-input';
 import {
   decodeClient,
   effectSpecs,
   encodeServer,
   serializeModel,
+  type ClientMessage,
   type ServerMessage,
 } from './ws-protocol';
 
@@ -110,15 +109,6 @@ function broadcastBinary(rgb: Uint8Array): void {
   }
 }
 
-/** Apply a resolved global transport recall to the voice engine + echo it to the input
- * monitor. Reuses the engine's existing `recallSection` input (which also activates the
- * song), so a Program Change / CC#0 / OSC recall drives the same path the UI does. */
-function applyTransportRecall(target: RecallTarget, monitor: { kind: 'midi' | 'osc'; label: string; value: number }): void {
-  if (!voiceHost) return;
-  voiceHost.applyInput({ kind: 'recallSection', songId: target.songId, sectionId: target.sectionId });
-  broadcastJson({ t: 'input', kind: monitor.kind, label: monitor.label, value: monitor.value });
-}
-
 /** Build the full `state` message reflecting the current engine/project. In voice mode
  * the voice host owns the live geometry, so its model is authoritative for the wire. */
 function stateMessage(): ServerMessage {
@@ -164,27 +154,15 @@ wss.on('connection', (ws) => {
   ws.on('error', () => clients.remove(ws));
 });
 
-type ClientMessage = ReturnType<typeof decodeClient>;
+// Shared collaborators handed to the extracted message handlers. `broadcastState` and the
+// voice deps capture the wiring closures so the handlers stay free of module-level state.
+const broadcastState = (): void => broadcastJson(stateMessage());
+const voiceDeps = { voiceHost, broadcastJson };
 
 function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
-  // Project IO is handled here, not by the reducer.
-  if (msg.t === 'loadProject') {
-    const loaded = loadProject(msg.name);
-    host.engine.setProject(loaded);
-    host.reloadOutputSettings();
-    broadcastJson(stateMessage());
-    autosaver.markDirty(); // the loaded project is now the live state — persist it
-    return;
-  }
-  if (msg.t === 'saveProject') {
-    saveProject(msg.name, host.engine.getProject());
-    ws.send(encodeServer({ t: 'projects', names: listProjects() }));
-    return;
-  }
-  if (msg.t === 'listProjects') {
-    ws.send(encodeServer({ t: 'projects', names: listProjects() }));
-    return;
-  }
+  // Project IO (load/save/list) is handled here, not by the reducer.
+  if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;
+
   // Show-library persistence is mode-independent (authored content, not an engine input): the
   // client pushes its authored library on every change; the server adopts it as the live slot
   // and debounce-autosaves it. No broadcast back — the single client is the source, so an echo
@@ -198,110 +176,18 @@ function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
     return;
   }
 
-  // --- voice-mode inputs (only meaningful when the voice host is running) ---
-  if (voiceHost) {
-    // Global transport recall — STEP 0, before the per-trigger zone-map. A Program Change
-    // selects a song (+ its first section); CC#0 recalls a section in the active song.
-    if (msg.t === 'programChange') {
-      const target = programChangeRecall(voiceHost.getShow(), msg.value);
-      if (target) applyTransportRecall(target, { kind: 'midi', label: `PC ${msg.value}`, value: msg.value });
-      return;
-    }
-    if (msg.t === 'cc') {
-      if (msg.controller === SECTION_RECALL_CC) {
-        const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
-        if (target) applyTransportRecall(target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
-      }
-      // Other controllers have no engine path yet — consume without falling through.
-      return;
-    }
-    if (msg.t === 'setShow') {
-      voiceHost.setShow(msg.show);
-      return;
-    }
-    if (msg.t === 'key') {
-      voiceHost.applyInput({ kind: 'key', drumId: msg.drumId, zone: msg.zone, velocity: msg.velocity });
-      broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
-      return;
-    }
-    if (msg.t === 'recallSection') {
-      voiceHost.applyInput({ kind: 'recallSection', songId: msg.songId, sectionId: msg.sectionId });
-      return;
-    }
-    if (msg.t === 'midi') {
-      if (msg.on && msg.velocity > 0) {
-        voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127 });
-      } else {
-        voiceHost.applyInput({ kind: 'noteOff', note: msg.note });
-      }
-      broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127 });
-      return;
-    }
-    if (msg.t === 'osc') {
-      // A section-recall address is a reserved global convention: it is ALWAYS consumed
-      // here (recall on a valid index, no-op when out of range) and never falls through to
-      // the zone-map. Any other address is a normal OSC input.
-      if (parseSectionRecallAddress(msg.address) !== null) {
-        const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
-        if (target) applyTransportRecall(target, { kind: 'osc', label: msg.address, value: msg.value });
-        return;
-      }
-      voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
-      broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
-      return;
-    }
-  } else if (
-    msg.t === 'setShow' ||
-    msg.t === 'key' ||
-    msg.t === 'recallSection' ||
-    msg.t === 'cc' ||
-    msg.t === 'programChange'
-  ) {
-    // These only apply to the voice engine; ignore in legacy mode.
-    return;
-  }
+  // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the
+  // voice-only types are consumed as no-ops; midi/osc fall through to the reducer below.
+  if (handleVoiceInput(msg, voiceDeps)) return;
 
   // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.
   if (msg.t === 'midi' || msg.t === 'osc') host.markInput();
 
   const result = applyClientMessage(host.engine, msg, host.engineTimeMs);
 
-  // Voice mode: the legacy reducer above mutated the shared project, but the voice host
-  // owns the live render + output. Propagate kit/output/input edits so real device
-  // behaviour changes without a restart. (setKitOutputs has no legacy reducer case, so
-  // the host mutation here is what actually applies it.)
-  if (voiceHost) {
-    switch (msg.t) {
-      case 'setKitTransform':
-        voiceHost.setKitTransform(msg.drumId, {
-          ...(msg.origin !== undefined ? { origin: msg.origin } : {}),
-          ...(msg.rotation !== undefined ? { rotation: msg.rotation } : {}),
-          ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
-          ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
-          ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
-        });
-        break;
-      case 'setKitOutputs':
-        voiceHost.setKitOutputs(msg.outputs);
-        break;
-      case 'setOutput':
-        voiceHost.setOutput({
-          ...(msg.state !== undefined ? { state: msg.state } : {}),
-          ...(msg.protocol !== undefined ? { protocol: msg.protocol } : {}),
-          ...(msg.host !== undefined ? { host: msg.host } : {}),
-          ...(msg.rgbOrder !== undefined ? { rgbOrder: msg.rgbOrder } : {}),
-          ...(msg.fps !== undefined ? { fps: msg.fps } : {}),
-          ...(msg.broadcast !== undefined ? { broadcast: msg.broadcast } : {}),
-          ...(msg.priority !== undefined ? { priority: msg.priority } : {}),
-          ...(msg.port !== undefined ? { port: msg.port } : {}),
-          ...(msg.iface !== undefined ? { iface: msg.iface } : {}),
-        });
-        break;
-      case 'setInputMap':
-        voiceHost.setInputMap(msg.inputMap);
-        break;
-    }
-  }
+  // Voice mode: the legacy reducer above mutated the shared project; propagate kit/output/
+  // input-map edits to the voice host (which owns the live render + output).
+  if (voiceHost) propagateToVoiceHost(voiceHost, msg);
 
   // Output settings or geometry changed → re-apply output + send fresh state.
   // (setKitOutputs has no legacy reducer case, so it never sets result.structural; mark
@@ -334,7 +220,7 @@ oscInput.on((e) => {
     // normal OSC input.
     if (parseSectionRecallAddress(event.address) !== null) {
       const target = oscRecall(voiceHost.getShow(), event.address, event.value);
-      if (target) applyTransportRecall(target, { kind: 'osc', label: event.address, value: event.value });
+      if (target) applyTransportRecall(voiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
       return;
     }
     voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
@@ -373,56 +259,19 @@ const statsTimer = setInterval(() => {
   broadcastJson({ t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output });
 }, 500);
 
-// --- boot -------------------------------------------------------------------
+// --- boot + shutdown --------------------------------------------------------
 
-function lanUrls(p: number): string[] {
-  const urls: string[] = [];
-  const ifaces = networkInterfaces();
-  for (const addrs of Object.values(ifaces)) {
-    for (const a of addrs ?? []) {
-      if (a.family === 'IPv4' && !a.internal) urls.push(`http://${a.address}:${p}`);
-    }
-  }
-  return urls;
-}
-
-server.listen(port, () => {
-  if (voiceHost) voiceHost.start();
-  else host.start();
-  console.log(`LEDrums server listening on http://localhost:${port}${VOICE_MODE ? ' [voice engine]' : ''}`);
-  for (const url of lanUrls(port)) console.log(`  LAN: ${url}`);
-  console.log(`OSC listening on udp:${oscPort}`);
-  console.log('Pixel output: set target IP + Arm in the UI');
+boot({
+  server,
+  wss,
+  clients,
+  host,
+  voiceHost,
+  oscInput,
+  port,
+  oscPort,
+  voiceMode: VOICE_MODE,
+  statsTimer,
+  autosaver,
+  showLibraryAutosaver,
 });
-
-// --- shutdown ---------------------------------------------------------------
-
-let shuttingDown = false;
-async function shutdown(): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  clearInterval(statsTimer);
-  if (voiceHost) voiceHost.stop();
-  else host.stop();
-  oscInput.close();
-  for (const ws of clients) {
-    try {
-      ws.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  wss.close();
-  server.close();
-  // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
-  // never rejects (write errors are logged), but guard exit-on-error just in case. Both the
-  // project and the show library are flushed (independent slots).
-  await Promise.all([
-    autosaver.flush().catch(() => {}),
-    showLibraryAutosaver.flush().catch(() => {}),
-  ]);
-  process.exit(0);
-}
-
-process.on('SIGINT', () => void shutdown());
-process.on('SIGTERM', () => void shutdown());
