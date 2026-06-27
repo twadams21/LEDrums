@@ -11,7 +11,7 @@
   import type { Connection, EdgeTypes, NodeTypes } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
+  import { NODE_KINDS, NODE_W, type GraphNode, type NodeKind } from '../../trigger-lab/sim';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
@@ -85,31 +85,53 @@
   /** Structure signatures — drive reactive rebuilds. Node positions are deliberately
       NOT in the node signature (a drag must not retrigger a rebuild mid-move); edge
       endpoints ARE, so a reconnect re-derives. */
-  const nodeSig = $derived(
-    (store.selectedGraph?.nodes ?? [])
-      .map((n) =>
-        // a value+bands switch's handle COUNT depends on its mode + band count — fold
-        // that into the signature so adding/removing a band rebuilds the node and xyflow
-        // re-measures its handles (a position-only drag still never rebuilds).
-        n.kind === 'switch' ? `${n.id}:switch:${n.on}:${n.valueMode}:${n.bands?.length ?? 0}` : `${n.id}:${n.kind}`,
-      )
-      .join('|'),
-  );
+  /** Per-node identity signature: kind plus a value+bands switch's handle-affecting shape
+      (mode + band count). Drives reactive rebuilds AND decides which flow-node objects can be
+      reused on re-projection — reuse keeps xyflow's measured handleBounds + live position, so a
+      structure change to one node never makes every node drop its wires or snap position. */
+  function nodeKey(n: GraphNode): string {
+    return n.kind === 'switch'
+      ? `${n.id}:switch:${n.on}:${n.valueMode}:${n.bands?.length ?? 0}`
+      : `${n.id}:${n.kind}`;
+  }
+  const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map(nodeKey).join('|'));
   const edgeSig = $derived(
     (store.selectedGraph?.edges ?? []).map((e) => `${e.id}:${e.from}>${e.to}`).join('|'),
   );
   const selectedNodeId = $derived(shell.selection?.kind === 'node' ? shell.selection.nodeId : null);
 
+  /** Per-node signatures from the last projection — lets rebuildNodes reuse the existing
+      flow-node object for structurally-unchanged nodes (see {@link nodeKey}). */
+  const prevSig = new Map<string, string>();
+
   function rebuildNodes(): void {
     const g = store.selectedGraph;
     const selId = selectedNodeId;
-    // positions read inside untrack so only structure / selection / graph-switch
-    // rebuild — never a position-only drag.
-    nodes = g
-      ? untrack(() =>
-          graphToFlowNodes(g).map((n) => (n.id === selId ? { ...n, selected: true } : n)),
-        )
-      : [];
+    if (!g) {
+      nodes = [];
+      prevSig.clear();
+      return;
+    }
+    // Reuse the existing flow-node object for any node whose structure AND selection are
+    // unchanged, so xyflow keeps its measured handleBounds + live position. Rebuilding every
+    // node from scratch made xyflow momentarily drop ALL edges (handleBounds lost until the
+    // next measure) and re-apply store positions (snapping a node that was mid-edit) — the
+    // "adding a node removes wires / moves the first play node" bug. Positions are read inside
+    // untrack so only structure / selection / graph-switch rebuilds — never a position drag.
+    nodes = untrack(() => {
+      const prevById = new Map(nodes.map((n) => [n.id, n]));
+      const next = graphToFlowNodes(g).map((fn, i) => {
+        const sn = g.nodes[i]!; // graphToFlowNodes preserves g.nodes order
+        const sig = nodeKey(sn);
+        const wantSel = fn.id === selId;
+        const prev = prevById.get(fn.id);
+        if (prev && prevSig.get(fn.id) === sig && !!prev.selected === wantSel) return prev;
+        return wantSel ? { ...fn, selected: true } : fn;
+      });
+      prevSig.clear();
+      for (const sn of g.nodes) prevSig.set(sn.id, nodeKey(sn));
+      return next;
+    });
   }
   function rebuildEdges(): void {
     const g = store.selectedGraph;

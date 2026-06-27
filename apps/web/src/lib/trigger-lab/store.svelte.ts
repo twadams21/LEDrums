@@ -237,6 +237,10 @@ export class TriggerLab {
   private persistDispose: (() => void) | null = null;
   /** pending debounced-save timer (plain field — must NOT be reactive). */
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** beforeunload handler that synchronously flushes a pending debounced save, so a hard
+      browser refresh inside the debounce window doesn't drop the last edit (e.g. a node
+      drag). Registered in startAutosave, removed in stopAutosave. */
+  private flushOnUnload: (() => void) | null = null;
   /** Reactive save status for the TopBar indicator ('idle' | 'saving' | 'saved'),
       driven by the autosave path through {@link saveStatusCtl}. */
   saveStatus = $state<SaveStatus>('idle');
@@ -484,6 +488,15 @@ export class TriggerLab {
         this.scheduleSave(lib);
       });
     });
+    if (typeof window !== 'undefined') {
+      this.flushOnUnload = () => {
+        if (!this.saveTimer) return;
+        clearTimeout(this.saveTimer);
+        this.saveTimer = null;
+        writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
+      };
+      window.addEventListener('beforeunload', this.flushOnUnload);
+    }
   }
 
   /** Flush any pending write and tear down the autosave effect (on stop/unmount),
@@ -497,6 +510,10 @@ export class TriggerLab {
     writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
     this.persistDispose();
     this.persistDispose = null;
+    if (this.flushOnUnload && typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this.flushOnUnload);
+      this.flushOnUnload = null;
+    }
     // Cancel any pending indicator transition and re-arm the mount guard for a future start().
     this.saveStatusCtl.dispose();
     this.autosaveArmed = false;
