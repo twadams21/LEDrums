@@ -1,6 +1,38 @@
 <script lang="ts">
   /* Living styleguide for the LEDrums design system. Pure presentational — no
-     store, no WS. Open at `/?style`. Used as the accent-decision checkpoint. */
+     store, no WS. Open at `/?style`. Used as the accent-decision checkpoint.
+     The Components block below demos the REAL lib/ui primitives. */
+  import TextField from '../ui/TextField.svelte';
+  import SearchField from '../ui/SearchField.svelte';
+  import Select from '../ui/Select.svelte';
+  import SegmentedControl from '../ui/SegmentedControl.svelte';
+  import Tabs from '../ui/Tabs.svelte';
+  import Toggle from '../ui/Toggle.svelte';
+  import Switch from '../ui/Switch.svelte';
+  import Slider from '../ui/Slider.svelte';
+  import IconButton from '../ui/IconButton.svelte';
+  import CommitInput from '../ui/CommitInput.svelte';
+  import Field from '../ui/Field.svelte';
+  import Eyebrow from '../ui/Eyebrow.svelte';
+  import Separator from '../ui/Separator.svelte';
+  import Tooltip from '../ui/Tooltip.svelte';
+  import StatusPill from '../ui/StatusPill.svelte';
+  import StatusDot from '../ui/StatusDot.svelte';
+  import ListItem from '../ui/ListItem.svelte';
+  import EditableRow from '../ui/EditableRow.svelte';
+  import ContextMenu, { type ContextMenuAction } from '../ui/ContextMenu.svelte';
+  import Dialog from '../ui/Dialog.svelte';
+  import Drawer from '../ui/Drawer.svelte';
+  import Play from '@lucide/svelte/icons/play';
+  import Plus from '@lucide/svelte/icons/plus';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Copy from '@lucide/svelte/icons/copy';
+  import ListMusic from '@lucide/svelte/icons/list-music';
+  import Layers from '@lucide/svelte/icons/layers';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+  import Cable from '@lucide/svelte/icons/cable';
+  import Radio from '@lucide/svelte/icons/radio';
 
   const accents = [
     { id: 'violet', name: 'Electric violet', note: 'synth heritage · off the RGB triad' },
@@ -45,6 +77,41 @@
   ];
 
   let fader = $state(65);
+
+  /* ---- Interactive state for the Components block ------------------------- */
+  let textVal = $state('Opening set');
+  let searchVal = $state('');
+  let renameVal = $state('Kick base');
+  let bpm = $state('120');
+  let protocol = $state('artnet');
+  let mode = $state('arrange');
+  let inspectorTab = $state('layers');
+  let armed = $state(true);
+  let broadcast = $state(false);
+  let opacity = $state(48);
+  let layerName = $state('Kick layer');
+  let rowEditing = $state(false);
+  let dialogOpen = $state(false);
+  let drawerOpen = $state(false);
+
+  const protocolOptions = [
+    { value: 'artnet', label: 'Art-Net', icon: Cable },
+    { value: 'sacn', label: 'sACN', icon: Radio },
+  ];
+  const modeOptions = [
+    { value: 'perform', label: 'Perform' },
+    { value: 'arrange', label: 'Arrange' },
+    { value: 'settings', label: 'Settings' },
+  ];
+  const inspectorTabs = [
+    { value: 'layers', label: 'Layers', icon: Layers },
+    { value: 'effects', label: 'Effects', icon: Sparkles },
+    { value: 'output', label: 'Output', icon: Cable },
+  ];
+  const rowActions: ContextMenuAction[] = [
+    { label: 'Duplicate', icon: Copy, onSelect: () => {} },
+    { label: 'Delete', icon: Trash2, danger: true, onSelect: () => {} },
+  ];
 </script>
 
 {#snippet glyph(name: string)}
@@ -206,24 +273,168 @@
     </section>
   </div>
 
-  <!-- CONTROLS ----------------------------------------------------------- -->
+  <!-- COMPONENTS — real lib/ui primitives -------------------------------- -->
   <section class="block">
-    <div class="block-head"><h2>Controls</h2><p>One vocabulary across every panel.</p></div>
-    <div class="ctl-row">
-      <button class="primary">Primary</button>
-      <button>Default</button>
-      <button class="ghost">Ghost</button>
-      <button class="danger">Disarm</button>
-      <button class="active">Toggled</button>
-      <button disabled>Disabled</button>
-      <input type="text" placeholder="Project name…" />
-      <input type="number" value="120" aria-label="bpm" />
-      <select aria-label="protocol"><option>Art-Net</option><option>sACN</option></select>
-      <label class="ck"><input type="checkbox" checked /> Broadcast</label>
-      <input type="color" value="#a35bff" aria-label="colour" />
+    <div class="block-head">
+      <h2>Components — lib/ui</h2>
+      <p>The real primitives every panel composes from. Interactive — try them.</p>
+    </div>
+
+    <div class="comp-grid">
+      <div class="comp">
+        <Eyebrow>Buttons</Eyebrow>
+        <div class="comp-row">
+          <button class="primary">Primary</button>
+          <button>Default</button>
+          <button class="ghost">Ghost</button>
+          <button class="danger">Disarm</button>
+          <button class="active">Toggled</button>
+          <button disabled>Disabled</button>
+        </div>
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Icon buttons · Tooltip</Eyebrow>
+        <div class="comp-row">
+          <IconButton icon={Play} label="Play" variant="solid" />
+          <IconButton icon={Plus} label="Add" variant="soft" />
+          <IconButton icon={Pencil} label="Rename" />
+          <IconButton icon={Trash2} label="Delete" />
+          <Separator orientation="vertical" />
+          <Tooltip text="A custom tooltip">
+            <button class="ghost">Hover me</button>
+          </Tooltip>
+        </div>
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Text fields</Eyebrow>
+        <div class="comp-stack">
+          <Field label="Show name" hint="Plain bindable input">
+            <TextField bind:value={textVal} placeholder="Untitled show…" ariaLabel="Show name" />
+          </Field>
+          <SearchField bind:value={searchVal} placeholder="Search shows…" />
+        </div>
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Commit input</Eyebrow>
+        <div class="comp-stack">
+          <Field label="Inline rename" hint="Commits on Enter / blur">
+            <CommitInput
+              value={renameVal}
+              ariaLabel="Layer name"
+              autofocus={false}
+              onCommit={(v) => (renameVal = v)}
+            />
+          </Field>
+          <Field label="BPM" hint="Clamped number 20–300">
+            <CommitInput
+              type="number"
+              min={20}
+              max={300}
+              value={bpm}
+              suffix="bpm"
+              ariaLabel="BPM"
+              onCommit={(v) => (bpm = v)}
+            />
+          </Field>
+        </div>
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Selection</Eyebrow>
+        <div class="comp-stack">
+          <Field label="Protocol">
+            <Select bind:value={protocol} options={protocolOptions} ariaLabel="Protocol" />
+          </Field>
+          <SegmentedControl value={mode} options={modeOptions} onChange={(v) => (mode = v)} ariaLabel="Mode" />
+          <Tabs bind:value={inspectorTab} tabs={inspectorTabs} ariaLabel="Inspector" />
+        </div>
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Toggles</Eyebrow>
+        <div class="comp-row">
+          <Toggle bind:pressed={armed} onLabel="armed" offLabel="safe" ariaLabel="Arm output" />
+          <Switch bind:checked={broadcast} ariaLabel="Broadcast" />
+        </div>
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Slider</Eyebrow>
+        <Slider bind:value={opacity} min={0} max={100} ariaLabel="Opacity" format={(v) => `${v}%`} />
+      </div>
+
+      <div class="comp">
+        <Eyebrow>Status</Eyebrow>
+        <div class="comp-row">
+          <StatusPill tone="ok" label="Connected" />
+          <StatusPill tone="live" label="LIVE" pulse />
+          <StatusPill tone="warn" label="Dry-run" />
+          <StatusPill tone="accent" label="Saving" pulse />
+          <StatusPill tone="muted" label="Idle" />
+        </div>
+        <div class="comp-row" style="margin-top: var(--space-2)">
+          <span class="dot-demo"><StatusDot tone="ok" /> ok</span>
+          <span class="dot-demo"><StatusDot tone="live" pulse /> live</span>
+          <span class="dot-demo"><StatusDot tone="warn" /> warn</span>
+        </div>
+      </div>
+
+      <div class="comp comp-wide">
+        <Eyebrow>List rows</Eyebrow>
+        <div class="comp-rows">
+          <ListItem icon={ListMusic} label="Opening set" secondary="6 sections" active onclick={() => {}}>
+            {#snippet actions()}
+              <IconButton icon={Copy} label="Duplicate" onclick={() => {}} />
+              <IconButton icon={Trash2} label="Delete" onclick={() => {}} />
+            {/snippet}
+          </ListItem>
+          <ListItem icon={ListMusic} label="Encore" secondary="2 sections" onclick={() => {}} />
+          <EditableRow
+            icon={Layers}
+            label={layerName}
+            bind:editing={rowEditing}
+            oncommit={(v) => (layerName = v)}
+            actions={rowActions}
+            renameLabel="Layer name"
+            onclick={() => {}}
+          />
+        </div>
+        <p class="comp-note">Right-click a row for its context menu · double-click the last row to rename.</p>
+      </div>
+
+      <div class="comp comp-wide">
+        <Eyebrow>Overlays</Eyebrow>
+        <div class="comp-row">
+          <ContextMenu actions={rowActions}>
+            <button class="ghost">Right-click target</button>
+          </ContextMenu>
+          <button onclick={() => (dialogOpen = true)}>Open dialog…</button>
+          <button onclick={() => (drawerOpen = true)}>Open drawer…</button>
+        </div>
+      </div>
     </div>
   </section>
 </div>
+
+<Dialog open={dialogOpen} onClose={() => (dialogOpen = false)} title="Example dialog">
+  <div class="ov-body">
+    <p>A modal <code>Dialog</code> — portaled, focus-trapped, scrim driven by <code>--overlay</code>.</p>
+    <Field label="Output bus" hint="A Select inside a Dialog — its dropdown rides above the modal.">
+      <Select bind:value={protocol} options={protocolOptions} ariaLabel="Output bus" />
+    </Field>
+    <div class="comp-row">
+      <button class="primary" onclick={() => (dialogOpen = false)}>Done</button>
+      <button class="ghost" onclick={() => (dialogOpen = false)}>Cancel</button>
+    </div>
+  </div>
+</Dialog>
+
+<Drawer open={drawerOpen} onClose={() => (drawerOpen = false)} title="Example drawer" side="right" width="320px">
+  <p class="ov-text">A slide-in <code>Drawer</code> — same <code>--overlay</code> scrim, <code>--z-overlay</code> tier.</p>
+</Drawer>
 
 <style>
   /* styleguide owns the whole page; let the document scroll naturally */
@@ -569,17 +780,61 @@
     color: var(--live-bright);
   }
 
-  /* controls */
-  .ctl-row {
+  /* components — real lib/ui primitives */
+  .comp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-5);
+  }
+  .comp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .comp-wide {
+    grid-column: 1 / -1;
+  }
+  .comp-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
   }
-  .ck {
+  .comp-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .comp-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .comp-note {
+    margin-top: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+  }
+  .dot-demo {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+
+  /* overlay demo bodies (Dialog/Drawer provide no inner padding) */
+  .ov-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    width: min(360px, 82vw);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .ov-text {
     font-size: var(--text-sm);
     color: var(--text-muted);
   }

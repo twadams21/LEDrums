@@ -74,9 +74,10 @@
     display: contents;
   }
 
-  /* portaled to body — global, uniquely prefixed (mirrors .lab-sel-*) */
+  /* portaled to body — global, uniquely prefixed (mirrors .lab-sel-*). Opens
+     inside Dialogs (ShowBrowser) and over panels — the topmost floating tier. */
   :global(.lab-ctx-content) {
-    z-index: 95;
+    z-index: var(--z-tooltip);
     min-width: 10rem;
     padding: var(--space-1);
     background: var(--surface-3);

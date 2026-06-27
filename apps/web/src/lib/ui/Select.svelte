@@ -106,9 +106,11 @@
     rotate: 180deg;
   }
 
-  /* portaled to body — global, uniquely prefixed */
+  /* portaled to body — global, uniquely prefixed. Selects open inside Dialogs
+     (EffectCreator / ClipSettings), so the dropdown rides a tier above
+     --z-modal — below the context menu, above everything else. */
   :global(.lab-sel-content) {
-    z-index: 90;
+    z-index: var(--z-toast);
     min-width: var(--bits-select-anchor-width, 9rem);
     max-height: 18rem;
     overflow-y: auto;

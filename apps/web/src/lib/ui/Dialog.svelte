@@ -19,7 +19,15 @@
 
   let { open, onClose, title, layer = 1, class: klass, children }: Props = $props();
 
-  const overlayZ = $derived(60 + layer * 10);
+  /* Anchor on the semantic --z-modal tier; each layer steps up by 4 so a
+     stacked dialog's scrim (overlay) still covers the dialog below it
+     (content). The content sits one above its own overlay. */
+  function modalZ(offset: number): string {
+    if (offset === 0) return 'var(--z-modal)';
+    return `calc(var(--z-modal) ${offset > 0 ? '+' : '-'} ${Math.abs(offset)})`;
+  }
+  const overlayZ = $derived(modalZ((layer - 1) * 4 - 1));
+  const contentZ = $derived(modalZ((layer - 1) * 4));
 
   function onOpenChange(v: boolean): void {
     if (!v) onClose?.();
@@ -29,7 +37,7 @@
 <Dialog.Root {open} {onOpenChange}>
   <Dialog.Portal>
     <Dialog.Overlay class="lab-dialog-overlay" style="z-index:{overlayZ}" />
-    <Dialog.Content class={['lab-dialog-content', klass]} style="z-index:{overlayZ + 1}">
+    <Dialog.Content class={['lab-dialog-content', klass]} style="z-index:{contentZ}">
       {#if title}<Dialog.Title class="lab-dialog-srtitle">{title}</Dialog.Title>{/if}
       {@render children()}
     </Dialog.Content>
@@ -40,7 +48,7 @@
   :global(.lab-dialog-overlay) {
     position: fixed;
     inset: 0;
-    background: oklch(0.1 0.01 256 / 0.6);
+    background: var(--overlay);
     backdrop-filter: blur(2px);
     animation: dlg-overlay-in 140ms ease;
   }
