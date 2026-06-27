@@ -193,8 +193,18 @@ function seedAuthored(): AuthoredState {
     effects whose id isn't a built-in — the user's own createEffect() additions.
     Built-ins are immutable from the UI, so re-taking the fresh def loses nothing. */
 function unionEffects(persisted: readonly EffectDef[]): EffectDef[] {
+  const overrideById = new Map(persisted.map((e) => [e.id, e] as const));
   const builtinIds = new Set(EFFECTS.map((e) => e.id));
-  return [...EFFECTS, ...persisted.filter((e) => !builtinIds.has(e.id))];
+  // Built-ins are re-taken FRESH (so new params/pattern/generator defs always surface), but a
+  // persisted RENAME of a built-in wins — `name` is the only field the UI lets you edit on an
+  // effect (rename + duplicate; never delete), so a renamed "Swirl" survives a reload. Mirrors
+  // {@link unionPresets} letting a persisted built-in preset win. Then append the user's own
+  // createEffect/duplicateEffect additions.
+  const builtins = EFFECTS.map((e) => {
+    const o = overrideById.get(e.id);
+    return o && o.name !== e.name ? { ...e, name: o.name } : e;
+  });
+  return [...builtins, ...persisted.filter((e) => !builtinIds.has(e.id))];
 }
 
 /** Union persisted presets with the built-ins (mirrors {@link unionEffects}). Keeps
@@ -1460,6 +1470,16 @@ export class TriggerLab {
     this.creatorOpen = false;
   }
 
+  /** Mint a fresh, unused effect id from a name (slug + `-N` de-dup). Shared by
+      {@link createEffect} and {@link duplicateEffect}. */
+  private freshEffectId(name: string): string {
+    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'effect';
+    let id = base;
+    let n = 2;
+    while (this.effects.some((e) => e.id === id)) id = `${base}-${n++}`;
+    return id;
+  }
+
   /** Author a new effect at runtime: register it + seed a Default preset. Returns its id. */
   createEffect(input: {
     name: string;
@@ -1471,10 +1491,7 @@ export class TriggerLab {
     releaseMs: number;
     params: ParamSpec[];
   }): string {
-    const base = input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'effect';
-    let id = base;
-    let n = 2;
-    while (this.effects.some((e) => e.id === id)) id = `${base}-${n++}`;
+    const id = this.freshEffectId(input.name);
     const eff: EffectDef = {
       id,
       name: input.name.trim() || 'Untitled',
@@ -1492,6 +1509,107 @@ export class TriggerLab {
     this.presets.push(preset);
     this.sim.registerPreset(preset);
     return id;
+  }
+
+  // --- effect / preset object CRUD (the Objects view consumes these) --------
+  // Effects are foundational: rename + duplicate ONLY, never delete. Presets add delete,
+  // gated to usage-count 0 (and never a live effect's `:default`). Each keeps the sim's
+  // registries in sync so the live preview reflects the edit, and persists via the authored
+  // autosave (effects/presets are part of the snapshot). Mirrors createEffect's
+  // store-array + sim-register pattern; renames mutate in place (the sim shares the object
+  // by reference, like setParam does for a linked preset).
+
+  /** Rename an effect (its display name) — the only edit effects allow. No-op on an unknown id
+      or a blank name (keeps the old name, mirrors {@link renameSong}). Replaces the EffectDef
+      IMMUTABLY (a built-in's seed array shares the module fixture objects by reference, so an
+      in-place mutation would corrupt the global registry), then re-points the sim's id-map at
+      the new object so the live preview reflects it. Persists via the authored autosave
+      ({@link unionEffects} keeps a built-in's renamed name on reload). */
+  renameEffect(id: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const cur = this.effects.find((e) => e.id === id);
+    if (!cur) return;
+    const renamed: EffectDef = { ...cur, name: trimmed };
+    this.effects = this.effects.map((e) => (e.id === id ? renamed : e));
+    this.sim.registerEffect(renamed);
+  }
+
+  /** Duplicate an effect: clone its definition under a fresh id named "<name> copy", register
+      it with the sim, and seed its `${newId}:default` preset (mirrors {@link createEffect}).
+      Returns the new id, or null for an unknown id. The clone is independent (its own id +
+      Default preset); a generator-backed effect keeps its `generatorId` so it renders
+      identically. Persists via the authored autosave. */
+  duplicateEffect(id: string): string | null {
+    const src = this.effects.find((e) => e.id === id);
+    if (!src) return null;
+    const name = `${src.name} copy`;
+    const newId = this.freshEffectId(name);
+    const eff: EffectDef = { ...($state.snapshot(src) as EffectDef), id: newId, name };
+    this.effects.push(eff);
+    this.sim.registerEffect(eff);
+    const preset: Preset = { id: `${newId}:default`, name: 'Default', effectId: newId, params: defaultParams(eff) };
+    this.presets.push(preset);
+    this.sim.registerPreset(preset);
+    return newId;
+  }
+
+  /** Rename a preset. No-op on an unknown id or a blank name (mirrors {@link renameSong}).
+      Replaces the Preset IMMUTABLY (re-added built-in presets share the module fixture by
+      reference) and re-points the sim's id-map, so linked play instances (which resolve by id)
+      see the new name. Persists via the autosave ({@link unionPresets} keeps a renamed built-in
+      preset on reload). */
+  renamePreset(id: string, name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const cur = this.presetById(id);
+    if (!cur) return;
+    const renamed: Preset = { ...cur, name: trimmed };
+    this.presets = this.presets.map((p) => (p.id === id ? renamed : p));
+    this.sim.registerPreset(renamed);
+  }
+
+  /** Duplicate a preset: clone it under a fresh id named "<name> copy" (same effect, an
+      independent copy of its params), and register it with the sim. Returns the new id, or
+      null for an unknown id. Persists via the authored autosave. */
+  duplicatePreset(id: string): string | null {
+    const src = this.presetById(id);
+    if (!src) return null;
+    let newId = nid('preset');
+    while (this.presets.some((p) => p.id === newId)) newId = nid('preset'); // global uniqueness (survives reload)
+    const preset: Preset = { id: newId, name: `${src.name} copy`, effectId: src.effectId, params: { ...src.params } };
+    this.presets.push(preset);
+    this.sim.registerPreset(preset);
+    return newId;
+  }
+
+  /** How many play nodes — across EVERY graph (pad + authored) — reference this preset, whether
+      linked (reads the shared preset live) or instance-origin (forked its own params from it,
+      keeping `presetId` as the origin). Pure read: gates {@link deletePreset} and is shown in
+      the Objects view. */
+  presetUsageCount(id: string): number {
+    let count = 0;
+    for (const graph of Object.values(this.graphs)) {
+      for (const node of graph.nodes) {
+        if (node.kind === 'play' && node.presetId === id) count++;
+      }
+    }
+    return count;
+  }
+
+  /** Delete a preset — ONLY when it is used nowhere ({@link presetUsageCount} === 0) and it is
+      not a live effect's foundational `:default` (an effect's seeded baseline is never
+      deletable while the effect exists). Removes it from `presets` + the sim registry and
+      returns true; returns false (a no-op) when the id is unknown, the preset is in use, or it
+      is a live effect's `:default`. Persists via the authored autosave. */
+  deletePreset(id: string): boolean {
+    const pr = this.presetById(id);
+    if (!pr) return false;
+    if (this.presetUsageCount(id) > 0) return false;
+    if (id.endsWith(':default') && this.effects.some((e) => e.id === pr.effectId)) return false;
+    this.presets = this.presets.filter((p) => p.id !== id);
+    this.sim.unregisterPreset(id);
+    return true;
   }
 
   /** Swap the effect: reset to that effect's Default preset (own instance). */
