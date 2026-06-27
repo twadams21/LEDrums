@@ -7,12 +7,9 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Voice, Polyphony } from '../../trigger-lab/sim';
-  import type { Component } from 'svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import IconButton from '../../ui/IconButton.svelte';
-  import Disc3 from '@lucide/svelte/icons/disc-3';
-  import Activity from '@lucide/svelte/icons/activity';
-  import Wand2 from '@lucide/svelte/icons/wand-2';
+  import { busIcon } from '../views/trigger-node-meta';
   import Zap from '@lucide/svelte/icons/zap';
   import Repeat from '@lucide/svelte/icons/repeat';
   import Hand from '@lucide/svelte/icons/hand';
@@ -24,7 +21,6 @@
     { value: 'mono', label: 'mono' },
     { value: 'poly', label: 'poly' },
   ];
-  const busIcon: Record<string, Component> = { base: Disc3, trigger: Activity, effect: Wand2 };
 
   function vlevel(v: Voice): number {
     return v.level * v.deckGain;

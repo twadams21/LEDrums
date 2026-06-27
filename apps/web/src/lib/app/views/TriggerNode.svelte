@@ -16,6 +16,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { getContext } from 'svelte';
   import NodeCard from './NodeCard.svelte';
+  import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import { kindIcon, tint, kindLabel, kindSummary } from './trigger-node-meta';
   import { pct } from './node-options';
@@ -71,18 +72,7 @@
 {/if}
 
 {#if isBandsSwitch}
-  <div class="switchnode">
-    <NodeCard icon={Icon} {title} sub="bands" tint={chipTint} selected={!!selected} />
-    <ul class="bands">
-      {#each bandLabels as label, i (i)}
-        <li class="brow">
-          <span class="bnum">{i + 1}</span>
-          <span class="blabel">{label}</span>
-          <Handle type="source" position={Position.Right} id={`band-${i}`} class="bhandle" />
-        </li>
-      {/each}
-    </ul>
-  </div>
+  <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
 {:else}
   <NodeCard
     icon={Icon}
@@ -96,57 +86,3 @@
     <Handle type="source" position={Position.Right} />
   {/if}
 {/if}
-
-<style>
-  .switchnode {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    width: 176px;
-  }
-  .bands {
-    list-style: none;
-    margin: 0;
-    padding: var(--space-1);
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-3);
-    box-shadow: var(--shadow-1);
-  }
-  .brow {
-    position: relative; /* offset parent for the per-band handle (sits at the row's right) */
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    height: 22px;
-    padding: 0 var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-1);
-  }
-  .bnum {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 15px;
-    height: 15px;
-    flex: none;
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-pill);
-  }
-  .blabel {
-    flex: 1;
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-</style>

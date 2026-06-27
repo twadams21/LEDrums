@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_KIT, type KitConfig } from '@ledrums/core';
 import {
   buildPatchTopology,
   describePatchNode,
+  topoDrumsFromKit,
   CONTROLLER_ID,
   INPUT_ID,
   drumNodeId,
@@ -127,6 +129,51 @@ describe('buildPatchTopology', () => {
     // input, trigger, zone, drum, hoop, dataline, output, controller
     expect(nodes).toHaveLength(8);
     expect(edges).toHaveLength(7);
+  });
+});
+
+describe('topoDrumsFromKit (#11: input half follows the project kit, not DEFAULT_KIT)', () => {
+  const drumList = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
+  const oneZone = (): string[] => ['center'];
+
+  /** A kit whose per-drum + global hoop counts all differ from DEFAULT_KIT's. */
+  function nonDefaultKit(): KitConfig {
+    return {
+      ...DEFAULT_KIT,
+      global: { ...DEFAULT_KIT.global, hoopCount: DEFAULT_KIT.global.hoopCount + 5 },
+      drums: DEFAULT_KIT.drums.map((d) =>
+        d.id === 'snare' ? { ...d, hoopCount: 9 } : { ...d, hoopCount: undefined },
+      ),
+    };
+  }
+
+  it('derives each drum hoop count from the supplied kit (per-drum override or global)', () => {
+    const kit = nonDefaultKit();
+    const topo = topoDrumsFromKit(kit, drumList, oneZone);
+    // the overridden drum follows its per-drum count...
+    expect(topo.find((t) => t.id === 'snare')!.hoopCount).toBe(9);
+    // ...and a non-overridden drum follows the kit global (NOT DEFAULT_KIT's global)
+    expect(topo.find((t) => t.id === 'kick')!.hoopCount).toBe(kit.global.hoopCount);
+    expect(kit.global.hoopCount).not.toBe(DEFAULT_KIT.global.hoopCount);
+  });
+
+  it('builds the matching number of input-half hoop nodes for a non-default kit', () => {
+    const kit = nonDefaultKit();
+    const { nodes } = buildPatchTopology(topoDrumsFromKit(kit, drumList, oneZone));
+    const snareHoops = nodes.filter((n) => n.id.startsWith('hoop:snare:'));
+    expect(snareHoops).toHaveLength(9); // would be DEFAULT_KIT.global.hoopCount with the old bug
+  });
+
+  it('falls back to the kit global when a drum is absent from the kit', () => {
+    const kit = nonDefaultKit();
+    const topo = topoDrumsFromKit(kit, [{ id: 'ghost', label: 'Ghost' }], oneZone);
+    expect(topo[0]!.hoopCount).toBe(kit.global.hoopCount);
+  });
+
+  it('injects the resolved zones per drum', () => {
+    const topo = topoDrumsFromKit(DEFAULT_KIT, drumList, (id) => (id === 'kick' ? ['center', 'shell'] : ['edge']));
+    expect(topo.find((t) => t.id === 'kick')!.zones).toEqual(['center', 'shell']);
+    expect(topo.find((t) => t.id === 'snare')!.zones).toEqual(['edge']);
   });
 });
 
