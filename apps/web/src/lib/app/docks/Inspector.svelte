@@ -11,17 +11,31 @@
   import { isReservedCc, RESERVED_CC, sectionRecall } from '../recall';
   import { ZONE_LABELS } from '../../trigger-lab/fixtures';
   import {
-    NODE_KINDS,
     type GraphNode,
     type NodeKind,
-    type ParamSpec,
-    type ParamValue,
     type Polyphony,
     type SwitchOn,
     type TriggerSource,
     type ValueMode,
   } from '../../trigger-lab/sim';
-  import { busIcon, kindIcon, kindLabel, tint } from '../views/trigger-node-meta';
+  import { busIcon } from '../views/trigger-node-meta';
+  import {
+    PROTOCOL_OPTS,
+    RGB_OPTS,
+    MODE_OPTS,
+    LINK_OPTS,
+    POLY_OPTS,
+    KIND_OPTS,
+    SWITCH_OPTS,
+    VALUEMODE_OPTS,
+    SOURCE_OPTS,
+    MIDI_OPTS,
+    pct,
+    num,
+    fmt,
+    fmtSpan,
+    uLabel,
+  } from '../views/node-options';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../ui/Slider.svelte';
   import Select from '../../ui/Select.svelte';
@@ -48,9 +62,6 @@
   import Replace from '@lucide/svelte/icons/replace';
   import Spline from '@lucide/svelte/icons/spline';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Zap from '@lucide/svelte/icons/zap';
-  import Repeat from '@lucide/svelte/icons/repeat';
-  import Hand from '@lucide/svelte/icons/hand';
   import Plus from '@lucide/svelte/icons/plus';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
 
@@ -157,8 +168,6 @@
     };
     store.setRouting(patchToOutputs(updated));
   }
-  /** A universe-snap read-out: an explicit universe, or "dense" when the line/port auto-packs. */
-  const uLabel = (u: number | undefined): string => (u === undefined ? 'dense' : `u${u}`);
   function setZoneNote(drumId: string, slot: number, note: number | null): void {
     if (project) store.setInputMap(setZoneMidiNote(project.inputMap, drumId, slot, note));
   }
@@ -166,57 +175,16 @@
     if (project) store.setInputMap(setZoneOscAddress(project.inputMap, drumId, slot, address));
   }
 
-  const PROTOCOL_OPTS = [
-    { value: 'artnet', label: 'Art-Net' },
-    { value: 'sacn', label: 'sACN (E1.31)' },
-  ];
-  const RGB_OPTS = (['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'] as const).map((o) => ({ value: o, label: o }));
-  const fmtSpan = (s: PixelSpan | null | undefined): string => (s ? `${s.first} – ${s.last}` : '—');
-
-  // iconed play-mode + layer groups (Zap/Repeat/Hand · Disc3/Activity/Wand2) — same
-  // SegmentedControl, just an icon per option (ported from the old node header).
-  const MODE_OPTS = [
-    { value: 'oneshot', label: 'One-shot', icon: Zap },
-    { value: 'loop', label: 'Loop', icon: Repeat },
-    { value: 'hold', label: 'Hold', icon: Hand },
-  ];
+  // Store-bound option array stays here (reactive over the live buses); the static option
+  // lists (MODE/LINK/POLY/KIND/SWITCH/VALUEMODE/SOURCE/MIDI/PROTOCOL/RGB) and the value
+  // formatters (pct/num/fmt/fmtSpan/uLabel) live in the shared `node-options` module.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
-  const LINK_OPTS = [
-    { value: 'instance', label: 'Instance' },
-    { value: 'linked', label: 'Linked' },
-  ];
-  const POLY_OPTS = [
-    { value: 'mono', label: 'mono' },
-    { value: 'poly', label: 'poly' },
-  ];
-
-  // kind selector (every node but the trigger root) + switch routing options.
-  const KIND_OPTS = NODE_KINDS.map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
-  const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
-    { value: 'value', label: 'value' },
-    { value: 'section', label: 'section' },
-    { value: 'beat', label: 'beat' },
-  ];
-  const VALUEMODE_OPTS: Array<{ value: ValueMode; label: string }> = [
-    { value: 'gate', label: 'Gate' },
-    { value: 'bands', label: 'Bands' },
-  ];
-  const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
   // --- Trigger-node source editor (U2) -------------------------------------------
   // The trigger node (graph root) declares what input fires its graph — a drum zone, a
   // raw MIDI note/CC, or an OSC address (U1's TriggerSource). Writes go through the U1
   // mutator store.setTriggerSource(<graph key>, source); the readout + the node sub-line
   // resolve via the pure describeTriggerSource helper. The graph key is store.selectedPadKey.
-  const SOURCE_OPTS: Array<{ value: TriggerSource['kind']; label: string }> = [
-    { value: 'drum', label: 'Drum' },
-    { value: 'midi', label: 'MIDI' },
-    { value: 'osc', label: 'OSC' },
-  ];
-  const MIDI_OPTS = [
-    { value: 'note', label: 'Note' },
-    { value: 'cc', label: 'CC' },
-  ];
   const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
 
   /** Zone <Select> options for a drum: the zones it exposes as pads (its hoops in use),
@@ -272,13 +240,6 @@
     }
   }
 
-  function num(v: ParamValue | undefined, d: number): number {
-    return typeof v === 'number' ? v : d;
-  }
-  function fmt(spec: ParamSpec, v: ParamValue | undefined): string {
-    if (typeof v === 'number') return `${spec.step && spec.step < 1 ? v.toFixed(2) : Math.round(v)}${spec.unit ?? ''}`;
-    return v ? 'on' : 'off';
-  }
 </script>
 
 <div class="inspector">
