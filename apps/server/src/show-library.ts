@@ -3,22 +3,20 @@ import { join } from 'node:path';
 import { PROJECTS_DIR } from './projects';
 import { writeFileAtomic, writeFileAtomicSync } from './atomic-file';
 
+// `ShowLibraryBlob` is part of the WS wire contract, so it is defined once in
+// `@ledrums/protocol` (app-shared) and re-exported here for the server's existing
+// `./show-library` import paths. The authored show library is WEB-OWNED state — its schema
+// (`ShowLibrary`, `AuthoredState`) lives in apps/web and the server can't import it. So the
+// server persists it as an OPAQUE versioned blob: it stores + rebroadcasts the JSON verbatim
+// and never interprets `data`; the web (de)serializes/validates it on adopt.
+export type { ShowLibraryBlob } from '@ledrums/protocol';
+
+import type { ShowLibraryBlob } from '@ledrums/protocol';
+
 /** Machine-local show-library file, written alongside the project autosave slot. Like the
  * live project it follows the repo's `.local.json` convention (gitignored runtime state, never
  * a hand-edited seed) — see apps/server/.gitignore. */
 export const SHOW_LIBRARY_FILE = 'default.shows.local.json';
-
-/**
- * The authored show library is WEB-OWNED state — its schema (`ShowLibrary`, `AuthoredState`)
- * lives in apps/web and the server can't import it. So the server persists it as an OPAQUE
- * versioned blob: it stores + rebroadcasts the JSON verbatim and never interprets `data`. The
- * web (de)serializes/validates it on adopt. This mirrors the web's `PersistedShowLibrary`
- * envelope: a `version` gate plus the bare library under `data`.
- */
-export interface ShowLibraryBlob {
-  version: number;
-  data: unknown;
-}
 
 /** Resolve the final path for the machine-local show library file. */
 function showLibraryPath(dir: string): string {
