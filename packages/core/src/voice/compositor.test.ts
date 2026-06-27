@@ -65,12 +65,52 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
   };
 }
 
-/** trigger → play(effectId) with the given scope. */
-function flatGraph(effectId: string, scope: 'drum' | 'kit' = 'kit'): TriggerGraph {
+/** trigger → play(effectId) with the given scope + optional targetId. */
+function flatGraph(effectId: string, scope: 'drum' | 'kit' | 'hoop' = 'kit', targetId?: string): TriggerGraph {
   return {
-    nodes: [node('trigger', 'trigger'), node('play', 'p1', { effectId, scope, params: { brightness: 1 } })],
+    nodes: [node('trigger', 'trigger'), node('play', 'p1', { effectId, scope, targetId, params: { brightness: 1 } })],
     edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
   };
+}
+
+/** render helper: hit drumId and tick to full level; return frame + model. */
+function renderPatt(scope: 'drum' | 'kit' | 'hoop', drumId: string, targetId?: string): {
+  frame: Readonly<Float32Array>;
+  model: PixelModel;
+} {
+  const m = testModel();
+  const e = createVoiceBusEngine();
+  const eff: EffectDef = {
+    id: 'patt',
+    name: 'patt',
+    pattern: 'flash',
+    busId: 'base',
+    scope: 'kit',
+    params: [{ key: 'brightness', label: 'B', kind: 'number', default: 1 }],
+    attackMs: 10,
+    sustainMs: 5000,
+    releaseMs: 100,
+  };
+  e.setModel(m);
+  e.setShow(show(flatGraph('patt', scope, targetId), [eff], drumId));
+  e.applyInput(hit(drumId, 0));
+  e.tick(5, 5, transport(5));
+  e.tick(40, 35, transport(40, 0.25));
+  return { frame: e.frame(), model: m };
+}
+
+function renderGenTargeted(generatorId: string, scope: 'drum' | 'kit' | 'hoop', drumId: string, targetId?: string): {
+  frame: Readonly<Float32Array>;
+  model: PixelModel;
+} {
+  const m = testModel();
+  const e = createVoiceBusEngine();
+  e.setModel(m);
+  e.setShow(show(flatGraph('fx', scope, targetId), [genEffect('fx', generatorId)], drumId));
+  e.applyInput(hit(drumId, 0));
+  e.tick(5, 5, transport(5));
+  e.tick(40, 35, transport(40, 0.25));
+  return { frame: e.frame(), model: m };
 }
 
 function show(graph: TriggerGraph, effects: EffectDef[], drumId = 'kick'): Show {
@@ -234,5 +274,121 @@ describe('Compositor — hosted legacy-generator bridge', () => {
     expect(e.stats().voiceCount).toBe(2);
     expect(allFiniteUnit(e.frame())).toBe(true);
     expect(litPixels(e.frame(), m.pixelCount).length).toBeGreaterThan(0);
+  });
+});
+
+// ---- testModel pixel layout (for scope/targetId tests) ----------------------
+// kick : hoopCount=2, pixelsPerHoop=29 → pixelStart=0,  pixelCount=58
+//   hoop 0: [0, 29)   hoop 1: [29, 58)
+// snare: hoopCount=2, pixelsPerHoop=24 → pixelStart=58, pixelCount=48
+//   hoop 0: [58, 82)  hoop 1: [82, 106)
+
+describe('Compositor — scope + targetId masking', () => {
+  it('scope:hoop masks to one hoop\'s pixel range (kick hoop 0)', () => {
+    const { frame, model } = renderPatt('hoop', 'kick', 'kick#0');
+    const kick = model.drumById.get('kick')!;
+    const hoopSize = kick.pixelsPerHoop; // 29
+    const lit = litPixels(frame, model.pixelCount);
+    expect(lit.length).toBeGreaterThan(0);
+    expect(lit.length).toBeLessThanOrEqual(hoopSize);
+    for (const id of lit) {
+      expect(id).toBeGreaterThanOrEqual(0); // hoop 0 start
+      expect(id).toBeLessThan(hoopSize);    // hoop 0 end
+    }
+  });
+
+  it('scope:hoop with no targetId defaults to source drum hoop 0', () => {
+    const { frame, model } = renderPatt('hoop', 'snare');
+    const snare = model.drumById.get('snare')!;
+    const h0start = snare.pixelStart;
+    const h0end = snare.pixelStart + snare.pixelsPerHoop;
+    const lit = litPixels(frame, model.pixelCount);
+    expect(lit.length).toBeGreaterThan(0);
+    for (const id of lit) {
+      expect(id).toBeGreaterThanOrEqual(h0start);
+      expect(id).toBeLessThan(h0end);
+    }
+  });
+
+  it('scope:drum with targetId overrides to the target drum (cross-drum)', () => {
+    // Fire kick but targetId='snare' → only snare pixels light up.
+    const { frame, model } = renderPatt('drum', 'kick', 'snare');
+    const snare = model.drumById.get('snare')!;
+    const lit = litPixels(frame, model.pixelCount);
+    expect(lit.length).toBeGreaterThan(0);
+    for (const id of lit) {
+      expect(id).toBeGreaterThanOrEqual(snare.pixelStart);
+      expect(id).toBeLessThan(snare.pixelStart + snare.pixelCount);
+    }
+    // kick pixels must be dark
+    const kick = model.drumById.get('kick')!;
+    for (let i = kick.pixelStart; i < kick.pixelStart + kick.pixelCount; i++) {
+      const j = i * 4;
+      expect(frame[j]! + frame[j + 1]! + frame[j + 2]!).toBeLessThan(0.01);
+    }
+  });
+
+  it('scope:kit ignores targetId — whole kit is lit', () => {
+    const { frame, model } = renderPatt('kit', 'kick', 'kick');
+    const lit = litPixels(frame, model.pixelCount);
+    // kit-wide flash → every pixel in the kit lights up
+    expect(lit.length).toBe(model.pixelCount);
+  });
+
+  it('scope:drum with dangling targetId renders nothing (no throw)', () => {
+    expect(() => {
+      const { frame, model } = renderPatt('drum', 'kick', 'does-not-exist');
+      expect(litPixels(frame, model.pixelCount).length).toBe(0);
+    }).not.toThrow();
+  });
+
+  it('scope:hoop with dangling targetId renders nothing (no throw)', () => {
+    expect(() => {
+      const { frame, model } = renderPatt('hoop', 'kick', 'does-not-exist#0');
+      expect(litPixels(frame, model.pixelCount).length).toBe(0);
+    }).not.toThrow();
+  });
+
+  it('scope:hoop with out-of-range hoop index renders nothing (no throw)', () => {
+    expect(() => {
+      const { frame, model } = renderPatt('hoop', 'kick', 'kick#99');
+      expect(litPixels(frame, model.pixelCount).length).toBe(0);
+    }).not.toThrow();
+  });
+
+  it('generator-backed effect respects drum scope with targetId override', () => {
+    // Fire kick, target snare → the plasma generator's frame is masked to snare range.
+    const { frame, model } = renderGenTargeted('plasma', 'drum', 'kick', 'snare');
+    const snare = model.drumById.get('snare')!;
+    const kick = model.drumById.get('kick')!;
+    const lit = litPixels(frame, model.pixelCount);
+    expect(lit.length).toBeGreaterThan(0);
+    for (const id of lit) {
+      expect(id).toBeGreaterThanOrEqual(snare.pixelStart);
+      expect(id).toBeLessThan(snare.pixelStart + snare.pixelCount);
+    }
+    // kick must be dark
+    for (let i = kick.pixelStart; i < kick.pixelStart + kick.pixelCount; i++) {
+      const j = i * 4;
+      expect(frame[j]! + frame[j + 1]! + frame[j + 2]!).toBeLessThan(0.01);
+    }
+  });
+
+  it('generator-backed effect respects hoop scope', () => {
+    // Plasma with hoop scope → only kick hoop 0 pixels lit.
+    const { frame, model } = renderGenTargeted('plasma', 'hoop', 'kick', 'kick#0');
+    const kick = model.drumById.get('kick')!;
+    const h0end = kick.pixelStart + kick.pixelsPerHoop;
+    const lit = litPixels(frame, model.pixelCount);
+    expect(lit.length).toBeGreaterThan(0);
+    for (const id of lit) {
+      expect(id).toBeGreaterThanOrEqual(kick.pixelStart);
+      expect(id).toBeLessThan(h0end);
+    }
+    // hoop 1 of kick must be dark
+    for (let i = h0end; i < kick.pixelStart + kick.pixelCount; i++) {
+      const j = i * 4;
+      expect(frame[j]! + frame[j + 1]! + frame[j + 2]!).toBeLessThan(0.01);
+    }
   });
 });

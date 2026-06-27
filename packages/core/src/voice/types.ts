@@ -15,7 +15,7 @@ export type PlayMode = 'oneshot' | 'loop' | 'hold';
 export type SwitchOn = 'section' | 'beat' | 'value';
 /** Sub-mode of a `value` switch: a single pass/block gate, or N value bands. */
 export type ValueMode = 'gate' | 'bands';
-export type Scope = 'drum' | 'kit';
+export type Scope = 'drum' | 'kit' | 'hoop';
 export type Polyphony = 'mono' | 'poly';
 
 /** The abstract procedural visual an effect demonstrates in the pixel renderer. */
@@ -194,6 +194,14 @@ export interface GraphNode {
   presetId: string;
   /** layer/bus override for this node ('' → the effect's default bus). */
   busId: string;
+  /**
+   * Per-play-node scope target. Encoding:
+   *   drum target  = drumId, e.g. `"kick"`
+   *   hoop target  = `"<drumId>#<hoopIndex>"`, e.g. `"tom1#2"`
+   * Absent/empty = auto (scope resolves against the firing/source drum).
+   * Back-compat: graphs persisted before targetId default to undefined.
+   */
+  targetId?: string;
   params: ParamValues;
   env: EnvMap;
   linked: boolean;
@@ -321,6 +329,9 @@ export interface Voice {
   busId: string;
   mode: PlayMode;
   scope: Scope;
+  /** Raw targetId from the play node — resolved to a pixel range by the compositor.
+   *  Encoding: drum = drumId; hoop = `"<drumId>#<hoopIndex>"`. Absent = auto. */
+  targetId?: string;
   sourceDrumId: string | null;
   /** Normalized hit velocity 0..1 captured at spawn — drives a hosted generator's
    * synthetic trigger (intensity / wash falloff / particle spread). */

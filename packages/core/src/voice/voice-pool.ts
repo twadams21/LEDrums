@@ -100,6 +100,7 @@ export class VoicePool {
     slot.busId = bus.id;
     slot.mode = a.mode;
     slot.scope = a.scope;
+    slot.targetId = a.targetId;
     slot.sourceDrumId = sourceDrumId;
     slot.velocity = velocity;
     // Generator-backed effects host a legacy EffectGenerator; the compositor reads
@@ -142,6 +143,7 @@ function makeVoiceSlot(): Voice {
     busId: '',
     mode: 'oneshot',
     scope: 'kit',
+    targetId: undefined,
     sourceDrumId: null,
     velocity: 1,
     generatorId: null,

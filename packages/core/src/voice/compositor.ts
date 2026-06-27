@@ -19,7 +19,7 @@
  * per-voice merged-params object stays well within budget — see the perf note below.
  */
 import type { Framebuffer } from '../engine/framebuffer';
-import type { PixelModel } from '../geometry/pixel-model';
+import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { sampleEnvelope } from './envelope';
 import { buildPixelAttrs, createPatternRenderer, type PixelAttrs } from './pattern-renderer';
@@ -133,12 +133,33 @@ export function createDefaultCompositor(): Compositor {
 
         let start = 0;
         let end = model.pixelCount;
-        if (v.scope === 'drum' && v.sourceDrumId != null) {
-          const d = model.drumById.get(v.sourceDrumId);
-          if (!d) continue;
+        if (v.scope === 'drum') {
+          // Resolve target drum: from targetId if set, else sourceDrumId (auto).
+          const drumId = v.targetId ?? v.sourceDrumId;
+          if (drumId == null) continue;
+          const d = model.drumById.get(drumId);
+          if (!d) continue; // dangling targetId → render nothing
           start = d.pixelStart;
           end = d.pixelStart + d.pixelCount;
+        } else if (v.scope === 'hoop') {
+          // Parse targetId as "<drumId>#<hoopIndex>"; absent or no '#' → source drum hoop 0.
+          let drumId: string | null = null;
+          let hoopIndex = 0;
+          if (v.targetId && v.targetId.includes('#')) {
+            const sep = v.targetId.indexOf('#');
+            drumId = v.targetId.slice(0, sep);
+            hoopIndex = parseInt(v.targetId.slice(sep + 1), 10);
+            if (!Number.isFinite(hoopIndex) || hoopIndex < 0) hoopIndex = 0;
+          } else {
+            drumId = v.sourceDrumId;
+          }
+          if (drumId == null) continue;
+          const range = getHoopPixelRange(model, drumId, hoopIndex);
+          if (!range) continue; // dangling → render nothing
+          start = range.start;
+          end = range.end;
         }
+        // scope === 'kit': start=0, end=model.pixelCount (whole kit, targetId ignored)
 
         if (v.generatorId) {
           // Hosted legacy-generator voice — never falls through to the pattern path.

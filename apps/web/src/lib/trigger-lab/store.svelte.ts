@@ -1233,8 +1233,28 @@ export class TriggerLab {
     }
   }
 
+  /** Drum info for the current kit, used by the Inspector's scope-target dropdowns. */
+  get kitDrumInfos(): { id: string; label: string; hoopCount: number }[] {
+    return this.labModel.pm.drums.map((d) => ({ id: d.drumId, label: d.label, hoopCount: d.hoopCount }));
+  }
+
   setMode(node: GraphNode, mode: PlayMode): void {
     if (node.kind === 'play') node.mode = mode;
+  }
+
+  /** Set the render scope on a play node (kit / drum / hoop). Clearing targetId on
+      scope change prevents a stale targetId from a previous scope from leaking. */
+  setScope(node: GraphNode, scope: Scope): void {
+    if (node.kind !== 'play') return;
+    node.scope = scope;
+    node.targetId = undefined;
+  }
+
+  /** Set (or clear) the per-play-node target id: drum = drumId, hoop = "drumId#hoopIndex".
+      Pass undefined or empty string to clear (auto = firing/source drum). */
+  setTargetId(node: GraphNode, targetId: string | undefined): void {
+    if (node.kind !== 'play') return;
+    node.targetId = targetId || undefined;
   }
   setNoRepeat(node: GraphNode, v: boolean): void {
     if (node.kind === 'random') node.noRepeat = v;

@@ -31,6 +31,13 @@ export const PROTOCOL_OPTS = [
 ];
 export const RGB_OPTS = (['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'] as const).map((o) => ({ value: o, label: o }));
 
+// --- Play-node scope options ----------------------------------------------------------
+export const SCOPE_OPTS: Array<{ value: 'kit' | 'drum' | 'hoop'; label: string }> = [
+  { value: 'kit', label: 'Kit' },
+  { value: 'drum', label: 'Drum' },
+  { value: 'hoop', label: 'Hoop' },
+];
+
 // --- Play-node options (iconed play-mode + link + layer-poly) --------------------
 // iconed play-mode group (Zap/Repeat/Hand) — same SegmentedControl, just an icon per
 // option (ported from the old node header).

@@ -154,6 +154,25 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
   };
 }
 
+/**
+ * Return the contiguous pixel range for one hoop on a drum, or `null` when the
+ * drum/hoop doesn't exist in the model (dangling targetId → caller renders nothing).
+ *
+ * Range is half-open: `[start, end)` — the same convention the compositor uses.
+ * Hoops are zero-indexed in build order (same as {@link buildPixelModel}'s inner loop).
+ */
+export function getHoopPixelRange(
+  model: PixelModel,
+  drumId: string,
+  hoopIndex: number,
+): { start: number; end: number } | null {
+  const drum = model.drumById.get(drumId);
+  if (!drum) return null;
+  if (hoopIndex < 0 || hoopIndex >= drum.hoopCount) return null;
+  const start = drum.pixelStart + hoopIndex * drum.pixelsPerHoop;
+  return { start, end: start + drum.pixelsPerHoop };
+}
+
 function computeBounds(pixels: Pixel[]): Bounds {
   if (pixels.length === 0) {
     const zero = { x: 0, y: 0, z: 0 };

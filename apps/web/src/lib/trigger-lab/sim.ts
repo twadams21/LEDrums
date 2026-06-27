@@ -61,7 +61,7 @@ export type SwitchOn = voice.SwitchOn;
 /** Sub-mode of a `value` switch: a single pass/block gate, or N value bands.
     CANONICAL in core `voice/types.ts` — re-exported here as a type alias (S4.4). */
 export type ValueMode = voice.ValueMode;
-export type Scope = 'drum' | 'kit';
+export type Scope = 'drum' | 'kit' | 'hoop';
 export type BlockKind = Block['kind'];
 
 /** The abstract visual an effect demonstrates in the lab's pixel renderer. */
@@ -195,6 +195,9 @@ export interface Voice {
   busId: string;
   mode: PlayMode;
   scope: Scope;
+  /** Raw targetId from the play node — resolved to a pixel range by the renderer.
+   *  Encoding: drum = drumId; hoop = `"<drumId>#<hoopIndex>"`. Absent = auto. */
+  targetId?: string;
   sourceDrumId: string | null;
   /** hit velocity 0..1 at spawn — drives a hosted generator's synthetic trigger. */
   velocity: number;
@@ -241,6 +244,9 @@ type PlayAction = {
   effectId: string;
   mode: PlayMode;
   scope: Scope;
+  /** Per-play-node scope target (see GraphNode.targetId). Carried verbatim from node
+      to voice so the renderer can resolve the pixel range. */
+  targetId?: string;
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
@@ -408,6 +414,7 @@ export class Sim {
             effectId: node.effectId,
             mode: node.mode,
             scope: node.scope,
+            targetId: node.targetId,
             busId: node.busId,
             params: this.resolveNodeParams(node),
             env: node.env,
@@ -596,6 +603,7 @@ export class Sim {
       busId: bus.id,
       mode: a.mode,
       scope: a.scope,
+      targetId: a.targetId,
       sourceDrumId,
       velocity,
       generatorId: effect.generatorId ?? null,

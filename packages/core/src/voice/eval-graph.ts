@@ -26,6 +26,9 @@ export interface PlayAction {
   effectId: string;
   mode: PlayMode;
   scope: Scope;
+  /** Per-play-node scope target (see {@link GraphNode.targetId}). Carried verbatim
+      from the graph node to the voice pool so the compositor can resolve the pixel range. */
+  targetId?: string;
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
@@ -118,6 +121,7 @@ function evalNode(
           effectId: node.effectId,
           mode: node.mode,
           scope: node.scope,
+          targetId: node.targetId,
           busId: node.busId,
           params: resolveNodeParams(state, node),
           env: node.env,

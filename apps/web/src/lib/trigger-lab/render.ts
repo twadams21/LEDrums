@@ -107,15 +107,36 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
     const level = sim.voiceLevel(v);
     if (level <= 0.003) continue;
 
-    // Pixel range: drum-scoped voices touch only their drum's range.
+    // Pixel range: scoped voices touch only their drum's / hoop's range.
     let start = 0;
     let end = model.count;
-    if (v.scope === 'drum' && v.sourceDrumId != null) {
-      const d = model.drums.find((dd) => dd.id === v.sourceDrumId);
-      if (!d) continue;
+    if (v.scope === 'drum') {
+      // Resolve target drum: from targetId if set, else sourceDrumId (auto).
+      const drumId = v.targetId ?? v.sourceDrumId;
+      if (drumId == null) continue;
+      const d = lab.pm.drumById.get(drumId);
+      if (!d) continue; // dangling targetId → render nothing
       start = d.pixelStart;
       end = d.pixelStart + d.pixelCount;
+    } else if (v.scope === 'hoop') {
+      // Parse targetId as "<drumId>#<hoopIndex>"; absent or no '#' → source drum hoop 0.
+      let drumId: string | null = null;
+      let hoopIndex = 0;
+      if (v.targetId && v.targetId.includes('#')) {
+        const sep = v.targetId.indexOf('#');
+        drumId = v.targetId.slice(0, sep);
+        hoopIndex = parseInt(v.targetId.slice(sep + 1), 10);
+        if (!Number.isFinite(hoopIndex) || hoopIndex < 0) hoopIndex = 0;
+      } else {
+        drumId = v.sourceDrumId;
+      }
+      if (drumId == null) continue;
+      const d = lab.pm.drumById.get(drumId);
+      if (!d || hoopIndex < 0 || hoopIndex >= d.hoopCount) continue; // dangling → render nothing
+      start = d.pixelStart + hoopIndex * d.pixelsPerHoop;
+      end = start + d.pixelsPerHoop;
     }
+    // scope === 'kit': start=0, end=model.count (whole kit, targetId ignored)
 
     // Generator-backed voice: delegate to the SAME core EffectGenerator the server
     // renders, so the offline preview matches real output (no silent divergence).

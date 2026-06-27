@@ -1,11 +1,12 @@
 <script lang="ts">
   /* Play-node editor — the effect header (thumb + name + swap), preset/link bar, play-mode
-     + layer segments, and the per-param controls (slider / toggle + optional envelope
-     button). The shared node header (kind selector + remove) lives in the parent Inspector. */
+     + layer segments, scope selector + target dropdown, and the per-param controls (slider /
+     toggle + optional envelope button). The shared node header (kind selector + remove) lives
+     in the parent Inspector. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
-  import type { GraphNode } from '../../../trigger-lab/sim';
+  import type { GraphNode, Scope } from '../../../trigger-lab/sim';
   import { busIcon } from '../../views/trigger-node-meta';
-  import { MODE_OPTS, LINK_OPTS, num, fmt } from '../../views/node-options';
+  import { MODE_OPTS, LINK_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -22,6 +23,23 @@
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
+
+  /** Options for the scope-target dropdown, derived from the current scope. */
+  const targetOptions = $derived.by(() => {
+    const infos = store.kitDrumInfos;
+    if (node.scope === 'drum') {
+      return infos.map((d) => ({ value: d.id, label: d.label }));
+    }
+    if (node.scope === 'hoop') {
+      return infos.flatMap((d) =>
+        Array.from({ length: d.hoopCount }, (_, i) => ({
+          value: `${d.id}#${i}`,
+          label: `${d.label} · Hoop ${i}`,
+        })),
+      );
+    }
+    return [];
+  });
 </script>
 
 {#if eff}
@@ -29,7 +47,7 @@
     <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} w={72} h={40} /></div>
     <div class="titles">
       <h3>{eff.name}</h3>
-      <span class="sub">{eff.pattern} · {eff.scope}</span>
+      <span class="sub">{eff.pattern} · {node.scope}</span>
     </div>
     <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
   </header>
@@ -53,6 +71,29 @@
     <SegmentedControl value={node.mode} options={MODE_OPTS} onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop' | 'hold')} ariaLabel="Play mode" />
     <SegmentedControl value={store.busOf(node)} options={LAYER_OPTS} onChange={(v) => store.setBus(node, v)} ariaLabel="Layer" />
   </div>
+
+  <div class="scoperow">
+    <span class="k">Scope</span>
+    <SegmentedControl
+      value={node.scope}
+      options={SCOPE_OPTS}
+      onChange={(v) => store.setScope(node, v as Scope)}
+      ariaLabel="Render scope"
+    />
+  </div>
+
+  {#if node.scope !== 'kit'}
+    <div class="targetrow">
+      <span class="k">Target</span>
+      <Select
+        value={node.targetId ?? ''}
+        options={targetOptions}
+        onChange={(v) => store.setTargetId(node, v || undefined)}
+        placeholder="Auto (firing drum)"
+        ariaLabel="Scope target"
+      />
+    </div>
+  {/if}
 
   <div class="params">
     {#each eff.params as spec (spec.key)}
@@ -145,6 +186,7 @@
     text-transform: uppercase;
     letter-spacing: var(--tracking-label);
     font-size: var(--text-2xs);
+    white-space: nowrap;
   }
   .seg2 {
     display: flex;
@@ -163,6 +205,24 @@
     flex: 1;
     text-align: center;
     justify-content: center;
+  }
+  .scoperow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .targetrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .targetrow :global(.select-trigger) {
+    flex: 1;
+    min-width: 0;
   }
   .params {
     padding: var(--space-3);
