@@ -1,4 +1,4 @@
-/* Server-authoritative show-library controller (#21 / S7) — the cold-load-adopt + write-through
+/* Server-authoritative show-library controller (#21) — the cold-load-adopt + write-through
    path, lifted out of the store as a small stateful controller (no runes/DOM, like
    SaveStatusController). The server owns the authored show library (as it owns the routing
    Project): it persists the library and broadcasts it on `state`. The web ADOPTS it once, on the

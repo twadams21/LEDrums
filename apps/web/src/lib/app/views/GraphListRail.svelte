@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* The Trigger Graph view's left rail — the ACTIVE section's flat graph list (U4):
+  /* The Trigger Graph view's left rail — the ACTIVE section's flat graph list:
      section header + one selectable row per graph + a "New graph" affordance. Extracted
      from TriggerGraphView (#9 companion) so the view stays focused on the canvas. Each
      graph row is the shared `ListItem` primitive (matching the Song / Sections / Objects

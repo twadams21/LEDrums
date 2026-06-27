@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* Sections / Setlist — the real model (U4): each section is a FLAT ORDERED LIST of reusable
+  /* Sections / Setlist — the real model: each section is a FLAT ORDERED LIST of reusable
      GRAPHS. Columns = the active song's sections; each column (SectionColumn) is that section's
      ordered graph list. A row references a trigger graph by key, so the same graph can appear in
      many sections (reuse). Clicking a section header makes it the active section; clicking a graph

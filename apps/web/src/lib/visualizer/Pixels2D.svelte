@@ -3,6 +3,7 @@
      composited frame). Diagnostic counterpart to the 3D stage. Per-layer
      breakdown arrives when the engine streams per-layer frames (slice 4). */
   import type { SerializedModel } from '../ws/protocol-types';
+  import { DARK_PIXEL_RGB8 } from './dark-pixel';
 
   interface Props {
     model: SerializedModel | null;
@@ -69,9 +70,7 @@
       const cw = drum.pixelCount > 0 ? availW / drum.pixelCount : availW;
       for (let i = 0; i < drum.pixelCount; i++) {
         const pi = (drum.pixelStart + i) * 3;
-        let r = 18;
-        let g = 22;
-        let b = 30;
+        let [r, g, b] = DARK_PIXEL_RGB8;
         if (f && pi + 2 < f.length) {
           r = f[pi]!;
           g = f[pi + 1]!;

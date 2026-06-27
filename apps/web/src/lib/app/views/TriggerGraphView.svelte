@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* Trigger Graph view — the ACTIVE SECTION's flat graph list rail (U4; replaces the old
+  /* Trigger Graph view — the ACTIVE SECTION's flat graph list rail (replaces the old
      drum-grouped Play Surface) beside an @xyflow/svelte canvas (the same engine + look as
      the Patch graph). Click a graph in the rail to activate its section, open it on the
      canvas, and highlight it. The store stays the source of truth and
@@ -44,7 +44,7 @@
   const hover = new GraphHover();
 
   // ---- active section's graph list (replaces the old drum-grouped Play Surface) ----
-  // The rail is the ACTIVE section's flat graph list (U4): click a graph → it activates its
+  // The rail is the ACTIVE section's flat graph list: click a graph → it activates its
   // section, opens on the canvas, and highlights here. Selecting + opening is one store call.
   const activeSection = $derived(store.activeSection);
 

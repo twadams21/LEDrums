@@ -693,7 +693,7 @@ export class TriggerLab {
     }
   }
 
-  // --- server-authoritative show library (S7 cold-load adopt + write-through) -----------
+  // --- server-authoritative show library (cold-load adopt + write-through) -----------
   // The server owns the authored show library (like the routing Project): it persists the
   // library and broadcasts it on the `state` message. The web ADOPTS it once, on the first
   // state of a cold load (server wins); thereafter the web is the source and pushes every

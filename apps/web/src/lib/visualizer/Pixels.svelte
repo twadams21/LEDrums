@@ -3,6 +3,7 @@
   import { untrack } from 'svelte';
   import * as THREE from 'three';
   import type { SerializedModel } from '../ws/protocol-types';
+  import { DARK_PIXEL_RGB } from './dark-pixel';
 
   interface Props {
     model: SerializedModel;
@@ -46,10 +47,9 @@
     6, 7, 11, 6, 11, 10, 4, 5, 9, 4, 9, 8, 5, 7, 11, 5, 11, 9, 4, 6, 10, 4, 10, 8,
   ];
 
-  // Unlit segments read as a dark frosted band, not black voids.
-  const DARK_R = 0.05;
-  const DARK_G = 0.05;
-  const DARK_B = 0.07;
+  // Unlit segments read as a dark frosted band, not black voids. Shared with the
+  // 2D strip via ./dark-pixel so the two views can't drift apart.
+  const [DARK_R, DARK_G, DARK_B] = DARK_PIXEL_RGB;
 
   // Geometry + material live for the component's lifetime; the cold build swaps
   // the geometry's attributes in place, the hot path only rewrites colours.

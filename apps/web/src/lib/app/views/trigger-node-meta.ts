@@ -1,8 +1,8 @@
 /* Shared visual metadata for the Trigger Graph's node kinds — the icon, type tint,
-   label and one-line summary each node card shows. Extracted from the bespoke
-   NodeCanvas so the xyflow TriggerNode, the add palette and (where useful) the
-   Inspector all read ONE source of truth for "what a Random node looks like".
-   Lucide imports keep this out of `packages/core`; it stays UI-only. */
+   label and one-line summary each node card shows. The xyflow TriggerNode, the add
+   palette and (where useful) the Inspector all read ONE source of truth here for
+   "what a Random node looks like". Lucide imports keep this out of `packages/core`;
+   it stays UI-only. */
 import type { Component } from 'svelte';
 import Zap from '@lucide/svelte/icons/zap';
 import Sparkles from '@lucide/svelte/icons/sparkles';
