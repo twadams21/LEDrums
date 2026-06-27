@@ -296,7 +296,7 @@ export class VoiceEngineHost {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.output.blackout(this.dmxMap, this.project.output.rgbOrder);
+    this.output.blackout(this.dmxMap);
     this.output.close();
   }
 

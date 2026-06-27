@@ -27,7 +27,6 @@
   --text-muted: oklch(0.770 0.009 256); /* secondary — still AA for body text  */
   --text-faint: oklch(0.668 0.011 256); /* meta / labels (AA for ≥large)       */
   --text-disabled: oklch(0.560 0.009 256);
-  --ink-on-accent: oklch(0.145 0.01 256); /* default; per-accent overrides     */
 
   /* ---- Signature accent (interactive: selection, focus, primary action) ---
      Phosphor lime — scope/console heritage, most alive on graphite, and the
@@ -76,7 +75,6 @@
   --text-2xl: 1.4375rem; /* 23px                                              */
   --text-3xl: 1.75rem; /* 28px — view headers (ceiling for product)            */
 
-  --leading-tight: 1.15;
   --leading-snug: 1.35;
   --leading-normal: 1.5;
   --tracking-label: 0.04em; /* small caps labels                              */
@@ -121,8 +119,6 @@
 
   /* ---- Motion ------------------------------------------------------------- */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-1: 90ms; /* state flips (hover/active)                                 */
   --dur-2: 150ms; /* most transitions                                          */
   --dur-3: 220ms; /* panel / mode reveals                                      */
