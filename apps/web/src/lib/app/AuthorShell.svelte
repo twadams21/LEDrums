@@ -18,6 +18,7 @@
   import TriggerGraphView from './views/TriggerGraphView.svelte';
   import PatchGraphView from './views/PatchGraphView.svelte';
   import SectionsView from './views/SectionsView.svelte';
+  import ObjectsView from './views/ObjectsView.svelte';
   import PerformView from './views/PerformView.svelte';
   import Eyebrow from '../ui/Eyebrow.svelte';
   import Tabs from '../ui/Tabs.svelte';
@@ -66,6 +67,8 @@
           <TriggerGraphView {store} {shell} />
         {:else if shell.view === 'patch'}
           <PatchGraphView {store} {shell} />
+        {:else if shell.view === 'objects'}
+          <ObjectsView {store} {shell} />
         {:else}
           <SectionsView {store} {shell} />
         {/if}

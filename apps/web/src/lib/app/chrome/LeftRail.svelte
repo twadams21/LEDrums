@@ -12,15 +12,17 @@
   import Cable from '@lucide/svelte/icons/cable';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Radio from '@lucide/svelte/icons/radio';
+  import Boxes from '@lucide/svelte/icons/boxes';
   import Navigation from '@lucide/svelte/icons/navigation';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const NAV: Array<{ id: View; label: string; icon: Component; sub?: string }> = [
+    { id: 'perform', label: 'Perform', icon: Radio },
+    { id: 'objects', label: 'Objects', icon: Boxes },
+    { id: 'sections', label: 'Sections', icon: LayoutGrid },
     { id: 'trigger', label: 'Trigger Graph', icon: Workflow },
     { id: 'patch', label: 'Patch Graph', icon: Cable, sub: 'inputs · devices' },
-    { id: 'sections', label: 'Sections', icon: LayoutGrid },
-    { id: 'perform', label: 'Perform', icon: Radio },
   ];
 </script>
 
