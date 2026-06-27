@@ -1,6 +1,6 @@
 <script lang="ts">
-  /* Compact engine telemetry for the lab header — ported from the main shell's
-     StatusCluster onto the lab's design tokens. Shows the engine link state
+  /* Compact engine telemetry for the lab header — modeled on the main shell's
+     engine-status readout, on the lab's design tokens. Shows the engine link state
      (dot + label), pixel count, render rate, and round-trip latency. The link
      fields are store-backed but inert today (local sim); the real WS values get
      wired in a later slice — see store.svelte.ts (link / latencyMs). */

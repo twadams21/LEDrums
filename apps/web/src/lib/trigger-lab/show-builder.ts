@@ -57,7 +57,7 @@ export function buildShow(source: ShowSource): voice.Show {
       sections: song.sections.map((sec) => ({
         id: sec.id,
         name: sec.name,
-        // U4: a section is a FLAT ordered graph list, but the engine still resolves a pad
+        // A section is a FLAT ordered graph list, but the engine still resolves a pad
         // hit by a padKey-keyed slot grid — so bridge graphs → slots here (the explicit map
         // this adapter's header promises). See sectionSlotsFromGraphs.
         slots: sectionSlotsFromGraphs(sec.graphs, source.graphs),
@@ -67,11 +67,11 @@ export function buildShow(source: ShowSource): voice.Show {
 }
 
 /**
- * Reconstruct the engine's per-pad slot grid (`SlotRefs`) from a section's flat graph list
- * (U4): group each graph under its `drum` source's padKey `"drumId:zone"`, preserving list
+ * Reconstruct the engine's per-pad slot grid (`SlotRefs`) from a section's flat graph
+ * list: group each graph under its `drum` source's padKey `"drumId:zone"`, preserving list
  * order so layered same-source graphs keep their order. AUTHORED graphs with a `midi`/`osc`
  * source (or no source / an unknown key) are NOT pad-bound, so they're omitted — the server
- * fires those via direct trigger-source routing (U3), not the section slot path.
+ * fires those via direct trigger-source routing, not the section slot path.
  */
 function sectionSlotsFromGraphs(
   graphs: readonly string[],

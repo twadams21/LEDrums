@@ -97,8 +97,10 @@
   --radius-3: 8px;
   --radius-4: 12px;
   --radius-pill: 999px;
-  /* Cards/panels are square (Ableton/Resolume feel). Tokens above stay for
-     small controls; flip this to a rounded value to soften the whole shell. */
+  /* The single card-corner knob — intentionally retained at 0px (square cards/panels,
+     Ableton/Resolume feel). Kept as the one place to soften the whole shell later: flip
+     this to a non-zero radius and every card/panel rounds at once. (Radii above are for
+     small controls and are unaffected.) */
   --radius-card: 0px;
 
   /* ---- Control sizing ----------------------------------------------------- */
