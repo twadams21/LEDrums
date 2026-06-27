@@ -7,7 +7,6 @@
   import { TriggerLab } from './lib/trigger-lab/store.svelte';
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
-  import type { Pad } from './lib/trigger-lab/fixtures';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
 
@@ -19,17 +18,14 @@
     return () => store.stop();
   });
 
-  // number keys 1–9 fire the corresponding pad (skip while typing in a control)
-  const padKey = (p: Pad) => `${p.drumId}:${p.zone}`;
+  // Number keys play the active section's graph list: 1–9 → graphs 1–9, 0 → graph 10.
+  // Extra keys (beyond the section's graph count) do nothing. Skip while typing in a control.
   function onKey(e: KeyboardEvent): void {
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
-    const n = Number(e.key);
-    if (n >= 1 && n <= store.pads.length) {
-      const pad = store.pads[n - 1]!;
-      store.selectedPadKey = padKey(pad);
-      store.hit(pad);
-    }
+    if (!/^[0-9]$/.test(e.key)) return;
+    const index = e.key === '0' ? 9 : Number(e.key) - 1;
+    store.fireSectionGraph(index);
   }
 </script>
 

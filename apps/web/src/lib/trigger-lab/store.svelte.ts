@@ -796,6 +796,35 @@ export class TriggerLab {
     }
   }
 
+  /** Fire the graph at `index` in the ACTIVE section's ordered graph list directly — the
+      computer-keyboard performance path (keys 1–9 → graphs 1–9, 0 → graph 10). Unlike
+      {@link hit} this does NOT filter by trigger-source match: it plays exactly the n-th graph
+      the active section lists, and is a no-op when the section has fewer graphs. */
+  fireSectionGraph(index: number): void {
+    const key = this.activeSection?.graphs[index];
+    const graph = key ? this.graphs[key] : undefined;
+    if (!key || !graph) return;
+    this.selectedPadKey = key; // show the graph that fired
+    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
+    const src = triggerSourceOf(graph);
+    const drumSrc = src?.kind === 'drum' ? src : null;
+    const ctx = {
+      velocity: this.velocity,
+      sectionIndex: idx < 0 ? 0 : idx,
+      sectionCount: this.sections.length,
+      beatPhase: this.beatPhase,
+      sourceDrumId: drumSrc?.drumId ?? this.pads[0]?.drumId ?? '',
+    };
+    this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    this.renderFrame();
+    this.snapshot();
+    // forward to the server so the real output fires too, when the graph is drum-sourced
+    // (MIDI/OSC-sourced graphs need their actual input upstream — fired locally only here).
+    if (this.link === 'open' && drumSrc) {
+      this.client.send({ t: 'key', drumId: drumSrc.drumId, zone: String(drumSrc.zone), velocity: this.velocity });
+    }
+  }
+
   togglePlay(): void {
     this.playing = !this.playing;
   }
