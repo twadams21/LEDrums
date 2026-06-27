@@ -11,7 +11,7 @@
   import type { Connection, EdgeTypes, NodeTypes } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { NODE_KINDS, NODE_W, type BlockKind } from '../../trigger-lab/sim';
+  import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
@@ -74,7 +74,7 @@
     title: `Add ${kindLabel[kind]} node`,
   }));
   /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
-  function addNodeAt(kind: BlockKind, cx: number, cy: number): void {
+  function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
     store.addNode(kind, cx - NODE_W / 2, cy - 40);
   }
 

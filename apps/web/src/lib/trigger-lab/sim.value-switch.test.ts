@@ -12,7 +12,7 @@ function mk(): Sim {
 }
 
 function ctxV(velocity: number): TriggerCtx {
-  return { velocity, sectionIndex: 0, sectionCount: 3, beatPhase: 0, sourceDrumId: 'd' };
+  return { velocity, sectionIndex: 0, sectionCount: 3, beatPhase: 0, sourceDrumId: 'd', bpm: 120 };
 }
 
 /** trigger → switch(value) → children, then return effect ids spawned by a hit. */

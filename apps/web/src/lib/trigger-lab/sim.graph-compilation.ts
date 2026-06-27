@@ -47,8 +47,10 @@ export type GraphNode = voice.GraphNode;
 export type GraphEdge = voice.GraphEdge;
 export type TriggerGraph = voice.TriggerGraph;
 
-/** Block kinds a user can add as graph nodes (the trigger input is implicit). */
-export const NODE_KINDS: BlockKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle'];
+/** Block kinds a user can add as graph nodes (the trigger input is implicit). `delay`
+    is a `NodeKind` but not a block type in the Block union, so the element type is
+    widened to `Exclude<NodeKind, 'trigger'>`. */
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
 
 /** 'play' is a sink (no children); 'trigger' is a source (no parent). */
 export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'play';
@@ -84,7 +86,7 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     p: 0.5,
     // delay (only meaningful when kind === 'delay'; defaults mirror the core engine defaults)
     delayMode: 'time',
-    ms: 0,
+    ms: 250,
     division: '1/8',
     ...over,
   };

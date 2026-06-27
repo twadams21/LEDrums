@@ -22,6 +22,7 @@
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
+  import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import BusInspector from './inspectors/BusInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
@@ -80,6 +81,8 @@
     </header>
     {#if node.kind === 'play'}
       <PlayNodeInspector {store} {node} />
+    {:else if node.kind === 'delay'}
+      <DelayNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}

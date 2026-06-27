@@ -14,7 +14,7 @@ function freshSim(): Sim {
 }
 
 function ctx(drumId = 'kick', velocity = 1): TriggerCtx {
-  return { velocity, sectionIndex: 0, sectionCount: 0, beatPhase: 0, sourceDrumId: drumId };
+  return { velocity, sectionIndex: 0, sectionCount: 0, beatPhase: 0, sourceDrumId: drumId, bpm: 120 };
 }
 
 /** Fire a generator effect through the sim + offline renderer; return the RGB buffer. */

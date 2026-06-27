@@ -80,6 +80,8 @@ export function kindSummary(node: GraphNode): string {
       return `${Math.round(node.p * 100)}%`;
     case 'toggle':
       return 'on · off';
+    case 'delay':
+      return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
     default:
       return '';
   }

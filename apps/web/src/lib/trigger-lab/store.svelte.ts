@@ -394,11 +394,14 @@ export class TriggerLab {
 
   /** Load a show's authored content into the live runes: reset to the blank seed, apply the
       show's (partial-tolerant, detached) authored over it, then re-run the graph normalizers.
-      A FULL swap — no field of the previously-active show bleeds through. */
+      A FULL swap — no field of the previously-active show bleeds through. Clears the sim's
+      pending-fire queue so stale delay fires from the outgoing show cannot materialise
+      (mirrors core `engine.ts` `setShow()` clearing `pendingFires`). */
   private applyShow(show: Show): void {
     this.resetAuthoredToSeed();
     this.applyAuthored($state.snapshot(show.authored));
     this.normalizeGraphs();
+    this.sim.clearPendingFires();
   }
 
   /** Write the live authored runes back into the active show's library slot, so its edits are
@@ -782,6 +785,7 @@ export class TriggerLab {
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
       sourceDrumId: pad.drumId,
+      bpm: this.bpm,
     };
     for (const { graph, label } of toFire) {
       this.sim.triggerGraph(label, graph, ctx);
@@ -814,6 +818,7 @@ export class TriggerLab {
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
       sourceDrumId: drumSrc?.drumId ?? this.pads[0]?.drumId ?? '',
+      bpm: this.bpm,
     };
     this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
     this.renderFrame();
@@ -1305,6 +1310,29 @@ export class TriggerLab {
     if (node.kind !== 'switch' || node.on !== 'value') return;
     node.invert = invert;
   }
+
+  // --- delay node mutators -------------------------------------------------
+
+  /** Switch a delay node between absolute-time (`'time'`) and musical-division
+      (`'beats'`) modes. Guards `node.kind === 'delay'`. */
+  setDelayMode(node: GraphNode, mode: 'time' | 'beats'): void {
+    if (node.kind !== 'delay') return;
+    node.delayMode = mode;
+  }
+
+  /** Set the absolute delay time in milliseconds. Guards `node.kind === 'delay'`. */
+  setDelayMs(node: GraphNode, ms: number): void {
+    if (node.kind !== 'delay') return;
+    node.ms = Math.max(0, ms);
+  }
+
+  /** Set the musical division string (e.g. `'1/8'`, `'dotted-1/4'`). Guards
+      `node.kind === 'delay'`. */
+  setDivision(node: GraphNode, division: string): void {
+    if (node.kind !== 'delay') return;
+    node.division = division;
+  }
+
   /** Append a band by splitting the final "rest" band (a new cutoff between the last
       cutoff and 1). Appending never disturbs existing band ports. */
   addBand(node: GraphNode): void {

@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import type { EffectCategory, voice } from '@ledrums/core';
+import { voice, type EffectCategory } from '@ledrums/core';
 import { cloneEnvelope, type EnvMap, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
@@ -263,6 +263,10 @@ export interface TriggerCtx {
   sectionCount: number;
   beatPhase: number;
   sourceDrumId: string;
+  /** Transport BPM at trigger time — snapshotted by delay nodes to resolve musical
+      divisions into milliseconds at enqueue time; later bpm changes do not alter
+      already-enqueued fires. Mirrors core `eval-graph.ts` `TriggerCtx.bpm`. */
+  bpm: number;
 }
 
 let voiceSeq = 0;
@@ -294,6 +298,21 @@ export class Sim {
   private seqIndex = new Map<string, number>();
   private lastPick = new Map<string, number>();
   private latched = new Map<string, string | null>();
+
+  /** Pending-fire queue for delay nodes — mirrors core `engine.ts` `pendingFires`.
+      Each entry carries an absolute `fireAtMs` (sim time at enqueue + resolved delayMs)
+      and an `enqueueOrder` for stable secondary sort. Drained every `tick()` after
+      advancing time. Cleared on `stopAll()` / `clearPendingFires()`. */
+  private pendingFires: Array<{
+    fireAtMs: number;
+    enqueueOrder: number;
+    childIds: string[];
+    graph: TriggerGraph;
+    ctx: TriggerCtx;
+    viaPrefix: string;
+    seen: Set<string>;
+  }> = [];
+  private pendingFireCounter = 0;
 
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
@@ -466,11 +485,24 @@ export class Sim {
         if (firstPlay) firstPlay.latchKey = node.id;
         return actions;
       }
-      case 'delay':
-        // Web mirror deferred to the next slice — sim fires delay children immediately
-        // as a no-op passthrough so the local preview stays functional. The core engine
-        // handles real deferred firing via its pending-fire queue.
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay (sim)'), seen2));
+      case 'delay': {
+        const delayMs = voice.computeDelayMs(node.delayMode, node.ms, node.division, ctx.bpm);
+        if (delayMs <= 0) {
+          // Degenerate: zero/negative delay fires children immediately (mirrors core).
+          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay 0ms'), seen2));
+        }
+        const delayLabel = node.delayMode === 'time' ? `Delay ${node.ms}ms` : `Delay ${node.division}`;
+        this.pendingFires.push({
+          fireAtMs: this.timeMs + delayMs,
+          enqueueOrder: this.pendingFireCounter++,
+          childIds: kids.map((k) => k.id),
+          graph,
+          ctx,
+          viaPrefix: label(delayLabel),
+          seen: seen2,
+        });
+        return [];
+      }
     }
   }
 
@@ -643,6 +675,45 @@ export class Sim {
   }
   stopAll(): void {
     for (const v of this.voices) this.release(v);
+    this.clearPendingFires();
+  }
+
+  /** Discard all enqueued deferred fires — call when authored content changes so
+      stale pending fires from the previous show/graph cannot materialise. Mirrors
+      core `engine.ts` `setShow()` clearing `this.pendingFires = []`. */
+  clearPendingFires(): void {
+    this.pendingFires = [];
+    this.pendingFireCounter = 0;
+  }
+
+  // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------
+
+  /** Drain pending delay fires whose `fireAtMs ≤ this.timeMs`, in stable
+      `(fireAtMs, enqueueOrder)` order. Re-enters `evalNode` on each child so nested
+      delays re-enqueue and the cycle guard (seen-set) is preserved. */
+  private drainPendingFires(): void {
+    if (this.pendingFires.length === 0) return;
+    const due = this.pendingFires.filter((f) => f.fireAtMs <= this.timeMs);
+    if (due.length === 0) return;
+    this.pendingFires = this.pendingFires.filter((f) => f.fireAtMs > this.timeMs);
+    due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
+    for (const f of due) {
+      const { graph, childIds, ctx, viaPrefix, seen } = f;
+      // Re-lookup child nodes by id so y-sort still applies (children may have moved).
+      const childNodes = childIds
+        .map((id) => graph.nodes.find((n) => n.id === id))
+        .filter((n): n is GraphNode => !!n)
+        .sort((a, b) => a.y - b.y);
+      const actions = childNodes.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen));
+      for (const a of actions) {
+        if (a.kind === 'stop') {
+          const v = this.voices.find((x) => x.id === a.voiceId);
+          if (v) this.release(v);
+        } else if (a.kind === 'play') {
+          this.spawn(a, ctx.sourceDrumId, ctx.velocity);
+        }
+      }
+    }
   }
 
   // --- tick ----------------------------------------------------------------
@@ -651,6 +722,8 @@ export class Sim {
     this.timeMs += dtMs;
     this.lastDt = dtMs;
     this.beat += (dtMs / 60000) * this.bpm;
+
+    this.drainPendingFires();
 
     for (const v of this.voices) {
       const age = this.timeMs - v.bornAtMs;

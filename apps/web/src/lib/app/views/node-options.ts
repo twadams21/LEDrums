@@ -23,6 +23,7 @@ import {
 } from '../../trigger-lab/sim';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
 import type { PixelSpan } from '../patch-routing';
+import { voice } from '@ledrums/core';
 
 // --- Output (Patch controller) options ------------------------------------------
 export const PROTOCOL_OPTS = [
@@ -79,6 +80,25 @@ export const MIDI_OPTS = [
   { value: 'note', label: 'Note' },
   { value: 'cc', label: 'CC' },
 ];
+
+// --- Delay node options -----------------------------------------------------------
+export const DELAY_MODE_OPTS: Array<{ value: 'time' | 'beats'; label: string }> = [
+  { value: 'time', label: 'Time' },
+  { value: 'beats', label: 'Division' },
+];
+
+/** Friendly label for a musical division string (e.g. `'dotted-1/8'` → `'1/8 dotted'`). */
+function divisionLabel(d: string): string {
+  if (d.startsWith('dotted-')) return d.replace('dotted-', '') + ' dotted';
+  if (d.startsWith('triplet-')) return d.replace('triplet-', '') + ' triplet';
+  return d;
+}
+
+/** One option per `DELAY_DIVISIONS` value — value = the canonical division string,
+    label = human-readable (e.g. `'1/8 dotted'`, `'1/4 triplet'`). */
+export const DIVISION_OPTS: Array<{ value: string; label: string }> = voice.DELAY_DIVISIONS.map(
+  (d) => ({ value: d, label: divisionLabel(d) }),
+);
 
 // --- Value formatters ------------------------------------------------------------
 /** A 0–1 ratio as a whole-percent label (e.g. 0.5 → "50%"). */

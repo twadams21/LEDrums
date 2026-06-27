@@ -48,7 +48,7 @@ function mk(): Sim {
   return new Sim(BUSES.map((b) => ({ ...b })), EFFECTS.map((e) => ({ ...e })), PRESETS.map((p) => ({ ...p })));
 }
 function ctxV(velocity: number): TriggerCtx {
-  return { velocity, sectionIndex: 0, sectionCount: 3, beatPhase: 0, sourceDrumId: 'd' };
+  return { velocity, sectionIndex: 0, sectionCount: 3, beatPhase: 0, sourceDrumId: 'd', bpm: 120 };
 }
 /** The pre-fold `switchIndexN` velocity formula: child = min(N−1, floor(v·N)). */
 const oldVelocityChild = (n: number, v: number): number => Math.min(n - 1, Math.floor(v * n));
