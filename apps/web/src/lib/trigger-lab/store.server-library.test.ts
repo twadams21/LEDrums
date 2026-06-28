@@ -333,6 +333,116 @@ describe('editor ignores a showLibrary broadcast (its own echo) (S1)', () => {
   });
 });
 
+/* ── S2 takeover, roles & read-only ───────────────────────────────────────────────────────────
+   A viewer claims the editor role with takeover() (→ a `takeover` client message); presence then
+   re-derives `role`/`canEdit`. A viewer's authoring mutators are genuine no-ops, while the
+   indicator-driving state (`canEdit`/`canTakeover`/`editorLabel`) is correct per role. */
+
+describe('takeover sends the role-claim + role flips live on the next presence (S2)', () => {
+  it('takeover() emits a `takeover` message; a follow-up presence makes us the editor', () => {
+    withRaf(() => {
+      const h: Harness = { cb: null, sent: [] };
+      const store = new TriggerLab(harnessClient(h));
+      store.start();
+      fireOpen(h);
+      firePresence(h, /* youAreEditor */ false); // we start as a viewer
+      expect(store.role).toBe('viewer');
+      expect(store.canEdit).toBe(false);
+      expect(store.canTakeover).toBe(true);
+
+      h.sent.length = 0;
+      store.takeover();
+      expect(h.sent).toContainEqual({ t: 'takeover' });
+
+      // the server hands us the slot and re-broadcasts presence → role flips with no refresh
+      firePresence(h, /* youAreEditor */ true);
+      expect(store.role).toBe('editor');
+      expect(store.canEdit).toBe(true);
+      expect(store.canTakeover).toBe(false);
+      store.stop();
+    });
+  });
+});
+
+describe('indicator-driving state is correct per role (S2)', () => {
+  it('maps role → canEdit / canTakeover / editorLabel', () => {
+    const store = new TriggerLab(noopClient);
+    // standalone (no presence): edits freely, no takeover affordance, plain label
+    expect(store.canEdit).toBe(true);
+    expect(store.canTakeover).toBe(false);
+    expect(store.editorLabel).toBe('Editing');
+
+    store.presence = { editorId: 'c1', youAreEditor: true, clientCount: 2 }; // editor
+    expect(store.canEdit).toBe(true);
+    expect(store.canTakeover).toBe(false);
+    expect(store.editorLabel).toBe("You're editing");
+
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
+    expect(store.canEdit).toBe(false);
+    expect(store.canTakeover).toBe(true);
+    expect(store.editorLabel).toBe('Another client is editing');
+  });
+});
+
+describe("a viewer's authoring mutators are no-ops (S2)", () => {
+  it('blocks structural authoring (shows / songs / sections / graphs) while a viewer', () => {
+    const store = new TriggerLab(noopClient);
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
+    expect(store.isViewer).toBe(true);
+
+    const songCount = store.songs.length;
+    const showCount = store.shows.length;
+    const graphCount = Object.keys(store.graphs).length;
+    const firstSong = store.activeSong!;
+    const sectionCount = firstSong.sections.length;
+
+    store.createSong('Nope');
+    store.createGraph('Nope');
+    store.newShow('Nope');
+    store.addSongSection('Nope');
+    store.renameShow(store.activeShowId, 'Renamed');
+    store.renameSong(firstSong.id, 'Renamed');
+
+    expect(store.songs).toHaveLength(songCount);
+    expect(store.shows).toHaveLength(showCount);
+    expect(Object.keys(store.graphs)).toHaveLength(graphCount);
+    expect(store.activeSong!.sections).toHaveLength(sectionCount);
+    expect(store.activeShow!.name).not.toBe('Renamed');
+    expect(store.activeSong!.name).not.toBe('Renamed');
+  });
+
+  it('blocks authoritative project mutators (setOutput) while a viewer', () => {
+    withRaf(() => {
+      const h: Harness = { cb: null, sent: [] };
+      const store = new TriggerLab(harnessClient(h));
+      store.start();
+      fireOpen(h);
+      firePresence(h, /* youAreEditor */ false); // viewer
+      fireState(h, null); // adopt the authoritative Project
+      const before = store.project!.output.host;
+
+      h.sent.length = 0;
+      store.setOutput({ host: '10.9.9.9' });
+
+      expect(store.project!.output.host).toBe(before); // local optimistic write suppressed
+      expect(h.sent.some((m) => m.t === 'setOutput')).toBe(false); // nothing sent upstream
+      store.stop();
+    });
+  });
+
+  it('resumes authoring once the viewer takes over (presence flips to editor)', () => {
+    const store = new TriggerLab(noopClient);
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
+    const songCount = store.songs.length;
+    store.createSong('Nope');
+    expect(store.songs).toHaveLength(songCount); // blocked
+
+    store.presence = { editorId: 'c2', youAreEditor: true, clientCount: 2 }; // we took over
+    store.createSong('Now allowed');
+    expect(store.songs).toHaveLength(songCount + 1); // authoring restored
+  });
+});
+
 describe('legacy offline migration (unchanged by server persistence)', () => {
   it('migrates a legacy single-blob authored state to one Default Show on a fresh offline boot', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored({ bpm: 156 } as AuthoredState)));

@@ -242,6 +242,19 @@ export class TriggerLab {
   );
   /** Whether we live-follow the editor's broadcast instead of authoring (role === 'viewer'). */
   isViewer = $derived(this.role === 'viewer');
+  /** Whether this client may AUTHOR (S2): the editor + the standalone single-user can edit;
+      only a viewer is read-only. Authoring mutators no-op when false, and views bind their edit
+      affordances' `disabled` to `!canEdit` so a viewer's UI is genuinely read-only (not just
+      ignored). View-only interactions (selecting/panning/switching, playing pads) stay enabled. */
+  canEdit = $derived(!this.isViewer);
+  /** Whether the editor slot is held by ANOTHER client (multi-client, we're a viewer) — the
+      TopBar shows a Takeover affordance only then (standalone/editor don't need it). */
+  canTakeover = $derived(this.role === 'viewer');
+  /** Editing-status text for the TopBar indicator (S2): the editor sees "You're editing", a
+      viewer sees that another client holds the slot, standalone shows the plain editing state. */
+  editorLabel = $derived<string>(
+    this.role === 'viewer' ? 'Another client is editing' : this.role === 'editor' ? "You're editing" : 'Editing',
+  );
 
   sim: Sim;
   private raf = 0;
@@ -388,6 +401,14 @@ export class TriggerLab {
     this.client.close();
     this.engineSync.reset();
     this.stopAutosave();
+  }
+
+  /** Claim the single editor role (S2): ask the server to hand US the editor slot. The prior
+      editor drops to viewer; the server re-broadcasts `presence`, so `role`/`canEdit` flip on the
+      next message (no refresh). A no-op when offline (`send` drops while closed) or already the
+      editor — pressing it as the editor just re-confirms the slot. */
+  takeover(): void {
+    this.client.send({ t: 'takeover' });
   }
 
   /** Open WebMIDI (browser-only) and forward every parsed event to the server. Never
@@ -590,6 +611,7 @@ export class TriggerLab {
       "Untitled Show [N]". The previous show's edits are flushed to its slot first. Returns the
       new id. */
   newShow(name?: string): string {
+    if (this.isViewer) return this.activeShowId; // read-only viewer (S2): authoring no-op
     this.flushActiveToLibrary();
     const id = this.freshShowId();
     const label = name?.trim() || showsLib.nextShowName(this.showLibrary);
@@ -612,6 +634,7 @@ export class TriggerLab {
   /** Deliberately persist the active show NOW (flush runes → slot → storage). Autosave already
       covers this on a debounce; saveShow is the explicit, immediate write/confirmation. */
   saveShow(): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     this.flushActiveToLibrary();
     writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
   }
@@ -620,6 +643,7 @@ export class TriggerLab {
       source show keeps its content. Name defaults to the first unused "Untitled Show [N]".
       Returns the new id. */
   saveShowAs(name: string): string {
+    if (this.isViewer) return this.activeShowId; // read-only viewer (S2): authoring no-op
     this.flushActiveToLibrary();
     const id = this.freshShowId();
     const label = name.trim() || showsLib.nextShowName(this.showLibrary);
@@ -632,6 +656,7 @@ export class TriggerLab {
   /** Rename a show. No-op on an unknown id or a blank name (keeps the old name, mirrors
       {@link renameSong}). */
   renameShow(id: string, name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     this.showLibrary = showsLib.renameShowIn(this.showLibrary, id, name);
   }
 
@@ -639,6 +664,7 @@ export class TriggerLab {
       Show". When the ACTIVE show is deleted, re-points to its left neighbour (else the new
       first) and swaps that show's authored into the runes. No-op on an unknown id. */
   deleteShow(id: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const plan = showsLib.planDeleteShow(this.showLibrary, this.activeShowId, id);
     if (plan.kind === 'noop') return;
     if (plan.kind === 'reseed') {
@@ -658,6 +684,7 @@ export class TriggerLab {
   /** Close the active show: it's already saved in the library, so just switch to a fresh blank
       "Untitled Show" (a clean slate to start over). */
   closeShow(): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     this.newShow();
   }
 
@@ -973,24 +1000,28 @@ export class TriggerLab {
 
   /** Edit a drum's transform (origin/rotation/spin/start-angle/literal pixel count). */
   setDrumTransform(drumId: string, partial: routing.DrumTransformPartial): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) this.project = routing.applyDrumTransform(this.project, drumId, partial);
     this.client.send({ t: 'setKitTransform', drumId, ...partial });
   }
 
   /** Replace the physical-output topology (a Patch graph rewire → PixLite patch order). */
   setRouting(outputs: OutputConfig[]): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) this.project = routing.applyRouting(this.project, outputs);
     this.client.send({ t: 'setKitOutputs', outputs });
   }
 
   /** Replace the input map (zone-node MIDI note / OSC address routing). */
   setInputMap(inputMap: InputMap): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) this.project = routing.applyInputMap(this.project, inputMap);
     this.client.send({ t: 'setInputMap', inputMap });
   }
 
   /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */
   setOutput(partial: routing.OutputPartial): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) this.project = routing.applyOutput(this.project, partial);
     this.client.send({ t: 'setOutput', ...partial });
   }
@@ -1000,6 +1031,7 @@ export class TriggerLab {
       — the device topology ids aren't server state — so this persists via the authored
       autosave, never over WS. */
   setPatchLabel(nodeId: string, label: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     this.patchLabels = routing.setPatchLabel(this.patchLabels, nodeId, label);
   }
 
@@ -1021,6 +1053,7 @@ export class TriggerLab {
       active song, and return its id. Name defaults to "New song N" (first unused). Persists
       via the authored-state autosave (`songs` is part of the snapshot). */
   createSong(name?: string): string {
+    if (this.isViewer) return this.activeSongId; // read-only viewer (S2): authoring no-op
     const id = freshId('song', (k) => this.songs.some((s) => s.id === k)); // global uniqueness (survives reload)
     const label = name?.trim() || this.nextSongName();
     this.songs = [...this.songs, setlist.makeSong(id, label)];
@@ -1039,6 +1072,7 @@ export class TriggerLab {
   /** Rename a song. No-op if the id is unknown or the trimmed name is empty (a blank rename
       keeps the old name rather than clearing it). Persists via autosave. */
   renameSong(id: string, name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const trimmed = name.trim();
     if (!trimmed) return;
     this.songs = this.songs.map((s) => (s.id === id ? { ...s, name: trimmed } : s));
@@ -1049,6 +1083,7 @@ export class TriggerLab {
       stay shared, i.e. reuse) and make it active. Returns the new id, or null if `id` is
       unknown. */
   duplicateSong(id: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.songs.find((s) => s.id === id);
     if (!src) return null;
     const newId = freshId('song', (k) => this.songs.some((s) => s.id === k));
@@ -1062,6 +1097,7 @@ export class TriggerLab {
       neighbour (the next song, else the new last). Guards the LAST song: removing the only
       song is a no-op, so the app always has a song to show + edit. Persists via autosave. */
   removeSong(id: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.songs.length <= 1) return; // never delete the last song (activeSong would go null)
     const idx = this.songs.findIndex((s) => s.id === id);
     if (idx === -1) return;
@@ -1073,8 +1109,11 @@ export class TriggerLab {
     }
   }
 
-  /** Mutate the active song immutably via the pure setlist ops, then store it back. */
+  /** Mutate the active song immutably via the pure setlist ops, then store it back. The single
+      chokepoint for every section + graph-slot edit, so the viewer read-only guard here covers
+      addSection/renameSection/removeSection + add/remove/reorder graphs (S2). */
   private updateActiveSong(fn: (song: Song) => Song): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const id = this.activeSongId;
     this.songs = this.songs.map((s) => (s.id === id ? fn(s) : s));
   }
@@ -1091,6 +1130,7 @@ export class TriggerLab {
     this.updateActiveSong((song) => setlist.setGraphs(song, sectionId, graphs));
   }
   addSongSection(name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const id = nid('section');
     this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)));
     this.activeSectionId = id;
@@ -1107,6 +1147,7 @@ export class TriggerLab {
       first section, else `null` once none remain. No-op on an unknown id. Persists via the
       authored autosave. */
   removeSection(sectionId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const idx = (this.activeSong?.sections ?? []).findIndex((s) => s.id === sectionId);
     if (idx < 0) return; // not a section of the active song
     this.updateActiveSong((song) => setlist.removeSection(song, sectionId));
@@ -1131,6 +1172,7 @@ export class TriggerLab {
       independent — its graph list is a copy, though the graph keys still reference the same
       underlying graphs (reuse). Autosave persists the new section with the rest of `songs`. */
   pasteSection(): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const clip = this.sectionClipboard;
     if (!clip) return;
     const id = nid('section');
@@ -1150,6 +1192,7 @@ export class TriggerLab {
       select it for editing. Returns its key. The label defaults to "New graph N"
       (first unused N). Persisted via the authored-state autosave. */
   createGraph(name?: string): string {
+    if (this.isViewer) return this.selectedPadKey ?? ''; // read-only viewer (S2): authoring no-op
     const key = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
     const label = name?.trim() || graphsLib.nextGraphName(this.graphNames);
     this.graphs = { ...this.graphs, [key]: graphsLib.buildEmptyGraph() };
@@ -1163,6 +1206,7 @@ export class TriggerLab {
       Inspector + Sections rename fields call. A blank name keeps the existing label (mirrors
       {@link renameSong}); an unknown key (not in `graphs`) is a no-op. Persists via autosave. */
   renameGraph(key: string, name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!(key in this.graphs)) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -1177,6 +1221,7 @@ export class TriggerLab {
       duplicated pad graph keeps firing the same drum until rebound. NOT added to any section —
       the user places it where they want (reuse is by reference). Persists via autosave. */
   duplicateGraph(key: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.graphs[key];
     if (!src) return null;
     const newKey = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
@@ -1194,6 +1239,7 @@ export class TriggerLab {
       deleted graph was the open/selected one, clear the selection. An unknown key (not in
       `graphs`) is a no-op. Persists via the authored autosave. */
   deleteGraph(key: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!(key in this.graphs)) return;
     const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
     this.graphs = next.graphs;
@@ -1210,6 +1256,7 @@ export class TriggerLab {
       WS message: resolving a fire from the source is a later slice. No-op if the graph or
       its trigger node is missing. */
   setTriggerSource(graphKey: string, source: TriggerSource): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.graphs[graphKey];
     if (!g) return;
     const trig = g.nodes.find((n) => n.kind === 'trigger');
@@ -1246,6 +1293,7 @@ export class TriggerLab {
 
   /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
   addNode(kind: NodeKind, x: number, y: number): GraphNode | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || kind === 'trigger') return null;
     let node: GraphNode;
@@ -1259,11 +1307,13 @@ export class TriggerLab {
   }
 
   moveNode(node: GraphNode, x: number, y: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     node.x = x;
     node.y = y;
   }
 
   removeNode(node: GraphNode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || node.kind === 'trigger') return;
     g.nodes = g.nodes.filter((n) => n.id !== node.id);
@@ -1277,11 +1327,13 @@ export class TriggerLab {
       `fromPort` is the source handle the wire leaves (a value+bands switch's `band-${i}`);
       undefined = the node's default single output. */
   connect(fromId: string, toId: string, fromPort?: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || !canConnect(g, fromId, toId, fromPort)) return;
     g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort });
   }
   disconnect(edgeId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (g) g.edges = g.edges.filter((e) => e.id !== edgeId);
   }
@@ -1290,6 +1342,7 @@ export class TriggerLab {
       wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
       reconnect drag snaps back instead of deleting the wire. */
   reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || !canReconnect(g, edgeId, fromId, toId, fromPort)) return;
     const edge = g.edges.find((e) => e.id === edgeId)!;
@@ -1300,6 +1353,7 @@ export class TriggerLab {
 
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */
   changeKind(node: GraphNode, kind: NodeKind): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind === 'trigger' || kind === 'trigger') return;
     node.kind = kind;
     if (kind === 'play') {
@@ -1470,6 +1524,7 @@ export class TriggerLab {
 
   /** Author a new effect at runtime: register it + seed a Default preset. Returns its id. */
   createEffect(input: objects.NewEffectInput): string {
+    if (this.isViewer) return ''; // read-only viewer (S2): authoring no-op
     const id = objects.freshEffectId(this.effects, input.name);
     const eff = objects.buildEffect(input, id);
     this.effects.push(eff);
@@ -1494,6 +1549,7 @@ export class TriggerLab {
       the new object so the live preview reflects it. Persists via the authored autosave
       ({@link unionEffects} keeps a built-in's renamed name on reload). */
   renameEffect(id: string, name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const trimmed = name.trim();
     if (!trimmed) return;
     const cur = this.effects.find((e) => e.id === id);
@@ -1509,6 +1565,7 @@ export class TriggerLab {
       Default preset); a generator-backed effect keeps its `generatorId` so it renders
       identically. Persists via the authored autosave. */
   duplicateEffect(id: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.effects.find((e) => e.id === id);
     if (!src) return null;
     const name = `${src.name} copy`;
@@ -1528,6 +1585,7 @@ export class TriggerLab {
       see the new name. Persists via the autosave ({@link unionPresets} keeps a renamed built-in
       preset on reload). */
   renamePreset(id: string, name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const trimmed = name.trim();
     if (!trimmed) return;
     const cur = this.presetById(id);
@@ -1541,6 +1599,7 @@ export class TriggerLab {
       independent copy of its params), and register it with the sim. Returns the new id, or
       null for an unknown id. Persists via the authored autosave. */
   duplicatePreset(id: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.presetById(id);
     if (!src) return null;
     const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
@@ -1564,6 +1623,7 @@ export class TriggerLab {
       returns true; returns false (a no-op) when the id is unknown, the preset is in use, or it
       is a live effect's `:default`. Persists via the authored autosave. */
   deletePreset(id: string): boolean {
+    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
     const pr = this.presetById(id);
     const usage = pr ? objects.presetUsageCount(this.graphs, id) : 0;
     if (!objects.canDeletePreset(pr, usage, this.effects)) return false;

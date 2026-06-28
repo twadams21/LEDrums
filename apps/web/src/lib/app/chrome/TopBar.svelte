@@ -43,7 +43,13 @@
           <CommitInput value={showName} ariaLabel="Show name" onCommit={commitName} onCancel={() => (editingName = false)} />
         </span>
       {:else}
-        <button type="button" class="set-name" title="Rename show" onclick={() => (editingName = true)}>
+        <button
+          type="button"
+          class="set-name"
+          title={store.canEdit ? 'Rename show' : 'Viewing — another client is editing'}
+          disabled={!store.canEdit}
+          onclick={() => store.canEdit && (editingName = true)}
+        >
           {showName}
         </button>
       {/if}
@@ -55,6 +61,22 @@
   <div class="transport-slot"><Transport {store} /></div>
 
   <div class="right">
+    {#if store.canTakeover}
+      <!-- Viewer (another client edits): clear read-only indicator + a one-press Takeover. -->
+      <div class="presence presence--viewing">
+        <span class="presence-dot" aria-hidden="true"></span>
+        <span class="presence-label">{store.editorLabel} — <strong>Viewing</strong></span>
+        <button type="button" class="takeover" onclick={() => store.takeover()} title="Become the editor">
+          Take over
+        </button>
+      </div>
+    {:else if store.role === 'editor'}
+      <!-- Editor with other clients connected: confirm we hold the authoring slot. -->
+      <div class="presence presence--editing">
+        <span class="presence-dot" aria-hidden="true"></span>
+        <span class="presence-label">You're editing</span>
+      </div>
+    {/if}
     <StatusBar {store} />
     <OutputPill {store} />
   </div>
@@ -138,9 +160,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .set-name:hover {
+  .set-name:hover:not(:disabled) {
     background: var(--surface-3);
     border-color: var(--border);
+  }
+  .set-name:disabled {
+    cursor: default;
+    opacity: 0.7;
   }
   .set-name-edit {
     display: block;
@@ -163,5 +189,50 @@
     align-items: center;
     gap: var(--space-3);
     flex: none;
+  }
+
+  /* Multi-client editing indicator (S2): who holds the single authoring slot. */
+  .presence {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .presence-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .presence--editing .presence-dot {
+    background: var(--role-content, #4caf50);
+  }
+  .presence--viewing .presence-dot {
+    background: var(--text-faint);
+  }
+  .presence-label strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .takeover {
+    margin-left: var(--space-1);
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--surface-3);
+    color: var(--ink);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .takeover:hover {
+    background: var(--accent, var(--surface-3));
+    border-color: var(--accent, var(--border));
   }
 </style>
