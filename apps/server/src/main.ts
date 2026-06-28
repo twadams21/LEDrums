@@ -20,7 +20,13 @@ import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
-import { admitDecision, createPinGate, resolvePin } from './pin-gate';
+import {
+  admitDecision,
+  createPinGate,
+  isLoopbackAddress,
+  isViaCloudflare,
+  resolvePin,
+} from './pin-gate';
 import { boot } from './boot';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
@@ -166,7 +172,13 @@ wss.on('connection', (ws, req) => {
   // registry or sent any presence/state/frames — so an un-authed client can neither view nor
   // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
   // admits everyone, so plain local dev is unchanged.
-  const decision = admitDecision(req.url, pinGate);
+  //
+  // Host bypass: a connection from the host's own machine (loopback) that did NOT arrive through the
+  // tunnel (no cf-* headers) is the person running the app — admit it without a PIN. Remote clients
+  // come via cloudflared (cf-* headers present) and LAN peers are non-loopback, so both stay gated.
+  const trustedLocal =
+    isLoopbackAddress(req.socket.remoteAddress) && !isViaCloudflare(req.headers);
+  const decision = admitDecision(req.url, pinGate, trustedLocal);
   if (!decision.ok) {
     ws.close(decision.code, decision.reason);
     return;

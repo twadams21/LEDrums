@@ -72,9 +72,38 @@ export function pinFromUrl(url: string | undefined): string | null {
 /** The admit/refuse decision for an incoming WS connection — pure over the connect URL + gate. */
 export type AdmitDecision = { ok: true } | { ok: false; code: number; reason: string };
 
-/** Decide whether to admit a connection given its connect URL and the gate. On refusal the
- * caller closes the socket with {@link WS_CLOSE_INVALID_PIN} before admitting it anywhere. */
-export function admitDecision(url: string | undefined, gate: PinGate): AdmitDecision {
+/** True for a loopback peer address (the host's own machine). ws/http reports IPv4-mapped IPv6
+ * (`::ffff:127.0.0.1`) on dual-stack sockets, so cover that form too. */
+export function isLoopbackAddress(addr: string | null | undefined): boolean {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+/** True when a request arrived through the Cloudflare tunnel — cloudflared injects these headers on
+ * every forwarded request (verified for both quick + named tunnels). A direct, same-machine
+ * connection has none of them, which is how we tell the host apart from a remote client. */
+export function isViaCloudflare(
+  headers: Record<string, string | string[] | undefined>,
+): boolean {
+  return headers['cf-connecting-ip'] !== undefined || headers['cdn-loop'] !== undefined;
+}
+
+/**
+ * Decide whether to admit a connection. On refusal the caller closes the socket with
+ * {@link WS_CLOSE_INVALID_PIN} before admitting it anywhere.
+ *
+ * `trustedLocal` short-circuits the PIN: a connection from the host's OWN machine (loopback) that
+ * did NOT come through the tunnel is the person running the app, so they must not have to type the
+ * PIN into the app on the very machine that generated it. Remote clients always arrive via
+ * cloudflared (loopback origin BUT carrying cf-* headers → not trustedLocal), and LAN peers are
+ * non-loopback — both stay gated. The caller computes `trustedLocal` from {@link isLoopbackAddress}
+ * + {@link isViaCloudflare}.
+ */
+export function admitDecision(
+  url: string | undefined,
+  gate: PinGate,
+  trustedLocal = false,
+): AdmitDecision {
+  if (trustedLocal) return { ok: true };
   if (gate.check(pinFromUrl(url))) return { ok: true };
   return { ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' };
 }

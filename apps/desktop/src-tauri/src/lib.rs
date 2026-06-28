@@ -16,7 +16,8 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    webview::PageLoadEvent, AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -105,7 +106,9 @@ fn parse_pin(line: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-/// Open the full-app webview window at the local origin (idempotent).
+/// Open the full-app webview window at the local origin (idempotent). Once its page finishes
+/// loading, the transient "splash" window is closed — so there is no lingering second window; the
+/// shareable URL/PIN live in the app's own UI (the host auto-connects, see the PIN gate bypass).
 fn open_app_window(app: &AppHandle, port: u16) {
     if app.get_webview_window("app").is_some() {
         return;
@@ -117,6 +120,13 @@ fn open_app_window(app: &AppHandle, port: u16) {
                 .title("LEDrums")
                 .inner_size(1440.0, 900.0)
                 .min_inner_size(900.0, 600.0)
+                .on_page_load(|window, payload| {
+                    if payload.event() == PageLoadEvent::Finished {
+                        if let Some(splash) = window.app_handle().get_webview_window("splash") {
+                            let _ = splash.close();
+                        }
+                    }
+                })
                 .build();
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
@@ -183,7 +193,16 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
             "LEDRUMS_PROJECTS_DIR",
             projects_dir.to_string_lossy().to_string(),
         )
-        .env("LEDRUMS_WEB_ROOT", web_root.to_string_lossy().to_string());
+        .env("LEDRUMS_WEB_ROOT", web_root.to_string_lossy().to_string())
+        // The desktop app is the drummer's live rig, which runs the voice-bus engine. The server
+        // defaults to the legacy engine unless LEDRUMS_ENGINE=voice, so set it here (matching how
+        // `pnpm dev` is run) — otherwise the packaged app silently runs a different engine than
+        // dev (patch-graph edits don't drive routing, triggers don't fire, etc.). Respect an
+        // explicit override from the launching environment for debugging.
+        .env(
+            "LEDRUMS_ENGINE",
+            std::env::var("LEDRUMS_ENGINE").unwrap_or_else(|_| "voice".into()),
+        );
 
     // Only enable the tunnel when a cloudflared binary was actually bundled — otherwise the app
     // degrades gracefully to local/LAN access (and no PIN is generated).
@@ -315,11 +334,16 @@ pub fn run() {
             }
             Ok(())
         })
-        // Closing any window quits the whole app — this makes the macOS "window closed but app
-        // lives" case truly stop everything (the Exit handler below SIGTERMs the sidecar).
+        // Quit when the main app window closes (the macOS "window closed but app lives" case →
+        // the Exit handler below SIGTERMs the sidecar), or when the splash is dismissed before the
+        // app window ever opened. A *programmatic* splash close (after the app window is up, see
+        // open_app_window) must NOT quit the app.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                window.app_handle().exit(0);
+                let app = window.app_handle();
+                if window.label() == "app" || app.get_webview_window("app").is_none() {
+                    app.exit(0);
+                }
             }
         })
         .build(tauri::generate_context!())

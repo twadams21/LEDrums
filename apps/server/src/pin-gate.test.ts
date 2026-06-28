@@ -4,6 +4,8 @@ import {
   admitDecision,
   createPinGate,
   generatePin,
+  isLoopbackAddress,
+  isViaCloudflare,
   pinFromUrl,
   resolvePin,
 } from './pin-gate';
@@ -52,6 +54,38 @@ describe('admitDecision', () => {
     expect(admitDecision('/ws?pin=1234', gate)).toEqual({ ok: true });
     expect(admitDecision('/ws?pin=0000', gate)).toEqual({ ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' });
     expect(admitDecision('/ws', gate)).toEqual({ ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' });
+  });
+
+  it('trustedLocal bypasses the PIN entirely (the host on its own machine)', () => {
+    const gate = createPinGate('1234');
+    expect(admitDecision('/ws', gate, true)).toEqual({ ok: true });
+    expect(admitDecision('/ws?pin=9999', gate, true)).toEqual({ ok: true });
+  });
+
+  it('a non-trusted connection is still gated even without a PIN', () => {
+    const gate = createPinGate('1234');
+    expect(admitDecision('/ws', gate, false)).toEqual({ ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' });
+  });
+});
+
+describe('isLoopbackAddress', () => {
+  it('recognizes loopback forms and rejects others', () => {
+    expect(isLoopbackAddress('127.0.0.1')).toBe(true);
+    expect(isLoopbackAddress('::1')).toBe(true);
+    expect(isLoopbackAddress('::ffff:127.0.0.1')).toBe(true);
+    expect(isLoopbackAddress('192.168.1.50')).toBe(false);
+    expect(isLoopbackAddress(undefined)).toBe(false);
+  });
+});
+
+describe('isViaCloudflare', () => {
+  it('detects cloudflared forwarding headers', () => {
+    expect(isViaCloudflare({ 'cf-connecting-ip': '180.181.248.71' })).toBe(true);
+    expect(isViaCloudflare({ 'cdn-loop': 'cloudflare; loops=1' })).toBe(true);
+  });
+  it('is false for a direct connection with no cf-* headers', () => {
+    expect(isViaCloudflare({ host: '127.0.0.1:4178', connection: 'keep-alive' })).toBe(false);
+    expect(isViaCloudflare({})).toBe(false);
   });
 });
 
