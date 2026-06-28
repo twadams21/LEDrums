@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 
 // ---------------------------------------------------------------------------
@@ -87,16 +87,77 @@ export function isViaCloudflare(
   return headers['cf-connecting-ip'] !== undefined || headers['cdn-loop'] !== undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Host-session token (S4 desktop) — proving the connection is the host's own app
+// ---------------------------------------------------------------------------
+//
+// Loopback alone is NOT an authentication boundary: any local browser tab, script, or compromised
+// local process that can reach the (random) localhost port is also loopback. So the host PIN bypass
+// additionally requires the connection to present an unguessable per-run token that the server hands
+// PRIVATELY to the desktop app window (via its URL hash) — never over the wire to remote clients.
+// Remote tunnel clients (cf-* headers) and LAN peers (non-loopback) can never satisfy the bypass and
+// must use the room PIN.
+
+/** A high-entropy host-session token (default 32 bytes → 64 hex chars) from a CSPRNG. Minted once
+ * per server run; handed to the desktop app window so its WebSocket can prove it is the host app. */
+export function generateHostToken(bytes = 32): string {
+  return randomBytes(bytes).toString('hex');
+}
+
+/** Extract the `hostToken` query parameter from a WS connect URL (or null when absent/unparseable).
+ * Mirrors {@link pinFromUrl}: the url is a path-relative request target resolved against a dummy base. */
+export function hostTokenFromUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url, 'http://localhost').searchParams.get('hostToken');
+  } catch {
+    return null;
+  }
+}
+
+/** Constant-time string equality, so a wrong token cannot be recovered byte-by-byte via comparison
+ * timing. Length-checks first (timingSafeEqual throws on unequal-length buffers). */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8');
+  const bb = Buffer.from(b, 'utf8');
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+/** Inputs to {@link isTrustedHost} — the per-connection facts plus the server's current host token. */
+export interface HostTrustInput {
+  /** `req.socket.remoteAddress`. */
+  remoteAddress: string | null | undefined;
+  /** `req.headers`. */
+  headers: Record<string, string | string[] | undefined>;
+  /** `req.url` (carries the `?hostToken=…` query). */
+  url: string | undefined;
+  /** The server's per-run host token, or null when none was minted (bypass disabled). */
+  hostToken: string | null;
+}
+
+/**
+ * Whether a connection is the trusted host app session — eligible to skip the room PIN. ALL of:
+ * a host token was minted, the peer is loopback, the request did NOT arrive via cloudflared, and the
+ * connection presents the exact host token. This is what the caller passes as `trustedLocal` to
+ * {@link admitDecision}; any failed condition falls through to the normal PIN check.
+ */
+export function isTrustedHost({ remoteAddress, headers, url, hostToken }: HostTrustInput): boolean {
+  if (hostToken === null) return false; // no token minted → bypass disabled
+  if (!isLoopbackAddress(remoteAddress)) return false; // LAN/remote peer → gated
+  if (isViaCloudflare(headers)) return false; // tunnel-forwarded → gated
+  const supplied = hostTokenFromUrl(url);
+  return supplied !== null && safeEqual(supplied, hostToken);
+}
+
 /**
  * Decide whether to admit a connection. On refusal the caller closes the socket with
  * {@link WS_CLOSE_INVALID_PIN} before admitting it anywhere.
  *
- * `trustedLocal` short-circuits the PIN: a connection from the host's OWN machine (loopback) that
- * did NOT come through the tunnel is the person running the app, so they must not have to type the
- * PIN into the app on the very machine that generated it. Remote clients always arrive via
- * cloudflared (loopback origin BUT carrying cf-* headers → not trustedLocal), and LAN peers are
- * non-loopback — both stay gated. The caller computes `trustedLocal` from {@link isLoopbackAddress}
- * + {@link isViaCloudflare}.
+ * `trustedLocal` short-circuits the PIN: it is the host's OWN app window, proven by the host-session
+ * token (see {@link isTrustedHost}) — so the drummer never types the room PIN into the app on the
+ * very machine that generated it. Remote clients (cf-* headers) and LAN peers (non-loopback) can
+ * never be trustedLocal and stay gated.
  */
 export function admitDecision(
   url: string | undefined,

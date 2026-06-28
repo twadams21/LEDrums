@@ -136,6 +136,47 @@ function writeStoredPin(pin: string): void {
   }
 }
 
+/** sessionStorage key for the host-session token (S4 desktop) — same per-tab lifetime as the PIN. */
+const HOST_TOKEN_STORAGE_KEY = 'ledrums:hostToken';
+
+/**
+ * The host-session token (S4 desktop), or null. The packaged app opens its window at
+ * `http://127.0.0.1:<port>#hostToken=<token>`; we read it from the URL hash, persist it to
+ * sessionStorage (so a reconnect/refresh that drops the hash still has it), then strip the hash from
+ * the address bar so the token does not linger in history. Plain browsers have no hash → null.
+ */
+function readHostToken(): string | null {
+  if (typeof location !== 'undefined' && location.hash) {
+    const m = /[#&]hostToken=([^&]+)/.exec(location.hash);
+    if (m?.[1]) {
+      const token = decodeURIComponent(m[1]);
+      writeStoredHostToken(token);
+      try {
+        history.replaceState(null, '', location.pathname + location.search);
+      } catch {
+        /* ignore */
+      }
+      return token;
+    }
+  }
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    return sessionStorage.getItem(HOST_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the host token for this tab so a reconnect/refresh need not re-read the hash. Best-effort. */
+function writeStoredHostToken(token: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(HOST_TOKEN_STORAGE_KEY, token);
+  } catch {
+    /* ignore */
+  }
+}
+
 export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
@@ -334,7 +375,10 @@ export class TriggerLab {
       server's cold-load library must not clobber it — see {@link ShowLibrarySync.planReconcile}. */
   private bootedFromLocalLibrary = false;
 
-  constructor(makeClient: () => WSClient = () => new WSClient({ pin: readStoredPin() })) {
+  constructor(
+    makeClient: () => WSClient = () =>
+      new WSClient({ pin: readStoredPin(), hostToken: readHostToken() }),
+  ) {
     // Load the show library from storage BEFORE the sim is built and the engine link opens,
     // so the sim's registries and the first setShow/recallSection reflect the ACTIVE show's
     // restored content. loadShowLibrary never throws: a valid library wins; else a legacy

@@ -23,8 +23,8 @@ import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
 import {
   admitDecision,
   createPinGate,
-  isLoopbackAddress,
-  isViaCloudflare,
+  generateHostToken,
+  isTrustedHost,
   resolvePin,
 } from './pin-gate';
 import { boot } from './boot';
@@ -56,6 +56,12 @@ const tunnelManager = tunnelConfig ? new TunnelManager(tunnelConfig) : null;
 /** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, and an enabled
  * tunnel auto-generates a per-run PIN so a public URL is never un-gated. */
 const pinGate = createPinGate(resolvePin(process.env, tunnelManager !== null));
+
+/** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
+ * hash, printed in the boot banner for the shell to read) so the host's own window is admitted
+ * without the room PIN — while a stray local browser tab/script that merely reached the loopback
+ * port cannot. Always minted; only meaningful when the gate is active (open gate admits everyone). */
+const hostToken = generateHostToken();
 
 // --- project + host ---------------------------------------------------------
 
@@ -173,11 +179,16 @@ wss.on('connection', (ws, req) => {
   // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
   // admits everyone, so plain local dev is unchanged.
   //
-  // Host bypass: a connection from the host's own machine (loopback) that did NOT arrive through the
-  // tunnel (no cf-* headers) is the person running the app — admit it without a PIN. Remote clients
-  // come via cloudflared (cf-* headers present) and LAN peers are non-loopback, so both stay gated.
-  const trustedLocal =
-    isLoopbackAddress(req.socket.remoteAddress) && !isViaCloudflare(req.headers);
+  // Host bypass: the host's OWN app window is admitted without a PIN — but loopback alone is not
+  // proof of that (any local tab/script is also loopback), so the bypass requires the unguessable
+  // per-run host token the window was handed (plus loopback + not-via-cloudflared). Remote clients
+  // (cf-* headers) and LAN peers (non-loopback) can never satisfy it, so both stay gated.
+  const trustedLocal = isTrustedHost({
+    remoteAddress: req.socket.remoteAddress,
+    headers: req.headers,
+    url: req.url,
+    hostToken,
+  });
   const decision = admitDecision(req.url, pinGate, trustedLocal);
   if (!decision.ok) {
     ws.close(decision.code, decision.reason);
@@ -321,5 +332,6 @@ boot({
   showLibraryAutosaver,
   tunnelManager,
   pin: pinGate.pin,
+  hostToken,
   broadcastState,
 });

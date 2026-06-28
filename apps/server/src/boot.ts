@@ -28,6 +28,10 @@ export interface BootDeps {
   tunnelManager: TunnelManager | null;
   /** Active room PIN (S3), or null when the gate is open — printed in the boot banner. */
   pin: string | null;
+  /** Per-run host-session token (S4 desktop). Printed in the boot banner (local stdout only) so the
+   * desktop shell can read it and inject it into the host app window — never sent to remote clients.
+   * Only banner-printed when the gate is active (the bypass is moot on an open gate). */
+  hostToken: string | null;
   /** Re-broadcast the `state` message — called once the tunnel URL resolves so already-connected
    * host clients pick up the share URL. */
   broadcastState: () => void;
@@ -84,7 +88,13 @@ export function boot(deps: BootDeps): void {
     for (const url of lanUrls(deps.port)) console.log(`  LAN: ${url}`);
     console.log(`OSC listening on udp:${deps.oscPort}`);
     console.log('Pixel output: set target IP + Arm in the UI');
-    if (deps.pin) console.log(`  Room PIN: ${deps.pin} (required to join)`);
+    if (deps.pin) {
+      console.log(`  Room PIN: ${deps.pin} (required to join)`);
+      // Machine-readable line for the desktop shell to capture + inject into the host app window —
+      // local stdout only, so it never reaches a remote client. Gated on `pin` because the host
+      // bypass only matters when there is a gate to bypass.
+      if (deps.hostToken) console.log(`  Host token: ${deps.hostToken}`);
+    }
     startTunnel(deps);
   });
 
