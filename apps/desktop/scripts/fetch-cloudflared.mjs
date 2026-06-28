@@ -9,6 +9,7 @@
 // Usage: node scripts/fetch-cloudflared.mjs
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,13 @@ const desktopDir = resolve(here, '..');
 const outDir = join(desktopDir, 'src-tauri', 'cloudflared');
 mkdirSync(outDir, { recursive: true });
 
-const VERSION = process.env.CLOUDFLARED_VERSION || 'latest';
+// Pin a specific release by default (reproducible bundles) — bump as needed, or set
+// CLOUDFLARED_VERSION=latest to track the newest. cloudflared does not publish per-asset checksum
+// files reliably, so verification is opt-in: set CLOUDFLARED_SHA256 to the expected lowercase-hex
+// sha256 of the downloaded asset and the script will refuse a mismatch.
+const PINNED_CLOUDFLARED = '2026.6.1';
+const VERSION = process.env.CLOUDFLARED_VERSION || PINNED_CLOUDFLARED;
+const EXPECTED_SHA256 = process.env.CLOUDFLARED_SHA256?.trim().toLowerCase() || null;
 const base =
   VERSION === 'latest'
     ? 'https://github.com/cloudflare/cloudflared/releases/latest/download'
@@ -47,6 +54,17 @@ try {
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
   const buf = Buffer.from(await res.arrayBuffer());
+
+  // Optional integrity check (set CLOUDFLARED_SHA256 to enforce).
+  const digest = createHash('sha256').update(buf).digest('hex');
+  if (EXPECTED_SHA256) {
+    if (digest !== EXPECTED_SHA256) {
+      throw new Error(`sha256 mismatch: got ${digest}, expected ${EXPECTED_SHA256}`);
+    }
+    console.log('[cloudflared] sha256 verified');
+  } else {
+    console.log(`[cloudflared] sha256 ${digest} (set CLOUDFLARED_SHA256 to enforce)`);
+  }
 
   if (isTgz) {
     // The macOS asset is a gzipped tar containing the `cloudflared` binary; extract via tar.

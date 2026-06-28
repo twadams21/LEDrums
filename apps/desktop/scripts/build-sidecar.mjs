@@ -22,9 +22,11 @@
 // copies the *host* node executable; it is not a cross-compiler). Run this script on each
 // target OS/arch, or in that platform's CI, passing --triple if auto-detection is wrong.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import dgram from 'node:dgram';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -230,29 +232,101 @@ if (isMac) {
 chmodSync(outBinary, 0o755);
 console.log(`[sidecar] done → ${outBinary}`);
 
-// --- 3. self-diagnosing smoke test -----------------------------------------
+// --- 3. smoke test (gates the build) ---------------------------------------
 //
-// Boot the produced binary briefly to confirm the SEA actually loads. This catches the known
-// macOS dyld TLV failure ("unsupported thread-local, larger than 4GB") that postject's Mach-O
-// injection can produce on some Node builds — surfacing it loudly instead of shipping a binary
-// that crashes on launch. Non-fatal: on a toolchain where SEA works this just prints OK.
-console.log('[sidecar] smoke-testing the produced binary…');
-const probe = spawnSync(outBinary, [], {
-  env: { ...process.env, PORT: '0', OSC_PORT: '0', LEDRUMS_WEB_ROOT: sidecarDir, LEDRUMS_PROJECTS_DIR: sidecarDir },
-  timeout: 2500,
-  encoding: 'utf8',
-});
-const probeOut = `${probe.stdout ?? ''}${probe.stderr ?? ''}`;
-if (/thread-local, larger than 4GB|failed to set up thread local/.test(probeOut)) {
-  console.warn(
-    '\n[sidecar] WARNING: the SEA binary failed to load with the macOS dyld thread-local error.\n' +
-      `          The SEA base was Node ${buildNode === process.execPath ? `v${process.versions.node} (active)` : `pinned v${PINNED_NODE}`}.\n` +
-      '          This should not happen with the pinned LTS — try clearing apps/desktop/.node-pin/\n' +
-      '          and rebuilding, or set LEDRUMS_SEA_NODE_VERSION to another LTS (even major ≥20).\n',
-  );
-} else if (probe.error && probe.error.code !== 'ETIMEDOUT') {
-  console.warn(`[sidecar] smoke test could not run the binary: ${probe.error.message}`);
-} else {
-  // ETIMEDOUT means it was still running (booted fine) when we killed it — the success signal.
-  console.log('[sidecar] smoke test OK — binary boots.');
+// Boot the produced binary and REQUIRE it to reach the server's `listening on` banner. This
+// proves the SEA actually loads + the server starts — catching the macOS dyld TLV failure
+// ("unsupported thread-local, larger than 4GB") AND any other early crash. The build FAILS
+// (exit 1) on early exit, the dyld error, a spawn error, or a timeout with no banner, so a
+// broken binary can never be shipped silently.
+//
+// The server reads `Number(env) || default`, so PORT=0 would fall back to the real default port;
+// we therefore bind real free TCP/UDP ports for the probe and pass those, avoiding collisions
+// with anything already running (e.g. a dev server on 4321) and with the OSC default.
+
+/** Reserve a free TCP port (closed again before returning, so the probe can bind it). */
+function freeTcpPort() {
+  return new Promise((res, rej) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', rej);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => res(port));
+    });
+  });
 }
+
+/** Reserve a free UDP port (for OSC), closed again before returning. */
+function freeUdpPort() {
+  return new Promise((res, rej) => {
+    const sock = dgram.createSocket('udp4');
+    sock.on('error', rej);
+    sock.bind(0, '127.0.0.1', () => {
+      const { port } = sock.address();
+      sock.close(() => res(port));
+    });
+  });
+}
+
+const BANNER = /LEDrums server listening on/;
+const DYLD_TLV = /thread-local, larger than 4GB|failed to set up thread local/;
+
+console.log('[sidecar] smoke-testing the produced binary (must reach the listening banner)…');
+const probePort = await freeTcpPort();
+const probeOscPort = await freeUdpPort();
+const verdict = await new Promise((resolveVerdict) => {
+  const child = spawn(outBinary, [], {
+    env: {
+      ...process.env,
+      PORT: String(probePort),
+      OSC_PORT: String(probeOscPort),
+      LEDRUMS_WEB_ROOT: sidecarDir,
+      LEDRUMS_PROJECTS_DIR: sidecarDir,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let out = '';
+  let settled = false;
+  const finish = (ok, reason) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* already gone */
+    }
+    resolveVerdict({ ok, reason, out });
+  };
+  const timer = setTimeout(() => finish(false, 'timed out before the listening banner'), 10_000);
+  const onData = (chunk) => {
+    out += chunk.toString();
+    if (DYLD_TLV.test(out)) finish(false, 'macOS dyld thread-local error (SEA failed to load)');
+    else if (BANNER.test(out)) finish(true);
+  };
+  child.stdout.on('data', onData);
+  child.stderr.on('data', onData);
+  child.on('error', (e) => finish(false, `could not spawn the binary: ${e.message}`));
+  child.on('exit', (code, signal) => {
+    if (!BANNER.test(out)) finish(false, `exited early (code ${code}, signal ${signal}) before the listening banner`);
+  });
+});
+
+if (!verdict.ok) {
+  const base = buildNode === process.execPath ? `v${process.versions.node} (active)` : `pinned v${PINNED_NODE}`;
+  console.error(
+    `\n[sidecar] SMOKE TEST FAILED: ${verdict.reason}.\n` +
+      `          SEA base Node: ${base}. Captured output:\n` +
+      verdict.out.split('\n').map((l) => `          | ${l}`).join('\n') +
+      '\n',
+  );
+  if (DYLD_TLV.test(verdict.out)) {
+    console.error(
+      '[sidecar] The dyld thread-local error should not happen with the pinned LTS — clear\n' +
+        '          apps/desktop/.node-pin/ and rebuild, or set LEDRUMS_SEA_NODE_VERSION to an LTS.\n',
+    );
+  }
+  process.exit(1);
+}
+console.log('[sidecar] smoke test OK — server reached the listening banner.');

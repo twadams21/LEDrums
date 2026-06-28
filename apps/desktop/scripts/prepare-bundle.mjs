@@ -40,6 +40,23 @@ mkdirSync(stagedWeb, { recursive: true });
 cpSync(webDist, stagedWeb, { recursive: true });
 console.log(`[prepare] staged web dist → ${stagedWeb}`);
 
+// 2b. Bundle the native share-window script (imports @tauri-apps/* as modules → the shell needs no
+// `withGlobalTauri`, so the full-app window is never given Tauri APIs). frontendDist is served as
+// static files, so the imports must be pre-bundled into one file index.html can <script src=>.
+console.log('[prepare] bundling shell script…');
+const esbuild = await import('esbuild');
+await esbuild.build({
+  entryPoints: [join(desktopDir, 'shell', 'main.js')],
+  outfile: join(desktopDir, 'shell', 'main.bundle.js'),
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  legalComments: 'none',
+  logLevel: 'info',
+});
+console.log('[prepare] shell script bundled → shell/main.bundle.js');
+
 // 3. Build the sidecar binary (unless explicitly skipped).
 if (process.env.PREPARE_SKIP_SIDECAR === '1') {
   console.log('[prepare] PREPARE_SKIP_SIDECAR=1 — reusing existing sidecar binary');

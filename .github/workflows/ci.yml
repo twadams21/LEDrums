@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Workspace-wide checks: typecheck + the full test suite.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  # Desktop path: build the self-contained server sidecar (esbuild + pinned-LTS Node SEA, which
+  # runs its own smoke test) and compile the Tauri Rust shell. macOS is the shipped target and
+  # needs no extra system deps for `cargo build`.
+  desktop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - run: pnpm install --frozen-lockfile
+      # Stage everything generate_context!/cargo needs (web-dist resource + shell bundle + sidecar).
+      - run: pnpm --filter @ledrums/desktop prepare:bundle
+      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml

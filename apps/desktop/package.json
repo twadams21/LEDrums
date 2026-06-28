@@ -13,7 +13,9 @@
     "fetch:cloudflared": "node scripts/fetch-cloudflared.mjs"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/cli": "^2.1.0",
+    "@tauri-apps/plugin-clipboard-manager": "^2.2.0",
     "esbuild": "^0.24.0",
     "postject": "^1.0.0-alpha.6"
   }
