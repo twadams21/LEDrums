@@ -21,6 +21,16 @@ import type {
 } from '@ledrums/core';
 
 // ---------------------------------------------------------------------------
+// Transport-level constants
+// ---------------------------------------------------------------------------
+
+/** WS close code used when a connection is refused for an absent/incorrect room PIN
+ * (S3 remote-access gate). In the application-private 4000–4999 range; chosen to echo
+ * HTTP 401 Unauthorized. The web client treats this code specially: it stops the
+ * auto-reconnect loop and prompts for a PIN instead of dialing forever. */
+export const WS_CLOSE_INVALID_PIN = 4401;
+
+// ---------------------------------------------------------------------------
 // Client → Server (JSON strings via ws.send(JSON.stringify(msg)))
 // ---------------------------------------------------------------------------
 
@@ -132,10 +142,24 @@ export interface VoiceStats {
   busLevels: Record<string, number>;
 }
 
+/** Remote-access surface (S3): the public share URL of the outbound Cloudflare tunnel and the
+ * room PIN, so an authenticated client's UI can display "scan/visit this URL, enter this PIN".
+ * Carried on the `state` message (only ever sent to already-admitted clients), so an un-authed
+ * connection — refused before any `state` — never learns either. A field is null when that
+ * facility is disabled: `url` null = no tunnel running; `pin` null = no PIN gate (open server). */
+export interface TunnelInfo {
+  /** Resolved public URL (e.g. `https://foo.trycloudflare.com`), or null when no tunnel runs. */
+  url: string | null;
+  /** Active room PIN, or null when the server is open (no PIN gate). */
+  pin: string | null;
+}
+
 export type ServerMessage =
   // `showLibrary` carries the server's persisted authored show library (the opaque versioned
   // blob), or null when the server has none yet — the web adopts it on cold load.
-  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null }
+  // `tunnel` carries the remote-access surface (share URL + room PIN) for the host UI; null when
+  // neither a tunnel nor a PIN gate is configured (plain local dev). See {@link TunnelInfo}.
+  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null; tunnel: TunnelInfo | null }
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
   | { t: 'projects'; names: string[] }

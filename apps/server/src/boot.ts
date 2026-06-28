@@ -6,6 +6,7 @@ import type { Autosaver } from './autosave';
 import type { ClientRegistry } from './client-registry';
 import type { EngineHost } from './engine-host';
 import type { VoiceEngineHost } from './voice-engine-host';
+import type { TunnelManager } from './tunnel-manager';
 
 /** Collaborators the boot/shutdown orchestration drives. */
 export interface BootDeps {
@@ -22,6 +23,14 @@ export interface BootDeps {
   statsTimer: ReturnType<typeof setInterval>;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
+  /** Outbound Cloudflare tunnel (S3), or null when disabled. Started after the socket binds;
+   * stopped on shutdown. */
+  tunnelManager: TunnelManager | null;
+  /** Active room PIN (S3), or null when the gate is open — printed in the boot banner. */
+  pin: string | null;
+  /** Re-broadcast the `state` message — called once the tunnel URL resolves so already-connected
+   * host clients pick up the share URL. */
+  broadcastState: () => void;
 }
 
 /** Every non-internal IPv4 address as an http URL on port `p` (for the boot LAN banner). */
@@ -34,6 +43,31 @@ export function lanUrls(p: number): string[] {
     }
   }
   return urls;
+}
+
+/**
+ * Bring up the outbound tunnel (if configured) once the socket is bound, so cloudflared has a
+ * live origin to forward to. Fire-and-forget: the public URL is logged + re-broadcast to
+ * connected clients when it resolves; a startup failure or later crash is logged (reported, not
+ * silent) and never wedges the server — local + LAN access keep working.
+ */
+function startTunnel(deps: BootDeps): void {
+  const tunnel = deps.tunnelManager;
+  if (!tunnel) return;
+  tunnel.onUnexpectedExit = ({ code, signal }) => {
+    console.error(`[tunnel] cloudflared exited unexpectedly (code ${code ?? 'null'}, signal ${signal ?? 'null'}) — remote access is down`);
+  };
+  tunnel.onError = (err) => console.error('[tunnel] error:', err.message);
+  tunnel
+    .start()
+    .then((url) => {
+      console.log(`  Tunnel: ${url}${deps.pin ? ` (PIN ${deps.pin})` : ''}`);
+      deps.broadcastState(); // host UIs connected before the URL resolved now learn it
+    })
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[tunnel] failed to start (is cloudflared installed?): ${message}`);
+    });
 }
 
 /**
@@ -50,6 +84,8 @@ export function boot(deps: BootDeps): void {
     for (const url of lanUrls(deps.port)) console.log(`  LAN: ${url}`);
     console.log(`OSC listening on udp:${deps.oscPort}`);
     console.log('Pixel output: set target IP + Arm in the UI');
+    if (deps.pin) console.log(`  Room PIN: ${deps.pin} (required to join)`);
+    startTunnel(deps);
   });
 
   let shuttingDown = false;
@@ -57,6 +93,7 @@ export function boot(deps: BootDeps): void {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(deps.statsTimer);
+    deps.tunnelManager?.stop();
     if (deps.voiceHost) deps.voiceHost.stop();
     else deps.host.stop();
     deps.oscInput.close();

@@ -10,6 +10,7 @@ export type {
   SerializedModel,
   ServerMessage,
   ShowLibraryBlob,
+  TunnelInfo,
   VoiceStats,
 } from '@ledrums/protocol';
 

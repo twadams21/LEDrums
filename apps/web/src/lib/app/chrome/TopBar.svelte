@@ -7,6 +7,7 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import Transport from './Transport.svelte';
   import OutputPill from './OutputPill.svelte';
+  import ShareInfo from './ShareInfo.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ShowBrowser from './ShowBrowser.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
@@ -77,6 +78,7 @@
         <span class="presence-label">You're editing</span>
       </div>
     {/if}
+    <ShareInfo {store} />
     <StatusBar {store} />
     <OutputPill {store} />
   </div>

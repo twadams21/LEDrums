@@ -19,6 +19,8 @@ import { loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './s
 import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic } from './static-host';
+import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
+import { admitDecision, createPinGate, resolvePin } from './pin-gate';
 import { boot } from './boot';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
@@ -28,6 +30,7 @@ import {
   encodeServer,
   serializeModel,
   type ServerMessage,
+  type TunnelInfo,
 } from './ws-protocol';
 
 const port = Number(process.env.PORT) || WS_PORT;
@@ -36,6 +39,17 @@ const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
 /** Engine mode: legacy layer/clip/binding brain (default) or the voice-bus brain.
  * Opt in with `LEDRUMS_ENGINE=voice`; anything else (or unset) keeps legacy. */
 const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
+
+// --- remote access: outbound tunnel + room PIN (S3) --------------------------
+
+/** Outbound Cloudflare tunnel config (null = disabled, the default — so plain `pnpm dev`
+ * never spawns cloudflared). Enabled + tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv). */
+const tunnelConfig = tunnelConfigFromEnv(process.env, port);
+const tunnelManager = tunnelConfig ? new TunnelManager(tunnelConfig) : null;
+
+/** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, and an enabled
+ * tunnel auto-generates a per-run PIN so a public URL is never un-gated. */
+const pinGate = createPinGate(resolvePin(process.env, tunnelManager !== null));
 
 // --- project + host ---------------------------------------------------------
 
@@ -116,6 +130,14 @@ function broadcastBinary(rgb: Uint8Array): void {
   }
 }
 
+/** The remote-access surface for the host UI: the resolved tunnel URL + room PIN. Null when
+ * neither is configured (plain local dev). Only ever reaches already-admitted clients (it rides
+ * the `state` message), so an un-authed connection never learns the PIN. */
+function tunnelInfo(): TunnelInfo | null {
+  if (tunnelManager === null && pinGate.pin === null) return null;
+  return { url: tunnelManager?.url ?? null, pin: pinGate.pin };
+}
+
 /** Build the full `state` message reflecting the current engine/project. In voice mode
  * the voice host owns the live geometry, so its model is authoritative for the wire. */
 function stateMessage(): ServerMessage {
@@ -128,13 +150,24 @@ function stateMessage(): ServerMessage {
     projects: listProjects(),
     output: (voiceHost ?? host).getOutputStatus(),
     showLibrary: liveShowLibrary,
+    tunnel: tunnelInfo(),
   };
 }
 
 if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
 else host.onFrame = (rgb) => broadcastBinary(rgb);
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
+  // registry or sent any presence/state/frames — so an un-authed client can neither view nor
+  // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
+  // admits everyone, so plain local dev is unchanged.
+  const decision = admitDecision(req.url, pinGate);
+  if (!decision.ok) {
+    ws.close(decision.code, decision.reason);
+    return;
+  }
+
   // Admit additively (no eviction) — the first client auto-claims the editor slot, later clients
   // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
   // the `state` below — messages are ordered on the socket), then ship its initial state.
@@ -270,4 +303,7 @@ boot({
   statsTimer,
   autosaver,
   showLibraryAutosaver,
+  tunnelManager,
+  pin: pinGate.pin,
+  broadcastState,
 });

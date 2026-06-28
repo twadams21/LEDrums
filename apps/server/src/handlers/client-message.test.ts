@@ -57,6 +57,7 @@ function harness() {
     projects: [],
     output: host.getOutputStatus(),
     showLibrary: slot.lib,
+    tunnel: null,
   });
   const broadcastState = (): void => broadcastJson(stateMessage());
   const relayToOthers = (sender: FakeSocket, msg: ServerMessage): void => {

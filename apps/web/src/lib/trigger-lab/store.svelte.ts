@@ -43,7 +43,7 @@ import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { SerializedModel } from '../ws/protocol-types';
+import type { SerializedModel, TunnelInfo } from '../ws/protocol-types';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
@@ -107,6 +107,30 @@ function writeStoredLibrary(payload: PersistedShowLibrary): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** sessionStorage key for the room PIN (S3) — per-tab so it does not leak across browser
+    sessions, but survives a reconnect/refresh within a session. */
+const PIN_STORAGE_KEY = 'ledrums:pin';
+
+/** The room PIN remembered for this tab, or null. Guards SSR / private-mode. */
+function readStoredPin(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    return sessionStorage.getItem(PIN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Remember the room PIN for this tab so a reconnect/refresh need not re-prompt. Best-effort. */
+function writeStoredPin(pin: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(PIN_STORAGE_KEY, pin);
   } catch {
     /* ignore */
   }
@@ -210,6 +234,18 @@ export class TriggerLab {
       forward the edit over WS; the server round-trips the next `state` to confirm. */
   project = $state<Project | null>(null);
 
+  /** Remote-access surface (S3) from the server's `state` message: the public share URL of the
+      Cloudflare tunnel + the room PIN, for the host to share. null when neither is configured
+      (plain local dev). */
+  tunnel = $state<TunnelInfo | null>(null);
+  /** The server refused our connection for a wrong/absent room PIN (close 4401) — drives the
+      PIN-entry gate. Cleared once a supplied PIN is accepted (the link opens). */
+  authRequired = $state(false);
+  /** Count of PIN refusals — increments on every 4401. The gate watches it to show an
+      "incorrect PIN" hint after a failed retry (authRequired alone can't signal a re-failure
+      since it stays true across the retry). */
+  authFailCount = $state(0);
+
   /** mutable effect registry — the effect creator appends here (synced to the sim). */
   effects = $state<EffectDef[]>([...EFFECTS]);
   drums = DRUMS;
@@ -298,7 +334,7 @@ export class TriggerLab {
       server's cold-load library must not clobber it — see {@link ShowLibrarySync.planReconcile}. */
   private bootedFromLocalLibrary = false;
 
-  constructor(makeClient: () => WSClient = () => new WSClient()) {
+  constructor(makeClient: () => WSClient = () => new WSClient({ pin: readStoredPin() })) {
     // Load the show library from storage BEFORE the sim is built and the engine link opens,
     // so the sim's registries and the first setShow/recallSection reflect the ACTIVE show's
     // restored content. loadShowLibrary never throws: a valid library wins; else a legacy
@@ -409,6 +445,16 @@ export class TriggerLab {
       editor — pressing it as the editor just re-confirms the slot. */
   takeover(): void {
     this.client.send({ t: 'takeover' });
+  }
+
+  /** Submit a room PIN from the entry gate (S3): remember it for this tab and retry the
+      connection. A correct PIN opens the link (clearing {@link authRequired}); a wrong one
+      refuses again and re-shows the gate. */
+  submitPin(pin: string): void {
+    const trimmed = pin.trim();
+    if (!trimmed) return;
+    writeStoredPin(trimmed);
+    this.client.reconnectWithPin(trimmed);
   }
 
   /** Open WebMIDI (browser-only) and forward every parsed event to the server. Never
@@ -698,12 +744,14 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, _output, showLibrary) => {
+      onState: (project, model, _effects, _projects, _output, showLibrary, tunnel) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
         this.project = project;
         this.serverModel = model;
+        // remote-access surface (share URL + PIN) for the host UI
+        this.tunnel = tunnel;
         // Cold-load adopt of the server-authoritative show library (server wins on first state;
         // seeds the server from our cache when it has none). markServerStateSeen first so the
         // seed-push isn't gated off. See the ShowLibrarySync controller.
@@ -738,10 +786,19 @@ export class TriggerLab {
           this.libSync.noteSynced(this.libSync.librarySig(this.currentLibrary()));
         }
       },
+      onAuthError: () => {
+        // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
+        // loop is paused in the client until submitPin() supplies one.
+        this.authRequired = true;
+        this.authFailCount += 1;
+        this.link = 'offline';
+      },
       onConnection: (state: ConnectionState) => {
         // map the client's 'closed' to the lab's 'offline'; others pass through
         this.link = state === 'closed' ? 'offline' : state;
         if (state === 'open') {
+          // A successful handshake means any PIN we sent was accepted — clear the gate.
+          this.authRequired = false;
           // hand the server the authored content, then the current transport
           const show = buildShow(this);
           this.client.send({ t: 'setShow', show });
