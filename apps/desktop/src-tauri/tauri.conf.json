@@ -42,7 +42,8 @@
       "cloudflared": "cloudflared"
     },
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
     }
   }
 }
