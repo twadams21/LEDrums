@@ -7,12 +7,18 @@
  * uploads both to a PUBLIC Cloudflare R2 bucket, and writes/merges the `latest.json` manifest.
  *
  * Steps:
- *   1. Resolve version (tauri.conf.json `version`, or OTA_VERSION) + the host platform key.
+ *   1. Resolve the version from tauri.conf.json `version` (the SOURCE OF TRUTH — it is baked into the
+ *      built app). OTA_VERSION, if set, only ASSERTS that expected version; a mismatch is a hard
+ *      error (unless OTA_ALLOW_VERSION_MISMATCH=1) so the manifest can never drift from the artifact.
  *   2. Locate the updater artifact (e.g. `*.app.tar.gz`) + signature under
  *      src-tauri/target/release/bundle/.
  *   3. Upload the artifact to r2://<bucket>/<version>/<target>/<file>.
  *   4. Fetch any existing latest.json from the public base, MERGE this platform's entry in (so a
  *      multi-arch release built on several machines accumulates into one manifest), and upload it.
+ *
+ * !! SERIAL PUBLISHING ONLY !! latest.json is read-modify-write (fetch → merge one platform → upload).
+ * Two `publish-ota.mjs` runs in flight at once can read the same manifest and clobber each other's
+ * platform entry. Publish each platform's build ONE AT A TIME — never concurrently.
  *
  * Tauri v2 manifest shape:
  *   { version, notes, pub_date, platforms: { "<os>-<arch>": { signature, url } } }
@@ -27,7 +33,10 @@
  *                                                 https://pub-xxxx.r2.dev  (no trailing /latest.json)
  * Optional env:
  *   OTA_BUCKET   (default "ledrums-ota")          R2 bucket name
- *   OTA_VERSION  (default tauri.conf.json version) override the release version
+ *   OTA_VERSION  (default unset)                  assert the expected version; must equal the
+ *                                                 tauri.conf.json version or publishing aborts
+ *   OTA_ALLOW_VERSION_MISMATCH (default unset)    set to "1" to publish despite an OTA_VERSION
+ *                                                 mismatch (emergency override; warns loudly)
  *   OTA_TARGET   (default host <os>-<arch>)        override the platform key
  *   OTA_NOTES    (default "")                      release notes string
  *
@@ -145,10 +154,28 @@ async function main() {
   }
 
   const conf = JSON.parse(readFileSync(tauriConfPath, 'utf8'));
-  const version = process.env.OTA_VERSION || conf.version;
-  if (!version) {
-    console.error('error: could not resolve a version (set OTA_VERSION or tauri.conf.json version).');
+  const confVersion = conf.version;
+  if (!confVersion) {
+    console.error('error: tauri.conf.json has no `version` — set it before publishing.');
     process.exit(1);
+  }
+  // tauri.conf.json `version` is the SOURCE OF TRUTH: it is baked into the built app metadata, and is
+  // what the updater compares clients against. Publishing a manifest version that differs from the
+  // built app causes silent version drift, so OTA_VERSION may only ASSERT the expected version — a
+  // mismatch is a hard error unless OTA_ALLOW_VERSION_MISMATCH=1 is set for an emergency override.
+  const version = confVersion;
+  if (process.env.OTA_VERSION && process.env.OTA_VERSION !== confVersion) {
+    const msg =
+      `OTA_VERSION (${process.env.OTA_VERSION}) does not match tauri.conf.json version (${confVersion}). ` +
+      `The conf version is the source of truth (it is baked into the built app).`;
+    if (process.env.OTA_ALLOW_VERSION_MISMATCH === '1') {
+      console.warn(`[ota] WARNING: ${msg} OTA_ALLOW_VERSION_MISMATCH=1 set — publishing as v${confVersion} anyway.`);
+    } else {
+      console.error(
+        `error: ${msg} Bump tauri.conf.json (and rebuild), or set OTA_ALLOW_VERSION_MISMATCH=1 to override.`,
+      );
+      process.exit(1);
+    }
   }
 
   const target = hostTarget();

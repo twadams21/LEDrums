@@ -171,8 +171,15 @@ shell** (`src-tauri/src/lib.rs`, `check_for_update`), using `tauri-plugin-update
 
 Set **`LEDRUMS_SKIP_UPDATE=1`** to skip the check entirely (handy in dev).
 
-The capability permissions (`updater`/`dialog`/`process` defaults) are scoped to the `splash`
-window in `src-tauri/capabilities/splash.json`.
+The whole OTA flow runs in Rust, so the webview needs **no** updater/dialog/process capability
+grants — `src-tauri/capabilities/splash.json` grants the splash only `core:default` +
+`clipboard-manager:allow-write-text` (what `shell/main.js` actually uses). The updater/dialog/process
+plugins are still `.plugin(...)`-initialized in `src-tauri/src/lib.rs`; only the webview-facing grants
+were dropped.
+
+If a user accepts an update **after** the app window is already up (the splash has since closed), the
+Rust shell **reopens the splash window** so download progress (`boot://status`, stage `"updating"`)
+is visible again, and closes it on failure (see `ensure_splash_window` / `check_for_update`).
 
 ### One-time setup — DONE (recorded here for reference)
 
@@ -227,3 +234,13 @@ manifest. Env knobs: `OTA_BUCKET` (default `ledrums-ota`), `OTA_PUBLIC_BASE` (**
 > **Per-platform builds.** As with the sidecar (Node SEA is not a cross-compiler), produce each
 > platform's signed bundle **on that platform** and run `publish:ota` there; the manifest merge
 > keeps both arch entries.
+
+> **⚠ Publish serially — one platform at a time.** `publish-ota.mjs` updates `latest.json` with a
+> read-modify-write (fetch the manifest → merge this platform's entry → re-upload). Two publishes in
+> flight at once can read the same manifest and clobber each other's platform entry. Always wait for
+> one platform's publish to finish before starting the next; **never run `publish:ota` concurrently.**
+
+> **Version is single-sourced.** `tauri.conf.json`'s `version` is authoritative (it's baked into the
+> built app). `OTA_VERSION`, if set, only *asserts* that version — a mismatch aborts the publish
+> (override with `OTA_ALLOW_VERSION_MISMATCH=1` only in an emergency), so the manifest can't drift
+> from the artifact.

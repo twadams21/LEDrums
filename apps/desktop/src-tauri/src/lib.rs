@@ -151,6 +151,27 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
     }
 }
 
+/// Re-create the transient splash/progress window if it has already been closed (`open_app_window`
+/// closes it once the app window finishes loading). An update accepted AFTER the app is up would
+/// otherwise download with no visible surface — the `boot://status` progress stream would have
+/// nothing to render on. Reopening reuses the same window label/url/size as `tauri.conf.json`, so the
+/// existing `shell/main.js` status rendering (incl. the `stage: "updating"` branch) is reused as-is.
+/// Idempotent: a no-op if the splash is still open. Closed again on update failure/cancel.
+fn ensure_splash_window(app: &AppHandle) {
+    if app.get_webview_window("splash").is_some() {
+        return;
+    }
+    if let Err(e) = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("index.html".into()))
+        .title("LEDrums")
+        .inner_size(460.0, 380.0)
+        .resizable(false)
+        .center()
+        .build()
+    {
+        eprintln!("[updater] could not reopen progress splash: {e}");
+    }
+}
+
 /// Send SIGTERM to the sidecar for a graceful shutdown (stops cloudflared + flushes autosaves),
 /// then ensure it is gone. Idempotent — the child handle is taken on first call.
 fn terminate_sidecar(app: &AppHandle) {
@@ -419,9 +440,15 @@ async fn check_for_update(app: AppHandle) {
         return;
     }
 
-    // Best-effort download progress on the splash. `publish` is harmless once the splash has
-    // closed (it just updates shared state). `on_chunk` is an immutable `Fn`, so accumulate the
-    // running byte count through an atomic.
+    // Make download progress visible. By now the splash may already be closed (open_app_window
+    // closes it once the app window loads), so an update accepted mid-session would otherwise show
+    // nothing until the restart. Reopen the splash so the `boot://status` progress stream has a
+    // surface again; it's closed below on failure (on success the app restarts anyway).
+    ensure_splash_window(&app);
+
+    // Best-effort download progress on the splash. `publish` updates shared state and emits to the
+    // (now-reopened) splash. `on_chunk` is an immutable `Fn`, so accumulate the running byte count
+    // through an atomic.
     publish(
         &app,
         &BootStatus {
@@ -464,8 +491,12 @@ async fn check_for_update(app: AppHandle) {
             app.restart();
         }
         Err(e) => {
-            // Don't clobber the (likely already-running) server's share status with an error —
-            // just log it and let the current version keep running.
+            // Close the progress splash we reopened above so the failed update doesn't leave a
+            // stuck window, and let the current version keep running. Don't clobber the
+            // (likely already-running) server's share status with an error — just log it.
+            if let Some(splash) = app.get_webview_window("splash") {
+                let _ = splash.close();
+            }
             eprintln!("[updater] download/install failed ({e}); continuing with current version");
         }
     }
