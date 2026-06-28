@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LEDrums — Share</title>
+    <style>
+      :root {
+        --bg: #0b0b0f;
+        --panel: #15151d;
+        --line: #26263300;
+        --border: #2a2a38;
+        --text: #e6e6ee;
+        --muted: #9a9ab0;
+        --accent: #7c6cff;
+        --good: #4ad58a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+        padding: 18px 20px;
+        gap: 14px;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      header { display: flex; align-items: baseline; justify-content: space-between; }
+      h1 { font-size: 15px; margin: 0; letter-spacing: 0.3px; }
+      .status {
+        font-size: 11px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--muted);
+        box-shadow: 0 0 0 0 rgba(124, 108, 255, 0.6);
+      }
+      .dot.live { background: var(--good); }
+      .dot.work { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(124, 108, 255, 0.5); }
+        100% { box-shadow: 0 0 0 7px rgba(124, 108, 255, 0); }
+      }
+      .field {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .field .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+      .row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+      .value {
+        font-family: "SF Mono", ui-monospace, "Cascadia Code", monospace;
+        font-size: 14px;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .value.pin { font-size: 26px; letter-spacing: 6px; font-weight: 600; }
+      .value.dim { color: var(--muted); }
+      button.copy {
+        background: var(--accent);
+        color: white;
+        border: 0;
+        border-radius: 7px;
+        padding: 6px 11px;
+        font-size: 12px;
+        cursor: pointer;
+        flex: none;
+      }
+      button.copy:active { transform: translateY(1px); }
+      button.copy.done { background: var(--good); }
+      .hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>LEDrums</h1>
+      <div class="status"><span id="dot" class="dot work"></span><span id="statusText">Starting…</span></div>
+    </header>
+
+    <div class="field" id="tunnelField">
+      <div class="label">Share link</div>
+      <div class="row">
+        <span class="value dim" id="tunnelUrl">Waiting for tunnel…</span>
+        <button class="copy hidden" id="copyUrl">Copy</button>
+      </div>
+    </div>
+
+    <div class="field hidden" id="pinField">
+      <div class="label">Room PIN</div>
+      <div class="row">
+        <span class="value pin" id="pin">––––––</span>
+        <button class="copy" id="copyPin">Copy</button>
+      </div>
+    </div>
+
+    <div class="field" id="localField">
+      <div class="label">On this machine</div>
+      <div class="row">
+        <span class="value dim" id="localUrl">starting…</span>
+        <button class="copy hidden" id="copyLocal">Copy</button>
+      </div>
+    </div>
+
+    <p class="hint" id="hint">
+      The full LEDrums app opens in its own window. Share the link above with a remote drummer —
+      they'll enter the Room PIN once to join.
+    </p>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const tauri = window.__TAURI__;
+
+      async function copy(text, btn) {
+        try {
+          if (tauri?.clipboardManager?.writeText) await tauri.clipboardManager.writeText(text);
+          else await navigator.clipboard.writeText(text);
+          const prev = btn.textContent;
+          btn.textContent = 'Copied';
+          btn.classList.add('done');
+          setTimeout(() => {
+            btn.textContent = prev;
+            btn.classList.remove('done');
+          }, 1200);
+        } catch (e) {
+          console.error('copy failed', e);
+        }
+      }
+
+      let state = { stage: 'starting', localUrl: null, tunnelUrl: null, pin: null };
+
+      function render() {
+        const dot = $('dot');
+        const statusText = $('statusText');
+
+        if (state.localUrl) {
+          $('localUrl').textContent = state.localUrl;
+          $('localUrl').classList.remove('dim');
+          $('copyLocal').classList.remove('hidden');
+        }
+
+        if (state.pin) {
+          $('pinField').classList.remove('hidden');
+          $('pin').textContent = state.pin;
+        }
+
+        if (state.tunnelUrl) {
+          $('tunnelUrl').textContent = state.tunnelUrl;
+          $('tunnelUrl').classList.remove('dim');
+          $('copyUrl').classList.remove('hidden');
+          dot.className = 'dot live';
+          statusText.textContent = 'Live';
+        } else if (state.stage === 'running' || state.localUrl) {
+          dot.className = 'dot work';
+          statusText.textContent = 'Local only — waiting for tunnel…';
+        } else {
+          dot.className = 'dot work';
+          statusText.textContent = 'Starting…';
+        }
+
+        if (state.stage === 'no-tunnel') {
+          $('tunnelUrl').textContent = 'No tunnel (local/LAN access only)';
+          dot.className = 'dot live';
+          statusText.textContent = 'Local only';
+          $('hint').textContent =
+            'No cloudflared binary was bundled, so there is no public share link. ' +
+            'The app is reachable on this machine and the LAN.';
+        }
+      }
+
+      $('copyUrl').addEventListener('click', () => state.tunnelUrl && copy(state.tunnelUrl, $('copyUrl')));
+      $('copyPin').addEventListener('click', () => state.pin && copy(state.pin, $('copyPin')));
+      $('copyLocal').addEventListener('click', () => state.localUrl && copy(state.localUrl, $('copyLocal')));
+
+      // The Rust shell parses the sidecar's boot banner and pushes status here.
+      if (tauri?.event?.listen) {
+        tauri.event.listen('boot://status', (evt) => {
+          state = { ...state, ...evt.payload };
+          render();
+        });
+      }
+      render();
+    </script>
+  </body>
+</html>

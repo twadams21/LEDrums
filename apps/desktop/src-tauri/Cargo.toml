@@ -1,0 +1,33 @@
+[package]
+name = "ledrums-desktop"
+version = "0.1.0"
+description = "LEDrums desktop shell"
+authors = ["LEDrums"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# The library carries the app logic so the same entry point works on desktop and (future)
+# mobile; main.rs is a thin launcher. crate-type covers desktop (rlib) + mobile targets.
+[lib]
+name = "ledrums_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+
+# SIGTERM-based graceful shutdown of the sidecar is unix-only; on Windows we fall back to the
+# shell plugin's kill().
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+# Default Tauri custom-protocol feature toggle used by the CLI for production builds.
+custom-protocol = ["tauri/custom-protocol"]

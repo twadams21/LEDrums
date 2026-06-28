@@ -1,0 +1,20 @@
+{
+  "name": "@ledrums/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LEDrums desktop shell (Tauri 2): bundles the server as a sidecar + the web UI, surfaces the share URL/PIN natively.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
+    "prepare:bundle": "node scripts/prepare-bundle.mjs",
+    "fetch:cloudflared": "node scripts/fetch-cloudflared.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "esbuild": "^0.24.0",
+    "postject": "^1.0.0-alpha.6"
+  }
+}

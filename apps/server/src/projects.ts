@@ -5,7 +5,20 @@ import { assertProjectIntegrity, parseProject, type Project } from '@ledrums/cor
 import { writeFileAtomic, writeFileAtomicSync } from './atomic-file';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const PROJECTS_DIR = join(here, '..', 'projects');
+
+/**
+ * Resolve the projects directory. An explicit `LEDRUMS_PROJECTS_DIR` wins — the packaged
+ * desktop shell (S4) sets it to redirect persistence into the OS app-data dir, where a
+ * sandboxed binary can actually write. Unset (plain `pnpm dev`/`pnpm start`) falls back to
+ * the in-repo `apps/server/projects` dir alongside this module, so today's behavior is
+ * unchanged. Pure over `env` so it is unit-testable without reaching into `process.env`.
+ */
+export function resolveProjectsDir(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.LEDRUMS_PROJECTS_DIR?.trim();
+  return override ? override : join(here, '..', 'projects');
+}
+
+export const PROJECTS_DIR = resolveProjectsDir();
 
 /** Validate + serialize a project to its on-disk JSON form. Throws on invalid input. */
 function serializeProject(project: Project): string {

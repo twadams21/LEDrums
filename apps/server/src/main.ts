@@ -18,7 +18,7 @@ import { listProjects, loadProject, projectExists, saveProjectAsync } from './pr
 import { loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
-import { serveStatic } from './static-host';
+import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
 import { admitDecision, createPinGate, resolvePin } from './pin-gate';
 import { boot } from './boot';
@@ -99,8 +99,12 @@ const showLibraryAutosaver = createAutosaver(() =>
 
 // --- HTTP + static + WS -----------------------------------------------------
 
+// Resolve the web root once at boot — env-overridable so the packaged desktop shell can point
+// it at its bundled web dist (default reproduces today's apps/web/dist behavior).
+const webRoot = resolveWebRoot(process.env);
+
 const server = createServer((req, res) => {
-  serveStatic(req, res);
+  serveStatic(req, res, webRoot);
 });
 
 const wss = new WebSocketServer({ server, path: WS_PATH });
