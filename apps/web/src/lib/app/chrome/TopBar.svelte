@@ -1,11 +1,11 @@
 <script lang="ts">
-  /* Top bar: brand · show identity · transport · engine status · output pill.
+  /* Top bar: brand · show identity · presence · share · engine status · output pill.
      The show control is the document identity: the active show's name shown + edited
      in place (→ store.renameShow), with a ListMusic affordance that opens the show
      browser (New / Open / Save / Save-As / Close / Rename / Delete). The live section
-     context rides underneath so the bar still reads at a glance. */
+     context rides underneath so the bar still reads at a glance. Transport lives in its
+     own bar below this one (see AuthorShell) — the bar stays an identity/status strip. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import Transport from './Transport.svelte';
   import OutputPill from './OutputPill.svelte';
   import ShareInfo from './ShareInfo.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
@@ -58,8 +58,6 @@
     </span>
     <SaveIndicator {store} />
   </div>
-
-  <div class="transport-slot"><Transport {store} /></div>
 
   <div class="right">
     {#if store.canTakeover}
@@ -134,7 +132,7 @@
     background: var(--surface-2);
     color: var(--text-faint);
     /* Fixed 300px footprint (basis, no grow/shrink) so a longer/shorter show name never
-       reflows the transport + status cluster to its right — the name truncates within
+       reflows the status cluster to its right — the name truncates within
        (.set-labels flex:1/min-width:0 + .set-name max-width:100%). */
     flex: 0 0 300px;
   }
@@ -179,14 +177,10 @@
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
   }
-  .transport-slot {
-    flex: 1 1 auto;
-    display: flex;
-    justify-content: center;
-    min-width: 0;
-    overflow: hidden;
-  }
   .right {
+    /* margin-left:auto pushes the status cluster to the far edge now that the
+       flex-grow transport slot that used to separate it is gone. */
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: var(--space-3);

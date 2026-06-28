@@ -10,6 +10,7 @@
   import type { ShellStore } from './shell-store.svelte';
   import type { DockTab } from './shell-nav';
   import TopBar from './chrome/TopBar.svelte';
+  import Transport from './chrome/Transport.svelte';
   import LeftRail from './chrome/LeftRail.svelte';
   import LayersDock from './docks/LayersDock.svelte';
   import Visualizer from './docks/Visualizer.svelte';
@@ -74,6 +75,11 @@
 
 <div class="author" class:solo={perform} style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px;">
   <div class="top"><TopBar {store} /></div>
+
+  <!-- Transport rides its own slim bar directly under the TopBar: a global
+       performance control (play/tempo/velocity/panic) that stays put across every
+       view — including Perform — instead of crowding the identity/status TopBar. -->
+  <div class="xport"><Transport {store} /></div>
 
   <div class="rail"><LeftRail {store} {shell} /></div>
 
@@ -162,15 +168,20 @@
     --pad: var(--space-3);
     --gap: var(--space-3);
     --topbar: 58px;
-    --content-top: calc(var(--pad) + var(--topbar) + var(--gap));
+    --transport: 46px;
+    /* content (rail/center/dock) starts below TWO chrome rows now — TopBar + the
+       transport bar — each followed by a grid gap. Keep this in sync with the
+       grid-template-rows below so the splitter handles land on the divides. */
+    --content-top: calc(var(--pad) + var(--topbar) + var(--gap) + var(--transport) + var(--gap));
     position: relative;
     height: 100vh;
     width: 100vw;
     display: grid;
     grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr) var(--dock-w, 360px);
-    grid-template-rows: var(--topbar) minmax(0, 1fr);
+    grid-template-rows: var(--topbar) var(--transport) minmax(0, 1fr);
     grid-template-areas:
       'top top top'
+      'xport xport xport'
       'rail center dock';
     gap: var(--gap);
     padding: var(--pad);
@@ -180,16 +191,30 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  /* Perform: no right dock — collapse to rail + center only. */
+  /* Perform: no right dock — collapse to rail + center only. The transport bar
+     stays (it's a performance control), spanning both remaining columns. */
   .author.solo {
     grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr);
     grid-template-areas:
       'top top'
+      'xport xport'
       'rail center';
   }
   .top {
     grid-area: top;
     min-width: 0;
+  }
+  .xport {
+    grid-area: xport;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 0 var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+    overflow: hidden;
   }
   .rail {
     grid-area: rail;
