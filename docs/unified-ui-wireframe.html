@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LEDrums — unified UI wireframe (interactive)</title>
+<style>
+  :root {
+    --bg: #0c0e11;
+    --region: #14171c;
+    --leaf: #181c22;
+    --line: #2a3038;
+    --line-strong: #3a424d;
+    --ink: #e6e9ee;
+    --muted: #9aa3af;
+    --faint: #6b7480;
+    --accent: oklch(0.845 0.19 128); /* phosphor lime — the one brand accent */
+    --radius: 7px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; }
+
+  .box { position: relative; border: 1px solid var(--line); border-radius: var(--radius); background: var(--region); min-height: 0; min-width: 0; }
+  .box > .tag { position: absolute; top: 6px; left: 9px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); pointer-events: none; }
+  .leaf { display: flex; align-items: center; justify-content: center; text-align: center; padding: 14px 10px; background: var(--leaf); border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); font-size: 12px; min-height: 40px; }
+  .leaf b { color: var(--ink); font-weight: 600; }
+  .leaf small { display: block; color: var(--faint); font-size: 10px; margin-top: 3px; }
+  .accent { border-color: color-mix(in oklch, var(--accent) 55%, var(--line)); color: var(--ink); }
+  .accent b { color: var(--accent); }
+  button.leaf { width: 100%; }
+  button.leaf:hover { border-color: var(--line-strong); color: var(--ink); }
+
+  .modeswitch { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; align-self: center; }
+  .modeswitch button { border: none; background: var(--leaf); color: var(--faint); padding: 9px 14px; font-size: 12px; }
+  .modeswitch button + button { border-left: 1px solid var(--line); }
+  body[data-mode="perform"] [data-set-mode="perform"],
+  body[data-mode="author"]  [data-set-mode="author"] { background: color-mix(in oklch, var(--accent) 22%, var(--leaf)); color: var(--accent); }
+
+  /* ===================== AUTHOR SHELL ===================== */
+  .app { height: 100vh; display: grid; grid-template-columns: 210px minmax(0, 1fr) 320px; grid-template-rows: 58px minmax(0, 1fr); grid-template-areas: "top top top" "rail center dock"; gap: 8px; padding: 8px; }
+  body[data-mode="perform"] .app, body[data-mode="perform"] .overlays { display: none; }
+  body[data-mode="author"] .perform { display: none; }
+
+  .topbar { grid-area: top; display: flex; align-items: stretch; gap: 8px; padding: 8px; }
+  .topbar .leaf { flex: 0 0 auto; padding: 8px 14px; min-height: 0; }
+  .topbar .grow { flex: 1 1 auto; }
+  .brand { display: flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 700; letter-spacing: 0.04em; }
+  .brand .mark { width: 16px; height: 16px; border-radius: 4px; background: var(--accent); }
+
+  .rail { grid-area: rail; display: grid; grid-template-rows: minmax(0, 1.1fr) auto; gap: 8px; padding: 8px; }
+  .rail .views { display: flex; flex-direction: column; gap: 6px; padding: 26px 8px 8px; }
+  .rail .views .leaf { padding: 9px; min-height: 0; }
+  body[data-view="trigger"]  [data-set-view="trigger"],
+  body[data-view="patch"]    [data-set-view="patch"],
+  body[data-view="sections"] [data-set-view="sections"],
+  body[data-view="kit"]      [data-set-view="kit"] { border-style: solid; border-color: color-mix(in oklch, var(--accent) 55%, var(--line)); color: var(--accent); font-weight: 600; }
+
+  .center { grid-area: center; display: grid; grid-template-rows: minmax(0, 1fr) 132px; gap: 8px; min-height: 0; }
+  .workspace { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 26px 8px 8px; }
+  .workspace .note { position: absolute; top: 6px; right: 10px; font-size: 10px; color: var(--faint); }
+  .vh { min-height: 0; padding: 9px; }
+
+  .viewport { display: grid; min-height: 0; }
+  .view { display: none; min-height: 0; }
+  body[data-view="trigger"]  .view-trigger  { display: grid; grid-template-columns: 224px minmax(0, 1fr); gap: 8px; }
+  body[data-view="patch"]    .view-patch    { display: flex; }
+  body[data-view="sections"] .view-sections { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
+  body[data-view="kit"]      .view-kit      { display: flex; }
+
+  /* trigger view */
+  .playsurface { display: flex; flex-direction: column; padding: 26px 8px 8px; }
+  .playsurface .scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 3px; }
+  .group { border: 1px solid var(--line); border-radius: 6px; padding: 7px; background: #11141a; margin-bottom: 8px; }
+  .group:last-child { margin-bottom: 0; }
+  .grouphead { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 0 2px 6px; }
+  .trig { border: 1px dashed var(--line-strong); border-radius: 5px; background: var(--leaf); color: var(--muted); font-size: 11px; padding: 7px 9px; margin-bottom: 6px; }
+  .trig:last-child { margin-bottom: 0; }
+  .trig:hover { border-color: var(--line-strong); color: var(--ink); }
+  .tg { min-height: 0; }
+
+  /* patch view — input / device routing graph (= the old input map, as nodes) */
+  .patchcanvas { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0; padding: 26px 12px 12px; flex-wrap: wrap; }
+  .pcol { display: flex; flex-direction: column; gap: 10px; }
+  .pnode { min-width: 150px; }
+  .arrow { color: var(--faint); padding: 0 10px; font-size: 16px; }
+
+  /* sections view — setlist + grid of GRAPHS (reusable, layerable): sections × drums, 2-3 slots/drum */
+  .setgrid { display: grid; grid-template-columns: 82px 38px repeat(4, minmax(0, 1fr)); gap: 6px; align-content: start; padding: 26px 8px 8px; overflow: auto; min-height: 0; }
+  .setgrid .h { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: flex; align-items: center; }
+  .setgrid .colh { justify-content: center; }
+  .setgrid .drum { font-weight: 600; color: var(--ink); align-self: center; }
+  .setgrid .slot { color: var(--faint); justify-content: center; font-family: ui-monospace, monospace; }
+  .gcell { border: 1px dashed var(--line-strong); border-radius: 5px; background: var(--leaf); color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px; }
+  .gcell.use { border-style: solid; border-color: color-mix(in oklch, var(--accent) 50%, var(--line)); color: var(--accent); }
+  .gcell.add { color: var(--faint); }
+
+  /* kit view */
+  .view-kit .leaf { flex: 1; }
+
+  /* bottom dock = contextual PROPERTIES (default: layers/buses overview) */
+  .bottom { display: flex; padding: 26px 8px 8px; }
+  .bottom .leaf { flex: 1; margin: 0; }
+
+  /* right dock = visualizer (pinned) + tabbed lower panel (inspector / monitor) */
+  .dock { grid-area: dock; display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+  .dock .viz { flex: 1.15; }
+  .dock .tabs { display: flex; gap: 6px; }
+  .dock .tab { flex: 1; font-size: 11px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--leaf); color: var(--faint); text-align: center; }
+  body[data-dock="inspector"] [data-set-dock="inspector"],
+  body[data-dock="monitor"]   [data-set-dock="monitor"] { color: var(--ink); border-color: color-mix(in oklch, var(--accent) 55%, var(--line)); }
+  .dock .panel { display: none; }
+  body[data-dock="inspector"] .panel-inspector,
+  body[data-dock="monitor"]   .panel-monitor { display: flex; flex: 1; }
+
+  /* ===================== PERFORM SHELL ===================== */
+  .perform { height: 100vh; display: grid; grid-template-columns: 176px minmax(0, 1fr); grid-template-rows: 54px auto minmax(0, 1fr) 172px; gap: 8px; padding: 8px;
+    grid-template-areas: "prail pbar" "prail precall" "prail pviz" "prail ppads"; }
+  .prail { grid-area: prail; padding: 26px 8px 8px; }
+  .prail .leaf { height: 100%; border: none; background: transparent; }
+  .pbar { grid-area: pbar; display: flex; gap: 8px; align-items: stretch; }
+  .pbar .leaf { min-height: 0; padding: 8px 14px; }
+  .pbar .grow { flex: 1 1 auto; }
+  .precall { grid-area: precall; display: flex; gap: 8px; align-items: center; padding: 8px 10px; overflow-x: auto; }
+  .precall .rlabel { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); flex: 0 0 auto; }
+  .precall .chip { border: 1px dashed var(--line-strong); border-radius: 6px; background: var(--leaf); color: var(--muted); font-size: 11px; padding: 6px 14px; flex: 0 0 auto; }
+  .precall .chip.on { border-style: solid; border-color: color-mix(in oklch, var(--accent) 55%, var(--line)); color: var(--accent); }
+  .pviz { grid-area: pviz; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
+  .pviz .leaf { font-size: 13px; }
+  .ppads { grid-area: ppads; display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+  .bigpad { border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--leaf); color: var(--ink); font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+
+  /* overlays + legend */
+  .overlays { padding: 18px 16px 28px; }
+  .overlays h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); font-weight: 600; margin: 0 0 10px; }
+  .overlays .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .overlays .leaf { flex: 1 1 180px; min-height: 64px; }
+  .legend { padding: 0 16px 28px; color: var(--faint); font-size: 11px; max-width: 76ch; }
+  .legend b { color: var(--muted); }
+</style>
+</head>
+<body data-mode="author" data-view="trigger" data-dock="inspector">
+
+  <!-- ============================ AUTHOR SHELL ============================ -->
+  <div class="app">
+
+    <div class="topbar box">
+      <div class="leaf brand"><span class="mark"></span>LEDrums</div>
+      <div class="modeswitch">
+        <button data-set-mode="perform">Perform</button>
+        <button data-set-mode="author">Author</button>
+      </div>
+      <div class="leaf">Setlist / Project <small>open · save · new</small></div>
+      <div class="leaf grow">Transport <small>play · stop · BPM · tap · beat clock</small></div>
+      <div class="leaf grow">Status cluster <small>engine link · MIDI · FPS · latency · pixels</small></div>
+      <div class="leaf">Output pill <small>LIVE / dry-run / off</small></div>
+    </div>
+
+    <div class="rail box">
+      <span class="tag">Left rail</span>
+      <div class="box" style="position:relative">
+        <span class="tag">Songs</span>
+        <div class="leaf" style="height:100%;border:none;background:transparent">Songs / scenes list</div>
+      </div>
+      <div class="views box" style="background:transparent;border:none">
+        <span class="tag">Views</span>
+        <button class="leaf" data-set-view="trigger">Trigger Graph</button>
+        <button class="leaf" data-set-view="patch">Patch Graph <small>inputs · devices</small></button>
+        <button class="leaf" data-set-view="sections">Sections / Setlist</button>
+        <button class="leaf" data-set-view="kit">Kit</button>
+      </div>
+    </div>
+
+    <div class="center">
+      <div class="workspace box">
+        <span class="tag">Workspace · active view</span>
+        <span class="note">pick a view in the left rail →</span>
+        <div class="leaf vh">View header — title · context · actions</div>
+
+        <div class="viewport">
+          <!-- TRIGGER GRAPH VIEW -->
+          <div class="view view-trigger">
+            <div class="playsurface box">
+              <span class="tag">Play Surface</span>
+              <div class="scroll">
+                <div class="group"><div class="grouphead">Kick</div><div class="trig" data-select="Trigger · Kick · center">Trigger · center</div><div class="trig" data-select="Trigger · Kick · edge">Trigger · edge</div></div>
+                <div class="group"><div class="grouphead">Snare</div><div class="trig" data-select="Trigger · Snare · center">Trigger · center</div><div class="trig" data-select="Trigger · Snare · rim">Trigger · rim</div><div class="trig" data-select="Trigger · Snare · cross-stick">Trigger · cross-stick</div></div>
+                <div class="group"><div class="grouphead">Tom</div><div class="trig" data-select="Trigger · Tom · center">Trigger · center</div><div class="trig" data-select="Trigger · Tom · edge">Trigger · edge</div></div>
+                <div class="group"><div class="grouphead">Tom 2</div><div class="trig" data-select="Trigger · Tom 2 · center">Trigger · center</div><div class="trig" data-select="Trigger · Tom 2 · edge">Trigger · edge</div></div>
+                <div class="group"><div class="grouphead">Hi-hat</div><div class="trig" data-select="Trigger · Hi-hat · closed">Trigger · closed</div><div class="trig" data-select="Trigger · Hi-hat · open">Trigger · open</div><div class="trig" data-select="Trigger · Hi-hat · pedal">Trigger · pedal</div></div>
+                <div class="group"><div class="grouphead">Ride</div><div class="trig" data-select="Trigger · Ride · bow">Trigger · bow</div><div class="trig" data-select="Trigger · Ride · bell">Trigger · bell</div></div>
+                <div class="group"><div class="grouphead">Crash</div><div class="trig" data-select="Trigger · Crash">Trigger · hit</div></div>
+              </div>
+            </div>
+            <div class="leaf accent tg"><b>Trigger Graph (NodeCanvas)</b></div>
+          </div>
+
+          <!-- PATCH GRAPH VIEW (= input map, as a device-routing node graph) -->
+          <div class="view view-patch box">
+            <span class="tag">Patch Graph · input &amp; device routing (select a node → settings in bottom dock)</span>
+            <div class="patchcanvas">
+              <div class="pcol">
+                <button class="leaf pnode" data-select="Controller · Sensory Percussion"><b>Controller</b><small>Sensory Percussion</small></button>
+                <button class="leaf pnode" data-select="MIDI In · device + note map">MIDI In <small>device · note map</small></button>
+                <button class="leaf pnode" data-select="OSC In · address map">OSC In <small>address map</small></button>
+              </div>
+              <span class="arrow">→</span>
+              <div class="pcol"><button class="leaf pnode accent" data-select="Kit · drums &amp; zones"><b>Kit</b><small>drums · zones</small></button></div>
+              <span class="arrow">→</span>
+              <div class="pcol"><button class="leaf pnode" data-select="Output · Art-Net / sACN device"><b>Output</b><small>Art-Net / sACN · IP · RGB · FPS</small></button></div>
+            </div>
+          </div>
+
+          <!-- SECTIONS / SETLIST VIEW — graphs (reusable + layerable) in slots -->
+          <div class="view view-sections">
+            <div class="leaf vh">Setlist · Song ▸ sections <small>open / save · add section · graphs reused across sections, layered per slot</small></div>
+            <div class="box" style="position:relative">
+              <span class="tag">Sections (x) × drums (y) · 2–3 graph slots per drum</span>
+              <div class="setgrid">
+                <!-- header row -->
+                <div class="h"></div><div class="h"></div>
+                <div class="h colh">Intro</div><div class="h colh">Verse 1</div><div class="h colh">Verse 2</div><div class="h colh">Chorus</div>
+                <!-- Kick: 2 slots -->
+                <div class="h drum">Kick</div><div class="h slot">L1</div>
+                <div class="gcell">Graph · pulse</div><div class="gcell use">Graph · drive</div><div class="gcell use">Graph · drive</div><div class="gcell">Graph · build</div>
+                <div class="h"></div><div class="h slot">L2</div>
+                <div class="gcell add">+</div><div class="gcell add">+</div><div class="gcell use">Graph · sparks +</div><div class="gcell add">+</div>
+                <!-- Snare: 3 slots -->
+                <div class="h drum">Snare</div><div class="h slot">L1</div>
+                <div class="gcell">Graph · flash</div><div class="gcell use">Graph · roll</div><div class="gcell use">Graph · roll</div><div class="gcell">Graph · hit</div>
+                <div class="h"></div><div class="h slot">L2</div>
+                <div class="gcell add">+</div><div class="gcell">Graph · halo</div><div class="gcell">Graph · halo</div><div class="gcell add">+</div>
+                <div class="h"></div><div class="h slot">L3</div>
+                <div class="gcell add">+</div><div class="gcell add">+</div><div class="gcell use">Graph · trails +</div><div class="gcell add">+</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- KIT VIEW -->
+          <div class="view view-kit">
+            <div class="leaf">Kit Geometry <small>3D transforms · hoops · spin · start angle</small></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom box">
+        <span class="tag">Bottom dock</span>
+        <div class="leaf" style="margin-top:18px">Layers / Buses <small>blend · opacity · mono / poly · meters</small></div>
+      </div>
+    </div>
+
+    <div class="dock box">
+      <div class="leaf viz accent"><b>Visualizer — Kit Preview</b><small>3D ⇄ 2D</small></div>
+      <div class="tabs">
+        <button class="tab" data-set-dock="inspector">Inspector</button>
+        <button class="tab" data-set-dock="monitor">Monitor / Log</button>
+      </div>
+      <div class="leaf panel panel-inspector" id="inspector">Inspector <small>select a node — params · envelopes · device · input settings</small></div>
+      <div class="leaf panel panel-monitor">Monitor / Log <small>input hits + resolution</small></div>
+    </div>
+
+  </div>
+
+  <!-- ============================ PERFORM SHELL ============================ -->
+  <div class="perform">
+    <div class="prail box">
+      <span class="tag">Songs</span>
+      <div class="leaf">Songs / scenes list</div>
+    </div>
+
+    <div class="pbar">
+      <div class="leaf brand" style="min-height:0"><span class="mark"></span>LEDrums</div>
+      <div class="modeswitch">
+        <button data-set-mode="perform">Perform</button>
+        <button data-set-mode="author">Author</button>
+      </div>
+      <div class="leaf grow">Transport <small>play · stop · BPM · tap · clock</small></div>
+      <div class="leaf">Status <small>engine · FPS · latency</small></div>
+      <div class="leaf">Output pill <small>LIVE</small></div>
+    </div>
+
+    <div class="precall box">
+      <span class="rlabel">Sections · recall</span>
+      <span class="chip on">Intro</span>
+      <span class="chip">Verse 1</span>
+      <span class="chip">Verse 2</span>
+      <span class="chip">Chorus</span>
+      <span class="chip">Outro</span>
+    </div>
+
+    <div class="pviz">
+      <div class="leaf accent"><b>Kit Preview · 3D stage</b><small>full-bleed</small></div>
+      <div class="leaf accent"><b>Kit Preview · 2D map</b><small>per-drum / per-layer</small></div>
+    </div>
+
+    <div class="ppads">
+      <div class="bigpad">Kick</div>
+      <div class="bigpad">Snare</div>
+      <div class="bigpad">Tom</div>
+      <div class="bigpad">Tom 2</div>
+      <div class="bigpad">Hi-hat</div>
+      <div class="bigpad">Ride</div>
+      <div class="bigpad">Crash</div>
+    </div>
+  </div>
+
+  <!-- ============================ OVERLAYS (author) ============================ -->
+  <div class="overlays">
+    <h2>Overlays — drawers &amp; modals (summoned on demand, not always visible)</h2>
+    <div class="row">
+      <div class="leaf">Effect Gallery <small>drawer</small></div>
+      <div class="leaf">Clip / Graph Settings <small>drawer</small></div>
+      <div class="leaf">Envelope Editor <small>modal</small></div>
+      <div class="leaf">Effect Creator <small>modal</small></div>
+    </div>
+  </div>
+
+  <p class="legend">
+    <b>Interactive:</b> click <b>Perform / Author</b> to switch shells, the left-rail <b>Views</b> to swap the
+    workspace, the right-dock <b>Inspector / Monitor</b> tabs, and any <b>node</b> (a Play-Surface trigger or a
+    Patch node) to load its settings into the <b>Inspector</b>. The <b>bottom dock</b> stays on Layers / Buses.
+    Patch Graph = the input/device routing (controller · MIDI · OSC → kit → output), replacing the old Input
+    Map and Settings pages. Sections hold reusable, layerable <b>graphs</b> (same graph in Verse 1 &amp; Verse 2;
+    stack a second graph to evolve it). Dashed boxes are leaf modules; solid boxes are containers; accent =
+    active / primary / reused.
+  </p>
+
+  <script>
+    const body = document.body;
+    const inspector = document.getElementById('inspector');
+    const INSPECTOR_DEFAULT = 'Inspector <small>select a node — params · envelopes · device · input settings</small>';
+    const resetInspector = () => { inspector.innerHTML = INSPECTOR_DEFAULT; inspector.classList.remove('accent'); };
+    document.addEventListener('click', (e) => {
+      const m = e.target.closest('[data-set-mode],[data-set-view],[data-set-dock],[data-select]');
+      if (!m) return;
+      if (m.dataset.setMode) body.dataset.mode = m.dataset.setMode;
+      if (m.dataset.setView) { body.dataset.view = m.dataset.setView; resetInspector(); }
+      if (m.dataset.setDock) body.dataset.dock = m.dataset.setDock;
+      if (m.dataset.select) {
+        body.dataset.dock = 'inspector';
+        inspector.innerHTML = 'Inspector — <b>' + m.dataset.select + '</b><small>the selected node’s settings</small>';
+        inspector.classList.add('accent');
+      }
+    });
+  </script>
+
+</body>
+</html>

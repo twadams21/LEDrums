@@ -36,7 +36,7 @@ function fixture(): { dmxMap: DmxMap; fb: Framebuffer } {
 }
 
 function settings(state: OutputSettings['state'], rgbOrder: OutputSettings['rgbOrder'] = 'RGB'): OutputSettings {
-  return { state, protocol: 'artnet', host: '127.0.0.1', broadcast: false, rgbOrder, fps: 44 };
+  return { state, protocol: 'artnet', host: '127.0.0.1', broadcast: false, rgbOrder, fps: 44, priority: 100 };
 }
 
 describe('output pure helpers', () => {
@@ -106,5 +106,30 @@ describe('OutputManager state machine', () => {
     m.applySettings(settings('armed'), dmxMap);
     expect(() => m.sendFrame(fb.rgba, dmxMap)).not.toThrow();
     expect(m.status().lastError).toContain('net down');
+  });
+
+  it('passes priority / port / iface through to the sender factory (S5c)', () => {
+    let captured: OutputSettings | null = null;
+    const m = new OutputManager((s) => {
+      captured = s;
+      return new FakeOutput();
+    });
+    const { dmxMap } = fixture();
+    m.applySettings({ ...settings('armed'), protocol: 'sacn', priority: 175, port: 5569, iface: '10.0.0.9' }, dmxMap);
+    expect(captured).toMatchObject({ priority: 175, port: 5569, iface: '10.0.0.9' });
+  });
+
+  it('re-creates the sender when only priority or iface changes (baked in at construction)', () => {
+    let builds = 0;
+    const m = new OutputManager(() => {
+      builds++;
+      return new FakeOutput();
+    });
+    const { dmxMap } = fixture();
+    const base = { ...settings('armed'), protocol: 'sacn' as const };
+    m.applySettings({ ...base, priority: 100 }, dmxMap);
+    m.applySettings({ ...base, priority: 200 }, dmxMap); // priority change → new transport
+    m.applySettings({ ...base, priority: 200, iface: '10.0.0.5' }, dmxMap); // iface change → new transport
+    expect(builds).toBe(3);
   });
 });

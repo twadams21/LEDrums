@@ -18,6 +18,8 @@ export const drumSchema = z.object({
   hoopCount: z.number().int().positive().optional(),
   /** Per-drum override of the global LED density (px/m). */
   ledDensityPxPerM: z.number().positive().optional(),
+  /** Literal pixels per hoop. When set, overrides the density computation entirely. */
+  pixelsPerHoop: z.number().int().positive().optional(),
   /** Rotates where pixel index 0 sits around the hoop. */
   localSpinDeg: z.number().default(0),
   startAngleDeg: z.number().default(0),
@@ -27,21 +29,55 @@ export const drumSchema = z.object({
   effectOriginLocal: vec3Schema.default({ x: 0, y: 0, z: 0 }),
 });
 
-/** One physical controller output (PixLite port): an ordered run of hoop segments. */
+/** An ordered run of hoops on a drum, carried on a single data line, in patch order. */
 export const outputSegmentSchema = z.object({
   drumId: z.string().min(1),
-  /** Inclusive hoop range carried on this output, in patch order. */
+  /** Inclusive hoop range carried on this segment, in patch order. */
   hoopStart: z.number().int().nonnegative(),
   hoopEnd: z.number().int().nonnegative(),
 });
 
-export const outputSchema = z.object({
+/**
+ * One physical data line out of a controller port (e.g. a PixLite output drives two
+ * data lines — Data + repurposed Clock). An ordered run of hoop segments; pixels pack
+ * channel-dense within it. An optional `startUniverse` snaps this line to that
+ * universe's channel 0 — a deliberate gap; absent → it continues dense from the cursor.
+ */
+export const dataLineSchema = z.object({
   id: z.string().min(1),
-  /** First DMX universe this output occupies. */
-  startUniverse: z.number().int().nonnegative().default(0),
-  channelsPerPixel: z.number().int().positive().default(3),
+  startUniverse: z.number().int().nonnegative().optional(),
   segments: z.array(outputSegmentSchema).min(1),
 });
+
+/** Inner object schema for a physical controller output (one PixLite port): ordered
+    data lines. `startUniverse` (optional) snaps the whole port to a universe boundary;
+    absent → it packs dense/contiguous with the preceding output. */
+const outputObjectSchema = z.object({
+  id: z.string().min(1),
+  startUniverse: z.number().int().nonnegative().optional(),
+  channelsPerPixel: z.number().int().positive().default(3),
+  dataLines: z.array(dataLineSchema).min(1),
+});
+
+/**
+ * A physical controller output. Back-compat: a legacy output carrying bare `segments`
+ * (the pre-data-line shape that live persistence may have written) is transparently
+ * wrapped as a single implicit data line `${id}:dl0` so old saved projects never crash.
+ */
+export const outputSchema = z.preprocess((raw) => {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    !('dataLines' in raw) &&
+    'segments' in raw
+  ) {
+    const { segments, ...rest } = raw as Record<string, unknown>;
+    const id = typeof (rest as { id?: unknown }).id === 'string' ? (rest as { id: string }).id : 'output';
+    return { ...rest, dataLines: [{ id: `${id}:dl0`, segments }] };
+  }
+  return raw;
+}, outputObjectSchema);
 
 export const kitGlobalSchema = z.object({
   ledDensityPxPerM: z.number().positive().default(60),
@@ -63,6 +99,7 @@ export const kitSchema = z.object({
 export type Vec3Config = z.infer<typeof vec3Schema>;
 export type DrumConfig = z.infer<typeof drumSchema>;
 export type OutputConfig = z.infer<typeof outputSchema>;
+export type DataLineConfig = z.infer<typeof dataLineSchema>;
 export type OutputSegment = z.infer<typeof outputSegmentSchema>;
 export type KitConfig = z.infer<typeof kitSchema>;
 

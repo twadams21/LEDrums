@@ -141,8 +141,10 @@ export const outputSettingsSchema = z.object({
   rgbOrder: rgbOrderSchema.default('RGB'),
   /** Output transmit rate, frames/sec. */
   fps: z.number().positive().max(120).default(44),
-  /** Multicast interface override (sACN, multi-NIC safety). */
+  /** Source/multicast interface override (multi-NIC safety; sACN multicast + Art-Net bind). */
   iface: z.string().optional(),
+  /** sACN E1.31 framing-layer priority, 1–200 (higher wins at a merging node). */
+  priority: z.number().int().min(1).max(200).default(100),
 });
 
 export const projectSchema = z.object({

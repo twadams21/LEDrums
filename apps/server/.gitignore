@@ -1,0 +1,5 @@
+# Machine-local project state (the live autosave slot + any *.local saves). The live
+# project is written automatically on every authoritative edit for crash recovery; it is
+# runtime state, not source, so it is never committed. Mirrors the repo's *.local.json
+# convention. Plain named saves (projects/<name>.json) are intentionally NOT ignored.
+projects/*.local.json

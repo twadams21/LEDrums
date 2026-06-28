@@ -1,4 +1,5 @@
 import { WS_PATH } from '@ledrums/core';
+import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
   decodeServer,
   type ClientMessage,
@@ -6,6 +7,9 @@ import {
   type OutputStatus,
   type SerializedModel,
   type ServerMessage,
+  type ShowLibraryBlob,
+  type TunnelInfo,
+  type VoiceStats,
 } from './protocol-types';
 import type { EngineStats, Project } from '@ledrums/core';
 
@@ -32,13 +36,23 @@ export interface WSCallbacks {
     effects: EffectSpec[],
     projects: string[],
     output: OutputStatus,
+    showLibrary: ShowLibraryBlob | null,
+    tunnel: TunnelInfo | null,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
-  onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus) => void;
+  onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (kind: 'midi' | 'osc', label: string, value: number) => void;
   onProjects?: (names: string[]) => void;
+  /** Multi-client presence (S1): who is the single editor, whether WE are it, and the headcount. */
+  onPresence?: (editorId: string | null, youAreEditor: boolean, clientCount: number) => void;
+  /** Live authored-library push (S1): the editor's library relayed by the server — a viewer adopts
+      it without a full `state` rebuild. */
+  onShowLibrary?: (library: ShowLibraryBlob) => void;
   onError?: (message: string) => void;
   onConnection?: (state: ConnectionState) => void;
+  /** The server refused the connection for a wrong/absent room PIN (close 4401). The reconnect
+      loop is paused; supply a PIN via {@link WSClient.reconnectWithPin} to retry. */
+  onAuthError?: () => void;
 }
 
 export interface WSClientOptions {
@@ -47,6 +61,8 @@ export interface WSClientOptions {
   /** Initial reconnect delay (ms); grows with backoff up to maxDelayMs. */
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /** Room PIN sent on connect as the `?pin=` query (S3). null/empty = none (open server). */
+  pin?: string | null;
 }
 
 function defaultUrl(): string {
@@ -78,12 +94,25 @@ export class WSClient {
   private attempt = 0;
   private closedByUser = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Room PIN appended to the connect URL (S3); null/empty when the server is open. */
+  private pin: string | null;
+  /** The last connect was refused for a bad PIN (close 4401) — the reconnect loop is paused
+      until {@link reconnectWithPin} supplies a new one. */
+  private authRejected = false;
 
   constructor(opts: WSClientOptions = {}) {
     this.url = opts.url ?? defaultUrl();
     this.factory = opts.factory ?? defaultFactory;
     this.baseDelayMs = opts.baseDelayMs ?? 500;
     this.maxDelayMs = opts.maxDelayMs ?? 8000;
+    this.pin = opts.pin ?? null;
+  }
+
+  /** The connect URL with the room PIN appended as a `?pin=` query, when one is set. */
+  private dialUrl(): string {
+    if (!this.pin) return this.url;
+    const sep = this.url.includes('?') ? '&' : '?';
+    return `${this.url}${sep}pin=${encodeURIComponent(this.pin)}`;
   }
 
   on(cb: WSCallbacks): void {
@@ -96,11 +125,32 @@ export class WSClient {
     this.openSocket();
   }
 
+  /** Whether the last connect was refused for a bad/absent PIN (reconnect is paused). */
+  get hasAuthError(): boolean {
+    return this.authRejected;
+  }
+
+  /** Retry the connection with a (new) room PIN after a 4401 refusal. Clears the auth-paused
+      state, tears down any stale socket/timer, and dials again from a fresh backoff. */
+  reconnectWithPin(pin: string): void {
+    this.pin = pin;
+    this.authRejected = false;
+    this.closedByUser = false;
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.ws?.close();
+    this.ws = null;
+    this.attempt = 0;
+    this.openSocket();
+  }
+
   private openSocket(): void {
     this.cb.onConnection?.('connecting');
     let ws: WSLike;
     try {
-      ws = this.factory(this.url);
+      ws = this.factory(this.dialUrl());
     } catch {
       this.scheduleReconnect();
       return;
@@ -112,9 +162,17 @@ export class WSClient {
       this.attempt = 0;
       this.cb.onConnection?.('open');
     };
-    ws.onclose = () => {
+    ws.onclose = (ev?: unknown) => {
       this.cb.onConnection?.('closed');
       this.ws = null;
+      // A 4401 close means the server refused our PIN. Don't dial forever against a gate we
+      // can't pass — pause reconnect and surface it so the UI can prompt for a PIN.
+      const code = (ev as { code?: number } | undefined)?.code;
+      if (code === WS_CLOSE_INVALID_PIN) {
+        this.authRejected = true;
+        this.cb.onAuthError?.();
+        return;
+      }
       if (!this.closedByUser) this.scheduleReconnect();
     };
     ws.onerror = () => {
@@ -149,16 +207,22 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.tunnel);
         break;
       case 'stats':
-        this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output);
+        this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
         break;
       case 'input':
         this.cb.onInput?.(msg.kind, msg.label, msg.value);
         break;
       case 'projects':
         this.cb.onProjects?.(msg.names);
+        break;
+      case 'presence':
+        this.cb.onPresence?.(msg.editorId, msg.youAreEditor, msg.clientCount);
+        break;
+      case 'showLibrary':
+        this.cb.onShowLibrary?.(msg.library);
         break;
       case 'error':
         this.cb.onError?.(msg.message);

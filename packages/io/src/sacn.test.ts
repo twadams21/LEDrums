@@ -23,6 +23,13 @@ describe('encodeE131', () => {
     expect(pkt[111]).toBe(99);
   });
 
+  it('writes the framing-layer priority (default 100, else the configured value)', () => {
+    const def = Buffer.from(encodeE131(1, 0, new Uint8Array(3), new Uint8Array(16)));
+    expect(def[108]).toBe(100); // default priority
+    const hi = Buffer.from(encodeE131(1, 0, new Uint8Array(3), new Uint8Array(16), 'LEDrums', 200));
+    expect(hi[108]).toBe(200); // configured priority reaches the wire
+  });
+
   it('derives the per-universe multicast address', () => {
     expect(sacnMulticastAddress(258)).toBe('239.255.1.2');
     expect(sacnMulticastAddress(1)).toBe('239.255.0.1');

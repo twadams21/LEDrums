@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import { WSClient, type WSLike } from './client';
 import type { ServerMessage } from './protocol-types';
 
@@ -30,6 +31,11 @@ class FakeWS implements WSLike {
   open(): void {
     this.readyState = 1; // OPEN
     this.onopen?.();
+  }
+  /** Simulate the server closing with a specific close code (e.g. 4401 invalid-pin). */
+  closeWith(code: number): void {
+    this.readyState = 3; // CLOSED
+    this.onclose?.({ code });
   }
   emitText(data: string): void {
     this.onmessage?.({ data });
@@ -75,7 +81,9 @@ describe('WSClient', () => {
       model: { count: 2, positions: [0, 0, 0, 1, 1, 1], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 1 } },
       effects: [],
       projects: ['default'],
-      output: { state: 'disabled', protocol: 'artnet', host: '1.2.3.4', packetsSent: 0, lastError: null },
+      output: { state: 'disabled', protocol: 'artnet', host: '1.2.3.4', packetsSent: 0, lastError: null, universeCount: 0 },
+      showLibrary: null,
+      tunnel: null,
     };
     ws.emitText(JSON.stringify(msg));
 
@@ -159,5 +167,63 @@ describe('WSClient', () => {
     client.send({ t: 'setTransport', bpm: 128 });
     expect(ws.sent.length).toBe(1);
     expect(JSON.parse(ws.sent[0]!)).toEqual({ t: 'setTransport', bpm: 128 });
+  });
+});
+
+describe('WSClient — room PIN (S3)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeWS.instances = [];
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const factory = (url: string): WSLike => new FakeWS(url);
+
+  it('appends the PIN to the connect URL', () => {
+    const client = new WSClient({ url: 'ws://test/ws', factory, pin: '1234' });
+    client.connect();
+    expect(FakeWS.instances[0]!.url).toBe('ws://test/ws?pin=1234');
+  });
+
+  it('dials the bare URL when no PIN is set', () => {
+    const client = new WSClient({ url: 'ws://test/ws', factory });
+    client.connect();
+    expect(FakeWS.instances[0]!.url).toBe('ws://test/ws');
+  });
+
+  it('a 4401 close fires onAuthError and pauses the reconnect loop', () => {
+    const onAuthError = vi.fn();
+    const client = new WSClient({ url: 'ws://test/ws', factory, baseDelayMs: 10, maxDelayMs: 100 });
+    client.on({ onAuthError });
+    client.connect();
+    FakeWS.instances[0]!.closeWith(WS_CLOSE_INVALID_PIN);
+
+    expect(onAuthError).toHaveBeenCalledTimes(1);
+    expect(client.hasAuthError).toBe(true);
+    // Backoff must NOT dial again — we'd just be refused forever.
+    vi.advanceTimersByTime(500);
+    expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it('reconnectWithPin retries with the new PIN and clears the auth-paused state', () => {
+    const client = new WSClient({ url: 'ws://test/ws', factory, baseDelayMs: 10, maxDelayMs: 100 });
+    client.connect();
+    FakeWS.instances[0]!.closeWith(WS_CLOSE_INVALID_PIN);
+    expect(client.hasAuthError).toBe(true);
+
+    client.reconnectWithPin('4242');
+    expect(client.hasAuthError).toBe(false);
+    expect(FakeWS.instances.length).toBe(2);
+    expect(FakeWS.instances[1]!.url).toBe('ws://test/ws?pin=4242');
+  });
+
+  it('a normal (non-4401) close still reconnects', () => {
+    const client = new WSClient({ url: 'ws://test/ws', factory, baseDelayMs: 10, maxDelayMs: 100 });
+    client.connect();
+    FakeWS.instances[0]!.open();
+    FakeWS.instances[0]!.closeWith(1006); // abnormal closure, not an auth refusal
+    expect(client.hasAuthError).toBe(false);
+    vi.advanceTimersByTime(50);
+    expect(FakeWS.instances.length).toBe(2);
   });
 });

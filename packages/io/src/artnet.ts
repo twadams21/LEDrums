@@ -30,6 +30,8 @@ export interface ArtNetOptions {
   host: string;
   port?: number;
   broadcast?: boolean;
+  /** Local source interface address to send from (multi-NIC safety). */
+  iface?: string;
 }
 
 /** Art-Net pixel output. One per-frame sequence counter is shared across universes. */
@@ -45,7 +47,7 @@ export class ArtNetOutput implements PixelOutput {
     this.port = opts.port ?? ARTNET_PORT;
     this.socket = createSocket('udp4');
     this.socket.on('error', () => {});
-    this.socket.bind(() => {
+    const onBound = (): void => {
       if (opts.broadcast) {
         try {
           this.socket.setBroadcast(true);
@@ -54,7 +56,11 @@ export class ArtNetOutput implements PixelOutput {
         }
       }
       this.ready = true;
-    });
+    };
+    // Bind to the given local interface (ephemeral port) so outbound packets leave the
+    // chosen NIC; otherwise bind ephemerally on the default interface.
+    if (opts.iface) this.socket.bind({ address: opts.iface }, onBound);
+    else this.socket.bind(onBound);
   }
 
   nextFrame(): void {

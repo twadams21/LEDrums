@@ -1,57 +1,35 @@
-import type {
-  Clip,
-  EngineStats,
-  InputMap,
-  Layer,
-  PixelModel,
-  Project,
-  Section,
-  Song,
-  TriggerBinding,
-} from '@ledrums/core';
+import type { PixelModel } from '@ledrums/core';
 import { listEffects } from '@ledrums/core';
+import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '@ledrums/protocol';
+
+// The WS wire contract is defined once in `@ledrums/protocol` (app-shared, NOT pure
+// `@ledrums/core`) and imported by both the server and the web client. Re-export the
+// types here so the server's existing `./ws-protocol` import paths keep working; this
+// module owns the server-side runtime helpers (decode/encode/serialize) below.
+export type {
+  ClientMessage,
+  EffectSpec,
+  OutputStatus,
+  SerializedDrum,
+  SerializedModel,
+  ServerMessage,
+  ShowLibraryBlob,
+  TunnelInfo,
+  VoiceStats,
+} from '@ledrums/protocol';
 
 // ---------------------------------------------------------------------------
 // Client → Server (JSON)
 // ---------------------------------------------------------------------------
 
-export type ClientMessage =
-  | { t: 'midi'; note: number; velocity: number; on: boolean }
-  | { t: 'osc'; address: string; value: number }
-  | { t: 'setParam'; layerId: string; clipId: string; key: string; value: number | string | boolean }
-  | { t: 'setLayer'; layerId: string; blendMode?: Layer['blendMode']; opacity?: number; activeClipId?: string | null; name?: string }
-  | { t: 'addLayer'; layer: Layer }
-  | { t: 'removeLayer'; layerId: string }
-  | { t: 'addClip'; layerId: string; clip: Clip }
-  | { t: 'removeClip'; layerId: string; clipId: string }
-  | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
-  | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number }
-  | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean }
-  // Setlist / songs / sections / per-trigger routing
-  | { t: 'setActiveSection'; songId: string; sectionId: string }
-  | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }
-  | { t: 'removeBinding'; sectionId: string; drumId: string; slot: number }
-  | { t: 'addSong'; song: Song }
-  | { t: 'removeSong'; songId: string }
-  | { t: 'addSection'; songId: string; section: Section }
-  | { t: 'removeSection'; songId: string; sectionId: string }
-  | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
-  | { t: 'setInputMap'; inputMap: InputMap }
-  | { t: 'loadProject'; name: string }
-  | { t: 'saveProject'; name: string }
-  | { t: 'listProjects' };
-
 const CLIENT_TYPES = new Set<ClientMessage['t']>([
-  'midi', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
-  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setOutput',
+  'midi', 'cc', 'programChange', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
+  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
+  'setShow', 'setShowLibrary', 'key', 'recallSection', 'takeover',
   'loadProject', 'saveProject', 'listProjects',
 ]);
-
-export function encodeClient(msg: ClientMessage): string {
-  return JSON.stringify(msg);
-}
 
 export function decodeClient(raw: string): ClientMessage {
   const obj = JSON.parse(raw);
@@ -64,52 +42,9 @@ export function decodeClient(raw: string): ClientMessage {
 // ---------------------------------------------------------------------------
 // Server → Client (JSON, plus a separate binary frame channel)
 // ---------------------------------------------------------------------------
-
-export interface SerializedDrum {
-  id: string;
-  label: string;
-  color: string;
-  pixelStart: number;
-  pixelCount: number;
-}
-
-export interface SerializedModel {
-  count: number;
-  /** Flat world positions [x0,y0,z0, x1,y1,z1, ...], mm. */
-  positions: number[];
-  /** Flat unit tangents (along the hoop), same layout as positions. */
-  tangents: number[];
-  /** Flat unit outward normals (radial), same layout as positions. */
-  normals: number[];
-  /** Arc length each pixel occupies along its hoop, mm. */
-  segmentLengths: number[];
-  drums: SerializedDrum[];
-  bounds: { center: [number, number, number]; size: number };
-}
-
-export interface EffectSpec {
-  id: string;
-  name: string;
-  category: string;
-  paramSpec: ReturnType<typeof listEffects>[number]['paramSpec'];
-}
-
-export type ServerMessage =
-  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus }
-  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus }
-  | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
-  | { t: 'projects'; names: string[] }
-  | { t: 'error'; message: string };
-
-export interface OutputStatus {
-  state: Project['output']['state'];
-  protocol: Project['output']['protocol'];
-  host: string;
-  packetsSent: number;
-  lastError: string | null;
-  /** Number of DMX universes the current topology transmits. */
-  universeCount: number;
-}
+// The `SerializedModel`, `SerializedDrum`, `EffectSpec`, `OutputStatus`, `VoiceStats`,
+// and `ServerMessage` types live in `@ledrums/protocol` (re-exported above). The
+// runtime serializers that produce them follow.
 
 export function encodeServer(msg: ServerMessage): string {
   return JSON.stringify(msg);

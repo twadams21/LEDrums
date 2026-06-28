@@ -105,7 +105,7 @@ export class EngineHost {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.output.blackout(this.engine.getDmxMap(), this.engine.getProject().output.rgbOrder);
+    this.output.blackout(this.engine.getDmxMap());
     this.output.close();
   }
 

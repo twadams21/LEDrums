@@ -77,6 +77,8 @@ export interface SacnOptions {
   sourceName?: string;
   /** Outbound multicast interface address (multi-NIC safety). */
   iface?: string;
+  /** E1.31 framing-layer priority 1–200 (default 100); higher wins at a merging node. */
+  priority?: number;
 }
 
 /** sACN (E1.31) pixel output. Uses per-universe multicast unless `host` is given. */
@@ -108,7 +110,7 @@ export class SacnOutput implements PixelOutput {
 
   send(universe: number, channels: Uint8Array): void {
     if (!this.ready) return;
-    const pkt = encodeE131(universe, this.seq, channels, this.cid, this.opts.sourceName);
+    const pkt = encodeE131(universe, this.seq, channels, this.cid, this.opts.sourceName, this.opts.priority);
     const host = this.opts.host ?? sacnMulticastAddress(universe);
     this.socket.send(pkt, this.opts.port ?? SACN_PORT, host, () => {});
   }

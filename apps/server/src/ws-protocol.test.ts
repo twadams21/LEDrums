@@ -3,7 +3,6 @@ import { buildPixelModel, parseKit } from '@ledrums/core';
 import {
   decodeClient,
   effectSpecs,
-  encodeClient,
   frameToRgbBytes,
   serializeModel,
   type ClientMessage,
@@ -11,6 +10,8 @@ import {
 
 const samples: ClientMessage[] = [
   { t: 'midi', note: 38, velocity: 100, on: true },
+  { t: 'cc', controller: 0, value: 5 },
+  { t: 'programChange', value: 2 },
   { t: 'osc', address: '/ledrums/volume', value: 0.5 },
   { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
   { t: 'setLayer', layerId: 'base', opacity: 0.5, activeClipId: 'swirl' },
@@ -19,6 +20,7 @@ const samples: ClientMessage[] = [
   { t: 'setTransport', bpm: 128, playing: false },
   { t: 'setKitTransform', drumId: 'kick', localSpinDeg: 90 },
   { t: 'setOutput', state: 'armed', host: '10.0.0.5' },
+  { t: 'takeover' },
   { t: 'loadProject', name: 'default' },
   { t: 'saveProject', name: 'show1' },
   { t: 'listProjects' },
@@ -27,7 +29,7 @@ const samples: ClientMessage[] = [
 describe('ws-protocol', () => {
   it('round-trips every client message type', () => {
     for (const msg of samples) {
-      expect(decodeClient(encodeClient(msg))).toEqual(msg);
+      expect(decodeClient(JSON.stringify(msg))).toEqual(msg);
     }
   });
 

@@ -1,138 +1,28 @@
-// Local TS interfaces mirroring apps/server/src/ws-protocol.ts exactly.
-// Defined here because the server is a different package and its protocol module
-// cannot be imported from the web app. Value constants + domain types
-// (Project, Layer, Clip, etc.) come from '@ledrums/core'.
-import type {
-  Clip,
-  EngineStats,
-  InputMap,
-  Layer,
-  Project,
-  ParamSpec,
-  Section,
-  Song,
-  TriggerBinding,
-} from '@ledrums/core';
+// The WS wire contract is defined once in `@ledrums/protocol` (app-shared, NOT pure
+// `@ledrums/core`) and imported by both the web client and the server. This module
+// re-exports those types for the web's existing import paths and adds the web-side
+// runtime helper (`decodeServer`) that parses inbound server frames.
+export type {
+  ClientMessage,
+  EffectSpec,
+  OutputStatus,
+  SerializedDrum,
+  SerializedModel,
+  ServerMessage,
+  ShowLibraryBlob,
+  TunnelInfo,
+  VoiceStats,
+} from '@ledrums/protocol';
 
-// ---------------------------------------------------------------------------
-// Client → Server (JSON strings via ws.send(JSON.stringify(msg)))
-// ---------------------------------------------------------------------------
-
-export type ClientMessage =
-  | { t: 'midi'; note: number; velocity: number; on: boolean }
-  | { t: 'osc'; address: string; value: number }
-  | {
-      t: 'setParam';
-      layerId: string;
-      clipId: string;
-      key: string;
-      value: number | string | boolean;
-    }
-  | {
-      t: 'setLayer';
-      layerId: string;
-      blendMode?: Layer['blendMode'];
-      opacity?: number;
-      activeClipId?: string | null;
-      name?: string;
-    }
-  | { t: 'addLayer'; layer: Layer }
-  | { t: 'removeLayer'; layerId: string }
-  | { t: 'addClip'; layerId: string; clip: Clip }
-  | { t: 'removeClip'; layerId: string; clipId: string }
-  | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
-  | {
-      t: 'setKitTransform';
-      drumId: string;
-      origin?: { x: number; y: number; z: number };
-      rotation?: { x: number; y: number; z: number };
-      localSpinDeg?: number;
-      startAngleDeg?: number;
-    }
-  | {
-      t: 'setOutput';
-      state?: Project['output']['state'];
-      protocol?: Project['output']['protocol'];
-      host?: string;
-      rgbOrder?: Project['output']['rgbOrder'];
-      fps?: number;
-      broadcast?: boolean;
-    }
-  | { t: 'setActiveSection'; songId: string; sectionId: string }
-  | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }
-  | { t: 'removeBinding'; sectionId: string; drumId: string; slot: number }
-  | { t: 'addSong'; song: Song }
-  | { t: 'removeSong'; songId: string }
-  | { t: 'addSection'; songId: string; section: Section }
-  | { t: 'removeSection'; songId: string; sectionId: string }
-  | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
-  | { t: 'setInputMap'; inputMap: InputMap }
-  | { t: 'loadProject'; name: string }
-  | { t: 'saveProject'; name: string }
-  | { t: 'listProjects' };
-
-// ---------------------------------------------------------------------------
-// Server → Client (JSON, plus a separate binary frame channel)
-// ---------------------------------------------------------------------------
-
-export interface SerializedDrum {
-  id: string;
-  label: string;
-  color: string;
-  pixelStart: number;
-  pixelCount: number;
-}
-
-export interface SerializedModel {
-  count: number;
-  /** Flat world positions [x0,y0,z0, x1,y1,z1, ...], mm. */
-  positions: number[];
-  /** Flat unit tangents [tx0,ty0,tz0, ...] per pixel — direction ALONG the hoop. */
-  tangents: number[];
-  /** Flat unit outward radial normals [nx0,ny0,nz0, ...] per pixel. */
-  normals: number[];
-  /** Arc length (mm) each pixel occupies along its hoop. */
-  segmentLengths: number[];
-  drums: SerializedDrum[];
-  bounds: { center: [number, number, number]; size: number };
-}
-
-export interface EffectSpec {
-  id: string;
-  name: string;
-  category: string;
-  paramSpec: ParamSpec[];
-}
-
-export interface OutputStatus {
-  state: Project['output']['state'];
-  protocol: Project['output']['protocol'];
-  host: string;
-  packetsSent: number;
-  lastError: string | null;
-  /** Universe count, when the server reports it. */
-  universeCount?: number;
-}
-
-export type ServerMessage =
-  | {
-      t: 'state';
-      project: Project;
-      model: SerializedModel;
-      effects: EffectSpec[];
-      projects: string[];
-      output: OutputStatus;
-    }
-  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus }
-  | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
-  | { t: 'projects'; names: string[] }
-  | { t: 'error'; message: string };
+import type { ServerMessage } from '@ledrums/protocol';
 
 const SERVER_TYPES = new Set<ServerMessage['t']>([
   'state',
   'stats',
   'input',
   'projects',
+  'presence',
+  'showLibrary',
   'error',
 ]);
 

@@ -31,6 +31,16 @@ describe('buildPixelModel', () => {
     expect(model.pixels).toHaveLength(perHoop * 2);
   });
 
+  it('honors a literal pixelsPerHoop, ignoring density entirely', () => {
+    // Density 60 on a 12" drum would compute ~57 px/hoop; the literal must win.
+    const model = buildPixelModel(oneDrumKit({ pixelsPerHoop: 50 }));
+    const diameterM = (12 * 25.4) / 1000;
+    const densityPerHoop = Math.round(Math.PI * diameterM * 60);
+    expect(densityPerHoop).not.toBe(50);
+    expect(model.drums[0]!.pixelsPerHoop).toBe(50);
+    expect(model.pixelCount).toBe(50 * 2); // hoopCount 2
+  });
+
   it('hoop-0 pixels lie on a circle of the drum radius in local space', () => {
     const model = buildPixelModel(oneDrumKit());
     const radius = (12 * 25.4) / 2;

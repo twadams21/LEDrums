@@ -8,7 +8,29 @@ export interface MidiNoteEvent {
   on: boolean;
 }
 
-export type MidiNoteHandler = (ev: MidiNoteEvent) => void;
+export interface MidiCcEvent {
+  /** Controller number 0..127. Controller 0 is reserved for global section recall. */
+  controller: number;
+  /** Controller value 0..127. */
+  value: number;
+}
+
+export interface MidiProgramChangeEvent {
+  /** Program number 0..127 (selects the song at that setlist index). */
+  value: number;
+}
+
+/**
+ * A parsed MIDI message the engine cares about — a discriminated union so the
+ * forwarder can route each shape to its own WS message. `note` covers note-on/off,
+ * `cc` a Control Change (0xB0), `programChange` a Program Change (0xC0).
+ */
+export type MidiEvent =
+  | ({ kind: 'note' } & MidiNoteEvent)
+  | ({ kind: 'cc' } & MidiCcEvent)
+  | ({ kind: 'programChange' } & MidiProgramChangeEvent);
+
+export type MidiEventHandler = (ev: MidiEvent) => void;
 
 export interface MidiInitResult {
   available: boolean;
@@ -41,28 +63,40 @@ function inputValues(access: MidiAccessLike): MidiInputLike[] {
   return [...inputs.values()];
 }
 
-/** Parse a raw MIDI status+data triple into a note event, or null if not a note. */
-export function parseMidiMessage(data: Uint8Array | number[] | null): MidiNoteEvent | null {
-  if (!data || data.length < 3) return null;
+/**
+ * Parse a raw MIDI message into the engine event it represents, or null if it's a
+ * status we don't forward. Handles note-on/off (0x90/0x80), Control Change (0xB0) and
+ * Program Change (0xC0). The channel nibble is masked off — channel lives on the patch
+ * device, not here. Program Change is a 2-byte message; everything else needs 3.
+ */
+export function parseMidiMessage(data: Uint8Array | number[] | null): MidiEvent | null {
+  if (!data || data.length < 2) return null;
   const status = data[0]! & 0xf0;
-  const note = data[1]!;
-  const velocity = data[2]!;
+  // Program Change: status + program (2 bytes). Selects a song by setlist index.
+  if (status === 0xc0 /* program change */) {
+    return { kind: 'programChange', value: data[1]! };
+  }
+  if (data.length < 3) return null;
   if (status === 0x90 /* note-on */) {
     // A note-on with velocity 0 is a conventional note-off.
-    return { note, velocity, on: velocity > 0 };
+    const velocity = data[2]!;
+    return { kind: 'note', note: data[1]!, velocity, on: velocity > 0 };
   }
   if (status === 0x80 /* note-off */) {
-    return { note, velocity: 0, on: false };
+    return { kind: 'note', note: data[1]!, velocity: 0, on: false };
+  }
+  if (status === 0xb0 /* control change */) {
+    return { kind: 'cc', controller: data[1]!, value: data[2]! };
   }
   return null;
 }
 
 /**
- * Request MIDI access and forward note events to `handler`.
- * `nav` is injectable for testing; defaults to the global navigator.
+ * Request MIDI access and forward parsed events (note / cc / program-change) to
+ * `handler`. `nav` is injectable for testing; defaults to the global navigator.
  */
 export async function initMidi(
-  handler: MidiNoteHandler,
+  handler: MidiEventHandler,
   nav?: MidiNavigatorLike,
 ): Promise<MidiInitResult> {
   const navigator_ =

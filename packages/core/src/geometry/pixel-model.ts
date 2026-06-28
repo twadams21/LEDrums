@@ -65,6 +65,8 @@ export interface PixelModel {
 }
 
 function pixelsPerHoop(kit: KitConfig, drum: DrumConfig): number {
+  // A literal per-drum count is authoritative — return it verbatim, ignoring density.
+  if (drum.pixelsPerHoop !== undefined) return drum.pixelsPerHoop;
   const diameterMm = drum.diameterIn * MM_PER_INCH;
   const circumferenceM = (Math.PI * diameterMm) / 1000;
   return Math.max(1, Math.round(circumferenceM * drumDensity(kit, drum)));
@@ -150,6 +152,25 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
     bounds: computeBounds(pixels),
     pixelCount: pixels.length,
   };
+}
+
+/**
+ * Return the contiguous pixel range for one hoop on a drum, or `null` when the
+ * drum/hoop doesn't exist in the model (dangling targetId → caller renders nothing).
+ *
+ * Range is half-open: `[start, end)` — the same convention the compositor uses.
+ * Hoops are zero-indexed in build order (same as {@link buildPixelModel}'s inner loop).
+ */
+export function getHoopPixelRange(
+  model: PixelModel,
+  drumId: string,
+  hoopIndex: number,
+): { start: number; end: number } | null {
+  const drum = model.drumById.get(drumId);
+  if (!drum) return null;
+  if (hoopIndex < 0 || hoopIndex >= drum.hoopCount) return null;
+  const start = drum.pixelStart + hoopIndex * drum.pixelsPerHoop;
+  return { start, end: start + drum.pixelsPerHoop };
 }
 
 function computeBounds(pixels: Pixel[]): Bounds {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { Canvas, T } from '@threlte/core';
   import { OrbitControls, Grid } from '@threlte/extras';
   import Pixels from './Pixels.svelte';
@@ -44,20 +45,46 @@
         })
       : [],
   );
+
+  // A value-stable framing key — it only changes when the kit's center/size
+  // actually change (kit swap / resize). Because it's a primitive, Svelte's
+  // $derived short-circuits when it's unchanged, so the pose below does NOT
+  // recompute on the spurious per-hit re-runs of `center`/`camDist`.
+  const framingKey = $derived(
+    model ? `${center[0]},${center[1]},${center[2]},${camDist}` : 'none',
+  );
+  // Camera pose + controls target, recomputed only when `framingKey` changes.
+  // Binding the camera position + OrbitControls target straight to `center`/
+  // `camDist` made every pad hit re-apply the pose and clobber the user's
+  // orbit/zoom: a hit invalidates the model-derived chain, handing Threlte fresh
+  // [x,y,z] arrays even when the values are identical, so it re-ran
+  // camera.position.set()/controls.target.set(). Reading center/camDist via
+  // untrack keeps `framingKey` the ONLY reactive dependency, so identical-value
+  // churn leaves the camera exactly where the user put it. Only the pixel
+  // COLORS update per frame.
+  const framing = $derived.by(() => {
+    void framingKey;
+    return untrack((): { pos: [number, number, number]; target: [number, number, number] } => {
+      if (!model) return { pos: [16, 11.2, 16], target: [0, 0, 0] };
+      const [cx, cy, cz] = center;
+      const d = camDist;
+      return { pos: [cx + d, cy + d * 0.7, cz + d], target: [cx, cy, cz] };
+    });
+  });
 </script>
 
 <div class="viz" class:dim>
   <Canvas>
     <T.PerspectiveCamera
       makeDefault
-      position={[center[0] + camDist, center[1] + camDist * 0.7, center[2] + camDist]}
+      position={framing.pos}
       fov={45}
       near={0.1}
       far={1000}
     >
       <OrbitControls
         enableDamping
-        target={center}
+        target={framing.target}
       />
     </T.PerspectiveCamera>
 

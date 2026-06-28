@@ -17,6 +17,7 @@ export * from './color/blend';
 
 // Model
 export * from './model/project-schema';
+export * from './model/integrity';
 export * from './model/defaults';
 
 // Effects
@@ -32,3 +33,7 @@ export * from './engine/transport';
 export * from './engine/modulation';
 export * from './engine/compositor';
 export * from './engine/engine';
+
+// Voice-bus brain (additive, behind a deep-module seam). Namespaced to avoid
+// name clashes with the legacy Engine's InputEvent/EngineStats during migration.
+export * as voice from './voice';

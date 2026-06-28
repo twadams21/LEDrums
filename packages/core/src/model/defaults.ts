@@ -1,4 +1,50 @@
+import { parseKit, type KitConfig } from '../geometry/kit-schema';
+import { assertProjectIntegrity } from './integrity';
 import { parseProject, type Layer, type Project } from './project-schema';
+
+const drum = (
+  id: string,
+  label: string,
+  color: string,
+  diameterIn: number,
+  /** Literal LED count per hoop — the authoritative count for the physical rig
+      (docs/kit-hoop-pixel-counts.md); every hoop on a drum shares it. */
+  pixelsPerHoop: number,
+  origin: { x: number; y: number; z: number },
+  rotation: { x: number; y: number; z: number },
+) => ({
+  id,
+  label,
+  color,
+  diameterIn,
+  hoopSpacingMm: 60,
+  pixelsPerHoop,
+  localSpinDeg: 270,
+  startAngleDeg: 0,
+  origin,
+  rotation,
+});
+
+/**
+ * The single canonical drum kit — the ONE in-code definition of the kit's drums +
+ * geometry. `defaultProject()` builds its `.kit` from this, and the web's offline
+ * lab model (`buildLabModel`) derives from it too, so drum ids / geometry can't
+ * drift between the engine and the lab preview (the prior `tom` vs `tom1` bug class).
+ * Parsed once so it's a validated {@link KitConfig} with all schema defaults applied.
+ * (The full hardware topology ships separately as `apps/server/projects/default.json`.)
+ */
+export const DEFAULT_KIT: KitConfig = parseKit({
+  version: 1,
+  units: 'mm',
+  global: { ledDensityPxPerM: 30, hoopCount: 4, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096 },
+  drums: [
+    drum('kick', 'Kick', '#5bbcff', 21, 196, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
+    drum('snare', 'Snare', '#72d572', 12, 108, { x: -230, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
+    drum('tom1', 'Tom 1', '#ff8e72', 12, 108, { x: -120, y: 300, z: 840 }, { x: 18, y: 0, z: 4 }),
+    drum('tom2', 'Tom 2', '#d69cff', 15, 136, { x: 360, y: 40, z: 620 }, { x: 0, y: 0, z: 0 }),
+  ],
+  outputs: [],
+});
 
 /**
  * A compact, always-valid default project used as a programmatic fallback (the
@@ -7,25 +53,6 @@ import { parseProject, type Layer, type Project } from './project-schema';
  * topology; the starter composition exercises base / trigger / effect layers.
  */
 export function defaultProject(): Project {
-  const drum = (
-    id: string,
-    label: string,
-    color: string,
-    diameterIn: number,
-    origin: { x: number; y: number; z: number },
-    rotation: { x: number; y: number; z: number },
-  ) => ({
-    id,
-    label,
-    color,
-    diameterIn,
-    hoopSpacingMm: 60,
-    localSpinDeg: 270,
-    startAngleDeg: 0,
-    origin,
-    rotation,
-  });
-
   const layers: Layer[] = [
     {
       id: 'base',
@@ -87,20 +114,9 @@ export function defaultProject(): Project {
     },
   ];
 
-  return parseProject({
+  const project = parseProject({
     name: 'LEDrums Default',
-    kit: {
-      version: 1,
-      units: 'mm',
-      global: { ledDensityPxPerM: 30, hoopCount: 4, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096 },
-      drums: [
-        drum('kick', 'Kick', '#5bbcff', 21, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
-        drum('snare', 'Snare', '#72d572', 12, { x: -230, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
-        drum('tom1', 'Tom 1', '#ff8e72', 12, { x: -120, y: 300, z: 840 }, { x: 18, y: 0, z: 4 }),
-        drum('tom2', 'Tom 2', '#d69cff', 15, { x: 360, y: 40, z: 620 }, { x: 0, y: 0, z: 0 }),
-      ],
-      outputs: [],
-    },
+    kit: DEFAULT_KIT,
     composition: {
       layers,
       transport: { bpm: 120, playing: true, beatsPerBar: 4 },
@@ -158,4 +174,7 @@ export function defaultProject(): Project {
     },
     output: { state: 'disabled', protocol: 'artnet', host: '255.255.255.255', rgbOrder: 'RGB', fps: 44 },
   });
+  // Fail loudly if the canonical default ever references a drum its kit doesn't define.
+  assertProjectIntegrity(project);
+  return project;
 }
