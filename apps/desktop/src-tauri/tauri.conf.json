@@ -28,6 +28,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -44,6 +45,14 @@
     "macOS": {
       "signingIdentity": "-",
       "entitlements": "entitlements.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "endpoints": ["https://REPLACE-ME.r2.dev/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdGOTM0NTdCMzUyMzg3NzUKUldSMWh5TTFlMFdUZjNvczI3RG16YURIMkR3UHRRWEpxMHlNbTJMWW9QcXNySENDc29HSU5WQTMK"
     }
   }
 }

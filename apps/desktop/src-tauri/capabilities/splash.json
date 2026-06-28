@@ -1,7 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "splash",
-  "description": "Transient startup splash window: core APIs (boot status event + get_boot_status command) and clipboard write for the copy buttons. Scoped to the 'splash' window only — the 'app' window loads the ordinary web UI over http and gets no Tauri APIs.",
+  "description": "Transient startup splash window: core APIs (boot status event + get_boot_status command), clipboard write for the copy buttons, and the whole-bundle OTA update surface (updater/dialog/process). The OTA flow is driven from Rust, but the splash is the only Tauri-privileged window, so the matching permissions are scoped here. The 'app' window loads the ordinary web UI over http and gets no Tauri APIs.",
   "windows": ["splash"],
-  "permissions": ["core:default", "clipboard-manager:allow-write-text"]
+  "permissions": [
+    "core:default",
+    "clipboard-manager:allow-write-text",
+    "updater:default",
+    "dialog:default",
+    "process:default"
+  ]
 }

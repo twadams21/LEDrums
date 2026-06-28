@@ -146,3 +146,84 @@ and prints the asset's SHA256. Verification is **opt-in** locally — set `CLOUD
 the expected hash to enforce it. **Release/packaging CI should set `CLOUDFLARED_SHA256` per
 platform** (the hash differs by OS/arch) so bundled binaries are integrity-checked, not just
 version-pinned.
+
+## OTA auto-update (whole-bundle)
+
+The app updates itself **as one whole bundle**. The server sidecar, the web UI, and cloudflared
+are all packaged inside the `.app`, so a Tauri updater release replaces **everything at once**
+(shell + server + UI + cloudflared). After the update installs and the app restarts, it boots
+fresh and mints a **new tunnel URL + room PIN** — exactly as a clean launch would.
+
+### How the check runs (Rust-driven, not the web app)
+
+The drummer's window loads the external web UI over `http://127.0.0.1` and has **no Tauri APIs** —
+only the transient `splash` window is Tauri-privileged. So the update check runs in the **Rust
+shell** (`src-tauri/src/lib.rs`, `check_for_update`), using `tauri-plugin-updater`'s Rust API:
+
+1. On startup it spawns a background task (it never blocks the server or the app window) that calls
+   `app.updater()?.check()`.
+2. If an update is available, it asks via a native `tauri-plugin-dialog` prompt
+   (*"Update & Restart"* / *"Later"*).
+3. On accept, it `download_and_install`s (streaming progress to the splash via `boot://status`,
+   stage `"updating"`) and then `app.restart()`s.
+4. **Any failure — offline, placeholder/unreachable endpoint, OTA not provisioned — is logged and
+   swallowed**, and the app starts normally on the current version. OTA is never required to run.
+
+Set **`LEDRUMS_SKIP_UPDATE=1`** to skip the check entirely (handy in dev).
+
+The capability permissions (`updater`/`dialog`/`process` defaults) are scoped to the `splash`
+window in `src-tauri/capabilities/splash.json`.
+
+### One-time setup (`TODO(release)`)
+
+> The endpoint + pubkey currently in `tauri.conf.json` are **placeholders / a throwaway public
+> key**. The app builds and runs with them, but OTA won't actually serve until a release operator
+> does the steps below. These are the spots marked `TODO(release)`.
+
+1. **Signing keypair.** Generate the production keypair and put the **public** key in
+   `tauri.conf.json` → `plugins.updater.pubkey` (public keys are not secret; committing is fine):
+
+   ```bash
+   pnpm --filter @ledrums/desktop exec tauri signer generate -w ledrums-ota.key
+   ```
+
+   Store the **private** key + its password in Infisical as `TAURI_SIGNING_PRIVATE_KEY` and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. **Never commit the private key.**
+
+2. **Public R2 bucket.** Create the bucket and enable public access (no Worker, no custom domain):
+
+   ```bash
+   wrangler r2 bucket create ledrums-ota
+   # enable public access in the Cloudflare dashboard (or `wrangler r2 bucket dev-url enable`)
+   # and note the public base URL, e.g. https://pub-xxxx.r2.dev
+   ```
+
+   Put `<public-base>/latest.json` into `tauri.conf.json` → `plugins.updater.endpoints`, replacing
+   the `https://REPLACE-ME.r2.dev/latest.json` placeholder.
+
+### Release flow
+
+Run the signed build and publish under Infisical so the signing key + R2 creds are present:
+
+```bash
+# 1. bump the version in src-tauri/tauri.conf.json (this is the OTA version)
+# 2. build a SIGNED bundle (TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] come from Infisical) — produces
+#    the updater artifacts (*.app.tar.gz + .sig) because bundle.createUpdaterArtifacts is true
+infisical run -- pnpm --filter @ledrums/desktop build
+# 3. upload the artifact + (merged) latest.json to R2
+OTA_PUBLIC_BASE=https://pub-xxxx.r2.dev \
+  infisical run -- pnpm --filter @ledrums/desktop publish:ota
+```
+
+`scripts/publish-ota.mjs` locates the host platform's updater artifact under
+`src-tauri/target/release/bundle/`, uploads it to `r2://<bucket>/<version>/<target>/<file>`, and
+writes the Tauri v2 manifest `latest.json` (`{ version, notes, pub_date, platforms[<os>-<arch>] =
+{ signature, url } }`). It **merges** into any existing same-version manifest, so a multi-arch
+release built on several machines (e.g. `darwin-aarch64` + `darwin-x86_64`) accumulates into one
+manifest. Env knobs: `OTA_BUCKET` (default `ledrums-ota`), `OTA_PUBLIC_BASE` (**required**),
+`OTA_VERSION`, `OTA_TARGET`, `OTA_NOTES`. It needs `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+(R2 read/write) — supplied by Infisical.
+
+> **Per-platform builds.** As with the sidecar (Node SEA is not a cross-compiler), produce each
+> platform's signed bundle **on that platform** and run `publish:ota` there; the manifest merge
+> keeps both arch entries.

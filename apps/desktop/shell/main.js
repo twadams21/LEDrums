@@ -39,6 +39,16 @@ function render() {
     return;
   }
 
+  // OTA: an update was accepted and is downloading; the app restarts when it finishes.
+  if (state.stage === 'updating') {
+    dot.className = 'dot work';
+    statusText.textContent = 'Updating…';
+    $('hint').textContent =
+      state.message ?? 'Downloading the latest version. The app will restart automatically.';
+    $('tunnelUrl').textContent = 'Updating…';
+    return;
+  }
+
   if (state.localUrl) {
     $('localUrl').textContent = state.localUrl;
     $('localUrl').classList.remove('dim');
