@@ -2,6 +2,9 @@
 sidecar/
 web-dist/
 
+# Pinned Node LTS cached by build-sidecar.mjs (the postject-safe SEA base) — per-machine, large.
+.node-pin/
+
 # The built sidecar binary + fetched cloudflared are per-machine, per-platform artifacts —
 # produced by build:sidecar / fetch:cloudflared, never committed. The dirs themselves are kept
 # (via .gitkeep) so Tauri's externalBin/resources paths always exist.

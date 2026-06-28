@@ -88,13 +88,18 @@ loads, and warns loudly if it does not.
 > auto-detection (`rustc -vV`) is wrong. The output is named `ledrums-server-<triple>` per
 > Tauri's sidecar convention.
 
-> **Known environment blocker (documented):** on **Node 25.x + postject 1.0.0-alpha.6 on
-> macOS x86_64**, postject's Mach-O injection produces a binary that crashes at launch with
-> `dyld: ... unsupported thread-local, larger than 4GB`. This is a postject/Node toolchain
-> incompatibility, **not** a code issue — the esbuild bundle itself runs cleanly
-> (`node apps/desktop/sidecar/server.cjs` boots and serves). The smoke test detects this and
-> prints remediation. To produce a working SEA, rebuild on a Node version whose postject
-> injection is compatible (e.g. an LTS line), then `pnpm --filter @ledrums/desktop build`.
+> **Pinned SEA Node (handled automatically):** Node "Current" (odd-major) lines such as **v25**
+> trigger a postject Mach-O bug on macOS — the produced binary crashes at launch with
+> `dyld: ... unsupported thread-local, larger than 4GB`. Even-major **LTS** lines (v20/22/24)
+> are fine. Rather than depend on the dev's active Node, `build-sidecar.mjs` **pins a known-good
+> LTS** (`22.23.1` by default) and uses it as the SEA base whenever the active Node isn't already
+> on that line: it downloads + checksum-verifies the official build from nodejs.org into
+> `apps/desktop/.node-pin/` (cached; gitignored) and builds against it. So `pnpm tauri build`
+> works on any machine — including a Node-25 default — and produces a **reproducible** binary
+> (same Node everywhere, not "whatever the builder had"). Override with
+> `LEDRUMS_SEA_NODE_VERSION=<ver>`. Offline on an LTS line, it falls back to the active Node; on a
+> Current line with no network it fails loudly rather than ship a broken binary. The smoke test
+> still boots the result to confirm it loads.
 
 ## macOS signing
 
