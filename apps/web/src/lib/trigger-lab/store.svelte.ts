@@ -53,6 +53,8 @@ import {
   SHOWS_STORAGE_KEY,
   loadShowLibrary,
   serializeShowLibrary,
+  deserializeShowLibrary,
+  deserializeAuthored,
   type AuthoredState,
   type Show,
   type ShowLibrary,
@@ -255,13 +257,26 @@ export class TriggerLab {
   private readonly engineSync = new EngineLinkSync();
   /** Server-authoritative show-library controller (cold-load adopt + write-through). */
   private readonly libSync = new ShowLibrarySync();
+  /** Whether boot found REAL local content (a valid library, or a migratable legacy blob).
+      When true, the localStorage cache is the freshest source (written on every edit) and the
+      server's cold-load library must not clobber it — see {@link ShowLibrarySync.planReconcile}. */
+  private bootedFromLocalLibrary = false;
 
   constructor(makeClient: () => WSClient = () => new WSClient()) {
     // Load the show library from storage BEFORE the sim is built and the engine link opens,
     // so the sim's registries and the first setShow/recallSection reflect the ACTIVE show's
     // restored content. loadShowLibrary never throws: a valid library wins; else a legacy
     // single blob is migrated to one "Default Show"; else a fresh "Untitled Show" is seeded.
-    const lib = loadShowLibrary(readStoredLibrary(), readLegacyAuthored(), () => nid('show'));
+    const rawLib = readStoredLibrary();
+    const rawSingle = readLegacyAuthored();
+    // Did we boot from REAL local content? If so, localStorage is the freshest source (it's
+    // written on EVERY edit, while the server push is gated on link/sig), so the server's
+    // cold-load library must not overwrite it — only adopt the server when there was nothing
+    // local to lose (a cleared/fresh browser). Prevents node positions / wires resetting on
+    // refresh. See onState → libSync.planReconcile.
+    this.bootedFromLocalLibrary =
+      deserializeShowLibrary(rawLib) !== null || deserializeAuthored(rawSingle) !== null;
+    const lib = loadShowLibrary(rawLib, rawSingle, () => nid('show'));
     this.showLibrary = lib.shows;
     this.activeShowId = lib.activeShowId;
     // Mirror the active show's authored over the seed defaults — exactly as the old single-blob
@@ -643,7 +658,7 @@ export class TriggerLab {
         // seeds the server from our cache when it has none). markServerStateSeen first so the
         // seed-push isn't gated off. See the ShowLibrarySync controller.
         this.libSync.markServerStateSeen();
-        const plan = this.libSync.planReconcile(showLibrary);
+        const plan = this.libSync.planReconcile(showLibrary, this.bootedFromLocalLibrary);
         if (plan.kind === 'adopt') {
           this.adoptLibrary(plan.library);
           // The server already holds this library, so mark synced WITHOUT echoing it back. A

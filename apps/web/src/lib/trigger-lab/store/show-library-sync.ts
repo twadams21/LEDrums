@@ -36,10 +36,18 @@ export class ShowLibrarySync {
   }
 
   /** Decide how to reconcile the server's library (`raw`) against ours on a `state` message.
-      Runs the cold-load adopt exactly once (first state of the session): server-has-library →
-      adopt; server-has-none → seed from our cache; later states → noop (lastLibrarySig set). */
-  planReconcile(raw: unknown): ReconcilePlan {
+      Runs the cold-load adopt exactly once (first state of the session); later states → noop.
+
+      `hasLocalLibrary` is whether boot found REAL local content. For a single writer the
+      localStorage cache is the freshest source (written on EVERY edit, while the server push is
+      gated on link/sig), so when we have local content we KEEP it and push it up (`seed`) — never
+      let the server clobber unsynced local edits (the node-positions-reset-on-refresh bug). We
+      only ADOPT the server when there was nothing local to lose (a cleared / fresh browser — the
+      "survive a localStorage clear" case). NOTE: single-writer assumption; a future multi-client
+      model would compare a revision/version instead of preferring local outright. */
+  planReconcile(raw: unknown, hasLocalLibrary: boolean): ReconcilePlan {
     if (this.lastLibrarySig !== null) return { kind: 'noop' }; // already synced — never clobber
+    if (hasLocalLibrary) return { kind: 'seed' }; // local is freshest → keep it, push up
     const incoming = deserializeShowLibrary(raw);
     return incoming ? { kind: 'adopt', library: incoming } : { kind: 'seed' };
   }

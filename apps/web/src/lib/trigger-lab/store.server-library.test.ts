@@ -183,6 +183,33 @@ describe('localStorage-cache fallback + seeding the server', () => {
   });
 });
 
+describe('cold-load keeps fresh local over a stale server (refresh preserves edits)', () => {
+  it('does not adopt the server library when we booted from a local one — keeps local + pushes up', () => {
+    withRaf(() => {
+      // localStorage holds the user's latest work (their edits, e.g. a moved node → bpm 132 here).
+      localStorage.setItem(
+        SHOWS_STORAGE_KEY,
+        JSON.stringify(serverLib({ id: 'local-1', name: 'Local Show', bpm: 132 })),
+      );
+      const h: Harness = { cb: null, sent: [] };
+      const store = new TriggerLab(harnessClient(h));
+      store.start();
+      expect(store.bpm).toBe(132); // hydrated from the local cache at boot
+
+      fireOpen(h);
+      h.sent.length = 0; // ignore the connect handshake
+      // The server still holds an OLDER copy (local saves on every edit; the server push is gated,
+      // so the server can lag). It must NOT clobber the fresher local state on cold-load adopt.
+      fireState(h, serverLib({ id: 'local-1', name: 'Local Show', bpm: 100 }));
+
+      expect(store.bpm).toBe(132); // local kept — NOT reset to the stale server value (the bug)
+      const push = h.sent.find((m) => m.t === 'setShowLibrary');
+      expect(push).toBeTruthy(); // local is pushed up to bring the server current
+      store.stop();
+    });
+  });
+});
+
 describe('no clobber after the cold-load adopt', () => {
   it('ignores a later state broadcast — adopt happens once, in-session edits survive', () => {
     withRaf(() => {
