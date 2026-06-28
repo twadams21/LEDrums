@@ -40,6 +40,11 @@ export interface WSCallbacks {
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (kind: 'midi' | 'osc', label: string, value: number) => void;
   onProjects?: (names: string[]) => void;
+  /** Multi-client presence (S1): who is the single editor, whether WE are it, and the headcount. */
+  onPresence?: (editorId: string | null, youAreEditor: boolean, clientCount: number) => void;
+  /** Live authored-library push (S1): the editor's library relayed by the server — a viewer adopts
+      it without a full `state` rebuild. */
+  onShowLibrary?: (library: ShowLibraryBlob) => void;
   onError?: (message: string) => void;
   onConnection?: (state: ConnectionState) => void;
 }
@@ -162,6 +167,12 @@ export class WSClient {
         break;
       case 'projects':
         this.cb.onProjects?.(msg.names);
+        break;
+      case 'presence':
+        this.cb.onPresence?.(msg.editorId, msg.youAreEditor, msg.clientCount);
+        break;
+      case 'showLibrary':
+        this.cb.onShowLibrary?.(msg.library);
         break;
       case 'error':
         this.cb.onError?.(msg.message);

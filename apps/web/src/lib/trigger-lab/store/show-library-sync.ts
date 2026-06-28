@@ -36,20 +36,37 @@ export class ShowLibrarySync {
   }
 
   /** Decide how to reconcile the server's library (`raw`) against ours on a `state` message.
-      Runs the cold-load adopt exactly once (first state of the session); later states → noop.
 
-      `hasLocalLibrary` is whether boot found REAL local content. For a single writer the
-      localStorage cache is the freshest source (written on EVERY edit, while the server push is
-      gated on link/sig), so when we have local content we KEEP it and push it up (`seed`) — never
-      let the server clobber unsynced local edits (the node-positions-reset-on-refresh bug). We
-      only ADOPT the server when there was nothing local to lose (a cleared / fresh browser — the
-      "survive a localStorage clear" case). NOTE: single-writer assumption; a future multi-client
-      model would compare a revision/version instead of preferring local outright. */
-  planReconcile(raw: unknown, hasLocalLibrary: boolean): ReconcilePlan {
+      ROLE-AWARE (S1 multi-client): a VIEWER always follows the editor's broadcast — it adopts the
+      server's library on every `state` (sig-guarded so an unchanged library is a no-op, and it
+      never seeds: a viewer is not the authoring source). It has no unsynced local edits to lose,
+      so the once-per-session gate + local-wins below do NOT apply to it.
+
+      EDITOR / STANDALONE keeps the single-writer cold-load behaviour (06cb92e): adopt exactly once
+      (first state of the session); later states → noop. `hasLocalLibrary` is whether boot found
+      REAL local content — for a single writer the localStorage cache is the freshest source
+      (written on EVERY edit, while the server push is gated on link/sig), so when we have local
+      content we KEEP it and push it up (`seed`), never letting the server clobber unsynced local
+      edits (the node-positions-reset-on-refresh bug). We only ADOPT the server when there was
+      nothing local to lose (a cleared / fresh browser — the "survive a localStorage clear" case). */
+  planReconcile(raw: unknown, hasLocalLibrary: boolean, isViewer: boolean): ReconcilePlan {
+    if (isViewer) return this.planFollow(raw); // viewer follows the server, every state
     if (this.lastLibrarySig !== null) return { kind: 'noop' }; // already synced — never clobber
     if (hasLocalLibrary) return { kind: 'seed' }; // local is freshest → keep it, push up
     const incoming = deserializeShowLibrary(raw);
     return incoming ? { kind: 'adopt', library: incoming } : { kind: 'seed' };
+  }
+
+  /** Decide whether to follow a server-pushed library (`raw`) — the live `showLibrary` broadcast a
+      viewer receives, or a viewer's `state`. Adopt when it deserializes AND differs from what we
+      last synced (sig-guarded), so a viewer live-follows the editor; the editor ignores its own
+      echo (its current library matches `lastLibrarySig`). Never seeds — a follower is not the
+      authoring source. */
+  planFollow(raw: unknown): ReconcilePlan {
+    const incoming = deserializeShowLibrary(raw);
+    if (!incoming) return { kind: 'noop' };
+    if (this.librarySig(incoming) === this.lastLibrarySig) return { kind: 'noop' }; // own echo / unchanged
+    return { kind: 'adopt', library: incoming };
   }
 
   /** Mark the session synced WITHOUT echoing — called after an adopt (the server already holds

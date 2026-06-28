@@ -190,6 +190,11 @@ export class TriggerLab {
   link = $state<'offline' | 'connecting' | 'open'>('offline');
   /** engine round-trip latency (ms) — 0 until the WS link reports it. */
   latencyMs = $state(0);
+  /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
+      whether WE are it, and the live headcount. null until the first presence arrives (offline /
+      pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
+      unchanged. */
+  presence = $state<{ editorId: string | null; youAreEditor: boolean; clientCount: number } | null>(null);
   /** latest binary RGB frame from the server engine (null until one arrives) —
       the kit preview shows this instead of the local composite when connected. */
   serverFrame = $state<Uint8Array | null>(null);
@@ -219,6 +224,24 @@ export class TriggerLab {
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
   /** Preview frame: the engine's composited output when connected, else local sim. */
   previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.frameBuf);
+
+  /** This client's authoring role, derived from {@link presence} (S1 multi-client):
+      - 'standalone' — no presence yet (offline / single user): local-wins authoring, as before;
+      - 'editor' — we hold the editor slot with other clients connected;
+      - 'viewer' — another client edits (or the editor left): we live-follow the server, no authoring.
+      Only 'viewer' changes behaviour (follow the server); 'editor' and 'standalone' both author with
+      the local-wins cold-load (06cb92e). */
+  role = $derived<'editor' | 'viewer' | 'standalone'>(
+    this.presence === null
+      ? 'standalone'
+      : this.presence.youAreEditor
+        ? this.presence.clientCount > 1
+          ? 'editor'
+          : 'standalone'
+        : 'viewer',
+  );
+  /** Whether we live-follow the editor's broadcast instead of authoring (role === 'viewer'). */
+  isViewer = $derived(this.role === 'viewer');
 
   sim: Sim;
   private raf = 0;
@@ -658,7 +681,10 @@ export class TriggerLab {
         // seeds the server from our cache when it has none). markServerStateSeen first so the
         // seed-push isn't gated off. See the ShowLibrarySync controller.
         this.libSync.markServerStateSeen();
-        const plan = this.libSync.planReconcile(showLibrary, this.bootedFromLocalLibrary);
+        // Role-aware (S1): a viewer follows the server's library on every state; editor/standalone
+        // keeps the once-per-session local-wins cold-load. Presence arrives before this state on a
+        // (re)connect (server sends presence first), so `isViewer` is already settled here.
+        const plan = this.libSync.planReconcile(showLibrary, this.bootedFromLocalLibrary, this.isViewer);
         if (plan.kind === 'adopt') {
           this.adoptLibrary(plan.library);
           // The server already holds this library, so mark synced WITHOUT echoing it back. A
@@ -667,6 +693,22 @@ export class TriggerLab {
         } else if (plan.kind === 'seed') {
           // Server has no library yet → seed it from our localStorage cache.
           this.syncLibraryToServer();
+        }
+      },
+      onPresence: (editorId, youAreEditor, clientCount) => {
+        // Adopt the server's view of who edits + the headcount. Drives `role`/`isViewer`, which
+        // gate the cold-load reconcile (above) and the outbound authoring syncs (below).
+        this.presence = { editorId, youAreEditor, clientCount };
+      },
+      onShowLibrary: (library) => {
+        // Live authored-library push from the editor, relayed by the server. Only a viewer follows
+        // it (the editor is the source and is never sent its own echo). Adopt sig-guarded, then mark
+        // synced so the adopted content isn't pushed back up.
+        if (!this.isViewer) return;
+        const plan = this.libSync.planFollow(library);
+        if (plan.kind === 'adopt') {
+          this.adoptLibrary(plan.library);
+          this.libSync.noteSynced(this.libSync.librarySig(this.currentLibrary()));
         }
       },
       onConnection: (state: ConnectionState) => {
@@ -687,6 +729,9 @@ export class TriggerLab {
         } else {
           // a drop means our next open must re-send the transport + Show
           this.engineSync.reset();
+          // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
+          // handshake re-establishes our role, so an offline editor keeps full local control.
+          this.presence = null;
         }
       },
       onStats: (stats, latencyMs, fps) => {
@@ -718,7 +763,7 @@ export class TriggerLab {
       Show. NOTE: setShow reseeds the engine (voices clear) — acceptable for authoring;
       a finer-grained live-update message is a future refinement. */
   private syncShowToServer(): void {
-    if (this.link !== 'open') return;
+    if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
     const show = buildShow(this);
     if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
@@ -749,7 +794,7 @@ export class TriggerLab {
       unchanged library isn't re-sent every autosave tick). Gated on the first `state` having
       been seen, so the cold-load adopt always wins the race against the debounced autosave. */
   private syncLibraryToServer(): void {
-    if (this.link !== 'open') return;
+    if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
     const envelope = serializeShowLibrary(this.currentLibrary());
     if (!this.libSync.planPush(envelope)) return;
     this.client.send({ t: 'setShowLibrary', library: envelope });
@@ -757,7 +802,7 @@ export class TriggerLab {
 
   /** Send setTransport to the server iff bpm/playing/beatsPerBar changed. */
   private syncTransport(): void {
-    if (this.link !== 'open') return;
+    if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
     const cur = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
     if (!this.engineSync.planTransportPush(cur)) return;
     this.client.send({ t: 'setTransport', ...cur });
