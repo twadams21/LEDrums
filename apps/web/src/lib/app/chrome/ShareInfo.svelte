@@ -6,6 +6,7 @@
      button so the bar stays uncluttered. The popover (Bits UI) closes on outside-click
      / Escape and is keyboard-accessible. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import { onDestroy } from 'svelte';
   import { Popover } from 'bits-ui';
   import Share2 from '@lucide/svelte/icons/share-2';
   import Copy from '@lucide/svelte/icons/copy';
@@ -26,8 +27,11 @@
 
   async function copy(field: 'url' | 'pin', text: string | null): Promise<void> {
     if (!text) return;
+    // Guard explicitly: optional chaining alone would resolve (not throw) when the
+    // Clipboard API is missing, falsely flipping the row to its "copied" state.
+    if (!navigator.clipboard?.writeText) return;
     try {
-      await navigator.clipboard?.writeText(text);
+      await navigator.clipboard.writeText(text);
       copiedField = field;
       if (copiedTimer) clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => (copiedField = null), 1500);
@@ -35,6 +39,11 @@
       /* clipboard unavailable — the value is still visible/selectable in the popover */
     }
   }
+
+  // The copy timer can outlive the component; clear it on teardown.
+  onDestroy(() => {
+    if (copiedTimer) clearTimeout(copiedTimer);
+  });
 </script>
 
 {#if show}

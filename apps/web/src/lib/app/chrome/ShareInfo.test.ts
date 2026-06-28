@@ -74,6 +74,36 @@ describe('ShareInfo', () => {
     expect(writeText).toHaveBeenLastCalledWith(TUNNEL.pin);
   });
 
+  it('flips the row to the copied (check) state after a successful copy', async () => {
+    render(ShareInfo, { props: { store: mockStore(TUNNEL) } });
+    await fireEvent.click(screen.getByLabelText('Share room link and PIN'));
+    await screen.findByText(TUNNEL.url);
+
+    const btn = screen.getByLabelText('Copy URL');
+    // Starts on the Copy icon, not the Check icon.
+    expect(btn.querySelector('.lucide-check')).toBeNull();
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.querySelector('.lucide-check')).not.toBeNull());
+  });
+
+  it('does not flip to the copied state when the Clipboard API is unavailable', async () => {
+    // Optional chaining alone would resolve without throwing; the explicit guard must
+    // keep the copied state from being set when writeText is missing.
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    try {
+      render(ShareInfo, { props: { store: mockStore(TUNNEL) } });
+      await fireEvent.click(screen.getByLabelText('Share room link and PIN'));
+      await screen.findByText(TUNNEL.url);
+
+      const btn = screen.getByLabelText('Copy URL');
+      await fireEvent.click(btn);
+      expect(writeText).not.toHaveBeenCalled();
+      expect(btn.querySelector('.lucide-check')).toBeNull();
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    }
+  });
+
   it('only offers the pin row when there is no url', async () => {
     render(ShareInfo, { props: { store: mockStore({ url: null, pin: '4821' }) } });
     await fireEvent.click(screen.getByLabelText('Share room link and PIN'));
