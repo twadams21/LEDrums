@@ -7,6 +7,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Default web build output, resolved relative to this module (apps/web/dist). */
 export const DEFAULT_WEB_ROOT = resolve(here, '..', '..', 'web', 'dist');
 
+/**
+ * Resolve the directory the built web UI is served from. An explicit `LEDRUMS_WEB_ROOT`
+ * wins — the packaged desktop shell (S4) points it at the web `dist` it bundles as a Tauri
+ * resource, since the in-repo {@link DEFAULT_WEB_ROOT} path does not exist inside a packaged
+ * binary. Unset (plain `pnpm dev`/`pnpm start`) falls back to {@link DEFAULT_WEB_ROOT}, so
+ * today's behavior is unchanged. Pure over `env` so it is unit-testable.
+ */
+export function resolveWebRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.LEDRUMS_WEB_ROOT?.trim();
+  return override ? resolve(override) : DEFAULT_WEB_ROOT;
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LEDrums",
+  "version": "0.1.0",
+  "identifier": "app.ledrums.desktop",
+  "build": {
+    "beforeDevCommand": "node scripts/prepare-bundle.mjs",
+    "beforeBuildCommand": "node scripts/prepare-bundle.mjs",
+    "frontendDist": "../shell"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "share",
+        "title": "LEDrums — Share",
+        "url": "index.html",
+        "width": 460,
+        "height": 380,
+        "resizable": true,
+        "center": true,
+        "alwaysOnTop": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/ledrums-server"],
+    "resources": {
+      "../web-dist": "web-dist",
+      "cloudflared": "cloudflared"
+    },
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  }
+}

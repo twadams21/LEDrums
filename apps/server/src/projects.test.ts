@@ -9,7 +9,14 @@ import {
   defaultProject,
   ReferentialIntegrityError,
 } from '@ledrums/core';
-import { listProjects, loadProject, projectExists, saveProject, saveProjectAsync } from './projects';
+import {
+  listProjects,
+  loadProject,
+  projectExists,
+  resolveProjectsDir,
+  saveProject,
+  saveProjectAsync,
+} from './projects';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ledrums-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -53,6 +60,28 @@ describe('projects', () => {
     saveProject('dangling', dangling, tmp);
     expect(() => loadProject('dangling', tmp)).toThrow(ReferentialIntegrityError);
     expect(() => loadProject('dangling', tmp)).toThrow(/drum "ghost"/);
+  });
+});
+
+describe('resolveProjectsDir (S4 env override)', () => {
+  // The packaged desktop shell sets LEDRUMS_PROJECTS_DIR to redirect persistence into the OS
+  // app-data dir; an explicit value wins verbatim.
+  it('honors an explicit LEDRUMS_PROJECTS_DIR', () => {
+    expect(resolveProjectsDir({ LEDRUMS_PROJECTS_DIR: '/var/data/ledrums/projects' })).toBe(
+      '/var/data/ledrums/projects',
+    );
+  });
+
+  // Unset → the in-repo default (apps/server/projects) so plain dev/start is unchanged. We
+  // don't pin the absolute path (it is machine-relative), only that it lands on .../projects.
+  it('falls back to the in-repo default when unset', () => {
+    const resolved = resolveProjectsDir({});
+    expect(resolved.endsWith(join('server', 'projects'))).toBe(true);
+  });
+
+  // A blank/whitespace value is treated as unset (not a request to persist into "").
+  it('treats a blank override as unset', () => {
+    expect(resolveProjectsDir({ LEDRUMS_PROJECTS_DIR: '   ' })).toBe(resolveProjectsDir({}));
   });
 });
 
