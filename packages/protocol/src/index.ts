@@ -134,4 +134,13 @@ export type ServerMessage =
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
   | { t: 'projects'; names: string[] }
+  // Multi-client presence (S1): who is the single editor, whether THIS recipient is it, and how
+  // many clients are connected. Sent to a client on join and re-broadcast to every client on any
+  // join/leave (each recipient gets its own `youAreEditor`). `editorId` is null when no client
+  // currently holds the editor slot (the editor left with ≥2 viewers remaining — S2 takeover).
+  | { t: 'presence'; editorId: string | null; youAreEditor: boolean; clientCount: number }
+  // Live authored-library push (S1): the editor's `setShowLibrary` relayed to the OTHER clients so
+  // viewers live-follow without a full `state` rebuild. Never echoed back to the editor that sent
+  // it. Carries the same opaque versioned blob the server persists + ships on `state`.
+  | { t: 'showLibrary'; library: ShowLibraryBlob }
   | { t: 'error'; message: string };

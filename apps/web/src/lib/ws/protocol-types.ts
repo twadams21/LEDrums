@@ -20,6 +20,8 @@ const SERVER_TYPES = new Set<ServerMessage['t']>([
   'stats',
   'input',
   'projects',
+  'presence',
+  'showLibrary',
   'error',
 ]);
 

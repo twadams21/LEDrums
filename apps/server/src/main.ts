@@ -18,7 +18,7 @@ import {
 import { listProjects, loadProject, projectExists, saveProjectAsync } from './projects';
 import { loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { createAutosaver } from './autosave';
-import { SingleClientLock } from './client-lock';
+import { ClientRegistry } from './client-registry';
 import { serveStatic } from './static-host';
 import { boot } from './boot';
 import { handleProjectMessage } from './handlers/projects';
@@ -92,14 +92,23 @@ const server = createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server, path: WS_PATH });
-/** Exactly one live client (newest wins) — a new connection supersedes the old. The
- * engine/output loop runs independently, so client churn never stops transmission. */
-const clients = new SingleClientLock<WebSocket>();
+/** Many simultaneous clients with one editor (S1) — later clients are viewers that live-follow the
+ * editor's broadcast. The engine/output loop runs independently, so client count (including zero)
+ * never stops transmission. */
+const clients = new ClientRegistry<WebSocket>();
 
 function broadcastJson(msg: ServerMessage): void {
   const data = encodeServer(msg);
   for (const ws of clients) {
     if (ws.readyState === ws.OPEN) ws.send(data);
+  }
+}
+
+/** Re-broadcast presence to every client (each gets its own `youAreEditor`). Called on any
+ * join/leave so every client's editor/viewer role + headcount stays current. */
+function broadcastPresence(): void {
+  for (const ws of clients) {
+    if (ws.readyState === ws.OPEN) ws.send(encodeServer({ t: 'presence', ...clients.presenceFor(ws) }));
   }
 }
 
@@ -128,9 +137,11 @@ if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
 else host.onFrame = (rgb) => broadcastBinary(rgb);
 
 wss.on('connection', (ws) => {
-  // Single-client lock: admitting this socket cleanly closes any prior one (newest wins),
-  // so a reconnect after a crash replaces the dead socket without wedging.
+  // Admit additively (no eviction) — the first client auto-claims the editor slot, later clients
+  // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
+  // the `state` below — messages are ordered on the socket), then ship its initial state.
   clients.admit(ws);
+  broadcastPresence();
   ws.send(encodeServer(stateMessage()));
 
   ws.on('message', (raw, isBinary) => {
@@ -150,8 +161,16 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => clients.remove(ws));
-  ws.on('error', () => clients.remove(ws));
+  // On disconnect, drop the socket and re-broadcast presence (headcount changed, and the editor
+  // slot may have moved per the registry's election rule).
+  ws.on('close', () => {
+    clients.remove(ws);
+    broadcastPresence();
+  });
+  ws.on('error', () => {
+    clients.remove(ws);
+    broadcastPresence();
+  });
 });
 
 // Shared collaborators handed to the extracted message handlers. `broadcastState` and the
@@ -160,18 +179,28 @@ const broadcastState = (): void => broadcastJson(stateMessage());
 const voiceDeps = { voiceHost, broadcastJson };
 
 function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
+  // Editor-only authoring (S1): the authored Show + show library may be set ONLY by the current
+  // editor — a viewer's pushes (e.g. its connect-time handshake, or an adopted-state echo) are
+  // dropped so they can't clobber the shared authored content. Broader read-only gating is S2.
+  if ((msg.t === 'setShow' || msg.t === 'setShowLibrary') && !clients.canMutate(ws)) return;
+
   // Project IO (load/save/list) is handled here, not by the reducer.
   if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;
 
   // Show-library persistence is mode-independent (authored content, not an engine input): the
-  // client pushes its authored library on every change; the server adopts it as the live slot
-  // and debounce-autosaves it. No broadcast back — the single client is the source, so an echo
-  // would be redundant; cold-load adopt happens via the `state` message on (re)connect.
+  // editor pushes its authored library on every change; the server adopts it as the live slot,
+  // debounce-autosaves it, AND relays it live to the OTHER clients so viewers follow without a full
+  // `state` rebuild. Never echoed to the sender (it is already the source); cold-load adopt for a
+  // fresh client still happens via the `state` message on (re)connect.
   if (msg.t === 'setShowLibrary') {
     const lib = msg.library;
     if (lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number') {
       liveShowLibrary = lib as ShowLibraryBlob;
       showLibraryAutosaver.markDirty();
+      const relay = encodeServer({ t: 'showLibrary', library: liveShowLibrary });
+      for (const other of clients) {
+        if (other !== ws && other.readyState === other.OPEN) other.send(relay);
+      }
     }
     return;
   }

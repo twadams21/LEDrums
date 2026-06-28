@@ -3,7 +3,7 @@ import { networkInterfaces } from 'node:os';
 import type { OscInput } from '@ledrums/io';
 import type { WebSocket, WebSocketServer } from 'ws';
 import type { Autosaver } from './autosave';
-import type { SingleClientLock } from './client-lock';
+import type { ClientRegistry } from './client-registry';
 import type { EngineHost } from './engine-host';
 import type { VoiceEngineHost } from './voice-engine-host';
 
@@ -11,7 +11,7 @@ import type { VoiceEngineHost } from './voice-engine-host';
 export interface BootDeps {
   server: Server;
   wss: WebSocketServer;
-  clients: SingleClientLock<WebSocket>;
+  clients: ClientRegistry<WebSocket>;
   host: EngineHost;
   voiceHost: VoiceEngineHost | null;
   oscInput: OscInput;
