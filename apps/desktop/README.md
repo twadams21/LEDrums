@@ -118,3 +118,9 @@ xattr -cr "/path/to/LEDrums.app"
 it (the server already logs a friendly "is cloudflared installed?" message and keeps serving
 locally/over the LAN). The `src-tauri/cloudflared/` directory is kept in git (via `.gitkeep`)
 so the Tauri `resources` path always resolves; the binary itself is gitignored.
+
+The download is **version-pinned** (`2026.6.1` by default; override with `CLOUDFLARED_VERSION`)
+and prints the asset's SHA256. Verification is **opt-in** locally — set `CLOUDFLARED_SHA256` to
+the expected hash to enforce it. **Release/packaging CI should set `CLOUDFLARED_SHA256` per
+platform** (the hash differs by OS/arch) so bundled binaries are integrity-checked, not just
+version-pinned.
