@@ -7,6 +7,7 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import Transport from './Transport.svelte';
   import OutputPill from './OutputPill.svelte';
+  import ShareInfo from './ShareInfo.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ShowBrowser from './ShowBrowser.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
@@ -55,6 +56,7 @@
   <div class="transport-slot"><Transport {store} /></div>
 
   <div class="right">
+    <ShareInfo {store} />
     <StatusBar {store} />
     <OutputPill {store} />
   </div>

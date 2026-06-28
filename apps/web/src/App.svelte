@@ -9,6 +9,7 @@
   import { parseSearch } from './lib/app/shell-nav';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
+  import PinGate from './lib/app/chrome/PinGate.svelte';
 
   const store = new TriggerLab();
   const shell = new ShellStore(parseSearch(typeof location !== 'undefined' ? location.search : ''));
@@ -36,6 +37,8 @@
 </div>
 
 <Overlays {store} />
+
+<PinGate {store} />
 
 <style>
   .shell-root {

@@ -96,7 +96,7 @@ function fireOpen(h: Harness): void {
   h.cb!.onConnection!('open');
 }
 function fireState(h: Harness, showLibrary: ShowLibraryBlob | null): void {
-  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, showLibrary);
+  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, showLibrary, null);
 }
 /** Drive a `presence` message (S1 multi-client) — `youAreEditor` decides editor vs viewer role. */
 function firePresence(h: Harness, youAreEditor: boolean, clientCount = 2, editorId: string | null = 'c1'): void {
