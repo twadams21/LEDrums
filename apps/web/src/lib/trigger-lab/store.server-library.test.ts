@@ -98,6 +98,14 @@ function fireOpen(h: Harness): void {
 function fireState(h: Harness, showLibrary: ShowLibraryBlob | null): void {
   h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, showLibrary);
 }
+/** Drive a `presence` message (S1 multi-client) — `youAreEditor` decides editor vs viewer role. */
+function firePresence(h: Harness, youAreEditor: boolean, clientCount = 2, editorId: string | null = 'c1'): void {
+  h.cb!.onPresence!(editorId, youAreEditor, clientCount);
+}
+/** Drive a live `showLibrary` broadcast (the editor's authored push relayed by the server). */
+function fireShowLibrary(h: Harness, library: ShowLibraryBlob): void {
+  h.cb!.onShowLibrary!(library);
+}
 
 /** Build a server-library blob (the envelope the server stores + ships). The active show carries
     a bpm so adoption is observable; extra shows carry empty authored content. */
@@ -227,6 +235,99 @@ describe('no clobber after the cold-load adopt', () => {
       fireState(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 145 }));
       expect(store.activeShow!.name).toBe('Renamed');
       expect(store.bpm).toBe(99);
+      store.stop();
+    });
+  });
+});
+
+/* ── S1 multi-client: presence-derived role + live-follow ─────────────────────────────────────
+   The server now holds many clients with one editor. A VIEWER (a non-editor client) live-follows
+   the editor's authored broadcast: it adopts every `showLibrary` push and every `state`, with no
+   local-wins. The EDITOR/STANDALONE keeps the single-writer local-wins cold-load (above). Role is
+   derived purely from the `presence` message. */
+
+describe('role derives from presence (S1)', () => {
+  it('maps presence → standalone / editor / viewer', () => {
+    const store = new TriggerLab(noopClient);
+    expect(store.role).toBe('standalone'); // no presence yet (offline / single user)
+
+    store.presence = { editorId: 'c1', youAreEditor: true, clientCount: 1 };
+    expect(store.role).toBe('standalone'); // sole client that edits == standalone
+
+    store.presence = { editorId: 'c1', youAreEditor: true, clientCount: 2 };
+    expect(store.role).toBe('editor'); // we edit, others are watching
+    expect(store.isViewer).toBe(false);
+
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    expect(store.role).toBe('viewer'); // someone else edits → we follow
+    expect(store.isViewer).toBe(true);
+  });
+});
+
+describe('viewer live-follows the editor broadcast (S1)', () => {
+  it('adopts a showLibrary broadcast with no refresh', () => {
+    withRaf(() => {
+      const h: Harness = { cb: null, sent: [] };
+      const store = new TriggerLab(harnessClient(h));
+      store.start();
+      fireOpen(h);
+      firePresence(h, /* youAreEditor */ false); // we are a viewer
+      // initial cold-load follow via state
+      fireState(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 100 }));
+      expect(store.activeShow!.name).toBe('Server Show');
+      expect(store.bpm).toBe(100);
+
+      // the editor edits → the server relays a live showLibrary broadcast → the viewer follows it
+      h.sent.length = 0;
+      fireShowLibrary(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 150 }));
+      expect(store.bpm).toBe(150); // live-updated, no state rebuild
+
+      // a viewer never authors upstream — it doesn't echo the adopted library back
+      expect(h.sent.some((m) => m.t === 'setShowLibrary')).toBe(false);
+      store.stop();
+    });
+  });
+
+  it('follows the server on state even when it has local content (no local-wins for a viewer)', () => {
+    withRaf(() => {
+      // the viewer's browser has its own cached library — a single writer would KEEP this, but a
+      // viewer must follow the editor's server copy instead.
+      localStorage.setItem(
+        SHOWS_STORAGE_KEY,
+        JSON.stringify(serverLib({ id: 'local-1', name: 'Local Show', bpm: 132 })),
+      );
+      const h: Harness = { cb: null, sent: [] };
+      const store = new TriggerLab(harnessClient(h));
+      store.start();
+      expect(store.activeShow!.name).toBe('Local Show'); // hydrated from cache at boot
+
+      fireOpen(h);
+      firePresence(h, /* youAreEditor */ false); // viewer (presence precedes state on a real connect)
+      fireState(h, serverLib({ id: 'srv-1', name: 'Editor Show', bpm: 90 }));
+
+      expect(store.activeShow!.name).toBe('Editor Show'); // adopted the editor's, NOT kept local
+      expect(store.bpm).toBe(90);
+      expect(h.sent.some((m) => m.t === 'setShowLibrary')).toBe(false); // no seed-push from a viewer
+      store.stop();
+    });
+  });
+});
+
+describe('editor ignores a showLibrary broadcast (its own echo) (S1)', () => {
+  it('does not adopt a broadcast while it holds the editor role', () => {
+    withRaf(() => {
+      const h: Harness = { cb: null, sent: [] };
+      const store = new TriggerLab(harnessClient(h));
+      store.start();
+      const ownName = store.activeShow!.name; // the editor's own fresh "Untitled Show"
+      fireOpen(h);
+      firePresence(h, /* youAreEditor */ true); // we are the editor (clientCount 2)
+      expect(store.role).toBe('editor');
+
+      // a relayed broadcast must not clobber the editor's authoritative local content
+      fireShowLibrary(h, serverLib({ id: 'evil', name: 'Not Mine', bpm: 999 }));
+      expect(store.activeShow!.name).toBe(ownName);
+      expect(store.bpm).not.toBe(999);
       store.stop();
     });
   });
