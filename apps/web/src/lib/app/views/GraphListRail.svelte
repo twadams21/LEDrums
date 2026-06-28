@@ -16,6 +16,7 @@
     subFor,
     onOpen,
     onNew,
+    canEdit = true,
   }: {
     /** Section name shown in the rail header. */
     title: string;
@@ -26,6 +27,8 @@
     subFor: (key: string) => string;
     onOpen: (key: string) => void;
     onNew: () => void;
+    /** Authoring allowed (S2): a viewer can browse + open graphs but not create them. */
+    canEdit?: boolean;
   } = $props();
 </script>
 
@@ -46,9 +49,11 @@
       {#if graphs.length === 0}
         <p class="empty">No graphs in this section.</p>
       {/if}
-      <button class="newgraph" type="button" onclick={onNew}>
-        <Plus size={13} aria-hidden="true" /> New graph
-      </button>
+      {#if canEdit}
+        <button class="newgraph" type="button" onclick={onNew}>
+          <Plus size={13} aria-hidden="true" /> New graph
+        </button>
+      {/if}
     {:else}
       <p class="empty">No active section.</p>
     {/if}

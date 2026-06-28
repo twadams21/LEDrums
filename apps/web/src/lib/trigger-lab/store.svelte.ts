@@ -950,10 +950,12 @@ export class TriggerLab {
   // --- voice model (branch 1) ----------------------------------------------
 
   setPolyphony(busId: string, poly: Polyphony): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const b = this.buses.find((x) => x.id === busId);
     if (b) b.polyphony = poly;
   }
   setCrossfade(busId: string, ms: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const b = this.buses.find((x) => x.id === busId);
     if (b) b.crossfadeMs = ms;
   }
@@ -1375,12 +1377,14 @@ export class TriggerLab {
   }
 
   setMode(node: GraphNode, mode: PlayMode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind === 'play') node.mode = mode;
   }
 
   /** Set the render scope on a play node (kit / drum / hoop). Clearing targetId on
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     node.scope = scope;
     node.targetId = undefined;
@@ -1389,16 +1393,20 @@ export class TriggerLab {
   /** Set (or clear) the per-play-node target id: drum = drumId, hoop = "drumId#hoopIndex".
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     node.targetId = targetId || undefined;
   }
   setNoRepeat(node: GraphNode, v: boolean): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind === 'random') node.noRepeat = v;
   }
   setChance(node: GraphNode, p: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind === 'chance') node.p = p;
   }
   setSwitchOn(node: GraphNode, on: SwitchOn): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch') return;
     node.on = on;
     // backfill value-mode fields the first time a node becomes a value switch (a graph
@@ -1428,16 +1436,19 @@ export class TriggerLab {
   }
 
   setValueMode(node: GraphNode, mode: ValueMode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch' || node.on !== 'value') return;
     node.valueMode = mode;
     // gate has a single output; collapse any band wires so they fire as default children.
     if (mode === 'gate') this.stripBandPorts(node);
   }
   setThreshold(node: GraphNode, threshold: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch' || node.on !== 'value') return;
     node.threshold = vsw.clamp01(threshold);
   }
   setInvert(node: GraphNode, invert: boolean): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch' || node.on !== 'value') return;
     node.invert = invert;
   }
@@ -1447,12 +1458,14 @@ export class TriggerLab {
   /** Switch a delay node between absolute-time (`'time'`) and musical-division
       (`'beats'`) modes. Guards `node.kind === 'delay'`. */
   setDelayMode(node: GraphNode, mode: 'time' | 'beats'): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'delay') return;
     node.delayMode = mode;
   }
 
   /** Set the absolute delay time in milliseconds. Guards `node.kind === 'delay'`. */
   setDelayMs(node: GraphNode, ms: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'delay') return;
     node.ms = Math.max(0, ms);
   }
@@ -1460,6 +1473,7 @@ export class TriggerLab {
   /** Set the musical division string (e.g. `'1/8'`, `'dotted-1/4'`). Guards
       `node.kind === 'delay'`. */
   setDivision(node: GraphNode, division: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'delay') return;
     node.division = division;
   }
@@ -1467,12 +1481,14 @@ export class TriggerLab {
   /** Append a band by splitting the final "rest" band (a new cutoff between the last
       cutoff and 1). Appending never disturbs existing band ports. */
   addBand(node: GraphNode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch' || node.on !== 'value') return;
     node.bands = vsw.addBand(node.bands);
   }
   /** Remove cutoff `cutoffIndex` (merging band cutoffIndex+1 down into it), keeping at
       least one cutoff (≥2 bands). Remaps the outgoing band ports to match. */
   removeBand(node: GraphNode, cutoffIndex: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch' || node.on !== 'value') return;
     if (!vsw.canRemoveBand(node.bands, cutoffIndex)) return;
     node.bands = vsw.removeBandAt(node.bands, cutoffIndex);
@@ -1481,6 +1497,7 @@ export class TriggerLab {
   /** Set cutoff `cutoffIndex`, clamped WITHIN its neighbours so cutoffs stay ascending
       without reordering — reordering would scramble which band each port maps to. */
   setBandCutoff(node: GraphNode, cutoffIndex: number, value: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'switch' || node.on !== 'value') return;
     const bands = node.bands ?? [0.5];
     if (cutoffIndex < 0 || cutoffIndex >= bands.length) return;
@@ -1634,6 +1651,7 @@ export class TriggerLab {
 
   /** Swap the effect: reset to that effect's Default preset (own instance). */
   pickEffect(node: GraphNode, effectId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     const eff = this.effects.find((e) => e.id === effectId);
     if (!eff) return;
@@ -1648,6 +1666,7 @@ export class TriggerLab {
 
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind === 'play') node.busId = busId;
   }
   /** The effective layer for a play node (its override, or the effect's default). */
@@ -1658,6 +1677,7 @@ export class TriggerLab {
 
   /** Select a preset for this instance. Forks its params (or rebinds if linked). */
   selectPreset(node: GraphNode, presetId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     const pr = this.presetById(presetId);
     if (!pr) return;
@@ -1666,6 +1686,7 @@ export class TriggerLab {
   }
 
   toggleLink(node: GraphNode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     if (node.linked) {
       // unlink → fork the shared preset into a private copy
@@ -1678,6 +1699,7 @@ export class TriggerLab {
   }
 
   setParam(node: GraphNode, key: string, value: ParamValue): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     if (node.linked) {
       const pr = this.presetById(node.presetId);
@@ -1698,17 +1720,20 @@ export class TriggerLab {
   }
   /** Set or clear the envelope on a param (seeds a preset curve; 'none' removes it). */
   setEnvKind(node: GraphNode, key: string, kind: EnvKind): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     if (kind === 'none') delete node.env[key];
     else node.env[key] = defaultEnvelope(kind);
   }
   setEnvAmount(node: GraphNode, key: string, amount: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     const e = node.env[key];
     if (e) e.amount = amount;
   }
   /** Replace the curve breakpoints (marks the envelope as hand-edited / custom). */
   setEnvPoints(node: GraphNode, key: string, points: EnvPoint[]): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     const e = node.env[key];
     if (!e) return;
@@ -1717,6 +1742,7 @@ export class TriggerLab {
   }
   /** Set the ADSR shape on a param's envelope (regenerates the render curve). */
   setEnvAdsr(node: GraphNode, key: string, adsr: AdsrShape): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     let e = node.env[key];
     if (!e) {

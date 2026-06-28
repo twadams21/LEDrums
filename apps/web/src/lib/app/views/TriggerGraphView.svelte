@@ -204,6 +204,7 @@
     subFor={sourceSub}
     onOpen={openGraph}
     onNew={newGraph}
+    canEdit={store.canEdit}
   />
 
   <GraphCanvas
@@ -233,7 +234,7 @@
     onDelete={({ edges: removed }) => onDeleteEdges(removed)}
   >
     {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} />
+      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
     {/snippet}
     {#snippet empty()}
       <p class="thint">Select a graph from the section to edit it.</p>

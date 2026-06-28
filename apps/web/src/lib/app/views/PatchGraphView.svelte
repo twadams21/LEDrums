@@ -344,7 +344,7 @@
     }}
   >
     {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addDevice} ariaLabel="Add device (local, not saved)" />
+      <GraphPalette items={PALETTE_ITEMS} add={addDevice} ariaLabel="Add device (local, not saved)" disabled={!store.canEdit} />
     {/snippet}
   </GraphCanvas>
 </div>

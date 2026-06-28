@@ -411,6 +411,26 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
     expect(store.activeSong!.name).not.toBe('Renamed');
   });
 
+  it('blocks fine-grained node setters (setParam / setScope) while a viewer', () => {
+    const store = new TriggerLab(noopClient);
+    // As standalone (an editor), mint a graph + a play node we can try to mutate later.
+    const key = store.createGraph('Test graph');
+    const node = store.addNode('play', 0, 0);
+    expect(node).not.toBeNull();
+    const paramKey = Object.keys(node!.params)[0];
+    const paramBefore = paramKey ? node!.params[paramKey] : undefined;
+    const scopeBefore = node!.scope;
+
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // now a viewer
+
+    if (paramKey) store.setParam(node!, paramKey, 0.123456);
+    store.setScope(node!, scopeBefore === 'kit' ? 'drum' : 'kit');
+
+    if (paramKey) expect(node!.params[paramKey]).toBe(paramBefore); // param edit suppressed
+    expect(node!.scope).toBe(scopeBefore); // scope edit suppressed
+    expect(key).toBeTruthy();
+  });
+
   it('blocks authoritative project mutators (setOutput) while a viewer', () => {
     withRaf(() => {
       const h: Harness = { cb: null, sent: [] };

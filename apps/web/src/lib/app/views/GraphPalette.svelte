@@ -22,11 +22,14 @@
     items,
     add,
     ariaLabel = 'Add node',
+    disabled = false,
   }: {
     items: ReadonlyArray<PaletteItem<K>>;
     /** Place a new item — `cx`/`cy` are the flow-space centre of the visible canvas. */
     add: (key: K, cx: number, cy: number) => void;
     ariaLabel?: string;
+    /** Read-only (S2 viewer): the add buttons are disabled — no new nodes/devices. */
+    disabled?: boolean;
   } = $props();
 
   const flow = useSvelteFlow();
@@ -50,6 +53,7 @@
       class="palette-btn"
       onclick={(e) => addAt(e, item.key)}
       title={item.title ?? `Add ${item.label}`}
+      {disabled}
       style="--tint:{item.tint}"
     >
       <I size={14} aria-hidden="true" class="palette-ico" />
@@ -93,9 +97,13 @@
       border-color var(--dur-120) ease,
       color var(--dur-120) ease;
   }
-  .palette-btn:hover {
+  .palette-btn:hover:not(:disabled) {
     border-color: var(--border-strong);
     color: var(--ink);
+  }
+  .palette-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
   .palette-btn :global(.palette-ico) {
     color: var(--tint);

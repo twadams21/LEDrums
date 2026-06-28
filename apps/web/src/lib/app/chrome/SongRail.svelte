@@ -36,9 +36,11 @@
 <div class="songrail">
   <div class="head">
     {#if heading}<Eyebrow icon={ListMusic}>Songs</Eyebrow>{/if}
-    <span class="add">
-      <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.createSong()} />
-    </span>
+    {#if store.canEdit}
+      <span class="add">
+        <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.createSong()} />
+      </span>
+    {/if}
   </div>
   <ul class="list">
     {#each store.songs as song (song.id)}

@@ -68,7 +68,11 @@
   const project = $derived(store.project);
 </script>
 
-<div class="inspector">
+<!-- A viewer (S2 read-only) gets a natively-disabled fieldset: every nested form control
+     (buttons, selects, inputs, the bits-ui triggers) is disabled by the browser, and the CSS
+     below dims the panel + neutralises the div-based slider drags. The store mutators already
+     no-op for a viewer — this makes that visible. -->
+<fieldset class="inspector" disabled={!store.canEdit}>
   {#if node && node.kind === 'trigger'}
     <TriggerSourceInspector {store} {node} />
   {:else if node}
@@ -144,15 +148,29 @@
       <p>Select a node, a bus, a device, or a section to edit it here.</p>
     </div>
   {/if}
-</div>
+</fieldset>
 
 <style>
   .inspector {
+    /* fieldset reset — it carries the read-only gate but must lay out like the old div */
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     min-height: 0;
     height: 100%;
     overflow: auto;
+  }
+  /* Read-only viewer: dim the panel + stop drag-based controls (sliders/segmented) the native
+     fieldset[disabled] can't reach (they're div/role-based, not form controls). */
+  .inspector:disabled {
+    opacity: 0.6;
+  }
+  .inspector:disabled :global(.slider),
+  .inspector:disabled :global(.seg) {
+    pointer-events: none;
   }
   .ihead {
     display: flex;

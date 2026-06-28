@@ -14,6 +14,7 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
       { id: 's2', name: 'Song Two', sections: [{}] },
     ],
     activeSongId: 's1',
+    canEdit: true, // standalone/editor can author (S2); a viewer (false) hides the Add button
     createSong: vi.fn(),
     renameSong: vi.fn(),
     duplicateSong: vi.fn(),
@@ -53,6 +54,11 @@ describe('SongRail', () => {
     const { getByLabelText } = render(SongRail, { props: { store } });
     await fireEvent.click(getByLabelText('Add song'));
     expect(store.createSong).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the Add song button for a read-only viewer (S2)', () => {
+    const { queryByLabelText } = render(SongRail, { props: { store: mockStore({ canEdit: false }) } });
+    expect(queryByLabelText('Add song')).toBeNull();
   });
 
   it('renames a song through the inline rename (double-click → type → Enter)', async () => {

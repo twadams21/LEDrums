@@ -48,9 +48,11 @@
       <Eyebrow icon={LayoutGrid}>Setlist</Eyebrow>
       <h2>{song?.name ?? 'No song'}</h2>
     </div>
-    <button class="addsection" type="button" onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}>
-      <Plus size={14} aria-hidden="true" /> Section
-    </button>
+    {#if store.canEdit}
+      <button class="addsection" type="button" onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}>
+        <Plus size={14} aria-hidden="true" /> Section
+      </button>
+    {/if}
   </header>
 
   {#if song}
