@@ -174,45 +174,45 @@ Set **`LEDRUMS_SKIP_UPDATE=1`** to skip the check entirely (handy in dev).
 The capability permissions (`updater`/`dialog`/`process` defaults) are scoped to the `splash`
 window in `src-tauri/capabilities/splash.json`.
 
-### One-time setup (`TODO(release)`)
+### One-time setup — DONE (recorded here for reference)
 
-> The endpoint + pubkey currently in `tauri.conf.json` are **placeholders / a throwaway public
-> key**. The app builds and runs with them, but OTA won't actually serve until a release operator
-> does the steps below. These are the spots marked `TODO(release)`.
+The channel is **provisioned and live**; `tauri.conf.json` carries the real pubkey + endpoint. The
+infra:
 
-1. **Signing keypair.** Generate the production keypair and put the **public** key in
-   `tauri.conf.json` → `plugins.updater.pubkey` (public keys are not secret; committing is fine):
+- **Signing keypair**: a production minisign keypair. The **private** key + password live in
+  Infisical (workspace `a7e707cd-322f-4cf1-a8ec-48da2e35fe72`, env `prod`) under the namespaced
+  names **`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY`** / **`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD`**
+  (namespaced because that vault already holds a different project's `TAURI_SIGNING_PRIVATE_KEY` —
+  do not clobber it). The **public** key is committed in `plugins.updater.pubkey`.
+- **Public R2 bucket** `ledrums-ota`, public base
+  `https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev`; `plugins.updater.endpoints` →
+  `<base>/latest.json`.
 
-   ```bash
-   pnpm --filter @ledrums/desktop exec tauri signer generate -w ledrums-ota.key
-   ```
-
-   Store the **private** key + its password in Infisical as `TAURI_SIGNING_PRIVATE_KEY` and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. **Never commit the private key.**
-
-2. **Public R2 bucket.** Create the bucket and enable public access (no Worker, no custom domain):
-
-   ```bash
-   wrangler r2 bucket create ledrums-ota
-   # enable public access in the Cloudflare dashboard (or `wrangler r2 bucket dev-url enable`)
-   # and note the public base URL, e.g. https://pub-xxxx.r2.dev
-   ```
-
-   Put `<public-base>/latest.json` into `tauri.conf.json` → `plugins.updater.endpoints`, replacing
-   the `https://REPLACE-ME.r2.dev/latest.json` placeholder.
+To rotate the key or re-provision, regenerate with `tauri signer generate`, update the secrets +
+`pubkey`, and re-publish.
 
 ### Release flow
 
-Run the signed build and publish under Infisical so the signing key + R2 creds are present:
+Because the signing key is namespaced, the build **maps it onto the canonical
+`TAURI_SIGNING_PRIVATE_KEY*` env names** Tauri expects (and overrides the other project's key that
+Infisical also injects in `prod`):
 
 ```bash
-# 1. bump the version in src-tauri/tauri.conf.json (this is the OTA version)
-# 2. build a SIGNED bundle (TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] come from Infisical) — produces
-#    the updater artifacts (*.app.tar.gz + .sig) because bundle.createUpdaterArtifacts is true
-infisical run -- pnpm --filter @ledrums/desktop build
-# 3. upload the artifact + (merged) latest.json to R2
-OTA_PUBLIC_BASE=https://pub-xxxx.r2.dev \
-  infisical run -- pnpm --filter @ledrums/desktop publish:ota
+PROJ=a7e707cd-322f-4cf1-a8ec-48da2e35fe72
+BASE=https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev
+
+# 1. bump `version` in src-tauri/tauri.conf.json (this is the OTA version clients compare against)
+
+# 2. SIGNED build (--bundles app avoids the headless dmg step; createUpdaterArtifacts emits
+#    *.app.tar.gz + .sig). Build per platform you ship (run on an arm64 Mac for darwin-aarch64).
+infisical run --projectId "$PROJ" --env prod -- bash -c \
+  'TAURI_SIGNING_PRIVATE_KEY="$LEDRUMS_TAURI_SIGNING_PRIVATE_KEY" \
+   TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+   pnpm --filter @ledrums/desktop tauri build --bundles app'
+
+# 3. publish the artifact + (merged) latest.json to R2
+infisical run --projectId "$PROJ" --env prod -- bash -c \
+  "OTA_PUBLIC_BASE=$BASE node apps/desktop/scripts/publish-ota.mjs"
 ```
 
 `scripts/publish-ota.mjs` locates the host platform's updater artifact under
