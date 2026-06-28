@@ -61,6 +61,11 @@ export type ClientMessage =
   | { t: 'setShowLibrary'; library: ShowLibraryBlob }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
   | { t: 'recallSection'; songId: string; sectionId: string }
+  // Multi-client takeover (S2): any client may claim the single editor slot. The server hands it
+  // the slot, drops the prior editor to viewer, and re-broadcasts `presence` so every client's
+  // role converges (last-press-wins for near-simultaneous takeovers). Carries no payload — the
+  // sender IS the claimant.
+  | { t: 'takeover' }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };

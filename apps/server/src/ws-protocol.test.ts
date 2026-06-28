@@ -20,6 +20,7 @@ const samples: ClientMessage[] = [
   { t: 'setTransport', bpm: 128, playing: false },
   { t: 'setKitTransform', drumId: 'kick', localSpinDeg: 90 },
   { t: 'setOutput', state: 'armed', host: '10.0.0.5' },
+  { t: 'takeover' },
   { t: 'loadProject', name: 'default' },
   { t: 'saveProject', name: 'show1' },
   { t: 'listProjects' },

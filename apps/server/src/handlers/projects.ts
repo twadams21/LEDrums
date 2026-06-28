@@ -1,8 +1,14 @@
-import type { WebSocket } from 'ws';
 import type { Autosaver } from '../autosave';
 import type { EngineHost } from '../engine-host';
 import { listProjects, loadProject, saveProject } from '../projects';
 import { encodeServer, type ClientMessage } from '../ws-protocol';
+
+/** Minimal socket surface this handler needs to reply to the requesting client — just the JSON
+ * send. Structural so a real `ws` WebSocket (and a test fake) both satisfy it without coupling
+ * the handler to `ws`. */
+export interface JsonSink {
+  send(data: string): void;
+}
 
 /** Collaborators the project-IO handler needs from the server wiring. */
 export interface ProjectHandlerDeps {
@@ -17,7 +23,7 @@ export interface ProjectHandlerDeps {
  * when `msg` was a project message and has been fully handled (the caller should stop);
  * `false` when the caller should keep dispatching.
  */
-export function handleProjectMessage(msg: ClientMessage, ws: WebSocket, deps: ProjectHandlerDeps): boolean {
+export function handleProjectMessage(msg: ClientMessage, ws: JsonSink, deps: ProjectHandlerDeps): boolean {
   if (msg.t === 'loadProject') {
     const loaded = loadProject(msg.name);
     deps.host.engine.setProject(loaded);

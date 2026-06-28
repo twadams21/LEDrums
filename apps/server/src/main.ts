@@ -10,7 +10,6 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
 import {
-  applyClientMessage,
   oscToEvent,
   oscRecall,
   parseSectionRecallAddress,
@@ -21,14 +20,13 @@ import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic } from './static-host';
 import { boot } from './boot';
-import { handleProjectMessage } from './handlers/projects';
-import { applyTransportRecall, handleVoiceInput, propagateToVoiceHost } from './handlers/voice-input';
+import { createClientMessageHandler } from './handlers/client-message';
+import { applyTransportRecall } from './handlers/voice-input';
 import {
   decodeClient,
   effectSpecs,
   encodeServer,
   serializeModel,
-  type ClientMessage,
   type ServerMessage,
 } from './ws-protocol';
 
@@ -173,72 +171,41 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Shared collaborators handed to the extracted message handlers. `broadcastState` and the
-// voice deps capture the wiring closures so the handlers stay free of module-level state.
+// Shared collaborators handed to the extracted message handler. The broadcast/relay closures
+// capture the wiring so the handler stays free of module-level state + socket plumbing.
 const broadcastState = (): void => broadcastJson(stateMessage());
-const voiceDeps = { voiceHost, broadcastJson };
 
-function handleClientMessage(msg: ClientMessage, ws: WebSocket): void {
-  // Editor-only authoring (S1): the authored Show + show library may be set ONLY by the current
-  // editor — a viewer's pushes (e.g. its connect-time handshake, or an adopted-state echo) are
-  // dropped so they can't clobber the shared authored content. Broader read-only gating is S2.
-  if ((msg.t === 'setShow' || msg.t === 'setShowLibrary') && !clients.canMutate(ws)) return;
-
-  // Project IO (load/save/list) is handled here, not by the reducer.
-  if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;
-
-  // Show-library persistence is mode-independent (authored content, not an engine input): the
-  // editor pushes its authored library on every change; the server adopts it as the live slot,
-  // debounce-autosaves it, AND relays it live to the OTHER clients so viewers follow without a full
-  // `state` rebuild. Never echoed to the sender (it is already the source); cold-load adopt for a
-  // fresh client still happens via the `state` message on (re)connect.
-  if (msg.t === 'setShowLibrary') {
-    const lib = msg.library;
-    if (lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number') {
-      liveShowLibrary = lib as ShowLibraryBlob;
-      showLibraryAutosaver.markDirty();
-      const relay = encodeServer({ t: 'showLibrary', library: liveShowLibrary });
-      for (const other of clients) {
-        if (other !== ws && other.readyState === other.OPEN) other.send(relay);
-      }
-    }
-    return;
-  }
-
-  // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the
-  // voice-only types are consumed as no-ops; midi/osc fall through to the reducer below.
-  if (handleVoiceInput(msg, voiceDeps)) return;
-
-  // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.
-  if (msg.t === 'midi' || msg.t === 'osc') host.markInput();
-
-  const result = applyClientMessage(host.engine, msg, host.engineTimeMs);
-
-  // Voice mode: the legacy reducer above mutated the shared project; propagate kit/output/
-  // input-map edits to the voice host (which owns the live render + output).
-  if (voiceHost) propagateToVoiceHost(voiceHost, msg);
-
-  // Output settings or geometry changed → re-apply output + send fresh state.
-  // (setKitOutputs has no legacy reducer case, so it never sets result.structural; mark
-  // dirty here so the output-topology reorder is persisted too.)
-  if (msg.t === 'setOutput' || msg.t === 'setKitTransform' || msg.t === 'setKitOutputs') {
-    host.reloadOutputSettings();
-    broadcastJson(stateMessage());
-    autosaver.markDirty();
-    return;
-  }
-
-  if (result.structural) {
-    broadcastJson(stateMessage());
-    autosaver.markDirty();
-  }
-  if (result.monitor) {
-    broadcastJson({ t: 'input', kind: result.monitor.kind, label: result.monitor.label, value: result.monitor.value });
+/** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
+function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
+  const data = encodeServer(msg);
+  for (const other of clients) {
+    if (other !== sender && other.readyState === other.OPEN) other.send(data);
   }
 }
 
+const handleClientMessage = createClientMessageHandler<WebSocket>({
+  clients,
+  host,
+  voiceHost,
+  autosaver,
+  showLibraryAutosaver,
+  broadcastJson,
+  broadcastPresence,
+  broadcastState,
+  stateMessage,
+  // The live show-library slot is owned here (boot-recovered + autosaved); the handler adopts a
+  // pushed library through this setter so stateMessage/the autosaver read the latest.
+  setShowLibrary: (lib) => {
+    liveShowLibrary = lib;
+  },
+  relayToOthers,
+});
+
 // --- OSC input --------------------------------------------------------------
 
+// Raw OSC inputs are engine inputs (not authoring), so they bypass the editor gate entirely —
+// the transport-recall handler just needs the voice host + broadcast sink.
+const oscVoiceDeps = { voiceHost, broadcastJson };
 const oscInput = new OscInput({ port: oscPort });
 oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
@@ -249,7 +216,7 @@ oscInput.on((e) => {
     // normal OSC input.
     if (parseSectionRecallAddress(event.address) !== null) {
       const target = oscRecall(voiceHost.getShow(), event.address, event.value);
-      if (target) applyTransportRecall(voiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
+      if (target) applyTransportRecall(oscVoiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
       return;
     }
     voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
