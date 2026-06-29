@@ -20,7 +20,13 @@ import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
-import { admitDecision, createPinGate, resolvePin } from './pin-gate';
+import {
+  admitDecision,
+  createPinGate,
+  generateHostToken,
+  isTrustedHost,
+  resolvePin,
+} from './pin-gate';
 import { boot } from './boot';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
@@ -50,6 +56,12 @@ const tunnelManager = tunnelConfig ? new TunnelManager(tunnelConfig) : null;
 /** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, and an enabled
  * tunnel auto-generates a per-run PIN so a public URL is never un-gated. */
 const pinGate = createPinGate(resolvePin(process.env, tunnelManager !== null));
+
+/** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
+ * hash, printed in the boot banner for the shell to read) so the host's own window is admitted
+ * without the room PIN — while a stray local browser tab/script that merely reached the loopback
+ * port cannot. Always minted; only meaningful when the gate is active (open gate admits everyone). */
+const hostToken = generateHostToken();
 
 // --- project + host ---------------------------------------------------------
 
@@ -166,7 +178,18 @@ wss.on('connection', (ws, req) => {
   // registry or sent any presence/state/frames — so an un-authed client can neither view nor
   // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
   // admits everyone, so plain local dev is unchanged.
-  const decision = admitDecision(req.url, pinGate);
+  //
+  // Host bypass: the host's OWN app window is admitted without a PIN — but loopback alone is not
+  // proof of that (any local tab/script is also loopback), so the bypass requires the unguessable
+  // per-run host token the window was handed (plus loopback + not-via-cloudflared). Remote clients
+  // (cf-* headers) and LAN peers (non-loopback) can never satisfy it, so both stay gated.
+  const trustedLocal = isTrustedHost({
+    remoteAddress: req.socket.remoteAddress,
+    headers: req.headers,
+    url: req.url,
+    hostToken,
+  });
+  const decision = admitDecision(req.url, pinGate, trustedLocal);
   if (!decision.ok) {
     ws.close(decision.code, decision.reason);
     return;
@@ -309,5 +332,6 @@ boot({
   showLibraryAutosaver,
   tunnelManager,
   pin: pinGate.pin,
+  hostToken,
   broadcastState,
 });

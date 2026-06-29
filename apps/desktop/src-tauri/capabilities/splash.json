@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "splash",
+  "description": "Transient startup splash window: core APIs (boot status event + get_boot_status command) and clipboard write for the copy buttons. Scoped to the 'splash' window only — the 'app' window loads the ordinary web UI over http and gets no Tauri APIs.",
+  "windows": ["splash"],
+  "permissions": ["core:default", "clipboard-manager:allow-write-text"]
+}

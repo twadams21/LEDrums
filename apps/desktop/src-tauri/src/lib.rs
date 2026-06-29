@@ -16,7 +16,8 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    webview::PageLoadEvent, AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -105,18 +106,43 @@ fn parse_pin(line: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-/// Open the full-app webview window at the local origin (idempotent).
-fn open_app_window(app: &AppHandle, port: u16) {
+/// Extract the per-run host-session token from the banner (`Host token: <hex>`). The server prints it
+/// to local stdout only; we inject it into the host app window URL so its WebSocket is admitted
+/// without the room PIN (loopback alone is not proof of the host — see the server pin-gate).
+fn parse_host_token(line: &str) -> Option<String> {
+    let re = regex::Regex::new(r"Host token: ([^\s]+)").unwrap();
+    re.captures(line)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Open the full-app webview window at the local origin (idempotent). Once its page finishes
+/// loading, the transient "splash" window is closed — so there is no lingering second window; the
+/// shareable URL/PIN live in the app's own UI (the host auto-connects, see the PIN gate bypass).
+fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
     if app.get_webview_window("app").is_some() {
         return;
     }
-    let url = format!("http://127.0.0.1:{port}");
+    // The host token rides the URL *fragment* (`#hostToken=…`), which the webview keeps client-side
+    // and never sends to the server as part of any HTTP request — the web app reads it from
+    // `location.hash`, presents it on the WebSocket connect URL, then strips it from the address bar.
+    let url = match host_token {
+        Some(token) => format!("http://127.0.0.1:{port}/#hostToken={token}"),
+        None => format!("http://127.0.0.1:{port}"),
+    };
     match url.parse() {
         Ok(parsed) => {
             let _ = WebviewWindowBuilder::new(app, "app", WebviewUrl::External(parsed))
                 .title("LEDrums")
                 .inner_size(1440.0, 900.0)
                 .min_inner_size(900.0, 600.0)
+                .on_page_load(|window, payload| {
+                    if payload.event() == PageLoadEvent::Finished {
+                        if let Some(splash) = window.app_handle().get_webview_window("splash") {
+                            let _ = splash.close();
+                        }
+                    }
+                })
                 .build();
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
@@ -183,7 +209,16 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
             "LEDRUMS_PROJECTS_DIR",
             projects_dir.to_string_lossy().to_string(),
         )
-        .env("LEDRUMS_WEB_ROOT", web_root.to_string_lossy().to_string());
+        .env("LEDRUMS_WEB_ROOT", web_root.to_string_lossy().to_string())
+        // The desktop app is the drummer's live rig, which runs the voice-bus engine. The server
+        // defaults to the legacy engine unless LEDRUMS_ENGINE=voice, so set it here (matching how
+        // `pnpm dev` is run) — otherwise the packaged app silently runs a different engine than
+        // dev (patch-graph edits don't drive routing, triggers don't fire, etc.). Respect an
+        // explicit override from the launching environment for debugging.
+        .env(
+            "LEDRUMS_ENGINE",
+            std::env::var("LEDRUMS_ENGINE").unwrap_or_else(|_| "voice".into()),
+        );
 
     // Only enable the tunnel when a cloudflared binary was actually bundled — otherwise the app
     // degrades gracefully to local/LAN access (and no PIN is generated).
@@ -211,6 +246,11 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut app_window_opened = false;
+        // The app window must be opened WITH the host token in its URL (so the host bypasses the PIN).
+        // The token line prints a beat after "listening on", so we hold off opening until we have it —
+        // unless no tunnel was bundled (then no token/PIN is ever printed and we open immediately).
+        let mut listening_seen = false;
+        let mut host_token: Option<String> = None;
         let mut buf = String::new();
         while let Some(event) = rx.recv().await {
             match event {
@@ -224,16 +264,29 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
                         println!("[sidecar] {line}");
 
                         let mut changed = false;
-                        if !app_window_opened && line.contains("listening on") {
+                        if !listening_seen && line.contains("listening on") {
                             status.stage = if has_cloudflared {
                                 "running".into()
                             } else {
                                 "no-tunnel".into()
                             };
                             status.local_url = Some(format!("http://127.0.0.1:{port}"));
-                            open_app_window(&app_handle, port);
-                            app_window_opened = true;
+                            listening_seen = true;
                             changed = true;
+                        }
+                        if host_token.is_none() {
+                            if let Some(t) = parse_host_token(line) {
+                                host_token = Some(t);
+                            }
+                        }
+                        // Open the app window once the server is up AND we have the host token — or,
+                        // when no tunnel was bundled, immediately (no token/PIN will ever print).
+                        if !app_window_opened
+                            && listening_seen
+                            && (host_token.is_some() || !has_cloudflared)
+                        {
+                            open_app_window(&app_handle, port, host_token.as_deref());
+                            app_window_opened = true;
                         }
                         if status.tunnel_url.is_none() {
                             if let Some(url) = parse_tunnel_url(line) {
@@ -315,11 +368,16 @@ pub fn run() {
             }
             Ok(())
         })
-        // Closing any window quits the whole app — this makes the macOS "window closed but app
-        // lives" case truly stop everything (the Exit handler below SIGTERMs the sidecar).
+        // Quit when the main app window closes (the macOS "window closed but app lives" case →
+        // the Exit handler below SIGTERMs the sidecar), or when the splash is dismissed before the
+        // app window ever opened. A *programmatic* splash close (after the app window is up, see
+        // open_app_window) must NOT quit the app.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                window.app_handle().exit(0);
+                let app = window.app_handle();
+                if window.label() == "app" || app.get_webview_window("app").is_none() {
+                    app.exit(0);
+                }
             }
         })
         .build(tauri::generate_context!())
@@ -334,7 +392,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_pin, parse_tunnel_url};
+    use super::{parse_host_token, parse_pin, parse_tunnel_url};
 
     #[test]
     fn extracts_tunnel_url_from_banner_line() {
@@ -381,5 +439,21 @@ mod tests {
     #[test]
     fn returns_none_when_no_pin_present() {
         assert_eq!(parse_pin("OSC listening on udp:57120"), None);
+    }
+
+    #[test]
+    fn parses_host_token_from_banner_line() {
+        assert_eq!(
+            parse_host_token("  Host token: a1b2c3d4e5f6").as_deref(),
+            Some("a1b2c3d4e5f6")
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_host_token_present() {
+        assert_eq!(
+            parse_host_token("  Room PIN: 481923 (required to join)"),
+            None
+        );
     }
 }

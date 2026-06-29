@@ -63,6 +63,9 @@ export interface WSClientOptions {
   maxDelayMs?: number;
   /** Room PIN sent on connect as the `?pin=` query (S3). null/empty = none (open server). */
   pin?: string | null;
+  /** Host-session token sent on connect as the `?hostToken=` query (S4 desktop) — the packaged app
+   * injects it so the host's own window is admitted without the room PIN. null/empty for browsers. */
+  hostToken?: string | null;
 }
 
 function defaultUrl(): string {
@@ -96,6 +99,9 @@ export class WSClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Room PIN appended to the connect URL (S3); null/empty when the server is open. */
   private pin: string | null;
+  /** Host-session token appended to the connect URL (S4 desktop); null for browser/remote clients.
+   * Fixed for the tab's lifetime — set once from the injected window URL, never re-prompted. */
+  private readonly hostToken: string | null;
   /** The last connect was refused for a bad PIN (close 4401) — the reconnect loop is paused
       until {@link reconnectWithPin} supplies a new one. */
   private authRejected = false;
@@ -106,13 +112,18 @@ export class WSClient {
     this.baseDelayMs = opts.baseDelayMs ?? 500;
     this.maxDelayMs = opts.maxDelayMs ?? 8000;
     this.pin = opts.pin ?? null;
+    this.hostToken = opts.hostToken ?? null;
   }
 
-  /** The connect URL with the room PIN appended as a `?pin=` query, when one is set. */
+  /** The connect URL with the room PIN (`?pin=`) and/or host token (`?hostToken=`) appended when set. */
   private dialUrl(): string {
-    if (!this.pin) return this.url;
+    const params = new URLSearchParams();
+    if (this.pin) params.set('pin', this.pin);
+    if (this.hostToken) params.set('hostToken', this.hostToken);
+    const qs = params.toString();
+    if (!qs) return this.url;
     const sep = this.url.includes('?') ? '&' : '?';
-    return `${this.url}${sep}pin=${encodeURIComponent(this.pin)}`;
+    return `${this.url}${sep}${qs}`;
   }
 
   on(cb: WSCallbacks): void {

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The server sidecar is a Node SEA: V8 needs to allocate executable memory for its JIT.
+       Tauri signs bundle binaries with the hardened runtime, which blocks that without these
+       entitlements (the unsigned binary crashes in V8 SetPermissionsOnExecutableMemory). We do
+       not notarize (ad-hoc + `xattr -cr`), so these are purely to let the bundled Node run. -->
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <!-- Retained defensively: the bundle ships helper binaries (the Node-SEA sidecar + cloudflared)
+       that are signed differently from the ad-hoc-signed app. Library validation governs code LOADED
+       into the app process (dylibs/frameworks), not child processes spawned via exec — which is how
+       the sidecar/cloudflared run — so this is likely NOT strictly required. It is kept until a
+       packaged hardened-runtime smoke test confirms the app launches without it; drop it then. -->
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict>
+</plist>

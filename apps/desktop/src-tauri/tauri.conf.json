@@ -12,12 +12,12 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "label": "share",
-        "title": "LEDrums — Share",
+        "label": "splash",
+        "title": "LEDrums",
         "url": "index.html",
         "width": 460,
         "height": 380,
-        "resizable": true,
+        "resizable": false,
         "center": true,
         "alwaysOnTop": false
       }
@@ -42,7 +42,8 @@
       "cloudflared": "cloudflared"
     },
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
     }
   }
 }

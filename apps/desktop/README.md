@@ -111,6 +111,28 @@ attributes cleared:
 xattr -cr "/path/to/LEDrums.app"
 ```
 
+**JIT entitlements (required).** Tauri signs bundle binaries with the hardened runtime. The
+server sidecar is a Node SEA, and V8 needs to allocate executable memory for its JIT — the
+hardened runtime blocks that unless `bundle.macOS.entitlements` (→ `entitlements.plist`) grants
+`com.apple.security.cs.allow-jit` + `allow-unsigned-executable-memory` (+ `disable-library-
+validation`, since the app loads the differently-signed sidecar/cloudflared). Without it the
+bundled server crashes on launch in `v8::...SetPermissionsOnExecutableMemory`. We don't notarize,
+so these entitlements are purely to let the embedded Node run.
+
+## Packaging the `.dmg`
+
+`pnpm --filter @ledrums/desktop build` (targets `all`) produces `LEDrums.app` **and** a `.dmg` on
+a normal (GUI) macOS machine. In a **headless** environment Tauri's `bundle_dmg.sh` fails because
+it styles the disk-image window via AppleScript/Finder — the `.app` is still produced. Build just
+the app and wrap a `.dmg` yourself:
+
+```bash
+pnpm --filter @ledrums/desktop tauri build --bundles app
+APP=apps/desktop/src-tauri/target/release/bundle/macos/LEDrums.app
+STAGE=$(mktemp -d); cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname LEDrums -srcfolder "$STAGE" -ov -format UDZO LEDrums.dmg
+```
+
 ## cloudflared
 
 `fetch:cloudflared` downloads the platform binary into `src-tauri/cloudflared/`. It is
