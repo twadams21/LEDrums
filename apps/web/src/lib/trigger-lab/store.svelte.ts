@@ -298,10 +298,12 @@ export class TriggerLab {
 
   labModel = buildLabModel();
   frameBuf = new Uint8Array(this.labModel.model.count * 3);
+  localPreviewActive = $state(false);
+  private localPreviewTimer: ReturnType<typeof setTimeout> | null = null;
   /** Safe to preview server geometry only once the link is up AND we have BOTH the
       server's model and a frame — model.count and frame length must agree, so they
       switch together (never a server frame on the lab model, or vice versa). */
-  useServer = $derived(this.link === 'open' && !!this.serverModel && !!this.serverFrame);
+  useServer = $derived(this.link === 'open' && !!this.serverModel && !!this.serverFrame && !this.localPreviewActive);
   /** Preview model: the engine's real kit when connected, else the local lab kit. */
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
   /** Preview frame: the engine's composited output when connected, else local sim. */
@@ -487,6 +489,9 @@ export class TriggerLab {
     this.midiHandle = null;
     this.client.close();
     this.engineSync.reset();
+    if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
+    this.localPreviewTimer = null;
+    this.localPreviewActive = false;
     this.stopAutosave();
   }
 
@@ -892,6 +897,7 @@ export class TriggerLab {
       onInput: (kind, _label, value, note, channel) => {
         if (kind === 'midi' && note !== undefined && value > 0 && this.acceptsMidiChannel(channel)) {
           this.applyMidiLearn(note);
+          this.fireRawMidiLocal(note, Math.round(Math.max(0, Math.min(1, value)) * 127));
         }
       },
     });
@@ -966,6 +972,15 @@ export class TriggerLab {
     compositeFrame(this.frameBuf, this.sim, this.labModel);
   }
 
+  private markLocalPreview(): void {
+    this.localPreviewActive = true;
+    if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
+    this.localPreviewTimer = setTimeout(() => {
+      this.localPreviewActive = false;
+      this.localPreviewTimer = null;
+    }, 350);
+  }
+
   private mappedDrumIdForMidiNote(note: number): string | null {
     return this.project?.inputMap.midiNotes.find((m) => m.note === note)?.drumId ?? null;
   }
@@ -997,6 +1012,7 @@ export class TriggerLab {
     for (const { key, graph } of toFire) this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
     this.renderFrame();
     this.snapshot();
+    this.markLocalPreview();
   }
 
   // --- play surface --------------------------------------------------------
@@ -1046,6 +1062,7 @@ export class TriggerLab {
     }
     this.renderFrame();
     this.snapshot();
+    this.markLocalPreview();
     // forward the hit so the server fires the REAL output (local sim stays intact
     // above — it still drives the lab's voice lanes + resolution log). send() is a
     // no-op unless the socket is open, so the guard is just to avoid a needless call.
@@ -1076,6 +1093,7 @@ export class TriggerLab {
     this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
     this.renderFrame();
     this.snapshot();
+    this.markLocalPreview();
     // Forward the matching source so connected server preview frames match the local audition.
     if (src?.kind === 'drum') {
       this.client.send({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: this.velocity });

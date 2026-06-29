@@ -30,7 +30,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydowncapture={onKey} />
 
 <div class="shell-root">
   <Shell {store} {shell} />

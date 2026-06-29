@@ -203,6 +203,23 @@ describe('keyboard graph firing', () => {
 
     expect(sent).toContainEqual({ t: 'midi', note: 36, velocity: Math.round(store.velocity * 127), on: true });
   });
+
+  it('uses the local preview frame briefly after a keyboard graph fire even when a server frame exists', () => {
+    const store = new TriggerLab(fakeClient);
+    const key = store.createGraph('Midi graph');
+    store.setTriggerSource(key, { kind: 'midi', note: 36 });
+    store.addGraphToSection(store.activeSectionId!, key);
+    store.link = 'open';
+    store.serverModel = store.labModel.model;
+    store.serverFrame = new Uint8Array(store.frameBuf.length);
+
+    expect(store.useServer).toBe(true);
+    store.fireSectionGraph(store.activeSection!.graphs.indexOf(key));
+
+    expect(store.localPreviewActive).toBe(true);
+    expect(store.useServer).toBe(false);
+    expect(store.previewFrame).toBe(store.frameBuf);
+  });
 });
 
 describe('rename / delete section', () => {
