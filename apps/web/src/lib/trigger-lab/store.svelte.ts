@@ -35,6 +35,7 @@ import {
   type TriggerGraph,
   type TriggerSource,
   makeNode,
+  resolveGraphsForFire,
   sourceMatchesPad,
   triggerSourceOf,
 } from './sim';
@@ -523,7 +524,10 @@ export class TriggerLab {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
-        if (ev.on && ev.velocity > 0 && this.acceptsMidiChannel(ev.channel)) this.applyMidiLearn(ev.note);
+        if (ev.on && ev.velocity > 0 && this.acceptsMidiChannel(ev.channel)) {
+          this.applyMidiLearn(ev.note);
+          this.fireRawMidiLocal(ev.note, ev.velocity);
+        }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
@@ -962,6 +966,39 @@ export class TriggerLab {
     compositeFrame(this.frameBuf, this.sim, this.labModel);
   }
 
+  private mappedDrumIdForMidiNote(note: number): string | null {
+    return this.project?.inputMap.midiNotes.find((m) => m.note === note)?.drumId ?? null;
+  }
+
+  private sourceDrumIdForTriggerSource(src: TriggerSource | undefined): string {
+    if (src?.kind === 'drum') return src.drumId;
+    if (src?.kind === 'midi' && src.note !== undefined) {
+      return this.mappedDrumIdForMidiNote(src.note) ?? this.pads[0]?.drumId ?? '';
+    }
+    return this.pads[0]?.drumId ?? '';
+  }
+
+  private midiVelocity(): number {
+    return Math.round(Math.max(0, Math.min(1, this.velocity)) * 127);
+  }
+
+  private fireRawMidiLocal(note: number, value: number): void {
+    const toFire = resolveGraphsForFire(this.graphs, { kind: 'midi', note, value });
+    if (toFire.length === 0) return;
+    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
+    const ctx = {
+      velocity: Math.max(0, Math.min(1, value / 127)),
+      sectionIndex: idx < 0 ? 0 : idx,
+      sectionCount: this.sections.length,
+      beatPhase: this.beatPhase,
+      sourceDrumId: this.mappedDrumIdForMidiNote(note) ?? this.pads[0]?.drumId ?? '',
+      bpm: this.bpm,
+    };
+    for (const { key, graph } of toFire) this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    this.renderFrame();
+    this.snapshot();
+  }
+
   // --- play surface --------------------------------------------------------
 
   /**
@@ -1028,22 +1065,25 @@ export class TriggerLab {
     this.selectedPadKey = key; // show the graph that fired
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const src = triggerSourceOf(graph);
-    const drumSrc = src?.kind === 'drum' ? src : null;
     const ctx = {
       velocity: this.velocity,
       sectionIndex: idx < 0 ? 0 : idx,
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
-      sourceDrumId: drumSrc?.drumId ?? this.pads[0]?.drumId ?? '',
+      sourceDrumId: this.sourceDrumIdForTriggerSource(src),
       bpm: this.bpm,
     };
     this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
     this.renderFrame();
     this.snapshot();
-    // forward to the server so the real output fires too, when the graph is drum-sourced
-    // (MIDI/OSC-sourced graphs need their actual input upstream — fired locally only here).
-    if (this.link === 'open' && drumSrc) {
-      this.client.send({ t: 'key', drumId: drumSrc.drumId, zone: String(drumSrc.zone), velocity: this.velocity });
+    // Forward the matching source so connected server preview frames match the local audition.
+    if (src?.kind === 'drum') {
+      this.client.send({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: this.velocity });
+    } else if (src?.kind === 'midi') {
+      if (src.note !== undefined) this.client.send({ t: 'midi', note: src.note, velocity: this.midiVelocity(), on: true });
+      else if (src.cc !== undefined) this.client.send({ t: 'cc', controller: src.cc, value: this.midiVelocity() });
+    } else if (src?.kind === 'osc') {
+      this.client.send({ t: 'osc', address: src.address, value: this.velocity });
     }
   }
 

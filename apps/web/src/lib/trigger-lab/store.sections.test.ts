@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import type { WSClient } from '../ws/client';
+import type { ClientMessage } from '../ws/protocol-types';
 
 /* U4 — sections as flat graph lists, the merged active section, and hit-resolution off the
    active section's source-matched graphs. The store seeds one song whose sections each hold
@@ -31,6 +32,9 @@ class MemStorage {
 }
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
+const capturing = (sent: ClientMessage[]): (() => WSClient) =>
+  () =>
+    ({ on() {}, connect() {}, close() {}, send(m: ClientMessage) { sent.push(m); } }) as unknown as WSClient;
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -183,6 +187,21 @@ describe('hit resolution = active section graphs whose drum source matches the p
     store.hit(kickCentre(store));
     expect(store.log).toHaveLength(1);
     expect(store.log[0]!.pad).toBe('Kick · center');
+  });
+});
+
+describe('keyboard graph firing', () => {
+  it('forwards MIDI-sourced section graphs to the server so connected preview frames update', () => {
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    const key = store.createGraph('Midi graph');
+    store.setTriggerSource(key, { kind: 'midi', note: 36 });
+    store.addGraphToSection(store.activeSectionId!, key);
+
+    const index = store.activeSection!.graphs.indexOf(key);
+    store.fireSectionGraph(index);
+
+    expect(sent).toContainEqual({ t: 'midi', note: 36, velocity: Math.round(store.velocity * 127), on: true });
   });
 });
 
