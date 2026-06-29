@@ -109,6 +109,27 @@ describe('WSClient', () => {
     expect(Array.from(got)).toEqual([10, 20, 30, 40, 50, 60]);
   });
 
+  it('dispatches monitor messages and reports outbound sends', () => {
+    const { client } = makeClient();
+    const onMonitor = vi.fn();
+    const onSend = vi.fn();
+    client.on({ onMonitor, onSend });
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+
+    client.send({ t: 'midi', note: 60, velocity: 100, on: true });
+    ws.emitText(
+      JSON.stringify({
+        t: 'monitor',
+        event: { id: 1, time: 1, type: 'input', direction: 'in', source: 'native-midi', label: 'MIDI note on 60' },
+      } satisfies ServerMessage),
+    );
+
+    expect(onSend).toHaveBeenCalledWith({ t: 'midi', note: 60, velocity: 100, on: true });
+    expect(onMonitor).toHaveBeenCalledWith({ id: 1, time: 1, type: 'input', direction: 'in', source: 'native-midi', label: 'MIDI note on 60' });
+  });
+
   it('ignores malformed text messages without throwing', () => {
     const { client } = makeClient();
     const onState = vi.fn();

@@ -14,7 +14,7 @@ import {
   type Transport,
   type TransportState,
 } from '@ledrums/core';
-import { OutputManager } from './output-manager';
+import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 
@@ -397,6 +397,10 @@ export class VoiceEngineHost {
 
   getOutputStatus(): OutputStatus {
     return this.output.status();
+  }
+
+  setOutputMonitor(sink: OutputMonitorSink): void {
+    this.output.onMonitor = sink;
   }
 }
 

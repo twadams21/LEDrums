@@ -10,6 +10,8 @@ export type {
   ClientMessage,
   EffectSpec,
   OutputStatus,
+  MonitorEvent,
+  MonitorEventType,
   SerializedDrum,
   SerializedModel,
   ServerMessage,

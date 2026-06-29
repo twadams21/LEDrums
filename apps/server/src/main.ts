@@ -36,6 +36,7 @@ import {
   encodeServer,
   serializeModel,
   type ClientMessage,
+  type MonitorEvent,
   type ServerMessage,
   type TunnelInfo,
 } from './ws-protocol';
@@ -136,6 +137,52 @@ function broadcastJson(msg: ServerMessage): void {
   }
 }
 
+let monitorSeq = 1;
+function monitor(event: Omit<MonitorEvent, 'id' | 'time'>): void {
+  broadcastJson({ t: 'monitor', event: { id: monitorSeq++, time: Date.now(), ...event } });
+}
+
+function monitorInput(msg: ClientMessage, origin: string): void {
+  switch (msg.t) {
+    case 'midi':
+      monitor({
+        type: 'input',
+        direction: 'in',
+        source: origin,
+        label: `MIDI ${msg.on ? 'note on' : 'note off'} ${msg.note}`,
+        detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
+      });
+      return;
+    case 'cc':
+      monitor({
+        type: 'input',
+        direction: 'in',
+        source: origin,
+        label: `MIDI CC ${msg.controller}`,
+        detail: `value=${msg.value}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
+      });
+      return;
+    case 'programChange':
+      monitor({
+        type: 'input',
+        direction: 'in',
+        source: origin,
+        label: `MIDI program ${msg.value}`,
+        detail: msg.channel != null ? `channel=${msg.channel}` : undefined,
+      });
+      return;
+    case 'osc':
+      monitor({ type: 'input', direction: 'in', source: origin, label: `OSC ${msg.address}`, detail: `value=${msg.value}` });
+      return;
+    case 'key':
+      monitor({ type: 'input', direction: 'in', source: origin, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
+      return;
+    case 'recallSection':
+      monitor({ type: 'graph', direction: 'in', source: origin, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
+      return;
+  }
+}
+
 /** Re-broadcast presence to every client (each gets its own `youAreEditor`). Called on any
  * join/leave so every client's editor/viewer role + headcount stays current. */
 function broadcastPresence(): void {
@@ -176,6 +223,8 @@ function stateMessage(): ServerMessage {
 
 if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
 else host.onFrame = (rgb) => broadcastBinary(rgb);
+host.setOutputMonitor(monitor);
+voiceHost?.setOutputMonitor(monitor);
 
 wss.on('connection', (ws, req) => {
   // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
@@ -212,6 +261,7 @@ wss.on('connection', (ws, req) => {
     try {
       const msg = decodeClient(raw.toString());
       handled = true;
+      monitorInput(msg, 'ws');
       handleClientMessage(msg, ws);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -317,6 +367,7 @@ function handleNativeMidiHttp(req: IncomingMessage, res: ServerResponse): boolea
         sendPlain(res, 400, 'unsupported native MIDI message');
         return;
       }
+      monitorInput(msg, 'native-midi');
       handleClientMessage(msg, nativeInputSocket);
       sendPlain(res, 204, '');
     } catch (err) {
@@ -337,6 +388,7 @@ const oscInput = new OscInput({ port: oscPort });
 oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
   if (!event || event.kind !== 'osc') return;
+  monitor({ type: 'input', direction: 'in', source: 'osc', label: `OSC ${event.address}`, detail: `value=${event.value}` });
   if (voiceHost) {
     // A section-recall address (e.g. from a show-control system) is always consumed by the
     // recall handler before the zone-map, exactly like the WS osc path; anything else is a

@@ -4,6 +4,7 @@ import {
   decodeServer,
   type ClientMessage,
   type EffectSpec,
+  type MonitorEvent,
   type OutputStatus,
   type SerializedModel,
   type ServerMessage,
@@ -42,6 +43,8 @@ export interface WSCallbacks {
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (kind: 'midi' | 'osc', label: string, value: number, note?: number, channel?: number) => void;
+  onMonitor?: (event: MonitorEvent) => void;
+  onSend?: (msg: ClientMessage) => void;
   onProjects?: (names: string[]) => void;
   /** Multi-client presence (S1): who is the single editor, whether WE are it, and the headcount. */
   onPresence?: (editorId: string | null, youAreEditor: boolean, clientCount: number) => void;
@@ -226,6 +229,9 @@ export class WSClient {
       case 'input':
         this.cb.onInput?.(msg.kind, msg.label, msg.value, msg.note, msg.channel);
         break;
+      case 'monitor':
+        this.cb.onMonitor?.(msg.event);
+        break;
       case 'projects':
         this.cb.onProjects?.(msg.names);
         break;
@@ -253,6 +259,7 @@ export class WSClient {
 
   /** Send a typed client message as a JSON string. No-op if not open. */
   send(msg: ClientMessage): void {
+    this.cb.onSend?.(msg);
     const ws = this.ws;
     if (!ws || ws.readyState !== 1 /* OPEN */) return;
     try {

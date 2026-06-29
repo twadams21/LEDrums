@@ -79,6 +79,41 @@ fn get_boot_status(state: State<'_, BootState>) -> BootStatus {
     state.0.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheckResult {
+    available: bool,
+    version: Option<String>,
+}
+
+#[tauri::command]
+async fn check_for_update_now(app: AppHandle) -> Result<UpdateCheckResult, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await.map_err(|e| e.to_string())? {
+        Some(update) => Ok(UpdateCheckResult {
+            available: true,
+            version: Some(update.version),
+        }),
+        None => Ok(UpdateCheckResult {
+            available: false,
+            version: None,
+        }),
+    }
+}
+
+#[tauri::command]
+async fn install_update_now(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
+
 /// Pick the local port: an explicit non-zero `LEDRUMS_DESKTOP_PORT`, else an OS-allocated free port
 /// (bind :0, read it back, drop the listener). A free port avoids a hard failure when the fixed
 /// default is already taken; the tiny bind→spawn race is covered by the sidecar exit/error handling.
@@ -541,7 +576,11 @@ pub fn run() {
         .manage(SidecarState::default())
         .manage(NativeMidiState::default())
         .manage(BootState::default())
-        .invoke_handler(tauri::generate_handler![get_boot_status])
+        .invoke_handler(tauri::generate_handler![
+            get_boot_status,
+            check_for_update_now,
+            install_update_now
+        ])
         .setup(move |app| {
             // Kick off the OTA check early and OFF the startup path: an update can be offered (and
             // installed) before the live session really begins, but a slow/failed check never holds

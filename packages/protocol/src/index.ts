@@ -142,6 +142,19 @@ export interface VoiceStats {
   busLevels: Record<string, number>;
 }
 
+export type MonitorEventType = 'input' | 'output' | 'effect' | 'graph' | 'system';
+
+export interface MonitorEvent {
+  id: number;
+  time: number;
+  type: MonitorEventType;
+  direction: 'in' | 'out' | 'local';
+  source: string;
+  destination?: string;
+  label: string;
+  detail?: string;
+}
+
 /** Remote-access surface (S3): the public share URL of the outbound Cloudflare tunnel and the
  * room PIN, so an authenticated client's UI can display "scan/visit this URL, enter this PIN".
  * Carried on the `state` message (only ever sent to already-admitted clients), so an un-authed
@@ -162,6 +175,7 @@ export type ServerMessage =
   | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null; tunnel: TunnelInfo | null }
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number; note?: number; channel?: number }
+  | { t: 'monitor'; event: MonitorEvent }
   | { t: 'projects'; names: string[] }
   // Multi-client presence (S1): who is the single editor, whether THIS recipient is it, and how
   // many clients are connected. Sent to a client on join and re-broadcast to every client on any

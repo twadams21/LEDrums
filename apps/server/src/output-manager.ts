@@ -7,6 +7,7 @@ import {
   type UniversePatch,
 } from '@ledrums/core';
 import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
+import type { MonitorEvent } from './ws-protocol';
 import type { OutputStatus } from './ws-protocol';
 
 /** Reorder RGB bytes for a strip's wiring order (e.g. GRB). */
@@ -39,6 +40,7 @@ export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, r
 }
 
 export type OutputFactory = (settings: OutputSettings) => PixelOutput;
+export type OutputMonitorSink = (event: Omit<MonitorEvent, 'id' | 'time'>) => void;
 
 function defaultFactory(settings: OutputSettings): PixelOutput {
   if (settings.protocol === 'sacn') {
@@ -69,6 +71,7 @@ export class OutputManager {
   private packetsSent = 0;
   private lastError: string | null = null;
   private universeCount = 0;
+  onMonitor?: OutputMonitorSink;
 
   constructor(private readonly factory: OutputFactory = defaultFactory) {}
 
@@ -111,14 +114,17 @@ export class OutputManager {
     if (!s || s.state === 'disabled') return;
     if (s.state === 'dry-run') {
       this.packetsSent += dmxMap.universes.length; // formed, not transmitted
+      this.monitor('dry-run', s, dmxMap.universes.length);
       return;
     }
     if (!this.output) return;
     try {
       this.output.nextFrame();
       for (const patch of dmxMap.universes) {
-        this.output.send(patch.universe, frameToUniverseBytes(rgba, patch, s.rgbOrder));
+        const bytes = frameToUniverseBytes(rgba, patch, s.rgbOrder);
+        this.output.send(patch.universe, bytes);
         this.packetsSent++;
+        this.monitor('packet', s, 1, patch.universe, bytes.length);
       }
     } catch (err) {
       this.lastError = String(err);
@@ -134,6 +140,7 @@ export class OutputManager {
       for (const patch of dmxMap.universes) {
         const zero = new Uint8Array(patch.channelCount);
         this.output.send(patch.universe, zero);
+        if (this.settings) this.monitor('blackout', this.settings, 1, patch.universe, zero.length);
       }
     } catch (err) {
       this.lastError = String(err);
@@ -156,5 +163,16 @@ export class OutputManager {
       this.output.close();
       this.output = null;
     }
+  }
+
+  private monitor(kind: string, settings: OutputSettings, packets: number, universe?: number, byteCount?: number): void {
+    this.onMonitor?.({
+      type: 'output',
+      direction: 'out',
+      source: 'server',
+      destination: `${settings.protocol}:${settings.broadcast ? 'broadcast' : settings.host}:${settings.port}`,
+      label: universe === undefined ? `${settings.protocol} ${kind}` : `${settings.protocol} universe ${universe}`,
+      detail: `${kind}; packets=${packets}${byteCount === undefined ? '' : `; bytes=${byteCount}`}`,
+    });
   }
 }

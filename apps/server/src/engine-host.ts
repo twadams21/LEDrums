@@ -1,5 +1,5 @@
 import { Engine, type InputEvent, type Project } from '@ledrums/core';
-import { OutputManager } from './output-manager';
+import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 
 /** Stats reported to clients (the ServerMessage `stats` shape, sans `t`). */
@@ -198,5 +198,9 @@ export class EngineHost {
 
   getOutputStatus(): OutputStatus {
     return this.output.status();
+  }
+
+  setOutputMonitor(sink: OutputMonitorSink): void {
+    this.output.onMonitor = sink;
   }
 }

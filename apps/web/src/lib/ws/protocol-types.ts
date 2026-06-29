@@ -5,6 +5,7 @@
 export type {
   ClientMessage,
   EffectSpec,
+  MonitorEvent,
   OutputStatus,
   SerializedDrum,
   SerializedModel,
@@ -20,6 +21,7 @@ const SERVER_TYPES = new Set<ServerMessage['t']>([
   'state',
   'stats',
   'input',
+  'monitor',
   'projects',
   'presence',
   'showLibrary',

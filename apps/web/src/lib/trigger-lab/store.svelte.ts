@@ -44,7 +44,7 @@ import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { SerializedModel, TunnelInfo } from '../ws/protocol-types';
+import type { ClientMessage, MonitorEvent, SerializedModel, TunnelInfo } from '../ws/protocol-types';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
@@ -82,6 +82,8 @@ const SAVE_DEBOUNCE_MS = 300;
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   | { kind: 'trigger'; graphKey: string };
+
+export type MonitorFilterType = MonitorEvent['type'] | 'all';
 
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
     malformed JSON — any failure yields null (boot keeps the seed). */
@@ -252,6 +254,10 @@ export class TriggerLab {
   timeMs = $state(0);
   beat = $state(0);
   busLevels = $state<Record<string, number>>({});
+  monitorEvents = $state<MonitorEvent[]>([]);
+  monitorTypeFilter = $state<MonitorFilterType>('all');
+  monitorTextFilter = $state('');
+  private monitorSeq = 1;
   /** measured output frame rate — local rAF rate when offline, the server's real
       LED output rate when the WS link is open (the server's number wins). */
   fps = $state(0);
@@ -900,7 +906,35 @@ export class TriggerLab {
           this.fireRawMidiLocal(note, Math.round(Math.max(0, Math.min(1, value)) * 127));
         }
       },
+      onMonitor: (event) => this.addMonitor(event),
+      onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
+  }
+
+  private monitorForClientMessage(msg: ClientMessage): Omit<MonitorEvent, 'id' | 'time'> {
+    switch (msg.t) {
+      case 'midi':
+        return {
+          type: 'input',
+          direction: 'out',
+          source: 'web',
+          destination: 'server',
+          label: `MIDI ${msg.on ? 'note on' : 'note off'} ${msg.note}`,
+          detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
+        };
+      case 'cc':
+        return { type: 'input', direction: 'out', source: 'web', destination: 'server', label: `MIDI CC ${msg.controller}`, detail: `value=${msg.value}` };
+      case 'programChange':
+        return { type: 'input', direction: 'out', source: 'web', destination: 'server', label: `MIDI program ${msg.value}` };
+      case 'osc':
+        return { type: 'input', direction: 'out', source: 'web', destination: 'server', label: `OSC ${msg.address}`, detail: `value=${msg.value}` };
+      case 'key':
+        return { type: 'input', direction: 'out', source: 'web', destination: 'server', label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` };
+      case 'setShow':
+        return { type: 'graph', direction: 'out', source: 'web', destination: 'server', label: 'Set show', detail: `${Object.keys(msg.show.graphs).length} graphs` };
+      default:
+        return { type: 'system', direction: 'out', source: 'web', destination: 'server', label: msg.t };
+    }
   }
 
   /** Re-send the authored Show to the engine when it actually changed, so edits
@@ -968,6 +1002,36 @@ export class TriggerLab {
     this.busLevels = levels;
   }
 
+  private addMonitor(event: Omit<MonitorEvent, 'id' | 'time'> | MonitorEvent): void {
+    const full: MonitorEvent = { id: this.monitorSeq++, time: Date.now(), ...event };
+    this.monitorEvents = [full, ...this.monitorEvents].slice(0, 300);
+  }
+
+  clearMonitor(): void {
+    this.monitorEvents = [];
+  }
+
+  setMonitorTypeFilter(type: MonitorFilterType): void {
+    this.monitorTypeFilter = type;
+  }
+
+  setMonitorTextFilter(text: string): void {
+    this.monitorTextFilter = text;
+  }
+
+  visibleMonitorEvents = $derived.by(() => {
+    const text = this.monitorTextFilter.trim().toLowerCase();
+    return this.monitorEvents.filter((event) => {
+      if (this.monitorTypeFilter !== 'all' && event.type !== this.monitorTypeFilter) return false;
+      if (!text) return true;
+      return [event.type, event.direction, event.source, event.destination, event.label, event.detail]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(text);
+    });
+  });
+
   private renderFrame(): void {
     compositeFrame(this.frameBuf, this.sim, this.labModel);
   }
@@ -1009,7 +1073,16 @@ export class TriggerLab {
       sourceDrumId: this.mappedDrumIdForMidiNote(note) ?? this.pads[0]?.drumId ?? '',
       bpm: this.bpm,
     };
-    for (const { key, graph } of toFire) this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    for (const { key, graph } of toFire) {
+      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+      this.addMonitor({
+        type: 'effect',
+        direction: 'local',
+        source: `midi:${note}`,
+        label: this.graphLabel(key),
+        detail: resolved.join(' | '),
+      });
+    }
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
@@ -1058,7 +1131,8 @@ export class TriggerLab {
       bpm: this.bpm,
     };
     for (const { graph, label } of toFire) {
-      this.sim.triggerGraph(label, graph, ctx);
+      const resolved = this.sim.triggerGraph(label, graph, ctx);
+      this.addMonitor({ type: 'effect', direction: 'local', source: `${pad.drumId}:${pad.zone}`, label, detail: resolved.join(' | ') });
     }
     this.renderFrame();
     this.snapshot();
@@ -1090,7 +1164,8 @@ export class TriggerLab {
       sourceDrumId: this.sourceDrumIdForTriggerSource(src),
       bpm: this.bpm,
     };
-    this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
