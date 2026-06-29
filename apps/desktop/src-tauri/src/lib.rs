@@ -11,16 +11,18 @@
 //   4. On exit, send the sidecar SIGTERM (graceful: it stops cloudflared + flushes autosaves),
 //      then guarantee it's gone — no orphaned processes.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{
     webview::PageLoadEvent, AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl,
     WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_updater::UpdaterExt;
 
 /// Fallback local port if free-port allocation fails. Overridable via `LEDRUMS_DESKTOP_PORT`.
 const DEFAULT_PORT: u16 = 4178;
@@ -38,7 +40,7 @@ struct SidecarState {
 /// fire before the page registers its listener). Field names match the keys `shell/main.js` reads.
 #[derive(Default, Clone, Serialize)]
 struct BootStatus {
-    /// "starting" | "running" | "no-tunnel" | "error"
+    /// "starting" | "running" | "no-tunnel" | "updating" | "error"
     stage: String,
     #[serde(rename = "localUrl")]
     local_url: Option<String>,
@@ -146,6 +148,27 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
                 .build();
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
+    }
+}
+
+/// Re-create the transient splash/progress window if it has already been closed (`open_app_window`
+/// closes it once the app window finishes loading). An update accepted AFTER the app is up would
+/// otherwise download with no visible surface — the `boot://status` progress stream would have
+/// nothing to render on. Reopening reuses the same window label/url/size as `tauri.conf.json`, so the
+/// existing `shell/main.js` status rendering (incl. the `stage: "updating"` branch) is reused as-is.
+/// Idempotent: a no-op if the splash is still open. Closed again on update failure/cancel.
+fn ensure_splash_window(app: &AppHandle) {
+    if app.get_webview_window("splash").is_some() {
+        return;
+    }
+    if let Err(e) = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("index.html".into()))
+        .title("LEDrums")
+        .inner_size(460.0, 380.0)
+        .resizable(false)
+        .center()
+        .build()
+    {
+        eprintln!("[updater] could not reopen progress splash: {e}");
     }
 }
 
@@ -342,6 +365,143 @@ fn shutting_down(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
+/// Dev escape hatch: skip the OTA check when `LEDRUMS_SKIP_UPDATE` is set to anything truthy
+/// (`1`, `true`, …). Empty / `0` / `false` are treated as "don't skip".
+fn skip_update_check() -> bool {
+    std::env::var("LEDRUMS_SKIP_UPDATE")
+        .map(|v| {
+            let v = v.trim();
+            !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
+        })
+        .unwrap_or(false)
+}
+
+/// Whole-bundle OTA: check the configured endpoint for a newer SIGNED build and, if the user
+/// accepts, download + install it and restart. Because the server sidecar + web UI + cloudflared
+/// are all bundled INSIDE the `.app`, this updates EVERYTHING at once; after the restart the app
+/// boots fresh and mints a new tunnel URL + PIN.
+///
+/// Runs as a background task and MUST NOT block startup. Any failure — offline, placeholder /
+/// unreachable endpoint, OTA not configured yet — is logged and swallowed so the app starts
+/// normally with the current version.
+async fn check_for_update(app: AppHandle) {
+    if skip_update_check() {
+        println!("[updater] LEDRUMS_SKIP_UPDATE set — skipping update check");
+        return;
+    }
+
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("[updater] updater unavailable ({e}); continuing without OTA");
+            return;
+        }
+    };
+
+    let update = match updater.check().await {
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            println!("[updater] up to date");
+            return;
+        }
+        Err(e) => {
+            // Offline, placeholder endpoint, or OTA not provisioned yet — degrade gracefully.
+            eprintln!("[updater] check failed ({e}); continuing without OTA");
+            return;
+        }
+    };
+
+    println!("[updater] update available: v{}", update.version);
+
+    // Ask on the Tauri-privileged splash surface. `blocking_show` dispatches to the main thread and
+    // blocks the caller until answered, so run it on the blocking pool to keep the async runtime
+    // free for the concurrently-booting sidecar.
+    let prompt_app = app.clone();
+    let version = update.version.clone();
+    let accepted = tauri::async_runtime::spawn_blocking(move || {
+        prompt_app
+            .dialog()
+            .message(format!(
+                "A new version of LEDrums (v{version}) is available.\n\nDownload and restart now? \
+                 The whole app updates and reconnects with a fresh share link."
+            ))
+            .title("Update available")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Update & Restart".to_string(),
+                "Later".to_string(),
+            ))
+            .blocking_show()
+    })
+    .await
+    .unwrap_or(false);
+
+    if !accepted {
+        println!("[updater] user declined the update");
+        return;
+    }
+
+    // Make download progress visible. By now the splash may already be closed (open_app_window
+    // closes it once the app window loads), so an update accepted mid-session would otherwise show
+    // nothing until the restart. Reopen the splash so the `boot://status` progress stream has a
+    // surface again; it's closed below on failure (on success the app restarts anyway).
+    ensure_splash_window(&app);
+
+    // Best-effort download progress on the splash. `publish` updates shared state and emits to the
+    // (now-reopened) splash. `on_chunk` is an immutable `Fn`, so accumulate the running byte count
+    // through an atomic.
+    publish(
+        &app,
+        &BootStatus {
+            stage: "updating".into(),
+            message: Some("Starting download…".into()),
+            ..Default::default()
+        },
+    );
+
+    let progress_app = app.clone();
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let result = update
+        .download_and_install(
+            move |chunk_len, content_len| {
+                let total =
+                    downloaded.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
+                let message = match content_len {
+                    Some(len) if len > 0 => {
+                        let pct = (total as f64 / len as f64 * 100.0).round() as u64;
+                        format!("Downloading update… {pct}%")
+                    }
+                    _ => format!("Downloading update… {total} bytes"),
+                };
+                publish(
+                    &progress_app,
+                    &BootStatus {
+                        stage: "updating".into(),
+                        message: Some(message),
+                        ..Default::default()
+                    },
+                );
+            },
+            || {},
+        )
+        .await;
+
+    match result {
+        Ok(()) => {
+            println!("[updater] update installed — restarting");
+            app.restart();
+        }
+        Err(e) => {
+            // Close the progress splash we reopened above so the failed update doesn't leave a
+            // stuck window, and let the current version keep running. Don't clobber the
+            // (likely already-running) server's share status with an error — just log it.
+            if let Some(splash) = app.get_webview_window("splash") {
+                let _ = splash.close();
+            }
+            eprintln!("[updater] download/install failed ({e}); continuing with current version");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = resolve_port();
@@ -349,10 +509,20 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Whole-bundle OTA auto-update (driven from Rust; see check_for_update).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .manage(SidecarState::default())
         .manage(BootState::default())
         .invoke_handler(tauri::generate_handler![get_boot_status])
         .setup(move |app| {
+            // Kick off the OTA check early and OFF the startup path: an update can be offered (and
+            // installed) before the live session really begins, but a slow/failed check never holds
+            // up the server or the app window. Failures degrade to a normal start (see
+            // check_for_update).
+            tauri::async_runtime::spawn(check_for_update(app.handle().clone()));
+
             if let Err(e) = spawn_sidecar(app.handle(), port) {
                 // A failed sidecar is fatal to the app's purpose — surface it in the share window
                 // (stored in state so the page shows it even if it loads after this fires).

@@ -10,7 +10,8 @@
     "build": "tauri build",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "prepare:bundle": "node scripts/prepare-bundle.mjs",
-    "fetch:cloudflared": "node scripts/fetch-cloudflared.mjs"
+    "fetch:cloudflared": "node scripts/fetch-cloudflared.mjs",
+    "publish:ota": "node scripts/publish-ota.mjs"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.1.1",

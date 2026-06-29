@@ -146,3 +146,101 @@ and prints the asset's SHA256. Verification is **opt-in** locally — set `CLOUD
 the expected hash to enforce it. **Release/packaging CI should set `CLOUDFLARED_SHA256` per
 platform** (the hash differs by OS/arch) so bundled binaries are integrity-checked, not just
 version-pinned.
+
+## OTA auto-update (whole-bundle)
+
+The app updates itself **as one whole bundle**. The server sidecar, the web UI, and cloudflared
+are all packaged inside the `.app`, so a Tauri updater release replaces **everything at once**
+(shell + server + UI + cloudflared). After the update installs and the app restarts, it boots
+fresh and mints a **new tunnel URL + room PIN** — exactly as a clean launch would.
+
+### How the check runs (Rust-driven, not the web app)
+
+The drummer's window loads the external web UI over `http://127.0.0.1` and has **no Tauri APIs** —
+only the transient `splash` window is Tauri-privileged. So the update check runs in the **Rust
+shell** (`src-tauri/src/lib.rs`, `check_for_update`), using `tauri-plugin-updater`'s Rust API:
+
+1. On startup it spawns a background task (it never blocks the server or the app window) that calls
+   `app.updater()?.check()`.
+2. If an update is available, it asks via a native `tauri-plugin-dialog` prompt
+   (*"Update & Restart"* / *"Later"*).
+3. On accept, it `download_and_install`s (streaming progress to the splash via `boot://status`,
+   stage `"updating"`) and then `app.restart()`s.
+4. **Any failure — offline, placeholder/unreachable endpoint, OTA not provisioned — is logged and
+   swallowed**, and the app starts normally on the current version. OTA is never required to run.
+
+Set **`LEDRUMS_SKIP_UPDATE=1`** to skip the check entirely (handy in dev).
+
+The whole OTA flow runs in Rust, so the webview needs **no** updater/dialog/process capability
+grants — `src-tauri/capabilities/splash.json` grants the splash only `core:default` +
+`clipboard-manager:allow-write-text` (what `shell/main.js` actually uses). The updater/dialog/process
+plugins are still `.plugin(...)`-initialized in `src-tauri/src/lib.rs`; only the webview-facing grants
+were dropped.
+
+If a user accepts an update **after** the app window is already up (the splash has since closed), the
+Rust shell **reopens the splash window** so download progress (`boot://status`, stage `"updating"`)
+is visible again, and closes it on failure (see `ensure_splash_window` / `check_for_update`).
+
+### One-time setup — DONE (recorded here for reference)
+
+The channel is **provisioned and live**; `tauri.conf.json` carries the real pubkey + endpoint. The
+infra:
+
+- **Signing keypair**: a production minisign keypair. The **private** key + password live in
+  Infisical (workspace `a7e707cd-322f-4cf1-a8ec-48da2e35fe72`, env `prod`) under the namespaced
+  names **`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY`** / **`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD`**
+  (namespaced because that vault already holds a different project's `TAURI_SIGNING_PRIVATE_KEY` —
+  do not clobber it). The **public** key is committed in `plugins.updater.pubkey`.
+- **Public R2 bucket** `ledrums-ota`, public base
+  `https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev`; `plugins.updater.endpoints` →
+  `<base>/latest.json`.
+
+To rotate the key or re-provision, regenerate with `tauri signer generate`, update the secrets +
+`pubkey`, and re-publish.
+
+### Release flow
+
+Because the signing key is namespaced, the build **maps it onto the canonical
+`TAURI_SIGNING_PRIVATE_KEY*` env names** Tauri expects (and overrides the other project's key that
+Infisical also injects in `prod`):
+
+```bash
+PROJ=a7e707cd-322f-4cf1-a8ec-48da2e35fe72
+BASE=https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev
+
+# 1. bump `version` in src-tauri/tauri.conf.json (this is the OTA version clients compare against)
+
+# 2. SIGNED build (--bundles app avoids the headless dmg step; createUpdaterArtifacts emits
+#    *.app.tar.gz + .sig). Build per platform you ship (run on an arm64 Mac for darwin-aarch64).
+infisical run --projectId "$PROJ" --env prod -- bash -c \
+  'TAURI_SIGNING_PRIVATE_KEY="$LEDRUMS_TAURI_SIGNING_PRIVATE_KEY" \
+   TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+   pnpm --filter @ledrums/desktop tauri build --bundles app'
+
+# 3. publish the artifact + (merged) latest.json to R2
+infisical run --projectId "$PROJ" --env prod -- bash -c \
+  "OTA_PUBLIC_BASE=$BASE node apps/desktop/scripts/publish-ota.mjs"
+```
+
+`scripts/publish-ota.mjs` locates the host platform's updater artifact under
+`src-tauri/target/release/bundle/`, uploads it to `r2://<bucket>/<version>/<target>/<file>`, and
+writes the Tauri v2 manifest `latest.json` (`{ version, notes, pub_date, platforms[<os>-<arch>] =
+{ signature, url } }`). It **merges** into any existing same-version manifest, so a multi-arch
+release built on several machines (e.g. `darwin-aarch64` + `darwin-x86_64`) accumulates into one
+manifest. Env knobs: `OTA_BUCKET` (default `ledrums-ota`), `OTA_PUBLIC_BASE` (**required**),
+`OTA_VERSION`, `OTA_TARGET`, `OTA_NOTES`. It needs `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+(R2 read/write) — supplied by Infisical.
+
+> **Per-platform builds.** As with the sidecar (Node SEA is not a cross-compiler), produce each
+> platform's signed bundle **on that platform** and run `publish:ota` there; the manifest merge
+> keeps both arch entries.
+
+> **⚠ Publish serially — one platform at a time.** `publish-ota.mjs` updates `latest.json` with a
+> read-modify-write (fetch the manifest → merge this platform's entry → re-upload). Two publishes in
+> flight at once can read the same manifest and clobber each other's platform entry. Always wait for
+> one platform's publish to finish before starting the next; **never run `publish:ota` concurrently.**
+
+> **Version is single-sourced.** `tauri.conf.json`'s `version` is authoritative (it's baked into the
+> built app). `OTA_VERSION`, if set, only *asserts* that version — a mismatch aborts the publish
+> (override with `OTA_ALLOW_VERSION_MISMATCH=1` only in an emergency), so the manifest can't drift
+> from the artifact.

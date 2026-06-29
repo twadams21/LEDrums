@@ -19,6 +19,12 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-clipboard-manager = "2"
+# Whole-bundle OTA auto-update (S4 Phase 2). The update check + prompt is driven from the Rust
+# shell (the app window loads the external web UI over http and has no Tauri APIs), so these are
+# used via their Rust APIs (updater()/dialog()/restart()), not from JS.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
