@@ -5,6 +5,7 @@
      fields are store-backed but inert today (local sim); the real WS values get
      wired in a later slice — see store.svelte.ts (link / latencyMs). */
   import type { TriggerLab } from './store.svelte';
+  import { formatFps, formatMs } from './stat-format';
 
   let { store }: { store: TriggerLab } = $props();
 
@@ -12,6 +13,9 @@
   const linkLabel = $derived(store.link === 'open' ? 'engine' : store.link === 'connecting' ? 'sync' : 'offline');
   // pixel count lives on the serialized model; reuse the live fps the rAF loop measures
   const pixels = $derived(store.model?.count ?? 0);
+  // raw fps/latency can be long fractions — compact + fixed-width (see stat-format.ts)
+  const fps = $derived(formatFps(store.fps));
+  const latency = $derived(formatMs(store.latencyMs));
 </script>
 
 <div class="status" aria-label="Engine status">
@@ -26,11 +30,11 @@
   </span>
   <span class="sep" aria-hidden="true"></span>
   <span class="stat" title="LED output frame rate">
-    <b>{store.fps}</b><i>fps</i>
+    <b>{fps}</b><i>fps</i>
   </span>
   <span class="sep" aria-hidden="true"></span>
   <span class="stat" title="Engine round-trip latency">
-    <b>{store.latencyMs}</b><i>ms</i>
+    <b>{latency}</b><i>ms</i>
   </span>
 </div>
 
