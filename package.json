@@ -12,7 +12,7 @@
     "build": "pnpm -r --filter \"./packages/*\" run build && pnpm --filter @ledrums/web run build && pnpm --filter @ledrums/server run build",
     "dev": "pnpm --parallel --filter @ledrums/server --filter @ledrums/web run dev",
     "start": "pnpm --filter @ledrums/server run start",
-    "tauri:build": "pnpm --filter @ledrums/desktop build",
+    "tauri:build": "node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",

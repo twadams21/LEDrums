@@ -202,9 +202,9 @@ To rotate the key or re-provision, regenerate with `tauri signer generate`, upda
 
 ### Release flow
 
-Because the signing key is namespaced, the build **maps it onto the canonical
-`TAURI_SIGNING_PRIVATE_KEY*` env names** Tauri expects (and overrides the other project's key that
-Infisical also injects in `prod`):
+Because the signing key is namespaced, the root `pnpm tauri:build` script maps it onto the canonical
+`TAURI_SIGNING_PRIVATE_KEY*` env names Tauri expects, overriding the other project's key that
+Infisical also injects in `prod`.
 
 ```bash
 PROJ=a7e707cd-322f-4cf1-a8ec-48da2e35fe72
@@ -212,12 +212,8 @@ BASE=https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev
 
 # 1. bump `version` in src-tauri/tauri.conf.json (this is the OTA version clients compare against)
 
-# 2. SIGNED build (--bundles app avoids the headless dmg step; createUpdaterArtifacts emits
-#    *.app.tar.gz + .sig). Build per platform you ship (run on an arm64 Mac for darwin-aarch64).
-infisical run --projectId "$PROJ" --env prod -- bash -c \
-  'TAURI_SIGNING_PRIVATE_KEY="$LEDRUMS_TAURI_SIGNING_PRIVATE_KEY" \
-   TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-   pnpm --filter @ledrums/desktop tauri build --bundles app'
+# 2. SIGNED build. Build per platform you ship (run on an arm64 Mac for darwin-aarch64).
+infisical run --projectId "$PROJ" --env prod -- pnpm tauri:build
 
 # 3. publish the artifact + (merged) latest.json to R2
 infisical run --projectId "$PROJ" --env prod -- bash -c \
