@@ -25,6 +25,17 @@ const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set([
   'recallSection',
 ]);
 
+function isMidiChannelMessage(msg: ClientMessage): msg is Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }> {
+  return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange';
+}
+
+/** App-wide MIDI channel filter. null means "omni"; when set, unknown-channel messages are
+    dropped rather than bypassing the filter. */
+function acceptsMidiChannel(msg: ClientMessage, channel: number | null): boolean {
+  if (channel === null || !isMidiChannelMessage(msg)) return true;
+  return msg.channel === channel;
+}
+
 /**
  * Non-authoring messages any client may send: pure reads (`listProjects`) and the role-claim
  * (`takeover`). These mutate no shared authored state, so they bypass the editor gate.
@@ -120,6 +131,10 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // Project IO (load/save/list) is handled here, not by the reducer.
     if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;
 
+    // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
+    // legacy reducer so every MIDI input adapter obeys the same setting.
+    if (!acceptsMidiChannel(msg, host.engine.getProject().inputMap.midiChannel)) return;
+
     // Show-library persistence: the editor pushes its authored library on every change; the server
     // adopts it as the live slot, debounce-autosaves it, AND relays it live to the OTHER clients so
     // viewers follow without a full `state` rebuild. Never echoed to the sender (it is the source);
@@ -163,7 +178,8 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       autosaver.markDirty();
     }
     if (result.monitor) {
-      broadcastJson({ t: 'input', kind: result.monitor.kind, label: result.monitor.label, value: result.monitor.value });
+      const midiMeta = msg.t === 'midi' ? { note: msg.note, channel: msg.channel } : {};
+      broadcastJson({ t: 'input', kind: result.monitor.kind, label: result.monitor.label, value: result.monitor.value, ...midiMeta });
     }
   };
 }

@@ -1,4 +1,4 @@
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import {
   defaultProject,
   WS_PATH,
@@ -35,6 +35,7 @@ import {
   effectSpecs,
   encodeServer,
   serializeModel,
+  type ClientMessage,
   type ServerMessage,
   type TunnelInfo,
 } from './ws-protocol';
@@ -115,7 +116,10 @@ const showLibraryAutosaver = createAutosaver(() =>
 // it at its bundled web dist (default reproduces today's apps/web/dist behavior).
 const webRoot = resolveWebRoot(process.env);
 
+let nativeHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
+
 const server = createServer((req, res) => {
+  if (nativeHttpHandler?.(req, res)) return;
   serveStatic(req, res, webRoot);
 });
 
@@ -260,6 +264,69 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   },
   relayToOthers,
 });
+
+const NATIVE_MIDI_PATH = '/api/native-midi';
+
+function isNativeMidiMessage(msg: ClientMessage): msg is Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }> {
+  return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange';
+}
+
+function sendPlain(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end(body);
+}
+
+const nativeInputSocket = {
+  close: () => {},
+  send: () => {},
+} as unknown as WebSocket;
+
+function handleNativeMidiHttp(req: IncomingMessage, res: ServerResponse): boolean {
+  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+  if (path !== NATIVE_MIDI_PATH) return false;
+
+  if (req.method !== 'POST') {
+    sendPlain(res, 405, 'method not allowed');
+    return true;
+  }
+
+  const trustedLocal = isTrustedHost({
+    remoteAddress: req.socket.remoteAddress,
+    headers: req.headers,
+    url: req.url,
+    hostToken,
+  });
+  if (!trustedLocal) {
+    sendPlain(res, 401, 'unauthorized');
+    return true;
+  }
+
+  let raw = '';
+  req.setEncoding('utf8');
+  req.on('data', (chunk) => {
+    raw += chunk;
+    if (raw.length > 4096) req.destroy(new Error('native MIDI payload too large'));
+  });
+  req.on('error', () => {
+    if (!res.headersSent) sendPlain(res, 400, 'bad request');
+  });
+  req.on('end', () => {
+    try {
+      const msg = decodeClient(raw);
+      if (!isNativeMidiMessage(msg)) {
+        sendPlain(res, 400, 'unsupported native MIDI message');
+        return;
+      }
+      handleClientMessage(msg, nativeInputSocket);
+      sendPlain(res, 204, '');
+    } catch (err) {
+      sendPlain(res, 400, err instanceof Error ? err.message : 'bad request');
+    }
+  });
+  return true;
+}
+
+nativeHttpHandler = handleNativeMidiHttp;
 
 // --- OSC input --------------------------------------------------------------
 

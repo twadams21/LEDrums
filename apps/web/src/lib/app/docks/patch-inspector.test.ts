@@ -145,7 +145,7 @@ describe('orderedDataLines', () => {
 });
 
 describe('input-map zone editing', () => {
-  const base: InputMap = { midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
+  const base: InputMap = { midiChannel: null, midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
 
   it('reads the note / address for a (drumId, slot)', () => {
     expect(zoneMidiNote(base, 'kick', 0)).toBe(36);

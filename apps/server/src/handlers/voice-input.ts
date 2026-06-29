@@ -80,7 +80,7 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       } else {
         voiceHost.applyInput({ kind: 'noteOff', note: msg.note });
       }
-      deps.broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127 });
+      deps.broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127, note: msg.note, channel: msg.channel });
       return true;
     }
     if (msg.t === 'osc') {

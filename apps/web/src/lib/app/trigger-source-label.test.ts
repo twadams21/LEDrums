@@ -39,7 +39,7 @@ describe('describeTriggerSource', () => {
   });
 
   it('describes a MIDI note source', () => {
-    expect(describeTriggerSource({ kind: 'midi', note: 38 }, DRUMS)).toEqual({ label: 'MIDI', sub: 'MIDI note 38' });
+    expect(describeTriggerSource({ kind: 'midi', note: 38 }, DRUMS)).toEqual({ label: 'MIDI', sub: 'MIDI D2' });
   });
 
   it('describes a MIDI CC source (CC takes precedence over note)', () => {

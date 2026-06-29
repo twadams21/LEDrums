@@ -78,6 +78,10 @@ import { EngineLinkSync } from './store/transport';
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 
+export type MidiLearnTarget =
+  | { kind: 'zone'; drumId: string; slot: number }
+  | { kind: 'trigger'; graphKey: string };
+
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
     malformed JSON — any failure yields null (boot keeps the seed). */
 function readStoredKey(key: string): unknown {
@@ -347,6 +351,8 @@ export class TriggerLab {
   /** WebMIDI access handle (real hardware → WS). Browser-only, opened in start(),
       released in stop(); null when MIDI is unavailable or not yet requested. */
   private midiHandle: MidiInitResult | null = null;
+  midiLearnTarget = $state<MidiLearnTarget | null>(null);
+  midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
 
   /** disposes the autosave $effect.root (null while persistence is not running). */
   private persistDispose: (() => void) | null = null;
@@ -517,13 +523,14 @@ export class TriggerLab {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
-        this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on });
+        if (ev.on && ev.velocity > 0 && this.acceptsMidiChannel(ev.channel)) this.applyMidiLearn(ev.note);
+        this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
-        this.client.send({ t: 'cc', controller: ev.controller, value: ev.value });
+        this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
       case 'programChange':
-        this.client.send({ t: 'programChange', value: ev.value });
+        this.client.send({ t: 'programChange', value: ev.value, channel: ev.channel });
         return;
     }
   }
@@ -878,6 +885,11 @@ export class TriggerLab {
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
+      onInput: (kind, _label, value, note, channel) => {
+        if (kind === 'midi' && note !== undefined && value > 0 && this.acceptsMidiChannel(channel)) {
+          this.applyMidiLearn(note);
+        }
+      },
     });
   }
 
@@ -1120,6 +1132,42 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) this.project = routing.applyInputMap(this.project, inputMap);
     this.client.send({ t: 'setInputMap', inputMap });
+  }
+
+  setMidiChannel(channel: number | null): void {
+    if (this.isViewer || !this.project) return;
+    this.setInputMap({ ...this.project.inputMap, midiChannel: channel });
+  }
+
+  startMidiLearn(target: MidiLearnTarget): void {
+    if (this.isViewer) return;
+    this.midiLearnTarget = target;
+  }
+
+  cancelMidiLearn(): void {
+    this.midiLearnTarget = null;
+  }
+
+  private acceptsMidiChannel(channel: number | undefined): boolean {
+    return this.midiChannel === null || channel === this.midiChannel;
+  }
+
+  private applyMidiLearn(note: number): void {
+    const target = this.midiLearnTarget;
+    if (!target || this.isViewer) return;
+    if (target.kind === 'zone') {
+      if (!this.project) return;
+      const rest = this.project.inputMap.midiNotes.filter(
+        (n) => !(n.drumId === target.drumId && n.slot === target.slot),
+      );
+      this.setInputMap({
+        ...this.project.inputMap,
+        midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
+      });
+    } else {
+      this.setTriggerSource(target.graphKey, { kind: 'midi', note });
+    }
+    this.midiLearnTarget = null;
   }
 
   /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */

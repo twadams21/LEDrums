@@ -122,6 +122,7 @@ export function defaultProject(): Project {
       transport: { bpm: 120, playing: true, beatsPerBar: 4 },
     },
     inputMap: {
+      midiChannel: null,
       midiNotes: [
         { note: 36, drumId: 'kick', slot: 0 },
         { note: 38, drumId: 'snare', slot: 0 },

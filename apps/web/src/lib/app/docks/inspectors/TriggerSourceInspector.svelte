@@ -16,14 +16,19 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
+  import Radio from '@lucide/svelte/icons/radio';
   import ReadRow from './ReadRow.svelte';
   import { onNum } from './forms';
+  import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const src = $derived(node.source);
   const gkey = $derived(store.selectedPadKey);
   const kindNow = $derived(src?.kind ?? 'drum');
+  const learning = $derived(
+    !!gkey && store.midiLearnTarget?.kind === 'trigger' && store.midiLearnTarget.graphKey === gkey,
+  );
 
   const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
 
@@ -64,6 +69,11 @@
   function commitMidiNumber(g: string, isCc: boolean, n: number): void {
     if (isCc && isReservedCc(n)) return; // CC 0 reserved — ignore
     store.setTriggerSource(g, isCc ? { kind: 'midi', cc: n } : { kind: 'midi', note: n });
+  }
+
+  function commitMidiNote(g: string, v: string): void {
+    const parsed = parseMidiNote(v);
+    if (parsed !== null) store.setTriggerSource(g, { kind: 'midi', note: parsed });
   }
 </script>
 
@@ -122,21 +132,48 @@
         ariaLabel="MIDI note or CC"
       />
     </Field>
-    <Field label={isCc ? 'CC number' : 'Note number'} hint={isCc ? '1–127' : '0–127'}>
-      <CommitInput
-        type="number"
-        min={isCc ? RESERVED_CC + 1 : 0}
-        max={127}
-        value={(isCc ? src.cc : src.note) ?? ''}
-        placeholder={isCc ? '1–127' : '0–127'}
-        ariaLabel={isCc ? 'CC number' : 'Note number'}
-        onCommit={(v) => onNum(v, (n) => gkey && commitMidiNumber(gkey, isCc, n))}
-      />
-    </Field>
     {#if isCc}
+      <Field label="CC number" hint="1-127">
+        <CommitInput
+          type="number"
+          min={RESERVED_CC + 1}
+          max={127}
+          value={src.cc ?? ''}
+          placeholder="1-127"
+          ariaLabel="CC number"
+          onCommit={(v) => onNum(v, (n) => gkey && commitMidiNumber(gkey, true, n))}
+        />
+      </Field>
       <p class="hint">CC 0 reserved for section recall.</p>
+    {:else}
+      <Field label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
+        <div class="note-row">
+          <CommitInput
+            value={src.note === undefined ? '' : formatMidiNote(src.note)}
+            placeholder="C4"
+            autofocus={false}
+            mono
+            ariaLabel="MIDI note"
+            onCommit={(v) => gkey && commitMidiNote(gkey, v)}
+          />
+          <button
+            type="button"
+            class="learn"
+            class:active={learning}
+            disabled={!gkey}
+            onclick={(e) => {
+              e.preventDefault();
+              if (!gkey) return;
+              learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'trigger', graphKey: gkey });
+            }}
+          >
+            <Radio size={13} aria-hidden="true" />
+            {learning ? 'Listening' : 'Learn'}
+          </button>
+        </div>
+      </Field>
     {/if}
-    <p class="hint">Channel comes from the patch device, not here.</p>
+    <p class="hint">Channel filter is in Settings.</p>
   {:else if src?.kind === 'osc'}
     <Field label="Address" hint="e.g. /kick">
       <CommitInput
@@ -197,6 +234,35 @@
   }
   .trigbody :global(.sel) {
     width: 100%;
+  }
+  .note-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .learn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 29px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-inset);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .learn:hover:not(:disabled),
+  .learn.active {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+  .learn:disabled {
+    opacity: 0.45;
   }
   .hint {
     margin: 0;

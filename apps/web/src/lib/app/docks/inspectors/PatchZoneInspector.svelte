@@ -5,7 +5,8 @@
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import RenameField from './RenameField.svelte';
-  import { onNum } from './forms';
+  import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
+  import Radio from '@lucide/svelte/icons/radio';
   import {
     setZoneMidiNote,
     setZoneOscAddress,
@@ -24,6 +25,11 @@
   const project = $derived(store.project);
   const note = $derived(project ? zoneMidiNote(project.inputMap, editor.drumId, editor.slot) : null);
   const addr = $derived(project ? zoneOscAddress(project.inputMap, editor.drumId, editor.slot) : null);
+  const learning = $derived(
+    store.midiLearnTarget?.kind === 'zone' &&
+      store.midiLearnTarget.drumId === editor.drumId &&
+      store.midiLearnTarget.slot === editor.slot,
+  );
 
   function drumName(drumId: string): string {
     return store.drums.find((x) => x.id === drumId)?.label ?? drumId;
@@ -31,24 +37,46 @@
   function setZoneNote(drumId: string, slot: number, n: number | null): void {
     if (project) store.setInputMap(setZoneMidiNote(project.inputMap, drumId, slot, n));
   }
+  function commitZoneNote(v: string): void {
+    if (v === '') {
+      setZoneNote(editor.drumId, editor.slot, null);
+      return;
+    }
+    const parsed = parseMidiNote(v);
+    if (parsed !== null) setZoneNote(editor.drumId, editor.slot, parsed);
+  }
   function setZoneOsc(drumId: string, slot: number, address: string | null): void {
     if (project) store.setInputMap(setZoneOscAddress(project.inputMap, drumId, slot, address));
   }
 </script>
 
 <p class="grouphint">What fires this zone — <b>{drumName(editor.drumId)}</b> · slot {editor.slot}.</p>
-<Field label="MIDI note" hint="0–127">
-  <CommitInput
-    type="number"
-    min={0}
-    max={127}
-    value={note ?? ''}
-    placeholder="none"
-    disabled={!project}
-    ariaLabel="MIDI note"
-    onCommit={(v) =>
-      v === '' ? setZoneNote(editor.drumId, editor.slot, null) : onNum(v, (n) => setZoneNote(editor.drumId, editor.slot, n))}
-  />
+<Field label="MIDI note" hint={note === null ? 'C-1 - G9' : String(note)}>
+  <div class="note-row">
+    <CommitInput
+      value={note === null ? '' : formatMidiNote(note)}
+      placeholder="none"
+      disabled={!project}
+      autofocus={false}
+      mono
+      allowEmpty
+      ariaLabel="MIDI note"
+      onCommit={commitZoneNote}
+    />
+    <button
+      type="button"
+      class="learn"
+      class:active={learning}
+      disabled={!project}
+      onclick={(e) => {
+        e.preventDefault();
+        learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'zone', drumId: editor.drumId, slot: editor.slot });
+      }}
+    >
+      <Radio size={13} aria-hidden="true" />
+      {learning ? 'Listening' : 'Learn'}
+    </button>
+  </div>
 </Field>
 <Field label="OSC address" hint="Sensory Percussion / Ableton">
   <CommitInput
@@ -74,5 +102,34 @@
   .grouphint b {
     color: var(--text);
     font-weight: 600;
+  }
+  .note-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .learn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 29px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-inset);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .learn:hover:not(:disabled),
+  .learn.active {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+  .learn:disabled {
+    opacity: 0.45;
   }
 </style>

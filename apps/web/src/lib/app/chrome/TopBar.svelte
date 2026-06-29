@@ -11,9 +11,11 @@
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ShowBrowser from './ShowBrowser.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
+  import AppSettingsDialog from './AppSettingsDialog.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
+  import Settings from '@lucide/svelte/icons/settings';
 
   let { store }: { store: TriggerLab } = $props();
 
@@ -22,6 +24,7 @@
   const sectionCount = $derived(store.activeSong?.sections.length ?? 0);
 
   let browserOpen = $state(false);
+  let settingsOpen = $state(false);
   let editingName = $state(false);
 
   function commitName(name: string): void {
@@ -77,12 +80,14 @@
       </div>
     {/if}
     <ShareInfo {store} />
+    <IconButton icon={Settings} label="Settings" size={15} onclick={() => (settingsOpen = true)} />
     <StatusBar {store} />
     <OutputPill {store} />
   </div>
 </header>
 
 <ShowBrowser {store} open={browserOpen} onClose={() => (browserOpen = false)} />
+<AppSettingsDialog {store} open={settingsOpen} onClose={() => (settingsOpen = false)} />
 
 <style>
   .topbar {

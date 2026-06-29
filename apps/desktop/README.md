@@ -62,7 +62,9 @@ On launch (`src-tauri/src/lib.rs`) the Rust shell:
    and the local URL — pushing them to the native share window via the `boot://status` event.
 3. Opens the **full app** in a second webview window at `http://127.0.0.1:<port>` (single
    origin → UI + WebSocket share the tunnel, reusing the web PinGate/ShareInfo).
-4. On exit (closing any window quits the app, incl. the macOS "window closed but app lives"
+4. On macOS, creates a CoreMIDI virtual destination named `LEDrums` and forwards incoming
+   note/CC/program-change messages into the same local server input path as WebMIDI.
+5. On exit (closing any window quits the app, incl. the macOS "window closed but app lives"
    case) sends the sidecar **SIGTERM** so the server gracefully stops cloudflared + flushes
    autosaves, then SIGKILLs as a backstop — no orphaned processes.
 

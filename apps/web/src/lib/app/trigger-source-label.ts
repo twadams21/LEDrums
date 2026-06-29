@@ -4,6 +4,7 @@
    drift. No Svelte / DOM — unit-tested in isolation. */
 import { ZONE_LABELS } from '../trigger-lab/fixtures';
 import type { TriggerSource } from '../trigger-lab/sim';
+import { formatMidiNote } from '../midi/midi-note';
 
 /** Minimal drum roster entry (id → display label) — i.e. `store.drums`. */
 export interface DrumRef {
@@ -16,7 +17,7 @@ export interface TriggerSourceLabel {
   /** Short kind headline — `'Drum' | 'MIDI' | 'OSC' | 'Trigger'` (the last when unbound). */
   label: string;
   /** Resolved, self-describing detail — the node card's sub line. e.g. `'Kick · center'`,
-      `'MIDI note 38'`, `'MIDI CC 74'`, `'OSC /kick'`, `'unbound'`. */
+      `'MIDI D2'`, `'MIDI CC 74'`, `'OSC /kick'`, `'unbound'`. */
   sub: string;
 }
 
@@ -44,7 +45,7 @@ export function describeTriggerSource(
     case 'midi':
       // CC wins when both happen to be set — the editor only ever writes one of them.
       if (source.cc !== undefined) return { label: 'MIDI', sub: `MIDI CC ${source.cc}` };
-      if (source.note !== undefined) return { label: 'MIDI', sub: `MIDI note ${source.note}` };
+      if (source.note !== undefined) return { label: 'MIDI', sub: `MIDI ${formatMidiNote(source.note)}` };
       return { label: 'MIDI', sub: 'MIDI — set a note' };
     case 'osc': {
       const addr = source.address.trim();
