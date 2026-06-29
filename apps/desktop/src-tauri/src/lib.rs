@@ -11,6 +11,8 @@
 //   4. On exit, send the sidecar SIGTERM (graceful: it stops cloudflared + flushes autosaves),
 //      then guarantee it's gone — no orphaned processes.
 
+mod native_midi;
+
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -34,6 +36,10 @@ struct SidecarState {
     child: Mutex<Option<CommandChild>>,
     shutting_down: AtomicBool,
 }
+
+/// Keeps the native MIDI virtual destination alive for the app lifetime.
+#[derive(Default)]
+struct NativeMidiState(Mutex<Option<native_midi::NativeMidiBridge>>);
 
 /// Boot status pushed to the native share window as the banner is parsed, and held in app state
 /// so the share page can pull the latest snapshot on load (events alone are race-prone — they can
@@ -148,6 +154,22 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
                 .build();
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
+    }
+}
+
+fn start_native_midi(app: &AppHandle, port: u16, host_token: &str) {
+    let state = app.state::<NativeMidiState>();
+    let mut guard = state.0.lock().unwrap();
+    if guard.is_some() {
+        return;
+    }
+    match native_midi::NativeMidiBridge::start(port, host_token.to_string()) {
+        Ok(bridge) => {
+            *guard = Some(bridge);
+        }
+        Err(err) => {
+            eprintln!("[native-midi] failed to start: {err}");
+        }
     }
 }
 
@@ -269,11 +291,11 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut app_window_opened = false;
-        // The app window must be opened WITH the host token in its URL (so the host bypasses the PIN).
-        // The token line prints a beat after "listening on", so we hold off opening until we have it —
-        // unless no tunnel was bundled (then no token/PIN is ever printed and we open immediately).
+        // The app window and native MIDI bridge both use the host token. The token line prints a
+        // beat after "listening on", so hold off until the server has printed it.
         let mut listening_seen = false;
         let mut host_token: Option<String> = None;
+        let mut native_midi_started = false;
         let mut buf = String::new();
         while let Some(event) = rx.recv().await {
             match event {
@@ -304,10 +326,13 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
                         }
                         // Open the app window once the server is up AND we have the host token — or,
                         // when no tunnel was bundled, immediately (no token/PIN will ever print).
-                        if !app_window_opened
-                            && listening_seen
-                            && (host_token.is_some() || !has_cloudflared)
-                        {
+                        if !native_midi_started && listening_seen {
+                            if let Some(token) = host_token.as_deref() {
+                                start_native_midi(&app_handle, port, token);
+                                native_midi_started = true;
+                            }
+                        }
+                        if !app_window_opened && listening_seen && host_token.is_some() {
                             open_app_window(&app_handle, port, host_token.as_deref());
                             app_window_opened = true;
                         }
@@ -514,6 +539,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .manage(SidecarState::default())
+        .manage(NativeMidiState::default())
         .manage(BootState::default())
         .invoke_handler(tauri::generate_handler![get_boot_status])
         .setup(move |app| {

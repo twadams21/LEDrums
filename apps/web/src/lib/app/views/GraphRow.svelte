@@ -1,7 +1,7 @@
 <script lang="ts">
   /* One Graphs-tab row in the Objects view. A trigger graph (need not belong to a section);
      clicking it opens the Trigger editor via `onOpen`. The sub-line is the graph's resolved
-     trigger source (e.g. "Kick · center", "MIDI note 38"). */
+     trigger source (e.g. "Kick · center", "MIDI D2"). */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { GraphRow as GraphRowVM } from './objects-view';
   import { describeTriggerSource } from '../trigger-source-label';

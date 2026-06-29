@@ -90,11 +90,9 @@ export function boot(deps: BootDeps): void {
     console.log('Pixel output: set target IP + Arm in the UI');
     if (deps.pin) {
       console.log(`  Room PIN: ${deps.pin} (required to join)`);
-      // Machine-readable line for the desktop shell to capture + inject into the host app window —
-      // local stdout only, so it never reaches a remote client. Gated on `pin` because the host
-      // bypass only matters when there is a gate to bypass.
-      if (deps.hostToken) console.log(`  Host token: ${deps.hostToken}`);
     }
+    // Local-only token for the desktop shell: it admits the host webview and native MIDI bridge.
+    if (deps.hostToken) console.log(`  Host token: ${deps.hostToken}`);
     startTunnel(deps);
   });
 

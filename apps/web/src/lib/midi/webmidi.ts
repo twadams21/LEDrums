@@ -6,6 +6,8 @@ export interface MidiNoteEvent {
   /** 0..127. note-off and zero-velocity note-on both report velocity 0. */
   velocity: number;
   on: boolean;
+  /** 1..16 MIDI channel. */
+  channel: number;
 }
 
 export interface MidiCcEvent {
@@ -13,11 +15,15 @@ export interface MidiCcEvent {
   controller: number;
   /** Controller value 0..127. */
   value: number;
+  /** 1..16 MIDI channel. */
+  channel: number;
 }
 
 export interface MidiProgramChangeEvent {
   /** Program number 0..127 (selects the song at that setlist index). */
   value: number;
+  /** 1..16 MIDI channel. */
+  channel: number;
 }
 
 /**
@@ -66,27 +72,29 @@ function inputValues(access: MidiAccessLike): MidiInputLike[] {
 /**
  * Parse a raw MIDI message into the engine event it represents, or null if it's a
  * status we don't forward. Handles note-on/off (0x90/0x80), Control Change (0xB0) and
- * Program Change (0xC0). The channel nibble is masked off — channel lives on the patch
- * device, not here. Program Change is a 2-byte message; everything else needs 3.
+ * Program Change (0xC0). The status low nibble is retained as a 1-based channel for the
+ * app-wide MIDI filter. Program Change is a 2-byte message; everything else needs 3.
  */
 export function parseMidiMessage(data: Uint8Array | number[] | null): MidiEvent | null {
   if (!data || data.length < 2) return null;
-  const status = data[0]! & 0xf0;
+  const rawStatus = data[0]!;
+  const status = rawStatus & 0xf0;
+  const channel = (rawStatus & 0x0f) + 1;
   // Program Change: status + program (2 bytes). Selects a song by setlist index.
   if (status === 0xc0 /* program change */) {
-    return { kind: 'programChange', value: data[1]! };
+    return { kind: 'programChange', value: data[1]!, channel };
   }
   if (data.length < 3) return null;
   if (status === 0x90 /* note-on */) {
     // A note-on with velocity 0 is a conventional note-off.
     const velocity = data[2]!;
-    return { kind: 'note', note: data[1]!, velocity, on: velocity > 0 };
+    return { kind: 'note', note: data[1]!, velocity, on: velocity > 0, channel };
   }
   if (status === 0x80 /* note-off */) {
-    return { kind: 'note', note: data[1]!, velocity: 0, on: false };
+    return { kind: 'note', note: data[1]!, velocity: 0, on: false, channel };
   }
   if (status === 0xb0 /* control change */) {
-    return { kind: 'cc', controller: data[1]!, value: data[2]! };
+    return { kind: 'cc', controller: data[1]!, value: data[2]!, channel };
   }
   return null;
 }

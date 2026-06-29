@@ -53,7 +53,7 @@
     if (id) store.selectGraphInSection(id, key);
     shell.clearSelection(); // switching graphs clears the node inspector
   }
-  /** The graph's trigger-source sub line (e.g. "Kick · center", "MIDI note 38", "unbound"). */
+  /** The graph's trigger-source sub line (e.g. "Kick · center", "MIDI D2", "unbound"). */
   function sourceSub(key: string): string {
     return describeTriggerSource(store.triggerSource(key), store.drums).sub;
   }

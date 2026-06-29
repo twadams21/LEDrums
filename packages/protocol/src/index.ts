@@ -35,12 +35,12 @@ export const WS_CLOSE_INVALID_PIN = 4401;
 // ---------------------------------------------------------------------------
 
 export type ClientMessage =
-  | { t: 'midi'; note: number; velocity: number; on: boolean }
+  | { t: 'midi'; note: number; velocity: number; on: boolean; channel?: number }
   // Global transport recall (voice mode): a Control Change (cc) and a Program Change.
   // The server's global recall handler intercepts cc#0 + programChange BEFORE the
   // per-trigger zone-map; other controllers are currently no-ops.
-  | { t: 'cc'; controller: number; value: number }
-  | { t: 'programChange'; value: number }
+  | { t: 'cc'; controller: number; value: number; channel?: number }
+  | { t: 'programChange'; value: number; channel?: number }
   | { t: 'osc'; address: string; value: number }
   | { t: 'setParam'; layerId: string; clipId: string; key: string; value: number | string | boolean }
   | { t: 'setLayer'; layerId: string; blendMode?: Layer['blendMode']; opacity?: number; activeClipId?: string | null; name?: string }
@@ -161,7 +161,7 @@ export type ServerMessage =
   // neither a tunnel nor a PIN gate is configured (plain local dev). See {@link TunnelInfo}.
   | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null; tunnel: TunnelInfo | null }
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
-  | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number }
+  | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number; note?: number; channel?: number }
   | { t: 'projects'; names: string[] }
   // Multi-client presence (S1): who is the single editor, whether THIS recipient is it, and how
   // many clients are connected. Sent to a client on join and re-broadcast to every client on any

@@ -12,7 +12,7 @@ KitConfig + Composition (JSON projects)
       ▼
  PixelModel (per-pixel local+world XYZ, hoop, angle, zone, DMX addr)
       │
-Input: MIDI (browser WebMIDI → WS) · OSC (UDP) ─► InputRouter ─► Engine
+Input: MIDI (desktop CoreMIDI / browser WebMIDI -> server) · OSC (UDP) ─► InputRouter ─► Engine
       │
  RenderLoop @60fps → Compositor (layers, blend modes) → Frame
       ├──► OutputManager → Art-Net / sACN over UDP → PixLite controller   packages/io
@@ -21,16 +21,16 @@ Input: MIDI (browser WebMIDI → WS) · OSC (UDP) ─► InputRouter ─► Engi
 
 - **`packages/core`** — pure, dependency-light TypeScript: geometry, color/blend, the layer/clip/effect model, 11 effects, the render engine. No Node/DOM/IO. Fully unit-tested.
 - **`packages/io`** — hand-rolled Art-Net, sACN (E1.31), and OSC over `node:dgram`. No native addons.
-- **`apps/server`** — the render-loop host: WebSocket control + preview stream, OSC input, pixel output, project persistence, static hosting of the web app.
-- **`apps/web`** — Svelte 5 + Vite + Threlte: the 3D visualizer and authoring panels. Captures MIDI via WebMIDI and forwards it to the server.
+- **`apps/server`** — the render-loop host: WebSocket control + preview stream, native/HTTP MIDI intake from the desktop shell, OSC input, pixel output, project persistence, static hosting of the web app.
+- **`apps/web`** — Svelte 5 + Vite + Threlte: the 3D visualizer and authoring panels. Captures MIDI via WebMIDI in browsers and forwards it to the server.
 
 See `.mex/ROUTER.md` and `.mex/context/` for the durable architecture record, and `docs/plans/` for the implementation plan.
 
 ## Requirements
 
 - **Node.js ≥ 20** and **pnpm** (`npm i -g pnpm`).
-- A **Chromium browser** (Chrome/Edge) for live MIDI input — WebMIDI is Chromium-only. (OSC works without a browser.)
-- Works identically on **macOS** and **Windows** — no native build steps.
+- For browser-based live MIDI input, use a **Chromium browser** (Chrome/Edge); WebMIDI is Chromium-only. The packaged macOS desktop app exposes a native CoreMIDI destination named `LEDrums`.
+- The server/web stack works on **macOS** and **Windows**; packaged desktop builds include platform-native shell pieces.
 
 ## Quick start
 
@@ -70,7 +70,7 @@ On first run, **Windows Defender Firewall** will prompt to allow inbound UDP for
 
 - **MIDI** (default project): GM-ish drum notes → drums and trigger clips:
   - `36` Kick → Whole Drum · `38` Snare → Chase · `48` Tom 1 → Follow Hoop · `45` Tom 2.
-  - Note velocity drives the `velocity` control (e.g. brightness). Edit in the project's `inputMap`.
+  - Note velocity drives the `velocity` control (e.g. brightness). Edit in the Patch/Trigger inspectors, use **Learn** to bind the next incoming note, and set the global MIDI channel from the top-bar settings.
 - **OSC** (from Ableton/Max, default UDP `9000`, override with `OSC_PORT`):
   - `/ledrums/volume <float 0..1>` drives the master `volume` control (e.g. saturation/level).
   - Any `/address <float>` is stored and can be bound to a parameter via a `{ "type": "osc", "address": "…" }` modulation.

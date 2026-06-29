@@ -175,6 +175,18 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     expect(monitor).toMatchObject({ t: 'input', kind: 'midi' });
   });
 
+  it('drops MIDI messages outside the app channel filter', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    host.engine.setInputMap({ ...host.engine.getProject().inputMap, midiChannel: 10 });
+
+    handle({ t: 'midi', note: 38, velocity: 100, on: true, channel: 9 }, editor);
+    expect(editor.sent.some((m) => m.t === 'input')).toBe(false);
+
+    handle({ t: 'midi', note: 38, velocity: 100, on: true, channel: 10 }, editor);
+    expect(editor.sent.find((m) => m.t === 'input')).toMatchObject({ t: 'input', kind: 'midi', note: 38, channel: 10 });
+  });
+
   it('rejects a viewer mutation but applies it once the viewer takes over', () => {
     const { handle, join, slot } = harness();
     join(); // editor (c1)

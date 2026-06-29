@@ -85,6 +85,8 @@ export const oscMapSchema = z.object({
 
 export const inputMapSchema = z.object({
   midiNotes: z.array(midiNoteMapSchema).default([]),
+  /** Global MIDI channel filter. null = accept all channels; otherwise 1..16. */
+  midiChannel: z.number().int().min(1).max(16).nullable().default(null),
   /** OSC addresses that fire a drum/slot trigger. */
   oscMap: z.array(oscMapSchema).default([]),
   /** OSC address that drives the master `volume` control. */

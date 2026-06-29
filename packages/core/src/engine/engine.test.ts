@@ -40,7 +40,7 @@ function velocityMeterProject(): Project {
       ],
       transport: { bpm: 120, playing: true, beatsPerBar: 4 },
     },
-    inputMap: { midiNotes: [{ note: 36, drumId: 'd' }] },
+    inputMap: { midiChannel: null, midiNotes: [{ note: 36, drumId: 'd' }], oscMap: [] },
   });
 }
 

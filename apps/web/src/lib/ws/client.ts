@@ -41,7 +41,7 @@ export interface WSCallbacks {
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
-  onInput?: (kind: 'midi' | 'osc', label: string, value: number) => void;
+  onInput?: (kind: 'midi' | 'osc', label: string, value: number, note?: number, channel?: number) => void;
   onProjects?: (names: string[]) => void;
   /** Multi-client presence (S1): who is the single editor, whether WE are it, and the headcount. */
   onPresence?: (editorId: string | null, youAreEditor: boolean, clientCount: number) => void;
@@ -224,7 +224,7 @@ export class WSClient {
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
         break;
       case 'input':
-        this.cb.onInput?.(msg.kind, msg.label, msg.value);
+        this.cb.onInput?.(msg.kind, msg.label, msg.value, msg.note, msg.channel);
         break;
       case 'projects':
         this.cb.onProjects?.(msg.names);
