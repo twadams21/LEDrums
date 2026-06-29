@@ -942,16 +942,17 @@ describe('VoiceBusEngine — direct trigger-source resolution (U3)', () => {
     expect(firedBusesFor(graphs, { kind: 'osc', address: '/nope', value: 1, timeMs: 0 })).toEqual([]);
   });
 
-  it('no double-fire: a zone-mapped hit fires only its pad graph, not a same-note direct binding', () => {
+  it('a zone-mapped MIDI hit can also fire a same-note direct binding', () => {
     const graphs = {
       [padKey('kick', '')]: sourcedGraph({ kind: 'drum', drumId: 'kick', zone: '' }, 'base'), // pad → base
       'graph:1': sourcedGraph({ kind: 'midi', note: 36 }, 'lead'), // raw note 36 → lead
     };
-    // Zone-mapped: the server attached (drumId, zone) AND kept the raw note. Pad wins, stop.
+    // Zone-mapped: the server attached (drumId, zone) AND kept the raw note. Both the
+    // pad graph and explicit MIDI-source graph receive the input.
     expect(
       firedBusesFor(graphs, { kind: 'noteOn', drumId: 'kick', zone: '', note: 36, velocity: 1, timeMs: 0 }),
-    ).toEqual(['base']);
-    // The same note as a RAW input (zone-map miss → no pad) fires the direct binding instead.
+    ).toEqual(['base', 'lead']);
+    // The same note as a RAW input (zone-map miss → no pad) fires only the direct binding.
     expect(firedBusesFor(graphs, { kind: 'noteOn', note: 36, velocity: 1, timeMs: 0 })).toEqual(['lead']);
   });
 

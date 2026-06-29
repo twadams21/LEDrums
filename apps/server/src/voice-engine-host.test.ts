@@ -257,7 +257,15 @@ describe('VoiceEngineHost', () => {
     expect(litBuses(host)).toEqual(['direct']);
   });
 
-  it('no double-fire: a zone-mapped note fires only its pad graph, not a same-note direct binding', () => {
+  it('a zone-mapped MIDI note can still fire an authored graph bound directly to that note', () => {
+    const { host } = makeHost();
+    host.setShow(routingShow({ 'graph:1': trigGraph({ kind: 'midi', note: 36 }, 'direct') }, ['direct']));
+    host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 }); // 36 is mapped to kick/center, but direct binding still receives it.
+    for (let i = 0; i < 8; i++) host.step(STEP);
+    expect(litBuses(host)).toEqual(['direct']);
+  });
+
+  it('a zone-mapped note fires both its pad graph and a same-note direct binding', () => {
     const { host } = makeHost();
     host.setShow(
       routingShow(
@@ -268,11 +276,11 @@ describe('VoiceEngineHost', () => {
         ['pad', 'direct'],
       ),
     );
-    // note 36 → kick/center via the zone-map → pad graph fires and STOPS. The direct
-    // binding that also declares note 36 must NOT fire (zone-map wins; exactly one path).
+    // note 36 → kick/center via the zone-map, while a graph can also opt into the raw
+    // note as its own trigger source.
     host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 });
     for (let i = 0; i < 8; i++) host.step(STEP);
-    expect(litBuses(host)).toEqual(['pad']);
+    expect(litBuses(host)).toEqual(['direct', 'pad']);
   });
 
   it('a raw unmapped OSC address fires the authored graph bound to its osc source', () => {

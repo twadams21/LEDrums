@@ -198,15 +198,11 @@ class VoiceBusEngine implements RenderEngine {
         ? normalizeTriggerValue({ kind: 'osc', arg: e.value ?? 0 })
         : normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 });
 
-    // PINNED precedence — no double-fire. A zone-mapped hit arrives already resolved to a
-    // (drumId, zone) pad (the server's patch inputMap claimed it, or it is a native `key`
-    // hit): fire its pad-bound graph(s) via the padKey path and STOP. Only an event with
-    // NO pad — a raw MIDI note / OSC address the zone-map did not claim — falls through to
-    // DIRECT trigger-source bindings. Exactly one branch runs, so an event never fires
-    // both a zone-mapped pad graph and a same-input direct binding.
-    const toFire = e.drumId
-      ? this.resolveHitGraphs(e.drumId, e.zone ?? '')
-      : this.resolveDirectGraphs(e);
+    // A zone-mapped hit fires its pad graph(s), and raw-addressable inputs (MIDI/OSC)
+    // also remain available to trigger-node `source` bindings. This lets a MIDI note
+    // drive a patch zone and an authored effect/trigger graph without needing to remove
+    // the note from the patch input map.
+    const toFire = this.resolveGraphsForEvent(e);
     if (toFire.length === 0) return;
 
     const ctx: TriggerCtx = {
@@ -222,9 +218,15 @@ class VoiceBusEngine implements RenderEngine {
     }
   }
 
+  private resolveGraphsForEvent(e: InputEvent): Array<{ graph: TriggerGraph; statePrefix: string }> {
+    const out: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
+    if (e.drumId) out.push(...this.resolveHitGraphs(e.drumId, e.zone ?? ''));
+    if (e.kind === 'noteOn' || e.kind === 'osc') out.push(...this.resolveDirectGraphs(e));
+    return out;
+  }
+
   /**
-   * DIRECT trigger-source resolution — the second half of the PINNED precedence, reached
-   * only when the server's zone-map did NOT claim the event (no `drumId`). Matches each
+   * DIRECT trigger-source resolution. Matches each
    * authored graph's trigger-node `source` against the raw input: a MIDI note event fires
    * graphs whose source is `{ kind:'midi', note }`; an OSC event fires `{ kind:'osc',
    * address }`. `drum` sources are pad-bound and never match here (they fire via the
