@@ -11,14 +11,19 @@
   import type { Connection, EdgeTypes, NodeTypes } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { NODE_KINDS, NODE_W, type GraphNode, type NodeKind } from '../../trigger-lab/sim';
+  import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
-    graphToFlowNodes,
     type TriggerFlowEdge,
     type TriggerFlowNode,
   } from './graph-to-flow';
+  import {
+    emptyTriggerProjectionCache,
+    projectTriggerFlowNodes,
+    triggerNodeSignature,
+    type TriggerProjectionCache,
+  } from './trigger-flow-projection';
   import { GraphHover } from './graph-hover.svelte';
   import { nodeIdAtEvent } from './flow-dom';
   import { TRIGGER_STORE_KEY } from './trigger-context';
@@ -89,27 +94,23 @@
       (mode + band count). Drives reactive rebuilds AND decides which flow-node objects can be
       reused on re-projection — reuse keeps xyflow's measured handleBounds + live position, so a
       structure change to one node never makes every node drop its wires or snap position. */
-  function nodeKey(n: GraphNode): string {
-    return n.kind === 'switch'
-      ? `${n.id}:switch:${n.on}:${n.valueMode}:${n.bands?.length ?? 0}`
-      : `${n.id}:${n.kind}`;
-  }
-  const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map(nodeKey).join('|'));
+  const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map(triggerNodeSignature).join('|'));
   const edgeSig = $derived(
     (store.selectedGraph?.edges ?? []).map((e) => `${e.id}:${e.from}>${e.to}`).join('|'),
   );
   const selectedNodeId = $derived(shell.selection?.kind === 'node' ? shell.selection.nodeId : null);
 
   /** Per-node signatures from the last projection — lets rebuildNodes reuse the existing
-      flow-node object for structurally-unchanged nodes (see {@link nodeKey}). */
-  const prevSig = new Map<string, string>();
+      flow-node object for structurally-unchanged nodes (see triggerNodeSignature). */
+  let projectionCache: TriggerProjectionCache = emptyTriggerProjectionCache();
 
   function rebuildNodes(): void {
     const g = store.selectedGraph;
+    const graphKey = store.selectedPadKey;
     const selId = selectedNodeId;
     if (!g) {
       nodes = [];
-      prevSig.clear();
+      projectionCache = emptyTriggerProjectionCache();
       return;
     }
     // Reuse the existing flow-node object for any node whose structure AND selection are
@@ -119,18 +120,15 @@
     // "adding a node removes wires / moves the first play node" bug. Positions are read inside
     // untrack so only structure / selection / graph-switch rebuilds — never a position drag.
     nodes = untrack(() => {
-      const prevById = new Map(nodes.map((n) => [n.id, n]));
-      const next = graphToFlowNodes(g).map((fn, i) => {
-        const sn = g.nodes[i]!; // graphToFlowNodes preserves g.nodes order
-        const sig = nodeKey(sn);
-        const wantSel = fn.id === selId;
-        const prev = prevById.get(fn.id);
-        if (prev && prevSig.get(fn.id) === sig && !!prev.selected === wantSel) return prev;
-        return wantSel ? { ...fn, selected: true } : fn;
+      const projected = projectTriggerFlowNodes({
+        graph: g,
+        graphKey,
+        selectedNodeId: selId,
+        previousNodes: nodes,
+        cache: projectionCache,
       });
-      prevSig.clear();
-      for (const sn of g.nodes) prevSig.set(sn.id, nodeKey(sn));
-      return next;
+      projectionCache = projected.cache;
+      return projected.nodes;
     });
   }
   function rebuildEdges(): void {

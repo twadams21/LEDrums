@@ -64,9 +64,10 @@ import {
 import { SaveStatusController, type SaveStatus } from './save-status';
 
 // --- pure domain slices (S3.2) --------------------------------------------------
-import { nid, freshId } from './store/ids';
+import { nid, freshId, reserveIds } from './store/ids';
 import { padKey, seedGraphs, seedSongs, seedAuthored, seedLookSections } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
+import { authoredIdsFromLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
 import { canConnect, canReconnect } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
@@ -414,6 +415,7 @@ export class TriggerLab {
     this.bootedFromLocalLibrary =
       deserializeShowLibrary(rawLib) !== null || deserializeAuthored(rawSingle) !== null;
     const lib = loadShowLibrary(rawLib, rawSingle, () => nid('show'));
+    reserveIds(authoredIdsFromLibrary(lib));
     this.showLibrary = lib.shows;
     this.activeShowId = lib.activeShowId;
     // Mirror the active show's authored over the seed defaults — exactly as the old single-blob
