@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" run build && pnpm --filter @ledrums/web run build && pnpm --filter @ledrums/server run build",
-    "dev": "pnpm --parallel --filter @ledrums/server --filter @ledrums/web run dev",
+    "dev": "node scripts/dev.mjs",
     "start": "pnpm --filter @ledrums/server run start",
     "tauri:build": "node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build",
     "ota": "pnpm --filter @ledrums/desktop ota",
