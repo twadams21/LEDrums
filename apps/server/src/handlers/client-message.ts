@@ -4,6 +4,7 @@ import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
 import type { ClientMessage, ServerMessage, ShowLibraryBlob } from '../ws-protocol';
+import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
 
@@ -82,6 +83,8 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   setShowLibrary(lib: ShowLibraryBlob): void;
   /** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
   relayToOthers(sender: S, msg: ServerMessage): void;
+  /** Append a diagnostic event to the shared Monitor stream. */
+  monitor?(event: MonitorDraft): void;
 }
 
 /**
@@ -110,6 +113,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     stateMessage,
     setShowLibrary,
     relayToOthers,
+    monitor,
   } = deps;
   const voiceDeps = { voiceHost, broadcastJson };
 
@@ -145,6 +149,13 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         const blob = lib as ShowLibraryBlob;
         setShowLibrary(blob);
         showLibraryAutosaver.markDirty();
+        monitor?.({
+          type: 'persistence',
+          direction: 'local',
+          source: 'server',
+          destination: 'show-library',
+          label: 'Show library update accepted',
+        });
         relayToOthers(ws, { t: 'showLibrary', library: blob });
       }
       return;

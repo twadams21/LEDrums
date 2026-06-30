@@ -7,7 +7,7 @@ describe('resolveWebRoot (S4 env override)', () => {
   // DEFAULT_WEB_ROOT path does not exist inside a packaged binary). An explicit value wins,
   // resolved to an absolute path.
   it('honors an explicit LEDRUMS_WEB_ROOT, resolved to absolute', () => {
-    expect(resolveWebRoot({ LEDRUMS_WEB_ROOT: '/opt/ledrums/web' })).toBe('/opt/ledrums/web');
+    expect(resolveWebRoot({ LEDRUMS_WEB_ROOT: '/opt/ledrums/web' })).toBe(resolve('/opt/ledrums/web'));
   });
 
   it('resolves a relative override against the cwd', () => {

@@ -19,8 +19,21 @@ import type { ShowLibraryBlob } from '@ledrums/protocol';
 export const SHOW_LIBRARY_FILE = 'default.shows.local.json';
 
 /** Resolve the final path for the machine-local show library file. */
-function showLibraryPath(dir: string): string {
+export function showLibraryPath(dir: string = PROJECTS_DIR): string {
   return join(dir, SHOW_LIBRARY_FILE);
+}
+
+export type ShowLibraryLoadSource = 'absent' | 'loaded' | 'invalid';
+
+export function inspectShowLibraryFile(dir: string = PROJECTS_DIR): { path: string; source: ShowLibraryLoadSource } {
+  const file = showLibraryPath(dir);
+  if (!existsSync(file)) return { path: file, source: 'absent' };
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    return { path: file, source: isBlob(parsed) ? 'loaded' : 'invalid' };
+  } catch {
+    return { path: file, source: 'invalid' };
+  }
 }
 
 /**

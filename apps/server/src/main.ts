@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { existsSync } from 'node:fs';
 import {
   defaultProject,
   WS_PATH,
@@ -14,8 +15,8 @@ import {
   oscRecall,
   parseSectionRecallAddress,
 } from './input-router';
-import { listProjects, loadProject, projectExists, saveProjectAsync } from './projects';
-import { loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
+import { listProjects, loadProject, projectExists, projectFilePath, saveProjectAsync } from './projects';
+import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
@@ -30,13 +31,14 @@ import {
 import { boot } from './boot';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
+import { startupDiagnostics } from './diagnostics';
+import { createMonitorBus } from './monitor';
 import {
   decodeClient,
   effectSpecs,
   encodeServer,
   serializeModel,
   type ClientMessage,
-  type MonitorEvent,
   type ServerMessage,
   type TunnelInfo,
 } from './ws-protocol';
@@ -74,17 +76,19 @@ const hostToken = generateHostToken();
  * gitignored (see apps/server/.gitignore) — never committed, never a hand-edited seed. */
 const LIVE_PROJECT = 'default.local';
 
-function initialProject(): Project {
+function initialProject(): { project: Project; source: 'seed' | 'file'; name: string; path: string } {
   // Boot recovery: the live project file is authoritative — load + integrity-check it if
   // present (failing loudly on dangling refs). Only on a truly fresh machine (no saved
   // file) do we seed from the canonical in-code definition (defaultProject → DEFAULT_KIT),
   // so there is no hand-edited file to drift from the engine/lab kit. Once any edit lands,
   // the autosaver writes this slot and it is what subsequent boots restore.
-  if (!projectExists(LIVE_PROJECT)) return defaultProject();
-  return loadProject(LIVE_PROJECT);
+  const path = projectFilePath(LIVE_PROJECT);
+  if (!projectExists(LIVE_PROJECT)) return { project: defaultProject(), source: 'seed', name: LIVE_PROJECT, path };
+  return { project: loadProject(LIVE_PROJECT), source: 'file', name: LIVE_PROJECT, path };
 }
 
-const project0 = initialProject();
+const projectLoad = initialProject();
+const project0 = projectLoad.project;
 const host = new EngineHost(project0);
 /** Voice-bus host, only constructed in voice mode. It owns the live render + output;
  * the legacy `host` still backs the `state` message and the structural reducer so the
@@ -95,20 +99,31 @@ const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
 
 /** Live persistence: debounce-autosave the authoritative project to {@link LIVE_PROJECT}
  * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
-const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()));
+const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()), 400, {
+  onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave scheduled' }),
+  onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave saved' }),
+  onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'project', label: 'Project autosave failed', detail: message }),
+});
 
 /** Server-authoritative show library: the authored show library (web-defined schema, persisted
  * as an opaque versioned blob) is owned by the server exactly like the routing project —
  * boot-recovered here, rebroadcast on cold load via {@link stateMessage}, autosaved on every
  * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
  * has no file yet); the web then seeds the server from its localStorage cache on connect. */
+const showLibraryLoad = inspectShowLibraryFile();
 let liveShowLibrary: ShowLibraryBlob | null = loadShowLibrary();
 
 /** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
  * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
  * yet) is a no-op. */
-const showLibraryAutosaver = createAutosaver(() =>
-  liveShowLibrary ? saveShowLibraryAsync(liveShowLibrary) : Promise.resolve(),
+const showLibraryAutosaver = createAutosaver(
+  () => (liveShowLibrary ? saveShowLibraryAsync(liveShowLibrary) : Promise.resolve()),
+  400,
+  {
+    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave scheduled' }),
+    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave saved' }),
+    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'show-library', label: 'Show library autosave failed', detail: message }),
+  },
 );
 
 // --- HTTP + static + WS -----------------------------------------------------
@@ -139,18 +154,35 @@ function broadcastJson(msg: ServerMessage): void {
   }
 }
 
-let monitorSeq = 1;
-function monitor(event: Omit<MonitorEvent, 'id' | 'time'>): void {
-  broadcastJson({ t: 'monitor', event: { id: monitorSeq++, time: Date.now(), ...event } });
+const monitorBus = createMonitorBus(broadcastJson);
+function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
+  monitorBus.emit(event);
+}
+
+for (const event of startupDiagnostics({
+  voiceMode: VOICE_MODE,
+  port,
+  oscPort,
+  webRoot,
+  webRootExists: existsSync(webRoot),
+  project: projectLoad,
+  showLibrary: showLibraryLoad,
+  tunnel: { enabled: tunnelManager !== null, url: tunnelManager?.url ?? null },
+  pinRequired: pinGate.pin !== null,
+  hostTokenPresent: !!hostToken,
+})) {
+  monitor(event);
 }
 
 function monitorInput(msg: ClientMessage, origin: string): void {
+  const destination = VOICE_MODE ? 'voice-engine' : 'legacy-engine';
   switch (msg.t) {
     case 'midi':
       monitor({
         type: 'input',
         direction: 'in',
         source: origin,
+        destination,
         label: `MIDI ${msg.on ? 'note on' : 'note off'} ${msg.note}`,
         detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
       });
@@ -160,6 +192,7 @@ function monitorInput(msg: ClientMessage, origin: string): void {
         type: 'input',
         direction: 'in',
         source: origin,
+        destination,
         label: `MIDI CC ${msg.controller}`,
         detail: `value=${msg.value}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
       });
@@ -169,18 +202,19 @@ function monitorInput(msg: ClientMessage, origin: string): void {
         type: 'input',
         direction: 'in',
         source: origin,
+        destination,
         label: `MIDI program ${msg.value}`,
         detail: msg.channel != null ? `channel=${msg.channel}` : undefined,
       });
       return;
     case 'osc':
-      monitor({ type: 'input', direction: 'in', source: origin, label: `OSC ${msg.address}`, detail: `value=${msg.value}` });
+      monitor({ type: 'input', direction: 'in', source: origin, destination, label: `OSC ${msg.address}`, detail: `value=${msg.value}` });
       return;
     case 'key':
-      monitor({ type: 'input', direction: 'in', source: origin, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
+      monitor({ type: 'input', direction: 'in', source: origin, destination, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
       return;
     case 'recallSection':
-      monitor({ type: 'graph', direction: 'in', source: origin, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
+      monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
       return;
   }
 }
@@ -227,6 +261,7 @@ if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
 else host.onFrame = (rgb) => broadcastBinary(rgb);
 host.setOutputMonitor(monitor);
 voiceHost?.setOutputMonitor(monitor);
+voiceHost?.setMonitor(monitor);
 
 wss.on('connection', (ws, req) => {
   // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
@@ -254,8 +289,10 @@ wss.on('connection', (ws, req) => {
   // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
   // the `state` below — messages are ordered on the socket), then ship its initial state.
   clients.admit(ws);
+  monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
   broadcastPresence();
   ws.send(encodeServer(stateMessage()));
+  monitorBus.replay((msg) => ws.send(encodeServer(msg)));
 
   ws.on('message', (raw, isBinary) => {
     if (isBinary) return; // clients send JSON only
@@ -271,6 +308,7 @@ wss.on('connection', (ws, req) => {
         // Error escaped the handler — log, but keep the socket alive.
         console.error('[ws] handler error:', message);
       }
+      monitor({ type: 'error', direction: 'local', source: 'server/ws', label: handled ? 'WebSocket handler error' : 'WebSocket decode error', detail: message });
       ws.send(encodeServer({ t: 'error', message }));
     }
   });
@@ -315,6 +353,7 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
     liveShowLibrary = lib;
   },
   relayToOthers,
+  monitor,
 });
 
 const NATIVE_MIDI_PATH = '/api/native-midi';
@@ -382,7 +421,9 @@ function handleNativeMidiHttp(req: IncomingMessage, res: ServerResponse): boolea
       handleClientMessage(msg, nativeInputSocket);
       sendPlain(res, 204, '');
     } catch (err) {
-      sendPlain(res, 400, err instanceof Error ? err.message : 'bad request');
+      const message = err instanceof Error ? err.message : 'bad request';
+      monitor({ type: 'error', direction: 'local', source: 'server/native-midi', label: 'Native MIDI error', detail: message });
+      sendPlain(res, 400, message);
     }
   });
   return true;
@@ -459,7 +500,7 @@ const oscInput = new OscInput({ port: oscPort });
 oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
   if (!event || event.kind !== 'osc') return;
-  monitor({ type: 'input', direction: 'in', source: 'osc', label: `OSC ${event.address}`, detail: `value=${event.value}` });
+  monitor({ type: 'input', direction: 'in', source: 'osc', destination: VOICE_MODE ? 'voice-engine' : 'legacy-engine', label: `OSC ${event.address}`, detail: `value=${event.value}` });
   if (voiceHost) {
     // A section-recall address (e.g. from a show-control system) is always consumed by the
     // recall handler before the zone-map, exactly like the WS osc path; anything else is a
@@ -524,4 +565,5 @@ boot({
   pin: pinGate.pin,
   hostToken,
   broadcastState,
+  monitor,
 });

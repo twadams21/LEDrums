@@ -21,6 +21,12 @@ export interface Autosaver {
 
 const DEFAULT_DELAY_MS = 400;
 
+export interface AutosaverHooks {
+  onScheduled?(): void;
+  onSaved?(): void;
+  onError?(message: string): void;
+}
+
 /**
  * Build an {@link Autosaver} over a `save` sink (typically a project write). `save` is
  * called at most once per coalesced burst; it should read the *current* project at call
@@ -29,6 +35,7 @@ const DEFAULT_DELAY_MS = 400;
 export function createAutosaver(
   save: () => Promise<void>,
   delayMs: number = DEFAULT_DELAY_MS,
+  hooks: AutosaverHooks = {},
 ): Autosaver {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let dirty = false;
@@ -49,9 +56,12 @@ export function createAutosaver(
       dirty = false;
       try {
         await save();
+        hooks.onSaved?.();
       } catch (err) {
         dirty = true; // failed — stay dirty so a later edit/flush retries
-        console.error('[autosave] write failed:', err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        hooks.onError?.(message);
+        console.error('[autosave] write failed:', message);
       }
     });
     return chain;
@@ -59,8 +69,10 @@ export function createAutosaver(
 
   return {
     markDirty(): void {
+      const wasDirty = dirty || timer !== null;
       dirty = true;
       clearTimer();
+      if (!wasDirty) hooks.onScheduled?.();
       timer = setTimeout(() => {
         timer = null;
         void enqueue();

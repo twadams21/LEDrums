@@ -26,6 +26,7 @@ import {
   evalGraph,
   evalChildren,
   type Action,
+  type PlayAction,
   type EvalState,
   type TriggerCtx,
   type PendingDescriptor,
@@ -43,6 +44,12 @@ import {
   type TriggerGraph,
   type TriggerSource,
 } from './types';
+import type {
+  GraphMissReason,
+  GraphResolutionPath,
+  VoiceDiagnosticSink,
+  VoiceInputDescriptor,
+} from './diagnostics';
 
 // ---- Public seam ------------------------------------------------------------
 
@@ -77,7 +84,18 @@ export interface RenderEngine {
   stats(): EngineStats;
 }
 
+export interface RenderEngineOptions {
+  onDiagnostic?: VoiceDiagnosticSink;
+}
+
 const PRNG_SEED = 0x1a2b3c4d;
+
+interface ResolvedGraph {
+  graphKey: string;
+  graph: TriggerGraph;
+  statePrefix: string;
+  path: GraphResolutionPath;
+}
 
 // ---- Production adapter ------------------------------------------------------
 
@@ -87,6 +105,8 @@ const PRNG_SEED = 0x1a2b3c4d;
  * the inner compositor. `frame()` returns the final framebuffer's rgba (no copy).
  */
 class VoiceBusEngine implements RenderEngine {
+  constructor(private readonly onDiagnostic?: VoiceDiagnosticSink) {}
+
   private model: PixelModel | null = null;
   private attrs: PixelAttrs | null = null;
   private finalFb: Framebuffer | null = null;
@@ -183,6 +203,11 @@ class VoiceBusEngine implements RenderEngine {
       // Activate a section so subsequent hits fire its slot graphs (layered).
       this.activeSongId = e.songId ?? null;
       this.activeSectionId = e.sectionId ?? null;
+      this.onDiagnostic?.({
+        kind: 'section-recalled',
+        songId: this.activeSongId,
+        sectionId: this.activeSectionId,
+      });
       return;
     }
     // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
@@ -203,7 +228,11 @@ class VoiceBusEngine implements RenderEngine {
     // drive a patch zone and an authored effect/trigger graph without needing to remove
     // the note from the patch input map.
     const toFire = this.resolveGraphsForEvent(e);
-    if (toFire.length === 0) return;
+    const input = describeInputEvent(e);
+    if (toFire.length === 0) {
+      this.onDiagnostic?.({ kind: 'graph-missed', input, reason: this.missReasonFor(e) });
+      return;
+    }
 
     const ctx: TriggerCtx = {
       velocity: value,
@@ -213,13 +242,20 @@ class VoiceBusEngine implements RenderEngine {
       sourceDrumId: e.drumId ?? '',
       bpm: this.bpm,
     };
-    for (const { graph, statePrefix } of toFire) {
-      this.fireGraph(graph, statePrefix, ctx);
+    for (const resolved of toFire) {
+      this.onDiagnostic?.({
+        kind: 'input-resolved',
+        input,
+        path: resolved.path,
+        graphKey: resolved.graphKey,
+        statePrefix: resolved.statePrefix,
+      });
+      this.fireGraph(resolved, ctx, input);
     }
   }
 
-  private resolveGraphsForEvent(e: InputEvent): Array<{ graph: TriggerGraph; statePrefix: string }> {
-    const out: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
+  private resolveGraphsForEvent(e: InputEvent): ResolvedGraph[] {
+    const out: ResolvedGraph[] = [];
     if (e.drumId) out.push(...this.resolveHitGraphs(e.drumId, e.zone ?? ''));
     if (e.kind === 'noteOn' || e.kind === 'osc') out.push(...this.resolveDirectGraphs(e));
     return out;
@@ -236,8 +272,8 @@ class VoiceBusEngine implements RenderEngine {
    * CC sources await a CC input event — there is no CC `InputEvent` kind yet, so only
    * `note` sources are reachable from a raw MIDI note here.
    */
-  private resolveDirectGraphs(e: InputEvent): Array<{ graph: TriggerGraph; statePrefix: string }> {
-    const out: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
+  private resolveDirectGraphs(e: InputEvent): ResolvedGraph[] {
+    const out: ResolvedGraph[] = [];
     for (const [key, graph] of Object.entries(this.show.graphs)) {
       const src = triggerSourceOf(graph);
       if (!src) continue;
@@ -245,7 +281,7 @@ class VoiceBusEngine implements RenderEngine {
         e.kind === 'osc'
           ? src.kind === 'osc' && e.address !== undefined && src.address === e.address
           : src.kind === 'midi' && src.note !== undefined && src.note === e.note;
-      if (match) out.push({ graph, statePrefix: key });
+      if (match) out.push({ graphKey: key, graph, statePrefix: key, path: e.kind === 'osc' ? 'direct-osc' : 'direct-midi' });
     }
     return out;
   }
@@ -267,7 +303,7 @@ class VoiceBusEngine implements RenderEngine {
    *  - all slots are null (unassigned).
    * The fallback restores the pre-section per-zone behaviour exactly.
    */
-  private resolveHitGraphs(drumId: string, zone: string): Array<{ graph: TriggerGraph; statePrefix: string }> {
+  private resolveHitGraphs(drumId: string, zone: string): ResolvedGraph[] {
     const pad = padKey(drumId, zone);
     if (this.activeSongId !== null && this.activeSectionId !== null && this.show.songs) {
       const song = this.show.songs.find((s) => s.id === this.activeSongId);
@@ -275,7 +311,7 @@ class VoiceBusEngine implements RenderEngine {
       if (section) {
         const slots = section.slots[pad];
         if (slots) {
-          const resolved: Array<{ graph: TriggerGraph; statePrefix: string }> = [];
+          const resolved: ResolvedGraph[] = [];
           for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
             const key = slots[slotIndex];
             if (!key) continue;
@@ -284,14 +320,29 @@ class VoiceBusEngine implements RenderEngine {
             // the SAME key in one section must run as INDEPENDENT layers (own
             // sequence/random/toggle/latch state), so fold in the slot index. Cross-
             // section reuse stays stable — slot 0 of any section shares one state key.
-            if (g) resolved.push({ graph: g, statePrefix: `${key}#${slotIndex}` });
+            if (g) resolved.push({ graphKey: key, graph: g, statePrefix: `${key}#${slotIndex}`, path: 'pad-section' });
           }
           if (resolved.length > 0) return resolved;
         }
       }
     }
     const g = this.show.graphs[pad];
-    return g ? [{ graph: g, statePrefix: pad }] : [];
+    return g ? [{ graphKey: pad, graph: g, statePrefix: pad, path: 'pad-fallback' }] : [];
+  }
+
+  private missReasonFor(e: InputEvent): GraphMissReason {
+    if (!e.drumId) return 'no-direct-match';
+    const pad = padKey(e.drumId, e.zone ?? '');
+    if (this.activeSongId === null || this.activeSectionId === null || !this.show.songs) {
+      return this.show.graphs[pad] ? 'no-direct-match' : 'no-active-section';
+    }
+    const song = this.show.songs.find((s) => s.id === this.activeSongId);
+    const section = song?.sections.find((s) => s.id === this.activeSectionId);
+    const slots = section?.slots[pad];
+    if (!slots || slots.every((key) => !key || !this.show.graphs[key])) {
+      return this.show.graphs[pad] ? 'no-direct-match' : 'no-slot-graphs';
+    }
+    return 'no-pad-fallback';
   }
 
   private beatPhase(): number {
@@ -313,8 +364,20 @@ class VoiceBusEngine implements RenderEngine {
     };
   }
 
-  private fireGraph(graph: TriggerGraph, pad: string, ctx: TriggerCtx): void {
-    const actions = evalGraph(this.evalState(), graph, pad, ctx);
+  private fireGraph(resolved: ResolvedGraph, ctx: TriggerCtx, input: VoiceInputDescriptor): void {
+    const actions = evalGraph(this.evalState(), resolved.graph, resolved.statePrefix, ctx);
+    const playEffects = actions
+      .filter((a): a is PlayAction => a.kind === 'play')
+      .map((a) => a.effectId);
+    this.onDiagnostic?.({
+      kind: 'graph-fired',
+      input,
+      path: resolved.path,
+      graphKey: resolved.graphKey,
+      statePrefix: resolved.statePrefix,
+      actionCount: actions.length,
+      playEffects,
+    });
     this.applyActions(actions, ctx);
   }
 
@@ -471,8 +534,8 @@ class NullEngine implements RenderEngine {
 
 const EMPTY_FRAME = new Float32Array(0);
 
-export function createVoiceBusEngine(): RenderEngine {
-  return new VoiceBusEngine();
+export function createVoiceBusEngine(opts: RenderEngineOptions = {}): RenderEngine {
+  return new VoiceBusEngine(opts.onDiagnostic);
 }
 
 export function createNullEngine(): RenderEngine {
@@ -485,6 +548,20 @@ export function createNullEngine(): RenderEngine {
     for a graph authored before the source model / with none bound. Mirrors the web sim. */
 function triggerSourceOf(graph: TriggerGraph): TriggerSource | undefined {
   return graph.nodes.find((n) => n.kind === 'trigger')?.source;
+}
+
+function describeInputEvent(e: InputEvent): VoiceInputDescriptor {
+  return {
+    kind: e.kind,
+    ...(e.drumId !== undefined ? { drumId: e.drumId } : {}),
+    ...(e.zone !== undefined ? { zone: e.zone } : {}),
+    ...(e.note !== undefined ? { note: e.note } : {}),
+    ...(e.address !== undefined ? { address: e.address } : {}),
+    ...(e.value !== undefined ? { value: e.value } : {}),
+    ...(e.velocity !== undefined ? { velocity: e.velocity } : {}),
+    ...(e.songId !== undefined ? { songId: e.songId } : {}),
+    ...(e.sectionId !== undefined ? { sectionId: e.sectionId } : {}),
+  };
 }
 
 // `bandIndex` lives in eval-graph.ts (graph eval owns band resolution). Re-exported here

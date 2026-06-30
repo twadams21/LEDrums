@@ -7,6 +7,7 @@ import type { ClientRegistry } from './client-registry';
 import type { EngineHost } from './engine-host';
 import type { VoiceEngineHost } from './voice-engine-host';
 import type { TunnelManager } from './tunnel-manager';
+import type { MonitorDraft } from './monitor';
 
 /** Collaborators the boot/shutdown orchestration drives. */
 export interface BootDeps {
@@ -35,6 +36,7 @@ export interface BootDeps {
   /** Re-broadcast the `state` message — called once the tunnel URL resolves so already-connected
    * host clients pick up the share URL. */
   broadcastState: () => void;
+  monitor?: (event: MonitorDraft) => void;
 }
 
 /** Every non-internal IPv4 address as an http URL on port `p` (for the boot LAN banner). */
@@ -59,17 +61,30 @@ function startTunnel(deps: BootDeps): void {
   const tunnel = deps.tunnelManager;
   if (!tunnel) return;
   tunnel.onUnexpectedExit = ({ code, signal }) => {
+    deps.monitor?.({
+      type: 'error',
+      direction: 'local',
+      source: 'server/tunnel',
+      destination: 'remote-access',
+      label: 'Tunnel exited unexpectedly',
+      detail: `code=${code ?? 'null'}; signal=${signal ?? 'null'}`,
+    });
     console.error(`[tunnel] cloudflared exited unexpectedly (code ${code ?? 'null'}, signal ${signal ?? 'null'}) — remote access is down`);
   };
-  tunnel.onError = (err) => console.error('[tunnel] error:', err.message);
+  tunnel.onError = (err) => {
+    deps.monitor?.({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel error', detail: err.message });
+    console.error('[tunnel] error:', err.message);
+  };
   tunnel
     .start()
     .then((url) => {
+      deps.monitor?.({ type: 'system', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel ready', detail: url });
       console.log(`  Tunnel: ${url}${deps.pin ? ` (PIN ${deps.pin})` : ''}`);
       deps.broadcastState(); // host UIs connected before the URL resolved now learn it
     })
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
+      deps.monitor?.({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel failed to start', detail: message });
       console.error(`[tunnel] failed to start (is cloudflared installed?): ${message}`);
     });
 }

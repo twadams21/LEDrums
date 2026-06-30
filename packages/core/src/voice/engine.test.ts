@@ -3,6 +3,7 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
+import type { VoiceDiagnostic } from './diagnostics';
 import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
 
 // ---- fixtures ---------------------------------------------------------------
@@ -999,6 +1000,95 @@ describe('VoiceBusEngine — direct trigger-source resolution (U3)', () => {
       return Array.from(e.frame());
     };
     expect(run()).toEqual(run());
+  });
+});
+
+describe('VoiceBusEngine - input resolution diagnostics', () => {
+  const runDiagnostics = (s: Show, events: InputEvent[]): VoiceDiagnostic[] => {
+    const diagnostics: VoiceDiagnostic[] = [];
+    const e = createVoiceBusEngine({ onDiagnostic: (d) => diagnostics.push(d) });
+    e.setModel(testModel());
+    e.setShow(s);
+    for (const ev of events) e.applyInput(ev);
+    e.tick(5, 5, transport(5));
+    return diagnostics;
+  };
+
+  it('reports direct MIDI graph resolution and fired play effects', () => {
+    const diagnostics = runDiagnostics(
+      showOf({ 'graph:midi': sourcedGraph({ kind: 'midi', note: 38 }, 'base') }),
+      [{ kind: 'noteOn', note: 38, velocity: 1, timeMs: 0 }],
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'input-resolved',
+        path: 'direct-midi',
+        graphKey: 'graph:midi',
+        statePrefix: 'graph:midi',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'graph-fired',
+        path: 'direct-midi',
+        graphKey: 'graph:midi',
+        playEffects: ['fxA'],
+      }),
+    );
+  });
+
+  it('reports direct OSC graph resolution', () => {
+    const diagnostics = runDiagnostics(
+      showOf({ 'graph:osc': sourcedGraph({ kind: 'osc', address: '/kick' }, 'lead') }),
+      [{ kind: 'osc', address: '/kick', value: 1, timeMs: 0 }],
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'input-resolved',
+        path: 'direct-osc',
+        graphKey: 'graph:osc',
+        statePrefix: 'graph:osc',
+      }),
+    );
+  });
+
+  it('reports active-section slot graph resolution', () => {
+    const diagnostics = runDiagnostics(sectionShow(['gA', null]), [
+      recallSection('song1', 'sec1', 0),
+      hit('kick', 1),
+    ]);
+
+    expect(diagnostics).toContainEqual({ kind: 'section-recalled', songId: 'song1', sectionId: 'sec1' });
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'input-resolved',
+        path: 'pad-section',
+        graphKey: 'gA',
+        statePrefix: 'gA#0',
+      }),
+    );
+  });
+
+  it('reports pad fallback resolution', () => {
+    const diagnostics = runDiagnostics(show(flatGraph('fxA')), [hit('kick', 0)]);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'input-resolved',
+        path: 'pad-fallback',
+        graphKey: padKey('kick', ''),
+        statePrefix: padKey('kick', ''),
+      }),
+    );
+  });
+
+  it('reports a graph miss without firing a graph', () => {
+    const diagnostics = runDiagnostics(showOf({}), [{ kind: 'noteOn', note: 7, velocity: 1, timeMs: 0 }]);
+
+    expect(diagnostics).toContainEqual(expect.objectContaining({ kind: 'graph-missed', reason: 'no-direct-match' }));
+    expect(diagnostics.some((d) => d.kind === 'graph-fired')).toBe(false);
   });
 });
 

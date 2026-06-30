@@ -9,6 +9,7 @@ import {
 } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { applyRgbOrder, frameToUniverseBytes, OutputManager } from './output-manager';
+import type { MonitorEvent } from './ws-protocol';
 
 class FakeOutput implements PixelOutput {
   sends: { universe: number; bytes: number[] }[] = [];
@@ -131,5 +132,112 @@ describe('OutputManager state machine', () => {
     m.applySettings({ ...base, priority: 200 }, dmxMap); // priority change → new transport
     m.applySettings({ ...base, priority: 200, iface: '10.0.0.5' }, dmxMap); // iface change → new transport
     expect(builds).toBe(3);
+  });
+});
+
+describe('OutputManager monitor diagnostics', () => {
+  it('coalesces armed packet diagnostics instead of emitting per frame/universe', () => {
+    let now = 0;
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake, { now: () => now, monitorWindowMs: 1000 });
+    m.onMonitor = (event) => events.push(event);
+
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+
+    for (let i = 0; i < 60; i++) {
+      now += 16;
+      m.sendFrame(fb.rgba, dmxMap);
+    }
+
+    expect(fake.sends.length).toBe(60 * dmxMap.universes.length);
+    expect(events.filter((e) => e.type === 'output' && e.label.includes('summary'))).toHaveLength(0);
+    expect(events.length).toBeLessThan(fake.sends.length);
+
+    now += 1000;
+    m.sendFrame(fb.rgba, dmxMap);
+    const summary = events.find((e) => e.type === 'output' && e.label.includes('summary'));
+    expect(summary?.detail).toContain(`packets=${61 * dmxMap.universes.length}`);
+    expect(summary?.destination).toContain('artnet:127.0.0.1:');
+  });
+
+  it('coalesces dry-run diagnostics instead of emitting once per frame', () => {
+    let now = 0;
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput(), { now: () => now, monitorWindowMs: 100 });
+    m.onMonitor = (event) => events.push(event);
+
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('dry-run'), dmxMap);
+    for (let i = 0; i < 11; i++) {
+      now += 10;
+      m.sendFrame(fb.rgba, dmxMap);
+    }
+
+    const summaries = events.filter((e) => e.type === 'output' && e.label.includes('dry-run summary'));
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]!.detail).toContain(`packets=${11 * dmxMap.universes.length}`);
+  });
+
+  it('emits one immediate blackout event for the operation', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = (event) => events.push(event);
+
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.blackout(dmxMap);
+
+    const blackouts = events.filter((e) => e.label === 'Blackout sent');
+    expect(blackouts).toHaveLength(1);
+    expect(blackouts[0]).toMatchObject({ type: 'output', source: 'server' });
+    expect(blackouts[0]!.detail).toContain(`packets=${dmxMap.universes.length}`);
+  });
+
+  it('emits setup errors and sets lastError when sender construction fails', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => {
+      throw new Error('factory down');
+    });
+    m.onMonitor = (event) => events.push(event);
+
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+
+    expect(m.status().lastError).toContain('factory down');
+    expect(events).toContainEqual(expect.objectContaining({ type: 'error', source: 'server/output', label: 'Output setup failed' }));
+  });
+
+  it('emits send errors, sets lastError, and still attempts blackout safely', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = (event) => events.push(event);
+
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.throwing = true;
+
+    expect(() => m.sendFrame(fb.rgba, dmxMap)).not.toThrow();
+    expect(m.status().lastError).toContain('net down');
+    expect(events).toContainEqual(expect.objectContaining({ type: 'error', source: 'server/output', label: 'Output send failed' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'error', source: 'server/output', label: 'Output blackout failed' }));
+  });
+
+  it('keeps output monitor destination and source fields filterable', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture();
+
+    m.applySettings({ ...settings('armed'), protocol: 'sacn', broadcast: true, port: 5568 }, dmxMap);
+
+    expect(events[0]).toMatchObject({
+      type: 'output',
+      source: 'server',
+      destination: 'sacn:broadcast:5568',
+    });
   });
 });

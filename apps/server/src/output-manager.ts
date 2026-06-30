@@ -7,6 +7,7 @@ import {
   type UniversePatch,
 } from '@ledrums/core';
 import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
+import { createOutputMonitorCoalescer, outputDestination, universeRangeLabel } from './output-monitor';
 import type { MonitorEvent } from './ws-protocol';
 import type { OutputStatus } from './ws-protocol';
 
@@ -42,6 +43,11 @@ export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, r
 export type OutputFactory = (settings: OutputSettings) => PixelOutput;
 export type OutputMonitorSink = (event: Omit<MonitorEvent, 'id' | 'time'>) => void;
 
+export interface OutputManagerOptions {
+  now?: () => number;
+  monitorWindowMs?: number;
+}
+
 function defaultFactory(settings: OutputSettings): PixelOutput {
   if (settings.protocol === 'sacn') {
     return new SacnOutput({
@@ -71,9 +77,18 @@ export class OutputManager {
   private packetsSent = 0;
   private lastError: string | null = null;
   private universeCount = 0;
+  private settingsMonitorSignature = '';
+  private readonly now: () => number;
+  private readonly outputDiag: ReturnType<typeof createOutputMonitorCoalescer>;
   onMonitor?: OutputMonitorSink;
 
-  constructor(private readonly factory: OutputFactory = defaultFactory) {}
+  constructor(
+    private readonly factory: OutputFactory = defaultFactory,
+    opts: OutputManagerOptions = {},
+  ) {
+    this.now = opts.now ?? (() => performance.now());
+    this.outputDiag = createOutputMonitorCoalescer({ windowMs: opts.monitorWindowMs });
+  }
 
   applySettings(settings: OutputSettings, dmxMap: DmxMap): void {
     this.universeCount = dmxMap.universes.length;
@@ -90,6 +105,7 @@ export class OutputManager {
         } catch (err) {
           this.lastError = String(err);
           this.output = null;
+          this.monitorError('Output setup failed', settings, this.lastError);
         }
       }
     } else {
@@ -97,6 +113,7 @@ export class OutputManager {
       this.teardown(dmxMap, settings);
     }
     this.settings = settings;
+    this.monitorSettings(settings, dmxMap);
   }
 
   private teardown(dmxMap: DmxMap, settings: OutputSettings): void {
@@ -114,20 +131,40 @@ export class OutputManager {
     if (!s || s.state === 'disabled') return;
     if (s.state === 'dry-run') {
       this.packetsSent += dmxMap.universes.length; // formed, not transmitted
-      this.monitor('dry-run', s, dmxMap.universes.length);
+      this.monitorPacketSummary({
+        settings: s,
+        kind: 'dry-run',
+        universes: dmxMap.universes.map((patch) => patch.universe),
+        packets: dmxMap.universes.length,
+        nowMs: this.now(),
+      });
       return;
     }
     if (!this.output) return;
     try {
       this.output.nextFrame();
+      let packets = 0;
+      let byteCount = 0;
+      const universes: number[] = [];
       for (const patch of dmxMap.universes) {
         const bytes = frameToUniverseBytes(rgba, patch, s.rgbOrder);
         this.output.send(patch.universe, bytes);
         this.packetsSent++;
-        this.monitor('packet', s, 1, patch.universe, bytes.length);
+        packets++;
+        byteCount += bytes.length;
+        universes.push(patch.universe);
       }
+      this.monitorPacketSummary({
+        settings: s,
+        kind: 'packet',
+        universes,
+        byteCount,
+        packets,
+        nowMs: this.now(),
+      });
     } catch (err) {
       this.lastError = String(err);
+      this.monitorError('Output send failed', s, this.lastError);
       this.blackout(dmxMap);
     }
   }
@@ -137,13 +174,27 @@ export class OutputManager {
     if (!this.output) return;
     try {
       this.output.nextFrame();
+      let packets = 0;
+      const universes: number[] = [];
       for (const patch of dmxMap.universes) {
         const zero = new Uint8Array(patch.channelCount);
         this.output.send(patch.universe, zero);
-        if (this.settings) this.monitor('blackout', this.settings, 1, patch.universe, zero.length);
+        packets++;
+        universes.push(patch.universe);
+      }
+      if (this.settings) {
+        this.onMonitor?.({
+          type: 'output',
+          direction: 'out',
+          source: 'server',
+          destination: outputDestination(this.settings),
+          label: 'Blackout sent',
+          detail: `packets=${packets}; universes=${universeRangeLabel(universes)}`,
+        });
       }
     } catch (err) {
       this.lastError = String(err);
+      if (this.settings) this.monitorError('Output blackout failed', this.settings, this.lastError);
     }
   }
 
@@ -165,14 +216,35 @@ export class OutputManager {
     }
   }
 
-  private monitor(kind: string, settings: OutputSettings, packets: number, universe?: number, byteCount?: number): void {
+  private monitorPacketSummary(sample: Parameters<typeof this.outputDiag.record>[0]): void {
+    const event = this.outputDiag.record(sample);
+    if (event) this.onMonitor?.(event);
+  }
+
+  private monitorSettings(settings: OutputSettings, dmxMap: DmxMap): void {
+    const signature = `${settings.state}|${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}|${settings.fps}|${dmxMap.universes.length}`;
+    if (signature === this.settingsMonitorSignature) return;
+    this.settingsMonitorSignature = signature;
+
+    const label = settings.state === 'armed' ? 'Output armed' : settings.state === 'dry-run' ? 'Output dry-run' : 'Output disabled';
     this.onMonitor?.({
       type: 'output',
       direction: 'out',
       source: 'server',
-      destination: `${settings.protocol}:${settings.broadcast ? 'broadcast' : settings.host}:${settings.port}`,
-      label: universe === undefined ? `${settings.protocol} ${kind}` : `${settings.protocol} universe ${universe}`,
-      detail: `${kind}; packets=${packets}${byteCount === undefined ? '' : `; bytes=${byteCount}`}`,
+      destination: outputDestination(settings),
+      label,
+      detail: `protocol=${settings.protocol}; fps=${settings.fps}; universes=${dmxMap.universes.length}`,
+    });
+  }
+
+  private monitorError(label: string, settings: OutputSettings, detail: string): void {
+    this.onMonitor?.({
+      type: 'error',
+      direction: 'out',
+      source: 'server/output',
+      destination: outputDestination(settings),
+      label,
+      detail,
     });
   }
 }

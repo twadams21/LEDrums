@@ -17,6 +17,7 @@ import {
 import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
+import type { MonitorDraft } from './monitor';
 
 /**
  * Partial input the voice host stamps with `timeMs = engineTimeMs` before applying.
@@ -95,15 +96,16 @@ export class VoiceEngineHost {
   /** The active song id for index-relative recalls (CC#0). Seeded from the first song on
    * setShow, updated whenever a recallSection names a song (web- or transport-driven). */
   private activeSongId: string | null = null;
+  private monitorSink: ((event: MonitorDraft) => void) | null = null;
 
   constructor(
     project: Project,
-    engine: voice.RenderEngine = voice.createVoiceBusEngine(),
+    engine: voice.RenderEngine | null = null,
     output: OutputManager = new OutputManager(),
   ) {
     this.project = project;
     this.kit = project.kit;
-    this.engine = engine;
+    this.engine = engine ?? voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
     this.output = output;
     this.model = buildPixelModel(this.kit);
     this.dmxMap = this.buildMapSafe(this.kit);
@@ -402,6 +404,77 @@ export class VoiceEngineHost {
   setOutputMonitor(sink: OutputMonitorSink): void {
     this.output.onMonitor = sink;
   }
+
+  setMonitor(sink: (event: MonitorDraft) => void): void {
+    this.monitorSink = sink;
+  }
+
+  private monitorVoiceDiagnostic(d: voice.VoiceDiagnostic): void {
+    if (d.kind === 'input-resolved') {
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        destination: `graph:${d.graphKey}`,
+        label: `Graph resolved ${d.graphKey}`,
+        detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}`,
+      });
+      return;
+    }
+
+    if (d.kind === 'graph-fired') {
+      const effectLabels = this.effectLabels(d.playEffects);
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        destination: `graph:${d.graphKey}`,
+        label: `Graph fired ${d.graphKey}`,
+        detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}; actions=${d.actionCount}; effects=${effectLabels.join(', ') || 'none'}`,
+      });
+      return;
+    }
+
+    if (d.kind === 'graph-missed') {
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'No graph resolved',
+        detail: `input=${describeVoiceInput(d.input)}; reason=${d.reason}`,
+      });
+      return;
+    }
+
+    this.monitorSink?.({
+      type: 'graph',
+      direction: 'local',
+      source: 'server/voice',
+      destination: d.sectionId ? `section:${d.sectionId}` : undefined,
+      label: 'Section recalled',
+      detail: `song=${d.songId ?? 'none'}; section=${d.sectionId ?? 'none'}`,
+    });
+  }
+
+  private effectLabels(ids: string[]): string[] {
+    const effectsById = new Map(this.currentShow?.effects.map((e) => [e.id, e.name]) ?? []);
+    return ids.map((id) => {
+      const name = effectsById.get(id);
+      return name && name !== id ? `${name} (${id})` : id;
+    });
+  }
+}
+
+function describeVoiceInput(input: voice.VoiceInputDescriptor): string {
+  const parts: string[] = [input.kind];
+  if (input.note !== undefined) parts.push(`note=${input.note}`);
+  if (input.address !== undefined) parts.push(`address=${input.address}`);
+  if (input.drumId !== undefined) parts.push(`pad=${input.drumId}:${input.zone ?? ''}`);
+  if (input.velocity !== undefined) parts.push(`velocity=${input.velocity}`);
+  if (input.value !== undefined) parts.push(`value=${input.value}`);
+  if (input.songId !== undefined) parts.push(`song=${input.songId}`);
+  if (input.sectionId !== undefined) parts.push(`section=${input.sectionId}`);
+  return parts.join('; ');
 }
 
 /** Wall clock (ms). Indirected so the host has no direct `performance` coupling. */
