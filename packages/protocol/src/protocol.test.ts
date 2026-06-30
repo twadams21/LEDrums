@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type { EffectGenerator, ParamSpec } from '@ledrums/core';
-import type { EffectSpec, OutputStatus, ShowLibraryBlob } from './index';
+import type { EffectSpec, MonitorEventType, OutputStatus, ShowLibraryBlob } from './index';
 
 // These are compile-time assertions: they pin the three shapes that S4.3 reconciled
 // between the server (`ws-protocol.ts`) and the web (`lib/ws/protocol-types.ts`) so the
@@ -19,5 +19,11 @@ describe('protocol wire contract (reconciled shapes)', () => {
 
     // (3) ShowLibraryBlob is the single opaque versioned envelope.
     expectTypeOf<ShowLibraryBlob>().toEqualTypeOf<{ version: number; data: unknown }>();
+
+    // (4) Monitor events use the shared operational taxonomy that server, web,
+    //     and output diagnostics extend.
+    expectTypeOf<MonitorEventType>().toEqualTypeOf<
+      'input' | 'output' | 'effect' | 'graph' | 'system' | 'persistence' | 'error'
+    >();
   });
 });

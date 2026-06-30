@@ -26,7 +26,7 @@ function serializeProject(project: Project): string {
 }
 
 /** Resolve the final path for a persisted `<name>.json` project. */
-function projectPath(name: string, dir: string): string {
+export function projectFilePath(name: string, dir: string = PROJECTS_DIR): string {
   return join(dir, `${name}.json`);
 }
 
@@ -41,7 +41,7 @@ export function listProjects(dir: string = PROJECTS_DIR): string[] {
 
 /** True when a saved project file exists for `name`. */
 export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean {
-  return existsSync(projectPath(name, dir));
+  return existsSync(projectFilePath(name, dir));
 }
 
 /**
@@ -52,7 +52,7 @@ export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean
  * going dark downstream.
  */
 export function loadProject(name: string, dir: string = PROJECTS_DIR): Project {
-  const raw = readFileSync(projectPath(name, dir), 'utf8');
+  const raw = readFileSync(projectFilePath(name, dir), 'utf8');
   const project = parseProject(JSON.parse(raw));
   assertProjectIntegrity(project);
   return project;
@@ -65,7 +65,7 @@ export function loadProject(name: string, dir: string = PROJECTS_DIR): Project {
  * target. Synchronous; used for explicit saves and the shutdown flush.
  */
 export function saveProject(name: string, project: Project, dir: string = PROJECTS_DIR): void {
-  writeFileAtomicSync(projectPath(name, dir), serializeProject(project));
+  writeFileAtomicSync(projectFilePath(name, dir), serializeProject(project));
 }
 
 /**
@@ -79,5 +79,5 @@ export async function saveProjectAsync(
   project: Project,
   dir: string = PROJECTS_DIR,
 ): Promise<void> {
-  await writeFileAtomic(projectPath(name, dir), serializeProject(project));
+  await writeFileAtomic(projectFilePath(name, dir), serializeProject(project));
 }

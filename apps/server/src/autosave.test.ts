@@ -15,10 +15,12 @@ describe('createAutosaver (debounced)', () => {
   it('coalesces a burst of edits into a single debounced write', async () => {
     vi.useFakeTimers();
     const save = vi.fn().mockResolvedValue(undefined);
-    const a = createAutosaver(save, 400);
+    const hooks = { onScheduled: vi.fn() };
+    const a = createAutosaver(save, 400, hooks);
     a.markDirty();
     a.markDirty();
     a.markDirty();
+    expect(hooks.onScheduled).toHaveBeenCalledTimes(1);
     expect(save).not.toHaveBeenCalled(); // debounced — nothing yet
     await vi.advanceTimersByTimeAsync(400);
     expect(save).toHaveBeenCalledTimes(1); // one write for the whole burst
@@ -41,10 +43,12 @@ describe('createAutosaver (debounced)', () => {
 
   it('flush() writes immediately and resolves when durable', async () => {
     const save = vi.fn().mockResolvedValue(undefined);
-    const a = createAutosaver(save, 10_000);
+    const hooks = { onSaved: vi.fn() };
+    const a = createAutosaver(save, 10_000, hooks);
     a.markDirty();
     await a.flush();
     expect(save).toHaveBeenCalledTimes(1);
+    expect(hooks.onSaved).toHaveBeenCalledTimes(1);
     a.dispose();
   });
 
@@ -61,8 +65,9 @@ describe('createAutosaver (debounced)', () => {
       .fn()
       .mockRejectedValueOnce(new Error('disk full'))
       .mockResolvedValue(undefined);
+    const hooks = { onError: vi.fn() };
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const a = createAutosaver(save, 10_000);
+    const a = createAutosaver(save, 10_000, hooks);
     a.markDirty();
     await a.flush(); // first attempt rejects — swallowed, stays dirty
     expect(save).toHaveBeenCalledTimes(1);
@@ -87,6 +92,17 @@ describe('createAutosaver (debounced)', () => {
     const f2 = a.flush();
     await Promise.all([f1, f2]);
     expect(overlapped).toBe(false);
+    a.dispose();
+  });
+
+  it('fires onError when a write fails', async () => {
+    const save = vi.fn().mockRejectedValue(new Error('disk full'));
+    const hooks = { onError: vi.fn() };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = createAutosaver(save, 10_000, hooks);
+    a.markDirty();
+    await a.flush();
+    expect(hooks.onError).toHaveBeenCalledWith('disk full');
     a.dispose();
   });
 

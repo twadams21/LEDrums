@@ -81,7 +81,7 @@ function makeHost(engine?: voice.RenderEngine) {
   const project = defaultProject();
   project.output.state = 'armed';
   project.output.fps = 60;
-  const host = new VoiceEngineHost(project, engine ?? voice.createVoiceBusEngine(), new OutputManager(() => fake));
+  const host = new VoiceEngineHost(project, engine ?? null, new OutputManager(() => fake));
   host.reloadOutputSettings();
   return { host, fake, project };
 }
@@ -327,5 +327,55 @@ describe('VoiceEngineHost', () => {
     expect(after.pixelsPerHoop).toBe(target);
     // 4-hoop kick → +10 px/hoop adds exactly 40 pixels to the whole model.
     expect(host.getModel().pixelCount).toBe(before + 10 * after.hoopCount);
+  });
+
+  it('emits server-authoritative graph monitor events for fired graphs', () => {
+    const { host } = makeHost();
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        destination: `graph:${voice.padKey('kick', SLOT_LABELS[0])}`,
+        label: `Graph fired ${voice.padKey('kick', SLOT_LABELS[0])}`,
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        detail: expect.stringContaining('path=pad-fallback'),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        detail: expect.stringContaining('effects=Flash (fx-flash)'),
+      }),
+    );
+  });
+
+  it('emits a graph miss monitor event for unresolved input', () => {
+    const { host } = makeHost();
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+
+    host.applyInput({ kind: 'noteOn', note: 7, velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'No graph resolved',
+        detail: expect.stringContaining('reason='),
+      }),
+    );
   });
 });

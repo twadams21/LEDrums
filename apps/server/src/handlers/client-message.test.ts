@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultProject } from '@ledrums/core';
+import { defaultProject, SLOT_LABELS, voice } from '@ledrums/core';
 import { EngineHost } from '../engine-host';
+import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
 import { encodeServer, serializeModel, type ClientMessage, type ServerMessage, type ShowLibraryBlob } from '../ws-protocol';
@@ -42,6 +43,7 @@ function harness() {
   const autosaver = fakeAutosaver();
   const showLibraryAutosaver = fakeAutosaver();
   const slot: { lib: ShowLibraryBlob | null } = { lib: null };
+  const monitor = vi.fn();
 
   const broadcastJson = (msg: ServerMessage): void => {
     for (const s of clients) if (s.readyState === s.OPEN) s.send(encodeServer(msg));
@@ -79,6 +81,7 @@ function harness() {
       slot.lib = lib;
     },
     relayToOthers,
+    monitor,
   });
 
   /** Admit a fresh socket (mirrors main's connection handler) and return it. */
@@ -88,7 +91,120 @@ function harness() {
     return s;
   };
 
-  return { clients, host, autosaver, showLibraryAutosaver, slot, handle, join };
+  return { clients, host, autosaver, showLibraryAutosaver, slot, handle, join, monitor };
+}
+
+function voiceHarness() {
+  const base = harness();
+  const project = base.host.engine.getProject();
+  const voiceHost = new VoiceEngineHost(project);
+  voiceHost.setMonitor(base.monitor);
+  const handleInner = createClientMessageHandler<FakeSocket>({
+    clients: base.clients,
+    host: base.host,
+    voiceHost,
+    autosaver: base.autosaver,
+    showLibraryAutosaver: base.showLibraryAutosaver,
+    broadcastJson: (msg) => {
+      for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer(msg));
+    },
+    broadcastPresence: () => {
+      for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer({ t: 'presence', ...base.clients.presenceFor(s) }));
+    },
+    broadcastState: () => {},
+    stateMessage: () => ({
+      t: 'state',
+      project,
+      model: serializeModel(voiceHost.getModel()),
+      effects: [],
+      projects: [],
+      output: voiceHost.getOutputStatus(),
+      showLibrary: base.slot.lib,
+      tunnel: null,
+    }),
+    setShowLibrary: (lib) => {
+      base.slot.lib = lib;
+    },
+    relayToOthers: (sender, msg) => {
+      const data = encodeServer(msg);
+      for (const s of base.clients) if (s !== sender && s.readyState === s.OPEN) s.send(data);
+    },
+    monitor: base.monitor,
+  });
+  const handle = (msg: ClientMessage, ws: FakeSocket): void => {
+    if (msg.t === 'midi') {
+      base.monitor({
+        type: 'input',
+        direction: 'in',
+        source: 'ws',
+        destination: 'voice-engine',
+        label: `MIDI ${msg.on ? 'note on' : 'note off'} ${msg.note}`,
+        detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
+      });
+    }
+    handleInner(msg, ws);
+  };
+  return { ...base, voiceHost, handle };
+}
+
+function voiceEffect(id: string): voice.EffectDef {
+  return {
+    id,
+    name: id,
+    pattern: 'flash',
+    busId: 'main',
+    scope: 'kit',
+    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
+    attackMs: 0,
+    sustainMs: 200,
+    releaseMs: 200,
+  };
+}
+
+function voiceNode(kind: voice.GraphNode['kind'], id: string, over: Partial<voice.GraphNode> = {}): voice.GraphNode {
+  return {
+    id,
+    kind,
+    x: 0,
+    y: 0,
+    mode: 'oneshot',
+    scope: 'kit',
+    effectId: '',
+    presetId: '',
+    busId: '',
+    params: {},
+    env: {},
+    linked: false,
+    noRepeat: false,
+    on: 'value',
+    valueMode: 'gate',
+    threshold: 0.5,
+    invert: false,
+    bands: [0.5],
+    p: 1,
+    delayMode: 'time',
+    ms: 0,
+    division: '1/8',
+    ...over,
+  };
+}
+
+function midiVoiceShow(note: number): voice.Show {
+  const graph: voice.TriggerGraph = {
+    nodes: [
+      voiceNode('trigger', 'trigger', { source: { kind: 'midi', note } }),
+      voiceNode('play', 'play', { effectId: 'fx-flash', params: { brightness: 1 } }),
+    ],
+    edges: [{ id: 'e1', from: 'trigger', to: 'play' }],
+  };
+  return {
+    buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }],
+    graphs: { 'graph:midi': graph },
+    sections: [],
+    effects: [voiceEffect('fx-flash')],
+    presets: [],
+    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', SLOT_LABELS[0])]: [] } }] }],
+  };
 }
 
 const LIB: ShowLibraryBlob = { version: 1, data: { hello: 'world' } };
@@ -137,7 +253,7 @@ describe('takeover flips roles + re-broadcasts presence to all (S2)', () => {
 
 describe('read-only gating: authoring is editor-only, engine inputs are not (S2)', () => {
   it("rejects a non-editor's setShowLibrary (no relay, slot untouched)", () => {
-    const { handle, join, slot, showLibraryAutosaver } = harness();
+    const { handle, join, slot, showLibraryAutosaver, monitor } = harness();
     const editor = join();
     const viewer = join();
 
@@ -145,11 +261,12 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
 
     expect(slot.lib).toBeNull(); // not adopted
     expect(showLibraryAutosaver.markDirty).not.toHaveBeenCalled();
+    expect(monitor).not.toHaveBeenCalled();
     expect(editor.has('showLibrary')).toBe(false); // not relayed to the editor
   });
 
   it("accepts the editor's setShowLibrary (adopts the slot + relays to others)", () => {
-    const { handle, join, slot, showLibraryAutosaver } = harness();
+    const { handle, join, slot, showLibraryAutosaver, monitor } = harness();
     const editor = join();
     const viewer = join();
 
@@ -157,6 +274,13 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
 
     expect(slot.lib).toEqual(LIB);
     expect(showLibraryAutosaver.markDirty).toHaveBeenCalledOnce();
+    expect(monitor).toHaveBeenCalledWith({
+      type: 'persistence',
+      direction: 'local',
+      source: 'server',
+      destination: 'show-library',
+      label: 'Show library update accepted',
+    });
     // relayed to the OTHER client (the viewer) but never echoed back to the sender.
     const relayed = viewer.sent.find((m) => m.t === 'showLibrary');
     expect(relayed).toEqual({ t: 'showLibrary', library: LIB });
@@ -185,6 +309,47 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
 
     handle({ t: 'midi', note: 38, velocity: 100, on: true, channel: 10 }, editor);
     expect(editor.sent.find((m) => m.t === 'input')).toMatchObject({ t: 'input', kind: 'midi', note: 38, channel: 10 });
+  });
+
+  it('voice mode accepts viewer MIDI and emits inbound plus graph monitor events', () => {
+    const { handle, join, voiceHost, monitor } = voiceHarness();
+    join();
+    const viewer = join();
+    voiceHost.setShow(midiVoiceShow(38));
+
+    handle({ t: 'midi', note: 38, velocity: 100, on: true }, viewer);
+    for (let i = 0; i < 4; i++) voiceHost.step(1000 / 120);
+
+    expect(monitor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'input',
+        direction: 'in',
+        source: 'ws',
+        destination: 'voice-engine',
+      }),
+    );
+    expect(monitor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        destination: 'graph:graph:midi',
+      }),
+    );
+  });
+
+  it('voice mode drops out-of-channel MIDI before graph diagnostics', () => {
+    const { handle, join, host, voiceHost, monitor } = voiceHarness();
+    const editor = join();
+    host.engine.setInputMap({ ...host.engine.getProject().inputMap, midiChannel: 10 });
+    voiceHost.setInputMap(host.engine.getProject().inputMap);
+    voiceHost.setShow(midiVoiceShow(38));
+
+    handle({ t: 'midi', note: 38, velocity: 100, on: true, channel: 9 }, editor);
+    for (let i = 0; i < 4; i++) voiceHost.step(1000 / 120);
+
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'input', source: 'ws' }));
+    expect(monitor).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'graph', source: 'server/voice' }));
   });
 
   it('rejects a viewer mutation but applies it once the viewer takes over', () => {

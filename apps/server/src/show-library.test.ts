@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   loadShowLibrary,
+  inspectShowLibraryFile,
   saveShowLibrary,
   saveShowLibraryAsync,
   SHOW_LIBRARY_FILE,
@@ -54,6 +55,21 @@ describe('show-library persistence', () => {
       // valid JSON but missing the version envelope → still rejected
       writeFileSync(join(dir, SHOW_LIBRARY_FILE), JSON.stringify({ shows: {} }), 'utf8');
       expect(loadShowLibrary(dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('inspects absent, valid, corrupt, and non-envelope library files for diagnostics', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ledrums-shows-inspect-'));
+    try {
+      expect(inspectShowLibraryFile(dir)).toEqual({ path: join(dir, SHOW_LIBRARY_FILE), source: 'absent' });
+      saveShowLibrary(sampleBlob(), dir);
+      expect(inspectShowLibraryFile(dir)).toEqual({ path: join(dir, SHOW_LIBRARY_FILE), source: 'loaded' });
+      writeFileSync(join(dir, SHOW_LIBRARY_FILE), '{ not valid json', 'utf8');
+      expect(inspectShowLibraryFile(dir)).toEqual({ path: join(dir, SHOW_LIBRARY_FILE), source: 'invalid' });
+      writeFileSync(join(dir, SHOW_LIBRARY_FILE), JSON.stringify({ shows: {} }), 'utf8');
+      expect(inspectShowLibraryFile(dir)).toEqual({ path: join(dir, SHOW_LIBRARY_FILE), source: 'invalid' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -10,6 +10,7 @@
  * {@link Prng} carries all randomness). Additive, not yet wired into anything.
  */
 export * from './types';
+export * from './diagnostics';
 export * from './envelope';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
@@ -26,6 +27,7 @@ export {
   createVoiceBusEngine,
   createNullEngine,
   type RenderEngine,
+  type RenderEngineOptions,
   type InputEvent,
   type EngineStats,
 } from './engine';
