@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MonitorEvent } from '../ws/protocol-types';
-import { appendMonitorEvent, filterMonitorEvents } from './monitor';
+import { appendMonitorEvent, filterMonitorEvents, monitorEventRowKey } from './monitor';
 
 function event(id: number, overrides: Partial<MonitorEvent> = {}): MonitorEvent {
   return {
@@ -44,6 +44,20 @@ describe('monitor event filters', () => {
   it('searches label and detail fields', () => {
     expect(filterMonitorEvents(events, { type: 'all', source: '', destination: '', text: 'bad project' })).toEqual([
       events[3],
+    ]);
+  });
+});
+
+describe('monitor row keys', () => {
+  it('keeps duplicate event ids renderable', () => {
+    const events = [
+      event(5, { time: 100, source: 'server', label: 'startup' }),
+      event(5, { time: 100, source: 'server', label: 'startup' }),
+    ];
+
+    expect(events.map((e, i) => monitorEventRowKey(e, i))).toEqual([
+      '5:100:input:in:server::0',
+      '5:100:input:in:server::1',
     ]);
   });
 });

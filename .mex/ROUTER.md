@@ -140,6 +140,8 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 **Trigger graph position persistence (done - 2026-07-01, PR #37):** trigger graph authored IDs are reserved from the persisted show library during web store boot, so `nid()` cannot reuse restored node/edge/section IDs after refresh. `TriggerGraphView` now projects xyflow nodes through a pure graph-scoped helper: unchanged nodes are still reused within the same graph to preserve the anti-snap fix, but graph switches with overlapping node IDs (including the shared `trigger` root) rebuild from the selected graph's stored positions. Added regression tests for persisted node/edge/section ID reservation and graph-scoped projection reuse.
 
+**Monitor workspace navigation fix (done - 2026-07-01):** clicking the left-rail Monitor view now opens the full workspace Monitor. The rail navigation reducer was already correct; the swap was aborting because `Monitor.svelte` keyed rows only by `event.id`, and replayed server diagnostics can share IDs with locally generated monitor events. Monitor rows now use a duplicate-safe key helper, with a regression test for duplicate IDs.
+
 **Not yet built (redesign):**
 - `packages/core` model refactor: Content vs Effect split + per-instance Clip presets.
 - Unified-shell view internals: Patch freeform node canvas. (Setlist/show persistence ✅ done via the show document model, 2026-06-27; Kit geometry editing lives in the Patch Inspector — the standalone Kit view was removed.)

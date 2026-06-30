@@ -1,6 +1,7 @@
 <script lang="ts">
   /* Monitor / Log: input, output and graph/effect events for debugging routing. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import { monitorEventRowKey } from '../monitor';
   import Select from '../../ui/Select.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
@@ -68,7 +69,7 @@
     <p class="empty">No matching monitor events yet.</p>
   {:else}
     <div class="log">
-      {#each store.visibleMonitorEvents as e (e.id)}
+      {#each store.visibleMonitorEvents as e, i (monitorEventRowKey(e, i))}
         <div class={['entry', `type-${e.type}`]}>
           <span class="meta">{fmtTime(e.time)} - {e.type} - {e.direction} - {e.source}{e.destination ? ` -> ${e.destination}` : ''}</span>
           <span class="line">{e.label}</span>

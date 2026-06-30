@@ -40,6 +40,10 @@ export function filterMonitorEvents(events: readonly MonitorEvent[], filters: Mo
   });
 }
 
+export function monitorEventRowKey(event: MonitorEvent, index: number): string {
+  return `${event.id}:${event.time}:${event.type}:${event.direction}:${event.source}:${event.destination ?? ''}:${index}`;
+}
+
 export function monitorSearchText(event: MonitorEvent): string {
   return [event.type, event.direction, event.source, event.destination, event.label, event.detail]
     .filter(Boolean)
