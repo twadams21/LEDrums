@@ -96,6 +96,7 @@ describe('parseSearch', () => {
     expect(parseSearch('?view=patch')).toEqual({ view: 'patch' });
     expect(parseSearch('?view=perform')).toEqual({ view: 'perform' });
     expect(parseSearch('?view=objects')).toEqual({ view: 'objects' });
+    expect(parseSearch('?view=monitor')).toEqual({ view: 'monitor' });
   });
   it('drops unknown / retired views (kit is gone)', () => {
     expect(parseSearch('?view=nope')).toEqual({});

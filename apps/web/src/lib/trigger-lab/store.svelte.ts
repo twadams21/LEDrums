@@ -75,6 +75,12 @@ import * as routing from './store/trigger-routing';
 import * as showsLib from './store/shows';
 import { ShowLibrarySync } from './store/show-library-sync';
 import { EngineLinkSync } from './store/transport';
+import {
+  DEFAULT_MONITOR_FILTERS,
+  appendMonitorEvent,
+  filterMonitorEvents,
+  type MonitorFilterType,
+} from '../app/monitor';
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
@@ -82,8 +88,6 @@ const SAVE_DEBOUNCE_MS = 300;
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   | { kind: 'trigger'; graphKey: string };
-
-export type MonitorFilterType = MonitorEvent['type'] | 'all';
 
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
     malformed JSON — any failure yields null (boot keeps the seed). */
@@ -255,8 +259,10 @@ export class TriggerLab {
   beat = $state(0);
   busLevels = $state<Record<string, number>>({});
   monitorEvents = $state<MonitorEvent[]>([]);
-  monitorTypeFilter = $state<MonitorFilterType>('all');
-  monitorTextFilter = $state('');
+  monitorTypeFilter = $state<MonitorFilterType>(DEFAULT_MONITOR_FILTERS.type);
+  monitorTextFilter = $state(DEFAULT_MONITOR_FILTERS.text);
+  monitorSourceFilter = $state(DEFAULT_MONITOR_FILTERS.source);
+  monitorDestinationFilter = $state(DEFAULT_MONITOR_FILTERS.destination);
   private monitorSeq = 1;
   /** measured output frame rate — local rAF rate when offline, the server's real
       LED output rate when the WS link is open (the server's number wins). */
@@ -998,7 +1004,7 @@ export class TriggerLab {
 
   private addMonitor(event: Omit<MonitorEvent, 'id' | 'time'> | MonitorEvent): void {
     const full: MonitorEvent = { id: this.monitorSeq++, time: Date.now(), ...event };
-    this.monitorEvents = [full, ...this.monitorEvents].slice(0, 300);
+    this.monitorEvents = appendMonitorEvent(this.monitorEvents, full);
   }
 
   clearMonitor(): void {
@@ -1013,16 +1019,27 @@ export class TriggerLab {
     this.monitorTextFilter = text;
   }
 
+  setMonitorSourceFilter(source: string): void {
+    this.monitorSourceFilter = source;
+  }
+
+  setMonitorDestinationFilter(destination: string): void {
+    this.monitorDestinationFilter = destination;
+  }
+
+  resetMonitorFilters(): void {
+    this.monitorTypeFilter = DEFAULT_MONITOR_FILTERS.type;
+    this.monitorTextFilter = DEFAULT_MONITOR_FILTERS.text;
+    this.monitorSourceFilter = DEFAULT_MONITOR_FILTERS.source;
+    this.monitorDestinationFilter = DEFAULT_MONITOR_FILTERS.destination;
+  }
+
   visibleMonitorEvents = $derived.by(() => {
-    const text = this.monitorTextFilter.trim().toLowerCase();
-    return this.monitorEvents.filter((event) => {
-      if (this.monitorTypeFilter !== 'all' && event.type !== this.monitorTypeFilter) return false;
-      if (!text) return true;
-      return [event.type, event.direction, event.source, event.destination, event.label, event.detail]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(text);
+    return filterMonitorEvents(this.monitorEvents, {
+      type: this.monitorTypeFilter,
+      text: this.monitorTextFilter,
+      source: this.monitorSourceFilter,
+      destination: this.monitorDestinationFilter,
     });
   });
 

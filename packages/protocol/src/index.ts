@@ -142,7 +142,7 @@ export interface VoiceStats {
   busLevels: Record<string, number>;
 }
 
-export type MonitorEventType = 'input' | 'output' | 'effect' | 'graph' | 'system';
+export type MonitorEventType = 'input' | 'output' | 'effect' | 'graph' | 'system' | 'persistence' | 'error';
 
 export interface MonitorEvent {
   id: number;

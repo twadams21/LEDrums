@@ -33,6 +33,7 @@
   // Perform is a chrome-light view: the shell hides the Layers/Buses drawer + the
   // right Inspector/Monitor dock and fills the center with PerformView.
   const perform = $derived(shell.view === 'perform');
+  const monitorWorkspace = $derived(shell.view === 'monitor');
 
   // Keep the Inspector's selection consistent with the active model so it never shows stale
   // info after the focus moves out from under it. The Inspector's deriveds are reactive, but
@@ -88,7 +89,7 @@
       <PerformView {store} {shell} />
     </main>
   {:else}
-    <div class="center">
+    <div class="center" class:monitor-center={monitorWorkspace}>
       <main class="workspace">
         {#if shell.view === 'trigger'}
           <TriggerGraphView {store} {shell} />
@@ -97,16 +98,18 @@
         {:else if shell.view === 'objects'}
           <ObjectsView {store} {shell} />
         {:else if shell.view === 'monitor'}
-          <Monitor {store} />
+          <Monitor {store} variant="workspace" />
         {:else}
           <SectionsView {store} {shell} />
         {/if}
       </main>
 
-      <section class="bottom">
-        <header class="dockhead"><Eyebrow icon={LayersIcon}>Layers / Buses</Eyebrow></header>
-        <LayersDock {store} {shell} />
-      </section>
+      {#if !monitorWorkspace}
+        <section class="bottom">
+          <header class="dockhead"><Eyebrow icon={LayersIcon}>Layers / Buses</Eyebrow></header>
+          <LayersDock {store} {shell} />
+        </section>
+      {/if}
     </div>
 
     <aside class="dock">
@@ -150,16 +153,18 @@
       label="Resize right dock"
       style="top:var(--content-top); bottom:var(--pad); right:calc(var(--pad) + var(--dock-w) + var(--gap) / 2); transform:translateX(50%);"
     />
-    <Splitter
-      orientation="horizontal"
-      invert
-      size={bottomH}
-      min={BOTTOM.min}
-      max={BOTTOM.max}
-      onResize={(v) => setPane(BOTTOM.key, v)}
-      label="Resize layers dock"
-      style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
-    />
+    {#if !monitorWorkspace}
+      <Splitter
+        orientation="horizontal"
+        invert
+        size={bottomH}
+        min={BOTTOM.min}
+        max={BOTTOM.max}
+        onResize={(v) => setPane(BOTTOM.key, v)}
+        label="Resize layers dock"
+        style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
+      />
+    {/if}
   {/if}
 </div>
 
@@ -229,6 +234,9 @@
     gap: var(--space-3);
     min-height: 0;
     min-width: 0;
+  }
+  .center.monitor-center {
+    grid-template-rows: minmax(0, 1fr);
   }
   /* Perform: the center is a single full-height region (no Layers/Buses row). */
   .center.solo-center {
