@@ -24,7 +24,7 @@ describe('initialNav', () => {
 
 describe('VIEWS', () => {
   it('is the rail order — perform · objects · sections · trigger · patch (no kit)', () => {
-    expect(VIEWS).toEqual(['perform', 'objects', 'sections', 'trigger', 'patch']);
+    expect(VIEWS).toEqual(['perform', 'objects', 'sections', 'trigger', 'patch', 'monitor']);
   });
 });
 

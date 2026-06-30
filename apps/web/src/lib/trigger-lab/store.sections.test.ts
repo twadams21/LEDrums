@@ -204,7 +204,7 @@ describe('keyboard graph firing', () => {
     expect(sent).toContainEqual({ t: 'midi', note: 36, velocity: Math.round(store.velocity * 127), on: true });
   });
 
-  it('uses the local preview frame briefly after a keyboard graph fire even when a server frame exists', () => {
+  it('keeps the connected server preview authoritative after a keyboard graph fire', () => {
     const store = new TriggerLab(fakeClient);
     const key = store.createGraph('Midi graph');
     store.setTriggerSource(key, { kind: 'midi', note: 36 });
@@ -217,8 +217,8 @@ describe('keyboard graph firing', () => {
     store.fireSectionGraph(store.activeSection!.graphs.indexOf(key));
 
     expect(store.localPreviewActive).toBe(true);
-    expect(store.useServer).toBe(false);
-    expect(store.previewFrame).toBe(store.frameBuf);
+    expect(store.useServer).toBe(true);
+    expect(store.previewFrame).toBe(store.serverFrame);
   });
 });
 

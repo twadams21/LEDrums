@@ -15,6 +15,7 @@
   import Radio from '@lucide/svelte/icons/radio';
   import Boxes from '@lucide/svelte/icons/boxes';
   import Navigation from '@lucide/svelte/icons/navigation';
+  import Terminal from '@lucide/svelte/icons/terminal';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -24,6 +25,7 @@
     { id: 'sections', label: 'Sections', icon: LayoutGrid },
     { id: 'trigger', label: 'Trigger Graph', icon: Workflow },
     { id: 'patch', label: 'Patch Graph', icon: Cable, sub: 'inputs · devices' },
+    { id: 'monitor', label: 'Monitor', icon: Terminal },
   ];
 </script>
 

@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-06-28
+last_updated: 2026-06-30
 ---
 
 # Session Bootstrap
@@ -35,6 +35,8 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Desktop OTA/monitor/voice preview fixes (done — 2026-06-30, branch `main`):** desktop now uses a single `app` webview window (the bundled loading shell navigates to the local server when ready; the old transient splash capability is removed). Manual OTA checks are split correctly: the server exposes informational `/api/update-status` for any browser, while the desktop host gets Tauri command permissions to install/restart. `pnpm ota bump` patch-bumps desktop/Tauri versions; `pnpm ota` loads `.env.local` and publishes OTA using `BASE`/`OTA_PUBLIC_BASE`. The left rail includes Monitor as a first-class view. Connected preview is server-authoritative again, avoiding local-sim/voice-server flicker in voice mode.
 
 **In progress: full UI redesign** (Impeccable `/craft`). Brief + locked decisions in [PRODUCT.md](../PRODUCT.md) and `docs/plans/2026-06-21-ui-redesign.md`.
 

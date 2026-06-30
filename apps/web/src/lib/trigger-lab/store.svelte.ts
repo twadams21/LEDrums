@@ -309,7 +309,7 @@ export class TriggerLab {
   /** Safe to preview server geometry only once the link is up AND we have BOTH the
       server's model and a frame — model.count and frame length must agree, so they
       switch together (never a server frame on the lab model, or vice versa). */
-  useServer = $derived(this.link === 'open' && !!this.serverModel && !!this.serverFrame && !this.localPreviewActive);
+  useServer = $derived(this.link === 'open' && !!this.serverModel && !!this.serverFrame);
   /** Preview model: the engine's real kit when connected, else the local lab kit. */
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
   /** Preview frame: the engine's composited output when connected, else local sim. */
@@ -884,18 +884,12 @@ export class TriggerLab {
           this.presence = null;
         }
       },
-      onStats: (stats, latencyMs, fps) => {
+      onStats: (_stats, latencyMs, fps, _output, voice) => {
         this.latencyMs = latencyMs;
         this.fps = fps; // the server's measured LED output rate wins while connected
-        // The protocol's stats message carries optional voice telemetry
-        // ({ voiceCount, busLevels }) as a sibling `voice` field, but the read-only
-        // WSClient only forwards `msg.stats` (typed core EngineStats, no `voice`) —
-        // it drops `msg.voice`. So server bus levels are not reachable here without
-        // editing the client; the lab keeps showing the LOCAL sim's bus levels (set
-        // each frame in snapshot()). Narrow defensively in case a future client
-        // forwards the field on the stats object.
-        const vs = (stats as { voice?: { busLevels?: Record<string, number> } }).voice;
-        if (vs?.busLevels) this.busLevels = vs.busLevels;
+        // In voice mode, the server owns the live bus levels; the local sim is only
+        // an offline preview once the socket is connected.
+        if (voice?.busLevels) this.busLevels = voice.busLevels;
       },
       onFrame: (frame) => {
         this.serverFrame = frame;

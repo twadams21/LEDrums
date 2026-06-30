@@ -118,8 +118,10 @@ const showLibraryAutosaver = createAutosaver(() =>
 const webRoot = resolveWebRoot(process.env);
 
 let nativeHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
+let updateStatusHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
 
 const server = createServer((req, res) => {
+  if (updateStatusHttpHandler?.(req, res)) return;
   if (nativeHttpHandler?.(req, res)) return;
   serveStatic(req, res, webRoot);
 });
@@ -316,6 +318,15 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
 });
 
 const NATIVE_MIDI_PATH = '/api/native-midi';
+const UPDATE_STATUS_PATH = '/api/update-status';
+
+interface UpdateStatusResponse {
+  available: boolean;
+  version: string | null;
+  currentVersion: string | null;
+  canInstall: false;
+  error?: string;
+}
 
 function isNativeMidiMessage(msg: ClientMessage): msg is Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }> {
   return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange';
@@ -378,6 +389,66 @@ function handleNativeMidiHttp(req: IncomingMessage, res: ServerResponse): boolea
 }
 
 nativeHttpHandler = handleNativeMidiHttp;
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(/[.-]/).map((part) => Number.parseInt(part, 10));
+  const pb = b.split(/[.-]/).map((part) => Number.parseInt(part, 10));
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const av = Number.isFinite(pa[i]) ? pa[i]! : 0;
+    const bv = Number.isFinite(pb[i]) ? pb[i]! : 0;
+    if (av !== bv) return av > bv ? 1 : -1;
+  }
+  return 0;
+}
+
+function sendJson(res: ServerResponse, status: number, body: UpdateStatusResponse): void {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body));
+}
+
+function handleUpdateStatusHttp(req: IncomingMessage, res: ServerResponse): boolean {
+  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+  if (path !== UPDATE_STATUS_PATH) return false;
+
+  if (req.method !== 'GET') {
+    sendJson(res, 405, { available: false, version: null, currentVersion: null, canInstall: false, error: 'method not allowed' });
+    return true;
+  }
+
+  const endpoint = process.env.LEDRUMS_OTA_ENDPOINT;
+  const currentVersion = process.env.LEDRUMS_APP_VERSION ?? null;
+  if (!endpoint || !currentVersion) {
+    sendJson(res, 200, { available: false, version: null, currentVersion, canInstall: false, error: 'OTA status is unavailable on this server.' });
+    return true;
+  }
+
+  void (async () => {
+    try {
+      const response = await fetch(endpoint, { redirect: 'follow' });
+      if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+      const manifest = (await response.json()) as { version?: unknown };
+      const version = typeof manifest.version === 'string' ? manifest.version : null;
+      sendJson(res, 200, {
+        available: !!version && compareVersions(version, currentVersion) > 0,
+        version,
+        currentVersion,
+        canInstall: false,
+      });
+    } catch (err) {
+      sendJson(res, 200, {
+        available: false,
+        version: null,
+        currentVersion,
+        canInstall: false,
+        error: err instanceof Error ? err.message : 'update check failed',
+      });
+    }
+  })();
+  return true;
+}
+
+updateStatusHttpHandler = handleUpdateStatusHttp;
 
 // --- OSC input --------------------------------------------------------------
 

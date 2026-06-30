@@ -17,10 +17,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use tauri::{
-    webview::PageLoadEvent, AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl,
-    WebviewWindowBuilder, WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -28,6 +25,7 @@ use tauri_plugin_updater::UpdaterExt;
 
 /// Fallback local port if free-port allocation fails. Overridable via `LEDRUMS_DESKTOP_PORT`.
 const DEFAULT_PORT: u16 = 4178;
+const UPDATER_ENDPOINT: &str = "https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev/latest.json";
 
 /// Live sidecar child + an intentional-shutdown flag (so a Terminated event during quit is not
 /// mis-reported as a crash to the share window).
@@ -159,13 +157,9 @@ fn parse_host_token(line: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-/// Open the full-app webview window at the local origin (idempotent). Once its page finishes
-/// loading, the transient "splash" window is closed — so there is no lingering second window; the
-/// shareable URL/PIN live in the app's own UI (the host auto-connects, see the PIN gate bypass).
+/// Navigate the full-app webview window to the local origin.
+/// The shareable URL/PIN live in the app's own UI (the host auto-connects, see the PIN gate bypass).
 fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
-    if app.get_webview_window("app").is_some() {
-        return;
-    }
     // The host token rides the URL *fragment* (`#hostToken=…`), which the webview keeps client-side
     // and never sends to the server as part of any HTTP request — the web app reads it from
     // `location.hash`, presents it on the WebSocket connect URL, then strips it from the address bar.
@@ -175,18 +169,13 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
     };
     match url.parse() {
         Ok(parsed) => {
-            let _ = WebviewWindowBuilder::new(app, "app", WebviewUrl::External(parsed))
-                .title("LEDrums")
-                .inner_size(1440.0, 900.0)
-                .min_inner_size(900.0, 600.0)
-                .on_page_load(|window, payload| {
-                    if payload.event() == PageLoadEvent::Finished {
-                        if let Some(splash) = window.app_handle().get_webview_window("splash") {
-                            let _ = splash.close();
-                        }
-                    }
-                })
-                .build();
+            if let Some(window) = app.get_webview_window("app") {
+                if let Err(e) = window.navigate(parsed) {
+                    eprintln!("[desktop] could not navigate app window to {url}: {e}");
+                }
+            } else {
+                eprintln!("[desktop] app window missing; could not navigate to {url}");
+            }
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
     }
@@ -205,27 +194,6 @@ fn start_native_midi(app: &AppHandle, port: u16, host_token: &str) {
         Err(err) => {
             eprintln!("[native-midi] failed to start: {err}");
         }
-    }
-}
-
-/// Re-create the transient splash/progress window if it has already been closed (`open_app_window`
-/// closes it once the app window finishes loading). An update accepted AFTER the app is up would
-/// otherwise download with no visible surface — the `boot://status` progress stream would have
-/// nothing to render on. Reopening reuses the same window label/url/size as `tauri.conf.json`, so the
-/// existing `shell/main.js` status rendering (incl. the `stage: "updating"` branch) is reused as-is.
-/// Idempotent: a no-op if the splash is still open. Closed again on update failure/cancel.
-fn ensure_splash_window(app: &AppHandle) {
-    if app.get_webview_window("splash").is_some() {
-        return;
-    }
-    if let Err(e) = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("index.html".into()))
-        .title("LEDrums")
-        .inner_size(460.0, 380.0)
-        .resizable(false)
-        .center()
-        .build()
-    {
-        eprintln!("[updater] could not reopen progress splash: {e}");
     }
 }
 
@@ -298,7 +266,9 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
         .env(
             "LEDRUMS_ENGINE",
             std::env::var("LEDRUMS_ENGINE").unwrap_or_else(|_| "voice".into()),
-        );
+        )
+        .env("LEDRUMS_APP_VERSION", env!("CARGO_PKG_VERSION"))
+        .env("LEDRUMS_OTA_ENDPOINT", UPDATER_ENDPOINT);
 
     // Only enable the tunnel when a cloudflared binary was actually bundled — otherwise the app
     // degrades gracefully to local/LAN access (and no PIN is generated).
@@ -473,7 +443,7 @@ async fn check_for_update(app: AppHandle) {
 
     println!("[updater] update available: v{}", update.version);
 
-    // Ask on the Tauri-privileged splash surface. `blocking_show` dispatches to the main thread and
+    // Ask through Tauri's native dialog surface. `blocking_show` dispatches to the main thread and
     // blocks the caller until answered, so run it on the blocking pool to keep the async runtime
     // free for the concurrently-booting sidecar.
     let prompt_app = app.clone();
@@ -500,15 +470,9 @@ async fn check_for_update(app: AppHandle) {
         return;
     }
 
-    // Make download progress visible. By now the splash may already be closed (open_app_window
-    // closes it once the app window loads), so an update accepted mid-session would otherwise show
-    // nothing until the restart. Reopen the splash so the `boot://status` progress stream has a
-    // surface again; it's closed below on failure (on success the app restarts anyway).
-    ensure_splash_window(&app);
-
-    // Best-effort download progress on the splash. `publish` updates shared state and emits to the
-    // (now-reopened) splash. `on_chunk` is an immutable `Fn`, so accumulate the running byte count
-    // through an atomic.
+    // Best-effort download progress for the loading shell if it is still visible. Once the app has
+    // navigated to the web UI, the Settings modal owns manual update status. `on_chunk` is an
+    // immutable `Fn`, so accumulate the running byte count through an atomic.
     publish(
         &app,
         &BootStatus {
@@ -551,12 +515,8 @@ async fn check_for_update(app: AppHandle) {
             app.restart();
         }
         Err(e) => {
-            // Close the progress splash we reopened above so the failed update doesn't leave a
-            // stuck window, and let the current version keep running. Don't clobber the
-            // (likely already-running) server's share status with an error — just log it.
-            if let Some(splash) = app.get_webview_window("splash") {
-                let _ = splash.close();
-            }
+            // Let the current version keep running. Don't clobber the (likely already-running)
+            // server's share status with an error — just log it.
             eprintln!("[updater] download/install failed ({e}); continuing with current version");
         }
     }
@@ -603,15 +563,12 @@ pub fn run() {
             }
             Ok(())
         })
-        // Quit when the main app window closes (the macOS "window closed but app lives" case →
-        // the Exit handler below SIGTERMs the sidecar), or when the splash is dismissed before the
-        // app window ever opened. A *programmatic* splash close (after the app window is up, see
-        // open_app_window) must NOT quit the app.
+        // Quit when the app window closes (the macOS "window closed but app lives" case → the Exit
+        // handler below SIGTERMs the sidecar).
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                let app = window.app_handle();
-                if window.label() == "app" || app.get_webview_window("app").is_none() {
-                    app.exit(0);
+                if window.label() == "app" {
+                    window.app_handle().exit(0);
                 }
             }
         })

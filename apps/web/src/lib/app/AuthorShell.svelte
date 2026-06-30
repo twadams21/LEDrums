@@ -96,6 +96,8 @@
           <PatchGraphView {store} {shell} />
         {:else if shell.view === 'objects'}
           <ObjectsView {store} {shell} />
+        {:else if shell.view === 'monitor'}
+          <Monitor {store} />
         {:else}
           <SectionsView {store} {shell} />
         {/if}

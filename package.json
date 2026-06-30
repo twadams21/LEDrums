@@ -13,6 +13,7 @@
     "dev": "pnpm --parallel --filter @ledrums/server --filter @ledrums/web run dev",
     "start": "pnpm --filter @ledrums/server run start",
     "tauri:build": "node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build",
+    "ota": "pnpm --filter @ledrums/desktop ota",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",

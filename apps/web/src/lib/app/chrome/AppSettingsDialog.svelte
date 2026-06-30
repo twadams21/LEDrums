@@ -4,7 +4,7 @@
   import Field from '../../ui/Field.svelte';
   import Select from '../../ui/Select.svelte';
   import { midiChannelOptions } from '../../midi/midi-note';
-  import { checkForDesktopUpdate, installDesktopUpdate } from '../desktop-updater';
+  import { checkForDesktopUpdate, checkHostUpdateStatus, installDesktopUpdate } from '../desktop-updater';
 
   let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
 
@@ -20,17 +20,24 @@
   async function checkUpdate(): Promise<void> {
     checkingUpdate = true;
     updateStatus = 'Checking...';
-    const result = await checkForDesktopUpdate();
+    const hostStatus = await checkHostUpdateStatus();
+    const desktopStatus = await checkForDesktopUpdate();
     checkingUpdate = false;
+
+    const result = desktopStatus ?? hostStatus;
     if (!result) {
-      updateStatus = 'Updater is only available in the desktop app.';
+      updateStatus = 'Could not check for updates.';
       return;
     }
     if (!result.available) {
-      updateStatus = 'No update available.';
+      updateStatus = result.error ? `No update status: ${result.error}` : 'No update available.';
       return;
     }
     const label = result.version ? `Version ${result.version} is available.` : 'An update is available.';
+    if (!desktopStatus?.canInstall) {
+      updateStatus = `${label} Install it from the desktop host.`;
+      return;
+    }
     const ok = window.confirm(`${label}\n\nUpdate now? Choose Cancel to install later on next launch.`);
     if (!ok) {
       updateStatus = 'Update deferred until next launch.';
