@@ -1084,11 +1084,32 @@ describe('VoiceBusEngine - input resolution diagnostics', () => {
     );
   });
 
-  it('reports a graph miss without firing a graph', () => {
+  it('reports an unrouted input for a raw note that matches no zone and no graph', () => {
     const diagnostics = runDiagnostics(showOf({}), [{ kind: 'noteOn', note: 7, velocity: 1, timeMs: 0 }]);
 
-    expect(diagnostics).toContainEqual(expect.objectContaining({ kind: 'graph-missed', reason: 'no-direct-match' }));
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ kind: 'input-unrouted', input: expect.objectContaining({ note: 7 }) }),
+    );
+    expect(diagnostics.some((d) => d.kind === 'graph-missed')).toBe(false);
     expect(diagnostics.some((d) => d.kind === 'graph-fired')).toBe(false);
+  });
+
+  it('reports an unrouted input for a raw OSC address that matches no graph', () => {
+    const diagnostics = runDiagnostics(showOf({}), [{ kind: 'osc', address: '/nope', value: 1, timeMs: 0 }]);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ kind: 'input-unrouted', input: expect.objectContaining({ address: '/nope' }) }),
+    );
+    expect(diagnostics.some((d) => d.kind === 'graph-missed')).toBe(false);
+  });
+
+  it('reports a graph miss (not unrouted) for a routed drum hit whose section holds no graph', () => {
+    // A zone-mapped hit carries a drumId (the server resolved the zone); an empty show means
+    // no graph fires — but the input WAS routed to a drum, so it is a miss, not unrouted.
+    const diagnostics = runDiagnostics(showOf({}), [hit('kick', 0)]);
+
+    expect(diagnostics).toContainEqual(expect.objectContaining({ kind: 'graph-missed' }));
+    expect(diagnostics.some((d) => d.kind === 'input-unrouted')).toBe(false);
   });
 });
 
