@@ -28,6 +28,7 @@
   } from './trigger-flow-projection';
   import { GraphHover } from './graph-hover.svelte';
   import { nodeIdAtEvent } from './flow-dom';
+  import { guardFlowCallback } from './flow-guard';
   import { TRIGGER_STORE_KEY } from './trigger-context';
   import { describeTriggerSource } from '../trigger-source-label';
   import TriggerNode from './TriggerNode.svelte';
@@ -127,16 +128,14 @@
 
   /** Wrap an xyflow event callback so a throw becomes a reported fault + a self-healing
       rebuild, never a silently corrupted canvas (incident 09, candidate 2: an uncaught throw
-      inside a handler breaks Svelte's effect tracking and freezes the node array). */
+      inside a handler breaks Svelte's effect tracking and freezes the node array). The
+      boundary itself is {@link guardFlowCallback} (pure, unit-tested); this binds the view's
+      fault + recovery to it. */
   function guard<A extends unknown[]>(where: string, fn: (...args: A) => void): (...args: A) => void {
-    return (...args: A) => {
-      try {
-        fn(...args);
-      } catch (err) {
-        reportGraphFault(where, err);
-        forceRebuild();
-      }
-    };
+    return guardFlowCallback(where, fn, (w, err) => {
+      reportGraphFault(w, err);
+      forceRebuild();
+    });
   }
 
   function rebuildNodes(): void {
