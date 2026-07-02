@@ -39,6 +39,7 @@ import {
   padKey,
   type Bus,
   type EffectDef,
+  type ParamValues,
   type Preset,
   type Show,
   type TriggerGraph,
@@ -208,6 +209,9 @@ class VoiceBusEngine implements RenderEngine {
         songId: this.activeSongId,
         sectionId: this.activeSectionId,
       });
+      // Spawn/release this section's base "looks" (the per-bus loop effects) so the
+      // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
+      this.spawnSectionLooks(this.activeSectionId);
       return;
     }
     // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
@@ -347,6 +351,60 @@ class VoiceBusEngine implements RenderEngine {
 
   private beatPhase(): number {
     return this.beat - Math.floor(this.beat);
+  }
+
+  // --- section looks (spawn/release on recall) ---------------------------
+  //
+  // A section's `looks` name one loop effect per bus that plays while the section is
+  // active. Recalling a section mirrors the offline sim (`sim.recallSection`)
+  // STRUCTURALLY so connected (engine) and offline (sim) output agree: iterate buses in
+  // show order, release each bus's prior non-oneshot voices, then — where the section
+  // names a look for that bus — spawn that effect as a looped, kit-scoped voice.
+  // Deterministic (no RNG; the play action is fixed given section + effect + preset) and
+  // non-stacking (release precedes spawn, so a repeated recall replaces rather than
+  // accumulates). Oneshot voices are never section-managed — they decay on their own
+  // envelope. A null/absent look releases the bus but spawns nothing, so a section with
+  // empty looks is a pure release (a no-op when there is nothing to release).
+
+  private spawnSectionLooks(sectionId: string | null): void {
+    if (sectionId === null) return;
+    const section = this.show.sections.find((s) => s.id === sectionId);
+    if (!section) return;
+    for (const bus of this.show.buses) {
+      const effectId = section.looks[bus.id] ?? null;
+      for (const v of this.voices.pool) {
+        if (v.active && v.busId === bus.id && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
+      }
+      if (!effectId) continue;
+      const action = this.lookAction(effectId, `Section: ${section.name}`);
+      if (!action) continue;
+      this.voices.spawn(action, null, 1, {
+        effectsById: this.effectsById,
+        busById: this.busById,
+        latched: this.latched,
+        timeMs: this.timeMs,
+      });
+    }
+  }
+
+  /** The looped play action for one section look — the effect's default-preset params
+      (or its spec defaults), kit scope, on the effect's own bus (`''` resolves to
+      `effect.busId` in the pool spawn), no latch. Null for an unknown effect. Mirrors
+      the sim's `lookAction`. */
+  private lookAction(effectId: string, via: string): PlayAction | null {
+    const effect = this.effectsById.get(effectId);
+    if (!effect) return null;
+    const params = this.presetsById.get(`${effectId}:default`)?.params ?? this.lookDefaultParams(effect);
+    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, env: {}, via, latchKey: null };
+  }
+
+  /** Default param record from an effect's spec — the fallback when no
+      `${effectId}:default` preset exists. Typed to the voice `ParamValues`
+      (number | bool), mirroring the sim's `defaultParams(effect)`. */
+  private lookDefaultParams(effect: EffectDef): ParamValues {
+    const out: ParamValues = {};
+    for (const s of effect.params) out[s.key] = s.default;
+    return out;
   }
 
   // --- graph eval (delegated to eval-graph.ts) ---------------------------
@@ -498,9 +556,10 @@ class VoiceBusEngine implements RenderEngine {
   }
 }
 
-// ---- Section recall reference (kept for parity / future host use) ------------
-// (Section morph from sim.recallSection is intentionally not auto-driven yet;
-//  sectionIndex tracking above feeds switch:section. Wiring is host work.)
+// ---- Section recall ----------------------------------------------------------
+// A recallSection input now drives the section morph directly (spawnSectionLooks above),
+// structurally mirroring sim.recallSection so connected + offline output match; the
+// sectionIndex tracking in tick() still feeds switch:section for count-based routing.
 
 // ---- Null adapter (test fake) ----------------------------------------------
 
