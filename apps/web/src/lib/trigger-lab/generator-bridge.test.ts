@@ -127,3 +127,30 @@ describe('generator bridge — voice timebase / restart-on-trigger (S25)', () =>
     }
   });
 });
+
+describe('generator bridge — voice timebase conversion batch (S26)', () => {
+  // The web bridge reads gen.timebase exactly like the core bridge (render.ts:221). A converted
+  // clock-reading effect (temp-sweep, one of the S26 batch) must animate on the hit-relative
+  // clock: the same voice age renders the same frame regardless of where the absolute transport
+  // was when the hit fired. This is the sim side of the sim/engine parity criterion (the core
+  // engine asserts birth-time dependence in compositor.test.ts).
+  function tempSweepAtAge(warmupMs: number, ageMs: number): { buf: Uint8Array; count: number } {
+    const lab = buildLabModel();
+    const sim = freshSim();
+    if (warmupMs > 0) sim.tick(warmupMs); // advance the absolute transport before firing
+    sim.triggerGraph('test', treeToGraph(play('gen:temp-sweep', 'oneshot')), ctx('kick'));
+    sim.tick(ageMs); // voice age = ageMs
+    const buf = new Uint8Array(lab.model.count * 3);
+    renderFrame(buf, sim, lab);
+    return { buf, count: lab.model.count };
+  }
+
+  it('a converted effect (temp-sweep) reads the hit-relative clock, not the absolute transport', () => {
+    const fresh = tempSweepAtAge(0, 200);
+    const late = tempSweepAtAge(5000, 200); // transport 5s ahead, same voice age
+    expect(litPixelIds(fresh.buf, fresh.count).length).toBeGreaterThan(0);
+    // Same voice age (200ms) → identical frame despite a 5s-different transport at firing.
+    // Under the old absolute clock these would differ (different wall-clock reads).
+    expect(Array.from(late.buf)).toEqual(Array.from(fresh.buf));
+  });
+});
