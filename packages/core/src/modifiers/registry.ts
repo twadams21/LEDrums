@@ -6,9 +6,21 @@
  */
 import type { ModifierDef } from './types';
 import { trail } from './impl/trail';
+// S31
+import { echo } from './impl/echo';
+import { pixelate } from './impl/pixelate';
+import { mirror } from './impl/mirror';
+import { hueShift } from './impl/hue-shift';
+import { levels } from './impl/levels';
 
 const ALL: ModifierDef<any>[] = [
   trail,
+  // S31
+  echo,
+  pixelate,
+  mirror,
+  hueShift,
+  levels,
 ];
 
 const registry = new Map<string, ModifierDef<any>>();
