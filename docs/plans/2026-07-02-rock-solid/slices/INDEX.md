@@ -20,20 +20,20 @@ The orchestrator chooses models. Tags carried by every slice:
 
 ## Groups
 
-| Group | File | Slices | Cross-group blockers |
-|---|---|---|---|
-| A — Graph editor hardening | [A-graph-hardening.md](A-graph-hardening.md) | S01 | none |
-| B — IO confidence surfaces | [B-io-confidence.md](B-io-confidence.md) | S02–S05 | none |
-| C — Desktop shell & updates | [C-desktop.md](C-desktop.md) | S06–S08 | none |
-| D — Layout & kit geometry | [D-layout-geometry.md](D-layout-geometry.md) | S09–S11 | none |
-| E — Input routing & section looks | [E-routing-looks.md](E-routing-looks.md) | S12–S17 | none |
-| F — Effect params & envelopes | [F-effect-params-envelopes.md](F-effect-params-envelopes.md) | S18–S24 | none |
-| G — Timebase & thumbnails | [G-timebase-thumbnails.md](G-timebase-thumbnails.md) | S25–S27 | none |
-| H — Modifier nodes | [H-modifiers.md](H-modifiers.md) | S28–S32 | S01 (A), S18 (F) |
-| I — Modulation system | [I-modulation.md](I-modulation.md) | S33–S38 | S29 (H), S23 (F) |
-| J — Presets & Song Library | [J-presets-song-library.md](J-presets-song-library.md) | S39–S42 | none |
-| K — Clipboard portability | [K-clipboard.md](K-clipboard.md) | S43–S45 | S40 (J) |
-| L — PixLite integration | [L-pixlite.md](L-pixlite.md) | S46–S49 | S03 (B, only S48) |
+| Group | Issue | File | Slices | Cross-group blockers |
+|---|---|---|---|---|
+| A — Graph editor hardening | #46 | [A-graph-hardening.md](A-graph-hardening.md) | S01 | none |
+| B — IO confidence surfaces | #47 | [B-io-confidence.md](B-io-confidence.md) | S02–S05 | none |
+| C — Desktop shell & updates | #48 | [C-desktop.md](C-desktop.md) | S06–S08 | none |
+| D — Layout & kit geometry | #49 | [D-layout-geometry.md](D-layout-geometry.md) | S09–S11 | none |
+| E — Input routing & section looks | #50 | [E-routing-looks.md](E-routing-looks.md) | S12–S17 | none |
+| F — Effect params & envelopes | #51 | [F-effect-params-envelopes.md](F-effect-params-envelopes.md) | S18–S24 | none |
+| G — Timebase & thumbnails | #52 | [G-timebase-thumbnails.md](G-timebase-thumbnails.md) | S25–S27 | none |
+| H — Modifier nodes | #54 | [H-modifiers.md](H-modifiers.md) | S28–S32 | S01 (#46), S18 (#51) |
+| I — Modulation system | #57 | [I-modulation.md](I-modulation.md) | S33–S38 | S29 (#54), S23 (#51) |
+| J — Presets & Song Library | #53 | [J-presets-song-library.md](J-presets-song-library.md) | S39–S42 | none |
+| K — Clipboard portability | #55 | [K-clipboard.md](K-clipboard.md) | S43–S45 | S40 (#53) |
+| L — PixLite integration | #56 | [L-pixlite.md](L-pixlite.md) | S46–S49 | S03 (#47, only S48) |
 
 ## Full dependency table
 
