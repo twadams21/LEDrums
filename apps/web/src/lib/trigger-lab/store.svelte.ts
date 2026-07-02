@@ -43,7 +43,7 @@ import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, type Pad } from './fixt
 import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
-import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
+import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
 import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo } from '../ws/protocol-types';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
@@ -383,6 +383,14 @@ export class TriggerLab {
   private midiHandle: MidiInitResult | null = null;
   midiLearnTarget = $state<MidiLearnTarget | null>(null);
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
+  /** Live WebMIDI input devices for the settings list, refreshed on hot-plug via the
+      initMidi device callback (empty until MIDI is requested / when unavailable). */
+  midiDevices = $state<MidiDeviceInfo[]>([]);
+  /** Whether WebMIDI access succeeded — drives the settings empty-state copy
+      (unavailable ⇒ browser/permission hint; available+empty ⇒ "connect one"). */
+  midiAvailable = $state(false);
+  /** Why WebMIDI is unavailable, when it is (e.g. 'no-api' or an access-error message). */
+  midiUnavailableReason = $state<string | undefined>(undefined);
 
   /** disposes the autosave $effect.root (null while persistence is not running). */
   private persistDispose: (() => void) | null = null;
@@ -515,6 +523,9 @@ export class TriggerLab {
     this.raf = 0;
     this.midiHandle?.stop();
     this.midiHandle = null;
+    this.midiDevices = [];
+    this.midiAvailable = false;
+    this.midiUnavailableReason = undefined;
     this.client.close();
     this.engineSync.reset();
     if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
@@ -545,9 +556,19 @@ export class TriggerLab {
       throws: an absent API / denied access resolves to an unavailable handle. */
   private async initMidiInput(): Promise<void> {
     try {
-      this.midiHandle = await initMidi((ev) => this.forwardMidi(ev));
+      this.midiHandle = await initMidi(
+        (ev) => this.forwardMidi(ev),
+        undefined,
+        (devices) => (this.midiDevices = devices),
+      );
+      this.midiAvailable = this.midiHandle.available;
+      this.midiUnavailableReason = this.midiHandle.reason;
+      this.midiDevices = this.midiHandle.devices;
     } catch {
       this.midiHandle = null;
+      this.midiAvailable = false;
+      this.midiUnavailableReason = 'access-denied';
+      this.midiDevices = [];
     }
   }
 
