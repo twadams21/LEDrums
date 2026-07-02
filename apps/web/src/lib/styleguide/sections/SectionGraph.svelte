@@ -20,6 +20,8 @@
     tint: tint[kind],
     hasInput: nodeHasInput(kind),
     hasOutput: nodeHasOutput(kind),
+    // play + modifier nodes take a modifier chain on a distinct `mod` input handle
+    hasMod: kind === 'play' || kind === 'modifier',
   });
 
   let nodes = $state<Node[]>([
@@ -28,12 +30,15 @@
     { id: 'p1', type: 'demo', position: { x: 500, y: 20 }, data: { ...face('play', 'Soft strike'), title: 'Chase' } },
     { id: 'd', type: 'demo', position: { x: 500, y: 160 }, data: face('delay', '1/8 dotted') },
     { id: 'p2', type: 'demo', position: { x: 750, y: 160 }, data: { ...face('play', 'Shimmer'), title: 'Sparkle' } },
+    // a modifier node wired into a play node's mod input — the dashed mod wire reads distinctly
+    { id: 'm', type: 'demo', position: { x: 250, y: 260 }, data: { ...face('modifier', 'add · smear'), title: 'Trail' } },
   ]);
   let edges = $state<Edge[]>([
     { id: 'e1', source: 't', target: 'r', type: 'wire' },
     { id: 'e2', source: 'r', target: 'p1', type: 'wire' },
     { id: 'e3', source: 'r', target: 'd', type: 'wire' },
     { id: 'e4', source: 'd', target: 'p2', type: 'wire' },
+    { id: 'e5', source: 'm', target: 'p2', targetHandle: 'mod', type: 'wire', data: { mod: true } },
   ]);
 
   const hover = new GraphHover();
@@ -41,7 +46,7 @@
     edges = hover.decorate(edges);
   }
 
-  const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
+  const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier'];
   const paletteItems = paletteKinds.map((k) => ({
     key: k,
     label: kindLabel[k],
@@ -59,6 +64,7 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '120ms',
+    modifier: 'add · smear',
   };
   function add(kind: NodeKind, cx: number, cy: number): void {
     nodes = [
@@ -128,6 +134,7 @@
       <li><strong>Drop anywhere on a node → its input.</strong> In the app views a wire dropped on the node body (not just the handle) connects to its target handle via a DOM hit-test (<code>TriggerGraphView</code>/<code>PatchGraphView</code> — xyflow alone only connects near a handle; this demo shows handle-drop only).</li>
       <li><strong>Rejected rewires keep the wire.</strong> The store validates reconnects; an invalid drop restores the original wire instead of deleting it.</li>
       <li><strong>Per-band handles.</strong> A value+bands switch emits one source handle per band (<code>band-&#123;i&#125;</code>) so each band wires a different child (<code>BandSwitchNode</code>).</li>
+      <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Delete / Backspace</strong> removes the selection; the palette adds at the visible canvas centre.</li>
     </ul>
   </div>
