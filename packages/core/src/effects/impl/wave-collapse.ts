@@ -20,11 +20,17 @@ export function collapseRadius(ageMs: number, speed: number, reach: number): num
  * edge toward the struck drum's effect origin, then EXPLODES back outward. A band of
  * light sits at the current radius and the whole thing fades over `decayMs` — like a
  * radial wash run in reverse and then forward.
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — the shell radius and fade are
+ * pure functions of `trig.ageMs`, so it restarts on retrigger with no bridge clock swap.
+ * The `timebase:'voice'` flag is a byte-parity declaration that records this and lets the
+ * thumbnail renderer (S27) drive it with a looping age.
  */
 export const waveCollapse: EffectGenerator = {
   id: 'wave-collapse',
   name: 'Wave Collapse',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 320, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

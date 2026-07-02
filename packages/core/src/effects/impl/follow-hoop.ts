@@ -5,11 +5,16 @@ import { pnum, type EffectGenerator } from '../types';
  * Follow Hoop: a hit lights hoop 0 immediately; each higher hoop lights after a
  * cumulative delay, producing a cascade up the drum (design "Hoop 2 follows 1...").
  * 0ms delay collapses to the Whole-Drum effect.
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — the per-hoop cascade is a pure
+ * function of `trig.ageMs`. The `timebase:'voice'` flag is a byte-parity declaration so the
+ * thumbnail renderer (S27) drives the cascade with a looping age.
  */
 export const followHoop: EffectGenerator = {
   id: 'follow-hoop',
   name: 'Follow Hoop',
   category: 'trigger',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 140, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

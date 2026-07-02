@@ -4,11 +4,16 @@ import { pnum, type EffectGenerator } from '../types';
 /**
  * Whole Kit: any hit lights every pixel of the entire kit, fading over decayMs
  * (design "all pixels of the KIT display the same content").
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — intensity is a pure function
+ * of `trig.ageMs`. The `timebase:'voice'` flag is a byte-parity declaration so the thumbnail
+ * renderer (S27) drives it with a looping age instead of a frozen age-0 frame.
  */
 export const wholeKit: EffectGenerator = {
   id: 'whole-kit',
   name: 'Whole Kit',
   category: 'trigger',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 50, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
