@@ -6,6 +6,7 @@
   import SearchField from '../../ui/SearchField.svelte';
   import Select from '../../ui/Select.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
+  import EasePicker, { type EaseSpec } from '../../ui/EasePicker.svelte';
   import Tabs from '../../ui/Tabs.svelte';
   import Toggle from '../../ui/Toggle.svelte';
   import Switch from '../../ui/Switch.svelte';
@@ -62,6 +63,7 @@
   let drawerOpen = $state(false);
   let railW = $state(160);
   let mdSelected = $state('songs');
+  let demoEase = $state<EaseSpec>({ fn: 'cubic', dir: 'inOut' });
 
   const protocolOptions = [
     { value: 'artnet', label: 'Art-Net', icon: Cable },
@@ -168,6 +170,17 @@
         <SegmentedControl value={mode} options={modeOptions} onChange={(v) => (mode = v)} ariaLabel="Mode" />
         <SegmentedControl value={layerBus} options={busOptions} onChange={(v) => (layerBus = v)} ariaLabel="Layer bus" />
         <Tabs bind:value={inspectorTab} tabs={inspectorTabs} ariaLabel="Inspector" />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Ease picker"
+      src="lib/ui/EasePicker"
+      note="Compact per-segment easing selector — a family Select (the Resolume-familiar set, grouped) paired with an In/Out/In·Out direction control. Direction disables for Linear (identical in every direction). Composed from Select + SegmentedControl; reused by the envelope editor and the Envelope node inspector."
+    >
+      <div class="comp-stack">
+        <EasePicker value={demoEase} onChange={(e) => (demoEase = e)} ariaLabel="Demo easing" />
+        <p class="ease-readout">{demoEase.fn} · {demoEase.dir}</p>
       </div>
     </DemoCard>
 
@@ -337,6 +350,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  .ease-readout {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
   }
   .sw-sliders {
     display: flex;
