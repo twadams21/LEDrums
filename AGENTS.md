@@ -1,7 +1,7 @@
 ---
 name: agents
 description: Always-loaded project anchor. Read this first. Contains project identity, non-negotiables, commands, and pointer to ROUTER.md for full context.
-last_updated: 2026-06-29
+last_updated: 2026-07-02
 ---
 
 # LEDrums
@@ -15,6 +15,7 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - Cross-platform: no native addons / node-gyp. UDP + OSC are pure JS over `dgram`; MIDI comes from the browser via WebMIDI and is forwarded over WebSocket.
 - The render loop is deterministic given (time, inputs, model) - effects must be pure functions of `RenderContext`, no hidden global state.
 - Never block the render loop with sync IO; output adapters must be fire-and-forget.
+- Any change that touches UI must apply the `/make-interfaces-feel-better` skill (design-engineering polish pass), alongside the Impeccable design context (`PRODUCT.md` / `DESIGN.md`).
 
 ## Commands
 - Install: `pnpm install`
