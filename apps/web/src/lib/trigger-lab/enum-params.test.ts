@@ -88,7 +88,7 @@ describe('enum params — persistence round-trip', () => {
     presets: [],
     effects: [],
     selectedPadKey: 'kick:1',
-    activeSongId: null,
+    activeSongId: '',
     activeSectionId: null,
     bpm: 120,
     velocity: 0.8,
