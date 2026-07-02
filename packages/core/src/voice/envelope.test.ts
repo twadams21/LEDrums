@@ -42,11 +42,23 @@ describe('adsrToPoints — legacy shapes render byte-identically', () => {
     }
   });
 
-  it('default ADSR (curve 0) renders exactly linear', () => {
+  it('default ADSR is v2-canonical (linear eases, no curve) and renders exactly linear', () => {
     const d = defaultAdsr();
+    // v2-canonical: explicit linear eases + attackLevel, no legacy curve field.
+    expect(d.curve).toBeUndefined();
+    expect(d.attackLevel).toBe(1);
+    expect(d.attackEase).toEqual({ fn: 'linear', dir: 'in' });
+    expect(d.decayEase).toEqual({ fn: 'linear', dir: 'in' });
+    expect(d.releaseEase).toEqual({ fn: 'linear', dir: 'in' });
+    // …and still samples byte-identically to the pre-v2 linear (curve 0) renderer.
     expect(adsrToPoints(d)).toEqual(
-      legacyPoints({ attack: d.attack, decay: d.decay, sustain: d.sustain, release: d.release, curve: d.curve ?? 0 }),
+      legacyPoints({ attack: d.attack, decay: d.decay, sustain: d.sustain, release: d.release, curve: 0 }),
     );
+  });
+
+  it('default ADSR is a migrateAdsr fixed point (already canonical)', () => {
+    const d = defaultAdsr();
+    expect(migrateAdsr(d)).toEqual(d);
   });
 });
 
