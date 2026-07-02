@@ -32,6 +32,7 @@ export const radialWash: EffectGenerator = {
   category: 'wash',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
     { key: 'mode', label: 'Mode', type: 'enum', default: 'out', options: ['out', 'in', 'bounce'] },
     { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'mm/ms' },
@@ -41,6 +42,7 @@ export const radialWash: EffectGenerator = {
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 280);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 0.9);
     const mode = pstr(params, 'mode', 'out') as WashMode;
     const speed = pnum(params, 'speed', 1.2);
@@ -61,7 +63,7 @@ export const radialWash: EffectGenerator = {
         const falloff = 1 - band / width;
         const intensity = envelope * falloff;
         if (intensity < 0.004) continue;
-        const rgb = hsvToRgb(hue, 1, bri * intensity);
+        const rgb = hsvToRgb(hue, sat, bri * intensity);
         fb.max(p.id, rgb.r, rgb.g, rgb.b, intensity);
       }
     }

@@ -17,6 +17,7 @@ export const wipe3d: EffectGenerator = {
     { key: 'axis', label: 'Axis', type: 'enum', default: 'x', options: ['x', 'y', 'z'] },
     { key: 'mode', label: 'Mode', type: 'enum', default: 'band', options: ['band', 'wipe'] },
     { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
     { key: 'speed', label: 'Speed', type: 'number', default: 0.5, min: 0.02, max: 4, step: 0.01, unit: 'Hz' },
     { key: 'width', label: 'Band Width', type: 'number', default: 120, min: 10, max: 800, unit: 'mm' },
@@ -25,6 +26,7 @@ export const wipe3d: EffectGenerator = {
     const axis = pstr(params, 'axis', 'x') as Axis;
     const mode = pstr(params, 'mode', 'band') as WipeMode;
     const hue = pnum(params, 'hue', 190);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 0.9);
     const speed = pnum(params, 'speed', 0.5);
     const width = Math.max(1, pnum(params, 'width', 120));
@@ -34,7 +36,7 @@ export const wipe3d: EffectGenerator = {
     const span = max - min || 1;
     const phase = (ctx.timeMs * 0.001 * speed) % 1;
     const planePos = min + phase * span;
-    const rgb = hsvToRgb(hue, 1, bri);
+    const rgb = hsvToRgb(hue, sat, bri);
 
     for (const p of ctx.model.pixels) {
       const proj = p.world[axis];
