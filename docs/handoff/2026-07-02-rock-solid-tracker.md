@@ -47,7 +47,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
-| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (S18/S19/S23 merged; S20/S21/S24 in flight, S22 next) | — | — |
+| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (6/7 merged; S22 last, in flight) | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
@@ -60,6 +60,11 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T18:38 — Lane 2 group/F nearly done (S22 last)
+
+- **group/F: 6/7 slices merged** (S18/S19/S20/S21/S22*/S23/S24 — S22 in flight, last). Usage 5h 37% (healthy). Inbox empty; rock-solid unchanged (af96b35) — no handoff yet.
+- **Next:** S22 lands → lane integrates rock-solid + full group review → hands off group/F → master merges (expect clean) + sweep. Then group/G (S25–S27). 30-min cadence.
 
 ### 2026-07-02T18:07 — reset; Lane 2 resumed ON ITS OWN
 
