@@ -191,7 +191,7 @@ describe('hit resolution = active section graphs whose drum source matches the p
 });
 
 describe('keyboard graph firing', () => {
-  it('connected: forwards a MIDI-sourced section graph to the server WITHOUT firing the local sim (S12)', () => {
+  it('connected: sends the fireGraph intent for a MIDI-sourced section graph — not a synthetic {t:midi} (S13)', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
     const key = store.createGraph('Midi graph');
@@ -202,8 +202,11 @@ describe('keyboard graph firing', () => {
     const index = store.activeSection!.graphs.indexOf(key);
     store.fireSectionGraph(index);
 
-    // The server fires it authoritatively; we forward the source and stay silent locally.
-    expect(sent).toContainEqual({ t: 'midi', note: 36, velocity: Math.round(store.velocity * 127), on: true });
+    // S13: the server fires the EXACT graph by key. We no longer forward a synthetic {t:'midi'}
+    // (which the server re-resolved AND echoed back → the old keyboard triple-fire); the sim
+    // stays silent locally.
+    expect(sent).toContainEqual({ t: 'fireGraph', graphKey: key, velocity: store.velocity });
+    expect(sent.some((m) => m.t === 'midi')).toBe(false);
     expect(store.localPreviewActive).toBe(false);
   });
 

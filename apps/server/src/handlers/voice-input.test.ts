@@ -102,3 +102,53 @@ describe('handleVoiceInput — one connected MIDI hit fires once (S12)', () => {
     expect(monitorEvents.filter((e) => e.label?.startsWith('Graph fired'))).toHaveLength(1);
   });
 });
+
+/* S13 — the keyboard performance path sends a `fireGraph` INTENT (the exact graph key) instead
+   of a synthetic MIDI/OSC source. The server plays precisely that graph — once — with no
+   re-resolution (so no zone-map / direct-binding both-fire), and validates the key: an unknown
+   key fires nothing and surfaces the normal graph-missed diagnostic. */
+describe('handleVoiceInput — fireGraph intent fires the exact graph once (S13)', () => {
+  it('fires exactly the named graph, once, and lights only its bus', () => {
+    const host = makeHost();
+    host.setShow(directNoteShow(60)); // graph:1 → flash on the `main` bus
+
+    const monitorEvents: Array<{ label?: string }> = [];
+    host.setMonitor((e) => monitorEvents.push(e as { label?: string }));
+    const broadcasts: ServerMessage[] = [];
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
+
+    const handled = handleVoiceInput({ t: 'fireGraph', graphKey: 'graph:1', velocity: 1 }, deps);
+    for (let i = 0; i < 4; i++) host.step(1000 / 120);
+
+    expect(handled).toBe(true);
+
+    // Exactly one graph-fired diagnostic, for the exact key — one authoritative fire, no re-fire.
+    const graphFired = monitorEvents.filter((e) => e.label?.startsWith('Graph fired'));
+    expect(graphFired).toHaveLength(1);
+    expect(graphFired[0]?.label).toBe('Graph fired graph:1');
+
+    // Exactly one bus lit by that single fire.
+    const litBuses = Object.values(host.getStats().engine.busLevels).filter((l) => l > 0);
+    expect(litBuses).toHaveLength(1);
+
+    // No `input` echo broadcast — the fire is surfaced by the graph diagnostics, not a note echo.
+    expect(broadcasts.filter((m) => m.t === 'input')).toHaveLength(0);
+  });
+
+  it('validates the key — an unknown graph key fires nothing and reports a miss', () => {
+    const host = makeHost();
+    host.setShow(directNoteShow(60));
+
+    const monitorEvents: Array<{ label?: string }> = [];
+    host.setMonitor((e) => monitorEvents.push(e as { label?: string }));
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
+
+    const handled = handleVoiceInput({ t: 'fireGraph', graphKey: 'graph:does-not-exist', velocity: 1 }, deps);
+    for (let i = 0; i < 4; i++) host.step(1000 / 120);
+
+    expect(handled).toBe(true);
+    expect(monitorEvents.filter((e) => e.label?.startsWith('Graph fired'))).toHaveLength(0);
+    expect(monitorEvents.filter((e) => e.label === 'No graph resolved')).toHaveLength(1);
+    expect(Object.values(host.getStats().engine.busLevels).filter((l) => l > 0)).toHaveLength(0);
+  });
+});
