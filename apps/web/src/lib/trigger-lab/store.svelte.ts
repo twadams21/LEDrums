@@ -545,7 +545,10 @@ export class TriggerLab {
       case 'note':
         if (ev.on && ev.velocity > 0 && this.acceptsMidiChannel(ev.channel)) {
           this.applyMidiLearn(ev.note);
-          this.fireRawMidiLocal(ev.note, ev.velocity);
+          // Preview the fire on the local sim ONLY when offline. When connected the server is the
+          // sole resolver/renderer and streams its frames/levels back — firing here as well would
+          // double the hit (the echo loop). Authority principle, doc 03.
+          if (this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
         }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
@@ -902,15 +905,27 @@ export class TriggerLab {
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
-      onInput: (kind, _label, value, note, channel) => {
-        if (kind === 'midi' && note !== undefined && value > 0 && this.acceptsMidiChannel(channel)) {
-          this.applyMidiLearn(note);
-          this.fireRawMidiLocal(note, Math.round(Math.max(0, Math.min(1, value)) * 127));
-        }
-      },
+      onInput: (kind, _label, value, note, channel) => this.receiveInputEcho(kind, value, note, channel),
       onMonitor: (event) => this.addMonitor(event),
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
+  }
+
+  /** Handle a server `input` broadcast — native MIDI/OSC, a transport recall, or the echo of our
+      own forwarded hit. Applies MIDI-learn from ANY input source (so learning works from hardware
+      arriving at the server or another client), but NEVER fires the sim: when connected the server
+      is the sole resolver/renderer, so firing here re-fired every hit — the echo loop this slice
+      kills (doc 03). Monitor display of the input rides the separate onMonitor / server-diagnostics
+      path, so dropping the local fire leaves the timeline intact. */
+  private receiveInputEcho(
+    kind: 'midi' | 'osc',
+    value: number,
+    note: number | undefined,
+    channel: number | undefined,
+  ): void {
+    if (kind === 'midi' && note !== undefined && value > 0 && this.acceptsMidiChannel(channel)) {
+      this.applyMidiLearn(note);
+    }
   }
 
   private monitorForClientMessage(msg: ClientMessage): Omit<MonitorEvent, 'id' | 'time'> {
@@ -1142,6 +1157,14 @@ export class TriggerLab {
   hit(pad: Pad): void {
     const toFire = this.resolveHitGraphsLocal(pad);
     if (toFire.length === 0) return;
+    // Connected: the server owns resolution + render. Forward the hit and let its frames/levels
+    // come back; do NOT fire the local sim (authority principle, doc 03). `onInput` has no `key`
+    // echo branch, so this is a single authoritative fire.
+    if (this.link === 'open') {
+      this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
+      return;
+    }
+    // Offline preview: fire the local sim (it drives the lab's voice lanes + resolution log).
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: this.velocity,
@@ -1158,12 +1181,6 @@ export class TriggerLab {
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
-    // forward the hit so the server fires the REAL output (local sim stays intact
-    // above — it still drives the lab's voice lanes + resolution log). send() is a
-    // no-op unless the socket is open, so the guard is just to avoid a needless call.
-    if (this.link === 'open') {
-      this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
-    }
   }
 
   /** Fire the graph at `index` in the ACTIVE section's ordered graph list directly — the
@@ -1175,8 +1192,23 @@ export class TriggerLab {
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const src = triggerSourceOf(graph);
+    // Connected: forward the graph's trigger source so the SERVER fires it authoritatively; the
+    // local sim stays silent (authority principle, doc 03). (S13 replaces this synthetic-source
+    // forward with a dedicated `fireGraph` intent message so the server needn't re-resolve.)
+    if (this.link === 'open') {
+      if (src?.kind === 'drum') {
+        this.client.send({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: this.velocity });
+      } else if (src?.kind === 'midi') {
+        if (src.note !== undefined) this.client.send({ t: 'midi', note: src.note, velocity: this.midiVelocity(), on: true });
+        else if (src.cc !== undefined) this.client.send({ t: 'cc', controller: src.cc, value: this.midiVelocity() });
+      } else if (src?.kind === 'osc') {
+        this.client.send({ t: 'osc', address: src.address, value: this.velocity });
+      }
+      return;
+    }
+    // Offline preview: fire the local sim directly (no source-match filter — the n-th graph plays).
+    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: this.velocity,
       sectionIndex: idx < 0 ? 0 : idx,
@@ -1190,15 +1222,6 @@ export class TriggerLab {
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
-    // Forward the matching source so connected server preview frames match the local audition.
-    if (src?.kind === 'drum') {
-      this.client.send({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: this.velocity });
-    } else if (src?.kind === 'midi') {
-      if (src.note !== undefined) this.client.send({ t: 'midi', note: src.note, velocity: this.midiVelocity(), on: true });
-      else if (src.cc !== undefined) this.client.send({ t: 'cc', controller: src.cc, value: this.midiVelocity() });
-    } else if (src?.kind === 'osc') {
-      this.client.send({ t: 'osc', address: src.address, value: this.velocity });
-    }
   }
 
   togglePlay(): void {
