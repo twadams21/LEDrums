@@ -18,11 +18,17 @@ function randomDir(rng: () => number): Vec3 {
  * drum's effect origin. The path is stepped through 3D space (seeded from trig.seq for
  * per-hit determinism), lighting the nearest pixel at each step, and the whole bolt
  * fades over `decayMs`. Branches fork off the main bolt for a forked-lightning look.
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — the bolt is seeded per-hit
+ * (`trig.seq`) and its envelope fades on `trig.ageMs`, so it restarts on retrigger with no
+ * bridge clock swap. The `timebase:'voice'` flag is a byte-parity declaration so the
+ * thumbnail renderer (S27) drives the fade with a looping age.
  */
 export const lightning: EffectGenerator = {
   id: 'lightning',
   name: 'Lightning',
   category: 'particle',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 0.35, min: 0, max: 1, step: 0.01 },

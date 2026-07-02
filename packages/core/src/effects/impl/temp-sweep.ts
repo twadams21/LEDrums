@@ -8,11 +8,16 @@ import { pnum, type EffectGenerator } from '../types';
  * [0,1], blended between a warm and a cool hue — like a thermal wave washing the kit.
  * Intrinsically two-colour, so it exposes the warm/cool hue endpoints (a range) plus a
  * shared saturation rather than a single hue + swatch.
+ *
+ * Voice timebase (S26): the travelling sine reads `ctx.timeMs` (hit-relative via the
+ * bridge), so the thermal wave starts from its origin phase on the hit and restarts on
+ * retrigger. No body change — the bridge swaps the clock.
  */
 export const tempSweep: EffectGenerator = {
   id: 'temp-sweep',
   name: 'Temperature Sweep',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'warmHue', label: 'Warm Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
     { key: 'coolHue', label: 'Cool Hue', type: 'number', default: 210, min: 0, max: 360, unit: '°' },

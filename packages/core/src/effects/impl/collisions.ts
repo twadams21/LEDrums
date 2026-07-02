@@ -29,11 +29,17 @@ function angularDist(a: number, b: number): number {
  * in opposite directions so they periodically meet. When two nodes pass within a
  * threshold angle they "collide", flashing a localized arc in `flashHue`. Stateful;
  * node phases are seeded from a hash of drumId+hoop for deterministic replay.
+ *
+ * Voice timebase (S26): node angles read `ctx.timeMs` (hit-relative via the bridge), so
+ * nodes start at their seeded phase on the hit and restart on retrigger. The flash decay
+ * accumulates on `ctx.dt` (real frame delta, unchanged by timebase) into per-voice
+ * `genState`, which is reset on (re)spawn → no flash state leaks across voices.
  */
 export const collisions: EffectGenerator<CollisionsState> = {
   id: 'collisions',
   name: 'Collisions',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 180, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
