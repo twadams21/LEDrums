@@ -18,10 +18,21 @@ import {
 import type { ParamValues } from './sim';
 import { buildThumbPixelModel } from './kit';
 
+/**
+ * The thumbnail replays ONE synthetic hit forever. The trigger age sawtooths over
+ * this window (0 → LOOP → 0), so hit-relative effects (whole-drum, burst, radial-wash…)
+ * visibly fire → decay → repeat instead of freezing at their age-0 frame. At 120bpm
+ * this is 3.2 beats — enough for beat-indexed voice effects (chase) to travel and reset.
+ */
+export const THUMB_LOOP_MS = 1600;
+
 // ---- Generator caching -------------------------------------------------------
 const genCache = new Map<string, Framebuffer>();
 const genDefaults = new Map<string, ResolvedParams>();
-const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
+// One synthetic trigger, mutated per render — the thumbnail's own originating hit.
+// `drumId: 'thumb'` matches buildThumbPixelModel's single drum so drum-keyed effects
+// (whole-drum, burst, radial-wash) actually find their drum and light up.
+const genTrigger: Trigger = { seq: 1, drumId: 'thumb', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
 const genTriggers: Trigger[] = [genTrigger];
 
 /**
@@ -31,9 +42,17 @@ const genTriggers: Trigger[] = [genTrigger];
  * `pixels[r * 26 + c]` is the RGB for grid cell (column c, row r).
  * Returns null if the generator is not registered.
  *
+ * Timebase-aware, mirroring the two render bridges (generator-bridge.ts / render.ts):
+ * the synthetic trigger's age loops over {@link THUMB_LOOP_MS} so hit-relative effects
+ * fire → decay → repeat. A `timebase: 'voice'` generator animates on that hit-relative
+ * age (its own onset, restarting each loop); a `timebase: 'absolute'` generator keeps
+ * free-running on the wall-clock `tMs`. Read the flag exactly as the bridges do:
+ * `(gen.timebase ?? 'absolute') === 'voice'`.
+ *
  * @param generatorId  The generator's registered ID (e.g. "plasma", "fire")
  * @param params       Voice parameters (numeric/bool only; color/enum fall back to defaults)
- * @param tMs          Absolute time in milliseconds
+ * @param tMs          Wall-clock time in milliseconds (e.g. performance.now()); the
+ *                     hit-relative loop age is derived as `tMs % THUMB_LOOP_MS`
  * @param state        Generator state; caller should create with `gen.createState(buildThumbPixelModel())`
  */
 export function renderGeneratorThumbFrame(
@@ -67,18 +86,38 @@ export function renderGeneratorThumbFrame(
     if (val !== undefined) resolvedParams[k] = val;
   }
 
-  // Build a minimal synthetic RenderContext (BPM 120, no beat sync needed for thumbnail).
+  // Looping hit age: the thumbnail's synthetic hit, replayed forever. Drives
+  // trig.ageMs so effects that decay off the trigger age (whole-drum, burst, …)
+  // fire → decay → repeat. Modulo keeps a monotonic wall-clock `tMs` bounded to
+  // [0, THUMB_LOOP_MS); the extra `+ LOOP) % LOOP` guards a negative input.
+  const ageMs = ((tMs % THUMB_LOOP_MS) + THUMB_LOOP_MS) % THUMB_LOOP_MS;
+  genTrigger.ageMs = ageMs;
+  genTrigger.timeMs = tMs - ageMs; // notional birth so timeMs = born + age stays coherent
+
+  // Timebase decides the clock the generator's ctx reads — same switch as the bridges.
+  //   'voice'    → hit-relative age: animate from the onset, restart each loop.
+  //   'absolute' → engine wall-clock: free-running base/ambient loops keep phasing.
+  const isVoice = (gen.timebase ?? 'absolute') === 'voice';
+  const clockMs = isVoice ? ageMs : tMs;
+
+  // Advance the transport beat from that same clock (beat = clock × bpm / 60000), the
+  // formula both bridges use, so beat-indexed effects (chase) step instead of freezing.
+  const BPM = 120;
+  const BEATS_PER_BAR = 4;
+  const beat = (clockMs / 60000) * BPM;
+  const bar = Math.floor(beat / BEATS_PER_BAR);
+
   const ctx: RenderContext = {
     model: pm,
-    timeMs: tMs,
+    timeMs: clockMs,
     dt: 16.67, // ~60fps nominal
     transport: {
-      timeMs: tMs,
-      beat: 0,
-      bar: 0,
-      beatInBar: 0,
-      bpm: 120,
-      beatsPerBar: 4,
+      timeMs: clockMs,
+      beat,
+      bar,
+      beatInBar: beat - bar * BEATS_PER_BAR,
+      bpm: BPM,
+      beatsPerBar: BEATS_PER_BAR,
       playing: true,
     },
     triggers: genTriggers,
