@@ -43,7 +43,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 | Group | Lane | Issue | Group branch | Status | Merged→rock-solid | Group report |
 |---|---|---|---|---|---|---|
-| A — Graph editor hardening | 1 | #46 | group/A | in-progress (S01 impl) | — | — |
+| A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | in-progress (S02–S05) | — | — |
 | E — Input routing & section looks | 1 | #50 | group/E | pending | — | — |
 | F — Effect params & envelopes | 2 | #51 | group/F | pending | — | — |
@@ -59,6 +59,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T09:2x — GROUP A MERGED → rock-solid
+
+- **group/A merged** (#46, S01) into rock-solid as merge commit **a91dbbf** (`--no-ff`, ort), pushed to origin (local == origin/rock-solid == a91dbbf). Lane orch verdict was PASS/no-findings; I re-read the report + diff scope (web-only, graph-editor hardening, tests + design-system regenerated in-change, no core/IO impurity), merged, ran my own full sweep.
+- **Master sweep green:** typecheck 0 (6 pkgs, web svelte-check 2208 files 0 errors); tests pass (web 619/619; merge clean single-slice so io/core/protocol/server unchanged from lane orch's verified 1037/no-skips). `derived_inert` Svelte warnings on stderr are pre-existing noise, not failures.
+- **Lane 1 continues:** B has S02+S03 merged (S03 sweep was pending at hand-off), S04 in flight, S05 next; E not started. Told lane orch (ack 640e55) to branch group/E + future groups off LATEST rock-solid (fetch first). group/A branch left intact (merged; optional tidy later).
+- **Next:** await group/B then group/E hand-offs. When all three merged → Lane 1 done → fire Lane 2 orch (F→G→H→I).
 
 ### 2026-07-02T09:14 — wake 1: Lane 1 progressing, no merges yet
 
