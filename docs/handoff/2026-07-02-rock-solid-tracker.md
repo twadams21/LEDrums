@@ -47,7 +47,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
-| F — Effect params & envelopes | 2 | #51 | group/F | pending | — | — |
+| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (6/7 merged; S22 last, in flight) | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
@@ -60,6 +60,27 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T18:38 — Lane 2 group/F nearly done (S22 last)
+
+- **group/F: 6/7 slices merged** (S18/S19/S20/S21/S22*/S23/S24 — S22 in flight, last). Usage 5h 37% (healthy). Inbox empty; rock-solid unchanged (af96b35) — no handoff yet.
+- **Next:** S22 lands → lane integrates rock-solid + full group review → hands off group/F → master merges (expect clean) + sweep. Then group/G (S25–S27). 30-min cadence.
+
+### 2026-07-02T18:07 — reset; Lane 2 resumed ON ITS OWN
+
+- **5h reset to 10%** (next 09:00+10 = 23:00 UTC). 7d 29%. Full runway.
+- **Lane 2 resumed autonomously** — no nudge needed (its own --at reset wake fired; wave 2 S20/S21/S24 launched 18:01–18:02 UTC).
+- **group/F: wave 1 merged** — S18/S19/S23 → group/F @ 1ff3fd0 (lane sweeps green, 1232 tests, slice branches deleted). **Wave 2 in flight:** S20-colour-batch2, S21-colour-batch3, S24-envelope-editor; S22 next. 3/7 F slices merged.
+- Lane orch keeps its own docs/handoff/rock-solid/lane-2-state.md. rock-solid unchanged (7c26130) — no group/F handoff yet.
+- **Next:** normal 30-min cadence; merge group/F when handed off (integrated + reviewed); then G→H→I. Fire Lane 3 (J→K) when Lane 2 done.
+
+### 2026-07-02T14:59 — Lane 2 F underway, approaching budget wall
+
+- **Lane 2 `lane-2-988e46` alive.** group/F created; started the 3 dep-free F slices (S18/S19/S23, front-loading S18+S23 for H/I). **S19 merged into group/F**; S18+S23 in flight (idle).
+- **Usage 5h 72%** (just past 70% budget). Remaining F slices gated: S20 needs S18 (unmerged), S24 needs S23 (unmerged), S21/S22 need S19 (merged) but launching them would breach the 70% cap → lane orch should PAUSE now. This protects Trent's interactive headroom (he's active).
+- **No master work pending:** group/F is 7 slices, ~2 in; won't hand off until post-reset. rock-solid unchanged (a6f4785).
+- **Master wake aligned to reset (~18:07 UTC / 04:07+10)** instead of 30-min polls into a paused system — conserves the shared 5h budget. An inbox handoff/blocker would re-invoke me sooner regardless.
+- **Next (post-reset):** verify Lane 2 resumed (nudge if parked, like Lane 1); merge group/F when handed off; continue G→H→I.
 
 ### 2026-07-02T14:2x — ✅ LANE 1 COMPLETE; Lane 2 launched
 
