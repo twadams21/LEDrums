@@ -57,6 +57,37 @@ describe('serializeAuthored / deserializeAuthored round-trip', () => {
     const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
     expect(restored?.paneSizes).toEqual(state.paneSizes);
   });
+
+  it('round-trips a modifier node + its `mod` edge (S29 kind + port)', () => {
+    // A graph with a Trail modifier node wired to a play node's `mod` input.
+    const modGraph: TriggerGraph = {
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('play', 'p', 200, 0, { effectId: 'flash', presetId: 'flash:default' }),
+        makeNode('modifier', 'm', 100, 100, {
+          modifierId: 'trail',
+          bypass: true,
+          params: { decayMs: 400, mode: 'max' },
+        }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'p' },
+        { id: 'e1', from: 'm', to: 'p', toPort: 'mod' },
+      ],
+    };
+    const state: AuthoredState = { ...authored(), graphs: { 'kick:1': modGraph } };
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    const g = restored?.graphs?.['kick:1'];
+    const mod = g?.nodes.find((n) => n.id === 'm');
+    expect(mod?.kind).toBe('modifier');
+    expect(mod?.modifierId).toBe('trail');
+    expect(mod?.bypass).toBe(true);
+    expect(mod?.params).toEqual({ decayMs: 400, mode: 'max' });
+    // the `mod` target port survives the round-trip verbatim
+    expect(g?.edges.find((e) => e.id === 'e1')?.toPort).toBe('mod');
+    // whole-graph equality — nothing dropped or reshaped
+    expect(g).toEqual(modGraph);
+  });
 });
 
 describe('version gate', () => {

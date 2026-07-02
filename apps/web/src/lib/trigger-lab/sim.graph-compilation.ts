@@ -47,14 +47,22 @@ export type GraphNode = voice.GraphNode;
 export type GraphEdge = voice.GraphEdge;
 export type TriggerGraph = voice.TriggerGraph;
 
-/** Block kinds a user can add as graph nodes (the trigger input is implicit). `delay`
-    is a `NodeKind` but not a block type in the Block union, so the element type is
+/** Node kinds a user can add from the palette (the trigger input is implicit). `delay` +
+    `modifier` are `NodeKind`s but not block types in the Block union, so the element type is
     widened to `Exclude<NodeKind, 'trigger'>`. */
-export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier'];
 
-/** 'play' is a sink (no children); 'trigger' is a source (no parent). */
+/** Whether a kind emits a trigger-flow / mod OUTPUT handle. 'play' is a sink (no children);
+    'trigger' is a source. A 'modifier' emits its `mod` output (wired into a play/modifier
+    `mod` input), so it counts as having an output. */
 export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'play';
-export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger';
+/** Whether a kind takes a trigger-FLOW input (the default `in` handle). 'trigger' is the
+    root; 'modifier' takes NO flow input — its only input is the `mod` handle (see
+    {@link nodeHasModInput}), so it is excluded here. */
+export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && kind !== 'modifier';
+/** Whether a kind exposes a `mod` INPUT handle (a modifier chain lands here). Play nodes
+    take modifiers; modifier nodes take upstream modifiers (mod→mod chains). */
+export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'play' || kind === 'modifier';
 
 function cloneEnvMap(env: EnvMap): EnvMap {
   const out: EnvMap = {};

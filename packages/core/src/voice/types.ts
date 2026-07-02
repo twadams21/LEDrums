@@ -4,6 +4,9 @@
  * and unit-testable. The authored content is the {@link Show} aggregate; everything
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
+import type { ResolvedModifier } from '../modifiers/types';
+
+export type { ResolvedModifier };
 
 // ---- Enumerations -----------------------------------------------------------
 
@@ -213,7 +216,14 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
 export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
-export type NodeKind = 'trigger' | BlockKind;
+/**
+ * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
+ * fires children). It is a media-effects node wired to a play node's `mod` input handle;
+ * at voice spawn its closure is resolved into `PlayAction.modifiers` (see
+ * `resolveModifierChain` in `modifier-graph.ts`). Kept out of {@link BlockKind} so the
+ * block-tree types (web `Block` union, `treeToGraph`) are unaffected.
+ */
+export type NodeKind = 'trigger' | BlockKind | 'modifier';
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -242,6 +252,14 @@ export interface GraphNode {
   params: ParamValues;
   env: EnvMap;
   linked: boolean;
+  // modifier (only meaningful when kind === 'modifier')
+  /** Which {@link ModifierDef} this modifier node applies (registry id). Optional +
+      additive — only modifier nodes carry it; graphs authored before modifiers lack it.
+      An empty/unknown id resolves to nothing (the chain runner skips it, never throws). */
+  modifierId?: string;
+  /** Modifier bypass: when true the resolved link is identity (kept in the chain so its
+      per-voice state slot survives toggling). Optional; defaults to not-bypassed. */
+  bypass?: boolean;
   // random
   noRepeat: boolean;
   // switch
@@ -280,6 +298,10 @@ export interface GraphEdge {
   /** source handle id this edge leaves from. undefined = the node's default single
       output (back-compat). For a value+bands switch, band i's handle is `band-${i}`. */
   fromPort?: string;
+  /** target handle this edge lands on. `undefined`/`'in'` = the node's trigger-flow input
+      (back-compat). `'mod'` = a play/modifier node's modifier input (a modifier-chain wire).
+      Shared with doc 10, which extends it with `param:<key>` modulation targets. */
+  toPort?: 'in' | 'mod';
 }
 
 export interface TriggerGraph {
@@ -397,6 +419,20 @@ export interface Voice {
    * is reused. Opaque to everything but the hosted generator.
    */
   genState: unknown;
+  /**
+   * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
+   * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from
+   * graph topology at spawn (S29); `undefined`/empty → the voice takes the unchanged
+   * zero-alloc hot path. The engine never sees graph topology — this flat chain is the seam.
+   */
+  modifiers?: ResolvedModifier[];
+  /**
+   * Per-voice, per-modifier mutable state (accumulators, ring buffers), parallel to
+   * `modifiers`. Built lazily by the chain runner and persisted for the voice's life; reset
+   * to `undefined` on pool-slot reuse so a retriggered voice starts clean (mirrors
+   * `genState` lifecycle).
+   */
+  modState?: unknown[];
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
   /**

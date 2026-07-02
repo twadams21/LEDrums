@@ -80,7 +80,7 @@ import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
-import { canConnect, canReconnect } from './store/graph-wiring';
+import { canConnect, canReconnect, type ToPort } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
@@ -100,6 +100,12 @@ const SAVE_DEBOUNCE_MS = 300;
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   | { kind: 'trigger'; graphKey: string };
+
+/** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
+    The param/envelope mutators + inspector share one editing surface across both. */
+function nodeHasParams(node: GraphNode): boolean {
+  return node.kind === 'play' || node.kind === 'modifier';
+}
 
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
     malformed JSON — any failure yields null (boot keeps the seed). */
@@ -1783,9 +1789,26 @@ export class TriggerLab {
     let node: GraphNode;
     if (kind === 'play') {
       node = makeNode('play', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
+    } else if (kind === 'modifier') {
+      node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
+    g.nodes.push(node);
+    return node;
+  }
+
+  /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
+      a chosen modifier directly, vs `addNode('modifier')` which seeds the first one). Unknown
+      ids are still placed — the inspector/chain runner tolerate an unresolved modifierId. */
+  addModifierNode(modifierId: string, x: number, y: number): GraphNode | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    const g = this.selectedGraph;
+    if (!g) return null;
+    const node = makeNode('modifier', nid('n'), x, y, {
+      modifierId,
+      params: graphsLib.modifierParamsFor(modifierId),
+    });
     g.nodes.push(node);
     return node;
   }
@@ -1809,12 +1832,14 @@ export class TriggerLab {
 
   /** Wire a node's output to another's input (rejects dup / cycle / bad direction).
       `fromPort` is the source handle the wire leaves (a value+bands switch's `band-${i}`);
-      undefined = the node's default single output. */
-  connect(fromId: string, toId: string, fromPort?: string): void {
+      undefined = the node's default single output. `toPort` is the target input handle:
+      `'mod'` routes a modifier-chain wire into a play/modifier node's `mod` input, undefined
+      the trigger-flow `in`. Validation is total — never throws (bad wires are ignored). */
+  connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || !canConnect(g, fromId, toId, fromPort)) return;
-    g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort });
+    if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
+    g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort, toPort });
   }
   disconnect(edgeId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -1825,14 +1850,15 @@ export class TriggerLab {
       exactly as connect() does — but ignoring the edge being moved — and leaves the
       wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
       reconnect drag snaps back instead of deleting the wire. */
-  reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string): void {
+  reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string, toPort?: ToPort): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || !canReconnect(g, edgeId, fromId, toId, fromPort)) return;
+    if (!g || !canReconnect(g, edgeId, fromId, toId, fromPort, toPort)) return;
     const edge = g.edges.find((e) => e.id === edgeId)!;
     edge.from = fromId;
     edge.to = toId;
     edge.fromPort = fromPort;
+    edge.toPort = toPort;
   }
 
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */
@@ -1850,6 +1876,16 @@ export class TriggerLab {
       }
       const g = this.selectedGraph;
       if (g) g.edges = g.edges.filter((e) => e.from !== node.id);
+    } else if (kind === 'modifier') {
+      // Seed a modifier id if the node has none yet. A modifier takes no trigger-flow input,
+      // so drop any flow wire that landed on it (mod wires — `toPort:'mod'` — are kept).
+      if (!node.modifierId) {
+        const init = graphsLib.modifierNodeInit();
+        node.modifierId = init.modifierId;
+        node.params = init.params;
+      }
+      const g = this.selectedGraph;
+      if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort !== 'mod'));
     }
   }
 
@@ -2182,41 +2218,58 @@ export class TriggerLab {
 
   setParam(node: GraphNode, key: string, value: ParamValue): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
-    if (node.linked) {
+    if (!nodeHasParams(node)) return;
+    if (node.kind === 'play' && node.linked) {
       const pr = this.presetById(node.presetId);
       if (pr) pr.params[key] = value;
     } else {
+      // play (instance) + modifier both author directly into node.params.
       node.params[key] = value;
     }
   }
 
+  /** Set the modifier a modifier node applies (its `modifierId`), seeding the new
+      modifier's default params so its inspector controls resolve. No-op off a modifier. */
+  setModifierId(node: GraphNode, modifierId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'modifier' || node.modifierId === modifierId) return;
+    node.modifierId = modifierId;
+    node.params = graphsLib.modifierParamsFor(modifierId);
+    node.env = {};
+  }
+  /** Toggle a modifier node's bypass (identity when true; the chain keeps its state slot). */
+  setModifierBypass(node: GraphNode, bypass: boolean): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'modifier') return;
+    node.bypass = bypass;
+  }
+
   getEnvelope(node: GraphNode, key: string): Envelope | null {
-    return node.kind === 'play' ? node.env[key] ?? null : null;
+    return nodeHasParams(node) ? node.env[key] ?? null : null;
   }
   envKind(node: GraphNode, key: string): EnvKind {
-    return node.kind === 'play' ? node.env[key]?.kind ?? 'none' : 'none';
+    return nodeHasParams(node) ? node.env[key]?.kind ?? 'none' : 'none';
   }
   isEnveloped(node: GraphNode, key: string): boolean {
-    return node.kind === 'play' && !!node.env[key] && node.env[key]!.kind !== 'none';
+    return nodeHasParams(node) && !!node.env[key] && node.env[key]!.kind !== 'none';
   }
   /** Set or clear the envelope on a param (seeds a preset curve; 'none' removes it). */
   setEnvKind(node: GraphNode, key: string, kind: EnvKind): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!nodeHasParams(node)) return;
     if (kind === 'none') delete node.env[key];
     else node.env[key] = defaultEnvelope(kind);
   }
   setEnvAmount(node: GraphNode, key: string, amount: number): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!nodeHasParams(node)) return;
     const e = node.env[key];
     if (e) e.amount = amount;
   }
   /** Replace the curve breakpoints (marks the envelope as hand-edited / custom). */
   setEnvPoints(node: GraphNode, key: string, points: EnvPoint[]): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!nodeHasParams(node)) return;
     const e = node.env[key];
     if (!e) return;
     e.points = points;
@@ -2225,7 +2278,7 @@ export class TriggerLab {
   /** Set the ADSR shape on a param's envelope (regenerates the render curve). */
   setEnvAdsr(node: GraphNode, key: string, adsr: AdsrShape): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!nodeHasParams(node)) return;
     let e = node.env[key];
     if (!e) {
       e = { kind: 'custom', amount: 1, points: [] };

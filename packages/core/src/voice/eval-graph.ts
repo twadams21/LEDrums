@@ -14,11 +14,13 @@ import type {
   ParamValues,
   PlayMode,
   Preset,
+  ResolvedModifier,
   Scope,
   SwitchOn,
   TriggerGraph,
 } from './types';
 import { computeDelayMs } from './delay';
+import { resolveModifierChain } from './modifier-graph';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -34,6 +36,12 @@ export interface PlayAction {
   busId: string;
   params: ParamValues;
   env: EnvMap;
+  /**
+   * Resolved modifier chain for this play node's `mod` input (S28 seam). Carried verbatim to
+   * the spawned voice. Populated by graph resolution in S29 (walk `mod` edges, order by
+   * topology / y-position, flatten); `undefined` until then, so S28 voices are unmodified.
+   */
+  modifiers?: ResolvedModifier[];
   via: string;
   latchKey: string | null;
 }
@@ -152,8 +160,11 @@ function evalNode(
   switch (node.kind) {
     case 'trigger':
       return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, viaPrefix, seen2));
-    case 'play':
+    case 'play': {
       if (!node.effectId) return [];
+      // Resolve this play node's `mod` input into a flat modifier chain (S29). Empty →
+      // undefined so the spawned voice keeps the zero-alloc, unmodified hot path.
+      const mods = resolveModifierChain(graph, node);
       return [
         {
           kind: 'play',
@@ -164,10 +175,16 @@ function evalNode(
           busId: node.busId,
           params: resolveNodeParams(state, node),
           env: node.env,
+          modifiers: mods.length ? mods : undefined,
           via: label(modeWord(node.mode)),
           latchKey: null,
         },
       ];
+    }
+    case 'modifier':
+      // A modifier node is inert in trigger-flow eval: it never fires children. Its effect
+      // is applied via a play node's resolved `mod` chain (resolveModifierChain), not here.
+      return [];
     case 'all':
       return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, label('All'), seen2));
     case 'random': {

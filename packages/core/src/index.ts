@@ -25,6 +25,24 @@ export * from './effects/types';
 export * from './effects/field';
 export * from './effects/registry';
 
+// Modifiers (media-effects layer — pure framebuffer transforms applied between a
+// voice's render and the compositor blend). The chain runner is the compositor's seam.
+export {
+  type ModifierDef,
+  type ModifierContext,
+  type ModifierCategory,
+  type PixelRange,
+  type ResolvedModifier,
+} from './modifiers/types';
+export { getModifier, tryGetModifier, listModifiers, modifierIds } from './modifiers/registry';
+export { applyModifierChain } from './modifiers/chain';
+export {
+  type ModifierCategoryGroup,
+  MODIFIER_CATEGORY_ORDER,
+  MODIFIER_CATEGORY_LABEL,
+  listModifiersByCategory,
+} from './modifiers/palette';
+
 // Engine
 export * from './engine/framebuffer';
 export * from './engine/render-context';

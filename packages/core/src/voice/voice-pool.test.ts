@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VoicePool, type SpawnDeps } from './voice-pool';
 import type { PlayAction } from './eval-graph';
-import type { Bus, EffectDef } from './types';
+import type { Bus, EffectDef, ResolvedModifier } from './types';
 
 // S25 — mono steal resets voice age. With voice timebase, a voice's animation clock is
 // `timeMs - bornAtMs`, so a fast retrigger only "restarts" the effect if the reused/new
@@ -64,5 +64,38 @@ describe('VoicePool — mono steal resets voice age (S25)', () => {
     const sampleAt = 1200;
     expect(sampleAt - b!.bornAtMs).toBe(200);
     expect(sampleAt - a!.bornAtMs).toBe(1200);
+  });
+});
+
+// S28 — spawn carries the resolved modifier chain (the S29 graph→voice seam) and resets
+// per-voice modifier state on (re)spawn so a reused pool slot never inherits a previous
+// voice's accumulators (same lifecycle as genState).
+describe('VoicePool — modifier chain plumbing (S28)', () => {
+  const chain: ResolvedModifier[] = [{ modifierId: 'trail', params: { decayMs: 250, mode: 'add' } }];
+  const withMods: PlayAction = { ...action, modifiers: chain };
+
+  it('copies PlayAction.modifiers onto the spawned voice and starts with no modifier state', () => {
+    const pool = new VoicePool();
+    const v = pool.spawn(withMods, null, 1, deps(0));
+    expect(v!.modifiers).toBe(chain);
+    expect(v!.modState).toBeUndefined();
+  });
+
+  it('a spawn without modifiers leaves the voice unmodified (hot path)', () => {
+    const pool = new VoicePool();
+    const v = pool.spawn(action, null, 1, deps(0));
+    expect(v!.modifiers).toBeUndefined();
+    expect(v!.modState).toBeUndefined();
+  });
+
+  it('reusing a pool slot clears the previous voice\'s modifier state', () => {
+    const pool = new VoicePool();
+    const a = pool.spawn(withMods, null, 1, deps(0));
+    a!.modState = [{ some: 'accumulator' }]; // simulate state built during the voice's life
+    a!.active = false; // free the slot so acquireSlot reuses it
+    const b = pool.spawn(action, null, 1, deps(100));
+    expect(b).toBe(a); // same reused slot
+    expect(b!.modifiers).toBeUndefined(); // no chain on the new voice
+    expect(b!.modState).toBeUndefined(); // stale accumulators cleared
   });
 });

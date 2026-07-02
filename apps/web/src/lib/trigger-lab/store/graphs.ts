@@ -4,7 +4,8 @@
    uniform here. The store wraps these with rune assignment + selection bookkeeping. Extracted
    from store.svelte.ts unchanged in behaviour. */
 
-import { type EffectDef, type GraphNode, type Preset, type TriggerGraph, defaultParams, makeNode } from '../sim';
+import { type EffectDef, type GraphNode, type ParamValues, type Preset, type TriggerGraph, defaultParams, makeNode } from '../sim';
+import { listModifiers } from '@ledrums/core';
 import { type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
 import type { Song } from '../../app/setlist';
@@ -44,6 +45,23 @@ export function playNodeInit(
   const eff = effects.find((e) => e.id === effId)!;
   const presetId = `${effId}:default`;
   return { scope: eff.scope, effectId: effId, presetId, params: { ...(presetById(presetId)?.params ?? defaultParams(eff)) } };
+}
+
+/** Default param values for a modifier id (its registry `paramSpec` defaults). Unknown id →
+    `{}` (the chain runner tolerates missing params via each modifier's own fallbacks). */
+export function modifierParamsFor(modifierId: string): ParamValues {
+  const def = listModifiers().find((m) => m.id === modifierId);
+  const params: ParamValues = {};
+  if (def) for (const s of def.paramSpec) params[s.key] = s.default;
+  return params;
+}
+
+/** The seed fields for a fresh modifier node — the first registered modifier and its
+    default params (mirrors {@link playNodeInit}). Empty when the registry is empty. */
+export function modifierNodeInit(): Pick<GraphNode, 'modifierId' | 'params'> {
+  const first = listModifiers()[0];
+  if (!first) return { modifierId: '', params: {} };
+  return { modifierId: first.id, params: modifierParamsFor(first.id) };
 }
 
 /** Human label for a graph key: the stored display name (`graphNames`, populated for every

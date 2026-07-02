@@ -35,6 +35,7 @@
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
   import GraphPalette from './GraphPalette.svelte';
+  import ModifierPalette from './ModifierPalette.svelte';
   import GraphListRail from './GraphListRail.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -75,7 +76,9 @@
 
   // ---- add-node palette (shared GraphPalette) -------------------------------
   // One palette item per node kind (icon / tint / label from the shared node metadata).
-  const PALETTE_ITEMS = NODE_KINDS.map((kind) => ({
+  // The generic `modifier` kind is served by the dedicated ModifierPalette below (which lists
+  // every registered modifier by category), so it's dropped from the flat kind palette.
+  const PALETTE_ITEMS = NODE_KINDS.filter((kind) => kind !== 'modifier').map((kind) => ({
     key: kind,
     label: kindLabel[kind],
     icon: kindIcon[kind],
@@ -85,6 +88,10 @@
   /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
   function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
     store.addNode(kind, cx - NODE_W / 2, cy - 40);
+  }
+  /** Add a specific modifier node (category palette) at the palette-supplied flow centre. */
+  function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
+    store.addModifierNode(modifierId, cx - NODE_W / 2, cy - 40);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -229,12 +236,17 @@
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
     if (sn) store.moveNode(sn, fn.position.x, fn.position.y);
   }
+  /** The target handle id ('mod' or the default flow input) as a store `toPort`. */
+  function toPortOf(handle: string | null | undefined): 'mod' | undefined {
+    return handle === 'mod' ? 'mod' : undefined;
+  }
   function onConnect(c: Connection): void {
-    store.connect(c.source, c.target, c.sourceHandle ?? undefined); // store validates (dup / cycle / direction)
+    // store validates (dup / cycle / direction / port scoping)
+    store.connect(c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
     rebuildEdges(); // drop any edge xyflow added optimistically that the store rejected
   }
   function onReconnect(oldEdge: { id: string }, c: Connection): void {
-    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined);
+    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
     rebuildEdges(); // revert the anchor's optimistic move if the store rejected it
   }
   function onDeleteEdges(removed: ReadonlyArray<{ id: string }>): void {
@@ -252,7 +264,14 @@
   /** A wire dropped on a node body (not a handle): wire it to that node's input — or
       its output if the drag began at an input. `store.connect` validates direction /
       cycle / dup, so a drop that can't be accepted is simply ignored. When the drag
-      began at a source handle, carry its id (a switch band) so the band wire lands. */
+      began at a source handle, carry its id (a switch band) so the band wire lands.
+
+      Drop-anywhere routes by SOURCE kind (memory `graph-interaction-prefs`): a wire from a
+      MODIFIER node lands on the target's `mod` input; every other source lands on the flow
+      `in`. So dropping Trail on a play node body wires its modifier chain, not a flow edge. */
+  function kindOf(id: string): string | undefined {
+    return store.selectedGraph?.nodes.find((n) => n.id === id)?.kind;
+  }
   function dropConnect(
     fromId: string,
     fromType: 'source' | 'target' | null,
@@ -260,8 +279,12 @@
     toId: string,
   ): void {
     if (fromId === toId) return;
-    if (fromType === 'target') store.connect(toId, fromId);
-    else store.connect(fromId, toId, fromPort ?? undefined);
+    if (fromType === 'target') {
+      // drag began at an INPUT handle → the dropped-on node becomes the source; route by ITS kind.
+      store.connect(toId, fromId, undefined, kindOf(toId) === 'modifier' ? 'mod' : undefined);
+    } else {
+      store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
+    }
     rebuildEdges();
   }
 </script>
@@ -299,7 +322,10 @@
     onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
   >
     {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
+      <div class="palette-stack">
+        <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
+        <ModifierPalette add={addModifierNodeAt} disabled={!store.canEdit} />
+      </div>
     {/snippet}
     {#snippet empty()}
       <p class="thint">Select a graph from the section to edit it.</p>
@@ -314,6 +340,13 @@
     gap: var(--space-3);
     min-height: 0;
     height: 100%;
+  }
+  /* the add-node kind palette + the modifier category palette, stacked top-left */
+  .palette-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {

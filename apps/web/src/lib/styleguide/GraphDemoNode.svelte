@@ -13,6 +13,8 @@
     tint: string;
     hasInput: boolean;
     hasOutput: boolean;
+    /** Renders the distinct `mod` input handle (play + modifier nodes take a modifier chain). */
+    hasMod?: boolean;
   };
 
   let { data, selected }: NodeProps = $props();
@@ -21,6 +23,15 @@
 
 {#if d.hasInput}
   <Handle type="target" position={Position.Left} />
+{/if}
+{#if d.hasMod}
+  <Handle
+    type="target"
+    id="mod"
+    position={Position.Left}
+    class="mod-handle"
+    style={d.hasInput ? 'top: 74%' : 'top: 50%'}
+  />
 {/if}
 <NodeCard icon={d.icon} title={d.title} sub={d.sub} tint={d.tint} selected={!!selected} />
 {#if d.hasOutput}
