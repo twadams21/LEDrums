@@ -15,6 +15,7 @@ export * from './easing';
 export * from './envelope';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
+export { resolveModifierChain } from './modifier-graph';
 export {
   buildPixelAttrs,
   createDefaultCompositor,
