@@ -51,7 +51,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
 | F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
-| H — Modifier nodes | 2 | #54 | group/H | in-progress (S28 merged; S29 in flight) | — | — |
+| H — Modifier nodes | 2 | #54 | group/H | in-progress (S28/S29 merged; S30/S31/S32 in flight) | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
@@ -62,6 +62,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T23:39 — Group H 2/5; new policy curbing burn
+
+- **group/H: 2/5 merged** (S28, S29); S30/S31/S32 in flight — all opus/**medium**, own windows (new policy fully applied). Usage 5h **21%** with 3 parallel impls — markedly lower burn than F/G's xhigh (which hit 70%+ walls). Policy working.
+- Inbox empty; rock-solid unchanged (50949b7). No handoff yet.
+- **Next:** S30/S31/S32 merge → H integrate+review → handoff → master merge; then I (S33–S38). 30-min cadence.
 
 ### 2026-07-02T23:08 — reset; Lane 2 resumed (Group H) under NEW policy
 
