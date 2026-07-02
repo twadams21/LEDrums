@@ -44,7 +44,7 @@ import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { ClientMessage, MonitorEvent, SerializedModel, TunnelInfo } from '../ws/protocol-types';
+import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo } from '../ws/protocol-types';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
@@ -273,6 +273,12 @@ export class TriggerLab {
   link = $state<'offline' | 'connecting' | 'open'>('offline');
   /** engine round-trip latency (ms) — 0 until the WS link reports it. */
   latencyMs = $state(0);
+  /** Latest server OutputStatus (arming state, packetsSent, lastError, universeCount) —
+      from the `state` message on connect and every `stats` tick. null until the first
+      arrives (offline / pre-handshake). The OutputPill derives its truth from this plus
+      {@link link}, not link state alone (link can be open while Art-Net is failing). S03's
+      output status panel reads the same field. */
+  output = $state<OutputStatus | null>(null);
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -818,12 +824,15 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, _output, showLibrary, tunnel) => {
+      onState: (project, model, _effects, _projects, output, showLibrary, tunnel) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
         this.project = project;
         this.serverModel = model;
+        // adopt the server's output truth (arming/packets/error) so the OutputPill is
+        // honest from the first handshake, before the first stats tick lands.
+        this.output = output;
         // remote-access surface (share URL + PIN) for the host UI
         this.tunnel = tunnel;
         // Cold-load adopt of the server-authoritative show library (server wins on first state;
@@ -892,9 +901,10 @@ export class TriggerLab {
           this.presence = null;
         }
       },
-      onStats: (_stats, latencyMs, fps, _output, voice) => {
+      onStats: (_stats, latencyMs, fps, output, voice) => {
         this.latencyMs = latencyMs;
         this.fps = fps; // the server's measured LED output rate wins while connected
+        this.output = output; // arming/packets/error truth for the OutputPill (S02)
         // In voice mode, the server owns the live bus levels; the local sim is only
         // an offline preview once the socket is connected.
         if (voice?.busLevels) this.busLevels = voice.busLevels;

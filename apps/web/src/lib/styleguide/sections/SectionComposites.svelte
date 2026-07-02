@@ -17,7 +17,7 @@
   import { PATTERN_EFFECTS, GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { MonitorEvent } from '../../ws/protocol-types';
+  import type { MonitorEvent, OutputStatus } from '../../ws/protocol-types';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
 
   /* ---- NodeCard faces ------------------------------------------------------- */
@@ -44,9 +44,18 @@
   const genThumb = GENERATOR_EFFECTS[0];
   const playFace = patternThumbs[1] ?? patternThumbs[0];
 
-  /* ---- OutputPill (reads only store.link) -------------------------------------- */
-  const linkStub = (link: 'open' | 'connecting' | 'closed') =>
-    ({ link }) as unknown as TriggerLab;
+  /* ---- OutputPill (reads store.link + store.output) ---------------------------- */
+  const outStatus = (o: Partial<OutputStatus>): OutputStatus => ({
+    state: 'armed',
+    protocol: 'artnet',
+    host: '192.168.1.50',
+    packetsSent: 0,
+    lastError: null,
+    universeCount: 4,
+    ...o,
+  });
+  const pillStub = (link: TriggerLab['link'], output: OutputStatus | null = null) =>
+    ({ link, output }) as unknown as TriggerLab;
 
   /* ---- Monitor — reactive stub store (filters actually work) ------------------- */
   const now = Date.now();
@@ -182,13 +191,17 @@
 
     <DemoCard
       title="Output pill"
-      src={['lib/app/chrome/OutputPill', 'lib/ui/StatusPill']}
-      note="Link-derived: open ⇒ LIVE (server engine drives output) · connecting ⇒ SYNC (pulsing) · offline ⇒ LOCAL (sim preview only)."
+      src={['lib/app/chrome/OutputPill', 'lib/app/chrome/output-pill', 'lib/ui/StatusPill']}
+      note="Truth from the server's OutputStatus (arming/packets/lastError) × link state, not link alone. LIVE (armed + packets, red) · ERR (armed but erroring — red, pulsing, error in tooltip) · DRY (dry-run, amber) · ARMED (armed, no packets yet — pulsing) · OFF (disabled) · SYNC (connecting, pulsing) · LOCAL (offline, sim only). LIVE is impossible while lastError is set or packets aren't flowing."
     >
       <div class="pill-row">
-        <OutputPill store={linkStub('open')} />
-        <OutputPill store={linkStub('connecting')} />
-        <OutputPill store={linkStub('closed')} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'armed', packetsSent: 128_400 }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'armed', packetsSent: 128_400, lastError: 'EHOSTUNREACH 192.168.1.50:6454' }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'dry-run' }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'armed', packetsSent: 0 }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'disabled' }))} />
+        <OutputPill store={pillStub('connecting')} />
+        <OutputPill store={pillStub('offline')} />
       </div>
     </DemoCard>
 
