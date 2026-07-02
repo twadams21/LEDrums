@@ -6,7 +6,8 @@
      horizontal strip for the dock. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import type { Voice, Polyphony } from '../../trigger-lab/sim';
+  import type { Polyphony } from '../../trigger-lab/sim';
+  import type { DockVoice } from '../../trigger-lab/dock-voices';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import { busIcon } from '../views/trigger-node-meta';
@@ -22,12 +23,9 @@
     { value: 'poly', label: 'poly' },
   ];
 
-  function vlevel(v: Voice): number {
-    return v.level * v.deckGain;
-  }
-  function voiceStyle(v: Voice): string {
-    const L = vlevel(v);
-    const hue = typeof v.params.hue === 'number' ? v.params.hue : 0;
+  function voiceStyle(v: DockVoice): string {
+    const L = v.level;
+    const hue = v.hue;
     const bg = `oklch(${(0.26 + 0.52 * L).toFixed(3)} ${(0.04 + 0.16 * L).toFixed(3)} ${hue} / ${(0.2 + 0.8 * L).toFixed(3)})`;
     return `background:${bg}; border-color: oklch(0.75 0.15 ${hue} / ${(0.35 + 0.6 * L).toFixed(2)});`;
   }
@@ -35,7 +33,7 @@
 
 <div class="layers">
   {#each store.buses as bus (bus.id)}
-    {@const voices = store.voices.filter((v) => v.busId === bus.id)}
+    {@const voices = store.dockVoices.filter((v) => v.busId === bus.id)}
     {@const selected = shell.isSelected({ kind: 'bus', busId: bus.id })}
     {@const I = busIcon[bus.id]}
     <article class="bus" class:selected>
@@ -60,7 +58,7 @@
           <span class="silent">— silent —</span>
         {:else}
           {#each voices as v (v.id)}
-            <span class="voice" class:releasing={v.phase === 'release'} style={voiceStyle(v)} title={v.via}>
+            <span class="voice" class:releasing={v.releasing} style={voiceStyle(v)} title={v.via}>
               {#if v.mode === 'oneshot'}<Zap size={11} aria-hidden="true" />{:else if v.mode === 'loop'}<Repeat size={11} aria-hidden="true" />{:else}<Hand size={11} aria-hidden="true" />{/if}
               {store.sim.effectName(v.effectId)}
             </span>

@@ -40,6 +40,7 @@ import {
   type Bus,
   type EffectDef,
   type ParamValues,
+  type PlayMode,
   type Preset,
   type Show,
   type TriggerGraph,
@@ -72,11 +73,32 @@ export interface InputEvent {
   timeMs: number;
 }
 
+/** Per-voice line item in {@link EngineStats.voices}: the minimal shape a client's Layers/Buses
+ * dock renders (id, bus, effect, mode, combined level, hue, release phase, provenance). Distinct
+ * from the internal pooled {@link Voice} — pattern / envelope / generator state stay engine-side.
+ * Built only in {@link RenderEngine.stats} (the ~2 Hz telemetry cadence), never on the render hot
+ * path. */
+export interface VoiceStat {
+  id: string;
+  busId: string;
+  effectId: string;
+  mode: PlayMode;
+  /** Combined `level * deckGain`, 0..1. */
+  level: number;
+  /** Param hue (0 when the effect exposes none). */
+  hue: number;
+  /** True while the voice is in its release (fade-out) phase. */
+  releasing: boolean;
+  via: string;
+}
+
 export interface EngineStats {
   timeMs: number;
   beat: number;
   voiceCount: number;
   busLevels: Record<string, number>;
+  /** Per-voice detail for a connected client's dock (S17). Empty when no voices are active. */
+  voices: VoiceStat[];
 }
 
 export interface RenderEngine {
@@ -590,8 +612,22 @@ class VoiceBusEngine implements RenderEngine {
     const busLevels: Record<string, number> = {};
     for (const b of this.show.buses) busLevels[b.id] = this.busLevel(b);
     let voiceCount = 0;
-    for (const v of this.voices.pool) if (v.active) voiceCount++;
-    return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels };
+    const voices: VoiceStat[] = [];
+    for (const v of this.voices.pool) {
+      if (!v.active) continue;
+      voiceCount++;
+      voices.push({
+        id: v.id,
+        busId: v.busId,
+        effectId: v.effectId,
+        mode: v.mode,
+        level: v.level * v.deckGain,
+        hue: typeof v.params.hue === 'number' ? v.params.hue : 0,
+        releasing: v.phase === 'release',
+        via: v.via,
+      });
+    }
+    return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels, voices };
   }
 
   private busLevel(bus: Bus): number {
@@ -641,7 +677,7 @@ class NullEngine implements RenderEngine {
     return this.fb;
   }
   stats(): EngineStats {
-    return { timeMs: this.timeMs, beat: this.beat, voiceCount: 0, busLevels: {} };
+    return { timeMs: this.timeMs, beat: this.beat, voiceCount: 0, busLevels: {}, voices: [] };
   }
 }
 

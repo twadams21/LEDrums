@@ -30,4 +30,5 @@ export {
   type RenderEngineOptions,
   type InputEvent,
   type EngineStats,
+  type VoiceStat,
 } from './engine';

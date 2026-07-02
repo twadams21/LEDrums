@@ -541,7 +541,7 @@ const statsTimer = setInterval(() => {
       latencyMs: s.latencyMs,
       fps: s.fps,
       output: s.output,
-      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels },
+      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
     });
     return;
   }

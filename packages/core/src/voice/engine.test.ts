@@ -158,6 +158,60 @@ describe('createNullEngine', () => {
     expect(f.length).toBe(m.pixelCount * 4);
     expect(Array.from(f).every((x) => x === 0)).toBe(true);
     expect(e.stats().voiceCount).toBe(0);
+    expect(e.stats().voices).toEqual([]);
+  });
+});
+
+describe('VoiceBusEngine — stats().voices per-voice detail (S17)', () => {
+  it('lists one entry per active voice with bus / effect / mode / level / release / via', () => {
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(allGraph())); // trigger → all → [fxA on base, fxB on lead], both oneshot
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+
+    const { voices } = e.stats();
+    expect(voices).toHaveLength(2);
+    // The dock groups by bus and names the effect — both must survive onto the wire shape.
+    expect(new Set(voices.map((v) => v.busId))).toEqual(new Set(['base', 'lead']));
+    expect(new Set(voices.map((v) => v.effectId))).toEqual(new Set(['fxA', 'fxB']));
+    for (const v of voices) {
+      expect(v.mode).toBe('oneshot');
+      expect(v.id).toBeTruthy();
+      expect(typeof v.via).toBe('string');
+      expect(v.level).toBeGreaterThanOrEqual(0);
+      expect(v.releasing).toBe(false); // fresh voices are attacking, not releasing
+    }
+  });
+
+  it('flags a voice as releasing once it enters its release phase', () => {
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(allGraph())); // default fxA/fxB: attack 10, sustain 100, release 100
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5)); // spawn → attacking
+    e.tick(120, 115, transport(120)); // attack level hits 1 → sustain
+    e.tick(160, 40, transport(160)); // sustain window elapsed (age 155 ≥ 110) → release, not yet reaped
+
+    const fxA = e.stats().voices.find((v) => v.effectId === 'fxA');
+    expect(fxA).toBeDefined();
+    expect(fxA!.releasing).toBe(true);
+  });
+
+  it('surfaces a section look as a looped voice on its bus after a server recall (S15 → S17)', () => {
+    // The S17 acceptance end-to-end: S15 spawns section looks in the engine on recall; those must
+    // appear in the per-voice stream (with bus + loop mode) so a connected dock renders them.
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({ base: 'lkBase', lead: 'lkLead' }));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5)); // drain recall → spawn looks
+    e.tick(40, 35, transport(40)); // age past attack so levels register
+
+    const { voices } = e.stats();
+    const base = voices.find((v) => v.effectId === 'lkBase');
+    const lead = voices.find((v) => v.effectId === 'lkLead');
+    expect(base).toMatchObject({ busId: 'base', mode: 'loop' });
+    expect(lead).toMatchObject({ busId: 'lead', mode: 'loop' });
   });
 });
 

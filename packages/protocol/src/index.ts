@@ -141,10 +141,32 @@ export interface OutputStatus {
   universeCount: number;
 }
 
+/** One live voice, streamed so a CONNECTED client's Layers/Buses dock renders the voices the
+ * server engine is actually sounding — not the offline sim's (S17). Only the fields the dock chip
+ * draws travel the wire; the engine's internal {@link voice.Voice} (pattern / envelope / generator
+ * state) stays server-side. */
+export interface VoiceStat {
+  /** Stable voice identity — the dock keys chips on it. */
+  id: string;
+  busId: string;
+  effectId: string;
+  mode: voice.PlayMode;
+  /** Combined `level * deckGain`, 0..1 — drives the chip's brightness. */
+  level: number;
+  /** Param hue for the chip colour (0 when the effect exposes none). */
+  hue: number;
+  /** True while the voice is fading out (release phase) — the chip dims. */
+  releasing: boolean;
+  /** Provenance label (the voice's `via`) — shown as the chip tooltip. */
+  via: string;
+}
+
 /** Optional voice-bus telemetry, present only when the server runs the voice engine. */
 export interface VoiceStats {
   voiceCount: number;
   busLevels: Record<string, number>;
+  /** Per-voice detail for the Layers/Buses dock (S17) — empty when nothing sounds. */
+  voices: VoiceStat[];
 }
 
 export type MonitorEventType = 'input' | 'output' | 'effect' | 'graph' | 'system' | 'persistence' | 'error';

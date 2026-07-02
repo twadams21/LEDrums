@@ -12,6 +12,7 @@ export type {
   ServerMessage,
   ShowLibraryBlob,
   TunnelInfo,
+  VoiceStat,
   VoiceStats,
 } from '@ledrums/protocol';
 

@@ -44,7 +44,8 @@ import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { ClientMessage, MonitorEvent, SerializedModel, TunnelInfo } from '../ws/protocol-types';
+import type { ClientMessage, MonitorEvent, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { selectDockVoices, type DockVoice } from './dock-voices';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
@@ -259,6 +260,11 @@ export class TriggerLab {
   timeMs = $state(0);
   beat = $state(0);
   busLevels = $state<Record<string, number>>({});
+  /** Per-voice detail streamed from the server engine's stats (S17) — the authoritative voice list
+      while the engine link is open (the sim stops firing when connected, so its `voices` are stale).
+      Empty offline / before the first stats. {@link dockVoices} source-selects between this and the
+      sim. */
+  serverVoices = $state<VoiceStat[]>([]);
   monitorEvents = $state<MonitorEvent[]>([]);
   monitorTypeFilter = $state<MonitorFilterType>(DEFAULT_MONITOR_FILTERS.type);
   monitorTextFilter = $state(DEFAULT_MONITOR_FILTERS.text);
@@ -321,6 +327,18 @@ export class TriggerLab {
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
   /** Preview frame: the engine's composited output when connected, else local sim. */
   previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.frameBuf);
+  /** Voice list for the Layers/Buses dock (S17): the server's streamed voices while the engine link
+      is open (its render is authoritative — the sim no longer fires when connected), the local sim's
+      voices offline. Pure source-selection lives in {@link selectDockVoices}. Gated on `link` (the
+      firing/authority gate), not `useServer` (the stricter visualiser-frame gate): the dock owns no
+      pixels, so it can adopt server voices the instant the link opens without waiting for a frame. */
+  dockVoices = $derived<DockVoice[]>(
+    selectDockVoices({
+      connected: this.link === 'open',
+      simVoices: this.voices,
+      serverVoices: this.serverVoices,
+    }),
+  );
 
   /** This client's authoring role, derived from {@link presence} (S1 multi-client):
       - 'standalone' — no presence yet (offline / single user): local-wins authoring, as before;
@@ -893,14 +911,18 @@ export class TriggerLab {
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
+          // Drop the server voice list — offline the dock reads the sim again, and stale server
+          // voices must not linger into the next connect.
+          this.serverVoices = [];
         }
       },
       onStats: (_stats, latencyMs, fps, _output, voice) => {
         this.latencyMs = latencyMs;
         this.fps = fps; // the server's measured LED output rate wins while connected
-        // In voice mode, the server owns the live bus levels; the local sim is only
-        // an offline preview once the socket is connected.
+        // In voice mode, the server owns the live bus levels AND the per-voice list; the local sim
+        // is only an offline preview once the socket is connected (the sim no longer fires — S12).
         if (voice?.busLevels) this.busLevels = voice.busLevels;
+        this.serverVoices = voice?.voices ?? [];
       },
       onFrame: (frame) => {
         this.serverFrame = frame;
@@ -1014,9 +1036,14 @@ export class TriggerLab {
     this.log = this.sim.log.slice(0, 40);
     this.timeMs = this.sim.timeMs;
     this.beat = this.sim.beat;
-    const levels: Record<string, number> = {};
-    for (const b of this.buses) levels[b.id] = this.sim.busLevel(b.id);
-    this.busLevels = levels;
+    // Bus meters follow the same authority rule as the voice list: the server owns them when
+    // connected (streamed via onStats). Writing the sim's levels here every rAF frame would clobber
+    // that ~2 Hz server value ~30× a second, so only publish sim levels while offline.
+    if (this.link !== 'open') {
+      const levels: Record<string, number> = {};
+      for (const b of this.buses) levels[b.id] = this.sim.busLevel(b.id);
+      this.busLevels = levels;
+    }
   }
 
   private addMonitor(event: Omit<MonitorEvent, 'id' | 'time'> | MonitorEvent): void {
