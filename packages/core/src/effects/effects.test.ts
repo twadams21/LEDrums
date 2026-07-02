@@ -310,6 +310,58 @@ describe('collisions', () => {
   });
 });
 
+// S19 — Colour batch 1 (swatch + hit/trigger effects). Saturation is now exposed on
+// chase, whole-drum, whole-kit, follow-hoop, burst, pixel-accum, synced-hoops, swing
+// (colour-melody already had it). The contract: saturation 0 desaturates every lit pixel
+// to achromatic white/grey (r===g===b), which the hardcoded `hsvToRgb(hue, 1, …)` could
+// never produce. Each case uses a coloured hue so a leak would show as a chromatic pixel.
+describe('S19 colour batch 1 — saturation 0 ⇒ white on lit pixels', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  const hit = (id: string) => trig(1, id, 38, 1, 0);
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'chase', run: (m) => render(chase, m, ctx(m, { transport: transport(0) }), { hue: 120, saturation: 0 }) },
+    { name: 'whole-drum', run: (m) => render(wholeDrum, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
+    { name: 'whole-kit', run: (m) => render(wholeKit, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
+    { name: 'follow-hoop', run: (m) => render(followHoop, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, delayMs: 0, decayMs: 2000 }) },
+    { name: 'burst', run: (m) => render(burst, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
+    { name: 'pixel-accum', run: (m) => render(pixelAccum, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }, pixelAccum.createState!(m)) },
+    { name: 'synced-hoops', run: (m) => render(syncedHoops, m, ctx(m, { transport: transport(1.3, 700) }), { hue: 120, saturation: 0 }) },
+    { name: 'swing', run: (m) => render(swing, m, ctx(m, { dt: 0, triggers: [hit('d0')] }), { hue: 120, saturation: 0 }, swing.createState!(m)) },
+    { name: 'colour-melody', run: (m) => render(colourMelody, m, ctx(m, { triggers: [hit('d0')] }), { saturation: 0 }) },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured hue at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(chase, m, ctx(m, { transport: transport(0) }), { hue: 120, saturation: 1 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+});
+
 describe('all effects', () => {
   it('never emit NaN or out-of-range channel values', () => {
     const m = model(2);
