@@ -66,7 +66,8 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 - **Lane 1 `lane-1-b0cea3`** was found parked idle at prompt 5 min past its 13:00 reset wake (context healthy 19%; footer showed stale 91%). Rather than risk idle crew, I sent a **resume nudge** (msg 629a67) with dup-safety instructions (check `twux list` before relaunching any S13–S17 impl). It should now launch the E wave: S13+S14+S15 parallel → S17 → S16.
 - **group/E** exists with **S12 merged** (lane orch, pre-pause, sweep green 1047 tests — authority principle: echo=learn-only, all outbound sim gated on link). Remaining E: S13/S14/S15/S17/S16 → group review → hand off to master.
 - **A+B merged** to rock-solid (a91dbbf, 74ffd7a). **Lane 2 still deferred** (serial; fires when group/E merged).
-- **Next:** short verify wake (~13:17) to confirm E wave launched; then normal 30-min cadence; merge group/E when handed off; then fire Lane 2 orch (F→G→H→I).
+- **CONFIRMED 13:18:** E wave live — S13-firegraph (wt-1), S14-drumlink (wt-2), S15-section-looks (wt-3), all opus/xhigh, no dups (dup-safety held). Lane orch resumed (msg df2c81). Pipeline: S17 → free worktree, S16 after S15, then group review + handoff = Lane 1 done.
+- **Next:** 30-min cadence; merge group/E when handed off; then fire Lane 2 orch (F→G→H→I).
 
 ### 2026-07-02T09:41 — GROUP B MERGED + BUDGET PAUSE
 
