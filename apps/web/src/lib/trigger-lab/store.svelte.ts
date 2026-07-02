@@ -1798,6 +1798,21 @@ export class TriggerLab {
     return node;
   }
 
+  /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
+      a chosen modifier directly, vs `addNode('modifier')` which seeds the first one). Unknown
+      ids are still placed — the inspector/chain runner tolerate an unresolved modifierId. */
+  addModifierNode(modifierId: string, x: number, y: number): GraphNode | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    const g = this.selectedGraph;
+    if (!g) return null;
+    const node = makeNode('modifier', nid('n'), x, y, {
+      modifierId,
+      params: graphsLib.modifierParamsFor(modifierId),
+    });
+    g.nodes.push(node);
+    return node;
+  }
+
   moveNode(node: GraphNode, x: number, y: number): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     node.x = x;
