@@ -6,10 +6,11 @@
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
   import GraphPalette from '../../app/views/GraphPalette.svelte';
+  import ModifierPalette from '../../app/views/ModifierPalette.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
   import { GraphHover } from '../../app/views/graph-hover.svelte';
-  import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
+  import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
   import DemoCard from '../DemoCard.svelte';
 
@@ -46,7 +47,9 @@
     edges = hover.decorate(edges);
   }
 
-  const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier'];
+  // Modifiers are added from the dedicated ModifierPalette (category-grouped over the registry),
+  // so they're dropped from the flat kind palette — mirroring the real Trigger graph.
+  const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
   const paletteItems = paletteKinds.map((k) => ({
     key: k,
     label: kindLabel[k],
@@ -64,7 +67,6 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '120ms',
-    modifier: 'add · smear',
   };
   function add(kind: NodeKind, cx: number, cy: number): void {
     nodes = [
@@ -74,6 +76,18 @@
         type: 'demo',
         position: { x: cx - 88, y: cy - 24 },
         data: face(kind, demoSubs[kind] ?? ''),
+      },
+    ];
+  }
+  /** Add a modifier node from the category palette (titled with the registry display name). */
+  function addMod(modifierId: string, cx: number, cy: number): void {
+    nodes = [
+      ...nodes,
+      {
+        id: `n${++nid}`,
+        type: 'demo',
+        position: { x: cx - 88, y: cy - 24 },
+        data: { ...face('modifier', 'modifier'), title: modifierName(modifierId) },
       },
     ];
   }
@@ -93,6 +107,7 @@
     src={[
       'lib/app/views/GraphCanvas',
       'lib/app/views/GraphPalette',
+      'lib/app/views/ModifierPalette',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
@@ -119,7 +134,10 @@
         }}
       >
         {#snippet palette()}
-          <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node" />
+          <div class="palette-stack">
+            <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node" />
+            <ModifierPalette add={addMod} />
+          </div>
         {/snippet}
       </GraphCanvas>
     </div>
@@ -135,6 +153,7 @@
       <li><strong>Rejected rewires keep the wire.</strong> The store validates reconnects; an invalid drop restores the original wire instead of deleting it.</li>
       <li><strong>Per-band handles.</strong> A value+bands switch emits one source handle per band (<code>band-&#123;i&#125;</code>) so each band wires a different child (<code>BandSwitchNode</code>).</li>
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
+      <li><strong>Modifiers add by category.</strong> The <code>ModifierPalette</code> lists every registered modifier grouped by category with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list), so new modifiers appear automatically.</li>
       <li><strong>Delete / Backspace</strong> removes the selection; the palette adds at the visible canvas centre.</li>
     </ul>
   </div>
@@ -143,6 +162,12 @@
 <style>
   .canvas-demo {
     height: 360px;
+  }
+  .palette-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
   }
   .contract {
     margin-top: var(--space-5);

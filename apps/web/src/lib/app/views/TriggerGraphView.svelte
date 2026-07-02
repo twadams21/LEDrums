@@ -35,6 +35,7 @@
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
   import GraphPalette from './GraphPalette.svelte';
+  import ModifierPalette from './ModifierPalette.svelte';
   import GraphListRail from './GraphListRail.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -75,7 +76,9 @@
 
   // ---- add-node palette (shared GraphPalette) -------------------------------
   // One palette item per node kind (icon / tint / label from the shared node metadata).
-  const PALETTE_ITEMS = NODE_KINDS.map((kind) => ({
+  // The generic `modifier` kind is served by the dedicated ModifierPalette below (which lists
+  // every registered modifier by category), so it's dropped from the flat kind palette.
+  const PALETTE_ITEMS = NODE_KINDS.filter((kind) => kind !== 'modifier').map((kind) => ({
     key: kind,
     label: kindLabel[kind],
     icon: kindIcon[kind],
@@ -85,6 +88,10 @@
   /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
   function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
     store.addNode(kind, cx - NODE_W / 2, cy - 40);
+  }
+  /** Add a specific modifier node (category palette) at the palette-supplied flow centre. */
+  function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
+    store.addModifierNode(modifierId, cx - NODE_W / 2, cy - 40);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -315,7 +322,10 @@
     onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
   >
     {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
+      <div class="palette-stack">
+        <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
+        <ModifierPalette add={addModifierNodeAt} disabled={!store.canEdit} />
+      </div>
     {/snippet}
     {#snippet empty()}
       <p class="thint">Select a graph from the section to edit it.</p>
@@ -330,6 +340,13 @@
     gap: var(--space-3);
     min-height: 0;
     height: 100%;
+  }
+  /* the add-node kind palette + the modifier category palette, stacked top-left */
+  .palette-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {

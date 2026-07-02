@@ -36,6 +36,12 @@ export {
 } from './modifiers/types';
 export { getModifier, tryGetModifier, listModifiers, modifierIds } from './modifiers/registry';
 export { applyModifierChain } from './modifiers/chain';
+export {
+  type ModifierCategoryGroup,
+  MODIFIER_CATEGORY_ORDER,
+  MODIFIER_CATEGORY_LABEL,
+  listModifiersByCategory,
+} from './modifiers/palette';
 
 // Engine
 export * from './engine/framebuffer';

@@ -17,6 +17,15 @@ import { pixelate } from './impl/pixelate';
 import { mirror } from './impl/mirror';
 import { hueShift } from './impl/hue-shift';
 import { levels } from './impl/levels';
+// S32
+import { slide } from './impl/slide';
+import { blur } from './impl/blur';
+import { posterize } from './impl/posterize';
+import { feedback } from './impl/feedback';
+import { kaleidoscope } from './impl/kaleidoscope';
+import { freeze } from './impl/freeze';
+import { flicker } from './impl/flicker';
+import { chromatic } from './impl/chromatic';
 
 const ALL: ModifierDef<any>[] = [
   trail,
@@ -31,6 +40,15 @@ const ALL: ModifierDef<any>[] = [
   mirror,
   hueShift,
   levels,
+  // S32 — modifier second wave (Slide/Blur/Posterize/Feedback/Kaleidoscope/Freeze/Flicker/Chromatic)
+  slide,
+  blur,
+  posterize,
+  feedback,
+  kaleidoscope,
+  freeze,
+  flicker,
+  chromatic,
 ];
 
 const registry = new Map<string, ModifierDef<any>>();
