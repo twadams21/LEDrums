@@ -9,6 +9,8 @@
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import RenameField from './RenameField.svelte';
+  import Separator from '../../../ui/Separator.svelte';
+  import OutputStatusPanel from './OutputStatusPanel.svelte';
   import { onNum } from './forms';
   import { PROTOCOL_OPTS, RGB_OPTS } from '../../views/node-options';
 
@@ -17,6 +19,9 @@
   const project = $derived(store.project);
   const out = $derived(project?.output ?? null);
 </script>
+
+<OutputStatusPanel output={store.output} packetsPerSec={store.outputPacketsPerSec} port={out?.port} />
+<Separator />
 
 {#if out}
   <p class="grouphint">Art-Net / sACN transport — where the pixel stream is sent.</p>
