@@ -9,6 +9,7 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 - **Disk headroom (MONITOR):** volume was at 99% / ~8.3 GB free at initiative start. pnpm's hardlinked global store makes each worktree `node_modules` nearly free (verified: 4 installs, no measurable disk delta). **Risk remains for Lane 4** (desktop/tauri) — Rust `target/` build dirs are NOT hardlinked and can be large. Watch `df -h /Users/trent` before/around Lane 4; if a build fails on ENOSPC, that is a blocking escalation to Trent.
 - **Non-blocking future-slice residuals (from group reports; NOT in scope for Rock Solid):** (F) — none blocking. (G, group-G.md) per-hosting timebase for trigger-hosted textures (doc 06 wish; needs a voice/bus-level flag — future slice); helix/wipe-3d timebase conversion follow-ups; 2 thumbnails static by nature. Surface to Trent post-initiative, not now.
 - **Cross-group merge drift (process lesson):** group/E was branched off rock-solid PRE-group-B, so B×E independently edited shared files (`store.svelte.ts`, two inspectors) → non-trivial semantic conflict at master-merge time. Handed back to the lane orch to integrate (merge rock-solid into group/E + resolve) rather than hand-merge entangled feature code as master. **Guidance for Lane 2+:** lane orch should `git merge rock-solid` into a group branch (resolving) BEFORE handing it off, so master merges are clean — especially when groups within a lane overlap in time.
+- **⚙️ EFFORT/COST POLICY CHANGE — Trent DIRECT directive (2026-07-02 21:54, given in the lane-2 session; overrides ORCHESTRATION.md's opus/xhigh impl row for ALL remaining work — Lanes 2→4).** After F+G burn analysis (xhigh on mechanical batch slices = biggest overspend; handoff reports were 28–49% of group insertions; narrow-pane paste bug killed 2 launches): (1) impls default **opus/MEDIUM**, **high** only where genuinely needed (tracers / ui-significant / engine seams), **NEVER xhigh** — compensated by a stricter per-slice orch review (full diff read before every merge; defects prompted back to the impl). (2) Followers get **only the slice file + predecessor tracer report**, NOT the mechanism/context doc. (3) **All launches in own windows, never split panes.** (4) Report contract slimmed to **<=30 lines** (no commits/files lists; context pack only when a dependent exists). **MASTER MUST propagate this to the Lane 3 (J→K) and Lane 4 (C→D→L) orch assignments** (bake into the send-message, since lane orchs still read ORCHESTRATION.md which says xhigh).
 - **Topology deviation (recorded):** the doc names a 3-worktree pool (`wt-1|2|3`). I additionally created **`../ledrums-wt/wt-master` on `rock-solid`** for the master's own tracker commits + group-branch merges + post-merge sweeps. Rationale: the main working tree (`~/Documents/dev/ledrums`) is dirty with Trent's unrelated local desktop/tauri work (`.dmg`, tauri configs, `.infisical.json`) and must stay pristine; a single branch can't be checked out in two worktrees. `wt-1/2/3` remain the impl pool exactly as the doc specifies.
 
 ---
@@ -50,7 +51,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
 | F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
-| H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
+| H — Modifier nodes | 2 | #54 | group/H | in-progress (S28/S29 merged; S30/S31/S32 in flight) | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
@@ -61,6 +62,20 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T23:39 — Group H 2/5; new policy curbing burn
+
+- **group/H: 2/5 merged** (S28, S29); S30/S31/S32 in flight — all opus/**medium**, own windows (new policy fully applied). Usage 5h **21%** with 3 parallel impls — markedly lower burn than F/G's xhigh (which hit 70%+ walls). Policy working.
+- Inbox empty; rock-solid unchanged (50949b7). No handoff yet.
+- **Next:** S30/S31/S32 merge → H integrate+review → handoff → master merge; then I (S33–S38). 30-min cadence.
+
+### 2026-07-02T23:08 — reset; Lane 2 resumed (Group H) under NEW policy
+
+- **5h reset (5% used; next 04:00 UTC).** **Lane 2 resumed autonomously** — no nudge.
+- **NEW effort/cost policy in effect** (Trent direct, see notes above): impls opus/medium default, never xhigh, own windows, slim reports, stricter orch review. Visible: S29 launched opus/**high** (ui/engine seam — justified) in its own window.
+- **group/H:** S28 (modifier engine core + Trail) MERGED into group/H; S29-modifier-graph in flight (needs S01+S28). Then S30/S31/S32.
+- rock-solid unchanged (9d23a5a) — no H handoff yet.
+- **Next:** merge group/H then group/I on handoff (integrated+reviewed). Lane 2 DONE → fire **Lane 3 orch (J→K) WITH THE NEW POLICY baked into its assignment** (+ K.S43/S45 need J.S40). 30-min cadence.
 
 ### 2026-07-02T19:5x — GROUP G MERGED (21/49); H waits for reset
 
