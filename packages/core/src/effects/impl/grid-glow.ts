@@ -23,6 +23,7 @@ export const gridGlow: EffectGenerator = {
     { key: 'rows', label: 'Rows', type: 'number', default: 4, min: 1, max: 24, step: 1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 5, step: 0.01 },
     { key: 'hue', label: 'Hue', type: 'number', default: 320, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
@@ -30,6 +31,7 @@ export const gridGlow: EffectGenerator = {
     const rows = Math.max(1, Math.round(pnum(params, 'rows', 4)));
     const speed = pnum(params, 'speed', 1);
     const hue = pnum(params, 'hue', 320);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const width = 0.18; // glow half-width as a fraction of a cell
     renderUvField(ctx, fb, 'cylindrical', (u, v, t) => {
@@ -41,7 +43,7 @@ export const gridGlow: EffectGenerator = {
       const pulse = 0.6 + 0.4 * Math.sin(t * speed * 2); // breathing brightness
       const b = clamp01(grid * pulse);
       if (b <= 0) return [0, 0, 0];
-      const c = hsvToRgb(hue + grid * 30, 1, bri * b);
+      const c = hsvToRgb(hue + grid * 30, sat, bri * b);
       return [c.r, c.g, c.b];
     });
   },
