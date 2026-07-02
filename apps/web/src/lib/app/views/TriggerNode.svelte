@@ -15,6 +15,7 @@
      own row with a cutoff readout, so a different child can be wired per value band. */
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { getContext } from 'svelte';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import NodeCard from './NodeCard.svelte';
   import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
@@ -67,22 +68,30 @@
   {/if}
 {/snippet}
 
-{#if nodeHasInput(kind)}
-  <Handle type="target" position={Position.Left} />
-{/if}
-
-{#if isBandsSwitch}
-  <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
+{#if !node}
+  <!-- The live model for this id is gone from the current graph — a projection / cache
+       desync (incident 09). Render a VISIBLE stale placeholder (dashed warn card, id in the
+       sub) instead of a blank card, so the fault is obvious on the canvas and in a screen
+       capture, not a silent blank. No handles: a stale node is not a valid wiring target. -->
+  <NodeCard icon={TriangleAlert} title="Stale node" sub={id} tint="var(--warn)" stale selected={!!selected} />
 {:else}
-  <NodeCard
-    icon={Icon}
-    {title}
-    {sub}
-    tint={chipTint}
-    selected={!!selected}
-    thumb={kind === 'play' && eff ? playThumb : undefined}
-  />
-  {#if nodeHasOutput(kind)}
-    <Handle type="source" position={Position.Right} />
+  {#if nodeHasInput(kind)}
+    <Handle type="target" position={Position.Left} />
+  {/if}
+
+  {#if isBandsSwitch}
+    <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
+  {:else}
+    <NodeCard
+      icon={Icon}
+      {title}
+      {sub}
+      tint={chipTint}
+      selected={!!selected}
+      thumb={kind === 'play' && eff ? playThumb : undefined}
+    />
+    {#if nodeHasOutput(kind)}
+      <Handle type="source" position={Position.Right} />
+    {/if}
   {/if}
 {/if}

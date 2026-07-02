@@ -8,7 +8,7 @@
      owning live node positions during a drag. All per-node editing lives in the
      right-dock Inspector — the nodes here are display-only. */
   import { setContext, untrack } from 'svelte';
-  import type { Connection, EdgeTypes, NodeTypes } from '@xyflow/svelte';
+  import type { Connection, EdgeTypes, NodeTypes, OnConnectEnd } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
@@ -20,12 +20,15 @@
   } from './graph-to-flow';
   import {
     emptyTriggerProjectionCache,
+    projectionDesyncIds,
     projectTriggerFlowNodes,
+    resetProjectionCache,
     triggerNodeSignature,
     type TriggerProjectionCache,
   } from './trigger-flow-projection';
   import { GraphHover } from './graph-hover.svelte';
   import { nodeIdAtEvent } from './flow-dom';
+  import { guardFlowCallback } from './flow-guard';
   import { TRIGGER_STORE_KEY } from './trigger-context';
   import { describeTriggerSource } from '../trigger-source-label';
   import TriggerNode from './TriggerNode.svelte';
@@ -55,6 +58,7 @@
 
   function openGraph(key: string): void {
     const id = store.activeSectionId;
+    projectionCache = resetProjectionCache(); // graph-open: never reuse the old graph's signatures
     if (id) store.selectGraphInSection(id, key);
     shell.clearSelection(); // switching graphs clears the node inspector
   }
@@ -104,6 +108,36 @@
       flow-node object for structurally-unchanged nodes (see triggerNodeSignature). */
   let projectionCache: TriggerProjectionCache = emptyTriggerProjectionCache();
 
+  /** Report a graph-editor fault: console for the dev, plus a Monitor `error` event so a
+      live-show failure is visible in the timeline instead of silently corrupting the canvas
+      (incident 09). */
+  function reportGraphFault(where: string, err: unknown): void {
+    const detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
+    console.error(`[trigger-graph] ${where} failed`, err);
+    store.reportError('trigger-graph', where, detail);
+  }
+
+  /** Self-heal after a fault: drop the projection cache and rebuild nodes + edges from the
+      store (the source of truth). A thrown callback then heals in place instead of leaving a
+      stale / blank canvas until a page refresh (incident 09, candidates 1 & 2). */
+  function forceRebuild(): void {
+    projectionCache = resetProjectionCache();
+    rebuildNodes();
+    rebuildEdges();
+  }
+
+  /** Wrap an xyflow event callback so a throw becomes a reported fault + a self-healing
+      rebuild, never a silently corrupted canvas (incident 09, candidate 2: an uncaught throw
+      inside a handler breaks Svelte's effect tracking and freezes the node array). The
+      boundary itself is {@link guardFlowCallback} (pure, unit-tested); this binds the view's
+      fault + recovery to it. */
+  function guard<A extends unknown[]>(where: string, fn: (...args: A) => void): (...args: A) => void {
+    return guardFlowCallback(where, fn, (w, err) => {
+      reportGraphFault(w, err);
+      forceRebuild();
+    });
+  }
+
   function rebuildNodes(): void {
     const g = store.selectedGraph;
     const graphKey = store.selectedPadKey;
@@ -120,15 +154,46 @@
     // "adding a node removes wires / moves the first play node" bug. Positions are read inside
     // untrack so only structure / selection / graph-switch rebuilds — never a position drag.
     nodes = untrack(() => {
-      const projected = projectTriggerFlowNodes({
-        graph: g,
-        graphKey,
-        selectedNodeId: selId,
-        previousNodes: nodes,
-        cache: projectionCache,
-      });
-      projectionCache = projected.cache;
-      return projected.nodes;
+      // New graph → drop the previous graph's cache BEFORE projecting, so a throw can never
+      // leave stale signatures a later projection reuses against the wrong graph (candidate 1).
+      if (graphKey !== projectionCache.graphKey) projectionCache = resetProjectionCache();
+      try {
+        const projected = projectTriggerFlowNodes({
+          graph: g,
+          graphKey,
+          selectedNodeId: selId,
+          previousNodes: nodes,
+          cache: projectionCache,
+        });
+        projectionCache = projected.cache; // write-through ONLY on success (exception-safe)
+        if (import.meta.env.DEV) {
+          const missing = projectionDesyncIds(
+            projected.nodes.map((n) => n.id),
+            g.nodes.map((n) => n.id),
+          );
+          if (missing.length) {
+            console.error(
+              '[trigger-graph] projection desync — rendered flow-node ids missing from the store graph',
+              {
+                missing,
+                cacheGraphKey: projectionCache.graphKey,
+                currentGraphKey: graphKey,
+                flowNodeIds: projected.nodes.map((n) => n.id),
+                graphNodeIds: g.nodes.map((n) => n.id),
+              },
+            );
+          }
+        }
+        return projected.nodes;
+      } catch (err) {
+        // Projection threw: reset the cache so the NEXT rebuild is a clean full rebuild (never
+        // reuse stale signatures) and keep the last-good render — a blank canvas is the exact
+        // failure we are preventing. A follow-up rebuild (structure change / forceRebuild)
+        // then re-projects cleanly.
+        projectionCache = resetProjectionCache();
+        reportGraphFault('projection', err);
+        return nodes;
+      }
     });
   }
   function rebuildEdges(): void {
@@ -176,6 +241,14 @@
     for (const e of removed) store.disconnect(e.id);
     rebuildEdges();
   }
+  function onDragStop(detail: { nodes: TriggerFlowNode[] }): void {
+    for (const n of detail.nodes) syncPos(n);
+  }
+  const onConnectEnd: OnConnectEnd = (event, conn) => {
+    if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+    const toId = nodeIdAtEvent(event);
+    if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
+  };
   /** A wire dropped on a node body (not a handle): wire it to that node's input — or
       its output if the drag began at an input. `store.connect` validates direction /
       cycle / dup, so a drop that can't be accepted is simply ignored. When the drag
@@ -219,17 +292,11 @@
     onPaneClick={() => shell.clearSelection()}
     onNodeEnter={(id) => hover.enter(id)}
     onNodeLeave={() => hover.leave()}
-    onNodeDragStop={({ nodes: moved }) => {
-      for (const n of moved) syncPos(n);
-    }}
-    onConnect={onConnect}
-    onConnectEnd={(event, conn) => {
-      if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
-      const toId = nodeIdAtEvent(event);
-      if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
-    }}
-    onReconnect={onReconnect}
-    onDelete={({ edges: removed }) => onDeleteEdges(removed)}
+    onNodeDragStop={guard('drag', onDragStop)}
+    onConnect={guard('connect', onConnect)}
+    onConnectEnd={guard('connect-end', onConnectEnd)}
+    onReconnect={guard('reconnect', onReconnect)}
+    onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
   >
     {#snippet palette()}
       <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
