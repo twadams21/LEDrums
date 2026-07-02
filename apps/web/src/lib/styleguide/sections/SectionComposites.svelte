@@ -7,6 +7,7 @@
   import NodeCard from '../../app/views/NodeCard.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
@@ -19,6 +20,11 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { MonitorEvent, OutputStatus } from '../../ws/protocol-types';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
+
+  /* ---- OutputStatusPanel (pure props — no store) ------------------------------- */
+  const outArmed: OutputStatus = { state: 'armed', protocol: 'artnet', host: '192.168.1.50', packetsSent: 0, lastError: null, universeCount: 8 };
+  const outDryRun: OutputStatus = { state: 'dry-run', protocol: 'sacn', host: '239.255.0.1', packetsSent: 0, lastError: null, universeCount: 4 };
+  const outErroring: OutputStatus = { state: 'armed', protocol: 'artnet', host: '192.168.1.50', packetsSent: 0, lastError: 'EHOSTUNREACH 192.168.1.50:6454', universeCount: 8 };
 
   /* ---- NodeCard faces ------------------------------------------------------- */
   const faceSubs: Record<NodeKind, string> = {
@@ -206,6 +212,20 @@
     </DemoCard>
 
     <DemoCard
+      title="Output status panel"
+      src={['lib/app/docks/inspectors/OutputStatusPanel', 'lib/app/docks/inspectors/output-status']}
+      note="The confidence home in the controller inspector — state pill, packets/s (tabular), universes, target, protocol. lastError raises a prominent red alert; offline shows a hint. Extended by the PixLite panel (S48)."
+      wide
+    >
+      <div class="panel-row">
+        <OutputStatusPanel output={outArmed} packetsPerSec={44_318} port={6454} />
+        <OutputStatusPanel output={outDryRun} packetsPerSec={null} />
+        <OutputStatusPanel output={outErroring} packetsPerSec={0} port={6454} />
+        <OutputStatusPanel output={null} packetsPerSec={null} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Inspector control rows"
       src={['lib/app/docks/inspectors/ReadRow', 'lib/app/docks/inspectors/RenameField']}
       note="The per-node editor vocabulary: RenameField (label override), Field-wrapped controls, ReadRow read-outs (mono, right-aligned, tabular)."
@@ -268,6 +288,12 @@
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+  }
+  .panel-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: var(--space-4) var(--space-5);
+    align-items: start;
   }
   .insp-demo {
     display: flex;
