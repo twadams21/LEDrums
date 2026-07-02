@@ -35,8 +35,8 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 | Lane | Groups (in order) | Slices | Lane orch session | Status |
 |---|---|---|---|---|
-| 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | _(launching)_ | **ACTIVE** |
-| 2 — Effects & graph | F → G → H → I | S18–S38 (21) | — | pending |
+| 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | lane-1-b0cea3 (killed, done) | **✅ DONE** |
+| 2 — Effects & graph | F → G → H → I | S18–S38 (21) | lane-2-988e46 | **ACTIVE** |
 | 3 — Data & portability | J → K | S39–S45 (7) | — | pending |
 | 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | — | pending |
 
@@ -46,7 +46,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 |---|---|---|---|---|---|---|
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
-| E — Input routing & section looks | 1 | #50 | group/E | in-progress (S12 merged; S13–S17 resuming) | — | — |
+| E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
 | F — Effect params & envelopes | 2 | #51 | group/F | pending | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
@@ -60,6 +60,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T14:2x — ✅ LANE 1 COMPLETE; Lane 2 launched
+
+- **group/E re-handed off clean** (lane orch merged rock-solid into group/E, resolved all 4 B×E conflicts exactly as instructed; pinned the receiveInputEcho-records-activity seam with +2 tests in store.echo-gate.test.ts). No conflicts on my side.
+- **group/E MERGED** → rock-solid as **ab5bc96** (`--no-ff`), pushed (local==origin). Master full sweep GREEN: typecheck 0 (web 2227 files); **1177 tests / 0 skips** (io 13 · core 251 · protocol 1 · server 176 · web 736).
+- **LANE 1 DONE** — all 11 slices (A/B/E) in rock-solid. **Killed lane-1-b0cea3** (resumable: `twux resume --session lane-1-b0cea3`).
+- **LANE 2 LAUNCHED: lane-2-988e46** (fable/high, own window). Assigned F→G→H→I (msg 660997) with the NEW rule: integrate rock-solid into each group + resolve BEFORE handoff. Usage 5h 58% at launch (limited headroom before 18:00 UTC reset; lane orch will pause at 70%).
+- **Next:** 30-min cadence; watch for Lane 2 group hand-offs (F first) → merge → sweep. group/A,B,E branches still exist locally (merged; optional tidy).
 
 ### 2026-07-02T14:1x — LANE 1 slices done; group/E merge BOUNCED (B×E conflict)
 
