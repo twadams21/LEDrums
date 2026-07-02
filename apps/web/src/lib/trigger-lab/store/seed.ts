@@ -3,7 +3,7 @@
    the store's authored `$state` field initializers mirror {@link seedAuthored}; keep the two
    in sync. Extracted from store.svelte.ts unchanged. */
 
-import { type Section, type TriggerGraph, treeToGraph } from '../sim';
+import { type TriggerGraph, treeToGraph } from '../sim';
 import { BUSES, PADS, PRESETS, EFFECTS, SECTIONS, type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
 import type { Song } from '../../app/setlist';
@@ -29,7 +29,10 @@ export function seedSongs(): Song[] {
     {
       id: 'set-1',
       name: 'Set 1',
-      sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys)),
+      // Seed each fixture section's per-bus `looks` (S16) so the demo looks are AUTHORED content
+      // (editable in the Section inspector, persisted, bridged to the engine) — the store's
+      // `sections` look-list derives from these, so there's no separate fixture look array to drift.
+      sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys, s.looks)),
     },
   ];
 }
@@ -62,7 +65,3 @@ export function seedAuthored(): AuthoredState {
     patchLabels: {},
   };
 }
-
-/** Look-section fixtures (the `Section[]` timed look-morph list) seed — distinct from the
-    setlist sections. Kept LIVE (hit-resolution ctx + look recall + the Perform recall menu). */
-export const seedLookSections = (): Section[] => structuredClone(SECTIONS);

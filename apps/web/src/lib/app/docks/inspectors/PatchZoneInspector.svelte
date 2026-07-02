@@ -6,8 +6,10 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import RenameField from './RenameField.svelte';
+  import { graphsLinkedToZone } from '../../trigger-source-label';
   import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
   import Radio from '@lucide/svelte/icons/radio';
+  import Link2 from '@lucide/svelte/icons/link-2';
   import {
     setZoneMidiNote,
     setZoneOscAddress,
@@ -33,6 +35,11 @@
     store.midiLearnTarget?.kind === 'zone' &&
       store.midiLearnTarget.drumId === editor.drumId &&
       store.midiLearnTarget.slot === editor.slot,
+  );
+  // Reverse cross-reference: authored graphs whose trigger source is this zone's note/address
+  // ALSO fire when this zone triggers (both-fire, by design). Names them so it's visible here.
+  const alsoFires = $derived(
+    graphsLinkedToZone(store.graphs, note, addr).map((key) => store.graphLabel(key)),
   );
 
   function drumName(drumId: string): string {
@@ -100,6 +107,12 @@
 {#if heardOsc}
   <div class="heard"><InputActivityBadge {...heardOsc} /></div>
 {/if}
+{#if alsoFires.length > 0}
+  <p class="linkhint">
+    <Link2 size={12} aria-hidden="true" />
+    <span>also fires: <b>{alsoFires.join(', ')}</b></span>
+  </p>
+{/if}
 <RenameField {store} {nodeId} fallback={title} />
 
 <style>
@@ -110,6 +123,24 @@
     line-height: var(--leading-normal);
   }
   .grouphint b {
+    color: var(--text);
+    font-weight: 600;
+  }
+  /* reverse drum-link cross-reference — accent glyph + the graphs this zone also fires */
+  .linkhint {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    line-height: var(--leading-normal);
+  }
+  .linkhint :global(svg) {
+    color: var(--accent);
+    flex: none;
+  }
+  .linkhint b {
     color: var(--text);
     font-weight: 600;
   }

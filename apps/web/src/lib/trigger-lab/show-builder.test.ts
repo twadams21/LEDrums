@@ -123,6 +123,27 @@ describe('buildShow bridges a section’s flat graphs → the engine slot grid',
   });
 });
 
+// S15 bridge: a section's per-bus `looks` (the loop effects the engine spawns on recall)
+// must arrive on the voice.Show intact — the connected engine reads exactly this map. And
+// as a DEEP copy, so the sent snapshot never aliases the rune-backed section state.
+describe('buildShow bridges a section’s per-bus looks (S15)', () => {
+  it('carries each section’s looks map onto the Show verbatim', () => {
+    const show = buildShow(fixtureSource());
+    for (const src of SECTIONS) {
+      const bridged = show.sections.find((s) => s.id === src.id);
+      expect(bridged?.looks).toEqual(src.looks);
+    }
+  });
+
+  it('deep-copies looks (a fresh object, not an alias of the source section)', () => {
+    const src = fixtureSource();
+    const show = buildShow(src);
+    expect(show.sections[0]!.looks).not.toBe(src.sections[0]!.looks); // distinct reference
+    show.sections[0]!.looks.base = 'mutated';
+    expect(src.sections[0]!.looks.base).not.toBe('mutated'); // source untouched
+  });
+});
+
 // Regression + drift guard: drum-scoped voices only render when the authored content's
 // drum ids exist in the kit the compositor runs against (`drumById.get(sourceDrumId)`).
 // The offline lab model and the engine kit both derive from the ONE canonical

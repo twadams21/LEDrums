@@ -30,6 +30,7 @@ export type VoicePartialInput =
   | { kind: 'noteOff'; note: number }
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
+  | { kind: 'fireGraph'; graphKey: string; velocity?: number }
   | { kind: 'recallSection'; songId?: string; sectionId: string };
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
@@ -227,6 +228,15 @@ export class VoiceEngineHost {
           kind: 'key',
           drumId: partial.drumId,
           zone: partial.zone ?? SLOT_LABELS[0],
+          velocity: partial.velocity ?? 1,
+          timeMs,
+        };
+      case 'fireGraph':
+        // Authoritative graph intent (keyboard performance): the engine plays this exact
+        // graph key — no zone-map, no source re-resolution. Velocity defaults to full.
+        return {
+          kind: 'fireGraph',
+          graphKey: partial.graphKey,
           velocity: partial.velocity ?? 1,
           timeMs,
         };
@@ -446,6 +456,17 @@ export class VoiceEngineHost {
       return;
     }
 
+    if (d.kind === 'input-unrouted') {
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'Unrouted input',
+        detail: `input=${describeVoiceInput(d.input)}; matched no zone or graph`,
+      });
+      return;
+    }
+
     this.monitorSink?.({
       type: 'graph',
       direction: 'local',
@@ -474,6 +495,7 @@ function describeVoiceInput(input: voice.VoiceInputDescriptor): string {
   if (input.value !== undefined) parts.push(`value=${input.value}`);
   if (input.songId !== undefined) parts.push(`song=${input.songId}`);
   if (input.sectionId !== undefined) parts.push(`section=${input.sectionId}`);
+  if (input.graphKey !== undefined) parts.push(`graph=${input.graphKey}`);
   return parts.join('; ');
 }
 

@@ -44,7 +44,8 @@ import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo } from '../ws/protocol-types';
+import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { selectDockVoices, type DockVoice } from './dock-voices';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
@@ -75,7 +76,7 @@ import {
 
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
-import { padKey, seedGraphs, seedSongs, seedAuthored, seedLookSections } from './store/seed';
+import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
@@ -211,7 +212,6 @@ export class TriggerLab {
   /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
       e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
-  sections = $state<Section[]>(seedLookSections());
   /** mutable presets — linked instances read these live. */
   presets = $state<Preset[]>(structuredClone(PRESETS));
 
@@ -269,6 +269,11 @@ export class TriggerLab {
   timeMs = $state(0);
   beat = $state(0);
   busLevels = $state<Record<string, number>>({});
+  /** Per-voice detail streamed from the server engine's stats (S17) — the authoritative voice list
+      while the engine link is open (the sim stops firing when connected, so its `voices` are stale).
+      Empty offline / before the first stats. {@link dockVoices} source-selects between this and the
+      sim. */
+  serverVoices = $state<VoiceStat[]>([]);
   monitorEvents = $state<MonitorEvent[]>([]);
   monitorTypeFilter = $state<MonitorFilterType>(DEFAULT_MONITOR_FILTERS.type);
   monitorTextFilter = $state(DEFAULT_MONITOR_FILTERS.text);
@@ -344,6 +349,18 @@ export class TriggerLab {
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
   /** Preview frame: the engine's composited output when connected, else local sim. */
   previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.frameBuf);
+  /** Voice list for the Layers/Buses dock (S17): the server's streamed voices while the engine link
+      is open (its render is authoritative — the sim no longer fires when connected), the local sim's
+      voices offline. Pure source-selection lives in {@link selectDockVoices}. Gated on `link` (the
+      firing/authority gate), not `useServer` (the stricter visualiser-frame gate): the dock owns no
+      pixels, so it can adopt server voices the instant the link opens without waiting for a frame. */
+  dockVoices = $derived<DockVoice[]>(
+    selectDockVoices({
+      connected: this.link === 'open',
+      simVoices: this.voices,
+      serverVoices: this.serverVoices,
+    }),
+  );
 
   /** This client's authoring role, derived from {@link presence} (S1 multi-client):
       - 'standalone' — no presence yet (offline / single user): local-wins authoring, as before;
@@ -489,6 +506,14 @@ export class TriggerLab {
   /** The active section (SetlistSection) in the active song — the section you play + edit.
       Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
   activeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.activeSectionId) ?? null);
+  /** The look-morph section list (`{ id, name, looks }`) the engine spawns on recall, the
+      offline sim recalls, and the Perform view lists — DERIVED from the active song's authored
+      sections so authored looks (S16) are the single source of truth (no separate fixture look
+      array to drift). `buildShow` reads this for `Show.sections`; the offline `setActiveSection`
+      recall resolves the look here. Empty when there is no active song. */
+  sections = $derived<Section[]>(
+    (this.activeSong?.sections ?? []).map((s) => ({ id: s.id, name: s.name, looks: s.looks })),
+  );
   /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
       and authored graphs alike, no distinction — in graph insertion order (pads first, then
       created/duplicated graphs). Drives the section picker + slot labels. A deleted graph drops
@@ -606,7 +631,10 @@ export class TriggerLab {
           this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
           if (this.acceptsMidiChannel(ev.channel)) {
             this.applyMidiLearn(ev.note);
-            this.fireRawMidiLocal(ev.note, ev.velocity);
+            // Preview the fire on the local sim ONLY when offline. When connected the server is the
+            // sole resolver/renderer and streams its frames/levels back — firing here as well would
+            // double the hit (the echo loop). Authority principle, doc 03.
+            if (this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
           }
         }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
@@ -961,6 +989,9 @@ export class TriggerLab {
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
+          // Drop the server voice list — offline the dock reads the sim again, and stale server
+          // voices must not linger into the next connect.
+          this.serverVoices = [];
         }
       },
       onStats: (_stats, latencyMs, fps, output, voice) => {
@@ -973,30 +1004,46 @@ export class TriggerLab {
         const sample: PacketSample = { packetsSent: output.packetsSent, atMs: performance.now() };
         this.outputPacketsPerSec = packetsPerSecond(this.prevPacketSample, sample);
         this.prevPacketSample = sample;
-        // In voice mode, the server owns the live bus levels; the local sim is only
-        // an offline preview once the socket is connected.
+        // In voice mode, the server owns the live bus levels AND the per-voice list; the local sim
+        // is only an offline preview once the socket is connected (the sim no longer fires — S12).
         if (voice?.busLevels) this.busLevels = voice.busLevels;
+        this.serverVoices = voice?.voices ?? [];
       },
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
-      onInput: (kind, label, value, note, channel) => {
-        const time = Date.now();
-        if (kind === 'midi' && note !== undefined) {
-          const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
-          this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
-          if (value > 0 && this.acceptsMidiChannel(channel)) {
-            this.applyMidiLearn(note);
-            this.fireRawMidiLocal(note, velocity);
-          }
-        } else if (kind === 'osc') {
-          // For OSC the wire `label` carries the address (see server broadcastJson).
-          this.recordInputActivity({ kind: 'osc', address: label, value, time });
-        }
-      },
+      onInput: (kind, label, value, note, channel) => this.receiveInputEcho(kind, label, value, note, channel),
       onMonitor: (event) => this.addMonitor(event),
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
+  }
+
+  /** Handle a server `input` broadcast — native MIDI/OSC, a transport recall, or the echo of our
+      own forwarded hit. Applies MIDI-learn from ANY input source (so learning works from hardware
+      arriving at the server or another client) and records last-heard badge activity for the
+      MIDI and OSC paths (S04 — hardware arriving at the server must still light the badges), but
+      NEVER fires the sim: when connected the server is the sole resolver/renderer, so firing here
+      re-fired every hit — the echo loop this slice kills (doc 03). Monitor display of the input
+      rides the separate onMonitor / server-diagnostics path, so dropping the local fire leaves
+      the timeline intact. */
+  private receiveInputEcho(
+    kind: 'midi' | 'osc',
+    label: string,
+    value: number,
+    note: number | undefined,
+    channel: number | undefined,
+  ): void {
+    const time = Date.now();
+    if (kind === 'midi' && note !== undefined) {
+      const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
+      this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
+      if (value > 0 && this.acceptsMidiChannel(channel)) {
+        this.applyMidiLearn(note);
+      }
+    } else if (kind === 'osc') {
+      // For OSC the wire `label` carries the address (see server broadcastJson).
+      this.recordInputActivity({ kind: 'osc', address: label, value, time });
+    }
   }
 
   private monitorForClientMessage(msg: ClientMessage): Omit<MonitorEvent, 'id' | 'time'> {
@@ -1085,9 +1132,14 @@ export class TriggerLab {
     this.log = this.sim.log.slice(0, 40);
     this.timeMs = this.sim.timeMs;
     this.beat = this.sim.beat;
-    const levels: Record<string, number> = {};
-    for (const b of this.buses) levels[b.id] = this.sim.busLevel(b.id);
-    this.busLevels = levels;
+    // Bus meters follow the same authority rule as the voice list: the server owns them when
+    // connected (streamed via onStats). Writing the sim's levels here every rAF frame would clobber
+    // that ~2 Hz server value ~30× a second, so only publish sim levels while offline.
+    if (this.link !== 'open') {
+      const levels: Record<string, number> = {};
+      for (const b of this.buses) levels[b.id] = this.sim.busLevel(b.id);
+      this.busLevels = levels;
+    }
   }
 
   private addMonitor(event: Omit<MonitorEvent, 'id' | 'time'> | MonitorEvent): void {
@@ -1164,10 +1216,6 @@ export class TriggerLab {
     return this.pads[0]?.drumId ?? '';
   }
 
-  private midiVelocity(): number {
-    return Math.round(Math.max(0, Math.min(1, this.velocity)) * 127);
-  }
-
   private fireRawMidiLocal(note: number, value: number): void {
     const toFire = resolveGraphsForFire(this.graphs, { kind: 'midi', note, value });
     if (toFire.length === 0) return;
@@ -1228,6 +1276,14 @@ export class TriggerLab {
   hit(pad: Pad): void {
     const toFire = this.resolveHitGraphsLocal(pad);
     if (toFire.length === 0) return;
+    // Connected: the server owns resolution + render. Forward the hit and let its frames/levels
+    // come back; do NOT fire the local sim (authority principle, doc 03). `onInput` has no `key`
+    // echo branch, so this is a single authoritative fire.
+    if (this.link === 'open') {
+      this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
+      return;
+    }
+    // Offline preview: fire the local sim (it drives the lab's voice lanes + resolution log).
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: this.velocity,
@@ -1244,12 +1300,6 @@ export class TriggerLab {
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
-    // forward the hit so the server fires the REAL output (local sim stays intact
-    // above — it still drives the lab's voice lanes + resolution log). send() is a
-    // no-op unless the socket is open, so the guard is just to avoid a needless call.
-    if (this.link === 'open') {
-      this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
-    }
   }
 
   /** Fire the graph at `index` in the ACTIVE section's ordered graph list directly — the
@@ -1261,8 +1311,17 @@ export class TriggerLab {
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const src = triggerSourceOf(graph);
+    // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
+    // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct
+    // both-fire and no echo mis-fire (the old keyboard triple-fire). The local sim stays silent
+    // (authority principle, doc 03 §3).
+    if (this.link === 'open') {
+      this.client.send({ t: 'fireGraph', graphKey: key, velocity: this.velocity });
+      return;
+    }
+    // Offline preview: fire the local sim directly (no source-match filter — the n-th graph plays).
+    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: this.velocity,
       sectionIndex: idx < 0 ? 0 : idx,
@@ -1276,15 +1335,6 @@ export class TriggerLab {
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
-    // Forward the matching source so connected server preview frames match the local audition.
-    if (src?.kind === 'drum') {
-      this.client.send({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: this.velocity });
-    } else if (src?.kind === 'midi') {
-      if (src.note !== undefined) this.client.send({ t: 'midi', note: src.note, velocity: this.midiVelocity(), on: true });
-      else if (src.cc !== undefined) this.client.send({ t: 'cc', controller: src.cc, value: this.midiVelocity() });
-    } else if (src?.kind === 'osc') {
-      this.client.send({ t: 'osc', address: src.address, value: this.velocity });
-    }
   }
 
   togglePlay(): void {
@@ -1324,7 +1374,10 @@ export class TriggerLab {
   setActiveSection(sectionId: string): void {
     this.activeSectionId = sectionId;
     const look = this.sections.find((s) => s.id === sectionId);
-    if (look) {
+    // Offline preview only: when connected the server engine spawns this section's looks
+    // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
+    // outbound authority gate (S12) — the sim resolves only while the link is closed.
+    if (look && this.link !== 'open') {
       this.sim.recallSection(look);
       this.snapshot();
     }
@@ -1540,6 +1593,25 @@ export class TriggerLab {
   /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
   setSectionGraphs(sectionId: string, graphs: string[]): void {
     this.updateActiveSong((song) => setlist.setGraphs(song, sectionId, graphs));
+  }
+
+  /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). `effectId` `null`
+      = None. Rides the standard authored-edit path: the mutation to `songs` persists via
+      autosave and live-resyncs the Show to the engine (the debounced `syncShowToServer`
+      re-sends `setShow` + re-recalls the active section, so a look edited on the active section
+      re-morphs with the new effect). Offline — where that resync never runs — re-morph the
+      local sim NOW when the edited section is the active one, so the pick is immediately
+      visible/audible in the preview; connected we defer to the resync's re-recall (an immediate
+      recall would race the not-yet-sent Show, spawning the stale look). */
+  setLook(sectionId: string, busId: string, effectId: string | null): void {
+    this.updateActiveSong((song) => setlist.setLook(song, sectionId, busId, effectId));
+    if (this.link !== 'open' && sectionId === this.activeSectionId) {
+      const look = this.sections.find((s) => s.id === sectionId);
+      if (look) {
+        this.sim.recallSection(look);
+        this.snapshot();
+      }
+    }
   }
   addSongSection(name: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op

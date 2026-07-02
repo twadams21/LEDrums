@@ -6,8 +6,9 @@
      key is store.selectedPadKey. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, TriggerSource } from '../../../trigger-lab/sim';
-  import { describeTriggerSource, zoneLabel } from '../../trigger-source-label';
+  import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
+  import Link2 from '@lucide/svelte/icons/link-2';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
@@ -29,6 +30,9 @@
   // Last-heard confirmation for the active MIDI-note / OSC field (null for drum/CC/empty).
   const heard = $derived(store.inputBadge(bindingFromSource(src)));
   const gkey = $derived(store.selectedPadKey);
+  // Cross-reference: this MIDI/OSC source is ALSO a mapped drum zone → both fire per hit
+  // (by design). Same phrasing as the trigger node's drum-link badge. Null offline.
+  const drumHint = $derived(store.project ? drumLinkHint(store.project.inputMap, src, store.drums) : null);
   const kindNow = $derived(src?.kind ?? 'drum');
   const learning = $derived(
     !!gkey && store.midiLearnTarget?.kind === 'trigger' && store.midiLearnTarget.graphKey === gkey,
@@ -200,6 +204,10 @@
 
   <ReadRow label="Resolves to" value={describeTriggerSource(src, store.drums).sub} />
 
+  {#if drumHint}
+    <p class="hint linkhint"><Link2 size={12} aria-hidden="true" />{drumHint}</p>
+  {/if}
+
   {#if gkey && gkey in store.graphs}
     <Field label="Name" hint="display label">
       <CommitInput
@@ -285,5 +293,16 @@
     margin-top: calc(-1 * var(--space-1));
     padding-left: var(--space-1);
     min-width: 0;
+  }
+  /* the drum-link cross-reference — accent glyph + hint, matches the node's badge tooltip */
+  .linkhint {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--text);
+  }
+  .linkhint :global(svg) {
+    color: var(--accent);
+    flex: none;
   }
 </style>

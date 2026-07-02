@@ -5,6 +5,7 @@
      (OutputPill, Monitor, RenameField) run on minimal reactive stubs — they read a
      tiny store surface, so the stub drives the real component, not a copy of it. */
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Link2 from '@lucide/svelte/icons/link-2';
   import NodeCard from '../../app/views/NodeCard.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
@@ -172,6 +173,21 @@
         <NodeCard icon={kindIcon.play} title="Selected" sub="ring · in Inspector" tint={tint.play} selected />
         <NodeCard icon={kindIcon.play} title="Drop target" sub="wire over node" tint={tint.play} dropTarget />
         <NodeCard icon={TriangleAlert} title="Stale node" sub="model missing" tint="var(--warn)" stale />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Node card — drum-link badge"
+      src="lib/app/views/NodeCard"
+      note="A trigger node whose MIDI/OSC source is ALSO zone-mapped to a drum fires both paths per hit (by design). The corner badge slot flags it with a link glyph; in the app it carries a naming tooltip (“also drum trigger: kick · center”) and the same hint shows in the trigger + zone inspectors."
+      wide
+    >
+      <div class="face-grid">
+        <NodeCard icon={kindIcon.trigger} title="Trigger" sub="MIDI D2" tint={tint.trigger}>
+          {#snippet badge()}
+            <Link2 size={11} aria-hidden="true" />
+          {/snippet}
+        </NodeCard>
       </div>
     </DemoCard>
 

@@ -213,6 +213,9 @@ function monitorInput(msg: ClientMessage, origin: string): void {
     case 'key':
       monitor({ type: 'input', direction: 'in', source: origin, destination, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
       return;
+    case 'fireGraph':
+      monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Fire graph ${msg.graphKey}`, detail: `velocity=${msg.velocity}` });
+      return;
     case 'recallSection':
       monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
       return;
@@ -538,7 +541,7 @@ const statsTimer = setInterval(() => {
       latencyMs: s.latencyMs,
       fps: s.fps,
       output: s.output,
-      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels },
+      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
     });
     return;
   }

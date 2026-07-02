@@ -70,6 +70,15 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       deps.broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
       return true;
     }
+    if (msg.t === 'fireGraph') {
+      // Keyboard performance intent: fire the EXACT authored graph, no re-resolution. The
+      // engine validates the key (emits `graph-missed` → "No graph resolved" on a stale key)
+      // and emits the normal input-resolved / graph-fired diagnostics for a valid one. No
+      // `input` broadcast: the fire is surfaced by those diagnostics + the server ingress line
+      // (`monitorInput` in main.ts), so there is no note/address to echo for MIDI-learn.
+      voiceHost.applyInput({ kind: 'fireGraph', graphKey: msg.graphKey, velocity: msg.velocity });
+      return true;
+    }
     if (msg.t === 'recallSection') {
       voiceHost.applyInput({ kind: 'recallSection', songId: msg.songId, sectionId: msg.sectionId });
       return true;
@@ -103,6 +112,7 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
   if (
     msg.t === 'setShow' ||
     msg.t === 'key' ||
+    msg.t === 'fireGraph' ||
     msg.t === 'recallSection' ||
     msg.t === 'cc' ||
     msg.t === 'programChange'
