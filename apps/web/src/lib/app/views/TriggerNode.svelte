@@ -16,13 +16,15 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { getContext } from 'svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Link2 from '@lucide/svelte/icons/link-2';
   import NodeCard from './NodeCard.svelte';
   import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
+  import Tooltip from '../../ui/Tooltip.svelte';
   import { kindIcon, tint, kindLabel, kindSummary } from './trigger-node-meta';
   import { pct } from './node-options';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { describeTriggerSource } from '../trigger-source-label';
+  import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
 
   let { id, data, selected }: NodeProps = $props();
@@ -60,11 +62,28 @@
   });
   const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
+
+  // Drum-link: a trigger node whose MIDI/OSC source is ALSO zone-mapped to a drum fires both
+  // paths for one message (by design). Flag it with a corner badge naming the drum · zone.
+  // Reads the authoritative patch input map; null offline / when not zone-mapped.
+  const linkHint = $derived(
+    node && node.kind === 'trigger' && store.project
+      ? drumLinkHint(store.project.inputMap, node.source, store.drums)
+      : null,
+  );
 </script>
 
 {#snippet playThumb()}
   {#if node && node.kind === 'play' && eff}
     <EffectThumb pattern={eff.pattern} params={store.liveParams(node)} w={56} h={32} />
+  {/if}
+{/snippet}
+
+{#snippet drumLinkBadge()}
+  {#if linkHint}
+    <Tooltip text={linkHint}>
+      <span class="drumlink" aria-label={linkHint}><Link2 size={11} aria-hidden="true" /></span>
+    </Tooltip>
   {/if}
 {/snippet}
 
@@ -89,9 +108,21 @@
       tint={chipTint}
       selected={!!selected}
       thumb={kind === 'play' && eff ? playThumb : undefined}
+      badge={linkHint ? drumLinkBadge : undefined}
     />
     {#if nodeHasOutput(kind)}
       <Handle type="source" position={Position.Right} />
     {/if}
   {/if}
 {/if}
+
+<style>
+  /* the drum-link badge glyph — inherits the badge's accent colour, centres the icon */
+  .drumlink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    line-height: 0;
+  }
+</style>

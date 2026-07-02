@@ -359,13 +359,35 @@ describe('VoiceEngineHost', () => {
     );
   });
 
-  it('emits a graph miss monitor event for unresolved input', () => {
+  it('emits an unrouted-input monitor event for a note bound to no zone or graph', () => {
     const { host } = makeHost();
     const events: unknown[] = [];
     host.setMonitor((event) => events.push(event));
     host.setShow(makeShow('kick', SLOT_LABELS[0]));
 
+    // note 7 is in no zone-map entry and no graph source → genuinely unrouted
     host.applyInput({ kind: 'noteOn', note: 7, velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'Unrouted input',
+        detail: expect.stringContaining('matched no zone or graph'),
+      }),
+    );
+  });
+
+  it('emits a graph-miss monitor event for a routed pad hit with no resolved graph', () => {
+    const { host } = makeHost();
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+    // A show whose only graph is for a DIFFERENT drum, so a snare pad hit routes but resolves nothing.
+    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+
+    host.applyInput({ kind: 'key', drumId: 'snare', zone: SLOT_LABELS[0], velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
 
     expect(events).toContainEqual(

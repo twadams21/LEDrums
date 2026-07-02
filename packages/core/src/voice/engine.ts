@@ -238,7 +238,14 @@ class VoiceBusEngine implements RenderEngine {
     const toFire = this.resolveGraphsForEvent(e);
     const input = describeInputEvent(e);
     if (toFire.length === 0) {
-      this.onDiagnostic?.({ kind: 'graph-missed', input, reason: this.missReasonFor(e) });
+      // A raw MIDI/OSC message that claimed no zone (no drumId attached by the server's
+      // zone-map) AND matched no direct graph source is genuinely UNROUTED — flag it apart
+      // from a routed drum hit whose section just holds no graph (`graph-missed`).
+      if ((e.kind === 'noteOn' || e.kind === 'osc') && !e.drumId) {
+        this.onDiagnostic?.({ kind: 'input-unrouted', input });
+      } else {
+        this.onDiagnostic?.({ kind: 'graph-missed', input, reason: this.missReasonFor(e) });
+      }
       return;
     }
 

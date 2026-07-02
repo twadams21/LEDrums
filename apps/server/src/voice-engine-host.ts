@@ -456,6 +456,17 @@ export class VoiceEngineHost {
       return;
     }
 
+    if (d.kind === 'input-unrouted') {
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'Unrouted input',
+        detail: `input=${describeVoiceInput(d.input)}; matched no zone or graph`,
+      });
+      return;
+    }
+
     this.monitorSink?.({
       type: 'graph',
       direction: 'local',

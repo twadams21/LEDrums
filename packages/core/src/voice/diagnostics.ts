@@ -47,6 +47,15 @@ export type VoiceDiagnostic =
       reason: GraphMissReason;
     }
   | {
+      // A raw MIDI note / OSC address that matched NOTHING — no patch zone-map entry (so the
+      // server forwarded it without a pad) AND no authored graph bound to it by trigger source.
+      // Distinct from `graph-missed`, which is a routed hit (a known drum zone) whose active
+      // section simply holds no graph. Surfaces a mis-wired input the Monitor would otherwise
+      // swallow. (S14 / doc 03.)
+      kind: 'input-unrouted';
+      input: VoiceInputDescriptor;
+    }
+  | {
       kind: 'section-recalled';
       songId: string | null;
       sectionId: string | null;
