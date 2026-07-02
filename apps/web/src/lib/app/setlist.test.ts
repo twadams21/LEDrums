@@ -12,6 +12,7 @@ import {
   removeSection,
   renameSection,
   setGraphs,
+  setLook,
   type Song,
 } from './setlist';
 
@@ -33,6 +34,15 @@ describe('makeSection', () => {
   });
   it('seeds + de-duplicates an initial ordered graph list', () => {
     expect(makeSection('a', 'A', ['g1', 'g2', 'g1', 'g3']).graphs).toEqual(['g1', 'g2', 'g3']);
+  });
+  it('starts with an empty looks map by default', () => {
+    expect(makeSection('a', 'A').looks).toEqual({});
+  });
+  it('copies a seeded looks map (the section owns it, not the caller)', () => {
+    const src = { base: 'drift', trigger: null };
+    const s = makeSection('a', 'A', [], src);
+    expect(s.looks).toEqual({ base: 'drift', trigger: null });
+    expect(s.looks).not.toBe(src); // a distinct object, not an alias
   });
 });
 
@@ -171,5 +181,51 @@ describe('cloneSection (copy / paste)', () => {
     expect(copy.graphs).not.toBe(original.graphs); // a distinct array, not an alias
     copy.graphs.push('gTom');
     expect(original.graphs).toEqual(['gKick', 'gSnare']); // original list unchanged
+  });
+
+  it('deep-copies the looks map — editing the copy does not touch the original', () => {
+    const original = makeSection('verse', 'Verse', [], { base: 'drift' });
+    const copy = cloneSection(original, 'verse-2');
+    expect(copy.looks).toEqual({ base: 'drift' });
+    expect(copy.looks).not.toBe(original.looks); // a distinct object, not an alias
+    copy.looks.base = 'swirl';
+    expect(original.looks).toEqual({ base: 'drift' }); // original map unchanged
+  });
+});
+
+describe('setLook (immutable, idempotent)', () => {
+  const withLooks = (): Song => ({
+    id: 'song1',
+    name: 'Set 1',
+    sections: [makeSection('intro', 'Intro', [], { base: 'drift' }), makeSection('verse', 'Verse')],
+  });
+
+  it('sets an effect on a bus without mutating the input', () => {
+    const a = withLooks();
+    const b = setLook(a, 'verse', 'base', 'aurora');
+    expect(b.sections[1]!.looks).toEqual({ base: 'aurora' });
+    expect(a.sections[1]!.looks).toEqual({}); // original untouched
+    expect(b).not.toBe(a);
+  });
+
+  it('overrides an existing look and clears one to null (None), preserving other buses', () => {
+    let s = setLook(withLooks(), 'intro', 'effect', 'haze'); // add a second bus
+    s = setLook(s, 'intro', 'base', null); // clear the seeded base look → None
+    expect(s.sections[0]!.looks).toEqual({ base: null, effect: 'haze' });
+  });
+
+  it('is idempotent — re-setting the current value is a no-op (same Song ref)', () => {
+    const a = setLook(withLooks(), 'intro', 'base', 'aurora');
+    expect(setLook(a, 'intro', 'base', 'aurora')).toBe(a); // unchanged ref
+  });
+
+  it('treats an absent bus key as None — setting null on it is a no-op', () => {
+    const a = withLooks();
+    expect(setLook(a, 'verse', 'effect', null)).toBe(a); // verse has no `effect` look; None → no-op
+  });
+
+  it('is a no-op (same Song ref) when the section id is absent', () => {
+    const a = withLooks();
+    expect(setLook(a, 'nope', 'base', 'aurora')).toBe(a);
   });
 });

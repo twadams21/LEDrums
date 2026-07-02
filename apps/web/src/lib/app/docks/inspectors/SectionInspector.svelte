@@ -6,15 +6,27 @@
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import Select from '../../../ui/Select.svelte';
+  import { busIcon } from '../../views/trigger-node-meta';
 
-  let { store, sectionId, sectionName, songName, sectionIdx, recall }: {
+  let { store, sectionId, sectionName, songName, sectionIdx, recall, looks }: {
     store: TriggerLab;
     sectionId: string;
     sectionName: string;
     songName: string;
     sectionIdx: number;
     recall: SectionRecall;
+    /** The section's authored per-bus looks (bus id → effect id, or null/absent = None). */
+    looks: Record<string, string | null>;
   } = $props();
+
+  /** Look options for a bus: "None" plus every effect whose HOME bus is this one — a look
+      spawns on the effect's own bus (S15), so listing only home-bus effects keeps the pick and
+      the result on the same bus (no cross-bus surprise). */
+  const lookOptions = (busId: string) => [
+    { value: '', label: 'None' },
+    ...store.effects.filter((e) => e.busId === busId).map((e) => ({ value: e.id, label: e.name })),
+  ];
 </script>
 
 <header class="ihead">
@@ -33,6 +45,29 @@
       onCommit={(v) => store.renameSection(sectionId, v)}
     />
   </Field>
+
+  <div class="looks">
+    <Eyebrow>Looks</Eyebrow>
+    <p class="grouphint">The effect each bus loops while this section plays. Recall the section to preview it live.</p>
+    <div class="look-rows">
+      {#each store.buses as bus (bus.id)}
+        {@const Icon = busIcon[bus.id]}
+        <div class="look-row">
+          <span class="look-bus">
+            {#if Icon}<Icon size={14} aria-hidden="true" />{/if}
+            <span class="look-busname">{bus.name}</span>
+          </span>
+          <Select
+            value={looks[bus.id] ?? ''}
+            options={lookOptions(bus.id)}
+            onChange={(v) => store.setLook(sectionId, bus.id, v === '' ? null : v)}
+            placeholder="None"
+            ariaLabel={`${bus.name} look`}
+          />
+        </div>
+      {/each}
+    </div>
+  </div>
 
   <div class="recall">
     <Eyebrow>Recall via</Eyebrow>
@@ -87,6 +122,43 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: var(--space-3);
+  }
+  .looks {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .look-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .look-row {
+    display: grid;
+    grid-template-columns: 5rem 1fr;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .look-bus {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+  .look-bus :global(svg) {
+    flex: none;
+    color: var(--text-faint);
+  }
+  .look-busname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* stretch the Select (an inline-flex primitive) to fill the row's control column */
+  .look-row :global(.sel) {
+    width: 100%;
   }
   .recall {
     display: flex;

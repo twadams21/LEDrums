@@ -172,9 +172,32 @@ export function migrateSongs(songs: readonly unknown[]): Song[] {
     const sections: SetlistSection[] = [];
     for (const sec of rawSections) {
       if (!isObject(sec)) continue;
-      sections.push({ id: String(sec.id ?? ''), name: String(sec.name ?? ''), graphs: sectionGraphList(sec) });
+      // `looks` (S16) is coerced defensively + defaults to `{}`: a pre-S16 section has no
+      // looks field, so it loads with an empty map (== no looks == unchanged behaviour), and a
+      // section that already carries looks round-trips untouched — the migration is idempotent.
+      sections.push({
+        id: String(sec.id ?? ''),
+        name: String(sec.name ?? ''),
+        graphs: sectionGraphList(sec),
+        looks: coerceLooks(sec.looks),
+      });
     }
     out.push({ id: String(raw.id ?? ''), name: String(raw.name ?? ''), sections });
+  }
+  return out;
+}
+
+/**
+ * Coerce a persisted section's `looks` into a clean per-bus map (S16): a non-object → `{}`;
+ * otherwise keep only the entries whose value is a string (an effect id) or `null` (None),
+ * dropping anything else. Defensive + idempotent, matching {@link sectionGraphList}'s spirit —
+ * a partially-corrupt looks blob degrades to the entries that survived.
+ */
+function coerceLooks(value: unknown): Record<string, string | null> {
+  if (!isObject(value)) return {};
+  const out: Record<string, string | null> = {};
+  for (const [busId, effectId] of Object.entries(value)) {
+    if (typeof effectId === 'string' || effectId === null) out[busId] = effectId;
   }
   return out;
 }

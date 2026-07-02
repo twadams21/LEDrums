@@ -66,7 +66,7 @@ import { SaveStatusController, type SaveStatus } from './save-status';
 
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
-import { padKey, seedGraphs, seedSongs, seedAuthored, seedLookSections } from './store/seed';
+import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
@@ -202,7 +202,6 @@ export class TriggerLab {
   /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
       e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
-  sections = $state<Section[]>(seedLookSections());
   /** mutable presets — linked instances read these live. */
   presets = $state<Preset[]>(structuredClone(PRESETS));
 
@@ -465,6 +464,14 @@ export class TriggerLab {
   /** The active section (SetlistSection) in the active song — the section you play + edit.
       Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
   activeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.activeSectionId) ?? null);
+  /** The look-morph section list (`{ id, name, looks }`) the engine spawns on recall, the
+      offline sim recalls, and the Perform view lists — DERIVED from the active song's authored
+      sections so authored looks (S16) are the single source of truth (no separate fixture look
+      array to drift). `buildShow` reads this for `Show.sections`; the offline `setActiveSection`
+      recall resolves the look here. Empty when there is no active song. */
+  sections = $derived<Section[]>(
+    (this.activeSong?.sections ?? []).map((s) => ({ id: s.id, name: s.name, looks: s.looks })),
+  );
   /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
       and authored graphs alike, no distinction — in graph insertion order (pads first, then
       created/duplicated graphs). Drives the section picker + slot labels. A deleted graph drops
@@ -1476,6 +1483,25 @@ export class TriggerLab {
   /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
   setSectionGraphs(sectionId: string, graphs: string[]): void {
     this.updateActiveSong((song) => setlist.setGraphs(song, sectionId, graphs));
+  }
+
+  /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). `effectId` `null`
+      = None. Rides the standard authored-edit path: the mutation to `songs` persists via
+      autosave and live-resyncs the Show to the engine (the debounced `syncShowToServer`
+      re-sends `setShow` + re-recalls the active section, so a look edited on the active section
+      re-morphs with the new effect). Offline — where that resync never runs — re-morph the
+      local sim NOW when the edited section is the active one, so the pick is immediately
+      visible/audible in the preview; connected we defer to the resync's re-recall (an immediate
+      recall would race the not-yet-sent Show, spawning the stale look). */
+  setLook(sectionId: string, busId: string, effectId: string | null): void {
+    this.updateActiveSong((song) => setlist.setLook(song, sectionId, busId, effectId));
+    if (this.link !== 'open' && sectionId === this.activeSectionId) {
+      const look = this.sections.find((s) => s.id === sectionId);
+      if (look) {
+        this.sim.recallSection(look);
+        this.snapshot();
+      }
+    }
   }
   addSongSection(name: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
