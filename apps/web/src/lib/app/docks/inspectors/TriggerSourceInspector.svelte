@@ -15,15 +15,19 @@
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Radio from '@lucide/svelte/icons/radio';
   import ReadRow from './ReadRow.svelte';
   import { onNum } from './forms';
   import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
+  import { bindingFromSource } from '../../../trigger-lab/input-activity';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const src = $derived(node.source);
+  // Last-heard confirmation for the active MIDI-note / OSC field (null for drum/CC/empty).
+  const heard = $derived(store.inputBadge(bindingFromSource(src)));
   const gkey = $derived(store.selectedPadKey);
   const kindNow = $derived(src?.kind ?? 'drum');
   const learning = $derived(
@@ -172,6 +176,9 @@
           </button>
         </div>
       </Field>
+      {#if heard}
+        <div class="heard"><InputActivityBadge {...heard} /></div>
+      {/if}
     {/if}
     <p class="hint">Channel filter is in Settings.</p>
   {:else if src?.kind === 'osc'}
@@ -185,6 +192,9 @@
         onCommit={(v) => gkey && store.setTriggerSource(gkey, { kind: 'osc', address: v.trim() })}
       />
     </Field>
+    {#if heard}
+      <div class="heard"><InputActivityBadge {...heard} /></div>
+    {/if}
     <p class="hint">Namespace / host comes from the patch device, not here.</p>
   {/if}
 
@@ -269,5 +279,11 @@
     font-size: var(--text-xs);
     color: var(--text-muted);
     line-height: var(--leading-normal);
+  }
+  /* Last-heard confirmation, tucked just under its field. */
+  .heard {
+    margin-top: calc(-1 * var(--space-1));
+    padding-left: var(--space-1);
+    min-width: 0;
   }
 </style>

@@ -62,6 +62,15 @@ import {
   type PersistedShowLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
+import { SvelteMap } from 'svelte/reactivity';
+import {
+  acceptsChannel,
+  activityKey,
+  deriveInputBadge,
+  type InputActivity,
+  type InputBadgeView,
+  type InputBinding,
+} from './input-activity';
 
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
@@ -376,6 +385,17 @@ export class TriggerLab {
   midiLearnTarget = $state<MidiLearnTarget | null>(null);
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
 
+  // --- input activity ("last heard") ---------------------------------------
+  /** Last-heard event per input identity (note / OSC address), for the S04 activity
+      badges. Keyed via {@link activityKey} so a binding's badge is a single lookup and
+      traffic for OTHER notes/addresses never churns it. A SvelteMap for fine-grained
+      per-key reactivity. Fed from BOTH input paths (local WebMIDI forward + server echo). */
+  private readonly inputActivity = new SvelteMap<string, InputActivity>();
+  /** Coarse age clock (ms epoch) advanced ~2×/s from the RAF loop — what makes a badge
+      "age out visually" between hits. Separate from the event map so a new event and the
+      passage of time are independent reactive triggers. */
+  private nowTick = $state(Date.now());
+
   /** disposes the autosave $effect.root (null while persistence is not running). */
   private persistDispose: (() => void) | null = null;
   /** pending debounced-save timer (plain field — must NOT be reactive). */
@@ -494,6 +514,8 @@ export class TriggerLab {
         if (this.link !== 'open') this.fps = Math.round((this.fpsFrames * 1000) / elapsed);
         this.fpsFrames = 0;
         this.fpsLast = now;
+        // Advance the input-activity age clock (~2×/s) so badges age out visually.
+        this.nowTick = Date.now();
       }
       // push transport to the server only when it actually changed (never per-frame)
       this.syncTransport();
@@ -549,9 +571,14 @@ export class TriggerLab {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
-        if (ev.on && ev.velocity > 0 && this.acceptsMidiChannel(ev.channel)) {
-          this.applyMidiLearn(ev.note);
-          this.fireRawMidiLocal(ev.note, ev.velocity);
+        if (ev.on && ev.velocity > 0) {
+          // Local WebMIDI never round-trips back as a server `input` echo, so record the
+          // badge activity here (channel-filtered inside recordInputActivity).
+          this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
+          if (this.acceptsMidiChannel(ev.channel)) {
+            this.applyMidiLearn(ev.note);
+            this.fireRawMidiLocal(ev.note, ev.velocity);
+          }
         }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
@@ -912,10 +939,18 @@ export class TriggerLab {
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
-      onInput: (kind, _label, value, note, channel) => {
-        if (kind === 'midi' && note !== undefined && value > 0 && this.acceptsMidiChannel(channel)) {
-          this.applyMidiLearn(note);
-          this.fireRawMidiLocal(note, Math.round(Math.max(0, Math.min(1, value)) * 127));
+      onInput: (kind, label, value, note, channel) => {
+        const time = Date.now();
+        if (kind === 'midi' && note !== undefined) {
+          const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
+          this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
+          if (value > 0 && this.acceptsMidiChannel(channel)) {
+            this.applyMidiLearn(note);
+            this.fireRawMidiLocal(note, velocity);
+          }
+        } else if (kind === 'osc') {
+          // For OSC the wire `label` carries the address (see server broadcastJson).
+          this.recordInputActivity({ kind: 'osc', address: label, value, time });
         }
       },
       onMonitor: (event) => this.addMonitor(event),
@@ -1305,7 +1340,28 @@ export class TriggerLab {
   }
 
   private acceptsMidiChannel(channel: number | undefined): boolean {
-    return this.midiChannel === null || channel === this.midiChannel;
+    return acceptsChannel(this.midiChannel, channel);
+  }
+
+  /** Record a heard input event for the activity badges (S04). Applies the global MIDI
+      channel filter here so a badge appears iff the event would also fire; upserts under
+      the event's identity key (newest wins), which is why unrelated traffic never churns
+      an unrelated binding. Called from BOTH input paths — the local WebMIDI forward and
+      the server `input` echo — since the server does not echo a client's own input back. */
+  private recordInputActivity(activity: InputActivity): void {
+    if (activity.kind === 'midi') {
+      if (activity.note === undefined || !this.acceptsMidiChannel(activity.channel)) return;
+      this.inputActivity.set(activityKey({ kind: 'midi', note: activity.note }), activity);
+    } else if (activity.address) {
+      this.inputActivity.set(activityKey({ kind: 'osc', address: activity.address }), activity);
+    }
+  }
+
+  /** Last-heard badge for an input binding, or null when nothing matching has been heard
+      (or the field is drum/CC/empty → null binding). Reactive: reads the activity map +
+      the age clock, so a component `$derived(store.inputBadge(b))` tracks both. */
+  inputBadge(binding: InputBinding | null): InputBadgeView | null {
+    return deriveInputBadge(binding, this.inputActivity, this.nowTick);
   }
 
   private applyMidiLearn(note: number): void {
