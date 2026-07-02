@@ -6,11 +6,17 @@ import { pnum, type EffectGenerator } from '../types';
  * Synced Hoops: a hue/brightness wave climbs the hoop levels, driven by transport
  * beat only. Because the color is a pure function of `normHoop` + time, "Hoop 1 is
  * Hoop 1 on every drum" — the same hoop level renders identically across the kit.
+ *
+ * Voice timebase (S26): the wave phase reads `ctx.transport.beat`, which the bridge makes
+ * voice-local (age×bpm), so the wave starts from its origin on the hit and restarts on
+ * retrigger. Categorised `base` for the palette, but spec-directed to voice (doc 06 §A) —
+ * it is NOT in the enumerated stay-absolute set (breathing/hue-rotate/solid-base).
  */
 export const syncedHoops: EffectGenerator = {
   id: 'synced-hoops',
   name: 'Synced Hoops',
   category: 'base',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

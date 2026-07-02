@@ -25,11 +25,17 @@ export function waveRadius(mode: WashMode, ageMs: number, speed: number, reach: 
 /**
  * 3D Radial Wash: a shell of light radiates from the hit drum's origin through the
  * whole kit in 3D space (design "wash radiates out from the origin of the hit").
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — the shell radius is a pure
+ * function of `trig.ageMs`, so it restarts on retrigger without any bridge clock swap. The
+ * `timebase:'voice'` flag is a byte-parity declaration that records this and lets the
+ * thumbnail renderer (S27) drive it with a looping age. (Doc 06 §A reference effect.)
  */
 export const radialWash: EffectGenerator = {
   id: 'radial-wash',
   name: '3D Radial Wash',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

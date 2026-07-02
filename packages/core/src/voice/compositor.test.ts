@@ -4,6 +4,7 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import { getEffect } from '../effects/registry';
 
 // ---- fixtures (mirror engine.test.ts so the bridge is exercised end-to-end) ----
 
@@ -393,5 +394,268 @@ describe('Compositor — scope + targetId masking', () => {
       const j = i * 4;
       expect(frame[j]! + frame[j + 1]! + frame[j + 2]!).toBeLessThan(0.01);
     }
+  });
+});
+
+// ---- S25: voice timebase (restart-on-trigger) -------------------------------
+// chase is the tracer effect (timebase:'voice'): the generator bridge feeds it a
+// hit-relative clock, so it starts at hoop 0 on the hit and restarts on retrigger. These
+// are the engine-level goldens the S25 spec requires — chase at voice ages 0/200/800,
+// identical across separate runs AND across retriggers. A retrigger is a NEW voice whose
+// age is 0, so the retriggered animation matches a fresh one age-for-age.
+
+/** A single 8-hoop drum: chase's active hoop is distinct at each sampled age (avoids the
+    2-hoop model's aliasing so the golden actually pins the position). */
+function chaseModel(): PixelModel {
+  const kit = parseKit({
+    global: { ledDensityPxPerM: 30, hoopCount: 8, defaultHoopSpacingMm: 50 },
+    drums: [{ id: 'kick', diameterIn: 12, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
+  });
+  return buildPixelModel(kit);
+}
+
+/** chase on a base bus; attack 0 so voice age maps straight to animation (age 0 → level 1). */
+function chaseShow(polyphony: 'mono' | 'poly'): Show {
+  const bus: Bus = { id: 'base', name: 'Base', polyphony, crossfadeMs: 0 };
+  return {
+    buses: [bus],
+    graphs: { [padKey('kick', '')]: flatGraph('fx', 'kit') },
+    sections: [],
+    effects: [genEffect('fx', 'chase', { attackMs: 0 })],
+    presets: [],
+  };
+}
+
+/** Fire chase once, sample the frame at the given voice age (transport bpm 120 throughout). */
+function chaseAtAge(ageMs: number, polyphony: 'mono' | 'poly' = 'poly'): Readonly<Float32Array> {
+  const e = createVoiceBusEngine();
+  e.setModel(chaseModel());
+  e.setShow(chaseShow(polyphony));
+  e.applyInput(hit('kick', 0));
+  e.tick(0, 0, transport(0)); // spawn at t=0 → born 0; attack 0 → full level this same tick
+  if (ageMs > 0) e.tick(ageMs, ageMs, transport(ageMs));
+  return e.frame();
+}
+
+/** Fire chase, run to t=500, retrigger (mono steal), then sample the NEW voice at `ageMs`. */
+function chaseAfterRetrigger(ageMs: number): Readonly<Float32Array> {
+  const e = createVoiceBusEngine();
+  e.setModel(chaseModel());
+  e.setShow(chaseShow('mono'));
+  e.applyInput(hit('kick', 0));
+  e.tick(0, 0, transport(0)); // voice A born 0
+  e.tick(500, 500, transport(500)); // A ages to 500
+  e.applyInput(hit('kick', 500)); // retrigger on the mono bus
+  e.tick(500, 0, transport(500)); // mono steal: A → release, B born 500
+  // Sample B at age `ageMs`. For ageMs ≥ the 100ms release ramp, A has fully faded and been
+  // reaped, so only B contributes → directly comparable to a fresh voice at the same age.
+  e.tick(500 + ageMs, ageMs, transport(500 + ageMs));
+  return e.frame();
+}
+
+/** The sorted set of hoop indices lit in a frame (any channel > 0). */
+function litHoopSet(f: Readonly<Float32Array>, m: PixelModel): number[] {
+  const hoops = new Set<number>();
+  for (const p of m.pixels) {
+    const j = p.id * 4;
+    if (f[j]! > 0.004 || f[j + 1]! > 0.004 || f[j + 2]! > 0.004) hoops.add(p.hoopIndex);
+  }
+  return [...hoops].sort((a, b) => a - b);
+}
+
+describe('Compositor — voice timebase / restart-on-trigger (S25)', () => {
+  const m = chaseModel(); // deterministic layout — for interpreting hoop positions
+
+  it('chase starts at hoop 0 on the hit (age 0 → beat 0 → step 0)', () => {
+    expect(litHoopSet(chaseAtAge(0), m)).toEqual([0]);
+  });
+
+  it('chase advances on the voice clock, not frozen (ages 0/200/800 → distinct hoops)', () => {
+    // voice-local beat = age×bpm/60000; subdivision 4 → step = floor(beat × 4).
+    // age 0 → beat 0 → step 0 (hoop 0); age 200 → beat 0.4 → step 1 (hoop 1);
+    // age 800 → beat 1.6 → step 6 (hoop 6).
+    expect(litHoopSet(chaseAtAge(0), m)).toEqual([0]);
+    expect(litHoopSet(chaseAtAge(200), m)).toEqual([1]);
+    expect(litHoopSet(chaseAtAge(800), m)).toEqual([6]);
+  });
+
+  it('chase goldens are identical across separate runs (deterministic)', () => {
+    const run = (): number[][] => [0, 200, 800].map((a) => Array.from(chaseAtAge(a)));
+    expect(run()).toEqual(run());
+  });
+
+  it('chase restarts on retrigger: the retriggered voice matches a fresh voice age-for-age', () => {
+    // Mono steal resets the voice → the second hit animates from 0 exactly like the first.
+    for (const age of [200, 800]) {
+      expect(Array.from(chaseAfterRetrigger(age))).toEqual(Array.from(chaseAtAge(age, 'mono')));
+    }
+  });
+
+  it('absolute-timebase effects are age-independent: plasma at a fixed engine time is unchanged by birth time (golden parity)', () => {
+    // My change only routes 'voice' generators onto a hit-relative clock; 'absolute'
+    // generators (default) still read the engine wall-clock, so plasma sampled at the SAME
+    // engine time is byte-identical regardless of how old the voice is.
+    const plasmaAtEngineTime500 = (bornAt: number): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(show(flatGraph('fx', 'kit'), [genEffect('fx', 'plasma', { attackMs: 0 })], 'kick'));
+      e.applyInput(hit('kick', bornAt));
+      e.tick(bornAt, bornAt, transport(bornAt)); // spawn at bornAt (attack 0 → level 1)
+      e.tick(500, 500 - bornAt, transport(500)); // sample at engine time 500 (ages 500 vs 300)
+      return Array.from(e.frame());
+    };
+    expect(plasmaAtEngineTime500(0)).toEqual(plasmaAtEngineTime500(200));
+  });
+});
+
+// ---- S26: voice timebase conversion batch -----------------------------------
+// The S26 slice flips the remaining free-running trigger effects to timebase:'voice'.
+// Each converted effect must now (a) animate on the hit-relative clock (advances with voice
+// age; birth-time dependent) and (b) restart on retrigger — a mono steal is a NEW voice
+// whose age is 0, so its animation matches a fresh voice age-for-age. Absolute effects (base
+// looks + textures) must be UNCHANGED: birth-time independent (no phase-snap on recall).
+// These reuse the S25 harness shape, parametrized over the generator id (chaseModel below).
+
+/** The nine effects converted in this slice. All restart on retrigger. */
+const S26_VOICE_EFFECTS = [
+  'synced-hoops', 'strobe', 'starfield', 'collisions', 'sacred-hogs',
+  'gravity-wells', 'orbit-rings', 'comet-trails', 'temp-sweep',
+] as const;
+
+/** The subset that reads a phase clock (ctx.timeMs / ctx.transport) — for these the bridge's
+    clock swap makes them birth-time dependent. comet-trails is excluded: it reads only ctx.dt
+    (no clock), so its restart comes from per-voice genState reset, not a clock swap — its total
+    accumulated dt is birth-independent, so the birth-dependence assertion below doesn't apply.
+    Its restart is proven by the restart + no-leak tests instead. */
+const S26_CLOCK_EFFECTS = S26_VOICE_EFFECTS.filter((id) => id !== 'comet-trails');
+
+/** Generic single-generator show on a mono/poly base bus; attack 0 so voice age maps
+    straight to animation (age 0 → full level this same tick). */
+function fxShow(generatorId: string, polyphony: 'mono' | 'poly'): Show {
+  const bus: Bus = { id: 'base', name: 'Base', polyphony, crossfadeMs: 0 };
+  return {
+    buses: [bus],
+    graphs: { [padKey('kick', '')]: flatGraph('fx', 'kit') },
+    sections: [],
+    effects: [genEffect('fx', generatorId, { attackMs: 0 })],
+    presets: [],
+  };
+}
+
+/** Fire once, sample the frame at voice age `ageMs`. */
+function fxAtAge(generatorId: string, ageMs: number, polyphony: 'mono' | 'poly' = 'poly'): Readonly<Float32Array> {
+  const e = createVoiceBusEngine();
+  e.setModel(chaseModel());
+  e.setShow(fxShow(generatorId, polyphony));
+  e.applyInput(hit('kick', 0));
+  e.tick(0, 0, transport(0)); // spawn at t=0 → born 0; attack 0 → full level this same tick
+  if (ageMs > 0) e.tick(ageMs, ageMs, transport(ageMs));
+  return e.frame();
+}
+
+/** Fire, run to t=500, retrigger (mono steal), then sample the NEW voice at age `ageMs`.
+    Mirrors chaseAfterRetrigger: B's tick sequence from spawn ([dt 0, dt ageMs]) matches a
+    fresh voice, so dt accumulators and seeded RNG state replay identically. */
+function fxAfterRetrigger(generatorId: string, ageMs: number): Readonly<Float32Array> {
+  const e = createVoiceBusEngine();
+  e.setModel(chaseModel());
+  e.setShow(fxShow(generatorId, 'mono'));
+  e.applyInput(hit('kick', 0));
+  e.tick(0, 0, transport(0)); // voice A born 0
+  e.tick(500, 500, transport(500)); // A ages to 500
+  e.applyInput(hit('kick', 500)); // retrigger on the mono bus
+  e.tick(500, 0, transport(500)); // mono steal: A → release, B born 500
+  e.tick(500 + ageMs, ageMs, transport(500 + ageMs)); // B at age `ageMs` (A faded + reaped)
+  return e.frame();
+}
+
+/** Sample at a FIXED engine time, varying birth time. A voice-timebase effect is birth-time
+    DEPENDENT (different age → different frame); an absolute effect is birth-time INDEPENDENT
+    (same engine time → same frame). This is the inverse of the S25 plasma absolute lock. */
+function fxAtEngineTime(generatorId: string, engineT: number, bornAt: number): Readonly<Float32Array> {
+  const e = createVoiceBusEngine();
+  e.setModel(chaseModel());
+  e.setShow(fxShow(generatorId, 'poly'));
+  e.applyInput(hit('kick', bornAt));
+  e.tick(bornAt, bornAt, transport(bornAt)); // spawn at bornAt (attack 0 → full level)
+  e.tick(engineT, engineT - bornAt, transport(engineT)); // sample at fixed engine time
+  return e.frame();
+}
+
+describe('Compositor — voice timebase conversion batch (S26)', () => {
+  const m = chaseModel();
+  // Ages ≥ the 100ms release ramp so the stolen mono voice is fully faded + reaped and the
+  // sampled frame is the retriggered voice alone → directly comparable to a fresh voice.
+  const AGES = [200, 800] as const;
+
+  for (const id of S26_VOICE_EFFECTS) {
+    it(`${id}: restarts on retrigger — retriggered voice matches a fresh voice age-for-age`, () => {
+      for (const age of AGES) {
+        expect(Array.from(fxAfterRetrigger(id, age))).toEqual(Array.from(fxAtAge(id, age, 'mono')));
+      }
+    });
+
+    it(`${id}: animates on the voice clock (not frozen) and lights pixels`, () => {
+      const a = fxAtAge(id, AGES[0]);
+      const b = fxAtAge(id, AGES[1]);
+      // Non-empty at (at least) one sampled age, and the two ages render differently.
+      expect(litPixels(a, m.pixelCount).length + litPixels(b, m.pixelCount).length).toBeGreaterThan(0);
+      expect(Array.from(a)).not.toEqual(Array.from(b));
+    });
+  }
+
+  for (const id of S26_CLOCK_EFFECTS) {
+    it(`${id}: is birth-time dependent at a fixed engine time (voice clock, not wall-clock)`, () => {
+      // Same engine time, two birth times → different voice ages → different frame. An
+      // absolute effect is identical here (see the free-run lock below). Ages 800 vs 200.
+      expect(Array.from(fxAtEngineTime(id, 800, 0))).not.toEqual(Array.from(fxAtEngineTime(id, 800, 600)));
+    });
+  }
+
+  it('goldens are deterministic across separate runs', () => {
+    const run = (): number[][] => S26_VOICE_EFFECTS.map((id) => Array.from(fxAtAge(id, 800)));
+    expect(run()).toEqual(run());
+  });
+
+  it('stateful converted effects do not leak state across voices (collisions / sacred-hogs / comet-trails)', () => {
+    // A retrigger gets a fresh genState; if accumulated flash / sparkle / orbit state leaked
+    // from the stolen voice, the retriggered frame would differ from a fresh one. It does not.
+    for (const id of ['collisions', 'sacred-hogs', 'comet-trails']) {
+      expect(Array.from(fxAfterRetrigger(id, 800))).toEqual(Array.from(fxAtAge(id, 800, 'mono')));
+    }
+  });
+
+  it('absolute effects still free-run: base + texture looks are birth-time INDEPENDENT (no phase-snap on recall)', () => {
+    // The inverse of the voice test: at a fixed engine time an absolute generator renders the
+    // same frame regardless of when its voice was born — so section recall never phase-snaps.
+    for (const id of ['breathing-kit', 'hue-rotate-kit', 'solid-base', 'plasma', 'fire']) {
+      expect(Array.from(fxAtEngineTime(id, 800, 0))).toEqual(Array.from(fxAtEngineTime(id, 800, 600)));
+    }
+  });
+
+  it('registry timebase classification matches the S26 audit (executable audit of all 41 effects)', () => {
+    // Pins the code to docs/handoff/rock-solid/effect-timebase-audit.md so the two can't drift.
+    const VOICE = new Set([
+      // Tier 1 — runtime conversions (this slice)
+      'synced-hoops', 'strobe', 'starfield', 'collisions', 'sacred-hogs', 'gravity-wells',
+      'orbit-rings', 'comet-trails', 'temp-sweep',
+      // Tier 2 — intrinsic age-readers declared voice (byte-parity); chase landed in S25
+      'chase', 'radial-wash', 'wave-collapse', 'whole-drum', 'whole-kit', 'follow-hoop',
+      'burst', 'lightning',
+    ]);
+    const ABSOLUTE = new Set([
+      // base / ambient — must stay free-running
+      'breathing-kit', 'hue-rotate-kit', 'solid-base',
+      // textures used as looks
+      'plasma', 'fire', 'ripple-pond', 'rainbow-flow', 'tunnel', 'checker-pulse',
+      'perlin-clouds', 'lava-lamp', 'interference', 'caustics', 'spiral', 'grid-glow',
+      // free-running washes not in the S26 named set + hybrid (velocity-flames flicker) +
+      // hit-driven seq/dt effects + param-driven meter (timebase flag immaterial for these)
+      'helix', 'wipe-3d', 'velocity-flames',
+      'confetti-burst', 'pixel-accum', 'colour-melody', 'swing', 'sidechain', 'meter-eq',
+    ]);
+    expect(VOICE.size + ABSOLUTE.size).toBe(41);
+    for (const id of VOICE) expect(getEffect(id).timebase).toBe('voice');
+    for (const id of ABSOLUTE) expect(getEffect(id).timebase ?? 'absolute').toBe('absolute');
   });
 });

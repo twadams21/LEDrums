@@ -103,3 +103,54 @@ describe('generator bridge — offline render parity', () => {
     expect(run()).toEqual(run());
   });
 });
+
+describe('generator bridge — voice timebase / restart-on-trigger (S25)', () => {
+  // The web offline bridge mirrors the core generator bridge: a `timebase:'voice'` generator
+  // (chase) animates on a hit-relative clock, so it starts at its start position on the hit —
+  // independent of where the absolute transport happens to be. This is the sim side of the
+  // sim/engine parity criterion (the core engine asserts the same in compositor.test.ts).
+  it('chase starts at hoop 0 on the hit regardless of the transport clock', () => {
+    const lab = buildLabModel();
+    const sim = freshSim();
+    sim.tick(5000); // run the absolute transport far ahead (sim.beat ≈ 10) BEFORE firing
+    sim.triggerGraph('test', treeToGraph(play('gen:chase', 'oneshot')), ctx('kick'));
+    sim.tick(100); // chase voice age 100ms → voice-local beat 0.2 → step 0 → hoop 0
+    const buf = new Uint8Array(lab.model.count * 3);
+    renderFrame(buf, sim, lab);
+
+    const lit = litPixelIds(buf, lab.model.count);
+    expect(lit.length).toBeGreaterThan(0);
+    // Voice timebase: the onset lands on hoop 0. Under the old absolute clock the same frame
+    // would light a mid-cycle hoop (step from sim.beat ≈ 10), so this pins the conversion.
+    for (const id of lit) {
+      expect(lab.pm.pixels[id]!.hoopIndex, `pixel ${id} hoop`).toBe(0);
+    }
+  });
+});
+
+describe('generator bridge — voice timebase conversion batch (S26)', () => {
+  // The web bridge reads gen.timebase exactly like the core bridge (render.ts:221). A converted
+  // clock-reading effect (temp-sweep, one of the S26 batch) must animate on the hit-relative
+  // clock: the same voice age renders the same frame regardless of where the absolute transport
+  // was when the hit fired. This is the sim side of the sim/engine parity criterion (the core
+  // engine asserts birth-time dependence in compositor.test.ts).
+  function tempSweepAtAge(warmupMs: number, ageMs: number): { buf: Uint8Array; count: number } {
+    const lab = buildLabModel();
+    const sim = freshSim();
+    if (warmupMs > 0) sim.tick(warmupMs); // advance the absolute transport before firing
+    sim.triggerGraph('test', treeToGraph(play('gen:temp-sweep', 'oneshot')), ctx('kick'));
+    sim.tick(ageMs); // voice age = ageMs
+    const buf = new Uint8Array(lab.model.count * 3);
+    renderFrame(buf, sim, lab);
+    return { buf, count: lab.model.count };
+  }
+
+  it('a converted effect (temp-sweep) reads the hit-relative clock, not the absolute transport', () => {
+    const fresh = tempSweepAtAge(0, 200);
+    const late = tempSweepAtAge(5000, 200); // transport 5s ahead, same voice age
+    expect(litPixelIds(fresh.buf, fresh.count).length).toBeGreaterThan(0);
+    // Same voice age (200ms) → identical frame despite a 5s-different transport at firing.
+    // Under the old absolute clock these would differ (different wall-clock reads).
+    expect(Array.from(late.buf)).toEqual(Array.from(fresh.buf));
+  });
+});

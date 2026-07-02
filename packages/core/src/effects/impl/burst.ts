@@ -5,11 +5,16 @@ import { pnum, type EffectGenerator } from '../types';
  * Burst: a hit lights the whole struck drum; the harder the hit the brighter it
  * starts AND the longer it lingers (design "harder you hit it, the longer the note
  * and the brighter/longer the light"). Decay time scales with velocity.
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — the velocity-scaled envelope
+ * is a pure function of `trig.ageMs`. The `timebase:'voice'` flag is a byte-parity
+ * declaration so the thumbnail renderer (S27) drives it with a looping age.
  */
 export const burst: EffectGenerator = {
   id: 'burst',
   name: 'Burst',
   category: 'trigger',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 20, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

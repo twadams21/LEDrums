@@ -22,11 +22,17 @@ function angularDist(a: number, b: number): number {
  * Sacred HOGs: the top hoop of each drum sparkles orange like a halo, while every
  * hoop below it carries a set of "hogs" — bright nodes that circle around the hoop
  * over time. Pixels near a hog angle light up. Stateful (seeded sparkle).
+ *
+ * Voice timebase (S26): the hog travel angle reads `ctx.timeMs` (hit-relative via the
+ * bridge), so hogs start at angle 0 on the hit and restart on retrigger. The halo sparkle
+ * decays on `ctx.dt` into per-voice `genState` (seeded RNG + sparkle buffer), which is
+ * reset on (re)spawn → the sparkle replays from a fresh seed and never leaks across voices.
  */
 export const sacredHogs: EffectGenerator<SacredHogsState> = {
   id: 'sacred-hogs',
   name: 'Sacred HOGs',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hogHue', label: 'Hog Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'haloHue', label: 'Halo Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },

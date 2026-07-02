@@ -6,11 +6,16 @@ import { pnum, type EffectGenerator } from '../types';
  * Orbit Rings: a horizontal ring plane orbits up and down through the kit. Pixels
  * whose world height (z) falls within `width` mm of the moving plane light up, hue
  * driven by their angle around the hoop — a glowing band that sweeps the whole rig.
+ *
+ * Voice timebase (S26): the plane height reads `ctx.timeMs` (hit-relative via the bridge),
+ * so the sweep starts at the kit centre (sin 0) on the hit and restarts on retrigger.
+ * No body change — the bridge swaps the clock.
  */
 export const orbitRings: EffectGenerator = {
   id: 'orbit-rings',
   name: 'Orbit Rings',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'amp', label: 'Amplitude', type: 'number', default: 1, min: 0, max: 2, step: 0.05 },
     { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0, max: 10, step: 0.05, unit: 'rad/s' },

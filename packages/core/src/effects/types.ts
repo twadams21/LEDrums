@@ -21,6 +21,17 @@ export interface ParamSpec {
 
 export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility' | 'texture' | 'particle';
 
+/**
+ * Which clock a generator animates against.
+ * - `'absolute'` (default): free-running engine time. Correct for base/ambient loops
+ *   (breathing-kit, hue-rotate-kit, textures used as looks) — they must NOT phase-snap on
+ *   section recall. `ctx.timeMs` / `ctx.transport` are the engine's wall-clock + transport.
+ * - `'voice'`: hit-relative. The generator bridge feeds `trig.ageMs` as `ctx.timeMs` and a
+ *   voice-local `ctx.transport` (beat derived from age×bpm), so the effect starts from its
+ *   start position on each hit and restarts on retrigger (new voice = animation from 0).
+ */
+export type EffectTimebase = 'voice' | 'absolute';
+
 /** Resolved parameter values (base params overlaid with modulation), passed to render. */
 export type ResolvedParams = Record<string, number | string | boolean>;
 
@@ -34,6 +45,15 @@ export interface EffectGenerator<State = unknown> {
   name: string;
   category: EffectCategory;
   paramSpec: ParamSpec[];
+  /**
+   * Clock this effect animates against (default `'absolute'`). The flag is interface, not
+   * convention — the generator bridge and the thumbnail renderer both read it to decide
+   * which clock to feed. Converting a free-running effect to restart-on-trigger is then a
+   * one-line declaration here plus (where the effect reads `ctx.timeMs` directly) swapping
+   * to the now voice-local clock; the generator signature never changes. See
+   * {@link EffectTimebase}.
+   */
+  timebase?: EffectTimebase;
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color). */
   createState?(model: PixelModel): State;
   render(ctx: RenderContext, params: ResolvedParams, fb: Framebuffer, state: State): void;
