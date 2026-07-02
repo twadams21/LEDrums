@@ -30,6 +30,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
   paramSpec: [
     { key: 'hogHue', label: 'Hog Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'haloHue', label: 'Halo Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'hogsPerHoop', label: 'Hogs / Hoop', type: 'number', default: 3, min: 1, max: 12, step: 1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 60, min: 0, max: 720, unit: '°/s' },
@@ -41,6 +42,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
   render(ctx, params, fb, state) {
     const hogHue = pnum(params, 'hogHue', 200);
     const haloHue = pnum(params, 'haloHue', 30);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const hogsPerHoop = Math.max(1, Math.round(pnum(params, 'hogsPerHoop', 3)));
     const speed = pnum(params, 'speed', 60);
@@ -69,7 +71,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
           const s = clamp01(state.sparkle[p]!);
           if (s < 0.004) continue;
           const v = clamp01(bri * s);
-          const rgb = hsvToRgb(haloHue, 1, v);
+          const rgb = hsvToRgb(haloHue, sat, v);
           fb.max(p, rgb.r, rgb.g, rgb.b, v);
         } else {
           // Lower hoops carry circling hogs. Spread hogs evenly, offset per hoop.
@@ -82,7 +84,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
           }
           if (best < 0.004) continue;
           const v = clamp01(bri * best);
-          const rgb = hsvToRgb(hogHue, 1, v);
+          const rgb = hsvToRgb(hogHue, sat, v);
           fb.max(p, rgb.r, rgb.g, rgb.b, v);
         }
       }

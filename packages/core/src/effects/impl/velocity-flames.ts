@@ -15,11 +15,19 @@ export const velocityFlames: EffectGenerator = {
   paramSpec: [
     { key: 'decayMs', label: 'Decay', type: 'number', default: 700, min: 50, max: 6000, unit: 'ms' },
     { key: 'flicker', label: 'Flicker', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01 },
+    { key: 'baseHue', label: 'Base Hue', type: 'number', default: 55, min: 0, max: 360, unit: '°' },
+    { key: 'tipHue', label: 'Tip Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
     const decay = Math.max(1, pnum(params, 'decayMs', 700));
     const flicker = clamp01(pnum(params, 'flicker', 0.25));
+    // Multi-colour gradient: base (flame body) → tip (crest). Defaults (55→0) reproduce the
+    // old yellow→red palette; `saturation` scales the intrinsic whiter-base/redder-tip ramp.
+    const baseHue = pnum(params, 'baseHue', 55);
+    const tipHue = pnum(params, 'tipHue', 0);
+    const satParam = clamp01(pnum(params, 'saturation', 1));
     const bri = clamp01(pnum(params, 'brightness', 1));
 
     // Per-drum flame height = strongest decayed velocity among that drum's triggers.
@@ -43,8 +51,8 @@ export const velocityFlames: EffectGenerator = {
 
       // Fraction up the flame body: 0 at base (hot/white), 1 at the tip (red).
       const up = effHeight > 0 ? clamp01(p.normHoop / effHeight) : 0;
-      const hue = lerp(55, 0, up); // yellow -> red
-      const sat = lerp(0.2, 1, up); // base whiter, tip saturated red
+      const hue = lerp(baseHue, tipHue, up); // body -> crest (default yellow -> red)
+      const sat = lerp(0.2, 1, up) * satParam; // base whiter, tip saturated; scaled by saturation
       // Brighter at the base, tapering toward the tip, with a touch of flicker.
       const taper = 1 - 0.5 * up;
       const flickBri = 1 - flicker * 0.3 * (0.5 + 0.5 * Math.sin(t * 17 + p.angleDeg * 0.21));
