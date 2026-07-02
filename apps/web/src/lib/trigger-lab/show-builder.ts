@@ -48,7 +48,10 @@ export function buildShow(source: ShowSource): voice.Show {
     // by structural assignment: core's `voice` types now model `on:'value'` and
     // `fromPort`, so the web↔core graph types have re-converged (no cast needed).
     graphs: { ...source.graphs },
-    sections: source.sections.map((s) => ({ ...s })),
+    // Section snapshots carry the per-bus `looks` the engine spawns on recall (S15).
+    // Deep-copy `looks` so the sent Show is a true snapshot, never a live alias of the
+    // rune-backed section state (the header's snapshot invariant).
+    sections: source.sections.map((s) => ({ ...s, looks: { ...s.looks } })),
     effects: source.effects.map((e) => ({ ...e })),
     presets: source.presets.map((p) => ({ ...p })),
     songs: (source.songs ?? []).map((song) => ({

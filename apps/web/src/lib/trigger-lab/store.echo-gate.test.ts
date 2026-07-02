@@ -177,3 +177,41 @@ describe('outbound firing is gated on the engine link (S12)', () => {
     });
   });
 });
+
+/* S15 — the same authority principle for SECTION RECALL. The engine now spawns a section's
+   looks on recall (engine parity), so the sim must recall its looks ONLY while offline —
+   otherwise the sim + engine double-spawn when connected. `setActiveSection` therefore fires
+   `sim.recallSection` only when `link !== 'open'`, and always forwards `{t:'recallSection'}`
+   when connected. (S12 deferred this gate to S15; here is where it lands.) */
+describe('setActiveSection recall is gated on the engine link (S15)', () => {
+  /** A fixture section whose looks name at least one effect, so recalling it spawns
+      look voices in the local sim (an observable "the sim recalled" signal). */
+  const sectionWithLook = (store: TriggerLab): string => {
+    const s = store.sections.find((sec) => Object.values(sec.looks).some((v) => v != null));
+    expect(s, 'a fixture section with a non-null look').toBeTruthy();
+    return s!.id;
+  };
+
+  it('offline: recalls the local sim (spawns the section looks) and sends nothing', () => {
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    expect(store.link).toBe('offline');
+
+    store.setActiveSection(sectionWithLook(store));
+
+    expect(store.voices.length).toBeGreaterThan(0); // the sim spawned the looks locally
+    expect(sent).toHaveLength(0);
+  });
+
+  it('connected: forwards the recall WITHOUT firing the local sim (no double-spawn)', () => {
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    const id = sectionWithLook(store);
+    store.link = 'open';
+
+    store.setActiveSection(id);
+
+    expect(store.voices).toHaveLength(0); // sim did NOT spawn — the server engine is authority
+    expect(sent).toContainEqual({ t: 'recallSection', songId: store.activeSongId, sectionId: id });
+  });
+});
