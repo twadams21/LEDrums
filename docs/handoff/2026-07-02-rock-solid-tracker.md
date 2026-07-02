@@ -47,7 +47,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
-| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (S19 merged; S18/S23 in flight) | — | — |
+| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (S18/S19/S23 merged; S20/S21/S24 in flight, S22 next) | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
@@ -60,6 +60,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T18:07 — reset; Lane 2 resumed ON ITS OWN
+
+- **5h reset to 10%** (next 09:00+10 = 23:00 UTC). 7d 29%. Full runway.
+- **Lane 2 resumed autonomously** — no nudge needed (its own --at reset wake fired; wave 2 S20/S21/S24 launched 18:01–18:02 UTC).
+- **group/F: wave 1 merged** — S18/S19/S23 → group/F @ 1ff3fd0 (lane sweeps green, 1232 tests, slice branches deleted). **Wave 2 in flight:** S20-colour-batch2, S21-colour-batch3, S24-envelope-editor; S22 next. 3/7 F slices merged.
+- Lane orch keeps its own docs/handoff/rock-solid/lane-2-state.md. rock-solid unchanged (7c26130) — no group/F handoff yet.
+- **Next:** normal 30-min cadence; merge group/F when handed off (integrated + reviewed); then G→H→I. Fire Lane 3 (J→K) when Lane 2 done.
 
 ### 2026-07-02T14:59 — Lane 2 F underway, approaching budget wall
 
