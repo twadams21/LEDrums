@@ -19,6 +19,7 @@ export const checkerPulse: EffectGenerator = {
     { key: 'rows', label: 'Rows', type: 'number', default: 4, min: 1, max: 24, step: 1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 6, step: 0.01 },
     { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
     const bri = pnum(params, 'brightness', 1);
@@ -26,6 +27,7 @@ export const checkerPulse: EffectGenerator = {
     const rows = pnum(params, 'rows', 4);
     const sp = pnum(params, 'speed', 1);
     const hue = pnum(params, 'hue', 280);
+    const sat = pnum(params, 'saturation', 1);
 
     renderUvField(ctx, fb, 'cylindrical', (u, v, t) => {
       const cell = (Math.floor(u * cols + t * sp * 0.5) + Math.floor(v * rows)) % 2;
@@ -33,7 +35,7 @@ export const checkerPulse: EffectGenerator = {
       const val = bri * (cell !== 0 ? 1 : pulse);
       // Slow global hue cycle, with a small offset between the two cell phases.
       const h = wrap(hue + t * sp * 12 + (cell !== 0 ? 0 : 40), 360);
-      const c = hsvToRgb(h, 0.9, val);
+      const c = hsvToRgb(h, sat * 0.9, val);
       return [c.r, c.g, c.b];
     });
   },

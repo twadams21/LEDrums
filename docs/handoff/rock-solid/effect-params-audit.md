@@ -69,11 +69,43 @@ Evidence: `effects.test.ts › S20 colour batch 2 — saturation 0 ⇒ white on 
 golden per effect: lit>0 AND every lit pixel achromatic) + a knob-is-real negative check +
 a byte-identical defaults-parity check (saturation default 1 == the old hardcoded look).
 
-## Batch 3 — S21 (textures) ⬜ PENDING
+## Batch 3 — S21 (textures) ✅ DONE
 
-`plasma`, `fire`, `ripple-pond`, `rainbow-flow` (*multi*), `tunnel`, `checker-pulse`,
-`perlin-clouds`, `lava-lamp`, `interference`, `caustics`, `spiral`, `grid-glow`,
-`wave-collapse`. Multi-colour ones expose range/offset where a single hue is wrong.
+Same shallow change: a `saturation` param (default 1) multiplied into each effect's existing
+S-slot — whether a literal (`1`, `0.95`, `0.9`) or a computed sat (fire/perlin/lava/caustics'
+heat- or density-driven wash) — so defaults reproduce the old look and `saturation` 0 washes
+every lit pixel to white. `lava-lamp` and `caustics` hardcoded their palette hue, so each also
+gained a base `hue` param; with `hue`+`saturation`+`brightness` present, all eleven single-hue
+textures light up the write-through **ColorSwatch** automatically (no per-effect UI).
+
+**Multi-colour (*multi*): `tunnel` and `rainbow-flow` only.** Both sweep a *full* hue wheel
+across space (tunnel's angle → ±180°, rainbow-flow's `(u+v)` → 360°), so a single-colour picker
+would be actively misleading. They use an offset/range scheme instead and deliberately carry no
+bare `hue` param → no swatch. Everything else that merely *spreads* hue around a base (plasma
+`hueSpread` 120, ripple-pond `hueSpread` 80, spiral/interference ≤ ~88°) is treated as
+single-hue **with a swatch on the base** — matching the S19 precedent for `synced-hoops`
+(hue + hueSpread → swatch ✓). "Spreads hue" ≠ "*multi*"; only a full-wheel sweep is.
+
+| Effect | id | Cat | Params before | Params after | Swatch |
+|---|---|---|---|---|---|
+| Plasma | `plasma` | texture | brightness, speed, scale, hue, hueSpread | brightness, speed, scale, hue, **saturation**, hueSpread | ✓ |
+| Fire | `fire` | texture | brightness, speed, scale, hue, intensity | brightness, speed, scale, hue, **saturation**, intensity | ✓ |
+| Ripple Pond | `ripple-pond` | texture | brightness, freq, speed, hue, hueSpread | brightness, freq, speed, hue, **saturation**, hueSpread | ✓ |
+| Rainbow Flow | `rainbow-flow` | texture | brightness, saturation, bands, speed | brightness, saturation, **hueOffset**, bands, speed | *multi* — full-wheel rainbow; offset rotates it, sat → greyscale |
+| Tunnel | `tunnel` | texture | brightness, rings, speed, hue | brightness, **saturation**, rings, speed, **hueOffset** (was hue), **hueRange** | *multi* — angle sweeps full wheel; offset+range control it |
+| Checker Pulse | `checker-pulse` | texture | brightness, cols, rows, speed, hue | brightness, cols, rows, speed, hue, **saturation** | ✓ |
+| Perlin Clouds | `perlin-clouds` | texture | scale, speed, hue, brightness | scale, speed, hue, **saturation**, brightness | ✓ |
+| Lava Lamp | `lava-lamp` | texture | blobs, speed, brightness | blobs, speed, **hue**, **saturation**, brightness | ✓ — base hue added (was hardcoded 8°) |
+| Interference | `interference` | texture | freq, speed, hue, brightness | freq, speed, hue, **saturation**, brightness | ✓ |
+| Caustics | `caustics` | texture | scale, speed, brightness | scale, speed, **hue**, **saturation**, brightness | ✓ — base hue added (was hardcoded 200°) |
+| Spiral | `spiral` | texture | arms, twist, speed, hue, brightness | arms, twist, speed, hue, **saturation**, brightness | ✓ |
+| Grid Glow | `grid-glow` | texture | cols, rows, speed, hue, brightness | cols, rows, speed, hue, **saturation**, brightness | ✓ |
+| Wave Collapse | `wave-collapse` | wash | hue, brightness, speed, width, reach, decayMs | hue, **saturation**, brightness, speed, width, reach, decayMs | ✓ |
+
+Evidence: `effects.test.ts › S21 colour batch 3 — saturation 0 ⇒ white on lit pixels (textures)`
+(one golden per effect: lit>0 AND every lit pixel achromatic) + a knob-is-real check
+(plasma hue 120 / sat 1 → not white). Default parity: the pre-existing `all effects`,
+`batch-b`, and `batch-c` finite/in-range goldens still pass unchanged.
 
 ## Batch 4 — S22 (particles) ⬜ PENDING — closes the audit (all 41 accounted for)
 

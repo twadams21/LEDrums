@@ -31,11 +31,13 @@ function valueNoise(x: number, y: number): number {
 }
 
 /** Map a heat value [0,1] to a black→red→orange→yellow→white ramp. */
-function heatColor(heat: number, hueBase: number, bri: number): readonly [number, number, number] {
+function heatColor(heat: number, hueBase: number, satScale: number, bri: number): readonly [number, number, number] {
   const h = clamp01(heat);
   // Hue climbs from base (deep orange/red) toward yellow; sat drops near white-hot.
   const hue = hueBase + h * 50;
-  const sat = clamp01(1 - Math.max(0, h - 0.75) * 4); // wash out to white at the top
+  // Heat washes sat out near white-hot; the `saturation` param scales the whole thing
+  // (0 ⇒ white flames) while default 1 preserves the classic look.
+  const sat = satScale * clamp01(1 - Math.max(0, h - 0.75) * 4);
   const val = bri * clamp01(h * 1.4); // dark at low heat
   const c = hsvToRgb(hue, sat, val);
   return [c.r, c.g, c.b];
@@ -55,6 +57,7 @@ export const fire: EffectGenerator = {
     { key: 'speed', label: 'Speed', type: 'number', default: 1.5, min: 0, max: 5, step: 0.01 },
     { key: 'scale', label: 'Scale', type: 'number', default: 6, min: 1, max: 24, step: 0.5 },
     { key: 'hue', label: 'Hue Base', type: 'number', default: 12, min: 0, max: 60, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'intensity', label: 'Intensity', type: 'number', default: 1, min: 0.2, max: 2, step: 0.01 },
   ],
   render(ctx, params, fb) {
@@ -62,6 +65,7 @@ export const fire: EffectGenerator = {
     const sp = pnum(params, 'speed', 1.5);
     const sc = pnum(params, 'scale', 6);
     const hue = pnum(params, 'hue', 12);
+    const sat = pnum(params, 'saturation', 1);
     const intensity = pnum(params, 'intensity', 1);
 
     renderUvField(ctx, fb, 'cylindrical', (u, v, t) => {
@@ -74,7 +78,7 @@ export const fire: EffectGenerator = {
       const fade = clamp01(1 - v * 0.95);
       heat = clamp01(heat * intensity * (0.35 + 0.65 * fade) - (1 - fade) * 0.15);
       if (heat <= 0.02) return null; // leave cold pixels dark
-      return heatColor(heat, hue, bri);
+      return heatColor(heat, hue, sat, bri);
     });
   },
 };

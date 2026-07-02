@@ -25,6 +25,20 @@ import { collisions } from './impl/collisions';
 import { breathingKit } from './impl/breathing-kit';
 import { hueRotateKit } from './impl/hue-rotate-kit';
 import { tempSweep } from './impl/temp-sweep';
+// S21 — texture effects (colour batch 3)
+import { plasma } from './impl/plasma';
+import { fire } from './impl/fire';
+import { ripplePond } from './impl/ripple-pond';
+import { rainbowFlow } from './impl/rainbow-flow';
+import { tunnel } from './impl/tunnel';
+import { checkerPulse } from './impl/checker-pulse';
+import { perlinClouds } from './impl/perlin-clouds';
+import { lavaLamp } from './impl/lava-lamp';
+import { interference } from './impl/interference';
+import { caustics } from './impl/caustics';
+import { spiral } from './impl/spiral';
+import { gridGlow } from './impl/grid-glow';
+import { waveCollapse } from './impl/wave-collapse';
 
 function model(drums = 1, hoopCount = 4): PixelModel {
   const drumDefs = [];
@@ -436,6 +450,72 @@ describe('S20 colour batch 2 — saturation 0 ⇒ white on lit pixels', () => {
       render(tempSweep, m, ctx(m, { timeMs: 0 }), {}),
       render(tempSweep, m, ctx(m, { timeMs: 0 }), { warmHue: 30, coolHue: 210, saturation: 1 }),
     );
+  });
+});
+
+// S21 — Colour batch 3 (textures). Saturation is now exposed and threaded into every
+// hsvToRgb on all thirteen texture effects. Same contract as S19: saturation 0 desaturates
+// every lit pixel to achromatic white/grey (r===g===b), which the old hardcoded S-slots
+// (1, 0.95, 0.9, or a computed sat) could never reach. tunnel and rainbow-flow are the two
+// full-wheel "multi" effects — a single hue can't represent them, so they carry no bare
+// `hue` param (hueOffset/hueRange instead), but saturation still desaturates them to grey.
+describe('S21 colour batch 3 — saturation 0 ⇒ white on lit pixels (textures)', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  // Field textures read ctx.timeMs; wave-collapse is trigger-driven (a shell at `reach`).
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'plasma', run: (m) => render(plasma, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'fire', run: (m) => render(fire, m, ctx(m, { timeMs: 250 }), { hue: 30, saturation: 0 }) },
+    { name: 'ripple-pond', run: (m) => render(ripplePond, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'rainbow-flow', run: (m) => render(rainbowFlow, m, ctx(m, { timeMs: 250 }), { saturation: 0 }) },
+    { name: 'tunnel', run: (m) => render(tunnel, m, ctx(m, { timeMs: 250 }), { hueOffset: 120, saturation: 0 }) },
+    { name: 'checker-pulse', run: (m) => render(checkerPulse, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'perlin-clouds', run: (m) => render(perlinClouds, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'lava-lamp', run: (m) => render(lavaLamp, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'interference', run: (m) => render(interference, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'caustics', run: (m) => render(caustics, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'spiral', run: (m) => render(spiral, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'grid-glow', run: (m) => render(gridGlow, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    {
+      name: 'wave-collapse',
+      run: (m) =>
+        render(waveCollapse, m, ctx(m, { triggers: [trig(1, 'd0', 38, 1, 0)] }), {
+          hue: 120,
+          saturation: 0,
+          reach: 100,
+          width: 800,
+        }),
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured texture at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(plasma, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 1 });
+    expect(scanLit(fb).allWhite).toBe(false);
   });
 });
 
