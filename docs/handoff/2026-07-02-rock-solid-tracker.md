@@ -60,9 +60,11 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
-### 2026-07-02T08:xx — master startup
+### 2026-07-02T08:xx — master startup COMPLETE, Lane 1 live
 
-- **In flight:** launching Lane 1 orch (fable, high), assigning groups A → B → E.
-- **Done:** `rock-solid` branch created off `main`@ca0d70c + pushed; 3-worktree impl pool + `wt-master` created and installed; this tracker committed.
-- **Verified evidence:** `git worktree list` shows the 4 worktrees; `twux list` shows master session `rock-solid-master-4091b2` alive; disk 8.3 GB free after all installs (hardlinks holding).
-- **Next actions:** (1) launch Lane 1 orch; (2) send it the Lane 1 assignment (groups A→B→E in order); (3) `twux wake --in 30m` to start the 30-min verify cadence.
+- **Master session:** `rock-solid-master-4091b2` (opus, high). Retire Trent's planning chat.
+- **In flight:** **Lane 1 orch `lane-1-b0cea3`** (fable, high, own window) launched + assigned groups A → B → E. Assignment delivered via inbox (id 14d8bb).
+- **Done:** `rock-solid` off `main`@ca0d70c + pushed; impl pool wt-1/2/3 + `wt-master` created & installed; this tracker committed (9b7022f) + pushed; Lane 1 orch launched & assigned; 30-min master wake armed (bg task belxirmfo).
+- **Verified evidence:** `git worktree list` = 4 rock-solid worktrees; `twux list` showed master alive; `twux launch` returned `lane-1-b0cea3`; send-message returned "delivered ... [nudged]"; disk 8.3 GB free after all 4 installs.
+- **Next actions (on wake):** verify lane-1-b0cea3 alive + progressing (`twux list`, capture if idle); drain inbox; merge any handed-off+reviewed group branches → rock-solid in wt-master + full sweep; re-arm 30-min wake. When Lane 1 completes (A, B, E merged), fire the Lane 2 orch (groups F→G→H→I).
+- **Not yet asked of Trent:** nothing (escalation/final-gate only, via AskUserQuestion).
