@@ -18,7 +18,7 @@ import { hueToRgb } from './kit';
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
-const num = (v: number | boolean | undefined, d: number) => (typeof v === 'number' ? v : d);
+const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
 function hash(n: number): number {
   const s = Math.sin(n) * 43758.5453;

@@ -20,6 +20,11 @@
 
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
+
+  /** Read a param as a string (enum choice / colour hex), falling back to `d`. */
+  const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
+  /** Enum value → a friendly Select label ("out" → "Out", "x" → "X"). */
+  const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
@@ -110,6 +115,23 @@
             format={(v) => (enveloped ? 'swept' : fmt(spec, v))}
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
+          />
+        {:else if spec.kind === 'enum'}
+          <Select
+            value={str(live[spec.key], spec.options?.[0] ?? '')}
+            options={(spec.options ?? []).map((o) => ({ value: o, label: titleCase(o) }))}
+            onChange={(v) => store.setParam(node, spec.key, v)}
+            ariaLabel={spec.label}
+            class="paramsel"
+          />
+        {:else if spec.kind === 'color'}
+          <!-- Interim native colour input; the S19 write-through swatch supersedes it. -->
+          <input
+            class="colorcell"
+            type="color"
+            value={str(live[spec.key], '#ffffff')}
+            oninput={(e) => store.setParam(node, spec.key, e.currentTarget.value)}
+            aria-label={spec.label}
           />
         {:else}
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
@@ -242,6 +264,21 @@
   }
   .prow :global(.boolcell) {
     justify-self: start;
+  }
+  /* Enum Select fills the middle (value) column, like the scope-target select. */
+  .prow :global(.paramsel) {
+    width: 100%;
+    min-width: 0;
+  }
+  .colorcell {
+    justify-self: start;
+    inline-size: 44px;
+    block-size: 24px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-inset);
+    cursor: pointer;
   }
   .envbtn {
     display: inline-flex;
