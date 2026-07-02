@@ -16,6 +16,7 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - The render loop is deterministic given (time, inputs, model) - effects must be pure functions of `RenderContext`, no hidden global state.
 - Never block the render loop with sync IO; output adapters must be fire-and-forget.
 - Any change that touches UI must apply the `/make-interfaces-feel-better` skill (design-engineering polish pass), alongside the Impeccable design context (`PRODUCT.md` / `DESIGN.md`).
+- UI work must **use or extend the design system** (`docs/design-system.html` — tokens, primitives, composites, interaction contracts; regenerate with `pnpm design-system`). Compose from its components; anything new and reusable gets added to the styleguide entry (`apps/web/src/lib/styleguide/` — see its README) and the file regenerated **in the same change**.
 
 ## Commands
 - Install: `pnpm install`
@@ -23,6 +24,7 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - Test: `pnpm test`
 - Typecheck: `pnpm typecheck`
 - Build: `pnpm build`
+- Design system (regenerate `docs/design-system.html`): `pnpm design-system`
 - Start (prod, serves built web): `pnpm start`
 
 ## After Every Task
