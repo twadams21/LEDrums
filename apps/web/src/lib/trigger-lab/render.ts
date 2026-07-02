@@ -213,16 +213,24 @@ function renderGeneratorVoice(
   const age = sim.timeMs - v.bornAtMs;
   genTrigger.ageMs = age > 0 ? age : 0;
 
-  const beatInBar = sim.beat - Math.floor(sim.beat / sim.beatsPerBar) * sim.beatsPerBar;
+  // Timebase parity with the core generator bridge (generator-bridge.ts): a 'voice'
+  // generator animates on a hit-relative clock (ctx.timeMs = age, transport.beat = age×bpm)
+  // so it restarts on each trigger; an 'absolute' generator (default) free-runs on the
+  // sim's wall-clock + transport. Keeping the formula identical to core keeps sim/engine
+  // output in step.
+  const voiceClock = (gen.timebase ?? 'absolute') === 'voice';
+  const clockMs = voiceClock ? genTrigger.ageMs : sim.timeMs;
+  const beat = voiceClock ? (genTrigger.ageMs / 60000) * sim.bpm : sim.beat;
+  const bar = Math.floor(beat / sim.beatsPerBar);
   const ctx: RenderContext = {
     model: pm,
-    timeMs: sim.timeMs,
+    timeMs: clockMs,
     dt: sim.lastDt,
     transport: {
-      timeMs: sim.timeMs,
-      beat: sim.beat,
-      bar: Math.floor(sim.beat / sim.beatsPerBar),
-      beatInBar,
+      timeMs: clockMs,
+      beat,
+      bar,
+      beatInBar: beat - bar * sim.beatsPerBar,
       bpm: sim.bpm,
       beatsPerBar: sim.beatsPerBar,
       playing: true,
