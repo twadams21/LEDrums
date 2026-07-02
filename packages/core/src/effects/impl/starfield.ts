@@ -48,6 +48,7 @@ export const starfield: EffectGenerator<StarfieldState> = {
     { key: 'count', label: 'Stars', type: 'number', default: 48, min: 1, max: 512, step: 1 },
     { key: 'rate', label: 'Twinkle Rate', type: 'number', default: 2.5, min: 0, max: 20, step: 0.1, unit: 'Hz' },
     { key: 'hue', label: 'Hue', type: 'number', default: 210, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   createState(model: PixelModel): StarfieldState {
@@ -58,6 +59,7 @@ export const starfield: EffectGenerator<StarfieldState> = {
     const count = Math.max(1, Math.round(pnum(params, 'count', 48)));
     const rate = pnum(params, 'rate', 2.5);
     const hue = pnum(params, 'hue', 210);
+    const sat = pnum(params, 'saturation', 0.15);
     const bri = pnum(params, 'brightness', 1);
 
     // Re-seed if the model size or requested star count changed.
@@ -74,8 +76,8 @@ export const starfield: EffectGenerator<StarfieldState> = {
       const twinkle = 0.5 + 0.5 * Math.sin(t * rate * star.rateScale * Math.PI * 2 + star.phase);
       const v = clamp01(bri * twinkle);
       if (v < 0.004) continue;
-      // Near-white with a faint hue tint (low saturation).
-      const rgb = hsvToRgb(hue, 0.15, v);
+      // Near-white with a faint hue tint by default (low saturation); now controllable.
+      const rgb = hsvToRgb(hue, sat, v);
       fb.max(star.id, rgb.r, rgb.g, rgb.b, v);
     }
   },

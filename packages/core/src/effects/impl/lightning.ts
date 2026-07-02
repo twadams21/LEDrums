@@ -25,12 +25,14 @@ export const lightning: EffectGenerator = {
   category: 'particle',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.35, min: 0, max: 1, step: 0.01 },
     { key: 'boltWidth', label: 'Bolt Width', type: 'number', default: 120, min: 20, max: 600, unit: 'mm' },
     { key: 'decayMs', label: 'Decay', type: 'number', default: 150, min: 20, max: 1500, unit: 'ms' },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 200);
+    const sat = pnum(params, 'saturation', 0.35);
     const width = Math.max(1, pnum(params, 'boltWidth', 120));
     const decay = Math.max(1, pnum(params, 'decayMs', 150));
     const bri = pnum(params, 'brightness', 1);
@@ -64,7 +66,7 @@ export const lightning: EffectGenerator = {
         pos = { x: pos.x + (dir.x / len) * stepLen, y: pos.y + (dir.y / len) * stepLen, z: pos.z + (dir.z / len) * stepLen };
         // Head fades toward the tip of the bolt.
         const along = 1 - s / STEPS;
-        lightNear(ctx, fb, pos, width, hue, env * (0.4 + 0.6 * along), bri);
+        lightNear(ctx, fb, pos, width, hue, sat, env * (0.4 + 0.6 * along), bri);
         // Occasionally spawn a branch.
         if (rng() < 0.25 && branchStarts.length < 4) {
           branchStarts.push({ pos: { ...pos }, dir: randomDir(rng) });
@@ -87,7 +89,7 @@ export const lightning: EffectGenerator = {
             y: bpos.y + (bdir.y / len) * stepLen,
             z: bpos.z + (bdir.z / len) * stepLen,
           };
-          lightNear(ctx, fb, bpos, width, hue, env * 0.5, bri);
+          lightNear(ctx, fb, bpos, width, hue, sat, env * 0.5, bri);
         }
       }
     }
@@ -101,6 +103,7 @@ function lightNear(
   point: Vec3,
   width: number,
   hue: number,
+  sat: number,
   env: number,
   bri: number,
 ): void {
@@ -111,8 +114,8 @@ function lightNear(
     const falloff = 1 - d / width;
     const v = clamp01(bri * env * falloff);
     if (v < 0.004) continue;
-    // Bright blue-white core: high value, low saturation.
-    const rgb = hsvToRgb(hue, 0.35, v);
+    // Bright blue-white core by default (low saturation); now controllable.
+    const rgb = hsvToRgb(hue, sat, v);
     fb.max(p.id, rgb.r, rgb.g, rgb.b, v);
   }
 }
