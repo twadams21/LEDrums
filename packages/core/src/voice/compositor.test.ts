@@ -2,8 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
+import { Framebuffer } from '../engine/framebuffer';
 import { createVoiceBusEngine, type InputEvent } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import { buildPixelAttrs, createDefaultCompositor, type CompositorFrame } from './compositor';
+import {
+  padKey,
+  type Bus,
+  type EffectDef,
+  type GraphNode,
+  type ResolvedModifier,
+  type Show,
+  type TriggerGraph,
+  type Voice,
+} from './types';
 import { getEffect } from '../effects/registry';
 
 // ---- fixtures (mirror engine.test.ts so the bridge is exercised end-to-end) ----
@@ -657,5 +668,155 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
     expect(VOICE.size + ABSOLUTE.size).toBe(41);
     for (const id of VOICE) expect(getEffect(id).timebase).toBe('voice');
     for (const id of ABSOLUTE) expect(getEffect(id).timebase ?? 'absolute').toBe('absolute');
+  });
+});
+
+// ---- S28: modifier chain at the engine seam ---------------------------------
+// The graph layer (S29) resolves a play node's `mod` closure into voice.modifiers; here we
+// drive the compositor directly with hand-built voices carrying a resolved chain — the same
+// seam, minus the topology. These pin: the chain applies between render and blend on BOTH
+// paths (generator + pattern), temporal state is per-voice, bypass/unmodified is identity,
+// chain order is respected, and the whole thing is deterministic.
+
+/** A minimal live voice (mirrors makeVoiceSlot defaults) with per-test overrides. */
+function mkVoice(over: Partial<Voice>): Voice {
+  return {
+    active: true,
+    id: 'v1',
+    effectId: 'fx',
+    pattern: 'flash',
+    busId: 'base',
+    mode: 'oneshot',
+    scope: 'kit',
+    targetId: undefined,
+    sourceDrumId: 'kick',
+    velocity: 1,
+    generatorId: null,
+    genState: null,
+    modifiers: undefined,
+    modState: undefined,
+    params: {},
+    liveParams: { hue: 0, brightness: 0.3 },
+    specs: [],
+    env: {},
+    attackMs: 0,
+    sustainMs: 5000,
+    releaseMs: 100,
+    phase: 'sustain',
+    level: 1,
+    bornAtMs: 0,
+    releaseAtMs: null,
+    releaseFromLevel: 1,
+    via: '',
+    deckGain: 1,
+    ...over,
+  };
+}
+
+const trailMod = (params: Record<string, number | string>, bypass?: boolean): ResolvedModifier => ({
+  modifierId: 'trail',
+  params,
+  bypass,
+});
+
+function total(f: Readonly<Float32Array>): number {
+  let s = 0;
+  for (let i = 0; i < f.length; i++) s += f[i]!;
+  return s;
+}
+
+describe('Compositor — modifier chain (S28)', () => {
+  const model = chaseModel(); // single 8-hoop kick drum
+  const attrs = buildPixelAttrs(model);
+  const frame = (timeMs: number, dt: number): CompositorFrame => ({ timeMs, dt, transport: transport(timeMs) });
+
+  /** Render `voices` at one frame into a fresh dst; return a copy of the frame. */
+  function renderOnce(voices: Voice[], timeMs: number, dt: number): Float32Array {
+    const c = createDefaultCompositor();
+    const dst = new Framebuffer(model.pixelCount);
+    c.render(voices, model, attrs, frame(timeMs, dt), dst);
+    return Float32Array.from(dst.rgba);
+  }
+
+  /** Render the SAME compositor + voice across two frames; return [frame1, frame2]. */
+  function renderTwo(mods: ResolvedModifier[] | undefined, dt: number): [Float32Array, Float32Array] {
+    const c = createDefaultCompositor();
+    const v = mkVoice({ modifiers: mods });
+    const dst = new Framebuffer(model.pixelCount);
+    c.render([v], model, attrs, frame(0, dt), dst);
+    const f1 = Float32Array.from(dst.rgba);
+    c.render([v], model, attrs, frame(dt, dt), dst);
+    const f2 = Float32Array.from(dst.rgba);
+    return [f1, f2];
+  }
+
+  it('pattern voice: an add-Trail accumulates a tail across frames (per-voice temporal state)', () => {
+    // Static source (flash), so any growth between frames comes from the Trail accumulator.
+    const [modF1, modF2] = renderTwo([trailMod({ decayMs: 1000, mode: 'add' })], 100);
+    const [baseF1, baseF2] = renderTwo(undefined, 100);
+    // First frame is identity (empty accumulator): modified == unmodified.
+    expect(Array.from(modF1)).toEqual(Array.from(baseF1));
+    // Unmodified static source is unchanged frame-to-frame; the trailed one brightens.
+    expect(total(baseF2)).toBeCloseTo(total(baseF1), 5);
+    expect(total(modF2)).toBeGreaterThan(total(baseF2));
+  });
+
+  it('generator voice: a Trail changes the composited output vs the unmodified baseline', () => {
+    const gen = { generatorId: 'plasma', liveParams: { brightness: 1 } };
+    const c1 = createDefaultCompositor();
+    const c2 = createDefaultCompositor();
+    const vMod = mkVoice({ ...gen, modifiers: [trailMod({ decayMs: 800, mode: 'add' })] });
+    const vBase = mkVoice({ ...gen });
+    const dstMod = new Framebuffer(model.pixelCount);
+    const dstBase = new Framebuffer(model.pixelCount);
+    // Two frames so the trail has history to add on the second.
+    for (const t of [0, 100]) {
+      c1.render([vMod], model, attrs, frame(t, 100), dstMod);
+      c2.render([vBase], model, attrs, frame(t, 100), dstBase);
+    }
+    // Additive trail can only add light → strictly more total, and a different frame.
+    expect(Array.from(dstMod.rgba)).not.toEqual(Array.from(dstBase.rgba));
+    expect(total(dstMod.rgba)).toBeGreaterThan(total(dstBase.rgba));
+  });
+
+  it('bypass = identity, and unmodified spellings (undefined / [] / [bypassed]) all match baseline', () => {
+    const dt = 100;
+    const baseline = renderTwo(undefined, dt)[1];
+    const empty = renderTwo([], dt)[1];
+    const bypassed = renderTwo([trailMod({ decayMs: 1000, mode: 'add' }, true)], dt)[1];
+    expect(Array.from(empty)).toEqual(Array.from(baseline));
+    expect(Array.from(bypassed)).toEqual(Array.from(baseline));
+  });
+
+  it('chain application order is respected at the compositor seam', () => {
+    // A time-varying generator (plasma) over several frames: two Trail links with distinct
+    // decay+mode compose order-dependently (each feeds the other its output through its own
+    // accumulator), so [a,b] and [b,a] diverge — the chain is applied in order, not commuted.
+    const a = trailMod({ decayMs: 120, mode: 'add' });
+    const b = trailMod({ decayMs: 500, mode: 'max' });
+    const renderChain = (mods: ResolvedModifier[]): Float32Array => {
+      const c = createDefaultCompositor();
+      const v = mkVoice({ generatorId: 'plasma', liveParams: { brightness: 1 }, modifiers: mods });
+      const dst = new Framebuffer(model.pixelCount);
+      for (let i = 0; i < 4; i++) c.render([v], model, attrs, frame(i * 60, 60), dst);
+      return Float32Array.from(dst.rgba);
+    };
+    expect(Array.from(renderChain([a, b]))).not.toEqual(Array.from(renderChain([b, a])));
+  });
+
+  it('a modified voice stays finite in [0,1] and is deterministic across runs', () => {
+    const mods = [trailMod({ decayMs: 400, mode: 'add' })];
+    const run = (): number[] => Array.from(renderTwo(mods, 50)[1]);
+    const f = run();
+    expect(allFiniteUnit(Float32Array.from(f))).toBe(true);
+    expect(run()).toEqual(f);
+  });
+
+  it('an unknown modifier id renders as identity (never throws)', () => {
+    const bad: ResolvedModifier[] = [{ modifierId: 'nope', params: {} }];
+    expect(() => renderOnce([mkVoice({ modifiers: bad })], 0, 16)).not.toThrow();
+    const withBad = renderOnce([mkVoice({ modifiers: bad })], 0, 16);
+    const baseline = renderOnce([mkVoice({})], 0, 16);
+    expect(Array.from(withBad)).toEqual(Array.from(baseline));
   });
 });

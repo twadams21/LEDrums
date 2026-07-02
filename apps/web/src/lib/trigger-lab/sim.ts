@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type EffectCategory } from '@ledrums/core';
+import { voice, type EffectCategory, type ResolvedModifier } from '@ledrums/core';
 import { cloneEnvelope, type EnvMap, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
@@ -212,6 +212,12 @@ export interface Voice {
   /** per-voice generator state (from the core EffectGenerator's createState) — built
       lazily by the offline renderer and persisted for the voice's life. */
   genState?: unknown;
+  /** resolved modifier chain (mirrors the core Voice field) — applied by the offline
+      renderer between render and blend. Resolved from graph topology at spawn (S29). */
+  modifiers?: ResolvedModifier[];
+  /** per-voice, per-modifier state (parallel to `modifiers`), built lazily by the chain
+      runner and reset per voice — mirrors `genState`. */
+  modState?: unknown[];
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   env: EnvMap;
@@ -256,6 +262,9 @@ type PlayAction = {
   busId: string;
   params: ParamValues;
   env: EnvMap;
+  /** Resolved modifier chain for this play node's `mod` input (S29 populates from graph
+      topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modifiers`. */
+  modifiers?: ResolvedModifier[];
   via: string;
   latchKey: string | null;
 };
@@ -650,6 +659,8 @@ export class Sim {
       velocity,
       generatorId: effect.generatorId ?? null,
       genState: null,
+      modifiers: a.modifiers,
+      modState: undefined,
       params: { ...a.params },
       env: Object.fromEntries(Object.entries(a.env).map(([k, e]) => [k, cloneEnvelope(e)])),
       attackMs: effect.attackMs,

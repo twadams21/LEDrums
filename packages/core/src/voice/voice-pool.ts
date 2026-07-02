@@ -108,6 +108,11 @@ export class VoicePool {
     // inherits a previous voice's accumulation buffers / RNG cursor.
     slot.generatorId = effect.generatorId ?? null;
     slot.genState = null;
+    // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
+    // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
+    // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
+    slot.modifiers = a.modifiers;
+    slot.modState = undefined;
     slot.params = { ...a.params };
     slot.specs = effect.params;
     slot.env = cloneEnvMap(a.env);
@@ -148,6 +153,8 @@ function makeVoiceSlot(): Voice {
     velocity: 1,
     generatorId: null,
     genState: null,
+    modifiers: undefined,
+    modState: undefined,
     params: {},
     liveParams: {},
     specs: EMPTY_SPECS,

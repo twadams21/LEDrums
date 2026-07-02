@@ -5,9 +5,11 @@
 
 import {
   Framebuffer,
+  applyModifierChain,
   defaultParams as genDefaultParams,
   tryGetEffect,
   type RenderContext,
+  type ResolvedModifier,
   type ResolvedParams,
   type Trigger,
 } from '@ledrums/core';
@@ -150,6 +152,16 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
     const hue = num(p.hue, 0);
     const amp = level * num(p.brightness, 1);
     if (amp <= 0.003) continue;
+
+    // Modified pattern voice: render into a float scratch (0..1, like core), apply the
+    // modifier chain in the same 0..1 space the core compositor uses, then blit to buf.
+    // Unmodified voices keep the direct 0..255 fast path below (mirrors core's gating).
+    const mods = v.modifiers;
+    if (mods && mods.length) {
+      renderModifiedPatternVoice(buf, v, p, hue, amp, sim, lab, start, end, attrs, mods);
+      continue;
+    }
+
     for (let i = start; i < end; i++) {
       const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
       const inten = si * amp;
@@ -160,6 +172,56 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
       buf[j + 1] = Math.min(255, buf[j + 1]! + g);
       buf[j + 2] = Math.min(255, buf[j + 2]! + b);
     }
+  }
+}
+
+// ---- modifier chain (media effects) — offline preview mirror ----------------
+// Mirrors the core compositor's modifier hook: a MODIFIED voice's rendered pixels are
+// transformed by its resolved chain (in 0..1 float space, shared core `applyModifierChain`)
+// between render and blend. The generator path applies it on `genScratch`; the pattern path
+// routes through this dedicated float scratch. Modifiers inherit the host voice's local
+// clock (age) — never re-derived here.
+
+let patScratch: Framebuffer | null = null;
+
+function renderModifiedPatternVoice(
+  buf: Uint8Array,
+  v: Voice,
+  p: ParamValues,
+  hue: number,
+  amp: number,
+  sim: Sim,
+  lab: LabModel,
+  start: number,
+  end: number,
+  attrs: PixelAttrs,
+  mods: readonly ResolvedModifier[],
+): void {
+  const pm = lab.pm;
+  const t = sim.timeMs / 1000;
+  if (!patScratch || patScratch.pixelCount !== pm.pixelCount) patScratch = new Framebuffer(pm.pixelCount);
+  patScratch.clear();
+  for (let i = start; i < end; i++) {
+    const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
+    const inten = si * amp;
+    if (inten <= 0.004) continue;
+    const [r, g, b] = hueToRgb(hue + hueOff, inten); // 0..255
+    patScratch.add(i, r / 255, g / 255, b / 255, inten);
+  }
+  if (!v.modState) v.modState = [];
+  const age = sim.timeMs - v.bornAtMs;
+  applyModifierChain(mods, v.modState, patScratch, { start, end }, pm, age > 0 ? age : 0, sim.lastDt);
+  const src = patScratch.rgba;
+  for (let i = start; i < end; i++) {
+    const j4 = i * 4;
+    const r = src[j4]!;
+    const g = src[j4 + 1]!;
+    const b = src[j4 + 2]!;
+    if (r <= 0 && g <= 0 && b <= 0) continue;
+    const j3 = i * 3;
+    buf[j3] = Math.min(255, buf[j3]! + Math.round(r * 255));
+    buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * 255));
+    buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * 255));
   }
 }
 
@@ -240,6 +302,15 @@ function renderGeneratorVoice(
 
   genScratch.clear();
   gen.render(ctx, params, genScratch, v.genState);
+
+  // Modifier chain (media effects) — mirror of the core generator bridge: pure transforms
+  // over the voice's rendered pixels, between render and blend, on the host voice's local
+  // clock (age). Only modified voices pay this; unmodified voices blit straight through.
+  const mods = v.modifiers;
+  if (mods && mods.length) {
+    if (!v.modState) v.modState = [];
+    applyModifierChain(mods, v.modState, genScratch, { start, end }, pm, genTrigger.ageMs, sim.lastDt);
+  }
 
   // Blit scratch (float RGBA) → buf (0..255 RGB), scaled by the voice envelope.
   const src = genScratch.rgba;
