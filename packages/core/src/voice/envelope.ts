@@ -64,8 +64,25 @@ export function cloneEnvelope(e: Envelope): Envelope {
   };
 }
 
+/**
+ * A fresh envelope's shape — now **v2-canonical** (S24): `attackLevel` 1 and an
+ * explicit `linear` ease on every segment, and NO legacy `curve`. Equivalent to
+ * `migrateAdsr({ …, curve: 0 })` and renders byte-identically to the pre-v2 linear
+ * default, but new envelopes start in the eased form the editor authors (the curve
+ * slider is gone), so there is never a legacy `curve` to migrate for content
+ * created after S24.
+ */
 export function defaultAdsr(): AdsrShape {
-  return { attack: 0.12, decay: 0.25, sustain: 0.5, release: 0.4, curve: 0 };
+  return {
+    attack: 0.12,
+    decay: 0.25,
+    sustain: 0.5,
+    release: 0.4,
+    attackLevel: 1,
+    attackEase: { fn: 'linear', dir: 'in' },
+    decayEase: { fn: 'linear', dir: 'in' },
+    releaseEase: { fn: 'linear', dir: 'in' },
+  };
 }
 
 /** Legacy single-tension power law (-1..1). The v2 fallback for a segment whose
