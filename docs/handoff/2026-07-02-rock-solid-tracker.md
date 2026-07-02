@@ -44,7 +44,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | Group | Lane | Issue | Group branch | Status | Merged→rock-solid | Group report |
 |---|---|---|---|---|---|---|
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
-| B — IO confidence surfaces | 1 | #47 | group/B | in-progress (S02–S05) | — | — |
+| B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | pending | — | — |
 | F — Effect params & envelopes | 2 | #51 | group/F | pending | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
@@ -59,6 +59,15 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T09:41 — GROUP B MERGED + BUDGET PAUSE
+
+- **group/B merged** (#47, S02–S05) → rock-solid as merge commit **74ffd7a** (`--no-ff`, ort), pushed (local == origin). Verified report + diff scope (web-only + 1-line .gitignore, 4 pure modules, tests, design-system engaged) before merging.
+- **Conflict resolved:** only `docs/design-system.html` conflicted (generated file — both A and B regenerated it). Source `.svelte` styleguide files auto-merged cleanly; I re-ran `pnpm design-system` to regenerate the HTML from merged sources (0 markers). This is the standing recipe for design-system.html merge conflicts.
+- **Master sweep green (A+B combined):** typecheck 0 (web 2220 files); **1101 tests / 0 skips** (io 13 · core 234 · protocol 1 · server 170 · web 683).
+- **⛔ BUDGET PAUSE:** lane orch reported 5h usage hit 86% (msg f205b1); now **89%**, resets **2026-07-02T23:00:00+10:00 (13:00 UTC)**. 7d 18% (healthy). Lane 1 stopped NEW launches; S12 finishing then merging into group/E; E remainder (S13/S14/S15/S17 → S16) BLOCKED until reset. Lane orch scheduled its own `--at` reset wake w/ pre-written assignments.
+- **Lane 2 NOT started** (lanes serial — Lane 2 fires only when Lane 1 completes = group/E merged, which is post-reset). No master action until reset.
+- **Next (at/after 13:00 UTC reset):** verify Lane 1 resumed + progressing; await group/E hand-off → merge → Lane 1 done → fire Lane 2 orch (F→G→H→I). Re-align master wake to the reset (pending 09:44 wake will re-arm it there).
 
 ### 2026-07-02T09:2x — GROUP A MERGED → rock-solid
 
