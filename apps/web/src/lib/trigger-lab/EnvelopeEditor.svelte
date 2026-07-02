@@ -262,7 +262,7 @@
 
     <div class="row">
       <Eyebrow>Curve</Eyebrow>
-      <Slider value={adsr.curve} min={-1} max={1} step={0.05} onChange={setCurve} format={fix2} ariaLabel="Segment curve" />
+      <Slider value={adsr.curve ?? 0} min={-1} max={1} step={0.05} onChange={setCurve} format={fix2} ariaLabel="Segment curve" />
     </div>
 
     <div class="row">

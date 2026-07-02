@@ -11,6 +11,7 @@
  */
 export * from './types';
 export * from './diagnostics';
+export * from './easing';
 export * from './envelope';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
