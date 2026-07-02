@@ -160,20 +160,35 @@ describe('outbound firing is gated on the engine link (S12)', () => {
       expect(sent).toHaveLength(0);
     });
 
-    it('connected: forwards the graph source WITHOUT firing the local sim', () => {
+    it('connected: sends the fireGraph intent (exact key), not a synthetic source, and does not fire the sim (S13)', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
       const key0 = store.activeSection!.graphs[0]!;
-      const src = store.triggerSource(key0); // seeded pad graph → a `drum` source
+      store.link = 'open';
+
+      store.fireSectionGraph(0);
+
+      // No local sim fire (authority principle) …
+      expect(effectEvents(store)).toHaveLength(0);
+      // … and EXACTLY the fireGraph intent goes out — no synthetic key/midi/osc source to
+      // re-resolve (which is what echo-re-fired the old keyboard path).
+      expect(sent).toEqual([{ t: 'fireGraph', graphKey: key0, velocity: store.velocity }]);
+    });
+
+    it('connected: a MIDI-bound section graph sends fireGraph — NOT a synthetic {t:midi} (the old triple-fire) (S13)', () => {
+      const sent: ClientMessage[] = [];
+      const store = new TriggerLab(capturing(sent));
+      const key0 = store.activeSection!.graphs[0]!;
+      store.setTriggerSource(key0, { kind: 'midi', note: 60 }); // rebind to a raw MIDI source
       store.link = 'open';
 
       store.fireSectionGraph(0);
 
       expect(effectEvents(store)).toHaveLength(0);
-      expect(sent.length).toBeGreaterThan(0);
-      if (src?.kind === 'drum') {
-        expect(sent).toContainEqual({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: store.velocity });
-      }
+      // The whole S13 fix: a MIDI-bound section graph no longer forwards a synthetic {t:'midi'}
+      // (which the server re-resolved AND echoed → triple-fire). It sends the exact graph key.
+      expect(sent).toEqual([{ t: 'fireGraph', graphKey: key0, velocity: store.velocity }]);
+      expect(sent.some((m) => m.t === 'midi')).toBe(false);
     });
   });
 });

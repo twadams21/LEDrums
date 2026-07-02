@@ -70,6 +70,11 @@ export type ClientMessage =
   // it and rebroadcasts it on cold load via the `state` message. Mode-independent.
   | { t: 'setShowLibrary'; library: ShowLibraryBlob }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
+  // Keyboard performance intent (voice mode): play an EXACT authored graph by key. Sent
+  // instead of a synthetic MIDI/OSC source so the server fires precisely that graph, with no
+  // zone-map / direct-binding re-resolution (which could otherwise both-fire). `velocity` is
+  // 0..1. The server validates the key and emits the normal graph diagnostics.
+  | { t: 'fireGraph'; graphKey: string; velocity: number }
   | { t: 'recallSection'; songId: string; sectionId: string }
   // Multi-client takeover (S2): any client may claim the single editor slot. The server hands it
   // the slot, drops the prior editor to viewer, and re-broadcasts `presence` so every client's

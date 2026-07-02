@@ -1003,6 +1003,73 @@ describe('VoiceBusEngine — direct trigger-source resolution (U3)', () => {
   });
 });
 
+describe('VoiceBusEngine — fireGraph intent (S13)', () => {
+  const fire = (graphKey: string, velocity = 1): InputEvent => ({ kind: 'fireGraph', graphKey, velocity, timeMs: 0 });
+
+  it('plays the EXACT graph named by key — no raw input, no source match needed', () => {
+    // Graph bound to midi note 60; fireGraph plays it by KEY without any note ever arriving.
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };
+    expect(firedBusesFor(graphs, fire('graph:1'))).toEqual(['base']);
+  });
+
+  it('fires ONLY the named graph — never both-fires a zone-mapped or other graph', () => {
+    const graphs = {
+      [padKey('kick', '')]: sourcedGraph({ kind: 'drum', drumId: 'kick', zone: '' }, 'base'),
+      'graph:1': sourcedGraph({ kind: 'midi', note: 36 }, 'lead'),
+    };
+    // The keyboard chose graph:1 → only 'lead' lights; the same-note pad graph on 'base' stays
+    // silent. This is the S13 fix for the old keyboard triple-fire (no re-resolution both-fire).
+    expect(firedBusesFor(graphs, fire('graph:1'))).toEqual(['lead']);
+  });
+
+  it('a stale key fires nothing and reports graph-missed (no-such-graph)', () => {
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };
+    expect(firedBusesFor(graphs, fire('graph:404'))).toEqual([]);
+
+    const diagnostics: VoiceDiagnostic[] = [];
+    const e = createVoiceBusEngine({ onDiagnostic: (d) => diagnostics.push(d) });
+    e.setModel(testModel());
+    e.setShow(showOf(graphs));
+    e.applyInput(fire('graph:404'));
+    e.tick(5, 5, transport(5));
+    expect(diagnostics).toContainEqual(expect.objectContaining({ kind: 'graph-missed', reason: 'no-such-graph' }));
+    expect(diagnostics.some((d) => d.kind === 'graph-fired')).toBe(false);
+  });
+
+  it('emits input-resolved + graph-fired on the fire-graph path with the graph key', () => {
+    const diagnostics: VoiceDiagnostic[] = [];
+    const e = createVoiceBusEngine({ onDiagnostic: (d) => diagnostics.push(d) });
+    e.setModel(testModel());
+    e.setShow(showOf({ 'graph:kbd': sourcedGraph({ kind: 'midi', note: 40 }, 'base') }));
+    e.applyInput(fire('graph:kbd'));
+    e.tick(5, 5, transport(5));
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ kind: 'input-resolved', path: 'fire-graph', graphKey: 'graph:kbd', statePrefix: 'graph:kbd' }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ kind: 'graph-fired', path: 'fire-graph', graphKey: 'graph:kbd', playEffects: ['fxA'] }),
+    );
+  });
+
+  it('is deterministic on the fire-graph path (two engines → byte-identical frames)', () => {
+    const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };
+    const run = (): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(showOf(graphs));
+      e.applyInput(fire('graph:1', 0.7));
+      let now = 0;
+      for (let i = 0; i < 10; i++) {
+        now += 16;
+        e.tick(now, 16, transport(now));
+      }
+      return Array.from(e.frame());
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
 describe('VoiceBusEngine - input resolution diagnostics', () => {
   const runDiagnostics = (s: Show, events: InputEvent[]): VoiceDiagnostic[] => {
     const diagnostics: VoiceDiagnostic[] = [];
