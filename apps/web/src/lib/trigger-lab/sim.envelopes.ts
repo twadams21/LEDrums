@@ -39,7 +39,7 @@ export const {
 /** Named envelope shapes the editor seeds from (then reshapes into a curve). */
 export const ENV_KINDS: EnvKind[] = ['decay', 'rise', 'pluck', 'pulse'];
 
-// ---- Param primitives (local — owned here until S18 widens ParamValue) -------
+// ---- Param primitives (local — mirrors of core voice param types — see S18) -------
 
 /** Mirrors core `voice.ParamValue` (S18): numbers/booleans plus `string` for enum choices
     and static-colour hex params. Kept structurally identical to the core type so a web

@@ -145,4 +145,4 @@ range remap, velocity-flames gradient endpoints).
 ---
 
 **Tally:** 41 registry effects total (`registry.ts`), all accounted for across the four batches.
-Batch 1 = 9 ✅ · batch 2 = 9 ✅ · batch 3 = 13 (S21, in flight) · batch 4 = 10 ✅ → 41.
+Batch 1 = 9 ✅ · batch 2 = 9 ✅ · batch 3 = 13 ✅ · batch 4 = 10 ✅ → 41.
