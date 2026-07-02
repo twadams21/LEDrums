@@ -7,6 +7,7 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 ## ESCALATIONS / notes
 
 - **Disk headroom (MONITOR):** volume was at 99% / ~8.3 GB free at initiative start. pnpm's hardlinked global store makes each worktree `node_modules` nearly free (verified: 4 installs, no measurable disk delta). **Risk remains for Lane 4** (desktop/tauri) — Rust `target/` build dirs are NOT hardlinked and can be large. Watch `df -h /Users/trent` before/around Lane 4; if a build fails on ENOSPC, that is a blocking escalation to Trent.
+- **Non-blocking future-slice residuals (from group reports; NOT in scope for Rock Solid):** (F) — none blocking. (G, group-G.md) per-hosting timebase for trigger-hosted textures (doc 06 wish; needs a voice/bus-level flag — future slice); helix/wipe-3d timebase conversion follow-ups; 2 thumbnails static by nature. Surface to Trent post-initiative, not now.
 - **Cross-group merge drift (process lesson):** group/E was branched off rock-solid PRE-group-B, so B×E independently edited shared files (`store.svelte.ts`, two inspectors) → non-trivial semantic conflict at master-merge time. Handed back to the lane orch to integrate (merge rock-solid into group/E + resolve) rather than hand-merge entangled feature code as master. **Guidance for Lane 2+:** lane orch should `git merge rock-solid` into a group branch (resolving) BEFORE handing it off, so master merges are clean — especially when groups within a lane overlap in time.
 - **Topology deviation (recorded):** the doc names a 3-worktree pool (`wt-1|2|3`). I additionally created **`../ledrums-wt/wt-master` on `rock-solid`** for the master's own tracker commits + group-branch merges + post-merge sweeps. Rationale: the main working tree (`~/Documents/dev/ledrums`) is dirty with Trent's unrelated local desktop/tauri work (`.dmg`, tauri configs, `.infisical.json`) and must stay pristine; a single branch can't be checked out in two worktrees. `wt-1/2/3` remain the impl pool exactly as the doc specifies.
 
@@ -48,7 +49,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
 | F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
-| G — Timebase & thumbnails | 2 | #52 | group/G | in-progress (2/3 merged; S26 in flight) | — | — |
+| G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
@@ -60,6 +61,15 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T19:5x — GROUP G MERGED (21/49); H waits for reset
+
+- **group/G MERGED** (#52, S25–S27) → rock-solid **6b80d0e** (`--no-ff`; pre-integrated with rock-solid@b363239 incl. group/F → NO conflicts). Review PASS no fixes (41-classification timebase audit pinned; determinism/no-phase-snap tested; core purity clean).
+- **Master sweep GREEN:** typecheck 0 (web 2238); **1346 tests / 0 skips** (io 13 · core 363 · protocol 1 · server 176 · web 793).
+- **Progress: 21/49 slices** (Lane 1: 11 + F: 7 + G: 3). Lane 2 remaining: H (S28–S32), I (S33–S38).
+- **⛔ BUDGET: 5h 73%** (over 70% wall). **Group H blocked until 23:00 UTC reset**; lane orch scheduled its own reset wake. Non-blocking residuals recorded in notes above.
+- **Master wake:** backstop b7zkswg4q (~20:10) will stretch to ~23:07 UTC reset per its prompt. No master work until then (H handoff won't come before H even starts).
+- **Next (post-reset):** verify Lane 2 resumed (nudge if parked); merge group/H then group/I; then Lane 2 DONE → fire Lane 3 orch (J→K).
 
 ### 2026-07-02T19:40 — Group G 2/3, budget wall (69%)
 
