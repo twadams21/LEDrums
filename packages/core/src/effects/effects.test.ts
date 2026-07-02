@@ -22,6 +22,9 @@ import { swing } from './impl/swing';
 import { sidechain } from './impl/sidechain';
 import { sacredHogs } from './impl/sacred-hogs';
 import { collisions } from './impl/collisions';
+import { breathingKit } from './impl/breathing-kit';
+import { hueRotateKit } from './impl/hue-rotate-kit';
+import { tempSweep } from './impl/temp-sweep';
 
 function model(drums = 1, hoopCount = 4): PixelModel {
   const drumDefs = [];
@@ -359,6 +362,80 @@ describe('S19 colour batch 1 — saturation 0 ⇒ white on lit pixels', () => {
     const m = model(1, 4);
     const fb = render(chase, m, ctx(m, { transport: transport(0) }), { hue: 120, saturation: 1 });
     expect(scanLit(fb).allWhite).toBe(false);
+  });
+});
+
+// S20 — Colour batch 2 (wash / base / utility / meter). Saturation is now exposed and threaded
+// through hsvToRgb on radial-wash, wipe-3d, solid-base, breathing-kit, strobe, hue-rotate-kit
+// (multi: base hue + vertical spread, no swatch), temp-sweep (multi: warm/cool endpoints, no
+// swatch), meter-eq and sidechain. Same contract as S19: saturation 0 desaturates every lit
+// pixel to achromatic white/grey (r===g===b), which the old hardcoded `hsvToRgb(hue, 1, …)`
+// could never produce. Each coloured case uses hue 120 so a leak shows as a chromatic pixel.
+describe('S20 colour batch 2 — saturation 0 ⇒ white on lit pixels', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  const hit = (id: string) => trig(1, id, 38, 1, 0);
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'radial-wash', run: (m) => render(radialWash, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, width: 400 }) },
+    { name: 'wipe-3d', run: (m) => render(wipe3d, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, width: 400 }) },
+    { name: 'solid-base', run: (m) => render(solidBase, m, ctx(m), { hue: 120, saturation: 0, brightness: 1 }) },
+    { name: 'breathing-kit', run: (m) => render(breathingKit, m, ctx(m), { hue: 120, saturation: 0, brightness: 1 }) },
+    { name: 'hue-rotate-kit', run: (m) => render(hueRotateKit, m, ctx(m), { saturation: 0, brightness: 0.8 }) },
+    { name: 'strobe', run: (m) => render(strobe, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, brightness: 1 }) },
+    { name: 'temp-sweep', run: (m) => render(tempSweep, m, ctx(m, { timeMs: 0 }), { saturation: 0, brightness: 0.8 }) },
+    { name: 'meter-eq', run: (m) => render(meterEq, m, ctx(m), { hue: 120, saturation: 0, level: 1 }) },
+    { name: 'sidechain', run: (m) => render(sidechain, m, ctx(m, { dt: 0, triggers: [] }), { hue: 120, saturation: 0 }, sidechain.createState!(m)) },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured meter at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(meterEq, m, ctx(m), { hue: 120, saturation: 1, level: 1 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+
+  it('defaults preserve current output: saturation default 1 == the old hardcoded look', () => {
+    const m = model(1, 4);
+    const same = (a: Framebuffer, b: Framebuffer): void => {
+      expect(a.rgba.length).toBe(b.rgba.length);
+      for (let i = 0; i < a.rgba.length; i++) expect(a.rgba[i]).toBe(b.rgba[i]);
+    };
+    // radial-wash / wipe-3d / meter-eq: the new saturation defaults to 1, so explicitly
+    // setting saturation 1 must be byte-identical to the default (i.e. the pre-S20 output).
+    same(
+      render(radialWash, m, ctx(m, { triggers: [hit('d0')] }), { width: 400 }),
+      render(radialWash, m, ctx(m, { triggers: [hit('d0')] }), { width: 400, saturation: 1 }),
+    );
+    same(render(wipe3d, m, ctx(m, { timeMs: 0 }), {}), render(wipe3d, m, ctx(m, { timeMs: 0 }), { saturation: 1 }));
+    same(render(meterEq, m, ctx(m), { level: 1 }), render(meterEq, m, ctx(m), { level: 1, saturation: 1 }));
+    // temp-sweep: default warm/cool endpoints reproduce the old amber↔blue at full saturation.
+    same(
+      render(tempSweep, m, ctx(m, { timeMs: 0 }), {}),
+      render(tempSweep, m, ctx(m, { timeMs: 0 }), { warmHue: 30, coolHue: 210, saturation: 1 }),
+    );
   });
 });
 
