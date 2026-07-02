@@ -42,9 +42,14 @@ export {
   defaultEnvelope,
   cloneEnvelope,
   type AdsrShape,
+  type EaseFn,
+  type EaseDir,
+  type EaseSpec,
   defaultAdsr,
   adsrToPoints,
   sampleEnvelope,
+  migrateAdsr,
+  ease,
 } from './sim.envelopes';
 export * from './sim.trigger-source';
 export * from './sim.graph-compilation';

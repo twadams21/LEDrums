@@ -16,6 +16,7 @@ export const ripplePond: EffectGenerator = {
     { key: 'freq', label: 'Frequency', type: 'number', default: 24, min: 2, max: 60, step: 0.5 },
     { key: 'speed', label: 'Speed', type: 'number', default: 2, min: 0, max: 8, step: 0.01 },
     { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'hueSpread', label: 'Hue Spread', type: 'number', default: 80, min: 0, max: 360, unit: '°' },
   ],
   render(ctx, params, fb) {
@@ -23,6 +24,7 @@ export const ripplePond: EffectGenerator = {
     const freq = pnum(params, 'freq', 24);
     const sp = pnum(params, 'speed', 2);
     const hue = pnum(params, 'hue', 190);
+    const sat = pnum(params, 'saturation', 1);
     const spread = pnum(params, 'hueSpread', 80);
 
     renderUvField(ctx, fb, 'planar-xz', (u, v, t) => {
@@ -33,7 +35,7 @@ export const ripplePond: EffectGenerator = {
       const b = 0.5 + 0.5 * Math.sin(d * freq - t * sp);
       // Rings sharpen with a slight power curve; fall off gently with distance.
       const ring = Math.pow(b, 1.5) * (1 - 0.35 * d);
-      const c = hsvToRgb(hue + d * spread, 0.95, bri * Math.max(0, ring));
+      const c = hsvToRgb(hue + d * spread, sat * 0.95, bri * Math.max(0, ring));
       return [c.r, c.g, c.b];
     });
   },

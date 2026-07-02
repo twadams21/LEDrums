@@ -16,6 +16,7 @@ export const orbitRings: EffectGenerator = {
     { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0, max: 10, step: 0.05, unit: 'rad/s' },
     { key: 'width', label: 'Width', type: 'number', default: 120, min: 5, max: 800, unit: 'mm' },
     { key: 'hue', label: 'Hue', type: 'number', default: 160, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
@@ -23,6 +24,7 @@ export const orbitRings: EffectGenerator = {
     const speed = pnum(params, 'speed', 1.2);
     const width = Math.max(1, pnum(params, 'width', 120));
     const hue = pnum(params, 'hue', 160);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
 
     const center = ctx.model.bounds.center;
@@ -38,7 +40,7 @@ export const orbitRings: EffectGenerator = {
       const v = clamp01(bri * falloff);
       if (v < 0.004) continue;
       const pixHue = hue + p.angleDeg;
-      const rgb = hsvToRgb(pixHue, 1, v);
+      const rgb = hsvToRgb(pixHue, sat, v);
       fb.max(p.id, rgb.r, rgb.g, rgb.b, v);
     }
   },

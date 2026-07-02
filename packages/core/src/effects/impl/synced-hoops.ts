@@ -13,12 +13,14 @@ export const syncedHoops: EffectGenerator = {
   category: 'base',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'hueSpread', label: 'Hue Spread', type: 'number', default: 120, min: 0, max: 360, unit: '°' },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 8, step: 0.05, unit: 'cyc/beat' },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 200);
+    const sat = pnum(params, 'saturation', 1);
     const hueSpread = pnum(params, 'hueSpread', 120);
     const bri = pnum(params, 'brightness', 1);
     const speed = pnum(params, 'speed', 1);
@@ -30,7 +32,7 @@ export const syncedHoops: EffectGenerator = {
       const wave = 0.5 + 0.5 * Math.sin((p.normHoop - phase) * 2 * Math.PI);
       const v = clamp01(bri * wave);
       const h = hue + p.normHoop * hueSpread;
-      const rgb = hsvToRgb(h, 1, v);
+      const rgb = hsvToRgb(h, sat, v);
       fb.set(p.id, rgb.r, rgb.g, rgb.b, v);
     }
   },

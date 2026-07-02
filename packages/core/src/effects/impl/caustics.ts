@@ -14,11 +14,15 @@ export const caustics: EffectGenerator = {
   paramSpec: [
     { key: 'scale', label: 'Scale', type: 'number', default: 8, min: 1, max: 24, step: 0.1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 0.8, min: 0, max: 5, step: 0.01 },
+    { key: 'hue', label: 'Hue Base', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
     const scale = pnum(params, 'scale', 8);
     const speed = pnum(params, 'speed', 0.8);
+    const hue = pnum(params, 'hue', 200);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     renderUvField(ctx, fb, 'planar-xz', (u, v, t) => {
       const x = u * scale;
@@ -31,7 +35,8 @@ export const caustics: EffectGenerator = {
       let n = (l1 + l2 + l3) / 3;
       n = 1 - clamp01(n); // invert so the troughs become bright lines
       n = Math.pow(n, 3); // sharpen into crisp caustic webs
-      const c = hsvToRgb(200 - n * 40, clamp01(1 - n * 0.9), bri * clamp01(n * 1.1));
+      // `hue` recolours the water (default 200 = blue→cyan); `saturation` scales it (0 ⇒ white veins).
+      const c = hsvToRgb(hue - n * 40, sat * clamp01(1 - n * 0.9), bri * clamp01(n * 1.1));
       return [c.r, c.g, c.b];
     });
   },

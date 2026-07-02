@@ -6,10 +6,12 @@
   import SearchField from '../../ui/SearchField.svelte';
   import Select from '../../ui/Select.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
+  import EasePicker, { type EaseSpec } from '../../ui/EasePicker.svelte';
   import Tabs from '../../ui/Tabs.svelte';
   import Toggle from '../../ui/Toggle.svelte';
   import Switch from '../../ui/Switch.svelte';
   import Slider from '../../ui/Slider.svelte';
+  import ColorSwatch from '../../ui/ColorSwatch.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
@@ -51,12 +53,17 @@
   let armed = $state(true);
   let broadcast = $state(false);
   let opacity = $state(48);
+  // Colour swatch demo — the swatch and the three sliders write through to the same hsv.
+  let swHue = $state(30);
+  let swSat = $state(1);
+  let swBri = $state(1);
   let layerName = $state('Kick layer');
   let rowEditing = $state(false);
   let dialogOpen = $state(false);
   let drawerOpen = $state(false);
   let railW = $state(160);
   let mdSelected = $state('songs');
+  let demoEase = $state<EaseSpec>({ fn: 'cubic', dir: 'inOut' });
 
   const protocolOptions = [
     { value: 'artnet', label: 'Art-Net', icon: Cable },
@@ -166,12 +173,43 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Ease picker"
+      src="lib/ui/EasePicker"
+      note="Compact per-segment easing selector — a family Select (the Resolume-familiar set, grouped) paired with an In/Out/In·Out direction control. Direction disables for Linear (identical in every direction). Composed from Select + SegmentedControl; reused by the envelope editor and the Envelope node inspector."
+    >
+      <div class="comp-stack">
+        <EasePicker value={demoEase} onChange={(e) => (demoEase = e)} ariaLabel="Demo easing" />
+        <p class="ease-readout">{demoEase.fn} · {demoEase.dir}</p>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Toggles · Slider" src={['lib/ui/Toggle', 'lib/ui/Switch', 'lib/ui/Slider']}>
       <div class="comp-row">
         <Toggle bind:pressed={armed} onLabel="armed" offLabel="safe" ariaLabel="Arm output" />
         <Switch bind:checked={broadcast} ariaLabel="Broadcast" />
       </div>
       <Slider bind:value={opacity} min={0} max={100} ariaLabel="Opacity" format={(v) => `${v}%`} />
+    </DemoCard>
+
+    <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">
+      <ColorSwatch
+        hue={swHue}
+        saturation={swSat}
+        brightness={swBri}
+        ariaLabel="Demo colour"
+        onChange={(hsv) => {
+          swHue = hsv.h;
+          swSat = hsv.s;
+          swBri = hsv.v;
+        }}
+      />
+      <div class="sw-sliders">
+        <Slider bind:value={swHue} min={0} max={360} step={1} ariaLabel="Hue" format={(v) => `${Math.round(v)}°`} />
+        <Slider bind:value={swSat} min={0} max={1} step={0.01} ariaLabel="Saturation" format={(v) => v.toFixed(2)} />
+        <Slider bind:value={swBri} min={0} max={1} step={0.01} ariaLabel="Brightness" format={(v) => v.toFixed(2)} />
+      </div>
+      <ColorSwatch hue={swHue} saturation={swSat} brightness={swBri} modulated ariaLabel="Demo colour (modulated)" />
     </DemoCard>
 
     <DemoCard title="Status" src={['lib/ui/StatusPill', 'lib/ui/StatusDot']}>
@@ -312,6 +350,19 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  .ease-readout {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .sw-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
   }
   .dot-demo {
     display: inline-flex;

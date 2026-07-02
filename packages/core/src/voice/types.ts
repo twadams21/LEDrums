@@ -55,13 +55,45 @@ export interface EnvPoint {
   v: number;
 }
 
-/** ADSR stage shape (times are fractions of the voice life 0..1). */
+/** An easing family from the Resolume-familiar standard set. */
+export type EaseFn =
+  | 'linear'
+  | 'quad'
+  | 'cubic'
+  | 'quart'
+  | 'expo'
+  | 'sine'
+  | 'circ'
+  | 'back'
+  | 'bounce'
+  | 'elastic';
+/** Direction the family is applied in. `linear` is identical across all three. */
+export type EaseDir = 'in' | 'out' | 'inOut';
+/** A fully-specified ease: a family + direction. Evaluated by `ease()` in `easing.ts`. */
+export interface EaseSpec {
+  fn: EaseFn;
+  dir: EaseDir;
+}
+
+/**
+ * ADSR stage shape (times are fractions of the voice life 0..1). v2 (S23): the
+ * attack rises to `attackLevel` (default 1) and each segment carries its own
+ * {@link EaseSpec}. The legacy single `curve` tension is retained for migration
+ * only — when a segment's `*Ease` is absent, sampling falls back to `curve` so
+ * un-migrated shapes render byte-identically (see `adsrToPoints` / `migrateAdsr`).
+ */
 export interface AdsrShape {
   attack: number;
   decay: number;
   sustain: number; // level 0..1
   release: number;
-  curve: number; // -1..1 segment tension
+  /** peak 0..1 the attack rises to, and the decay's starting level (default 1). */
+  attackLevel?: number;
+  /** legacy -1..1 segment tension; drives sampling only when a segment ease is absent. */
+  curve?: number;
+  attackEase?: EaseSpec;
+  decayEase?: EaseSpec;
+  releaseEase?: EaseSpec;
 }
 
 /** A per-parameter envelope: an editable curve + how strongly it sweeps (amount). */
@@ -73,7 +105,10 @@ export interface Envelope {
   adsr?: AdsrShape;
 }
 
-export type ParamValue = number | boolean;
+/** A param value: numbers/booleans plus `string` for enum choices (e.g. radial-wash
+    `mode`) and any static-colour param stored as a `'#rrggbb'` hex string. Envelopes only
+    sweep `number` params; strings flow through the engine untouched (S18). */
+export type ParamValue = number | boolean | string;
 export type ParamValues = Record<string, ParamValue>;
 /** param key → envelope driving it. */
 export type EnvMap = Record<string, Envelope>;
@@ -83,11 +118,13 @@ export type EnvMap = Record<string, Envelope>;
 export interface ParamSpec {
   key: string;
   label: string;
-  kind: 'number' | 'bool';
+  kind: 'number' | 'bool' | 'enum' | 'color';
   min?: number;
   max?: number;
   step?: number;
   unit?: string;
+  /** Allowed values for an `enum` param (rendered as a Select). */
+  options?: string[];
   default: ParamValue;
   /** a number param an envelope can sweep over the voice's life. */
   envable?: boolean;

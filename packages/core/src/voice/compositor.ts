@@ -31,7 +31,7 @@ import type { ParamSpec, ParamValues, Voice } from './types';
 // voice barrel — is unchanged.
 export { buildPixelAttrs, type PixelAttrs };
 
-const num = (v: number | boolean | undefined, d: number): number => (typeof v === 'number' ? v : d);
+const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
 /**
  * 0..1 progress through a voice's life — drives param envelopes. Ported from

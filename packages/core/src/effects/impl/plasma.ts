@@ -16,6 +16,7 @@ export const plasma: EffectGenerator = {
     { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 5, step: 0.01 },
     { key: 'scale', label: 'Scale', type: 'number', default: 4, min: 1, max: 16, step: 0.5 },
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'hueSpread', label: 'Hue Spread', type: 'number', default: 120, min: 0, max: 360, unit: '°' },
   ],
   render(ctx, params, fb) {
@@ -23,6 +24,7 @@ export const plasma: EffectGenerator = {
     const sp = pnum(params, 'speed', 1);
     const sc = pnum(params, 'scale', 4);
     const hue = pnum(params, 'hue', 200);
+    const sat = pnum(params, 'saturation', 1);
     const spread = pnum(params, 'hueSpread', 120);
 
     renderUvField(ctx, fb, 'cylindrical', (u, v, t) => {
@@ -33,7 +35,7 @@ export const plasma: EffectGenerator = {
         Math.sin((Math.cos(a) + v) * sc * 0.5 + t * sp * 1.3) +
         Math.sin(Math.hypot(Math.sin(a) * sc, v * sc - t * sp * 0.4));
       n = (n / 4) * 0.5 + 0.5; // → [0,1]
-      const c = hsvToRgb(hue + n * spread, 1, bri * (0.25 + 0.75 * n));
+      const c = hsvToRgb(hue + n * spread, sat, bri * (0.25 + 0.75 * n));
       return [c.r, c.g, c.b];
     });
   },

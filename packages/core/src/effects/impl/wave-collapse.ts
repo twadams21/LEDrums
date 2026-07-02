@@ -27,6 +27,7 @@ export const waveCollapse: EffectGenerator = {
   category: 'wash',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 320, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
     { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'mm/ms' },
     { key: 'width', label: 'Width', type: 'number', default: 180, min: 10, max: 800, unit: 'mm' },
@@ -35,6 +36,7 @@ export const waveCollapse: EffectGenerator = {
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 320);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 0.9);
     const speed = pnum(params, 'speed', 1.2);
     const width = Math.max(1, pnum(params, 'width', 180));
@@ -54,7 +56,7 @@ export const waveCollapse: EffectGenerator = {
         const falloff = 1 - band / width;
         const v = clamp01(envelope * falloff * bri);
         if (v < 0.004) continue;
-        const rgb = hsvToRgb(hue, 1, v);
+        const rgb = hsvToRgb(hue, sat, v);
         fb.max(p.id, rgb.r, rgb.g, rgb.b, v);
       }
     }

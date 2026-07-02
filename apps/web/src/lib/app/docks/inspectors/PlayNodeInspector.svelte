@@ -5,6 +5,7 @@
      in the parent Inspector. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
+  import type { Hsv } from '@ledrums/core';
   import { busIcon } from '../../views/trigger-node-meta';
   import { MODE_OPTS, LINK_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
@@ -12,6 +13,7 @@
   import Select from '../../../ui/Select.svelte';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import Spline from '@lucide/svelte/icons/spline';
@@ -20,6 +22,23 @@
 
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
+
+  /** Read a param as a string (enum choice / colour hex), falling back to `d`. */
+  const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
+  /** Enum value → a friendly Select label ("out" → "Out", "x" → "X"). */
+  const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+  /** Effects that carry hue + saturation + brightness numeric params get a colour swatch
+      that writes through to all three (the picker is UI-only — persistence stays numeric). */
+  const COLOR_KEYS = ['hue', 'saturation', 'brightness'] as const;
+  const hasColorSwatch = $derived(!!eff && COLOR_KEYS.every((k) => eff.params.some((p) => p.key === k)));
+  const colorModulated = $derived(hasColorSwatch && COLOR_KEYS.some((k) => store.isEnveloped(node, k)));
+
+  function applyColor(hsv: Hsv): void {
+    store.setParam(node, 'hue', hsv.h);
+    store.setParam(node, 'saturation', hsv.s);
+    store.setParam(node, 'brightness', hsv.v);
+  }
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
@@ -96,6 +115,20 @@
   {/if}
 
   <div class="params">
+    {#if hasColorSwatch}
+      <div class="prow">
+        <span class="plabel">Colour</span>
+        <ColorSwatch
+          hue={num(live['hue'], 0)}
+          saturation={num(live['saturation'], 1)}
+          brightness={num(live['brightness'], 1)}
+          modulated={colorModulated}
+          onChange={applyColor}
+          ariaLabel="Effect colour"
+        />
+        <span class="envspace"></span>
+      </div>
+    {/if}
     {#each eff.params as spec (spec.key)}
       {@const enveloped = store.isEnveloped(node, spec.key)}
       <div class="prow">
@@ -111,7 +144,17 @@
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
           />
+        {:else if spec.kind === 'enum'}
+          <Select
+            value={str(live[spec.key], spec.options?.[0] ?? '')}
+            options={(spec.options ?? []).map((o) => ({ value: o, label: titleCase(o) }))}
+            onChange={(v) => store.setParam(node, spec.key, v)}
+            ariaLabel={spec.label}
+            class="paramsel"
+          />
         {:else}
+          <!-- bool → Toggle. `color` specs map (fixtures.mapParamSpec) but their inspector
+               control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
         {/if}
         {#if spec.envable}
@@ -242,6 +285,11 @@
   }
   .prow :global(.boolcell) {
     justify-self: start;
+  }
+  /* Enum Select fills the middle (value) column, like the scope-target select. */
+  .prow :global(.paramsel) {
+    width: 100%;
+    min-width: 0;
   }
   .envbtn {
     display: inline-flex;

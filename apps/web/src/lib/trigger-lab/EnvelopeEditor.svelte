@@ -1,18 +1,37 @@
 <script lang="ts">
   /* ADSR envelope editor (throwaway). A modal that opens when store.envTarget is
-     set. Edits an AdsrShape (attack/decay/sustain/release + segment curve) by
-     dragging three stage handles on a hand-rolled SVG curve — Vital/Serum-style.
-     The store turns the shape into the persisted render curve (adsrToPoints), so
-     it stays the single source of truth: every drag/slider rebuilds the next
-     AdsrShape and calls store.setEnvAdsr. No charting library. */
+     set. Edits an AdsrShape by dragging three stage handles on a hand-rolled SVG
+     curve — Vital/Serum-style. v2 (S24): the Attack handle is draggable in Y to set
+     `attackLevel` (the peak it rises to), and each segment (attack/decay/release)
+     carries its own easing, chosen per-segment via the EasePicker — the old single
+     Curve slider is gone. The store turns the shape into the persisted render curve
+     (adsrToPoints), so it stays the single source of truth: every drag/pick rebuilds
+     the next AdsrShape and calls store.setEnvAdsr. No charting library.
+
+     All handle↔shape geometry is pure and unit-tested in `envelope-editor-geom.ts`;
+     this component is a thin, accessible view over it. */
   import Dialog from '../ui/Dialog.svelte';
   import SegmentedControl from '../ui/SegmentedControl.svelte';
   import Slider from '../ui/Slider.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import Eyebrow from '../ui/Eyebrow.svelte';
+  import EasePicker from '../ui/EasePicker.svelte';
   import X from '@lucide/svelte/icons/x';
   import Spline from '@lucide/svelte/icons/spline';
-  import { type AdsrShape, defaultAdsr, adsrToPoints } from './sim';
+  import { type AdsrShape, type EaseSpec, defaultAdsr, adsrToPoints } from './sim';
+  import {
+    GEO,
+    xOf,
+    yOf,
+    toUnit,
+    handleAnchors,
+    segmentBands,
+    dragAttack,
+    dragSustain,
+    dragRelease,
+    NUDGE,
+    type Stage,
+  } from './envelope-editor-geom';
   import type { Attachment } from 'svelte/attachments';
   import type { TriggerLab } from './store.svelte';
 
@@ -43,12 +62,24 @@
     store.setEnvAdsr(target.block, target.key, { ...adsr, ...patch });
   }
 
-  // --- quick presets -------------------------------------------------------
+  // --- quick presets (v2: explicit per-segment eases) ----------------------
   const PRESETS: Record<string, AdsrShape> = {
-    pluck: { attack: 0.02, decay: 0.18, sustain: 0.18, release: 0.22, curve: 0.55 },
-    stab: { attack: 0, decay: 0.16, sustain: 0, release: 0.1, curve: 0.4 },
-    swell: { attack: 0.4, decay: 0.15, sustain: 0.85, release: 0.45, curve: -0.3 },
-    gate: { attack: 0, decay: 0, sustain: 1, release: 0, curve: 0 },
+    pluck: {
+      attack: 0.02, decay: 0.18, sustain: 0.18, release: 0.22, attackLevel: 1,
+      attackEase: { fn: 'linear', dir: 'in' }, decayEase: { fn: 'expo', dir: 'out' }, releaseEase: { fn: 'expo', dir: 'out' },
+    },
+    stab: {
+      attack: 0, decay: 0.16, sustain: 0, release: 0.1, attackLevel: 1,
+      attackEase: { fn: 'linear', dir: 'in' }, decayEase: { fn: 'quart', dir: 'out' }, releaseEase: { fn: 'quad', dir: 'out' },
+    },
+    swell: {
+      attack: 0.4, decay: 0.15, sustain: 0.85, release: 0.45, attackLevel: 1,
+      attackEase: { fn: 'sine', dir: 'in' }, decayEase: { fn: 'sine', dir: 'inOut' }, releaseEase: { fn: 'sine', dir: 'out' },
+    },
+    gate: {
+      attack: 0, decay: 0, sustain: 1, release: 0, attackLevel: 1,
+      attackEase: { fn: 'linear', dir: 'in' }, decayEase: { fn: 'linear', dir: 'in' }, releaseEase: { fn: 'linear', dir: 'in' },
+    },
   };
   const presetOptions = [
     { value: 'pluck', label: 'Pluck' },
@@ -61,24 +92,18 @@
     if (p && target) store.setEnvAdsr(target.block, target.key, { ...p });
   }
 
-  // --- SVG geometry --------------------------------------------------------
-  const W = 480;
-  const H = 160;
-  const PAD = 10; // inner padding so endpoint/stage handles never clip
-  const innerW = W - PAD * 2;
-  const innerH = H - PAD * 2;
+  // --- SVG geometry (constants + mapping live in envelope-editor-geom) ------
+  const innerW = GEO.W - GEO.PAD * 2;
+  const innerH = GEO.H - GEO.PAD * 2;
 
-  const xOf = (t: number): number => PAD + t * innerW;
-  const yOf = (v: number): number => PAD + (1 - v) * innerH; // invert: v=0 bottom, v=1 top
-
-  const clampUnit = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
-  const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
-
-  // Stage handle anchor positions in (t, v) space.
-  const attackT = $derived(clampUnit(adsr.attack));
-  const sustainT = $derived(clampUnit(adsr.attack + adsr.decay));
-  const sustainV = $derived(clampUnit(adsr.sustain));
-  const releaseT = $derived(clampUnit(1 - adsr.release));
+  // Handle anchors + selectable segment bands, derived from the live shape.
+  const anchors = $derived(handleAnchors(adsr));
+  const attackT = $derived(anchors.attack.t);
+  const attackPeak = $derived(anchors.attack.v);
+  const sustainT = $derived(anchors.sustain.t);
+  const sustainV = $derived(anchors.sustain.v);
+  const releaseT = $derived(anchors.release.t);
+  const bands = $derived(segmentBands(adsr));
 
   const points = $derived(adsrToPoints(adsr));
   const linePath = $derived(points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(p.t)},${yOf(p.v)}`).join(' '));
@@ -103,47 +128,30 @@
     };
   };
 
-  type Stage = 'attack' | 'sustain' | 'release';
-  let dragStage = $state<Stage | null>(null);
+  /** Which handle is being dragged — attack, the decay/sustain node, or release. */
+  type DragHandle = 'attack' | 'sustain' | 'release';
+  let dragStage = $state<DragHandle | null>(null);
 
-  /** Map a pointer position to envelope (t, v) using the SVG's box. */
-  function toUnit(clientX: number, clientY: number): { t: number; v: number } {
-    if (!svgEl) return { t: 0, v: 0 };
-    const r = svgEl.getBoundingClientRect();
-    // CSS pixels → viewBox units (the SVG scales to its box).
-    const px = ((clientX - r.left) / r.width) * W;
-    const py = ((clientY - r.top) / r.height) * H;
-    const t = clampUnit((px - PAD) / innerW);
-    const v = clampUnit(1 - (py - PAD) / innerH);
-    return { t, v };
+  function applyDrag(handle: DragHandle, t: number, v: number): void {
+    if (handle === 'attack') commit(dragAttack(adsr, t, v));
+    else if (handle === 'sustain') commit(dragSustain(adsr, t, v));
+    else commit(dragRelease(adsr, t));
   }
 
-  function onHandleDown(e: PointerEvent, stage: Stage): void {
+  function onHandleDown(e: PointerEvent, handle: DragHandle): void {
     if (!target) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    dragStage = stage;
+    dragStage = handle;
+    // Selecting the segment a handle owns surfaces its ease controls on grab.
+    selectedSegment = handle === 'sustain' ? 'decay' : handle;
   }
 
   function onHandleMove(e: PointerEvent): void {
-    if (dragStage === null || !target) return;
-    const { t, v } = toUnit(e.clientX, e.clientY);
-    if (dragStage === 'attack') {
-      // X only — keep attack ≤ attack+decay ≤ 1−release.
-      const a = clamp(t, 0, Math.min(0.9, sustainT, releaseT));
-      const decay = Math.max(0, sustainT - a);
-      commit({ attack: a, decay });
-    } else if (dragStage === 'sustain') {
-      // X sets decay (relative to attack), Y sets sustain level.
-      const x = clamp(t, attackT, releaseT);
-      const decay = Math.max(0, x - attackT);
-      commit({ decay, sustain: clampUnit(v) });
-    } else {
-      // Release X only — its Y tracks sustain, not draggable.
-      const x = clamp(t, sustainT, 1);
-      commit({ release: clamp(1 - x, 0, 0.9) });
-    }
+    if (dragStage === null || !target || !svgEl) return;
+    const { t, v } = toUnit(e.clientX, e.clientY, svgEl.getBoundingClientRect());
+    applyDrag(dragStage, t, v);
   }
 
   function onHandleUp(e: PointerEvent): void {
@@ -153,10 +161,53 @@
     dragStage = null;
   }
 
-  // --- curve / amount ------------------------------------------------------
-  function setCurve(v: number): void {
-    commit({ curve: v });
+  /** Keyboard operation: arrows nudge the focused handle; Enter/Space selects its
+      segment for ease editing. Attack + the decay/sustain node move in X and Y;
+      release is X-only (its Y tracks sustain). */
+  function onHandleKey(e: KeyboardEvent, handle: DragHandle): void {
+    if (!target) return;
+    const A = handleAnchors(adsr);
+    const cur = handle === 'attack' ? A.attack : handle === 'sustain' ? A.sustain : A.release;
+    let handled = true;
+    switch (e.key) {
+      case 'ArrowLeft': applyDrag(handle, cur.t - NUDGE, cur.v); break;
+      case 'ArrowRight': applyDrag(handle, cur.t + NUDGE, cur.v); break;
+      case 'ArrowUp': if (handle !== 'release') applyDrag(handle, cur.t, cur.v + NUDGE); else handled = false; break;
+      case 'ArrowDown': if (handle !== 'release') applyDrag(handle, cur.t, cur.v - NUDGE); else handled = false; break;
+      case 'Enter':
+      case ' ': selectedSegment = handle === 'sustain' ? 'decay' : handle; break;
+      default: handled = false;
+    }
+    if (handled) e.preventDefault();
   }
+
+  // --- per-segment easing --------------------------------------------------
+  const SEGMENTS: Stage[] = ['attack', 'decay', 'release'];
+  const segmentOptions = [
+    { value: 'attack', label: 'Attack' },
+    { value: 'decay', label: 'Decay' },
+    { value: 'release', label: 'Release' },
+  ];
+  let selectedSegment = $state<Stage>('attack');
+
+  const LINEAR: EaseSpec = { fn: 'linear', dir: 'in' };
+  /** The ease shown for a segment — an authored EaseSpec, else linear (the default
+      the v2 renderer falls back to when a segment has no explicit ease). */
+  function segEaseOf(seg: Stage): EaseSpec {
+    return adsr[`${seg}Ease`] ?? LINEAR;
+  }
+  const selectedEase = $derived(segEaseOf(selectedSegment));
+
+  function setSegEase(spec: EaseSpec): void {
+    const patch: Partial<AdsrShape> = {};
+    patch[`${selectedSegment}Ease`] = spec;
+    commit(patch);
+  }
+  function selectSegment(seg: Stage): void {
+    selectedSegment = seg;
+  }
+
+  // --- amount --------------------------------------------------------------
   const amount = $derived(env?.amount ?? 1);
   function setAmount(v: number): void {
     if (target) store.setEnvAmount(target.block, target.key, v);
@@ -167,6 +218,11 @@
 
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
   const fix2 = (v: number): string => v.toFixed(2);
+
+  // Human-readable state for each handle's aria-valuetext (2D sliders).
+  const attackAria = $derived(`Attack time ${pct(attackT)}, peak level ${pct(attackPeak)}`);
+  const sustainAria = $derived(`Decay ${fix2(adsr.decay)}, sustain level ${pct(sustainV)}`);
+  const releaseAria = $derived(`Release ${fix2(adsr.release)}`);
 </script>
 
 <Dialog open={!!store.envTarget} onClose={() => store.closeEnv()} title="Envelope" layer={2} class="dlg-envedit">
@@ -185,22 +241,37 @@
       <svg
         {@attach captureSvg}
         class="curve"
-        viewBox="0 0 {W} {H}"
+        viewBox="0 0 {GEO.W} {GEO.H}"
         preserveAspectRatio="none"
         role="application"
         aria-label="{paramLabel} ADSR envelope"
       >
         <!-- frame + grid -->
-        <rect class="frame" x={PAD} y={PAD} width={innerW} height={innerH} />
+        <rect class="frame" x={GEO.PAD} y={GEO.PAD} width={innerW} height={innerH} />
         {#each gridX as gx (gx)}
-          <line class="grid" x1={xOf(gx)} y1={PAD} x2={xOf(gx)} y2={H - PAD} />
+          <line class="grid" x1={xOf(gx)} y1={GEO.PAD} x2={xOf(gx)} y2={GEO.H - GEO.PAD} />
         {/each}
         {#each gridY as gy (gy)}
-          <line class="grid" x1={PAD} y1={yOf(gy)} x2={W - PAD} y2={yOf(gy)} />
+          <line class="grid" x1={GEO.PAD} y1={yOf(gy)} x2={GEO.W - GEO.PAD} y2={yOf(gy)} />
         {/each}
-        <line class="baseline" x1={PAD} y1={yOf(0)} x2={W - PAD} y2={yOf(0)} />
+        <line class="baseline" x1={GEO.PAD} y1={yOf(0)} x2={GEO.W - GEO.PAD} y2={yOf(0)} />
 
-        <!-- filled area + curve -->
+        <!-- clickable segment bands (select a segment to edit its easing) -->
+        {#each SEGMENTS as seg (seg)}
+          {@const b = bands[seg]}
+          <rect
+            class="seg-band"
+            class:selected={selectedSegment === seg}
+            x={xOf(b[0])}
+            y={GEO.PAD}
+            width={Math.max(0, xOf(b[1]) - xOf(b[0]))}
+            height={innerH}
+            onclick={() => selectSegment(seg)}
+            role="presentation"
+          />
+        {/each}
+
+        <!-- filled area + curve (pointer-transparent so bands under it stay clickable) -->
         <path class="area" d={areaPath} />
         <path class="line" d={linePath} />
 
@@ -208,7 +279,7 @@
         <circle class="anchor" cx={xOf(0)} cy={yOf(0)} r="3" />
         <circle class="anchor" cx={xOf(1)} cy={yOf(0)} r="3" />
 
-        <!-- stage handles: Attack (X), Sustain (X+Y), Release (X) -->
+        <!-- stage handles: Attack (X+Y → attackLevel), Sustain (X+Y), Release (X) -->
         <g
           class="handle"
           class:active={dragStage === 'attack'}
@@ -216,11 +287,18 @@
           onpointermove={onHandleMove}
           onpointerup={onHandleUp}
           onpointercancel={onHandleUp}
-          role="presentation"
+          onkeydown={(e) => onHandleKey(e, 'attack')}
+          role="slider"
+          tabindex="0"
+          aria-label="Attack handle"
+          aria-valuemin={0}
+          aria-valuemax={1}
+          aria-valuenow={attackPeak}
+          aria-valuetext={attackAria}
         >
-          <circle class="hit" cx={xOf(attackT)} cy={yOf(1)} r="16" />
-          <circle class="dot" cx={xOf(attackT)} cy={yOf(1)} r="7" />
-          <text class="cap" x={xOf(attackT)} y={yOf(1) - 12} text-anchor="middle">A</text>
+          <circle class="hit" cx={xOf(attackT)} cy={yOf(attackPeak)} r="16" />
+          <circle class="dot" cx={xOf(attackT)} cy={yOf(attackPeak)} r="7" />
+          <text class="cap" x={xOf(attackT)} y={yOf(attackPeak) - 12} text-anchor="middle">A</text>
         </g>
 
         <g
@@ -230,7 +308,14 @@
           onpointermove={onHandleMove}
           onpointerup={onHandleUp}
           onpointercancel={onHandleUp}
-          role="presentation"
+          onkeydown={(e) => onHandleKey(e, 'sustain')}
+          role="slider"
+          tabindex="0"
+          aria-label="Decay and sustain handle"
+          aria-valuemin={0}
+          aria-valuemax={1}
+          aria-valuenow={sustainV}
+          aria-valuetext={sustainAria}
         >
           <circle class="hit" cx={xOf(sustainT)} cy={yOf(sustainV)} r="16" />
           <circle class="dot" cx={xOf(sustainT)} cy={yOf(sustainV)} r="7" />
@@ -244,7 +329,14 @@
           onpointermove={onHandleMove}
           onpointerup={onHandleUp}
           onpointercancel={onHandleUp}
-          role="presentation"
+          onkeydown={(e) => onHandleKey(e, 'release')}
+          role="slider"
+          tabindex="0"
+          aria-label="Release handle"
+          aria-valuemin={0}
+          aria-valuemax={1}
+          aria-valuenow={releaseT}
+          aria-valuetext={releaseAria}
         >
           <circle class="hit" cx={xOf(releaseT)} cy={yOf(sustainV)} r="16" />
           <circle class="dot" cx={xOf(releaseT)} cy={yOf(sustainV)} r="7" />
@@ -254,6 +346,7 @@
 
       <div class="readouts">
         <span class="ro"><b>A</b>{fix2(attackT)}</span>
+        <span class="ro"><b>P</b>{pct(attackPeak)}</span>
         <span class="ro"><b>D</b>{fix2(adsr.decay)}</span>
         <span class="ro"><b>S</b>{fix2(sustainV)}</span>
         <span class="ro"><b>R</b>{fix2(adsr.release)}</span>
@@ -261,8 +354,18 @@
     </div>
 
     <div class="row">
-      <Eyebrow>Curve</Eyebrow>
-      <Slider value={adsr.curve} min={-1} max={1} step={0.05} onChange={setCurve} format={fix2} ariaLabel="Segment curve" />
+      <Eyebrow>Segment</Eyebrow>
+      <SegmentedControl
+        value={selectedSegment}
+        options={segmentOptions}
+        onChange={(v) => selectSegment(v as Stage)}
+        ariaLabel="Easing segment"
+      />
+    </div>
+
+    <div class="row">
+      <Eyebrow>Ease</Eyebrow>
+      <EasePicker value={selectedEase} onChange={setSegEase} ariaLabel="{selectedSegment} easing" class="ease-row" />
     </div>
 
     <div class="row">
@@ -272,7 +375,8 @@
 
     <footer class="foot">
       <p class="hint">
-        {paramLabel} sweeps across {min}–{max}{unit} as the hit plays; Amount scales the depth.
+        {paramLabel} sweeps across {min}–{max}{unit} as the hit plays. Drag the Attack node up for its
+        peak level; pick each segment's easing above. Amount scales the depth.
       </p>
       <button class="remove" type="button" onclick={removeEnvelope}>Remove envelope</button>
     </footer>
@@ -329,9 +433,24 @@
     stroke-width: 1;
   }
 
+  /* Selectable segment columns — transparent until hovered/selected. */
+  .seg-band {
+    fill: var(--accent);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity var(--dur-120) ease;
+  }
+  .seg-band:hover {
+    opacity: 0.05;
+  }
+  .seg-band.selected {
+    opacity: 0.12;
+  }
+
   .area {
     fill: var(--accent);
     opacity: 0.16;
+    pointer-events: none;
   }
   .line {
     fill: none;
@@ -339,12 +458,14 @@
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
+    pointer-events: none;
   }
 
   .anchor {
     fill: var(--surface-inset);
     stroke: var(--border-strong);
     stroke-width: 1.5;
+    pointer-events: none;
   }
 
   .handle {
@@ -352,6 +473,9 @@
   }
   .handle.active {
     cursor: grabbing;
+  }
+  .handle:focus-visible {
+    outline: none;
   }
   .hit {
     fill: transparent;
@@ -366,9 +490,16 @@
   .handle:hover .dot {
     stroke: var(--accent-bright);
   }
-  .handle.active .dot {
+  .handle.active .dot,
+  .handle:focus-visible .dot {
     stroke: var(--accent-bright);
     fill: var(--accent-soft);
+  }
+  /* Keyboard focus ring on the SVG handle (focus-visible has no default outline
+     inside SVG in most engines). */
+  .handle:focus-visible .hit {
+    fill: var(--accent-soft);
+    opacity: 0.25;
   }
   .cap {
     fill: var(--text-faint);
@@ -380,7 +511,8 @@
     transition: opacity var(--dur-120) ease;
   }
   .handle:hover .cap,
-  .handle.active .cap {
+  .handle.active .cap,
+  .handle:focus-visible .cap {
     opacity: 1;
     fill: var(--accent-bright);
   }
@@ -409,6 +541,9 @@
   .row :global(.eyebrow) {
     min-width: 56px;
   }
+  .row :global(.ease-row) {
+    flex: 1;
+  }
 
   .foot {
     display: flex;
@@ -423,6 +558,7 @@
     font-size: var(--text-2xs);
     color: var(--text-faint);
     line-height: 1.5;
+    text-wrap: pretty;
   }
   .remove {
     flex: none;
@@ -439,5 +575,14 @@
   }
   .remove:hover {
     color: var(--accent-bright);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .seg-band,
+    .dot,
+    .cap,
+    .remove {
+      transition: none;
+    }
   }
 </style>

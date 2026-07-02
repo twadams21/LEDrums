@@ -30,7 +30,7 @@
   }
   let { pattern, params, generatorId, w = 64, h = 36 }: Props = $props();
 
-  const num = (v: number | boolean | undefined, d: number) => (typeof v === 'number' ? v : d);
+  const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
   const COLS = 26;
   const ROWS = 13;
