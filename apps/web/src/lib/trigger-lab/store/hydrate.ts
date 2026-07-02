@@ -4,11 +4,15 @@
    `normalizeGraphs` / `applyAuthored`. */
 
 import {
+  type AdsrShape,
+  type EaseSpec,
   type EffectDef,
+  type EnvMap,
   type Preset,
   type TriggerGraph,
   type TriggerSource,
   foldVelocitySwitches,
+  migrateAdsr,
 } from '../sim';
 import { EFFECTS, PRESETS, type Pad } from '../fixtures';
 import { padKey, padLabel } from './seed';
@@ -101,10 +105,73 @@ export function hydratePadNames(
   return out ?? names;
 }
 
+/** Structural equality for two ADSR shapes (times, levels, legacy curve, and each
+    per-segment ease by fn/dir) — lets the migrator keep the original object when a
+    shape is already normalized, so the pass stays alias-stable. */
+function adsrEqual(a: AdsrShape, b: AdsrShape): boolean {
+  const easeEq = (x?: EaseSpec, y?: EaseSpec): boolean =>
+    (!x && !y) || (!!x && !!y && x.fn === y.fn && x.dir === y.dir);
+  return (
+    a.attack === b.attack &&
+    a.decay === b.decay &&
+    a.sustain === b.sustain &&
+    a.release === b.release &&
+    a.attackLevel === b.attackLevel &&
+    a.curve === b.curve &&
+    easeEq(a.attackEase, b.attackEase) &&
+    easeEq(a.decayEase, b.decayEase) &&
+    easeEq(a.releaseEase, b.releaseEase)
+  );
+}
+
+/** Normalize every play node's persisted {@link AdsrShape} to the v2 form
+    (attackLevel + per-segment eases) via the core {@link migrateAdsr} migrator —
+    the S23-deferred hydrate wiring, sitting beside {@link foldVelocitySwitch}.
+    Behaviour-preserving: `migrateAdsr` never alters a sampled point, so the
+    persisted `points` need no regeneration. Idempotent + immutable: a graph with
+    no envelope shapes (or already-normalized ones) keeps its reference. */
+export function migrateGraphEnvelopes(graph: TriggerGraph): TriggerGraph {
+  let graphChanged = false;
+  const nodes = graph.nodes.map((n) => {
+    if (n.kind !== 'play') return n;
+    let envChanged = false;
+    const env: EnvMap = {};
+    for (const [key, e] of Object.entries(n.env)) {
+      if (!e.adsr) {
+        env[key] = e;
+        continue;
+      }
+      const migrated = migrateAdsr(e.adsr);
+      if (adsrEqual(migrated, e.adsr)) {
+        env[key] = e; // already v2 (or a retained-curve shape) — keep the ref
+        continue;
+      }
+      env[key] = { ...e, adsr: migrated };
+      envChanged = true;
+    }
+    if (!envChanged) return n;
+    graphChanged = true;
+    return { ...n, env };
+  });
+  return graphChanged ? { nodes, edges: graph.edges } : graph;
+}
+
+/** Apply {@link migrateGraphEnvelopes} across a keyed map of graphs (each unchanged
+    graph keeps its reference — alias-stable + idempotent, mirrors
+    {@link foldVelocitySwitches}). */
+export function migrateGraphsEnvelopes(
+  graphs: Record<string, TriggerGraph>,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) out[key] = migrateGraphEnvelopes(graph);
+  return out;
+}
+
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
     every pad-bound graph's trigger source explicit, fold legacy velocity switches into the
-    canonical value+bands form, and hydrate a friendly display name onto every pad-keyed graph.
-    Returns the new `{ graphs, graphNames }` — the store assigns them back into its runes. */
+    canonical value+bands form, migrate persisted envelope shapes to v2, and hydrate a friendly
+    display name onto every pad-keyed graph. Returns the new `{ graphs, graphNames }` — the store
+    assigns them back into its runes. */
 export function normalizeGraphs(
   graphs: Record<string, TriggerGraph>,
   graphNames: Record<string, string>,
@@ -113,6 +180,7 @@ export function normalizeGraphs(
   const padKeys = new Set(pads.map(padKey));
   let next = unionTriggerSources(graphs, padKeys);
   next = foldVelocitySwitches(next);
+  next = migrateGraphsEnvelopes(next);
   const names = hydratePadNames(next, graphNames, pads);
   return { graphs: next, graphNames: names };
 }
