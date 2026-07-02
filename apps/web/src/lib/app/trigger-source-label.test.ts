@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { describeTriggerSource, drumLinkHint, graphsLinkedToZone, zoneLabel, zoneLinkForSource } from './trigger-source-label';
-import type { TriggerGraph, TriggerSource } from '../trigger-lab/sim';
+import { makeNode, type TriggerGraph, type TriggerSource } from '../trigger-lab/sim';
 import type { InputMap } from '@ledrums/core';
 
 /** A small drum roster (id → label) — the shape of store.drums. */
@@ -74,7 +74,7 @@ const MAP: InputMap = {
 
 /** A one-node trigger graph carrying a source (enough for the reverse resolver). */
 function graph(source: TriggerSource | undefined): TriggerGraph {
-  return { nodes: [{ id: 'trigger', kind: 'trigger', x: 0, y: 0, source }], edges: [] };
+  return { nodes: [makeNode('trigger', 'trigger', 0, 0, { source })], edges: [] };
 }
 
 describe('zoneLinkForSource', () => {
