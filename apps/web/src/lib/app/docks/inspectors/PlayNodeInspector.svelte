@@ -124,16 +124,9 @@
             ariaLabel={spec.label}
             class="paramsel"
           />
-        {:else if spec.kind === 'color'}
-          <!-- Interim native colour input; the S19 write-through swatch supersedes it. -->
-          <input
-            class="colorcell"
-            type="color"
-            value={str(live[spec.key], '#ffffff')}
-            oninput={(e) => store.setParam(node, spec.key, e.currentTarget.value)}
-            aria-label={spec.label}
-          />
         {:else}
+          <!-- bool → Toggle. `color` specs map (fixtures.mapParamSpec) but their inspector
+               control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
         {/if}
         {#if spec.envable}
@@ -269,16 +262,6 @@
   .prow :global(.paramsel) {
     width: 100%;
     min-width: 0;
-  }
-  .colorcell {
-    justify-self: start;
-    inline-size: 44px;
-    block-size: 24px;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    cursor: pointer;
   }
   .envbtn {
     display: inline-flex;

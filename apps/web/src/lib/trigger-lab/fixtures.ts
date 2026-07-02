@@ -97,7 +97,9 @@ const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number
 /** Map a legacy core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s so
     no spec is ever silently dropped (S18). number/bool map 1:1 (numbers become
     envelope-able); `enum` maps to a Select (string value, its `options` carried through);
-    `color` maps to a colour control (a `'#rrggbb'` string). enum/color are not envelope-able. */
+    `color` maps to a colour spec (a `'#rrggbb'` string) — its inspector control (the
+    write-through swatch) is S19's, and no effect declares a color param yet. enum/color are
+    not envelope-able. */
 export function mapParamSpec(spec: CoreParamSpec): ParamSpec {
   if (spec.type === 'number') {
     return {
