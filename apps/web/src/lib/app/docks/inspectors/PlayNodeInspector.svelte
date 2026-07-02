@@ -5,6 +5,7 @@
      in the parent Inspector. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
+  import type { Hsv } from '@ledrums/core';
   import { busIcon } from '../../views/trigger-node-meta';
   import { MODE_OPTS, LINK_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
@@ -12,6 +13,7 @@
   import Select from '../../../ui/Select.svelte';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import Spline from '@lucide/svelte/icons/spline';
@@ -20,6 +22,18 @@
 
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
+
+  /** Effects that carry hue + saturation + brightness numeric params get a colour swatch
+      that writes through to all three (the picker is UI-only — persistence stays numeric). */
+  const COLOR_KEYS = ['hue', 'saturation', 'brightness'] as const;
+  const hasColorSwatch = $derived(!!eff && COLOR_KEYS.every((k) => eff.params.some((p) => p.key === k)));
+  const colorModulated = $derived(hasColorSwatch && COLOR_KEYS.some((k) => store.isEnveloped(node, k)));
+
+  function applyColor(hsv: Hsv): void {
+    store.setParam(node, 'hue', hsv.h);
+    store.setParam(node, 'saturation', hsv.s);
+    store.setParam(node, 'brightness', hsv.v);
+  }
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
@@ -96,6 +110,20 @@
   {/if}
 
   <div class="params">
+    {#if hasColorSwatch}
+      <div class="prow">
+        <span class="plabel">Colour</span>
+        <ColorSwatch
+          hue={num(live['hue'], 0)}
+          saturation={num(live['saturation'], 1)}
+          brightness={num(live['brightness'], 1)}
+          modulated={colorModulated}
+          onChange={applyColor}
+          ariaLabel="Effect colour"
+        />
+        <span class="envspace"></span>
+      </div>
+    {/if}
     {#each eff.params as spec (spec.key)}
       {@const enveloped = store.isEnveloped(node, spec.key)}
       <div class="prow">
