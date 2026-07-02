@@ -164,6 +164,23 @@ describe('VoiceEngineHost', () => {
     expect(stats.engine.busLevels.main).toBeGreaterThan(0);
   });
 
+  it('streams per-voice detail so a connected dock can render server-truth voices (S17)', () => {
+    const { host } = makeHost();
+    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+
+    const { voices } = host.getStats().engine;
+    expect(voices.length).toBe(host.getStats().engine.voiceCount);
+    expect(voices.length).toBeGreaterThan(0);
+    const v = voices[0]!;
+    expect(v.id).toBeTruthy();
+    expect(typeof v.busId).toBe('string');
+    expect(typeof v.effectId).toBe('string');
+    expect(v.level).toBeGreaterThanOrEqual(0);
+    expect(typeof v.releasing).toBe('boolean');
+  });
+
   it('blacks out and closes the transport on stop', () => {
     const { host, fake } = makeHost(voice.createNullEngine());
     host.step(STEP);
