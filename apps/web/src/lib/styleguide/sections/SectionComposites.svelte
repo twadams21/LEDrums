@@ -4,6 +4,7 @@
      the Monitor log, and the inspector control rows. Store-bound components
      (OutputPill, Monitor, RenameField) run on minimal reactive stubs — they read a
      tiny store surface, so the stub drives the real component, not a copy of it. */
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import NodeCard from '../../app/views/NodeCard.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
@@ -147,7 +148,7 @@
     <DemoCard
       title="Node card — states"
       src="lib/app/views/NodeCard"
-      note="Hover = accent border only (NO lift/motion). Selected adds a crisp ring; wires do not light. Drop target = wider soft ring while a wire hovers the node."
+      note="Hover = accent border only (NO lift/motion). Selected adds a crisp ring; wires do not light. Drop target = wider soft ring while a wire hovers the node. Stale = dashed warn card when a node's live model can't be resolved (blank-proof placeholder, incident 09)."
       wide
     >
       <div class="face-grid">
@@ -155,6 +156,7 @@
         <NodeCard icon={kindIcon.play} title="Hovered" sub="hovered … wires hot" tint={tint.play} hovered />
         <NodeCard icon={kindIcon.play} title="Selected" sub="ring · in Inspector" tint={tint.play} selected />
         <NodeCard icon={kindIcon.play} title="Drop target" sub="wire over node" tint={tint.play} dropTarget />
+        <NodeCard icon={TriangleAlert} title="Stale node" sub="model missing" tint="var(--warn)" stale />
       </div>
     </DemoCard>
 

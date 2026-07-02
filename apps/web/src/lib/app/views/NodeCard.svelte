@@ -16,6 +16,10 @@
     selected?: boolean;
     hovered?: boolean;
     dropTarget?: boolean;
+    /** Degraded placeholder: the node's live model could not be resolved (a "stale node").
+        Renders a dashed warn-tinted card so a projection/desync fault is VISIBLE on the
+        canvas instead of a blank card (see TriggerNode / incident 09). */
+    stale?: boolean;
     /** Optional right-side thumbnail (play nodes pass an EffectThumb). */
     thumb?: Snippet;
   };
@@ -28,6 +32,7 @@
     selected = false,
     hovered = false,
     dropTarget = false,
+    stale = false,
     thumb,
   }: Props = $props();
 </script>
@@ -37,6 +42,7 @@
   class:sel={selected}
   class:hov={hovered}
   class:drop={dropTarget}
+  class:stale
   class:has-thumb={!!thumb}
   style="--tint:{tint}"
 >
@@ -89,6 +95,16 @@
   .card.drop {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 55%, transparent), var(--shadow-1);
+  }
+  /* stale placeholder: the live model is gone — a dashed warn card so the fault is
+     visible on the canvas (a blank card told us nothing for a day). Never hides on hover. */
+  .card.stale {
+    border-style: dashed;
+    border-color: var(--warn);
+    background: color-mix(in oklch, var(--warn) 8%, var(--surface-2));
+  }
+  .card.stale .title {
+    color: var(--warn);
   }
   /* signal-path role / kind colour rides the icon chip (icon + tinted wash) */
   .icon {
