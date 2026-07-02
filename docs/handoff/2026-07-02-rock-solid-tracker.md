@@ -7,6 +7,7 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 ## ESCALATIONS / notes
 
 - **Disk headroom (MONITOR):** volume was at 99% / ~8.3 GB free at initiative start. pnpm's hardlinked global store makes each worktree `node_modules` nearly free (verified: 4 installs, no measurable disk delta). **Risk remains for Lane 4** (desktop/tauri) — Rust `target/` build dirs are NOT hardlinked and can be large. Watch `df -h /Users/trent` before/around Lane 4; if a build fails on ENOSPC, that is a blocking escalation to Trent.
+- **Cross-group merge drift (process lesson):** group/E was branched off rock-solid PRE-group-B, so B×E independently edited shared files (`store.svelte.ts`, two inspectors) → non-trivial semantic conflict at master-merge time. Handed back to the lane orch to integrate (merge rock-solid into group/E + resolve) rather than hand-merge entangled feature code as master. **Guidance for Lane 2+:** lane orch should `git merge rock-solid` into a group branch (resolving) BEFORE handing it off, so master merges are clean — especially when groups within a lane overlap in time.
 - **Topology deviation (recorded):** the doc names a 3-worktree pool (`wt-1|2|3`). I additionally created **`../ledrums-wt/wt-master` on `rock-solid`** for the master's own tracker commits + group-branch merges + post-merge sweeps. Rationale: the main working tree (`~/Documents/dev/ledrums`) is dirty with Trent's unrelated local desktop/tauri work (`.dmg`, tauri configs, `.infisical.json`) and must stay pristine; a single branch can't be checked out in two worktrees. `wt-1/2/3` remain the impl pool exactly as the doc specifies.
 
 ---
@@ -59,6 +60,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T14:1x — LANE 1 slices done; group/E merge BOUNCED (B×E conflict)
+
+- **Lane 1 all 11 slices complete** (A:S01, B:S02–S05, E:S12–S17). Lane orch handed off group/E (PASS, its sweep 1111 tests). A+B already in rock-solid.
+- **group/E did NOT merge cleanly** into rock-solid (has A+B): 4 conflicts — design-system.html (regen), PatchZoneInspector + TriggerSourceInspector (additive UNION), and **store.svelte.ts (4 hunks, semantically entangled)**: B's input-activity-badge (recordInputActivity, S04) vs E's authority refactor (receiveInputEcho, S12) both rewrote input handling. Risk: E's `receiveInputEcho` must ALSO recordInputActivity or B's badges silently break on the echo path — likely UNTESTED seam.
+- **ABORTED my merge** (rock-solid untouched @ 7929593). **Handed back to lane-1-b0cea3** (msg 0e49b3) with exact resolution steps: merge rock-solid into group/E in a pool worktree, resolve the 4 conflicts, ADD a test for receiveInputEcho-records-activity, re-review the store seam, re-hand-off. Lane orch NOT killed.
+- **Lane 2 still deferred** (Lane 1 not complete until group/E merges).
+- **Next:** await re-handoff of group/E → clean merge (group/E will contain rock-solid) + sweep → Lane 1 DONE → fire Lane 2 orch. Check wake ~18 min.
 
 ### 2026-07-02T13:49 — wake: group/E nearly done (S16+S17 last)
 
