@@ -42,12 +42,32 @@ Evidence: `effects.test.ts › S19 colour batch 1 — saturation 0 ⇒ white on 
 golden per effect: lit>0 AND every lit pixel achromatic) plus a knob-is-real check
 (hue 120 / sat 1 → not white). Swatch reflect + write-through: `ColorSwatch.test.ts`.
 
-## Batch 2 — S20 (wash / base / utility / meter) ⬜ PENDING
+## Batch 2 — S20 (wash / base / utility / meter) ✅ DONE
 
-`radial-wash`, `wipe-3d`, `solid-base`*, `breathing-kit`*, `hue-rotate-kit` (*multi*),
-`strobe`*, `temp-sweep`, `meter-eq`, `sidechain`.
-(*`solid-base`, `breathing-kit`, `strobe` already expose `saturation` — finish their contract
-and confirm the swatch applies.)
+Same shallow pass as batch 1: add a `saturation` ParamSpec after `hue` (default 1) and thread
+it into `hsvToRgb(hue, sat, …)`. `radial-wash`, `wipe-3d` and `meter-eq` gained it (meter-eq
+keeps its base `hue` + `hueSpread`, so like `synced-hoops` it still gets the swatch).
+`solid-base`, `breathing-kit`, `strobe`, `hue-rotate-kit` and `sidechain` already exposed +
+threaded `saturation` — no code change, just confirmed the contract and the swatch. Two effects
+are intrinsically multi-colour and stay swatch-less: `hue-rotate-kit` (base hue + vertical
+spread) and `temp-sweep` (now exposes its warm/cool hue **endpoints** as a range + a shared
+saturation, replacing the hardcoded amber/blue consts).
+
+| Effect | id | Cat | Params before | Params after | Swatch |
+|---|---|---|---|---|---|
+| 3D Radial Wash | `radial-wash` | wash | hue, brightness, mode, speed, width, reach, decayMs | hue, **saturation**, brightness, mode, speed, width, reach, decayMs | ✓ |
+| 3D Wipe | `wipe-3d` | wash | axis, mode, hue, brightness, speed, width | axis, mode, hue, **saturation**, brightness, speed, width | ✓ |
+| Meter (EQ) | `meter-eq` | meter | hue, brightness, level, hueSpread | hue, **saturation**, brightness, level, hueSpread | ✓ |
+| Temperature Sweep | `temp-sweep` | wash | kz, speed, brightness | **warmHue, coolHue, saturation**, kz, speed, brightness | *multi* — warm/cool hue endpoints (range), no single hue |
+| Solid Base (Swirl) | `solid-base` | base | hue, saturation, brightness, speed, noise | *(unchanged — already compliant)* | ✓ |
+| Breathing Kit | `breathing-kit` | base | hue, rate, depth, brightness, saturation | *(unchanged)* | ✓ |
+| Hue Rotate Kit | `hue-rotate-kit` | base | baseHue, speed, ky, brightness, saturation | *(unchanged)* | *multi* — base hue + vertical spread (`ky`), no single hue |
+| Strobe | `strobe` | utility | hue, saturation, brightness, rate | *(unchanged)* | ✓ |
+| Sidechain Pump | `sidechain` | utility | hue, saturation, brightness, duckDepth, recoverMs | *(unchanged)* | ✓ |
+
+Evidence: `effects.test.ts › S20 colour batch 2 — saturation 0 ⇒ white on lit pixels` (one
+golden per effect: lit>0 AND every lit pixel achromatic) + a knob-is-real negative check +
+a byte-identical defaults-parity check (saturation default 1 == the old hardcoded look).
 
 ## Batch 3 — S21 (textures) ⬜ PENDING
 
