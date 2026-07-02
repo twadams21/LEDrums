@@ -4,6 +4,9 @@
  * and unit-testable. The authored content is the {@link Show} aggregate; everything
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
+import type { ResolvedModifier } from '../modifiers/types';
+
+export type { ResolvedModifier };
 
 // ---- Enumerations -----------------------------------------------------------
 
@@ -397,6 +400,20 @@ export interface Voice {
    * is reused. Opaque to everything but the hosted generator.
    */
   genState: unknown;
+  /**
+   * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
+   * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from
+   * graph topology at spawn (S29); `undefined`/empty → the voice takes the unchanged
+   * zero-alloc hot path. The engine never sees graph topology — this flat chain is the seam.
+   */
+  modifiers?: ResolvedModifier[];
+  /**
+   * Per-voice, per-modifier mutable state (accumulators, ring buffers), parallel to
+   * `modifiers`. Built lazily by the chain runner and persisted for the voice's life; reset
+   * to `undefined` on pool-slot reuse so a retriggered voice starts clean (mirrors
+   * `genState` lifecycle).
+   */
+  modState?: unknown[];
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
   /**

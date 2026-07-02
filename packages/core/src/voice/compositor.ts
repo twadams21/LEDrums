@@ -18,9 +18,11 @@
  * path; generators run far fewer voices (mono buses, level gating), so the bridge's
  * per-voice merged-params object stays well within budget — see the perf note below.
  */
-import type { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../engine/framebuffer';
 import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
+import { applyModifierChain } from '../modifiers/chain';
+import type { PixelRange } from '../modifiers/types';
 import { sampleEnvelope } from './envelope';
 import { buildPixelAttrs, createPatternRenderer, type PixelAttrs } from './pattern-renderer';
 import { createGeneratorBridge } from './generator-bridge';
@@ -116,6 +118,10 @@ export interface Compositor {
 export function createDefaultCompositor(): Compositor {
   const patterns = createPatternRenderer();
   const generators = createGeneratorBridge();
+  /** Scratch framebuffer for MODIFIED pattern voices only — an unmodified pattern voice
+      writes straight to `dst` (zero-alloc hot path). Lazily sized to the model. */
+  let patScratch: Framebuffer | null = null;
+  const modRange: PixelRange = { start: 0, end: 0 };
 
   return {
     render(voices, model, attrs, frame, dst): void {
@@ -167,7 +173,33 @@ export function createDefaultCompositor(): Compositor {
           continue;
         }
 
-        // Pattern voice (fast path).
+        // Pattern voice. Modified voices route through a scratch so the chain can transform
+        // the rendered pixels before they blend into `dst`; unmodified voices write directly
+        // (the zero-alloc fast path is untouched).
+        const mods = v.modifiers;
+        if (mods && mods.length) {
+          if (!patScratch || patScratch.pixelCount !== model.pixelCount) {
+            patScratch = new Framebuffer(model.pixelCount);
+          }
+          patScratch.clear();
+          patterns.renderVoice(v, t, level, start, end, attrs, patScratch);
+          if (!v.modState) v.modState = [];
+          modRange.start = start;
+          modRange.end = end;
+          const age = timeMs - v.bornAtMs;
+          applyModifierChain(mods, v.modState, patScratch, modRange, model, age > 0 ? age : 0, frame.dt);
+          const src = patScratch.rgba;
+          for (let i = start; i < end; i++) {
+            const j = i * 4;
+            const r = src[j]!;
+            const g = src[j + 1]!;
+            const b = src[j + 2]!;
+            const a = src[j + 3]!;
+            if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+            dst.add(i, r, g, b, a);
+          }
+          continue;
+        }
         patterns.renderVoice(v, t, level, start, end, attrs, dst);
       }
     },

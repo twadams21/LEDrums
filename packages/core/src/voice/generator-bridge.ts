@@ -22,6 +22,8 @@ import type { PixelModel } from '../geometry/pixel-model';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
 import { defaultParams, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
+import { applyModifierChain } from '../modifiers/chain';
+import type { PixelRange } from '../modifiers/types';
 import type { Voice } from './types';
 
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
@@ -54,6 +56,8 @@ export function createGeneratorBridge(): GeneratorBridge {
   const voiceTransport: TransportState = {
     timeMs: 0, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true,
   };
+  /** Reused pixel-range for the modifier chain (only touched by modified voices). */
+  const modRange: PixelRange = { start: 0, end: 0 };
 
   return {
     beginFrame(model, timeMs, dt, transport): void {
@@ -131,6 +135,18 @@ export function createGeneratorBridge(): GeneratorBridge {
 
       genScratch.clear();
       gen.render(genCtx, params, genScratch, v.genState);
+
+      // Modifier chain (media effects) — pure framebuffer transforms applied between render
+      // and blend, over the voice's pixel range. Only modified voices pay this; unmodified
+      // voices fall straight through to the composite loop (zero-alloc path preserved).
+      // Modifiers inherit the host voice's local clock (age) — never re-derived downstream.
+      const mods = v.modifiers;
+      if (mods && mods.length) {
+        if (!v.modState) v.modState = [];
+        modRange.start = start;
+        modRange.end = end;
+        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt);
+      }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is
       // applied inside the generator), masked to [start, end). dst.add clamps.

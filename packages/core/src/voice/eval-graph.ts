@@ -14,6 +14,7 @@ import type {
   ParamValues,
   PlayMode,
   Preset,
+  ResolvedModifier,
   Scope,
   SwitchOn,
   TriggerGraph,
@@ -34,6 +35,12 @@ export interface PlayAction {
   busId: string;
   params: ParamValues;
   env: EnvMap;
+  /**
+   * Resolved modifier chain for this play node's `mod` input (S28 seam). Carried verbatim to
+   * the spawned voice. Populated by graph resolution in S29 (walk `mod` edges, order by
+   * topology / y-position, flatten); `undefined` until then, so S28 voices are unmodified.
+   */
+  modifiers?: ResolvedModifier[];
   via: string;
   latchKey: string | null;
 }
