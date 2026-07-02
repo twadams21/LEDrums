@@ -63,6 +63,7 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
     { key: 'speed', label: 'Speed', type: 'number', default: 180, min: 0, max: 1080, unit: '°/s' },
     { key: 'tail', label: 'Tail', type: 'number', default: 120, min: 5, max: 350, unit: '°' },
     { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   createState(model: PixelModel): CometTrailsState {
@@ -74,6 +75,7 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
     const speed = pnum(params, 'speed', 180);
     const tail = Math.max(1, pnum(params, 'tail', 120));
     const hue = pnum(params, 'hue', 190);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
 
     // Re-seed if comet count changed or state is unbound.
@@ -105,7 +107,7 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
           if (behind > -8) {
             const v = clamp01(bri * (1 + behind / 8));
             if (v >= 0.004) {
-              const rgb = hsvToRgb(cometHue, 1, v);
+              const rgb = hsvToRgb(cometHue, sat, v);
               fb.max(p, rgb.r, rgb.g, rgb.b, v);
             }
           }
@@ -115,7 +117,7 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
         const falloff = 1 - behind / tail;
         const v = clamp01(bri * falloff * falloff);
         if (v < 0.004) continue;
-        const rgb = hsvToRgb(cometHue, 1, v);
+        const rgb = hsvToRgb(cometHue, sat, v);
         fb.max(p, rgb.r, rgb.g, rgb.b, v);
       }
     }

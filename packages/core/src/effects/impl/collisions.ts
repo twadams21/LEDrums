@@ -36,6 +36,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
   category: 'wash',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 180, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'flashHue', label: 'Flash Hue', type: 'number', default: 50, min: 0, max: 360, unit: '°' },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'nodesPerHoop', label: 'Nodes / Hoop', type: 'number', default: 2, min: 2, max: 8, step: 1 },
@@ -63,6 +64,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
   },
   render(ctx, params, fb, state) {
     const hue = pnum(params, 'hue', 180);
+    const sat = pnum(params, 'saturation', 1);
     const flashHue = pnum(params, 'flashHue', 50);
     const bri = pnum(params, 'brightness', 1);
     const nodesPerHoop = Math.max(2, Math.round(pnum(params, 'nodesPerHoop', 2)));
@@ -121,7 +123,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
           if (fd < flashWidth) {
             const v = clamp01(bri * hoop.flashLevel * (1 - fd / flashWidth));
             if (v >= 0.004) {
-              const rgb = hsvToRgb(flashHue, 1, v);
+              const rgb = hsvToRgb(flashHue, sat, v);
               fb.max(p, rgb.r, rgb.g, rgb.b, v);
             }
           }
@@ -135,7 +137,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
         }
         if (best < 0.004) continue;
         const v = clamp01(bri * best * 0.7);
-        const rgb = hsvToRgb(hue, 1, v);
+        const rgb = hsvToRgb(hue, sat, v);
         fb.max(p, rgb.r, rgb.g, rgb.b, v);
       }
     }
