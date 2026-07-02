@@ -53,11 +53,17 @@ function seedComets(model: PixelModel, count: number): Comet[] {
  * Comet Trails: a handful of seeded comets orbit around individual hoops, advancing
  * their head angle each frame. Pixels near the head light brightest, with a fading
  * tail trailing behind by angular distance. Stateful so the orbit advances per dt.
+ *
+ * Voice timebase (S26): the orbit accumulates on `ctx.dt` (real frame delta, unchanged by
+ * timebase) into per-voice `genState`, and the comets are seeded at their start angles in
+ * `createState`. `genState` is reset on (re)spawn, so a retrigger restarts every comet from
+ * its seeded angle — the orbit replays identically and no state leaks across voices.
  */
 export const cometTrails: EffectGenerator<CometTrailsState> = {
   id: 'comet-trails',
   name: 'Comet Trails',
   category: 'particle',
+  timebase: 'voice',
   paramSpec: [
     { key: 'comets', label: 'Comets', type: 'number', default: 4, min: 1, max: 32, step: 1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 180, min: 0, max: 1080, unit: '°/s' },

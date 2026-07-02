@@ -39,11 +39,17 @@ function seedStars(model: PixelModel, count: number): Star[] {
  * Starfield: a fixed, seeded set of "stars" scattered across pixels, each twinkling
  * with its own sine phase. Near-white with a faint hue tint, like a deep-space wash.
  * Stateful + seeded so the same star layout replays identically (R13).
+ *
+ * Voice timebase (S26): the twinkle phase reads `ctx.timeMs`, which the bridge makes
+ * hit-relative, so the twinkle restarts from its seeded phase on each hit. Per-voice
+ * `genState` (the seeded star layout) is reset on (re)spawn, so a retrigger replays the
+ * identical layout from t=0 — no state leaks across voices.
  */
 export const starfield: EffectGenerator<StarfieldState> = {
   id: 'starfield',
   name: 'Starfield',
   category: 'particle',
+  timebase: 'voice',
   paramSpec: [
     { key: 'count', label: 'Stars', type: 'number', default: 48, min: 1, max: 512, step: 1 },
     { key: 'rate', label: 'Twinkle Rate', type: 'number', default: 2.5, min: 0, max: 20, step: 0.1, unit: 'Hz' },

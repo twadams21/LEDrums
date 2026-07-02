@@ -29,11 +29,17 @@ const SEED = 0x1234abcd;
  * kit's bounding volume. Each pixel is colored by proximity to its nearest well —
  * closer is brighter, and the hue is the nearest well's hue. Stateful + seeded so
  * the drifting paths replay identically across engines (R13).
+ *
+ * Voice timebase (S26): the well positions read `ctx.timeMs` (hit-relative via the
+ * bridge), so the wells start at their seeded phase on the hit and restart on retrigger.
+ * Per-voice `genState` (seeded wells + captured kit bounds) is reset on (re)spawn → the
+ * drift replays identically from t=0, no state leaks across voices.
  */
 export const gravityWells: EffectGenerator<GravityWellsState> = {
   id: 'gravity-wells',
   name: 'Gravity Wells',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'wells', label: 'Wells', type: 'number', default: 3, min: 1, max: 6, step: 1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 0.2, min: 0, max: 2, step: 0.01 },
