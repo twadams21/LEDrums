@@ -45,6 +45,7 @@ import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
 import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo } from '../ws/protocol-types';
+import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
@@ -288,6 +289,13 @@ export class TriggerLab {
       {@link link}, not link state alone (link can be open while Art-Net is failing). S03's
       output status panel reads the same field. */
   output = $state<OutputStatus | null>(null);
+  /** Instantaneous send rate (packets/s) derived from the change in `output.packetsSent` between
+      successive `stats` ticks (see {@link packetsPerSecond}). null until two ticks have arrived, or
+      after a counter reset — shown as "—". A steady 0 means armed-but-nothing-flowing. */
+  outputPacketsPerSec = $state<number | null>(null);
+  /** Previous packet counter sample, kept to derive {@link outputPacketsPerSec}. Plain field —
+      must NOT be reactive (it is bookkeeping for the derivation, not rendered). */
+  private prevPacketSample: PacketSample | null = null;
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -857,8 +865,8 @@ export class TriggerLab {
         // geometry/pixel count, not the lab kit).
         this.project = project;
         this.serverModel = model;
-        // adopt the server's output truth (arming/packets/error) so the OutputPill is
-        // honest from the first handshake, before the first stats tick lands.
+        // adopt the server's output truth (arming/packets/error) so the OutputPill AND the S03
+        // output status panel are honest from the first handshake, before the first stats tick lands.
         this.output = output;
         // remote-access surface (share URL + PIN) for the host UI
         this.tunnel = tunnel;
@@ -923,6 +931,12 @@ export class TriggerLab {
         } else {
           // a drop means our next open must re-send the transport + Show
           this.engineSync.reset();
+          // Clear the output truth (S03) — a dropped link can't confirm packets are leaving the
+          // box, so the panel must not keep showing a frozen "armed"/rate. Resets to the offline
+          // empty state; the next `state`/`stats` after reconnect repopulates it.
+          this.output = null;
+          this.outputPacketsPerSec = null;
+          this.prevPacketSample = null;
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
@@ -931,7 +945,13 @@ export class TriggerLab {
       onStats: (_stats, latencyMs, fps, output, voice) => {
         this.latencyMs = latencyMs;
         this.fps = fps; // the server's measured LED output rate wins while connected
-        this.output = output; // arming/packets/error truth for the OutputPill (S02)
+        // Output transport truth: adopt the status (for the OutputPill, S02) and derive packets/s
+        // (S03) from the change in the cumulative counter since the last tick. The derivation is
+        // pure + tested; the store just owns the "previous sample" bookkeeping across discrete ticks.
+        this.output = output;
+        const sample: PacketSample = { packetsSent: output.packetsSent, atMs: performance.now() };
+        this.outputPacketsPerSec = packetsPerSecond(this.prevPacketSample, sample);
+        this.prevPacketSample = sample;
         // In voice mode, the server owns the live bus levels; the local sim is only
         // an offline preview once the socket is connected.
         if (voice?.busLevels) this.busLevels = voice.busLevels;
