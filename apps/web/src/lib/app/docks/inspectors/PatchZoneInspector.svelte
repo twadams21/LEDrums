@@ -4,6 +4,7 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import RenameField from './RenameField.svelte';
   import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
   import Radio from '@lucide/svelte/icons/radio';
@@ -25,6 +26,9 @@
   const project = $derived(store.project);
   const note = $derived(project ? zoneMidiNote(project.inputMap, editor.drumId, editor.slot) : null);
   const addr = $derived(project ? zoneOscAddress(project.inputMap, editor.drumId, editor.slot) : null);
+  // Last-heard confirmation per field: the bound note, and the bound OSC address.
+  const heardNote = $derived(store.inputBadge(note !== null ? { kind: 'midi', note } : null));
+  const heardOsc = $derived(store.inputBadge(addr ? { kind: 'osc', address: addr } : null));
   const learning = $derived(
     store.midiLearnTarget?.kind === 'zone' &&
       store.midiLearnTarget.drumId === editor.drumId &&
@@ -78,6 +82,9 @@
     </button>
   </div>
 </Field>
+{#if heardNote}
+  <div class="heard"><InputActivityBadge {...heardNote} /></div>
+{/if}
 <Field label="OSC address" hint="Sensory Percussion / Ableton">
   <CommitInput
     value={addr ?? ''}
@@ -90,6 +97,9 @@
     onCommit={(v) => setZoneOsc(editor.drumId, editor.slot, v.trim() ? v : null)}
   />
 </Field>
+{#if heardOsc}
+  <div class="heard"><InputActivityBadge {...heardOsc} /></div>
+{/if}
 <RenameField {store} {nodeId} fallback={title} />
 
 <style>
@@ -131,5 +141,11 @@
   }
   .learn:disabled {
     opacity: 0.45;
+  }
+  /* Last-heard confirmation, tucked just under its field. */
+  .heard {
+    margin-top: calc(-1 * var(--space-1));
+    padding-left: var(--space-1);
+    min-width: 0;
   }
 </style>
