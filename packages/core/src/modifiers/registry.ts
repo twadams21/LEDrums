@@ -6,9 +6,27 @@
  */
 import type { ModifierDef } from './types';
 import { trail } from './impl/trail';
+// S32
+import { slide } from './impl/slide';
+import { blur } from './impl/blur';
+import { posterize } from './impl/posterize';
+import { feedback } from './impl/feedback';
+import { kaleidoscope } from './impl/kaleidoscope';
+import { freeze } from './impl/freeze';
+import { flicker } from './impl/flicker';
+import { chromatic } from './impl/chromatic';
 
 const ALL: ModifierDef<any>[] = [
   trail,
+  // S32 — modifier second wave (Slide/Blur/Posterize/Feedback/Kaleidoscope/Freeze/Flicker/Chromatic)
+  slide,
+  blur,
+  posterize,
+  feedback,
+  kaleidoscope,
+  freeze,
+  flicker,
+  chromatic,
 ];
 
 const registry = new Map<string, ModifierDef<any>>();
