@@ -25,6 +25,14 @@ import { collisions } from './impl/collisions';
 import { breathingKit } from './impl/breathing-kit';
 import { hueRotateKit } from './impl/hue-rotate-kit';
 import { tempSweep } from './impl/temp-sweep';
+import { starfield } from './impl/starfield';
+import { cometTrails } from './impl/comet-trails';
+import { lightning } from './impl/lightning';
+import { confettiBurst } from './impl/confetti-burst';
+import { helix } from './impl/helix';
+import { orbitRings } from './impl/orbit-rings';
+import { gravityWells } from './impl/gravity-wells';
+import { velocityFlames } from './impl/velocity-flames';
 
 function model(drums = 1, hoopCount = 4): PixelModel {
   const drumDefs = [];
@@ -435,6 +443,138 @@ describe('S20 colour batch 2 — saturation 0 ⇒ white on lit pixels', () => {
     same(
       render(tempSweep, m, ctx(m, { timeMs: 0 }), {}),
       render(tempSweep, m, ctx(m, { timeMs: 0 }), { warmHue: 30, coolHue: 210, saturation: 1 }),
+    );
+  });
+});
+
+// S22 — Colour batch 4 (particles). Saturation is now exposed and threaded through hsvToRgb on
+// every particle effect: starfield (default 0.15 near-white), comet-trails, lightning (default
+// 0.35 blue-white), helix, orbit-rings and collisions get the generic hue+sat+bri swatch;
+// confetti-burst / gravity-wells (random palettes → baseHue+hueSpan range), sacred-hogs (hog+halo
+// hues) and velocity-flames (baseHue→tipHue gradient) are multi-colour and stay swatch-less but
+// gain a shared `saturation`. Same contract as S19/S20: saturation 0 desaturates every lit pixel
+// to achromatic white/grey (r===g===b), which the old hardcoded `hsvToRgb(hue, 1|0.15|0.35, …)`
+// could never reach for an arbitrary hue.
+describe('S22 colour batch 4 — saturation 0 ⇒ white on lit pixels', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  /** Render `frames` sequential frames on one fresh seeded state; return the last framebuffer. */
+  function sweep<S>(
+    effect: EffectGenerator<S>,
+    m: PixelModel,
+    params: ResolvedParams,
+    frames: number,
+    opts: (f: number) => Partial<RenderContext>,
+  ): Framebuffer {
+    const s = effect.createState ? effect.createState(m) : (undefined as S);
+    let fb = new Framebuffer(m.pixelCount);
+    for (let f = 0; f < frames; f++) fb = render(effect, m, ctx(m, opts(f)), params, s);
+    return fb;
+  }
+
+  /**
+   * Like `sweep`, but returns the most-lit frame rather than the last. Confetti particles
+   * spawn at the drum origin and fly outward, so they only cross (and light) the pixel shell
+   * mid-flight — the final frame is empty. Deterministic given the seeded state + schedule.
+   */
+  function sweepPeak<S>(
+    effect: EffectGenerator<S>,
+    m: PixelModel,
+    params: ResolvedParams,
+    frames: number,
+    opts: (f: number) => Partial<RenderContext>,
+  ): Framebuffer {
+    const s = effect.createState ? effect.createState(m) : (undefined as S);
+    let best = new Framebuffer(m.pixelCount);
+    let bestLit = -1;
+    for (let f = 0; f < frames; f++) {
+      const fb = render(effect, m, ctx(m, opts(f)), params, s);
+      const { lit } = scanLit(fb);
+      if (lit > bestLit) {
+        bestLit = lit;
+        best = fb;
+      }
+    }
+    return best;
+  }
+  const confettiBurstAt = (f: number): Partial<RenderContext> => ({ triggers: f === 0 ? [hit('d0')] : [], dt: 16, timeMs: f * 16 });
+
+  const hit = (id: string) => trig(1, id, 38, 1, 0);
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'starfield', run: (m) => render(starfield, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0 }, starfield.createState!(m)) },
+    // Comets orbit a hoop; sweep a few frames so a head+tail overlaps some pixels.
+    { name: 'comet-trails', run: (m) => sweep(cometTrails, m, { hue: 120, saturation: 0 }, 8, (f) => ({ timeMs: f * 50, dt: 50 })) },
+    { name: 'lightning', run: (m) => render(lightning, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, boltWidth: 500 }) },
+    // Confetti spawns at the drum origin then flies outward; take the peak-lit crossing frame.
+    { name: 'confetti-burst', run: (m) => sweepPeak(confettiBurst, m, { saturation: 0, count: 200, spread: 2 }, 40, confettiBurstAt) },
+    { name: 'helix', run: (m) => render(helix, m, ctx(m, { timeMs: 500 }), { hue: 120, saturation: 0 }) },
+    { name: 'orbit-rings', run: (m) => render(orbitRings, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, width: 400 }) },
+    { name: 'gravity-wells', run: (m) => render(gravityWells, m, ctx(m, { timeMs: 100 }), { saturation: 0 }, gravityWells.createState!(m)) },
+    // Collisions circle over time and flash on contact; sweep frames like the base coverage test.
+    { name: 'collisions', run: (m) => sweep(collisions, m, { hue: 120, flashHue: 60, saturation: 0 }, 30, (f) => ({ timeMs: f * 100, dt: 100 })) },
+    { name: 'sacred-hogs', run: (m) => render(sacredHogs, m, ctx(m, { timeMs: 500, dt: 16 }), { hogHue: 120, haloHue: 200, saturation: 0 }, sacredHogs.createState!(m)) },
+    { name: 'velocity-flames', run: (m) => render(velocityFlames, m, ctx(m, { triggers: [hit('d0')], timeMs: 0 }), { saturation: 0 }) },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured orbit-rings at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(orbitRings, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 1, width: 400 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+
+  it('defaults preserve current output: the new colour params default to the old hardcoded look', () => {
+    const m = model(1, 4);
+    const same = (a: Framebuffer, b: Framebuffer): void => {
+      expect(a.rgba.length).toBe(b.rgba.length);
+      for (let i = 0; i < a.rgba.length; i++) expect(a.rgba[i]).toBe(b.rgba[i]);
+    };
+    // starfield/lightning kept their non-1 hardcoded saturation as the new default.
+    same(
+      render(starfield, m, ctx(m, { timeMs: 0 }), {}, starfield.createState!(m)),
+      render(starfield, m, ctx(m, { timeMs: 0 }), { saturation: 0.15 }, starfield.createState!(m)),
+    );
+    same(
+      render(lightning, m, ctx(m, { triggers: [hit('d0')] }), {}),
+      render(lightning, m, ctx(m, { triggers: [hit('d0')] }), { saturation: 0.35 }),
+    );
+    // confetti-burst / gravity-wells remapped random hues to a range whose defaults are identical
+    // to the old full-spectrum draw (baseHue 0 + rng()·360).
+    same(
+      sweepPeak(confettiBurst, m, { count: 200, spread: 2 }, 40, confettiBurstAt),
+      sweepPeak(confettiBurst, m, { count: 200, spread: 2, baseHue: 0, hueSpan: 360, saturation: 1 }, 40, confettiBurstAt),
+    );
+    same(
+      render(gravityWells, m, ctx(m, { timeMs: 100 }), {}, gravityWells.createState!(m)),
+      render(gravityWells, m, ctx(m, { timeMs: 100 }), { baseHue: 0, hueSpan: 360, saturation: 1 }, gravityWells.createState!(m)),
+    );
+    // velocity-flames exposed its yellow→red gradient endpoints + a saturation scaler.
+    same(
+      render(velocityFlames, m, ctx(m, { triggers: [hit('d0')] }), {}),
+      render(velocityFlames, m, ctx(m, { triggers: [hit('d0')] }), { baseHue: 55, tipHue: 0, saturation: 1 }),
     );
   });
 });
