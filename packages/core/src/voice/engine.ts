@@ -54,7 +54,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -64,6 +64,10 @@ export interface InputEvent {
   /** recallSection: activate a song's section so hits fire its slot graphs. */
   songId?: string;
   sectionId?: string;
+  /** fireGraph: the exact graph key to play — an authoritative intent, not a source to
+      re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
+      precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
+  graphKey?: string;
   timeMs: number;
 }
 
@@ -210,6 +214,10 @@ class VoiceBusEngine implements RenderEngine {
       });
       return;
     }
+    if (e.kind === 'fireGraph') {
+      this.processFireGraph(e);
+      return;
+    }
     // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
     // (voices decay on their own envelope).
     if (e.kind !== 'noteOn' && e.kind !== 'key' && e.kind !== 'osc') return;
@@ -252,6 +260,45 @@ class VoiceBusEngine implements RenderEngine {
       });
       this.fireGraph(resolved, ctx, input);
     }
+  }
+
+  /**
+   * Fire an EXPLICIT graph by key — the keyboard performance intent (`fireGraph` input).
+   * The graph key is authoritative: no source re-resolution, no zone-map, no direct/pad
+   * both-fire. The client already chose which graph (the n-th of its active section); the
+   * engine plays exactly that one, ONCE. Emits the same `input-resolved` / `graph-fired`
+   * diagnostics as any other fire, or `graph-missed` (`no-such-graph`) when the key is stale.
+   *
+   * `sourceDrumId` is derived from the graph's own authored `drum` trigger source so drum-
+   * scoped effects target the right drum (matching the offline sim); a midi/osc-sourced graph
+   * carries no drum here — identical to the server's existing direct-binding path.
+   */
+  private processFireGraph(e: InputEvent): void {
+    const input = describeInputEvent(e);
+    const key = e.graphKey;
+    const graph = key ? this.show.graphs[key] : undefined;
+    if (!key || !graph) {
+      this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'no-such-graph' });
+      return;
+    }
+    const src = triggerSourceOf(graph);
+    const ctx: TriggerCtx = {
+      velocity: normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 }),
+      sectionIndex: this.sectionIndex,
+      sectionCount: this.show.sections.length,
+      beatPhase: this.beatPhase(),
+      sourceDrumId: src?.kind === 'drum' ? src.drumId : '',
+      bpm: this.bpm,
+    };
+    const resolved: ResolvedGraph = { graphKey: key, graph, statePrefix: key, path: 'fire-graph' };
+    this.onDiagnostic?.({
+      kind: 'input-resolved',
+      input,
+      path: resolved.path,
+      graphKey: resolved.graphKey,
+      statePrefix: resolved.statePrefix,
+    });
+    this.fireGraph(resolved, ctx, input);
   }
 
   private resolveGraphsForEvent(e: InputEvent): ResolvedGraph[] {
@@ -561,6 +608,7 @@ function describeInputEvent(e: InputEvent): VoiceInputDescriptor {
     ...(e.velocity !== undefined ? { velocity: e.velocity } : {}),
     ...(e.songId !== undefined ? { songId: e.songId } : {}),
     ...(e.sectionId !== undefined ? { sectionId: e.sectionId } : {}),
+    ...(e.graphKey !== undefined ? { graphKey: e.graphKey } : {}),
   };
 }
 

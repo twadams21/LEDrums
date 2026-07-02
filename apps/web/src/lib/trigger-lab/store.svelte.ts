@@ -1093,10 +1093,6 @@ export class TriggerLab {
     return this.pads[0]?.drumId ?? '';
   }
 
-  private midiVelocity(): number {
-    return Math.round(Math.max(0, Math.min(1, this.velocity)) * 127);
-  }
-
   private fireRawMidiLocal(note: number, value: number): void {
     const toFire = resolveGraphsForFire(this.graphs, { kind: 'midi', note, value });
     if (toFire.length === 0) return;
@@ -1193,18 +1189,12 @@ export class TriggerLab {
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
     const src = triggerSourceOf(graph);
-    // Connected: forward the graph's trigger source so the SERVER fires it authoritatively; the
-    // local sim stays silent (authority principle, doc 03). (S13 replaces this synthetic-source
-    // forward with a dedicated `fireGraph` intent message so the server needn't re-resolve.)
+    // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
+    // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct
+    // both-fire and no echo mis-fire (the old keyboard triple-fire). The local sim stays silent
+    // (authority principle, doc 03 §3).
     if (this.link === 'open') {
-      if (src?.kind === 'drum') {
-        this.client.send({ t: 'key', drumId: src.drumId, zone: String(src.zone), velocity: this.velocity });
-      } else if (src?.kind === 'midi') {
-        if (src.note !== undefined) this.client.send({ t: 'midi', note: src.note, velocity: this.midiVelocity(), on: true });
-        else if (src.cc !== undefined) this.client.send({ t: 'cc', controller: src.cc, value: this.midiVelocity() });
-      } else if (src?.kind === 'osc') {
-        this.client.send({ t: 'osc', address: src.address, value: this.velocity });
-      }
+      this.client.send({ t: 'fireGraph', graphKey: key, velocity: this.velocity });
       return;
     }
     // Offline preview: fire the local sim directly (no source-match filter — the n-th graph plays).

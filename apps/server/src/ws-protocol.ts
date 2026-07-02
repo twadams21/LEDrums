@@ -29,7 +29,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
-  'setShow', 'setShowLibrary', 'key', 'recallSection', 'takeover',
+  'setShow', 'setShowLibrary', 'key', 'fireGraph', 'recallSection', 'takeover',
   'loadProject', 'saveProject', 'listProjects',
 ]);
 
