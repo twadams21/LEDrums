@@ -47,7 +47,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
-| F — Effect params & envelopes | 2 | #51 | group/F | pending | — | — |
+| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (S19 merged; S18/S23 in flight) | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
@@ -60,6 +60,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T14:59 — Lane 2 F underway, approaching budget wall
+
+- **Lane 2 `lane-2-988e46` alive.** group/F created; started the 3 dep-free F slices (S18/S19/S23, front-loading S18+S23 for H/I). **S19 merged into group/F**; S18+S23 in flight (idle).
+- **Usage 5h 72%** (just past 70% budget). Remaining F slices gated: S20 needs S18 (unmerged), S24 needs S23 (unmerged), S21/S22 need S19 (merged) but launching them would breach the 70% cap → lane orch should PAUSE now. This protects Trent's interactive headroom (he's active).
+- **No master work pending:** group/F is 7 slices, ~2 in; won't hand off until post-reset. rock-solid unchanged (a6f4785).
+- **Master wake aligned to reset (~18:07 UTC / 04:07+10)** instead of 30-min polls into a paused system — conserves the shared 5h budget. An inbox handoff/blocker would re-invoke me sooner regardless.
+- **Next (post-reset):** verify Lane 2 resumed (nudge if parked, like Lane 1); merge group/F when handed off; continue G→H→I.
 
 ### 2026-07-02T14:2x — ✅ LANE 1 COMPLETE; Lane 2 launched
 
