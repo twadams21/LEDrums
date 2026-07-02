@@ -43,8 +43,8 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 | Group | Lane | Issue | Group branch | Status | Merged→rock-solid | Group report |
 |---|---|---|---|---|---|---|
-| A — Graph editor hardening | 1 | #46 | group/A | pending | — | — |
-| B — IO confidence surfaces | 1 | #47 | group/B | pending | — | — |
+| A — Graph editor hardening | 1 | #46 | group/A | in-progress (S01 impl) | — | — |
+| B — IO confidence surfaces | 1 | #47 | group/B | in-progress (S02–S05) | — | — |
 | E — Input routing & section looks | 1 | #50 | group/E | pending | — | — |
 | F — Effect params & envelopes | 2 | #51 | group/F | pending | — | — |
 | G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
@@ -59,6 +59,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T09:14 — wake 1: Lane 1 progressing, no merges yet
+
+- **Lane 1 `lane-1-b0cea3` alive + progressing.** Reported (08:50): ACK'd, `group/A`+`group/B` created off rock-solid; impls S01→wt-1, S02→wt-2, S03→wt-3 launched (opus/xhigh). At 09:14 `twux list`: S01/S03/S04 impls alive (S04 launched 09:08 → S02 already landed, freed wt-2). Lane usage 5h ~30%.
+- **Merges into rock-solid:** none yet (rock-solid log still at tracker commits; no group handed off). Nothing for master to do this cycle.
+- **Verified evidence:** inbox msg c32b58 (progress); `twux list` shows lane-1 + S01/S03/S04 impls alive; `git branch group/*` = group/A, group/B; wt-master rock-solid log unchanged.
+- **Next actions (next wake):** same cadence; watch for group A/B hand-off (→ merge in wt-master + sweep). When Lane 1 done → fire Lane 2 orch (F→G→H→I).
 
 ### 2026-07-02T08:xx — master startup COMPLETE, Lane 1 live
 
