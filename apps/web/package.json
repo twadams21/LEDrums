@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "design-system": "vite build --config vite.design-system.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,8 +17,8 @@
     "@fontsource-variable/geist-mono": "5.2.8",
     "@ledrums/core": "workspace:*",
     "@ledrums/protocol": "workspace:*",
-    "@tauri-apps/api": "^2.1.1",
     "@lucide/svelte": "^1.21.0",
+    "@tauri-apps/api": "^2.1.1",
     "@threlte/core": "^8.0.2",
     "@threlte/extras": "^9.1.0",
     "@xyflow/svelte": "^1.6.0",
@@ -33,6 +34,7 @@
     "svelte-check": "^4.1.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^2.1.8"
   }
 }

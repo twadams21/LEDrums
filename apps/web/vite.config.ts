@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { svelteTesting } from '@testing-library/svelte/vite';
+import { sourceManifestPlugin } from './scripts/vite-plugin-source-manifest.mjs';
 
 // Must match @ledrums/core WS_PORT / WS_PATH (apps/server binds the same).
 const WS_PORT = 4321;
@@ -10,7 +11,7 @@ export default defineConfig({
   // `svelteTesting()` is a no-op outside Vitest; under test it adds the `browser` resolve
   // condition (so Svelte's client runtime is used for component tests, not its SSR build)
   // and auto-cleans the DOM between tests.
-  plugins: [svelte(), svelteTesting()],
+  plugins: [svelte(), svelteTesting(), sourceManifestPlugin()],
   // Vitest's resolved config omits `environments.client`, which vite 6's preprocessCSS
   // (invoked by vite-plugin-svelte's <style> preprocessor) proxies — tripping a
   // "non-object proxy target" crash when compiling .svelte files under test. Declaring an
