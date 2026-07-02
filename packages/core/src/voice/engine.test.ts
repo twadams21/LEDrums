@@ -4,7 +4,7 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
 import type { VoiceDiagnostic } from './diagnostics';
-import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Show, type ShowSong, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
+import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Section, type Show, type ShowSong, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -1445,6 +1445,132 @@ describe('VoiceBusEngine — delay node (determinism)', () => {
       e.setModel(testModel());
       e.setShow({ buses: buses(), graphs: { [padKey('kick', '')]: g }, sections: [],
         effects: [effect('fxA'), effect('fxB')], presets: [] });
+      for (const ev of events) e.applyInput(ev);
+      let now = 0;
+      for (let i = 0; i < 30; i++) {
+        now += 16;
+        e.tick(now, 16, transport(now));
+      }
+      return Array.from(e.frame());
+    };
+    expect(run()).toEqual(run());
+  });
+});
+
+// ---- section looks (spawn/release on recall) --------------------------------
+// The engine now spawns/releases a section's per-bus "looks" on recall, mirroring the
+// offline sim (apps/web/.../sim.ts recallSection). Voices are private, so — as elsewhere
+// in this file — a spawned look is observed by voiceCount + the BUS it lights.
+// buses(): base (poly, xfade 200) + lead (mono, xfade 120). Look effects live on those
+// buses; 'one' is a oneshot fired via a kick hit (flat padKey graph fallback).
+
+/** A show whose single section 'sec1' carries the given per-bus looks. */
+function looksShow(looks: Record<string, string | null>, extraSections: Section[] = []): Show {
+  return {
+    buses: buses(),
+    graphs: { [padKey('kick', '')]: flatGraph('one') },
+    sections: [{ id: 'sec1', name: 'Sec 1', looks }, ...extraSections],
+    // 'one' has a huge sustain so a fired oneshot stays alive across a test window
+    // (it must survive a recall to prove oneshots are not section-released).
+    effects: [
+      effect('lkBase', { busId: 'base' }),
+      effect('lkLead', { busId: 'lead' }),
+      effect('one', { busId: 'base', sustainMs: 100_000 }),
+    ],
+    presets: [],
+  };
+}
+
+describe('VoiceBusEngine — section looks (spawn/release)', () => {
+  it('recall spawns a looped voice on each bus the section names (and none on empty buses)', () => {
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({ base: 'lkBase', lead: 'lkLead' }));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5)); // drain recall → spawn looks (born at 5)
+    e.tick(40, 35, transport(40)); // age past attack (10ms) so levels register
+    expect(e.stats().voiceCount).toBe(2);
+    expect(e.stats().busLevels.base).toBeGreaterThan(0);
+    expect(e.stats().busLevels.lead).toBeGreaterThan(0);
+  });
+
+  it('a bus with a null look gets no look voice', () => {
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({ base: 'lkBase', lead: null }));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(1);
+    expect(e.stats().busLevels.base).toBeGreaterThan(0);
+    expect(e.stats().busLevels.lead).toBe(0);
+  });
+
+  it('empty looks is a no-op (nothing to spawn)', () => {
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({}));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(0);
+  });
+
+  it('recalling a section absent from Show.sections spawns no looks (slot-only sections)', () => {
+    // The existing slot-resolution tests recall song sections that carry slots but no
+    // looks entry in Show.sections — those recalls must remain look-free.
+    const e = createVoiceBusEngine();
+    e.setShow(sectionShow(['gA', null, null])); // sections: [] (no looks), songs has 'sec1'
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(0);
+  });
+
+  it('recall releases the prior look on a bus; oneshot hit voices are untouched', () => {
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({ base: 'lkBase', lead: null }, [{ id: 'sec2', name: 'Sec 2', looks: {} }]));
+    // Recall sec1 → one looped voice on base.
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(1);
+    // Fire a oneshot on base (flat padKey fallback fires 'one').
+    e.applyInput(hit('kick', 45));
+    e.tick(50, 10, transport(50));
+    expect(e.stats().voiceCount).toBe(2); // look loop + oneshot
+    // Recall sec2 (empty looks) → releases the base loop, leaves the oneshot alone.
+    e.applyInput(recallSection('song1', 'sec2', 55));
+    e.tick(60, 10, transport(60));
+    // Let the released loop decay fully (base crossfade 200ms) — the oneshot (huge
+    // sustain) stays at full.
+    for (let t = 80; t <= 360; t += 20) e.tick(t, 20, transport(t));
+    expect(e.stats().voiceCount).toBe(1); // only the oneshot survives
+    expect(e.stats().busLevels.base).toBeGreaterThan(0);
+  });
+
+  it('repeated recall of the same section does not stack look voices', () => {
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({ base: 'lkBase', lead: null }));
+    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(1);
+    // Recall again: release-before-spawn means one releasing + one attacking (a crossfade),
+    // never two live looks stacking.
+    e.applyInput(recallSection('song1', 'sec1', 45));
+    e.tick(50, 10, transport(50));
+    expect(e.stats().voiceCount).toBe(2); // transient crossfade
+    for (let t = 70; t <= 360; t += 20) e.tick(t, 20, transport(t));
+    expect(e.stats().voiceCount).toBe(1); // settled back to one — no stacking
+  });
+
+  it('determinism: two engines with identical look recalls produce byte-identical frames', () => {
+    const events: InputEvent[] = [
+      recallSection('song1', 'sec1', 0),
+      recallSection('song1', 'sec1', 60), // a repeat to exercise release + reap
+    ];
+    const run = (): number[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(looksShow({ base: 'lkBase', lead: 'lkLead' }));
       for (const ev of events) e.applyInput(ev);
       let now = 0;
       for (let i = 0; i < 30; i++) {

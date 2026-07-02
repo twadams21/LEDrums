@@ -1251,7 +1251,10 @@ export class TriggerLab {
   setActiveSection(sectionId: string): void {
     this.activeSectionId = sectionId;
     const look = this.sections.find((s) => s.id === sectionId);
-    if (look) {
+    // Offline preview only: when connected the server engine spawns this section's looks
+    // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
+    // outbound authority gate (S12) — the sim resolves only while the link is closed.
+    if (look && this.link !== 'open') {
       this.sim.recallSection(look);
       this.snapshot();
     }
