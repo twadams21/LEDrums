@@ -60,6 +60,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-02T13:49 — wake: group/E nearly done (S16+S17 last)
+
+- **group/E:** S12/S13/S14/S15 all merged into group/E (lane orch, 4 slice merges). **S16-looks-authoring + S17-layersdock in flight** (last two E slices) — then group review + handoff = Lane 1 complete.
+- Usage 5h 34% (healthy). Inbox empty; rock-solid unchanged (no group/E handoff yet — nothing for master to merge).
+- **Next:** await group/E handoff → merge (wt-master) + sweep → Lane 1 DONE → fire Lane 2 orch (F→G→H→I). 30-min wake re-armed.
+
 ### 2026-07-02T13:05 — RESET reached, Lane 1 resumed (nudged)
 
 - **5h budget reset to 0%** (next reset 2026-07-03T04:00+10). Full runway.
