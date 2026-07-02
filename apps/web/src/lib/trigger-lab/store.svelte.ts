@@ -1013,6 +1013,14 @@ export class TriggerLab {
     this.monitorEvents = [];
   }
 
+  /** Surface a client-side editor fault on the Monitor as an `error` event, so a
+      live-show failure (a thrown xyflow callback, a failed graph projection) is visible
+      in the Monitor timeline instead of silently corrupting the canvas. `source` groups
+      the fault (e.g. `trigger-graph`), `label` names it, `detail` carries the message. */
+  reportError(source: string, label: string, detail?: string): void {
+    this.addMonitor({ type: 'error', direction: 'local', source, label, detail });
+  }
+
   setMonitorTypeFilter(type: MonitorFilterType): void {
     this.monitorTypeFilter = type;
   }
