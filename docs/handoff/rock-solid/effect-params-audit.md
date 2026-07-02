@@ -75,12 +75,42 @@ a byte-identical defaults-parity check (saturation default 1 == the old hardcode
 `perlin-clouds`, `lava-lamp`, `interference`, `caustics`, `spiral`, `grid-glow`,
 `wave-collapse`. Multi-colour ones expose range/offset where a single hue is wrong.
 
-## Batch 4 — S22 (particles) ⬜ PENDING — closes the audit (all 41 accounted for)
+## Batch 4 — S22 (particles) ✅ DONE — closes the audit (all 41 accounted for)
 
-`starfield`, `comet-trails`, `lightning`, `confetti-burst`, `helix`, `orbit-rings`,
-`gravity-wells`, `collisions`, `sacred-hogs`, `velocity-flames`.
+Same shallow pass: add a `saturation` ParamSpec after `hue` (default matching the old
+hardcoded S-slot) and thread it into every `hsvToRgb(hue, sat, …)`. Six effects carry a real
+base `hue` and so get the generic swatch — `starfield` (default saturation **0.15**, its old
+near-white tint), `comet-trails` (base hue + per-comet ±30° offset, like `synced-hoops`),
+`lightning` (default saturation **0.35**, its old blue-white core), `helix` and `orbit-rings`
+(base hue + spatial spread), and `collisions` (base node `hue` drives the swatch; `flashHue`
+stays a separate accent, both desaturated by the shared saturation). Four are intrinsically
+multi-colour and stay swatch-less, taking a range/offset scheme + shared saturation (the
+`temp-sweep` precedent): `confetti-burst` and `gravity-wells` remap their random full-spectrum
+hues to `baseHue`+`hueSpan` (defaults 0/360 reproduce the old `rng()*360` draw byte-for-byte),
+`velocity-flames` exposes its yellow→red palette as `baseHue`/`tipHue` endpoints with saturation
+scaling the intrinsic whiter-base/redder-tip ramp, and `sacred-hogs` already had `hogHue`+`haloHue`
+and just gains the shared saturation.
+
+| Effect | id | Cat | Params before | Params after | Swatch |
+|---|---|---|---|---|---|
+| Starfield | `starfield` | particle | count, rate, hue, brightness | count, rate, hue, **saturation**, brightness | ✓ — default sat 0.15 (near-white tint) |
+| Comet Trails | `comet-trails` | particle | comets, speed, tail, hue, brightness | comets, speed, tail, hue, **saturation**, brightness | ✓ |
+| Lightning | `lightning` | particle | hue, boltWidth, decayMs, brightness | hue, **saturation**, boltWidth, decayMs, brightness | ✓ — default sat 0.35 (blue-white core) |
+| Confetti Burst | `confetti-burst` | particle | count, spread, gravity, life, brightness | count, spread, gravity, life, **baseHue, hueSpan, saturation**, brightness | *multi* — random per-particle hue over a range, no single hue |
+| Helix | `helix` | wash | kz, ka, speed, hue, brightness | kz, ka, speed, hue, **saturation**, brightness | ✓ — base hue + phase-spread ribbon |
+| Orbit Rings | `orbit-rings` | wash | amp, speed, width, hue, brightness | amp, speed, width, hue, **saturation**, brightness | ✓ — base hue + angular spread |
+| Gravity Wells | `gravity-wells` | wash | wells, speed, reach, brightness | wells, speed, reach, **baseHue, hueSpan, saturation**, brightness | *multi* — per-well seeded hues over a range, no single hue |
+| Collisions | `collisions` | wash | hue, flashHue, brightness, nodesPerHoop, speed, flashWidthDeg | hue, **saturation**, flashHue, brightness, nodesPerHoop, speed, flashWidthDeg | ✓ — node hue + separate flashHue accent |
+| Sacred HOGs | `sacred-hogs` | wash | hogHue, haloHue, brightness, hogsPerHoop, speed, hogWidthDeg | hogHue, haloHue, **saturation**, brightness, hogsPerHoop, speed, hogWidthDeg | *multi* — hog + halo hues, no single hue |
+| Velocity Flames | `velocity-flames` | trigger | decayMs, flicker, brightness | decayMs, flicker, **baseHue, tipHue, saturation**, brightness | *multi* — body→crest hue gradient endpoints |
+
+Evidence: `effects.test.ts › S22 colour batch 4 — saturation 0 ⇒ white on lit pixels` (one
+golden per effect: lit>0 AND every lit pixel achromatic) + a knob-is-real negative check
+(orbit-rings hue 120 / sat 1 ≠ white) + a byte-identical defaults-parity check over the effects
+whose colour maths were restructured (starfield 0.15, lightning 0.35, confetti-burst + gravity-wells
+range remap, velocity-flames gradient endpoints).
 
 ---
 
-**Tally:** 41 registry effects total (`registry.ts`). Batch 1 = 9 done · batch 2 = 9 ·
-batch 3 = 13 · batch 4 = 10 → 41.
+**Tally:** 41 registry effects total (`registry.ts`), all accounted for across the four batches.
+Batch 1 = 9 ✅ · batch 2 = 9 ✅ · batch 3 = 13 (S21, in flight) · batch 4 = 10 ✅ → 41.
