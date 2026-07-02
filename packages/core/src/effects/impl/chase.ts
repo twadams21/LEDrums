@@ -4,11 +4,16 @@ import { pnum, type EffectGenerator } from '../types';
 /**
  * Chase: one hoop per drum lights at a time, advancing on a beat subdivision
  * (design "16th-note arp moving through each hoop over and over").
+ *
+ * Voice timebase: the bridge feeds a voice-local `ctx.transport.beat` (age×bpm), so the
+ * chase starts at hoop 0 on the hit (beat 0 → step 0) and restarts on retrigger. No body
+ * change was needed — the beat read below is now hit-relative. (Tracer for the S26 batch.)
  */
 export const chase: EffectGenerator = {
   id: 'chase',
   name: 'Chase',
   category: 'trigger',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

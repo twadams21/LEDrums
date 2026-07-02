@@ -1,0 +1,68 @@
+import { describe, expect, it } from 'vitest';
+import { VoicePool, type SpawnDeps } from './voice-pool';
+import type { PlayAction } from './eval-graph';
+import type { Bus, EffectDef } from './types';
+
+// S25 — mono steal resets voice age. With voice timebase, a voice's animation clock is
+// `timeMs - bornAtMs`, so a fast retrigger only "restarts" the effect if the reused/new
+// voice gets a fresh bornAtMs. spawn() stamps `bornAtMs = deps.timeMs` on every spawn,
+// including the mono-steal path; these tests lock that so retrigger-restart can't regress.
+
+const monoBus: Bus = { id: 'lead', name: 'Lead', polyphony: 'mono', crossfadeMs: 0 };
+
+const effect: EffectDef = {
+  id: 'fx',
+  name: 'fx',
+  pattern: 'flash',
+  generatorId: 'chase',
+  busId: 'lead',
+  scope: 'kit',
+  params: [],
+  attackMs: 0,
+  sustainMs: 1000,
+  releaseMs: 100,
+};
+
+const action: PlayAction = {
+  kind: 'play',
+  effectId: 'fx',
+  mode: 'oneshot',
+  scope: 'kit',
+  busId: '',
+  params: {},
+  env: {},
+  via: '',
+  latchKey: null,
+};
+
+const deps = (timeMs: number): SpawnDeps => ({
+  effectsById: new Map([['fx', effect]]),
+  busById: new Map([['lead', monoBus]]),
+  latched: new Map(),
+  timeMs,
+});
+
+describe('VoicePool — mono steal resets voice age (S25)', () => {
+  it('a mono retrigger spawns a voice born at the retrigger time (its hit-relative clock restarts from 0)', () => {
+    const pool = new VoicePool();
+
+    const a = pool.spawn(action, null, 1, deps(0));
+    expect(a).not.toBeNull();
+    expect(a!.bornAtMs).toBe(0);
+    expect(a!.phase).toBe('attack');
+
+    // Retrigger on the same mono bus 1000ms later: the old voice is stolen (released) and a
+    // fresh voice is born at 1000 — so age = timeMs - bornAtMs starts from 0, not 1000.
+    const b = pool.spawn(action, null, 1, deps(1000));
+    expect(b).not.toBeNull();
+    expect(b!.bornAtMs).toBe(1000);
+    expect(b!.phase).toBe('attack'); // fresh envelope
+    expect(a!.phase).toBe('release'); // mono steal released the first voice
+    expect(b!.id).not.toBe(a!.id); // distinct voice
+
+    // Sanity: at any later time the two voices report different ages — the new one younger.
+    const sampleAt = 1200;
+    expect(sampleAt - b!.bornAtMs).toBe(200);
+    expect(sampleAt - a!.bornAtMs).toBe(1200);
+  });
+});

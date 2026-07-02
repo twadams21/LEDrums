@@ -47,9 +47,17 @@ export function createGeneratorBridge(): GeneratorBridge {
   const genTriggers: Trigger[] = [genTrigger];
   /** Reused RenderContext (rebuilt only when the model identity changes). */
   let genCtx: RenderContext | null = null;
+  /** This frame's absolute transport (engine's, held by reference — never mutated). */
+  let frameTransport: TransportState | null = null;
+  /** Bridge-owned voice-local transport, refilled per voice-timebase voice so we never
+      touch the shared frame transport (a `timebase:'voice'` generator reads this). */
+  const voiceTransport: TransportState = {
+    timeMs: 0, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true,
+  };
 
   return {
     beginFrame(model, timeMs, dt, transport): void {
+      frameTransport = transport;
       // The triggers array reference is stable; its single element is mutated per voice.
       if (!genCtx || genCtx.model !== model) {
         genCtx = { model, timeMs, dt, transport, triggers: genTriggers };
@@ -63,7 +71,7 @@ export function createGeneratorBridge(): GeneratorBridge {
     renderVoice(v, model, timeMs, level, start, end, dst): void {
       const gen = tryGetEffect(v.generatorId!);
       if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
-      if (!genCtx) return; // beginFrame not called this frame (never happens in practice)
+      if (!genCtx || !frameTransport) return; // beginFrame not called this frame (never happens in practice)
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
         genScratch = new Framebuffer(model.pixelCount);
       }
@@ -96,6 +104,30 @@ export function createGeneratorBridge(): GeneratorBridge {
       genTrigger.timeMs = v.bornAtMs;
       const age = timeMs - v.bornAtMs;
       genTrigger.ageMs = age > 0 ? age : 0;
+
+      // Timebase: swap the clock the generator reads, without changing its signature.
+      // 'absolute' (default) — the engine's wall-clock + transport, exactly as before, so
+      //   free-running base/ambient effects are byte-for-byte unchanged.
+      // 'voice' — a hit-relative clock: ctx.timeMs = trig.ageMs and a voice-local transport
+      //   whose beat is derived from age×bpm (so beat-indexed effects like chase start at
+      //   their start position on the hit and restart on retrigger, since a retrigger is a
+      //   new voice whose age is 0).
+      if ((gen.timebase ?? 'absolute') === 'voice') {
+        const ft = frameTransport;
+        const beats = (genTrigger.ageMs / 60000) * ft.bpm; // age×bpm; matches transport.beat's accumulation
+        voiceTransport.timeMs = genTrigger.ageMs;
+        voiceTransport.beat = beats;
+        voiceTransport.bar = Math.floor(beats / ft.beatsPerBar);
+        voiceTransport.beatInBar = beats - voiceTransport.bar * ft.beatsPerBar;
+        voiceTransport.bpm = ft.bpm;
+        voiceTransport.beatsPerBar = ft.beatsPerBar;
+        voiceTransport.playing = ft.playing;
+        genCtx.timeMs = genTrigger.ageMs;
+        genCtx.transport = voiceTransport;
+      } else {
+        genCtx.timeMs = timeMs;
+        genCtx.transport = frameTransport;
+      }
 
       genScratch.clear();
       gen.render(genCtx, params, genScratch, v.genState);
