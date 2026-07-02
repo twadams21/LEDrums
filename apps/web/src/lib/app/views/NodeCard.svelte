@@ -22,6 +22,10 @@
     stale?: boolean;
     /** Optional right-side thumbnail (play nodes pass an EffectThumb). */
     thumb?: Snippet;
+    /** Optional small corner indicator (top-right) — a secondary status/relationship marker
+        that doesn't disturb the icon/title/sub/thumb grid. The trigger node passes the
+        drum-link badge here (a source that is ALSO zone-mapped). */
+    badge?: Snippet;
   };
 
   let {
@@ -34,6 +38,7 @@
     dropTarget = false,
     stale = false,
     thumb,
+    badge,
   }: Props = $props();
 </script>
 
@@ -50,10 +55,12 @@
   <span class="title">{title}</span>
   <span class="sub">{sub}</span>
   {#if thumb}<span class="thumb">{@render thumb()}</span>{/if}
+  {#if badge}<span class="badge">{@render badge()}</span>{/if}
 </div>
 
 <style>
   .card {
+    position: relative; /* anchors the corner badge */
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
@@ -141,6 +148,24 @@
     display: inline-flex;
     align-items: center;
     margin-left: var(--space-1);
+    line-height: 0;
+  }
+  /* a small corner marker riding the top-right border — a secondary relationship badge
+     (the trigger node's drum-link). Sits on the corner so it never crowds the title/sub. */
+  .badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-pill);
+    color: var(--accent);
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-1);
     line-height: 0;
   }
 </style>
