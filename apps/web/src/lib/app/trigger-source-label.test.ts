@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { describeTriggerSource, zoneLabel } from './trigger-source-label';
-import type { TriggerSource } from '../trigger-lab/sim';
+import { describeTriggerSource, drumLinkHint, graphsLinkedToZone, zoneLabel, zoneLinkForSource } from './trigger-source-label';
+import type { TriggerGraph, TriggerSource } from '../trigger-lab/sim';
+import type { InputMap } from '@ledrums/core';
 
 /** A small drum roster (id → label) — the shape of store.drums. */
 const DRUMS = [
@@ -61,5 +62,89 @@ describe('describeTriggerSource', () => {
 
   it('shows an unbound placeholder when the source is unset (authored graph)', () => {
     expect(describeTriggerSource(undefined, DRUMS)).toEqual({ label: 'Trigger', sub: 'unbound' });
+  });
+});
+
+/** An input map mapping note 38 → snare · center (slot 0) and OSC /kick → kick · center. */
+const MAP: InputMap = {
+  midiChannel: null,
+  midiNotes: [{ note: 38, drumId: 'snare', slot: 0 }],
+  oscMap: [{ address: '/kick', drumId: 'kick', slot: 0 }],
+};
+
+/** A one-node trigger graph carrying a source (enough for the reverse resolver). */
+function graph(source: TriggerSource | undefined): TriggerGraph {
+  return { nodes: [{ id: 'trigger', kind: 'trigger', x: 0, y: 0, source }], edges: [] };
+}
+
+describe('zoneLinkForSource', () => {
+  it('links a MIDI note source that is also a mapped zone', () => {
+    expect(zoneLinkForSource(MAP, { kind: 'midi', note: 38 })).toEqual({ drumId: 'snare', zone: '0' });
+  });
+
+  it('links an OSC source that is also a mapped zone', () => {
+    expect(zoneLinkForSource(MAP, { kind: 'osc', address: '/kick' })).toEqual({ drumId: 'kick', zone: '0' });
+    // trims before matching
+    expect(zoneLinkForSource(MAP, { kind: 'osc', address: ' /kick ' })).toEqual({ drumId: 'kick', zone: '0' });
+  });
+
+  it('returns null for a note/address that is not zone-mapped', () => {
+    expect(zoneLinkForSource(MAP, { kind: 'midi', note: 60 })).toBeNull();
+    expect(zoneLinkForSource(MAP, { kind: 'osc', address: '/snare' })).toBeNull();
+  });
+
+  it('returns null for a drum source (it IS the drum trigger, no extra link)', () => {
+    expect(zoneLinkForSource(MAP, { kind: 'drum', drumId: 'snare', zone: '0' })).toBeNull();
+  });
+
+  it('returns null for a CC source (the zone-map keys notes, not CCs) and an unbound source', () => {
+    expect(zoneLinkForSource(MAP, { kind: 'midi', cc: 38 })).toBeNull();
+    expect(zoneLinkForSource(MAP, { kind: 'midi', note: 38, cc: 74 })).toBeNull(); // cc wins
+    expect(zoneLinkForSource(MAP, { kind: 'midi' })).toBeNull();
+    expect(zoneLinkForSource(MAP, undefined)).toBeNull();
+    expect(zoneLinkForSource(MAP, { kind: 'osc', address: ' ' })).toBeNull();
+  });
+});
+
+describe('drumLinkHint', () => {
+  it('names the zone-mapped drum, resolving the label from drums', () => {
+    expect(drumLinkHint(MAP, { kind: 'midi', note: 38 }, DRUMS)).toBe('also drum trigger: Snare · center');
+    expect(drumLinkHint(MAP, { kind: 'osc', address: '/kick' }, DRUMS)).toBe('also drum trigger: Kick · center');
+  });
+
+  it('is null when the source is not zone-mapped', () => {
+    expect(drumLinkHint(MAP, { kind: 'midi', note: 60 }, DRUMS)).toBeNull();
+    expect(drumLinkHint(MAP, { kind: 'drum', drumId: 'kick', zone: '0' }, DRUMS)).toBeNull();
+    expect(drumLinkHint(MAP, undefined, DRUMS)).toBeNull();
+  });
+});
+
+describe('graphsLinkedToZone', () => {
+  const graphs: Record<string, TriggerGraph> = {
+    'g:note': graph({ kind: 'midi', note: 38 }),
+    'g:osc': graph({ kind: 'osc', address: '/kick' }),
+    'g:other': graph({ kind: 'midi', note: 60 }),
+    'g:cc': graph({ kind: 'midi', cc: 38 }),
+    'g:drum': graph({ kind: 'drum', drumId: 'snare', zone: '0' }),
+    'g:unbound': graph(undefined),
+  };
+
+  it('finds the graphs whose source note matches the zone note', () => {
+    expect(graphsLinkedToZone(graphs, 38, null)).toEqual(['g:note']);
+  });
+
+  it('finds the graphs whose source address matches the zone address (trimmed)', () => {
+    expect(graphsLinkedToZone(graphs, null, '/kick')).toEqual(['g:osc']);
+    expect(graphsLinkedToZone(graphs, null, ' /kick ')).toEqual(['g:osc']);
+  });
+
+  it('matches both a note and an address at once, ignoring CC / drum / unbound sources', () => {
+    expect(graphsLinkedToZone(graphs, 38, '/kick').sort()).toEqual(['g:note', 'g:osc']);
+  });
+
+  it('returns nothing for an unmapped zone (no note, no address, or no match)', () => {
+    expect(graphsLinkedToZone(graphs, null, null)).toEqual([]);
+    expect(graphsLinkedToZone(graphs, 99, '/nope')).toEqual([]);
+    expect(graphsLinkedToZone(graphs, null, '  ')).toEqual([]);
   });
 });
