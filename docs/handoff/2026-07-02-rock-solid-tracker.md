@@ -47,8 +47,8 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | A — Graph editor hardening | 1 | #46 | group/A | **MERGED** | a91dbbf | docs/handoff/rock-solid/group-A.md |
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
-| F — Effect params & envelopes | 2 | #51 | group/F | in-progress (6/7 merged; S22 last, in flight) | — | — |
-| G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
+| F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
+| G — Timebase & thumbnails | 2 | #52 | group/G | in-progress (2/3 merged; S26 in flight) | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
@@ -60,6 +60,25 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T19:40 — Group G 2/3, budget wall (69%)
+
+- **group/G: 2/3 merged**, S26 in flight (busy). Usage 5h **69%** — at the 70% wall. G will finish (in-flight), integrate + review, hand off. **H (S28–S32) will be budget-blocked** until 23:00 UTC reset once >70%.
+- Inbox empty; rock-solid unchanged (9198018). G handoff will re-invoke master via inbox; 30-min wake is backstop only.
+- **Next:** merge group/G on handoff; then H blocked-till-reset likely → will stretch master wake to reset if so. Fire Lane 3 (J→K) when Lane 2 done.
+
+### 2026-07-02T19:09 — Lane 2 on Group G
+
+- **group/G started:** S25-timebase (gate slice; S26/S27 depend on it) in flight. Usage 5h 49% (healthy). Inbox empty; rock-solid unchanged (dd9083a) — no handoff.
+- **Next:** S25 merges → S26/S27 launch → G integrates + review → handoff → master merge. Then H (S28–S32), I (S33–S38). 30-min cadence.
+
+### 2026-07-02T18:5x — GROUP F MERGED (18/49 slices)
+
+- **group/F MERGED** (#51, S18–S24) → rock-solid **0cb5c73** (`--no-ff`; group/F was pre-integrated with rock-solid@453576e per the new rule → NO conflicts, ff-able). Lane review PASS (core purity clean over 76-file diff, swatch-UI-only honored, 41/41 effect audit closed, 2 trivial findings fixed in-branch d02cf34).
+- **Master sweep GREEN:** typecheck 0 (web 2238 files); **1300 tests / 0 skips** (io 13 · core 327 · protocol 1 · server 176 · web 783).
+- **Progress: 18/49 slices** (Lane 1: 11 + F: 7). Lane 2 remaining: G (S25–S27), H (S28–S32), I (S33–S38).
+- Lane orch already proceeding to Group G; will read group-E.md before H. rock-solid now has F for G/H/I to branch/integrate from.
+- **Next:** merge group/G when handed off; continue H→I; then fire Lane 3 (J→K). 30-min cadence (wake bchxm1mv5 active).
 
 ### 2026-07-02T18:38 — Lane 2 group/F nearly done (S22 last)
 
