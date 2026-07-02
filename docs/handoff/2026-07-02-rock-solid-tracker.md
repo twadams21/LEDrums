@@ -48,7 +48,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | B — IO confidence surfaces | 1 | #47 | group/B | **MERGED** | 74ffd7a | docs/handoff/rock-solid/group-B.md |
 | E — Input routing & section looks | 1 | #50 | group/E | **MERGED** | ab5bc96 | docs/handoff/rock-solid/group-E.md |
 | F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
-| G — Timebase & thumbnails | 2 | #52 | group/G | pending | — | — |
+| G — Timebase & thumbnails | 2 | #52 | group/G | in-progress (S25 gate in flight) | — | — |
 | H — Modifier nodes | 2 | #54 | group/H | pending | — | — |
 | I — Modulation system | 2 | #57 | group/I | pending | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
@@ -60,6 +60,11 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-02T19:09 — Lane 2 on Group G
+
+- **group/G started:** S25-timebase (gate slice; S26/S27 depend on it) in flight. Usage 5h 49% (healthy). Inbox empty; rock-solid unchanged (dd9083a) — no handoff.
+- **Next:** S25 merges → S26/S27 launch → G integrates + review → handoff → master merge. Then H (S28–S32), I (S33–S38). 30-min cadence.
 
 ### 2026-07-02T18:5x — GROUP F MERGED (18/49 slices)
 
