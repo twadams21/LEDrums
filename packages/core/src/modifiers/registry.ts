@@ -6,6 +6,11 @@
  */
 import type { ModifierDef } from './types';
 import { trail } from './impl/trail';
+// S30 — modifier batch 2 (spatial / texture / temporal)
+import { bloom } from './impl/bloom';
+import { sparkle } from './impl/sparkle';
+import { grain } from './impl/grain';
+import { strobe } from './impl/strobe';
 // S31
 import { echo } from './impl/echo';
 import { pixelate } from './impl/pixelate';
@@ -15,6 +20,11 @@ import { levels } from './impl/levels';
 
 const ALL: ModifierDef<any>[] = [
   trail,
+  // S30 — modifier batch 2 (spatial / texture / temporal)
+  bloom,
+  sparkle,
+  grain,
+  strobe,
   // S31
   echo,
   pixelate,
