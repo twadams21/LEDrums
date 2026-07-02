@@ -229,12 +229,17 @@
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
     if (sn) store.moveNode(sn, fn.position.x, fn.position.y);
   }
+  /** The target handle id ('mod' or the default flow input) as a store `toPort`. */
+  function toPortOf(handle: string | null | undefined): 'mod' | undefined {
+    return handle === 'mod' ? 'mod' : undefined;
+  }
   function onConnect(c: Connection): void {
-    store.connect(c.source, c.target, c.sourceHandle ?? undefined); // store validates (dup / cycle / direction)
+    // store validates (dup / cycle / direction / port scoping)
+    store.connect(c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
     rebuildEdges(); // drop any edge xyflow added optimistically that the store rejected
   }
   function onReconnect(oldEdge: { id: string }, c: Connection): void {
-    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined);
+    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
     rebuildEdges(); // revert the anchor's optimistic move if the store rejected it
   }
   function onDeleteEdges(removed: ReadonlyArray<{ id: string }>): void {
@@ -252,7 +257,14 @@
   /** A wire dropped on a node body (not a handle): wire it to that node's input — or
       its output if the drag began at an input. `store.connect` validates direction /
       cycle / dup, so a drop that can't be accepted is simply ignored. When the drag
-      began at a source handle, carry its id (a switch band) so the band wire lands. */
+      began at a source handle, carry its id (a switch band) so the band wire lands.
+
+      Drop-anywhere routes by SOURCE kind (memory `graph-interaction-prefs`): a wire from a
+      MODIFIER node lands on the target's `mod` input; every other source lands on the flow
+      `in`. So dropping Trail on a play node body wires its modifier chain, not a flow edge. */
+  function kindOf(id: string): string | undefined {
+    return store.selectedGraph?.nodes.find((n) => n.id === id)?.kind;
+  }
   function dropConnect(
     fromId: string,
     fromType: 'source' | 'target' | null,
@@ -260,8 +272,12 @@
     toId: string,
   ): void {
     if (fromId === toId) return;
-    if (fromType === 'target') store.connect(toId, fromId);
-    else store.connect(fromId, toId, fromPort ?? undefined);
+    if (fromType === 'target') {
+      // drag began at an INPUT handle → the dropped-on node becomes the source; route by ITS kind.
+      store.connect(toId, fromId, undefined, kindOf(toId) === 'modifier' ? 'mod' : undefined);
+    } else {
+      store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
+    }
     rebuildEdges();
   }
 </script>

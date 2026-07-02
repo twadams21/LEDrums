@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode, type TriggerGraph } from '../sim';
-import { canConnect, canReconnect } from './graph-wiring';
+import { canConnect, canReconnect, type ToPort } from './graph-wiring';
 
 /* Incident 09 acceptance: wiring validation must RETURN a verdict, never throw — a throw from
    a connect/reconnect guard is what propagates into xyflow mid-gesture and blanks the canvas.
@@ -42,6 +42,7 @@ const knownIds = graph.nodes.map((n) => n.id);
 const alienIds = ['', 'trigger ', 'r1\n', 'n:9999', '💥', 'undefined', '__proto__', 'nodes', 'toString'];
 const idPool = [...knownIds, ...alienIds];
 const ports: Array<string | undefined> = [undefined, 'band-0', 'band-999', '', 'default', '💥'];
+const toPorts: ToPort[] = [undefined, 'in', 'mod'];
 
 function pick<T>(arr: readonly T[], rand: () => number): T {
   return arr[Math.floor(rand() * arr.length)]!;
@@ -54,9 +55,10 @@ describe('graph-wiring validation never throws (fuzz)', () => {
       const from = pick(idPool, rand);
       const to = pick(idPool, rand);
       const port = pick(ports, rand);
+      const toPort = pick(toPorts, rand);
       let result: unknown;
       expect(() => {
-        result = canConnect(graph, from, to, port);
+        result = canConnect(graph, from, to, port, toPort);
       }).not.toThrow();
       expect(typeof result).toBe('boolean');
     }
@@ -70,12 +72,78 @@ describe('graph-wiring validation never throws (fuzz)', () => {
       const from = pick(idPool, rand);
       const to = pick(idPool, rand);
       const port = pick(ports, rand);
+      const toPort = pick(toPorts, rand);
       let result: unknown;
       expect(() => {
-        result = canReconnect(graph, edgeId, from, to, port);
+        result = canReconnect(graph, edgeId, from, to, port, toPort);
       }).not.toThrow();
       expect(typeof result).toBe('boolean');
     }
+  });
+});
+
+describe('graph-wiring — modifier (mod) port scoping', () => {
+  /** trigger → play, with a Trail modifier node and a container, all unwired. */
+  function modGraph(): TriggerGraph {
+    return {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('play', 'p1', 200, 0),
+        makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
+        makeNode('modifier', 'm2', 100, 200, { modifierId: 'trail' }),
+        makeNode('all', 'a1', 100, 300),
+      ],
+      edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
+    };
+  }
+
+  it('accepts a mod wire from a modifier node into a play node', () => {
+    expect(canConnect(modGraph(), 'm1', 'p1', undefined, 'mod')).toBe(true);
+  });
+
+  it('accepts a mod→mod chain wire', () => {
+    expect(canConnect(modGraph(), 'm1', 'm2', undefined, 'mod')).toBe(true);
+  });
+
+  it('rejects a mod wire from a NON-modifier source (scoped handles)', () => {
+    expect(canConnect(modGraph(), 'a1', 'p1', undefined, 'mod')).toBe(false); // container → mod
+    expect(canConnect(modGraph(), 'trigger', 'p1', undefined, 'mod')).toBe(false);
+  });
+
+  it('rejects a mod wire into a node with no mod input (a container)', () => {
+    expect(canConnect(modGraph(), 'm1', 'a1', undefined, 'mod')).toBe(false);
+  });
+
+  it("rejects a modifier's output on a trigger-flow wire (modifier only feeds mod ports)", () => {
+    expect(canConnect(modGraph(), 'm1', 'p1')).toBe(false); // no toPort = flow wire
+    expect(canConnect(modGraph(), 'm1', 'a1')).toBe(false);
+  });
+
+  it('rejects a trigger-flow wire INTO a modifier node (modifier takes no flow input)', () => {
+    expect(canConnect(modGraph(), 'trigger', 'm1')).toBe(false);
+    expect(canConnect(modGraph(), 'a1', 'm1')).toBe(false);
+  });
+
+  it('flow `in` and `mod` inputs on one node are distinct — not duplicates of each other', () => {
+    const g = modGraph();
+    g.edges.push({ id: 'e2', from: 'm1', to: 'p1', toPort: 'mod' });
+    // an identical mod wire is a dup...
+    expect(canConnect(g, 'm1', 'p1', undefined, 'mod')).toBe(false);
+    // ...but the flow input is a different port entirely (still rejected here only because a
+    // modifier can't feed a flow wire — the point is the dup guard keys on toPort).
+    const g2 = modGraph();
+    g2.edges.push({ id: 'e3', from: 'trigger', to: 'p1', toPort: 'in' });
+    // trigger→p1 already exists on flow 'in' (e1 has undefined toPort ≡ 'in') → dup
+    expect(canConnect(g2, 'trigger', 'p1')).toBe(false);
+  });
+
+  it('reconnecting an edge onto the mod port validates against source kind', () => {
+    const g = modGraph();
+    g.edges.push({ id: 'e2', from: 'm1', to: 'p1', toPort: 'mod' });
+    // repoint the mod wire to m2's mod input (mod→mod) — legal
+    expect(canReconnect(g, 'e2', 'm1', 'm2', undefined, 'mod')).toBe(true);
+    // repoint the trigger-flow edge onto a mod port — illegal (trigger isn't a modifier)
+    expect(canReconnect(g, 'e1', 'trigger', 'p1', undefined, 'mod')).toBe(false);
   });
 });
 

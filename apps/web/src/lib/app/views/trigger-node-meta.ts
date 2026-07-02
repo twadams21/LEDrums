@@ -16,6 +16,8 @@ import Disc3 from '@lucide/svelte/icons/disc-3';
 import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
+import Blend from '@lucide/svelte/icons/blend';
+import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
 /** Icon per node kind (add palette, node card chip, kind selector). */
@@ -29,6 +31,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   chance: Dices,
   toggle: Power,
   delay: Timer,
+  modifier: Blend,
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -49,6 +52,7 @@ export const tint: Record<NodeKind, string> = {
   chance: 'var(--role-mod)',
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
+  modifier: 'var(--role-mod)',
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -62,7 +66,14 @@ export const kindLabel: Record<NodeKind, string> = {
   chance: 'Chance',
   toggle: 'Toggle',
   delay: 'Delay',
+  modifier: 'Modifier',
 };
+
+/** Human name for a modifier id (the registry's display name), falling back to the id. */
+export function modifierName(id: string | undefined): string {
+  if (!id) return 'none';
+  return listModifiers().find((m) => m.id === id)?.name ?? id;
+}
 
 /** One-line summary for a container/modifier node's card sub line. Play + trigger
     nodes carry their own (effect/preset, drum·zone) and don't use this. */
@@ -82,6 +93,8 @@ export function kindSummary(node: GraphNode): string {
       return 'on · off';
     case 'delay':
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
+    case 'modifier':
+      return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
     default:
       return '';
   }

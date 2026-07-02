@@ -439,8 +439,11 @@ export class Sim {
     switch (node.kind) {
       case 'trigger':
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2));
-      case 'play':
+      case 'play': {
         if (!node.effectId) return [];
+        // Resolve this play node's `mod` input into a flat modifier chain (S29) — the SAME
+        // pure core resolver the engine uses, so the offline preview and real output agree.
+        const mods = voice.resolveModifierChain(graph, node);
         return [
           {
             kind: 'play',
@@ -451,10 +454,16 @@ export class Sim {
             busId: node.busId,
             params: this.resolveNodeParams(node),
             env: node.env,
+            modifiers: mods.length ? mods : undefined,
             via: label(this.modeWord(node.mode)),
             latchKey: null,
           },
         ];
+      }
+      case 'modifier':
+        // Inert in trigger-flow eval: a modifier node never fires children. Its effect
+        // reaches a voice via the play node's resolved `mod` chain, not here.
+        return [];
       case 'all':
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2));
       case 'random': {

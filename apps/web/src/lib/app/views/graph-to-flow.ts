@@ -28,15 +28,19 @@ export function graphToFlowNodes(graph: TriggerGraph): TriggerFlowNode[] {
 }
 
 /** Map the store graph's edges to xyflow edges (from→source, to→target). An edge's
-    `fromPort` becomes the xyflow `sourceHandle` (a value+bands switch's `band-${i}`);
-    undefined leaves it on the node's default output. */
+    `fromPort` becomes the xyflow `sourceHandle` (a value+bands switch's `band-${i}`) and its
+    `toPort` the `targetHandle` (`'mod'` for a modifier-chain wire); undefined leaves each on
+    the node's default handle. `data.mod` flags a modifier wire so it can be styled distinctly
+    (graph-hover combines it with the hover-highlight class). */
 export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
   return graph.edges.map((e) => ({
     id: e.id,
     source: e.from,
     target: e.to,
     sourceHandle: e.fromPort,
+    targetHandle: e.toPort,
     type: 'wire',
+    ...(e.toPort === 'mod' ? { data: { mod: true } } : {}),
   }));
 }
 

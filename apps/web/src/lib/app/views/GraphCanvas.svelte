@@ -179,9 +179,26 @@
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
+  /* modifier-chain wires read distinctly from trigger-flow wires: the mod role colour +
+     a dashed stroke, so the two flows separate at a glance (declared BEFORE edge-hot so the
+     hover accent still wins the stroke on a hovered mod wire; the dash stays either way) */
+  .gcanvas :global(.svelte-flow__edge.edge-mod .svelte-flow__edge-path) {
+    stroke: var(--role-mod);
+    stroke-dasharray: 5 4;
+  }
   /* a wire one level connected to the hovered node lights up (see graph-hover) */
   .gcanvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
     stroke: var(--accent);
+  }
+  /* the `mod` input handle — mod role colour so it reads as the modifier port, not flow in */
+  .gcanvas :global(.svelte-flow__handle.mod-handle) {
+    background: color-mix(in oklch, var(--role-mod) 30%, var(--surface-2));
+    border-color: var(--role-mod);
+  }
+  .gcanvas :global(.svelte-flow__handle.mod-handle:hover),
+  .gcanvas :global(.svelte-flow__handle.mod-handle.connectingto) {
+    background: var(--role-mod);
+    border-color: var(--role-mod);
   }
   /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
   .gcanvas :global(.svelte-flow__handle) {

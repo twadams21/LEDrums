@@ -17,13 +17,15 @@
   import { getContext } from 'svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Link2 from '@lucide/svelte/icons/link-2';
+  import Blend from '@lucide/svelte/icons/blend';
   import NodeCard from './NodeCard.svelte';
   import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import Tooltip from '../../ui/Tooltip.svelte';
-  import { kindIcon, tint, kindLabel, kindSummary } from './trigger-node-meta';
+  import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
-  import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
+  import { nodeHasInput, nodeHasModInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
+  import { voice } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
 
@@ -51,6 +53,7 @@
     if (!node) return '';
     if (node.kind === 'trigger') return 'Trigger';
     if (node.kind === 'play') return eff?.name ?? 'effect';
+    if (node.kind === 'modifier') return modifierName(node.modifierId);
     return kindLabel[node.kind];
   });
   const sub = $derived.by(() => {
@@ -58,8 +61,17 @@
     // the resolved input source — drum · zone / MIDI note·CC / OSC address, or "unbound"
     if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
     if (node.kind === 'play') return store.presetById(node.presetId)?.name ?? '';
+    if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
     return kindSummary(node);
   });
+
+  // A play node's resolved modifier-chain length (mod→mod flattened) — drives the small
+  // count chip riding the mod input handle, so the chain reads at a glance on the canvas.
+  const modCount = $derived(
+    node && node.kind === 'play' && store.selectedGraph
+      ? voice.resolveModifierChain(store.selectedGraph, node).length
+      : 0,
+  );
   const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
 
@@ -97,19 +109,37 @@
   {#if nodeHasInput(kind)}
     <Handle type="target" position={Position.Left} />
   {/if}
+  <!-- distinct `mod` input handle (play + modifier nodes) — a modifier-chain wire lands here.
+       Offset below the flow input when the node also has one; centred otherwise. -->
+  {#if nodeHasModInput(kind)}
+    <Handle
+      type="target"
+      id="mod"
+      position={Position.Left}
+      class="mod-handle"
+      style={nodeHasInput(kind) ? 'top: 74%' : 'top: 50%'}
+    />
+  {/if}
 
   {#if isBandsSwitch}
     <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
   {:else}
-    <NodeCard
-      icon={Icon}
-      {title}
-      {sub}
-      tint={chipTint}
-      selected={!!selected}
-      thumb={kind === 'play' && eff ? playThumb : undefined}
-      badge={linkHint ? drumLinkBadge : undefined}
-    />
+    <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass}>
+      <NodeCard
+        icon={Icon}
+        {title}
+        {sub}
+        tint={chipTint}
+        selected={!!selected}
+        thumb={kind === 'play' && eff ? playThumb : undefined}
+        badge={linkHint ? drumLinkBadge : undefined}
+      />
+      {#if modCount > 0}
+        <span class="modcount" title={`${modCount} modifier${modCount === 1 ? '' : 's'} in chain`}>
+          <Blend size={9} aria-hidden="true" />{modCount}
+        </span>
+      {/if}
+    </div>
     {#if nodeHasOutput(kind)}
       <Handle type="source" position={Position.Right} />
     {/if}
@@ -124,5 +154,33 @@
     justify-content: center;
     color: inherit;
     line-height: 0;
+  }
+  /* wrapper so the resolved-chain count chip can ride the card's bottom-left (near the mod
+     handle) without disturbing NodeCard's own grid */
+  .tnode {
+    position: relative;
+  }
+  /* a bypassed modifier reads as muted but present (its wire + state slot survive) */
+  .tnode.bypassed {
+    opacity: 0.55;
+  }
+  /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
+  .modcount {
+    position: absolute;
+    left: -8px;
+    bottom: -7px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 5px 1px 4px;
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--role-mod);
+    background: color-mix(in oklch, var(--role-mod) 16%, var(--surface-3));
+    border: 1px solid color-mix(in oklch, var(--role-mod) 45%, transparent);
+    border-radius: var(--radius-pill);
+    box-shadow: var(--shadow-1);
   }
 </style>

@@ -39,6 +39,7 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '1/8 dotted',
+    modifier: 'Trail',
   };
   const faceKinds = Object.keys(faceSubs) as NodeKind[];
 

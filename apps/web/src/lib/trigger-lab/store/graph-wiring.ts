@@ -3,7 +3,22 @@
    `reconnect` consult these, then push / repoint the edge on the live `$state` graph.
    Extracted from store.svelte.ts unchanged in behaviour. */
 
-import { type TriggerGraph, nodeHasInput, nodeHasOutput } from '../sim';
+import { type NodeKind, type TriggerGraph, nodeHasInput, nodeHasModInput, nodeHasOutput } from '../sim';
+
+/** A wire's target port. `'mod'` = a modifier-chain wire into a play/modifier node's `mod`
+    input; `undefined`/`'in'` = the trigger-flow input. */
+export type ToPort = 'in' | 'mod' | undefined;
+
+/** Whether a wire `from →(toPort) to` is directionally legal given the two node kinds. A
+    `mod` wire may leave ONLY a modifier node and land ONLY on a `mod`-input node; a flow
+    wire follows the normal in/out rule and a modifier's output is NOT a flow source. */
+function directionOk(fromKind: NodeKind, toKind: NodeKind, toPort: ToPort): boolean {
+  if (toPort === 'mod') return fromKind === 'modifier' && nodeHasModInput(toKind);
+  return nodeHasOutput(fromKind) && nodeHasInput(toKind) && fromKind !== 'modifier';
+}
+
+/** Equal (source-port, target-port) identity for duplicate-wire detection. */
+const samePorts = (a: ToPort, b: ToPort): boolean => (a ?? 'in') === (b ?? 'in');
 
 /** Can node `targetId` reach node `startId` by following edges from `startId`? (cycle test). */
 export function reaches(graph: TriggerGraph, startId: string, targetId: string): boolean {
@@ -19,40 +34,63 @@ export function reaches(graph: TriggerGraph, startId: string, targetId: string):
   return false;
 }
 
-/** Whether a new wire `fromId →(fromPort) toId` is legal: distinct endpoints, both nodes
-    exist, source has an output + target has an input, not a duplicate (same source-port →
-    target), and would not form a cycle. Mirrors the old inline checks in `connect`. */
-export function canConnect(graph: TriggerGraph, fromId: string, toId: string, fromPort?: string): boolean {
+/** Whether a new wire `fromId →(fromPort) toId (toPort)` is legal: distinct endpoints, both
+    nodes exist, direction is valid for the port (a `mod` wire only from a modifier node into a
+    `mod` input; a flow wire the normal way, never from a modifier), not a duplicate (same
+    source-port → target-port), and would not form a cycle. Mirrors the old inline checks in
+    `connect`. Pure + total — NEVER throws on any input (unknown ids / kinds just fail). */
+export function canConnect(
+  graph: TriggerGraph,
+  fromId: string,
+  toId: string,
+  fromPort?: string,
+  toPort?: ToPort,
+): boolean {
   if (fromId === toId) return false;
   const from = graph.nodes.find((n) => n.id === fromId);
   const to = graph.nodes.find((n) => n.id === toId);
-  if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return false;
-  // dup is per source-port: two different bands MAY route to the same child, but the same
-  // (source-port → target) wire is rejected.
-  if (graph.edges.some((e) => e.from === fromId && e.to === toId && (e.fromPort ?? null) === (fromPort ?? null))) {
+  if (!from || !to || !directionOk(from.kind, to.kind, toPort)) return false;
+  // dup is per (source-port → target-port): two different bands MAY route to the same child,
+  // and a node's flow `in` + `mod` inputs are distinct; the same wire on both ports is rejected.
+  if (
+    graph.edges.some(
+      (e) =>
+        e.from === fromId &&
+        e.to === toId &&
+        (e.fromPort ?? null) === (fromPort ?? null) &&
+        samePorts(e.toPort, toPort),
+    )
+  ) {
     return false;
   }
   return !reaches(graph, toId, fromId);
 }
 
-/** Whether moving edge `edgeId` to `fromId →(fromPort) toId` is legal — same checks as
-    {@link canConnect} but IGNORING the edge being moved (so its own presence never trips the
-    dup / cycle guard). A false result means the drag should snap back, not delete the wire. */
+/** Whether moving edge `edgeId` to `fromId →(fromPort) toId (toPort)` is legal — same checks
+    as {@link canConnect} but IGNORING the edge being moved (so its own presence never trips
+    the dup / cycle guard). A false result means the drag should snap back, not delete the
+    wire. Pure + total — never throws. */
 export function canReconnect(
   graph: TriggerGraph,
   edgeId: string,
   fromId: string,
   toId: string,
   fromPort?: string,
+  toPort?: ToPort,
 ): boolean {
   if (fromId === toId) return false;
   if (!graph.edges.some((e) => e.id === edgeId)) return false;
   const from = graph.nodes.find((n) => n.id === fromId);
   const to = graph.nodes.find((n) => n.id === toId);
-  if (!from || !to || !nodeHasOutput(from.kind) || !nodeHasInput(to.kind)) return false;
+  if (!from || !to || !directionOk(from.kind, to.kind, toPort)) return false;
   if (
     graph.edges.some(
-      (e) => e.id !== edgeId && e.from === fromId && e.to === toId && (e.fromPort ?? null) === (fromPort ?? null),
+      (e) =>
+        e.id !== edgeId &&
+        e.from === fromId &&
+        e.to === toId &&
+        (e.fromPort ?? null) === (fromPort ?? null) &&
+        samePorts(e.toPort, toPort),
     )
   ) {
     return false; // dup
