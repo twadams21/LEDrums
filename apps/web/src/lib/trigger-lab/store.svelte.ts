@@ -43,9 +43,10 @@ import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, type Pad } from './fixt
 import { buildLabModel } from './kit';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
-import { initMidi, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { ClientMessage, MonitorEvent, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
+import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
+import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
@@ -63,6 +64,15 @@ import {
   type PersistedShowLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
+import { SvelteMap } from 'svelte/reactivity';
+import {
+  acceptsChannel,
+  activityKey,
+  deriveInputBadge,
+  type InputActivity,
+  type InputBadgeView,
+  type InputBinding,
+} from './input-activity';
 
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
@@ -278,6 +288,19 @@ export class TriggerLab {
   link = $state<'offline' | 'connecting' | 'open'>('offline');
   /** engine round-trip latency (ms) — 0 until the WS link reports it. */
   latencyMs = $state(0);
+  /** Latest server OutputStatus (arming state, packetsSent, lastError, universeCount) —
+      from the `state` message on connect and every `stats` tick. null until the first
+      arrives (offline / pre-handshake). The OutputPill derives its truth from this plus
+      {@link link}, not link state alone (link can be open while Art-Net is failing). S03's
+      output status panel reads the same field. */
+  output = $state<OutputStatus | null>(null);
+  /** Instantaneous send rate (packets/s) derived from the change in `output.packetsSent` between
+      successive `stats` ticks (see {@link packetsPerSecond}). null until two ticks have arrived, or
+      after a counter reset — shown as "—". A steady 0 means armed-but-nothing-flowing. */
+  outputPacketsPerSec = $state<number | null>(null);
+  /** Previous packet counter sample, kept to derive {@link outputPacketsPerSec}. Plain field —
+      must NOT be reactive (it is bookkeeping for the derivation, not rendered). */
+  private prevPacketSample: PacketSample | null = null;
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -386,6 +409,25 @@ export class TriggerLab {
   private midiHandle: MidiInitResult | null = null;
   midiLearnTarget = $state<MidiLearnTarget | null>(null);
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
+  /** Live WebMIDI input devices for the settings list, refreshed on hot-plug via the
+      initMidi device callback (empty until MIDI is requested / when unavailable). */
+  midiDevices = $state<MidiDeviceInfo[]>([]);
+  /** Whether WebMIDI access succeeded — drives the settings empty-state copy
+      (unavailable ⇒ browser/permission hint; available+empty ⇒ "connect one"). */
+  midiAvailable = $state(false);
+  /** Why WebMIDI is unavailable, when it is (e.g. 'no-api' or an access-error message). */
+  midiUnavailableReason = $state<string | undefined>(undefined);
+
+  // --- input activity ("last heard") ---------------------------------------
+  /** Last-heard event per input identity (note / OSC address), for the S04 activity
+      badges. Keyed via {@link activityKey} so a binding's badge is a single lookup and
+      traffic for OTHER notes/addresses never churns it. A SvelteMap for fine-grained
+      per-key reactivity. Fed from BOTH input paths (local WebMIDI forward + server echo). */
+  private readonly inputActivity = new SvelteMap<string, InputActivity>();
+  /** Coarse age clock (ms epoch) advanced ~2×/s from the RAF loop — what makes a badge
+      "age out visually" between hits. Separate from the event map so a new event and the
+      passage of time are independent reactive triggers. */
+  private nowTick = $state(Date.now());
 
   /** disposes the autosave $effect.root (null while persistence is not running). */
   private persistDispose: (() => void) | null = null;
@@ -513,6 +555,8 @@ export class TriggerLab {
         if (this.link !== 'open') this.fps = Math.round((this.fpsFrames * 1000) / elapsed);
         this.fpsFrames = 0;
         this.fpsLast = now;
+        // Advance the input-activity age clock (~2×/s) so badges age out visually.
+        this.nowTick = Date.now();
       }
       // push transport to the server only when it actually changed (never per-frame)
       this.syncTransport();
@@ -526,6 +570,9 @@ export class TriggerLab {
     this.raf = 0;
     this.midiHandle?.stop();
     this.midiHandle = null;
+    this.midiDevices = [];
+    this.midiAvailable = false;
+    this.midiUnavailableReason = undefined;
     this.client.close();
     this.engineSync.reset();
     if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
@@ -556,9 +603,19 @@ export class TriggerLab {
       throws: an absent API / denied access resolves to an unavailable handle. */
   private async initMidiInput(): Promise<void> {
     try {
-      this.midiHandle = await initMidi((ev) => this.forwardMidi(ev));
+      this.midiHandle = await initMidi(
+        (ev) => this.forwardMidi(ev),
+        undefined,
+        (devices) => (this.midiDevices = devices),
+      );
+      this.midiAvailable = this.midiHandle.available;
+      this.midiUnavailableReason = this.midiHandle.reason;
+      this.midiDevices = this.midiHandle.devices;
     } catch {
       this.midiHandle = null;
+      this.midiAvailable = false;
+      this.midiUnavailableReason = 'access-denied';
+      this.midiDevices = [];
     }
   }
 
@@ -568,12 +625,17 @@ export class TriggerLab {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
-        if (ev.on && ev.velocity > 0 && this.acceptsMidiChannel(ev.channel)) {
-          this.applyMidiLearn(ev.note);
-          // Preview the fire on the local sim ONLY when offline. When connected the server is the
-          // sole resolver/renderer and streams its frames/levels back — firing here as well would
-          // double the hit (the echo loop). Authority principle, doc 03.
-          if (this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
+        if (ev.on && ev.velocity > 0) {
+          // Local WebMIDI never round-trips back as a server `input` echo, so record the
+          // badge activity here (channel-filtered inside recordInputActivity).
+          this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
+          if (this.acceptsMidiChannel(ev.channel)) {
+            this.applyMidiLearn(ev.note);
+            // Preview the fire on the local sim ONLY when offline. When connected the server is the
+            // sole resolver/renderer and streams its frames/levels back — firing here as well would
+            // double the hit (the echo loop). Authority principle, doc 03.
+            if (this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
+          }
         }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
@@ -846,12 +908,15 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, _output, showLibrary, tunnel) => {
+      onState: (project, model, _effects, _projects, output, showLibrary, tunnel) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
         this.project = project;
         this.serverModel = model;
+        // adopt the server's output truth (arming/packets/error) so the OutputPill AND the S03
+        // output status panel are honest from the first handshake, before the first stats tick lands.
+        this.output = output;
         // remote-access surface (share URL + PIN) for the host UI
         this.tunnel = tunnel;
         // Cold-load adopt of the server-authoritative show library (server wins on first state;
@@ -915,6 +980,12 @@ export class TriggerLab {
         } else {
           // a drop means our next open must re-send the transport + Show
           this.engineSync.reset();
+          // Clear the output truth (S03) — a dropped link can't confirm packets are leaving the
+          // box, so the panel must not keep showing a frozen "armed"/rate. Resets to the offline
+          // empty state; the next `state`/`stats` after reconnect repopulates it.
+          this.output = null;
+          this.outputPacketsPerSec = null;
+          this.prevPacketSample = null;
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
@@ -923,9 +994,16 @@ export class TriggerLab {
           this.serverVoices = [];
         }
       },
-      onStats: (_stats, latencyMs, fps, _output, voice) => {
+      onStats: (_stats, latencyMs, fps, output, voice) => {
         this.latencyMs = latencyMs;
         this.fps = fps; // the server's measured LED output rate wins while connected
+        // Output transport truth: adopt the status (for the OutputPill, S02) and derive packets/s
+        // (S03) from the change in the cumulative counter since the last tick. The derivation is
+        // pure + tested; the store just owns the "previous sample" bookkeeping across discrete ticks.
+        this.output = output;
+        const sample: PacketSample = { packetsSent: output.packetsSent, atMs: performance.now() };
+        this.outputPacketsPerSec = packetsPerSecond(this.prevPacketSample, sample);
+        this.prevPacketSample = sample;
         // In voice mode, the server owns the live bus levels AND the per-voice list; the local sim
         // is only an offline preview once the socket is connected (the sim no longer fires — S12).
         if (voice?.busLevels) this.busLevels = voice.busLevels;
@@ -934,7 +1012,7 @@ export class TriggerLab {
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
-      onInput: (kind, _label, value, note, channel) => this.receiveInputEcho(kind, value, note, channel),
+      onInput: (kind, label, value, note, channel) => this.receiveInputEcho(kind, label, value, note, channel),
       onMonitor: (event) => this.addMonitor(event),
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
@@ -942,18 +1020,29 @@ export class TriggerLab {
 
   /** Handle a server `input` broadcast — native MIDI/OSC, a transport recall, or the echo of our
       own forwarded hit. Applies MIDI-learn from ANY input source (so learning works from hardware
-      arriving at the server or another client), but NEVER fires the sim: when connected the server
-      is the sole resolver/renderer, so firing here re-fired every hit — the echo loop this slice
-      kills (doc 03). Monitor display of the input rides the separate onMonitor / server-diagnostics
-      path, so dropping the local fire leaves the timeline intact. */
+      arriving at the server or another client) and records last-heard badge activity for the
+      MIDI and OSC paths (S04 — hardware arriving at the server must still light the badges), but
+      NEVER fires the sim: when connected the server is the sole resolver/renderer, so firing here
+      re-fired every hit — the echo loop this slice kills (doc 03). Monitor display of the input
+      rides the separate onMonitor / server-diagnostics path, so dropping the local fire leaves
+      the timeline intact. */
   private receiveInputEcho(
     kind: 'midi' | 'osc',
+    label: string,
     value: number,
     note: number | undefined,
     channel: number | undefined,
   ): void {
-    if (kind === 'midi' && note !== undefined && value > 0 && this.acceptsMidiChannel(channel)) {
-      this.applyMidiLearn(note);
+    const time = Date.now();
+    if (kind === 'midi' && note !== undefined) {
+      const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
+      this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
+      if (value > 0 && this.acceptsMidiChannel(channel)) {
+        this.applyMidiLearn(note);
+      }
+    } else if (kind === 'osc') {
+      // For OSC the wire `label` carries the address (see server broadcastJson).
+      this.recordInputActivity({ kind: 'osc', address: label, value, time });
     }
   }
 
@@ -1353,7 +1442,28 @@ export class TriggerLab {
   }
 
   private acceptsMidiChannel(channel: number | undefined): boolean {
-    return this.midiChannel === null || channel === this.midiChannel;
+    return acceptsChannel(this.midiChannel, channel);
+  }
+
+  /** Record a heard input event for the activity badges (S04). Applies the global MIDI
+      channel filter here so a badge appears iff the event would also fire; upserts under
+      the event's identity key (newest wins), which is why unrelated traffic never churns
+      an unrelated binding. Called from BOTH input paths — the local WebMIDI forward and
+      the server `input` echo — since the server does not echo a client's own input back. */
+  private recordInputActivity(activity: InputActivity): void {
+    if (activity.kind === 'midi') {
+      if (activity.note === undefined || !this.acceptsMidiChannel(activity.channel)) return;
+      this.inputActivity.set(activityKey({ kind: 'midi', note: activity.note }), activity);
+    } else if (activity.address) {
+      this.inputActivity.set(activityKey({ kind: 'osc', address: activity.address }), activity);
+    }
+  }
+
+  /** Last-heard badge for an input binding, or null when nothing matching has been heard
+      (or the field is drum/CC/empty → null binding). Reactive: reads the activity map +
+      the age clock, so a component `$derived(store.inputBadge(b))` tracks both. */
+  inputBadge(binding: InputBinding | null): InputBadgeView | null {
+    return deriveInputBadge(binding, this.inputActivity, this.nowTick);
   }
 
   private applyMidiLearn(note: number): void {

@@ -9,6 +9,7 @@
   import NodeCard from '../../app/views/NodeCard.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
@@ -19,8 +20,13 @@
   import { PATTERN_EFFECTS, GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { MonitorEvent } from '../../ws/protocol-types';
+  import type { MonitorEvent, OutputStatus } from '../../ws/protocol-types';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
+
+  /* ---- OutputStatusPanel (pure props — no store) ------------------------------- */
+  const outArmed: OutputStatus = { state: 'armed', protocol: 'artnet', host: '192.168.1.50', packetsSent: 0, lastError: null, universeCount: 8 };
+  const outDryRun: OutputStatus = { state: 'dry-run', protocol: 'sacn', host: '239.255.0.1', packetsSent: 0, lastError: null, universeCount: 4 };
+  const outErroring: OutputStatus = { state: 'armed', protocol: 'artnet', host: '192.168.1.50', packetsSent: 0, lastError: 'EHOSTUNREACH 192.168.1.50:6454', universeCount: 8 };
 
   /* ---- NodeCard faces ------------------------------------------------------- */
   const faceSubs: Record<NodeKind, string> = {
@@ -46,9 +52,18 @@
   const genThumb = GENERATOR_EFFECTS[0];
   const playFace = patternThumbs[1] ?? patternThumbs[0];
 
-  /* ---- OutputPill (reads only store.link) -------------------------------------- */
-  const linkStub = (link: 'open' | 'connecting' | 'closed') =>
-    ({ link }) as unknown as TriggerLab;
+  /* ---- OutputPill (reads store.link + store.output) ---------------------------- */
+  const outStatus = (o: Partial<OutputStatus>): OutputStatus => ({
+    state: 'armed',
+    protocol: 'artnet',
+    host: '192.168.1.50',
+    packetsSent: 0,
+    lastError: null,
+    universeCount: 4,
+    ...o,
+  });
+  const pillStub = (link: TriggerLab['link'], output: OutputStatus | null = null) =>
+    ({ link, output }) as unknown as TriggerLab;
 
   /* ---- Monitor — reactive stub store (filters actually work) ------------------- */
   const now = Date.now();
@@ -200,13 +215,31 @@
 
     <DemoCard
       title="Output pill"
-      src={['lib/app/chrome/OutputPill', 'lib/ui/StatusPill']}
-      note="Link-derived: open ⇒ LIVE (server engine drives output) · connecting ⇒ SYNC (pulsing) · offline ⇒ LOCAL (sim preview only)."
+      src={['lib/app/chrome/OutputPill', 'lib/app/chrome/output-pill', 'lib/ui/StatusPill']}
+      note="Truth from the server's OutputStatus (arming/packets/lastError) × link state, not link alone. LIVE (armed + packets, red) · ERR (armed but erroring — red, pulsing, error in tooltip) · DRY (dry-run, amber) · ARMED (armed, no packets yet — pulsing) · OFF (disabled) · SYNC (connecting, pulsing) · LOCAL (offline, sim only). LIVE is impossible while lastError is set or packets aren't flowing."
     >
       <div class="pill-row">
-        <OutputPill store={linkStub('open')} />
-        <OutputPill store={linkStub('connecting')} />
-        <OutputPill store={linkStub('closed')} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'armed', packetsSent: 128_400 }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'armed', packetsSent: 128_400, lastError: 'EHOSTUNREACH 192.168.1.50:6454' }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'dry-run' }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'armed', packetsSent: 0 }))} />
+        <OutputPill store={pillStub('open', outStatus({ state: 'disabled' }))} />
+        <OutputPill store={pillStub('connecting')} />
+        <OutputPill store={pillStub('offline')} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Output status panel"
+      src={['lib/app/docks/inspectors/OutputStatusPanel', 'lib/app/docks/inspectors/output-status']}
+      note="The confidence home in the controller inspector — state pill, packets/s (tabular), universes, target, protocol. lastError raises a prominent red alert; offline shows a hint. Extended by the PixLite panel (S48)."
+      wide
+    >
+      <div class="panel-row">
+        <OutputStatusPanel output={outArmed} packetsPerSec={44_318} port={6454} />
+        <OutputStatusPanel output={outDryRun} packetsPerSec={null} />
+        <OutputStatusPanel output={outErroring} packetsPerSec={0} port={6454} />
+        <OutputStatusPanel output={null} packetsPerSec={null} />
       </div>
     </DemoCard>
 
@@ -273,6 +306,12 @@
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+  }
+  .panel-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: var(--space-4) var(--space-5);
+    align-items: start;
   }
   .insp-demo {
     display: flex;

@@ -17,6 +17,7 @@
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
+  import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import EditableRow from '../../ui/EditableRow.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
@@ -185,6 +186,18 @@
         <span class="dot-demo"><StatusDot tone="ok" /> ok</span>
         <span class="dot-demo"><StatusDot tone="live" pulse /> live</span>
         <span class="dot-demo"><StatusDot tone="warn" /> warn</span>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Input activity badge"
+      src="lib/ui/InputActivityBadge"
+      note="Last-heard confirmation beside a MIDI/OSC binding: identity · value · age. Fresh hit pulses (live); fades to muted as it ages out. Fed by a pure matcher; the store owns the age clock."
+    >
+      <div class="comp-row">
+        <InputActivityBadge label="C4" value="92" age="now" tone="live" fresh title="Last heard C4 · velocity 92 · now ago" />
+        <InputActivityBadge label="/kick" value="0.75" age="3s" tone="live" title="Last heard /kick · 0.75 · 3s ago" />
+        <InputActivityBadge label="D2" value="41" age="2m" tone="muted" title="Last heard D2 · velocity 41 · 2m ago" />
       </div>
     </DemoCard>
 
