@@ -141,6 +141,7 @@
       songName={ss.song.name}
       sectionIdx={ss.sectionIdx}
       recall={ss.recall}
+      looks={ss.section.looks}
     />
   {:else}
     <div class="empty">
