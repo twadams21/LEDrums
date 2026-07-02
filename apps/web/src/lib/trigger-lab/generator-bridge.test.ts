@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listEffects } from '@ledrums/core';
+import { listEffects, type ResolvedModifier } from '@ledrums/core';
 import { BUSES, EFFECTS, GENERATOR_EFFECTS, PRESETS, play } from './fixtures';
 import { Sim, treeToGraph, type TriggerCtx } from './sim';
 import { buildLabModel } from './kit';
@@ -125,6 +125,57 @@ describe('generator bridge — voice timebase / restart-on-trigger (S25)', () =>
     for (const id of lit) {
       expect(lab.pm.pixels[id]!.hoopIndex, `pixel ${id} hoop`).toBe(0);
     }
+  });
+});
+
+describe('generator bridge — modifier chain parity (S28)', () => {
+  // The offline preview applies a voice's resolved modifier chain through the SAME core
+  // `applyModifierChain` the engine compositor uses, on the same genScratch framebuffer the
+  // parity harness already establishes — so the modifier behaviour mirrors the engine. These
+  // pin the sim side of the parity criterion behaviourally (as S25/S26 do for timebase): a
+  // Trail-modified generator voice smears across ticks; bypass is identity.
+  const trailChain = (bypass?: boolean): ResolvedModifier[] => [
+    { modifierId: 'trail', params: { decayMs: 800, mode: 'add' }, bypass },
+  ];
+
+  function totalRgb(buf: Uint8Array): number {
+    let s = 0;
+    for (let i = 0; i < buf.length; i++) s += buf[i]!;
+    return s;
+  }
+
+  /** Fire a generator, optionally inject a modifier chain on its voice, render across two
+      frames (so a temporal modifier has history), and return the final RGB buffer. */
+  function renderWithMods(effectId: string, mods: ResolvedModifier[] | undefined): Uint8Array {
+    const lab = buildLabModel();
+    const sim = freshSim();
+    sim.triggerGraph('test', treeToGraph(play(effectId, 'loop')), ctx('kick'));
+    sim.tick(120); // spawn + level up
+    if (mods) for (const v of sim.voices) v.modifiers = mods;
+    const buf = new Uint8Array(lab.model.count * 3);
+    renderFrame(buf, sim, lab); // frame 1 — seeds the trail accumulator
+    sim.tick(120); // advance dt/time
+    renderFrame(buf, sim, lab); // frame 2 — trail adds its decayed history
+    return buf;
+  }
+
+  it('a Trail-modified generator voice smears — brighter than the unmodified baseline', () => {
+    const mod = renderWithMods('gen:plasma', trailChain());
+    const base = renderWithMods('gen:plasma', undefined);
+    // Additive trail only adds light and leaves a tail → a different, brighter frame.
+    expect(Array.from(mod)).not.toEqual(Array.from(base));
+    expect(totalRgb(mod)).toBeGreaterThan(totalRgb(base));
+  });
+
+  it('a bypassed modifier is identity (matches the unmodified render)', () => {
+    const bypassed = renderWithMods('gen:plasma', trailChain(true));
+    const base = renderWithMods('gen:plasma', undefined);
+    expect(Array.from(bypassed)).toEqual(Array.from(base));
+  });
+
+  it('modified offline render is deterministic (same inputs → identical buffer)', () => {
+    const run = (): number[] => Array.from(renderWithMods('gen:starfield', trailChain()));
+    expect(run()).toEqual(run());
   });
 });
 
