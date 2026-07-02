@@ -105,7 +105,10 @@ export interface Envelope {
   adsr?: AdsrShape;
 }
 
-export type ParamValue = number | boolean;
+/** A param value: numbers/booleans plus `string` for enum choices (e.g. radial-wash
+    `mode`) and any static-colour param stored as a `'#rrggbb'` hex string. Envelopes only
+    sweep `number` params; strings flow through the engine untouched (S18). */
+export type ParamValue = number | boolean | string;
 export type ParamValues = Record<string, ParamValue>;
 /** param key → envelope driving it. */
 export type EnvMap = Record<string, Envelope>;
@@ -115,11 +118,13 @@ export type EnvMap = Record<string, Envelope>;
 export interface ParamSpec {
   key: string;
   label: string;
-  kind: 'number' | 'bool';
+  kind: 'number' | 'bool' | 'enum' | 'color';
   min?: number;
   max?: number;
   step?: number;
   unit?: string;
+  /** Allowed values for an `enum` param (rendered as a Select). */
+  options?: string[];
   default: ParamValue;
   /** a number param an envelope can sweep over the voice's life. */
   envable?: boolean;

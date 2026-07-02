@@ -94,10 +94,13 @@ const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number
   trigger: { attackMs: 10, sustainMs: 100, releaseMs: 300 },
 };
 
-/** Map a legacy core ParamSpec → the lab's ParamSpec. number/bool map 1:1 (and become
-    envelope-able); color/enum params can't be represented in ParamValues (number|bool),
-    so they're dropped here and the generator falls back to its own default for them. */
-function mapParamSpec(spec: CoreParamSpec): ParamSpec | null {
+/** Map a legacy core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s so
+    no spec is ever silently dropped (S18). number/bool map 1:1 (numbers become
+    envelope-able); `enum` maps to a Select (string value, its `options` carried through);
+    `color` maps to a colour spec (a `'#rrggbb'` string) — its inspector control (the
+    write-through swatch) is S19's, and no effect declares a color param yet. enum/color are
+    not envelope-able. */
+export function mapParamSpec(spec: CoreParamSpec): ParamSpec {
   if (spec.type === 'number') {
     return {
       key: spec.key,
@@ -119,7 +122,23 @@ function mapParamSpec(spec: CoreParamSpec): ParamSpec | null {
       default: typeof spec.default === 'boolean' ? spec.default : false,
     };
   }
-  return null; // color / enum — not voice-editable yet; generator uses its own default
+  if (spec.type === 'enum') {
+    const options = spec.options ?? [];
+    return {
+      key: spec.key,
+      label: spec.label,
+      kind: 'enum',
+      options,
+      default: typeof spec.default === 'string' ? spec.default : options[0] ?? '',
+    };
+  }
+  // color — a static-colour param carried as a '#rrggbb' string.
+  return {
+    key: spec.key,
+    label: spec.label,
+    kind: 'color',
+    default: typeof spec.default === 'string' ? spec.default : '#ffffff',
+  };
 }
 
 /** All 41 legacy generators as selectable, generator-backed EffectDefs. Scope is `kit`
@@ -136,7 +155,7 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
     category: gen.category,
     busId: CATEGORY_BUS[gen.category],
     scope: 'kit',
-    params: gen.paramSpec.map(mapParamSpec).filter((p): p is ParamSpec => p !== null),
+    params: gen.paramSpec.map(mapParamSpec),
     attackMs: env.attackMs,
     sustainMs: env.sustainMs,
     releaseMs: env.releaseMs,

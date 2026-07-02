@@ -23,6 +23,11 @@
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
 
+  /** Read a param as a string (enum choice / colour hex), falling back to `d`. */
+  const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
+  /** Enum value → a friendly Select label ("out" → "Out", "x" → "X"). */
+  const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
   /** Effects that carry hue + saturation + brightness numeric params get a colour swatch
       that writes through to all three (the picker is UI-only — persistence stays numeric). */
   const COLOR_KEYS = ['hue', 'saturation', 'brightness'] as const;
@@ -139,7 +144,17 @@
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
           />
+        {:else if spec.kind === 'enum'}
+          <Select
+            value={str(live[spec.key], spec.options?.[0] ?? '')}
+            options={(spec.options ?? []).map((o) => ({ value: o, label: titleCase(o) }))}
+            onChange={(v) => store.setParam(node, spec.key, v)}
+            ariaLabel={spec.label}
+            class="paramsel"
+          />
         {:else}
+          <!-- bool → Toggle. `color` specs map (fixtures.mapParamSpec) but their inspector
+               control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
         {/if}
         {#if spec.envable}
@@ -270,6 +285,11 @@
   }
   .prow :global(.boolcell) {
     justify-self: start;
+  }
+  /* Enum Select fills the middle (value) column, like the scope-target select. */
+  .prow :global(.paramsel) {
+    width: 100%;
+    min-width: 0;
   }
   .envbtn {
     display: inline-flex;

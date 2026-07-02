@@ -41,17 +41,22 @@ export const ENV_KINDS: EnvKind[] = ['decay', 'rise', 'pluck', 'pulse'];
 
 // ---- Param primitives (local — owned here until S18 widens ParamValue) -------
 
-export type ParamValue = number | boolean;
+/** Mirrors core `voice.ParamValue` (S18): numbers/booleans plus `string` for enum choices
+    and static-colour hex params. Kept structurally identical to the core type so a web
+    `EffectDef`/play-node flows into a `voice.Show` (setShow) without a conversion. */
+export type ParamValue = number | boolean | string;
 export type ParamValues = Record<string, ParamValue>;
 
 export interface ParamSpec {
   key: string;
   label: string;
-  kind: 'number' | 'bool';
+  kind: 'number' | 'bool' | 'enum' | 'color';
   min?: number;
   max?: number;
   step?: number;
   unit?: string;
+  /** Allowed values for an `enum` param (rendered as a Select). */
+  options?: string[];
   default: ParamValue;
   /** a number param an envelope can sweep over the voice's life. */
   envable?: boolean;
