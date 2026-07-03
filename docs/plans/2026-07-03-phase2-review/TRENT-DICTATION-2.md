@@ -56,6 +56,12 @@ Build a really good way for agents to **view their UI changes and verify them**:
 - **Token cost of capturing screenshots must be as low as possible** — reusable scripts, not per-session bespoke headless-chrome driving.
 - (A prior agent hand-rolled headless chrome; that per-session cost is what this eliminates.)
 
+## Wave-3 reframe (Trent, post-audit)
+
+- Wave 3 must be a **thorough design critique and improvement**, not lifting a few things: too many things are inconsistent or off screen.
+- **Information density is wrong in both directions:** the app is too small to view on a small screen, yet displays too few pieces of information without scrolling. Density/scale is a first-class review axis, not polish.
+- "One render truth" confirmed as the item-B direction (collapse the throwaway web sim onto the core engine rather than re-seeding it).
+
 ## Phase 0 status at capture time
 
 - 7 haiku Explore agents dispatched to reconcile groups A/B/E/F/G/H/I/J/K + side-tasks vs the actual wired code, plus sweeps: determinism suspects, self-referential `$effect` recurrence, Share-button archaeology, thumbnail time-source inventory, graph-UX bug code location, title-style inventory, modifier/modulation chaining semantics.
