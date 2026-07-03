@@ -68,6 +68,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 — Phase-2 waves: wave-1 MERGED, wave-2 in flight
+
+- **Phase-0 audit DONE** (7 haiku explores): all 9 groups + side-tasks verified WIRED — reconciliation in `docs/plans/2026-07-03-phase2-review/PHASE0-RECONCILIATION.md`. Trust gap = presentation, not missing work.
+- **Decisions (Trent):** app-shell re-layout APPROVED (`~/TWA/ledrums-prototypes/relayout-shell.html` = wave-3 target; supersedes add-flow + inspector decisions); modifier-order chips/reorder both REJECTED (parked); trigger-started envelopes DROPPED.
+- **Wave-1 MERGED** → rock-solid (pushed): `pnpm ui-shot` (playwright-core + system Chrome, 18 named shots, --strict console gate; AGENTS.md rule added), env-overridable dev ports, smoke report `WAVE1-REPORT.md`. Key findings: visualiser renders SERVER frames link-open (determinism bug is at the server/core seam, NOT sim-only); delay "corruption" likely spawn-stacking illusion; tunnel = opt-in env + cloudflared not installed (Share button behaving correctly). Agent wave1-ui-shot-a9f6b3 killed (resumable); wt-1 freed.
+- **Wave-2 IN FLIGHT:** wave2-correctness-258285 (fable/low, own window, wt-2, branch `wave-2/correctness`) — assignment `WAVE2-ASSIGNMENT.md` (9 graph fixes, one render truth, LayersDock smoothing, tunnel visibility) + wave-1 findings forwarded (msg be44cf: determinism at server seam; fix stacking before re-testing corruption; tunnel rescoped to visible-disabled-state; no fixes for non-repro'd symptoms).
+- **🛑 Lane 4 STILL ON HOLD.** Wave 3 (shell re-layout + full design critique incl. density/scale) not started — needs wave-1/2 merged first.
+
 ### 2026-07-03 — Phase-2 item F MERGED
 
 - **Item F MERGED** → rock-solid (`--shell-gap` default 0 = flush chrome; darker surface/bg token scale; Splitter hover thicken+accent-tint + NEW visualiser↔inspector rail; +Splitter.test.ts). Reviewed (web-shell only, no new self-ref effects, conflict-free) + full sweep GREEN **1769 tests/0 skips**. impl shell-theme-rails-542767 killed; wt-1 freed. Awaiting Trent's visual judgment (darkness/flush/hover feel) — iterate if needed.
