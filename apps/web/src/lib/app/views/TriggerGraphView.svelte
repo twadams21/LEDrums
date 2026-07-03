@@ -13,7 +13,9 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
   import type { ToPort } from '../../trigger-lab/store/graph-wiring';
-  import { voice } from '@ledrums/core';
+  import { listModifiersByCategory, voice } from '@ledrums/core';
+  import Blend from '@lucide/svelte/icons/blend';
+  import Waves from '@lucide/svelte/icons/waves';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
@@ -37,7 +39,7 @@
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
   import GraphPalette from './GraphPalette.svelte';
-  import ModifierPalette from './ModifierPalette.svelte';
+  import GraphAddMenu, { type PickerGroup } from './GraphAddMenu.svelte';
   import GraphListRail from './GraphListRail.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -78,10 +80,8 @@
 
   // ---- add-node palette (shared GraphPalette) -------------------------------
   // One palette item per node kind (icon / tint / label from the shared node metadata).
-  // The generic `modifier` kind is served by the dedicated ModifierPalette below (which lists
-  // every registered modifier by category), so it's dropped from the flat kind palette.
-  // Flow-node kinds only. `modifier` is served by ModifierPalette (by category); `envelope` +
-  // the other modulation sources are grouped into their own palette below.
+  // `modifier` and the modulation-source kinds are dropped from the flat kind palette — they are
+  // served by the two GraphAddMenu buttons (Add Modifier / Add Modulation), each a modal picker.
   const PALETTE_ITEMS = NODE_KINDS.filter((kind) => kind !== 'modifier' && !voice.isModSourceKind(kind)).map((kind) => ({
     key: kind,
     label: kindLabel[kind],
@@ -89,14 +89,38 @@
     tint: tint[kind],
     title: `Add ${kindLabel[kind]} node`,
   }));
-  // Modulation sources (doc 10) — their own palette group (Envelope now; LFO/CC in S36/S37).
-  const MODULATION_ITEMS = NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
-    key: kind,
-    label: kindLabel[kind],
-    icon: kindIcon[kind],
-    tint: tint[kind],
-    title: `Add ${kindLabel[kind]} modulation source`,
-  }));
+
+  // "Add Modifier" picker groups — registry-driven (category-grouped over `listModifiersByCategory`),
+  // so a newly registered modifier appears with no edit here. Every modifier shares the Blend glyph
+  // (as the old palette did). Reactive so a registry change re-derives the modal.
+  const modifierGroups = $derived<PickerGroup[]>(
+    listModifiersByCategory().map((g) => ({
+      category: g.category,
+      label: g.label,
+      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend })),
+    })),
+  );
+
+  // "Add Modulation" picker — one flat group of the modulation-source kinds (envelope / lfo / cc),
+  // each with its shared node icon + tint and a one-line hint.
+  const MOD_HINT: Partial<Record<NodeKind, string>> = {
+    envelope: 'Per-hit shape',
+    lfo: 'Continuous wave',
+    cc: 'MIDI CC or OSC',
+  };
+  const modulationGroups: PickerGroup[] = [
+    {
+      category: 'all',
+      label: 'Sources',
+      items: NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
+        id: kind,
+        name: kindLabel[kind],
+        icon: kindIcon[kind],
+        tint: tint[kind],
+        hint: MOD_HINT[kind],
+      })),
+    },
+  ];
   /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
   function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
     store.addNode(kind, cx - NODE_W / 2, cy - 40);
@@ -355,8 +379,28 @@
     {#snippet palette()}
       <div class="palette-stack">
         <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
-        <ModifierPalette add={addModifierNodeAt} disabled={!store.canEdit} />
-        <GraphPalette items={MODULATION_ITEMS} add={addNodeAt} ariaLabel="Add modulation source" disabled={!store.canEdit} />
+        <div class="add-bar" role="toolbar" aria-label="Add modifier or modulation">
+          <span class="add-label">Add</span>
+          <GraphAddMenu
+            label="Modifier"
+            icon={Blend}
+            title="Add modifier"
+            subtitle="Insert a modifier into the chain — filter by category."
+            groups={modifierGroups}
+            add={addModifierNodeAt}
+            disabled={!store.canEdit}
+          />
+          <GraphAddMenu
+            label="Modulation"
+            icon={Waves}
+            tint="var(--role-modulation)"
+            title="Add modulation source"
+            subtitle="Drive parameters from an envelope, LFO, or MIDI CC / OSC."
+            groups={modulationGroups}
+            add={(id, cx, cy) => addNodeAt(id as NodeKind, cx, cy)}
+            disabled={!store.canEdit}
+          />
+        </div>
       </div>
     {/snippet}
     {#snippet empty()}
@@ -383,6 +427,28 @@
     align-items: flex-start;
     width: fit-content;
     pointer-events: none;
+  }
+  /* the Add Modifier / Add Modulation menu bar — same treatment as GraphPalette's `.palette`. */
+  .add-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    width: fit-content;
+    max-width: 100%;
+    padding: var(--space-1);
+    background: color-mix(in oklch, var(--surface) 86%, transparent);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  .add-label {
+    padding: 0 var(--space-1);
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
+    color: var(--text-faint);
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {
