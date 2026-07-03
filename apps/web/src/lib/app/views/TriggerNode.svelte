@@ -21,6 +21,9 @@
   import NodeCard from './NodeCard.svelte';
   import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
+  import NodeSignalPreview from './NodeSignalPreview.svelte';
+  import ParamRowTick from './ParamRowTick.svelte';
+  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import Tooltip from '../../ui/Tooltip.svelte';
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
@@ -83,9 +86,14 @@
     return rows.map((r) => ({
       param: r.param,
       label: specs.find((s) => s.key === r.param)?.label ?? r.param,
-      wired: store.mappingsFor(node, r.param).length,
+      // resolved wired sources drive both the "wired" state and the S38 live value tick
+      sources: store.modSourcesFor(node, r.param),
     }));
   });
+
+  // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
+  // mirroring how a play node shows its EffectThumb (S38). Sampled through core, ticker-driven.
+  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc');
   const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
 
@@ -102,6 +110,16 @@
 {#snippet playThumb()}
   {#if node && node.kind === 'play' && eff}
     <EffectThumb pattern={eff.pattern} params={store.liveParams(node)} w={56} h={32} />
+  {/if}
+{/snippet}
+
+{#snippet sourceThumb()}
+  {#if node && node.kind === 'envelope'}
+    <NodeSignalPreview kind="envelope" env={store.envelopeNodeEnvelope(node) ?? undefined} w={56} h={32} />
+  {:else if node && node.kind === 'lfo'}
+    <NodeSignalPreview kind="lfo" lfo={store.lfoSettings(node)} bpm={store.bpm} w={56} h={32} />
+  {:else if node && node.kind === 'cc'}
+    <NodeSignalPreview kind="cc" ccValue={() => store.ccNodeLiveValue(node)} w={56} h={32} />
   {/if}
 {/snippet}
 
@@ -145,7 +163,7 @@
         {sub}
         tint={chipTint}
         selected={!!selected}
-        thumb={kind === 'play' && eff ? playThumb : undefined}
+        thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
       />
       {#if modCount > 0}
@@ -159,10 +177,14 @@
            scoped to modulation sources). Precedent: the value+bands switch's per-band handles. -->
       <ul class="modrows">
         {#each modRows as row (row.param)}
-          <li class="modrow" class:wired={row.wired > 0}>
+          <li class="modrow" class:wired={row.sources.length > 0}>
             <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
             <span class="pdot" aria-hidden="true"></span>
             <span class="plabel">{row.label}</span>
+            <!-- live value tick (S38): the row's current source signal while the engine runs -->
+            <ParamRowTick
+              sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable))}
+            />
           </li>
         {/each}
       </ul>

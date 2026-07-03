@@ -100,9 +100,14 @@ import {
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 
+/** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
+    so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
+const RESERVED_CC_CONTROLLER = 0;
+
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
-  | { kind: 'trigger'; graphKey: string };
+  | { kind: 'trigger'; graphKey: string }
+  | { kind: 'cc-node'; nodeId: string }; // S37: bind a CC source node to the next incoming CC
 
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */
@@ -649,6 +654,11 @@ export class TriggerLab {
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
+        // S37: a CC source node can MIDI-learn the next incoming controller; the live value
+        // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
+        // Controller 0 is reserved for section recall and never learns/binds here.
+        if (this.acceptsMidiChannel(ev.channel)) this.applyCcLearn(ev.controller, ev.channel);
+        this.sim.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
       case 'programChange':
@@ -1493,9 +1503,24 @@ export class TriggerLab {
         ...this.project.inputMap,
         midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
       });
-    } else {
+    } else if (target.kind === 'trigger') {
       this.setTriggerSource(target.graphKey, { kind: 'midi', note });
+    } else {
+      return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
+    this.midiLearnTarget = null;
+  }
+
+  /** Bind an armed CC-node learn target to the next incoming controller (S37). Controller 0 is
+      reserved for section recall, so it is never learned — the target stays armed for a real CC.
+      No-op unless a `cc-node` learn is armed and its node still exists. */
+  private applyCcLearn(controller: number, _channel: number): void {
+    const target = this.midiLearnTarget;
+    if (!target || target.kind !== 'cc-node' || this.isViewer) return;
+    if (controller === RESERVED_CC_CONTROLLER) return; // reserved → keep waiting for a real CC
+    const node = this.selectedGraph?.nodes.find((n) => n.id === target.nodeId);
+    if (!node || node.kind !== 'cc') return;
+    node.ccController = controller;
     this.midiLearnTarget = null;
   }
 
@@ -1811,6 +1836,10 @@ export class TriggerLab {
     } else if (kind === 'lfo') {
       // S36 — seed default LFO settings so it animates the moment it is wired.
       node = makeNode('lfo', nid('n'), x, y, { lfo: voice.defaultLfoSettings() });
+    } else if (kind === 'cc') {
+      // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
+      // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
+      node = makeNode('cc', nid('n'), x, y, { ccController: 1, ccChannel: null });
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
@@ -2393,6 +2422,36 @@ export class TriggerLab {
     return g.edges.filter((e) => e.to === node.id && e.toPort === `param:${param}`);
   }
 
+  /** The resolved modulation SOURCES wired into an exposed param row, each with its edge's
+      `invert` — drives the S38 node-face live tick (`paramRowSignal`). Dangling / non-source
+      wires are skipped (never thrown), mirroring `resolveNodeModulations`. */
+  modSourcesFor(node: GraphNode, param: string): { source: voice.ModSource; invert: boolean }[] {
+    const g = this.selectedGraph;
+    if (!g) return [];
+    const out: { source: voice.ModSource; invert: boolean }[] = [];
+    for (const e of g.edges) {
+      if (e.to !== node.id || e.toPort !== `param:${param}`) continue;
+      const src = g.nodes.find((n) => n.id === e.from);
+      if (!src) continue;
+      const source = voice.nodeModSource(src);
+      if (!source) continue;
+      out.push({ source, invert: e.invert === true });
+    }
+    return out;
+  }
+
+  /** A `cc` source node's current live 0..1 level, read from the sim's CC table (the offline
+      mirror of the engine table). Drives the CC node-face value bar + readout (S38). */
+  ccNodeLiveValue(node: GraphNode): number {
+    if (node.kind !== 'cc') return 0;
+    return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
+  }
+
+  /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
+  get liveCcTable(): voice.CcTable {
+    return this.sim.ccTable;
+  }
+
   private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const edge = this.selectedGraph?.edges.find((e) => e.id === edgeId);
@@ -2449,5 +2508,47 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'lfo') return;
     node.lfo = { ...(node.lfo ?? voice.defaultLfoSettings()), ...patch };
+  }
+
+  // --- CC SOURCE node settings (S37) ---------------------------------------
+  // The node's controller number + channel filter drive an engine CC-table read at sample
+  // time. MIDI-learn reuses the shared learn flow (see startMidiLearn + applyCcLearn).
+
+  /** The CC source node's controller number (default 1). */
+  ccNodeController(node: GraphNode): number {
+    return node.kind === 'cc' ? node.ccController ?? 1 : 1;
+  }
+  /** The CC source node's channel filter (1..16), or null for omni (any channel). */
+  ccNodeChannel(node: GraphNode): number | null {
+    return node.kind === 'cc' ? node.ccChannel ?? null : null;
+  }
+
+  /** Whether a controller number is bindable — rejects the reserved section-recall CC 0 and
+      anything outside the MIDI range (1..127). Drives the inspector's validation. */
+  isBindableCcController(controller: number): boolean {
+    return Number.isFinite(controller) && controller >= 1 && controller <= 127;
+  }
+
+  /** Set the CC node's controller. Controller 0 is reserved for section recall and REJECTED
+      (validation, not a throw); an out-of-range value is likewise ignored, leaving the prior
+      binding untouched. Valid range 1..127. */
+  setCcController(node: GraphNode, controller: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'cc') return;
+    if (!this.isBindableCcController(controller)) return; // 0 reserved + out-of-range rejected
+    node.ccController = Math.round(controller);
+  }
+
+  /** Set the CC node's channel filter (1..16), or null for omni (any channel). Out-of-range
+      numeric channels are ignored (the prior filter stays). */
+  setCcChannel(node: GraphNode, channel: number | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'cc') return;
+    if (channel === null) {
+      node.ccChannel = null;
+      return;
+    }
+    if (!Number.isFinite(channel) || channel < 1 || channel > 16) return;
+    node.ccChannel = Math.round(channel);
   }
 }

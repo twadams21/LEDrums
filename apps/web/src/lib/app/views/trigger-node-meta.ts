@@ -19,6 +19,7 @@ import Timer from '@lucide/svelte/icons/timer';
 import Blend from '@lucide/svelte/icons/blend';
 import Spline from '@lucide/svelte/icons/spline';
 import Waves from '@lucide/svelte/icons/waves'; // S36
+import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
 import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
@@ -36,6 +37,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   modifier: Blend,
   envelope: Spline,
   lfo: Waves, // S36
+  cc: SlidersHorizontal, // S37
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -59,6 +61,7 @@ export const tint: Record<NodeKind, string> = {
   modifier: 'var(--role-mod)',
   envelope: 'var(--role-modulation)',
   lfo: 'var(--role-modulation)', // S36
+  cc: 'var(--role-modulation)', // S37
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -75,6 +78,7 @@ export const kindLabel: Record<NodeKind, string> = {
   modifier: 'Modifier',
   envelope: 'Envelope',
   lfo: 'LFO', // S36
+  cc: 'CC', // S37
 };
 
 /** Human name for a modifier id (the registry's display name), falling back to the id. */
@@ -109,6 +113,8 @@ export function kindSummary(node: GraphNode): string {
       return node.lfo?.rateMode === 'beats'
         ? `${node.lfo.waveform} · ${node.lfo.division}`
         : `${node.lfo?.waveform ?? 'sine'} · ${node.lfo?.rateHz ?? 1}Hz`;
+    case 'cc':
+      return `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
     default:
       return '';
   }
