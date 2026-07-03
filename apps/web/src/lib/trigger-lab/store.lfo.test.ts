@@ -145,3 +145,23 @@ describe('sim — LFO graph resolution + continuous modulation', () => {
     expect(sim.voices.length).toBe(0);
   });
 });
+
+describe('source getters are null-safe (node-face preview lifecycle race, S38)', () => {
+  // The node-face SignalFace rAF ticker samples through these getters via a reactive prop getter;
+  // when the source node is deleted the ticker can fire ONE more frame with a now-null node. The
+  // getters must degrade to defaults, not throw: a throw in the rAF loop (plus the former
+  // self-referential colour $effect in NodeSignalPreview) froze Svelte's effect flush and killed
+  // delegated onclick handlers app-wide. Regression guard for the null-deref half of that bug.
+  it('return safe defaults for a null/undefined node instead of throwing', () => {
+    const store = new TriggerLab(fakeClient);
+    for (const bad of [null, undefined]) {
+      const node = bad as unknown as GraphNode;
+      expect(() => store.lfoSettings(node)).not.toThrow();
+      expect(store.lfoSettings(node)).toEqual(voice.defaultLfoSettings());
+      expect(store.envelopeNodeEnvelope(node)).toBeNull();
+      expect(store.ccNodeLiveValue(node)).toBe(0);
+      expect(store.ccNodeController(node)).toBe(1);
+      expect(store.ccNodeChannel(node)).toBeNull();
+    }
+  });
+});

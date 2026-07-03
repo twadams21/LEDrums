@@ -28,16 +28,20 @@
   // Theme-aware canvas colours resolved from design tokens on the live element (so light/dark
   // and any scoped override are honoured) — canvas can't read CSS vars directly. Fallbacks keep
   // it drawing before layout / in tests where getComputedStyle is empty.
-  let c = $state({ signal: '#7c9cff', ink: '#e6e9f0', grid: '#3a4056' });
+  const FALLBACK_COLOURS = { signal: '#7c9cff', ink: '#e6e9f0', grid: '#3a4056' };
+  let c = $state({ ...FALLBACK_COLOURS });
   $effect(() => {
     const el = root;
     if (!el || typeof getComputedStyle === 'undefined') return;
     const cs = getComputedStyle(el);
     const read = (name: string, fallback: string): string => cs.getPropertyValue(name).trim() || fallback;
+    // Fall back to the fixed defaults, NOT the reactive `c`: reading `c` here while also writing
+    // it made this effect self-referential → effect_update_depth_exceeded (which halts Svelte's
+    // effect flush app-wide, killing delegated onclick handlers everywhere).
     c = {
-      signal: read('--role-modulation', c.signal),
-      ink: read('--ink', c.ink),
-      grid: read('--border-faint', c.grid),
+      signal: read('--role-modulation', FALLBACK_COLOURS.signal),
+      ink: read('--ink', FALLBACK_COLOURS.ink),
+      grid: read('--border-faint', FALLBACK_COLOURS.grid),
     };
   });
 

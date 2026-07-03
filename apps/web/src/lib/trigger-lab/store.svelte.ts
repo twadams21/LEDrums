@@ -2719,7 +2719,7 @@ export class TriggerLab {
   /** A `cc` source node's current live 0..1 level, read from the sim's CC table (the offline
       mirror of the engine table). Drives the CC node-face value bar + readout (S38). */
   ccNodeLiveValue(node: GraphNode): number {
-    if (node.kind !== 'cc') return 0;
+    if (node?.kind !== 'cc') return 0;
     return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
   }
 
@@ -2753,11 +2753,11 @@ export class TriggerLab {
 
   /** The envelope source node's ADSR shape (stored in the well-known slot). */
   envelopeNodeAdsr(node: GraphNode): AdsrShape {
-    return (node.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY]?.adsr : undefined) ?? defaultAdsr();
+    return (node?.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY]?.adsr : undefined) ?? defaultAdsr();
   }
   /** The envelope source node's full envelope (shape + render points), or null. */
   envelopeNodeEnvelope(node: GraphNode): Envelope | null {
-    return node.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY] ?? null : null;
+    return node?.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY] ?? null : null;
   }
   /** Set the envelope source node's shape (regenerates its render curve; single source). */
   setEnvelopeNodeAdsr(node: GraphNode, adsr: AdsrShape): void {
@@ -2777,7 +2777,7 @@ export class TriggerLab {
 
   /** The LFO source node's settings (defaults when unset). */
   lfoSettings(node: GraphNode): voice.LfoSettings {
-    return (node.kind === 'lfo' ? node.lfo : undefined) ?? voice.defaultLfoSettings();
+    return (node?.kind === 'lfo' ? node.lfo : undefined) ?? voice.defaultLfoSettings();
   }
   /** Patch the LFO source node's settings (seeds defaults first so partial edits are safe). */
   setLfo(node: GraphNode, patch: Partial<voice.LfoSettings>): void {
@@ -2792,11 +2792,11 @@ export class TriggerLab {
 
   /** The CC source node's controller number (default 1). */
   ccNodeController(node: GraphNode): number {
-    return node.kind === 'cc' ? node.ccController ?? 1 : 1;
+    return node?.kind === 'cc' ? node.ccController ?? 1 : 1;
   }
   /** The CC source node's channel filter (1..16), or null for omni (any channel). */
   ccNodeChannel(node: GraphNode): number | null {
-    return node.kind === 'cc' ? node.ccChannel ?? null : null;
+    return node?.kind === 'cc' ? node.ccChannel ?? null : null;
   }
 
   /** Whether a controller number is bindable — rejects the reserved section-recall CC 0 and
