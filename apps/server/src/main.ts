@@ -17,6 +17,7 @@ import {
 } from './input-router';
 import { listProjects, loadProject, projectExists, projectFilePath, saveProjectAsync } from './projects';
 import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
+import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
@@ -113,6 +114,12 @@ const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engi
 const showLibraryLoad = inspectShowLibraryFile();
 let liveShowLibrary: ShowLibraryBlob | null = loadShowLibrary();
 
+/** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
+ * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
+ * flushed on shutdown). `null` until the first client pushes one. */
+const songLibraryLoad = inspectSongLibraryFile();
+let liveSongLibrary: SongLibraryBlob | null = loadSongLibrary();
+
 /** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
  * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
  * yet) is a no-op. */
@@ -123,6 +130,17 @@ const showLibraryAutosaver = createAutosaver(
     onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave scheduled' }),
     onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave saved' }),
     onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'show-library', label: 'Show library autosave failed', detail: message }),
+  },
+);
+
+/** Debounce-autosave the live song library (mirrors {@link showLibraryAutosaver}). */
+const songLibraryAutosaver = createAutosaver(
+  () => (liveSongLibrary ? saveSongLibraryAsync(liveSongLibrary) : Promise.resolve()),
+  400,
+  {
+    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave scheduled' }),
+    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave saved' }),
+    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'song-library', label: 'Song library autosave failed', detail: message }),
   },
 );
 
@@ -167,6 +185,7 @@ for (const event of startupDiagnostics({
   webRootExists: existsSync(webRoot),
   project: projectLoad,
   showLibrary: showLibraryLoad,
+  songLibrary: songLibraryLoad,
   tunnel: { enabled: tunnelManager !== null, url: tunnelManager?.url ?? null },
   pinRequired: pinGate.pin !== null,
   hostTokenPresent: !!hostToken,
@@ -256,6 +275,7 @@ function stateMessage(): ServerMessage {
     projects: listProjects(),
     output: (voiceHost ?? host).getOutputStatus(),
     showLibrary: liveShowLibrary,
+    songLibrary: liveSongLibrary,
     tunnel: tunnelInfo(),
   };
 }
@@ -346,6 +366,7 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   voiceHost,
   autosaver,
   showLibraryAutosaver,
+  songLibraryAutosaver,
   broadcastJson,
   broadcastPresence,
   broadcastState,
@@ -354,6 +375,9 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   // pushed library through this setter so stateMessage/the autosaver read the latest.
   setShowLibrary: (lib) => {
     liveShowLibrary = lib;
+  },
+  setSongLibrary: (lib) => {
+    liveSongLibrary = lib;
   },
   relayToOthers,
   monitor,
@@ -564,6 +588,7 @@ boot({
   statsTimer,
   autosaver,
   showLibraryAutosaver,
+  songLibraryAutosaver,
   tunnelManager,
   pin: pinGate.pin,
   hostToken,
