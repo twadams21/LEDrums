@@ -87,7 +87,7 @@ import {
 import { nid, freshId, reserveIds } from './store/ids';
 import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
-import { authoredIdsFromLibrary } from './store/reserve-library-ids';
+import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
 import { canConnect, canReconnect, type ToPort } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
@@ -276,6 +276,28 @@ function friendlyParseMessage(reason: ClipParseReason): string {
       return 'That clipboard content can’t be pasted here.';
     default:
       return 'The clipboard didn’t contain anything pasteable.';
+  }
+}
+
+/** Every generated id a materialized paste introduces that must be reserved against the global id
+    counter BEFORE it enters the show. The critical ones are the graphs' NODE + EDGE ids: remap
+    carries them verbatim (so wiring/modulation ports survive), so a cross-machine paste can bring a
+    high `n-<n>` the local counter is below — a later `nid('n')` would then re-mint it, duplicating a
+    node id in one graph. The remapped graph/section/song/preset ids come off the counter already,
+    but yielding them too is harmless and future-proof. */
+function* remapResultIds(res: RemapResult): Iterable<string> {
+  for (const [key, graph] of Object.entries(res.graphs)) {
+    yield key;
+    for (const node of graph.nodes) yield node.id;
+    for (const edge of graph.edges) yield edge.id;
+  }
+  if (res.graphKey) yield res.graphKey;
+  for (const effect of res.effects) yield effect.id;
+  for (const preset of res.presets) yield preset.id;
+  if (res.section) yield res.section.id;
+  if (res.song) {
+    yield res.song.id;
+    for (const section of res.song.sections) yield section.id;
   }
 }
 
@@ -606,9 +628,10 @@ export class TriggerLab {
     this.songLibrary = loadSongLibrary(rawSongLib);
     // Reserve the POOL ids too (they share the global `song-N` counter with local songs): without
     // this a later local-song mint could reuse a restored pool id, so `resolvedSongs` would carry a
-    // local AND a referenced song under one id. Closure-internal ids are safe via the `lib:<id>/`
-    // prefix — only the pool id itself collides. Mirrored in adoptSongLibrary for the server path.
-    reserveIds(Object.keys(this.songLibrary.songs));
+    // local AND a referenced song under one id. ALSO reserve each closure's node/edge ids — those
+    // travel raw (un-namespaced) inside library graphs, and S42 lets a user edit a referenced graph,
+    // so a fresh node mint must clear them too. Mirrored in adoptSongLibrary for the server path.
+    reserveIds(idsFromSongLibrary(this.songLibrary));
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
@@ -1459,10 +1482,10 @@ export class TriggerLab {
       plain rune replace (the shows that reference it re-resolve reactively). */
   private adoptSongLibrary(lib: SongLibrary): void {
     this.songLibrary = lib;
-    // Reserve the adopted pool ids into the global counter, so a later local-song mint can't reuse
-    // one and collide in `resolvedSongs` (the cross-process case: machine A's exported `song-N`
-    // arrives here before this client mints its own). See the constructor's boot reserve.
-    reserveIds(Object.keys(lib.songs));
+    // Reserve the adopted pool ids AND each closure's raw node/edge ids into the global counter, so a
+    // later local mint can't reuse one and collide (the cross-process case: machine A's exported
+    // `song-N` / `n-N` arrives here before this client mints its own). See the constructor's boot reserve.
+    reserveIds(idsFromSongLibrary(lib));
   }
 
   /** Push the current song library to the server when it actually changed (sig-guarded, gated on
@@ -2134,6 +2157,9 @@ export class TriggerLab {
       and insert its primary object — mirrors {@link detachSongReference}. Sim registries re-sync
       through the resolved-view effect. */
   private applyRemapResult(res: RemapResult): void {
+    // Reserve the carried node/edge ids (and remapped domain ids) FIRST, so a later mint into the
+    // pasted content can't collide with an id that arrived verbatim from another machine.
+    reserveIds(remapResultIds(res));
     if (Object.keys(res.graphs).length > 0) this.graphs = { ...this.graphs, ...res.graphs };
     if (Object.keys(res.graphNames).length > 0) this.graphNames = { ...this.graphNames, ...res.graphNames };
     if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
@@ -2179,6 +2205,9 @@ export class TriggerLab {
       };
       const closure = extractSongClosure(doc.payload.song, sources, libId);
       this.songLibrary = songRefsLib.withLibrarySong(this.songLibrary, closure);
+      // Reserve the new pool entry's raw node/edge ids: S42 lets a user edit this referenced graph,
+      // so a fresh node mint must clear any high id the pasted closure carried in.
+      reserveIds(idsFromLibrarySong(closure));
       return { ok: true, kind: 'song', message: `Pasted “${doc.payload.song.name || 'song'}” into the library.` };
     }
 

@@ -10,6 +10,7 @@ import {
   type RemapMint,
 } from './clipdoc';
 import type { ClosureSources } from './store/song-library';
+import { nid } from './store/ids';
 import type { WSClient } from '../ws/client';
 
 /* Clipboard copy/paste on the store (S44). The pure build/parse/remap contract is covered in
@@ -89,6 +90,20 @@ describe('paste materialize — graph', () => {
     expect(store.graphs['tg-1']).toBeDefined();
     // effects were reused (built-in / content-equal), never duplicated
     expect(store.effects.length).toBe(effectsBefore);
+  });
+
+  it('reserves a pasted graph’s carried node ids so a later node mint never collides', () => {
+    const store = new TriggerLab(fakeClient);
+    const key = Object.keys(store.graphs)[0]!;
+    const doc = buildGraphClipDoc(key, sourcesOf(store));
+    expect(doc.payload.graph.nodes.length).toBeGreaterThan(0);
+    // A high node id as if copied from another machine whose counter ran ahead of ours.
+    doc.payload.graph.nodes[0]!.id = 'n-9000001';
+
+    const res = store.materializePaste(serialize(doc), { context: 'graph', mint: testMint() });
+    expect(res.ok).toBe(true);
+    // The global node counter is now past the carried id — the next mint can't duplicate it.
+    expect(Number(nid('n').split('-')[1])).toBeGreaterThan(9000001);
   });
 
   it('double-paste of the same graph creates exactly one copy (content reuse)', () => {
