@@ -113,6 +113,10 @@ export class VoicePool {
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
     slot.modifiers = a.modifiers;
     slot.modState = undefined;
+    // Resolved modulation mappings (S34 populates `a.modulations` from graph topology); no
+    // per-voice state — envelopes sample the voice's own life phase, so a reused slot just
+    // takes the new list (or undefined) with nothing to reset.
+    slot.modulations = a.modulations;
     slot.params = { ...a.params };
     slot.specs = effect.params;
     slot.env = cloneEnvMap(a.env);
@@ -155,6 +159,7 @@ function makeVoiceSlot(): Voice {
     genState: null,
     modifiers: undefined,
     modState: undefined,
+    modulations: undefined,
     params: {},
     liveParams: {},
     specs: EMPTY_SPECS,

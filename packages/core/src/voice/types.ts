@@ -5,6 +5,7 @@
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
 import type { ResolvedModifier } from '../modifiers/types';
+import type { Mapping } from './modulation';
 
 export type { ResolvedModifier };
 
@@ -433,6 +434,14 @@ export interface Voice {
    * `genState` lifecycle).
    */
   modState?: unknown[];
+  /**
+   * Resolved modulation mappings onto this voice's effect params (doc 10). Populated from
+   * graph topology at spawn (S34); `undefined`/empty → params take their unmodulated value.
+   * The per-frame param sweep (`applyEffectiveParams`) sums each param's contributions and
+   * clamps to the spec range. Same {@link Mapping} model + sampler as the modifier chain's
+   * `ResolvedModifier.modulations` — one model, two carriers.
+   */
+  modulations?: Mapping[];
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
   /**

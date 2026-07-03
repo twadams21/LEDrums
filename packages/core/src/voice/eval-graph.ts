@@ -19,6 +19,7 @@ import type {
   SwitchOn,
   TriggerGraph,
 } from './types';
+import type { Mapping } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain } from './modifier-graph';
 
@@ -42,6 +43,13 @@ export interface PlayAction {
    * topology / y-position, flatten); `undefined` until then, so S28 voices are unmodified.
    */
   modifiers?: ResolvedModifier[];
+  /**
+   * Resolved modulation mappings onto this play node's effect params (doc 10). Carried
+   * verbatim to the spawned voice. Populated by graph resolution in S34 (walk `param:<key>`
+   * modulation edges); `undefined` until then, so S33 voices carry no mappings unless a test
+   * injects them at the compositor seam.
+   */
+  modulations?: Mapping[];
   via: string;
   latchKey: string | null;
 }
