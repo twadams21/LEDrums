@@ -28,7 +28,8 @@ import type { Envelope, ParamSpec, ParamValues } from './types';
 export type ModSource =
   | { kind: 'envelope'; env: Envelope }
   | { kind: 'lfo'; lfo: LfoSettings } // S36
-  | { kind: 'cc'; controller: number; channel: number | null }; // S37
+  | { kind: 'cc'; controller: number; channel: number | null } // S37
+  | { kind: 'osc'; address: string }; // OSC modulation — a live 0..1 value at an OSC address
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
 export type ModSourceKind = ModSource['kind'];
@@ -67,6 +68,29 @@ export function sampleCc(table: CcTable | undefined, controller: number, channel
   return table.get(ccKey(controller, channel)) ?? 0;
 }
 
+// ---- OSC value table --------------------------------------------------------
+//
+// The OSC analogue of the CC table: a live map of the latest 0..1 value per OSC address, fed
+// deterministically from queued OSC input events, read per frame by an `osc` {@link ModSource}.
+// Same read-only-at-sample-time discipline as CC: the transport owns the mutable map, the sweep
+// only looks values up — so determinism holds (same event log ⇒ same table ⇒ same frames).
+
+/** Latest OSC values, keyed by OSC address → 0..1. */
+export type OscTable = ReadonlyMap<string, number>;
+
+/** Clamp a raw OSC argument to 0..1 (OSC control values are already floats; a sender may
+    overshoot, so we clamp — the transport calls this when writing into the table). */
+export function oscValue01(raw: number): number {
+  return raw < 0 ? 0 : raw > 1 ? 1 : raw;
+}
+
+/** An `osc` source's current 0..1 value from `table`. Absent — no table yet, or that address
+    not heard — reads as `0`, the same deterministic neutral as {@link sampleCc}. */
+export function sampleOsc(table: OscTable | undefined, address: string): number {
+  if (!table) return 0;
+  return table.get(address) ?? 0;
+}
+
 /**
  * One resolved modulation mapping onto a single param. `targetParam` is a bare param key
  * relative to the carrier's param spec (the carrier — voice or modifier link — is the
@@ -101,6 +125,9 @@ export interface ModSampleCtx {
       absent when no CC has been received (⇒ `sampleCc` neutral), so envelope-only sweeps and
       tests need not supply it. */
   cc?: CcTable; // S37
+  /** Live OSC value table — an `osc` source reads its address here. Optional (⇒ `sampleOsc`
+      neutral) with the same rationale as {@link cc}. */
+  osc?: OscTable;
 }
 
 const num = (v: number | boolean | string | undefined, d: number): number =>
@@ -135,6 +162,8 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
       return sampleLfo(src.lfo, ctx.timeMs, ctx.bpm);
     case 'cc': // S37
       return sampleCc(ctx.cc, src.controller, src.channel);
+    case 'osc': // live 0..1 at an OSC address
+      return sampleOsc(ctx.osc, src.address);
   }
 }
 

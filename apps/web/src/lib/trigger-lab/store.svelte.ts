@@ -1393,6 +1393,9 @@ export class TriggerLab {
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson).
       this.recordInputActivity({ kind: 'osc', address: label, value, time });
+      // Feed the sim's OSC table so an OSC-bound modulation source previews live (the OSC
+      // analogue of forwardMidi's `sim.setCc`; OSC arrives only via the server broadcast).
+      this.sim.setOsc(label, value);
     }
   }
 
@@ -3066,16 +3069,23 @@ export class TriggerLab {
     return out;
   }
 
-  /** A `cc` source node's current live 0..1 level, read from the sim's CC table (the offline
-      mirror of the engine table). Drives the CC node-face value bar + readout (S38). */
+  /** A `cc` source node's current live 0..1 level, read from the sim's CC table — or, when the
+      node is in OSC mode, from the sim's OSC table at its address. Drives the node-face value bar
+      + readout (S38); the branch keeps the preview honest for both live inputs. */
   ccNodeLiveValue(node: GraphNode): number {
     if (node?.kind !== 'cc') return 0;
+    if (node.ccSource === 'osc') return voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '');
     return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
   }
 
   /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
   get liveCcTable(): voice.CcTable {
     return this.sim.ccTable;
+  }
+
+  /** The live OSC value table (sim mirror) — the S38 param-row tick reads it for `osc` sources. */
+  get liveOscTable(): voice.OscTable {
+    return this.sim.oscTable;
   }
 
   private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
@@ -3176,5 +3186,30 @@ export class TriggerLab {
     }
     if (!Number.isFinite(channel) || channel < 1 || channel > 16) return;
     node.ccChannel = Math.round(channel);
+  }
+
+  // --- OSC modulation input (the cc source node's alternate live input) ------
+  // A cc node reads MIDI CC by default; switched to OSC it reads a live 0..1 value at an OSC
+  // address instead (nodeModSource maps it to an `osc` ModSource). Both are "controller" inputs.
+
+  /** The cc node's live input mode: 'midi' (Control Change) or 'osc' (address). Default 'midi'. */
+  ccNodeSource(node: GraphNode): 'midi' | 'osc' {
+    return node?.kind === 'cc' ? node.ccSource ?? 'midi' : 'midi';
+  }
+  /** Switch the cc node between MIDI CC and OSC as its live input. */
+  setCcNodeSource(node: GraphNode, source: 'midi' | 'osc'): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'cc') return;
+    node.ccSource = source;
+  }
+  /** The cc node's OSC address (read when in OSC mode); '' until one is set. */
+  oscNodeAddress(node: GraphNode): string {
+    return node?.kind === 'cc' ? node.oscAddress ?? '' : '';
+  }
+  /** Set the cc node's OSC address (trimmed). Empty is allowed (⇒ neutral until set). */
+  setOscNodeAddress(node: GraphNode, address: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'cc') return;
+    node.oscAddress = address.trim();
   }
 }

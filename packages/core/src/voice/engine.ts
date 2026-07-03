@@ -33,7 +33,7 @@ import {
 } from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
-import { ccKey, ccValue01 } from './modulation';
+import { ccKey, ccValue01, oscValue01 } from './modulation';
 import {
   emptyShow,
   normalizeTriggerValue,
@@ -168,6 +168,14 @@ class VoiceBusEngine implements RenderEngine {
    */
   private ccTable = new Map<string, number>();
 
+  /**
+   * Live OSC value table: keyed by OSC address → 0..1. The OSC analogue of {@link ccTable},
+   * updated ONLY inside the queue drain (a pure function of the event log), read by an `osc`
+   * modulation source each frame. An OSC event both fires trigger graphs AND feeds this table,
+   * so the same address can drive a trigger and modulate params.
+   */
+  private oscTable = new Map<string, number>();
+
   private queue: InputEvent[] = [];
   private timeMs = 0;
   private beat = 0;
@@ -219,6 +227,7 @@ class VoiceBusEngine implements RenderEngine {
     this.pendingFires = [];
     this.pendingFireCounter = 0;
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
+    this.oscTable.clear(); // fresh show → no lingering OSC values
     // Seed active section from the first song/section (a recallSection event can
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
@@ -269,6 +278,12 @@ class VoiceBusEngine implements RenderEngine {
       this.ccTable.set(ccKey(controller, null), value01);
       return;
     }
+    // An OSC event ALSO feeds the OSC value table (an `osc` modulation source reads its address
+    // here) in addition to firing trigger graphs below — deterministic: state only changes here.
+    if (e.kind === 'osc' && e.address !== undefined) {
+      this.oscTable.set(e.address, oscValue01(e.value ?? 0));
+    }
+
     // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
     // (voices decay on their own envelope).
     if (e.kind !== 'noteOn' && e.kind !== 'key' && e.kind !== 'osc') return;
@@ -614,13 +629,13 @@ class VoiceBusEngine implements RenderEngine {
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.attrs && this.finalFb) {
       for (const v of this.voices.pool) {
-        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable); // cc: S37
+        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable);
       }
       this.compositor.render(
         this.voices.pool,
         this.model,
         this.attrs,
-        { timeMs: this.timeMs, dt, transport, cc: this.ccTable }, // cc: S37
+        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable },
         this.finalFb,
       );
     }

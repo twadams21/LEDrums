@@ -6,12 +6,15 @@
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
   import GraphPalette from '../../app/views/GraphPalette.svelte';
-  import ModifierPalette from '../../app/views/ModifierPalette.svelte';
+  import GraphAddMenu, { type PickerGroup } from '../../app/views/GraphAddMenu.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
   import { GraphHover } from '../../app/views/graph-hover.svelte';
   import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
+  import { listModifiersByCategory } from '@ledrums/core';
+  import Blend from '@lucide/svelte/icons/blend';
+  import Waves from '@lucide/svelte/icons/waves';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import ParamRowTick from '../../app/views/ParamRowTick.svelte';
@@ -68,7 +71,7 @@
     edges = hover.decorate(edges);
   }
 
-  // Modifiers are added from the dedicated ModifierPalette (category-grouped over the registry),
+  // Modifiers + modulation sources are added from the two GraphAddMenu buttons (modal pickers),
   // so they're dropped from the flat kind palette — mirroring the real Trigger graph.
   const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
   const paletteItems = paletteKinds.map((k) => ({
@@ -77,6 +80,23 @@
     icon: kindIcon[k],
     tint: tint[k],
   }));
+  // Registry-driven "Add Modifier" groups, and a flat "Add Modulation" group — same shape the real
+  // Trigger graph feeds GraphAddMenu.
+  const modifierGroups = $derived<PickerGroup[]>(
+    listModifiersByCategory().map((g) => ({
+      category: g.category,
+      label: g.label,
+      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend })),
+    })),
+  );
+  const modSourceKinds: NodeKind[] = ['envelope', 'lfo', 'cc'];
+  const modulationGroups: PickerGroup[] = [
+    {
+      category: 'all',
+      label: 'Sources',
+      items: modSourceKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
+    },
+  ];
 
   let nid = 0;
   const demoSubs: Partial<Record<NodeKind, string>> = {
@@ -128,7 +148,7 @@
     src={[
       'lib/app/views/GraphCanvas',
       'lib/app/views/GraphPalette',
-      'lib/app/views/ModifierPalette',
+      'lib/app/views/GraphAddMenu',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
@@ -155,10 +175,27 @@
         }}
       >
         {#snippet palette()}
-          <div class="palette-stack">
-            <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node" />
-            <ModifierPalette add={addMod} />
-          </div>
+          <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node">
+            {#snippet trailing()}
+              <GraphAddMenu
+                label="Modifier"
+                icon={Blend}
+                title="Add modifier"
+                subtitle="Insert a modifier into the chain — filter by category."
+                groups={modifierGroups}
+                add={addMod}
+              />
+              <GraphAddMenu
+                label="Modulation"
+                icon={Waves}
+                tint="var(--role-modulation)"
+                title="Add modulation source"
+                subtitle="Drive parameters from an envelope, LFO, or MIDI CC / OSC."
+                groups={modulationGroups}
+                add={(id, cx, cy) => add(id as NodeKind, cx, cy)}
+              />
+            {/snippet}
+          </GraphPalette>
         {/snippet}
       </GraphCanvas>
     </div>
@@ -205,7 +242,7 @@
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Modifiers add by category.</strong> The <code>ModifierPalette</code> lists every registered modifier grouped by category with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list), so new modifiers appear automatically.</li>
+      <li><strong>Modifier / Modulation open a modal picker.</strong> The Modifier and Modulation buttons sit in the ONE add palette alongside the node kinds (<code>GraphAddMenu</code> in the palette's <code>trailing</code> slot) and open the shared <code>Dialog</code>: the modifier picker is category-grouped with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list); the modulation picker lists the source kinds (Envelope / LFO / CC). Selecting adds the node at the visible canvas centre and closes — the always-expanded palettes no longer cover the canvas.</li>
       <li><strong>Delete / Backspace</strong> removes the selection; the palette adds at the visible canvas centre.</li>
     </ul>
   </div>
@@ -246,12 +283,6 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
-  }
-  .palette-stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    align-items: flex-start;
   }
   .contract {
     margin-top: var(--space-5);

@@ -52,8 +52,11 @@ export function nodeModSource(node: GraphNode): ModSource | null {
       return { kind: 'envelope', env: node.env?.[ENVELOPE_NODE_KEY] ?? defaultEnvelope('decay') };
     case 'lfo': // S36 — settings live on node.lfo; unset falls back to a default so it still animates
       return { kind: 'lfo', lfo: node.lfo ?? defaultLfoSettings() };
-    case 'cc': // S37: controller/channel drive an engine CC-table read at sample time
-      return { kind: 'cc', controller: node.ccController ?? 1, channel: node.ccChannel ?? null };
+    case 'cc': // S37: controller/channel drive an engine CC-table read at sample time; an OSC-mode
+      // node instead reads a live 0..1 value at its OSC address (mirrors the CC-table read).
+      return node.ccSource === 'osc'
+        ? { kind: 'osc', address: node.oscAddress ?? '' }
+        : { kind: 'cc', controller: node.ccController ?? 1, channel: node.ccChannel ?? null };
     default:
       return null;
   }

@@ -183,7 +183,7 @@
             <span class="plabel">{row.label}</span>
             <!-- live value tick (S38): the row's current source signal while the engine runs -->
             <ParamRowTick
-              sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable))}
+              sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
             />
           </li>
         {/each}
