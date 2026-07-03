@@ -134,21 +134,36 @@
     top: -19px;
     bottom: -19px;
   }
-  /* the visible hairline */
+  /* The visible hairline. Rest: it hides in the flush module seam (border-faint).
+     Hover/focus/drag: it thickens (scale on the thin axis) and tints toward the
+     accent, so a gutter-less boundary still announces "I'm draggable". */
   .splitter::after {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: 2px;
     background: var(--border-faint);
-    transition: background-color var(--dur-120) ease, box-shadow var(--dur-120) ease;
-  }
-  .splitter:hover::after {
-    background: var(--border-strong);
+    transition: background-color var(--dur-120) ease, box-shadow var(--dur-120) ease,
+      transform var(--dur-120) var(--ease-control);
   }
   .splitter:focus-visible {
     outline: none;
   }
+  /* Hover: clear tint + a visible thickening of the thin axis (2px → ~5px). */
+  .splitter:hover::after {
+    background: var(--accent-dim);
+  }
+  .splitter.vertical:hover::after,
+  .splitter.vertical.dragging::after,
+  .splitter.vertical:focus-visible::after {
+    transform: scaleX(2.5);
+  }
+  .splitter.horizontal:hover::after,
+  .splitter.horizontal.dragging::after,
+  .splitter.horizontal:focus-visible::after {
+    transform: scaleY(2.5);
+  }
+  /* Active drag / keyboard focus: full accent + glow (strongest state). */
   .splitter.dragging::after,
   .splitter:focus-visible::after {
     background: var(--accent);

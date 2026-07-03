@@ -10,12 +10,12 @@
   color-scheme: dark;
 
   /* ---- Graphite canvas — cool near-black instrument body ------------------ */
-  --bg-perform: oklch(0.135 0.011 256); /* perform stage backdrop (deepest)   */
-  --bg: oklch(0.170 0.012 256); /* app canvas (authoring)                      */
-  --surface: oklch(0.208 0.013 256); /* panel base                            */
-  --surface-2: oklch(0.245 0.014 256); /* raised control / panel header        */
-  --surface-3: oklch(0.288 0.015 256); /* popover / menu / hover lift          */
-  --surface-inset: oklch(0.155 0.011 256); /* sunken wells (inputs, tracks)    */
+  --bg-perform: oklch(0.112 0.010 256); /* perform stage backdrop (deepest)   */
+  --bg: oklch(0.142 0.011 256); /* app canvas (authoring)                      */
+  --surface: oklch(0.180 0.012 256); /* panel base                            */
+  --surface-2: oklch(0.216 0.013 256); /* raised control / panel header        */
+  --surface-3: oklch(0.258 0.014 256); /* popover / menu / hover lift          */
+  --surface-inset: oklch(0.128 0.010 256); /* sunken wells (inputs, tracks)    */
 
   --border-faint: oklch(0.262 0.012 256);
   --border: oklch(0.318 0.015 256);
@@ -94,9 +94,11 @@
 
   /* ---- Shell gutter ------------------------------------------------------- */
   /* The single gap between top-level chrome modules (top bar · transport · rails ·
-     center · docks). Its own knob so the shell can tighten toward flush (→ 0)
-     independently of --space-3, which most of these gaps used to hard-code. */
-  --shell-gap: var(--space-3);
+     center · docks). Flush (0) by default so modules read as one instrument body,
+     separated by their surface steps + borders rather than whitespace. Its own
+     knob — independent of --space-3 (which these gaps used to hard-code) — so a
+     gutter can be reintroduced globally by bumping this one value. */
+  --shell-gap: 0px;
 
   /* ---- Radii -------------------------------------------------------------- */
   --radius-1: 3px;

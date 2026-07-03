@@ -241,7 +241,7 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Splitter" src="lib/ui/Splitter" note="Drag the divider, or focus it and use arrow keys / Home / End. Controlled: the caller owns + persists the px size.">
+    <DemoCard title="Splitter" src="lib/ui/Splitter" note="Drag the divider, or focus it and use arrow keys / Home / End. Hover thickens + tints it so it stays discoverable even where modules sit flush (no gutter). Controlled: the caller owns + persists the px size.">
       <div class="split-demo">
         <div class="split-pane" style="width: {railW}px">rail · {railW}px</div>
         <div class="split-pane grow">content</div>
