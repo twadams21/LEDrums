@@ -24,6 +24,7 @@ import type { TransportState } from '../engine/render-context';
 import { applyModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
 import { sampleEnvelope } from './envelope';
+import { applyModulations, type ModSampleCtx } from './modulation';
 import { buildPixelAttrs, createPatternRenderer, type PixelAttrs } from './pattern-renderer';
 import { createGeneratorBridge } from './generator-bridge';
 import type { ParamSpec, ParamValues, Voice } from './types';
@@ -74,8 +75,22 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): Par
     const target = lo + sampleEnvelope(env, phase) * (hi - lo);
     out[key] = base + (target - base) * env.amount; // amount = sweep depth
   }
+  // Modulation mappings (doc 10, S34-wired): summed-and-clamped contributions over the same
+  // spawn-snapshot base. Envelopes sample the same voice-life `phase` (restart per hit). The
+  // legacy env loop above stays until S35 migrates it into mappings + removes `v.env`.
+  const mods = v.modulations;
+  if (mods && mods.length) {
+    applyModulations(v.params, out, mods, v.specs, { phase, timeMs, bpm });
+  }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
+}
+
+/** Build the per-frame modulation-sample context for a voice — its life phase (envelope
+    sources restart per hit) plus the absolute clock + tempo continuous sources (S36/S37)
+    read. Shared by the play-param sweep and the modifier chain so both restart together. */
+function modCtxFor(v: Voice, timeMs: number, bpm: number): ModSampleCtx {
+  return { phase: voicePhase(v, timeMs), timeMs, bpm };
 }
 
 function specFor(specs: ParamSpec[], key: string): ParamSpec | undefined {
@@ -169,7 +184,8 @@ export function createDefaultCompositor(): Compositor {
 
         if (v.generatorId) {
           // Hosted legacy-generator voice — never falls through to the pattern path.
-          generators.renderVoice(v, model, timeMs, level, start, end, dst);
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm);
+          generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
           continue;
         }
 
@@ -187,7 +203,8 @@ export function createDefaultCompositor(): Compositor {
           modRange.start = start;
           modRange.end = end;
           const age = timeMs - v.bornAtMs;
-          applyModifierChain(mods, v.modState, patScratch, modRange, model, age > 0 ? age : 0, frame.dt);
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm);
+          applyModifierChain(mods, v.modState, patScratch, modRange, model, age > 0 ? age : 0, frame.dt, modCtx);
           const src = patScratch.rgba;
           for (let i = start; i < end; i++) {
             const j = i * 4;

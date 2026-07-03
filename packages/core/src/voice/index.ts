@@ -13,6 +13,14 @@ export * from './types';
 export * from './diagnostics';
 export * from './easing';
 export * from './envelope';
+export * from './modulation';
+export {
+  MODULATION_PARITY_CASES,
+  PARITY_PHASES,
+  legacyEnvValue,
+  mappingEnvValue,
+  type ParityCase,
+} from './modulation-parity';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
 export { resolveModifierChain } from './modifier-graph';

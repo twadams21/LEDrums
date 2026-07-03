@@ -16,6 +16,7 @@
  */
 import type { Framebuffer } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
+import { applyModulations, type ModSampleCtx } from '../voice/modulation';
 import { tryGetModifier } from './registry';
 import type { ModifierContext, PixelRange, ResolvedModifier } from './types';
 
@@ -24,6 +25,11 @@ import type { ModifierContext, PixelRange, ResolvedModifier } from './types';
  * array (parallel to `chain`); the runner fills slots lazily via each modifier's
  * `createState` and persists them for the voice's life. No-op for an empty chain — callers
  * gate on `chain.length` to keep the unmodified voice on its zero-alloc path.
+ *
+ * `modCtx` (doc 10, S33) enables per-param modulation of modifier params: when supplied and
+ * a link carries `modulations`, its params are sampled into an effective copy just before
+ * `apply` (summed + clamped to the modifier's spec, same model as play-voice params). Omit it
+ * — or a link with no `modulations` — and the link runs on its authored params allocation-free.
  */
 export function applyModifierChain(
   chain: readonly ResolvedModifier[],
@@ -33,6 +39,7 @@ export function applyModifierChain(
   model: PixelModel,
   timeMs: number,
   dt: number,
+  modCtx?: ModSampleCtx,
 ): void {
   const ctx: ModifierContext = { model, timeMs, dt };
   for (let i = 0; i < chain.length; i++) {
@@ -41,6 +48,11 @@ export function applyModifierChain(
     const def = tryGetModifier(link.modifierId);
     if (!def) continue; // unknown id → skip (never throw on the render path)
     if (state[i] === undefined && def.createState) state[i] = def.createState(model, range);
-    def.apply(ctx, link.params, fb, range, state[i]);
+    let params = link.params;
+    if (modCtx && link.modulations && link.modulations.length) {
+      params = { ...link.params };
+      applyModulations(link.params, params, link.modulations, def.paramSpec, modCtx);
+    }
+    def.apply(ctx, params, fb, range, state[i]);
   }
 }

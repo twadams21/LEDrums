@@ -20,6 +20,7 @@
 import type { PixelModel } from '../geometry/pixel-model';
 import type { Framebuffer } from '../engine/framebuffer';
 import type { ParamSpec, ResolvedParams } from '../effects/types';
+import type { Mapping } from '../voice/modulation';
 
 export type { ParamSpec, ResolvedParams };
 
@@ -67,11 +68,14 @@ export interface ModifierDef<State = unknown> {
  * One resolved link in a voice's modifier chain — the interface between graph resolution
  * (S29) and the engine. `params` are the node's authored values overlaid on the modifier
  * defaults; `bypass` disables the link (identity) without dropping it from the chain.
- * `env` is reserved for doc 10 (per-param modulation of modifier params) — carried but not
- * applied in S28.
+ * `modulations` (doc 10, S33) drives this link's params from modulation sources — the same
+ * {@link Mapping} model + sampler as a play voice's `Voice.modulations`, sampled per-frame by
+ * the chain runner just before `apply` (empty/undefined → params pass through unmodulated).
+ * The graph layer (S34) populates it; before that the chain runs on the authored params.
  */
 export interface ResolvedModifier {
   modifierId: string;
   params: ResolvedParams;
   bypass?: boolean;
+  modulations?: Mapping[];
 }
