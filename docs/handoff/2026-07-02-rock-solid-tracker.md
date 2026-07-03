@@ -63,6 +63,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-03T05:2x — out-of-band: Trent's styling merged to rock-solid
+
+- **Trent's uncommitted main-working-tree styling changes 3-way merged onto rock-solid** (commit **eb97243**): app.css (focus-ring), GraphCanvas (10px handle + larger invisible hit-target, controls), NodeCard (1.5px border, accent-bright hover, dashed drop state, sel ring off), SegmentedControl (solid accent active), Slider (ink thumb), Tooltip (shadow off). Clean 3-way apply (no overlap w/ rock-solid's evolution of these files); design-system.html regenerated; full sweep GREEN (1611 tests). NOT reviewed by a lane orch (Trent authored + requested directly).
+- **NOTE:** these remain UNCOMMITTED on `main` (I copied to rock-solid, did NOT touch Trent's main working tree). Desktop/tauri cruft on main left untouched as always.
+- Active Lane 3 (group/J) will absorb eb97243 via its integrate-before-handoff step; presets/library work won't collide with these UI files.
+
 ### 2026-07-03T05:09 — Lane 3 J 2/4; stricter review caught a defect
 
 - **group/J 2/4 merged** (S39, S40). **S40 review caught a real defect** (closure aliased live graph objects) → impl fixed with structuredClone + mutation-isolation test BEFORE merge. Validates the policy: medium impl + rigorous orch review catches what xhigh would've. Sweep green (1661 tests).
