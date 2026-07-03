@@ -23,6 +23,16 @@ export {
 } from './modulation-parity';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
+// S36 — LFO source node
+export {
+  LFO_WAVEFORMS,
+  defaultLfoSettings,
+  lfoPeriodMs,
+  sampleLfo,
+  type LfoWaveform,
+  type LfoRateMode,
+  type LfoSettings,
+} from './lfo';
 export { resolveModifierChain } from './modifier-graph';
 export {
   resolveNodeModulations,
