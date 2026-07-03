@@ -99,6 +99,15 @@ export interface ShowLibraryBlob {
   data: unknown;
 }
 
+/** The authored SONG library on the wire — a sibling of {@link ShowLibraryBlob} one layer up
+    (canonical songs a show imports). Same contract: an opaque, web-owned versioned envelope the
+    server persists verbatim (as a second named blob) and rebroadcasts; the web validates it via
+    `deserializeSongLibrary` on adopt. */
+export interface SongLibraryBlob {
+  version: number;
+  data: unknown;
+}
+
 export interface SerializedDrum {
   id: string;
   label: string;
