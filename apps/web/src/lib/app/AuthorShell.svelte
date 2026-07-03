@@ -104,7 +104,7 @@
     </main>
 
     <aside class="col2">
-      <section class="viz"><Visualizer {store} /></section>
+      <section class="viz"><Visualizer {store} variant="panel" /></section>
       <section class="buses">
         <PanelHeader icon={LayersIcon} title="Buses / Layers" />
         <LayersDock {store} {shell} />

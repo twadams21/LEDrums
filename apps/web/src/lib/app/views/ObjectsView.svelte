@@ -21,6 +21,7 @@
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import SongRow from './SongRow.svelte';
@@ -87,8 +88,10 @@
 </script>
 
 <MasterDetail bind:selected={type} railLabel="Object types" railWidth="210px">
+  {#snippet railHeader()}
+    <PanelHeader icon={Boxes} title="Objects" />
+  {/snippet}
   {#snippet master({ selected, select })}
-    <Eyebrow icon={Boxes}>Objects</Eyebrow>
     {#each TYPES as t (t.id)}
       <ListItem
         icon={t.icon}
@@ -102,19 +105,17 @@
   {/snippet}
 
   {#snippet detail()}
-    <header class="detail-head">
-      <Eyebrow icon={HeadIcon}>{activeType.label}</Eyebrow>
+    <PanelHeader icon={HeadIcon} title={activeType.label}>
       <span class="detail-count">{countOf(type)}</span>
       {#if type === 'graphs' && store.canEdit}
         <IconButton
-          class="head-paste"
           icon={ClipboardPaste}
           label="Paste graph from clipboard"
           size={14}
           onclick={() => void store.pasteGraphFromClipboard()}
         />
       {/if}
-    </header>
+    </PanelHeader>
 
     <div class="objlist">
       {#if type === 'songs'}
@@ -173,10 +174,6 @@
 </MasterDetail>
 
 <style>
-  /* rail eyebrow spacing (mirrors the old .typerail header gap) */
-  :global(.md-rail) > :global(.eyebrow) {
-    margin-bottom: var(--space-1);
-  }
   .typecount {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
@@ -184,21 +181,13 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .detail-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: none;
-    padding: var(--space-3) var(--space-3) var(--space-2);
-  }
   .detail-count {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
   }
-  /* Header paste action sits at the far right of its row. */
-  .detail-head :global(.head-paste),
+  /* Group-level paste action sits at the far right of its row. */
   .grouphead :global(.head-paste) {
     margin-left: auto;
   }
@@ -209,7 +198,7 @@
     min-height: 0;
     flex: 1;
     overflow: auto;
-    padding: 0 var(--space-3) var(--space-3);
+    padding: var(--space-3);
   }
   /* Source groups within the Songs detail (This show · Song Library). */
   .group {

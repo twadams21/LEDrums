@@ -12,7 +12,6 @@
   import SectionColumn from './SectionColumn.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -67,7 +66,7 @@
 <div class="sections-view">
   <header class="head">
     <div class="title">
-      <Eyebrow icon={LayoutGrid}>Setlist</Eyebrow>
+      <LayoutGrid size={15} aria-hidden="true" class="title-icon" />
       <h2>{song?.name ?? 'No song'}</h2>
     </div>
     {#if store.canEdit}
@@ -137,8 +136,12 @@
   }
   .title {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: 7px;
+  }
+  .title :global(.title-icon) {
+    color: var(--accent);
+    flex: none;
   }
   .title h2 {
     margin: 0;

@@ -57,7 +57,7 @@
   import { findFreePosition } from './node-placement';
   import { guardFlowCallback } from './flow-guard';
   import { nodeIdAtEvent } from './flow-dom';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
   import Cable from '@lucide/svelte/icons/cable';
   import Plug from '@lucide/svelte/icons/plug';
 
@@ -360,13 +360,11 @@
 </script>
 
 <div class="patch-view">
-  <header class="phead">
-    <div class="phead-lead">
-      <Eyebrow icon={Cable}>Patch Graph · device routing</Eyebrow>
-      <span class="hint">input → trigger → zone → drum → hoop → data line → output → controller</span>
-    </div>
-    <PatchClipboardToolbar {store} />
-  </header>
+  <div class="phead">
+    <PanelHeader icon={Cable} title="Patch Graph">
+      <PatchClipboardToolbar {store} />
+    </PanelHeader>
+  </div>
 
   <div class="prow">
     <div class="gwrap" bind:this={canvasWrap}>
@@ -426,24 +424,14 @@
     min-height: 0;
   }
   .phead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
+    overflow: hidden;
   }
-  .phead-lead {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-3);
-    min-width: 0;
-  }
-  .hint {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
+  /* The header IS the whole card here — drop PanelHeader's border-bottom so the card
+     shows a single clean edge. */
+  .phead :global(.panel-hd) {
+    border-bottom: none;
   }
 </style>
