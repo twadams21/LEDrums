@@ -49,6 +49,7 @@ import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
 import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
+import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project } from '@ledrums/core';
 import { voice, listModifiers } from '@ledrums/core';
@@ -500,6 +501,23 @@ export class TriggerLab {
     }),
   );
 
+  /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
+      them raw made meters/chips step visibly. These mirror {@link busLevels}/{@link dockVoices}
+      but exponentially approach the authoritative values, advanced every rAF frame by
+      {@link start}'s loop. Display-only — the server (or offline sim) stays the truth; nothing
+      writes back. The dock renders these. */
+  busLevelsDisplay = $state<Record<string, number>>({});
+  dockVoicesDisplay = $state.raw<DockVoice[]>([]);
+  /** Per-voice display levels backing {@link dockVoicesDisplay} (pruned as voices die). */
+  private voiceLevelDisplay = new Map<string, number>();
+
+  /** Advance the display-smoothed dock values one frame toward the authoritative ones. */
+  private tickDockDisplay(dtMs: number): void {
+    const alpha = smoothingAlpha(dtMs);
+    this.busLevelsDisplay = smoothBusLevels(this.busLevelsDisplay, this.busLevels, alpha);
+    this.dockVoicesDisplay = smoothDockVoices(this.voiceLevelDisplay, this.dockVoices, alpha);
+  }
+
   /** This client's authoring role, derived from {@link presence} (S1 multi-client):
       - 'standalone' — no presence yet (offline / single user): local-wins authoring, as before;
       - 'editor' — we hold the editor slot with other clients connected;
@@ -741,6 +759,7 @@ export class TriggerLab {
       // the offline preview resumes instantly when the link drops.
       if (!this.useServer) this.renderFrame();
       this.snapshot();
+      this.tickDockDisplay(dt);
       // measure local output rate — but only publish it when offline; when the
       // link is open the server reports the real LED output rate via onStats.
       this.fpsFrames++;
