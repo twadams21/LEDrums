@@ -68,6 +68,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 — Wave-2 MERGED (waves 1+2 complete)
+
+- **Wave-2 MERGED** → rock-solid (pushed): (1) all 9 trigger-graph defects fixed + flow-guard on PatchGraphView + `ui/theme-tokens.ts` shared helper (self-ref `$effect` idiom now unwritable) — Delay "corruption" confirmed as the spawn-stacking pointer-theft illusion, gone with the ring-probe placement; (2) ONE RENDER TRUTH: per-trigger `Voice.seed` (deriveSeed in VoicePool) threaded through generator-bridge + web render, sim's 6 `Math.random` → core seeded Prng, instance-scoped voiceSeq, idle-rAF skip while server frames adopted, `determinism.test.ts` (compositor seam) + `sim-determinism.test.ts` (visualiser seam); (3) LayersDock display smoothing (`dock-smoothing.ts`, exp approach τ=150ms, server stays truth — 2 Hz steps → ~17 ms median updates); (4) in-app tunnel start/stop: `TunnelControl` one-truth status machine (off/starting/live/error), PIN minted BEFORE every spawn, tunnel-riding clients (cf-*) refused control even post-takeover, Share button always visible w/ 4-state popover + copy-invite.
+- **Master gates:** full sweep green (typecheck 0 / 2335 files; 1812 tests, 0 skips), review PASS items 1–4 (interim review 1+2 mid-flight), live smoke `pnpm ui-shot --all --strict` **18/18 PASS, zero console errors** (after adding a placeholder SVG favicon — the 404 was the app's only console noise; real logo = wave 3).
+- **Ops notes:** `.env.local` tunnel flag REMOVED (boot-time tunnel gates localhost behind the room PIN — redundant now Share starts in-app; comment documents re-enable). cloudflared installed on this machine. Trent's uncommitted rail-swap experiment on wt-master (`TriggerGraphView.svelte`) was stashed through the merge and restored intact. Known residual: wire-release-shift (1.1) needs-manual-verify; ui-shot note — Playwright trusted clicks inside Bits UI popovers get swallowed, use JS clicks.
+- Agent wave2-correctness-258285 killed (resumable); wt-2 freed. **Remaining: wave 3** (approved shell re-layout + full design critique incl. density/scale + logo + library entry point + trigger-driven previews). **🛑 Lane 4 STILL ON HOLD.**
+
 ### 2026-07-04 — Phase-2 waves: wave-1 MERGED, wave-2 in flight
 
 - **Phase-0 audit DONE** (7 haiku explores): all 9 groups + side-tasks verified WIRED — reconciliation in `docs/plans/2026-07-03-phase2-review/PHASE0-RECONCILIATION.md`. Trust gap = presentation, not missing work.
