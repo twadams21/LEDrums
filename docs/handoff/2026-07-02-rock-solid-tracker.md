@@ -4,6 +4,8 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 
 ---
 
+> **↪ Resuming after a compaction? Read `docs/handoff/2026-07-02-rock-solid-MASTER-HANDOFF.md` FIRST.**
+
 ## ESCALATIONS / notes
 
 - **🛑 LANE 4 ON HOLD (Trent, 2026-07-03 ~08:5x): DO NOT launch the Lane 4 orch (C→D→L) until Trent explicitly says go — he wants to discuss first.** The bgbeq1z0n reset wake (~09:07 UTC) is set to fire Lane 4 — when it fires, SKIP the Lane 4 launch; only check/review the side-task. This overrides all prior "fire Lane 4 at reset" instructions until Trent lifts the hold.
@@ -65,6 +67,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T09:1x — side-task MERGED (39/49 holds); Lane 4 held; HANDOFF written
+
+- **Side-task MERGED** → rock-solid **75ea23f** (`--no-ff`): trigger-graph palette→single top-bar buttons + type modals (GraphAddMenu; ModifierPalette retired), pointer-events bug fixed, OSC modulation (cc-source toggle `ccSource` midi|osc + `oscAddress`, back-compat, core pure). Reviewed (purity ✓, back-compat ✓) + full sweep GREEN **1763 tests/0 skips**. impl fix-graph-palette-30094a killed; wt-1 freed; branch deleted.
+- **Slice count unchanged: 39/49** (side-task is not a slice). rock-solid HEAD 75ea23f.
+- **🛑 Lane 4 remains ON HOLD (Trent).** No lane orch running. Compaction expected next (Trent).
+- **Wrote `docs/handoff/2026-07-02-rock-solid-MASTER-HANDOFF.md`** — the cold-resume doc. wt-2 detached off stale group/K (pool clean).
+- **Next:** await Trent's chat (likely Lane 4 scope). Do NOT launch Lane 4 until he says go. Then resume per the HANDOFF doc's "HOW TO RESUME LANE 4".
 
 ### 2026-07-03T08:46 — side-task phases 1+2 DONE, OSC in progress
 
