@@ -53,7 +53,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
 | I — Modulation system | 2 | #57 | group/I | **MERGED** | d591baf | docs/handoff/rock-solid/group-I.md |
-| J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
+| J — Presets & Song Library | 3 | #53 | group/J | in-progress (3/4 merged; S42 in flight, last) | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
 | D — Layout & kit geometry | 4 | #49 | group/D | pending | — | — |
@@ -62,6 +62,30 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T05:39 — Lane 3 J 3/4; review caught 2nd defect
+
+- **group/J 3/4 merged** (S39/S40/S41). **S41 review caught a 2nd real defect** (adopted song-pool ids not reserved → cross-process id collision) — fixed+tested pre-merge. Two Lane-3 defects caught by the stricter review (S40 closure aliasing, S41 id collision) → policy validated.
+- **S42-library-ui in flight** (opus/high, ui-significant — closes group J). Usage 5h 38%, 7d 50%. rock-solid 48b538c (has Trent styling eb97243).
+- **Next:** S42 merges → J integrate(+Trent styling)+review+handoff → master merge; then K (S43 needs S40✓ → S44∥S45). 30-min cadence.
+
+### 2026-07-03T05:2x — out-of-band: Trent's styling merged to rock-solid
+
+- **Trent's uncommitted main-working-tree styling changes 3-way merged onto rock-solid** (commit **eb97243**): app.css (focus-ring), GraphCanvas (10px handle + larger invisible hit-target, controls), NodeCard (1.5px border, accent-bright hover, dashed drop state, sel ring off), SegmentedControl (solid accent active), Slider (ink thumb), Tooltip (shadow off). Clean 3-way apply (no overlap w/ rock-solid's evolution of these files); design-system.html regenerated; full sweep GREEN (1611 tests). NOT reviewed by a lane orch (Trent authored + requested directly).
+- **NOTE:** these remain UNCOMMITTED on `main` (I copied to rock-solid, did NOT touch Trent's main working tree). Desktop/tauri cruft on main left untouched as always.
+- Active Lane 3 (group/J) will absorb eb97243 via its integrate-before-handoff step; presets/library work won't collide with these UI files.
+
+### 2026-07-03T05:09 — Lane 3 J 2/4; stricter review caught a defect
+
+- **group/J 2/4 merged** (S39, S40). **S40 review caught a real defect** (closure aliased live graph objects) → impl fixed with structuredClone + mutation-isolation test BEFORE merge. Validates the policy: medium impl + rigorous orch review catches what xhigh would've. Sweep green (1661 tests).
+- **S41-library-refs in flight** (opus/medium); S42 next. Usage 5h 27%, 7d 49%. rock-solid 9b8736f — no handoff.
+- **Next:** S41/S42 merge → J integrate+review+handoff → master merge; then K (S43 needs S40✓ → S44∥S45). 30-min cadence.
+
+### 2026-07-03T04:38 — Lane 3 group/J underway
+
+- **Lane 3 progressing:** S39 (remove linked presets) merged → group/J (lane sweep green, 1622 tests). **S40-library-persist in flight opus/high** (J mechanism tracer — justified). Remaining J: S41, S42; then K (S43 needs S40 → S44∥S45). Lane orch cleaned up merged lane-2 branches (F–I). Applying new policy cleanly.
+- Usage 5h 17%, 7d 48% (slow climb). Inbox drained; rock-solid f280a00 — no handoff yet.
+- **Next:** J completes → integrate+review+handoff → master merge; then K. 30-min cadence.
 
 ### 2026-07-03T04:07 — reset; LANE 3 LAUNCHED (J→K)
 

@@ -69,10 +69,10 @@
     align-items: center;
     column-gap: var(--space-2);
     width: 176px;
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
     text-align: left;
     background: var(--surface-2);
-    border: 1px solid var(--border);
+    border: 1.5px solid var(--border);
     border-radius: var(--radius-3);
     box-shadow: var(--shadow-1);
   }
@@ -90,18 +90,19 @@
      node's xyflow position (a CSS transform here would detach handles + edges). */
   .card:hover,
   .card.hov {
-    border-color: var(--accent);
+    border-color: var(--accent-bright);
   }
   /* selected into the Inspector — same full-accent border as hover, plus a crisp ring
      so selection still reads when the node isn't hovered (wires do NOT light up) */
   .card.sel {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent), var(--shadow-1);
+    /* box-shadow: 0 0 0 1px var(--accent), var(--shadow-1); */
   }
   /* a wire is being dropped onto this node (the whole node is the drop target) */
   .card.drop {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 55%, transparent), var(--shadow-1);
+    border-style: dashed;
+    /* box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 55%, transparent), var(--shadow-1); */
   }
   /* stale placeholder: the live model is gone — a dashed warn card so the fault is
      visible on the canvas (a blank card told us nothing for a day). Never hides on hover. */

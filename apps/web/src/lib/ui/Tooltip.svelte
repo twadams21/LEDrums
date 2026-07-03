@@ -43,7 +43,7 @@
     background: var(--surface-3);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-2);
-    box-shadow: var(--shadow-3);
+    /* box-shadow: var(--shadow-3); */
     transform-origin: var(--bits-tooltip-content-transform-origin);
     animation: tt-in 110ms var(--ease-control);
   }

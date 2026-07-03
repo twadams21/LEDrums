@@ -96,12 +96,14 @@
     color: var(--text);
   }
   .seg :global(.seg-btn[data-state='on']) {
-    background: var(--accent-soft);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
   }
-  .seg :global(.seg-btn[data-state='on']:hover) {
-    color: var(--ink);
-  }
+  /* .seg :global(.seg-btn[data-state='on']:hover) {
+    background: var(--accent-dim);
+    color: var(--on-accent);
+  } */
   .seg :global(.seg-btn:focus-visible) {
     outline: none;
     box-shadow: inset 0 0 0 2px var(--accent-soft);

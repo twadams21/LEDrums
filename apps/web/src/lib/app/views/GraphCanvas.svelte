@@ -208,10 +208,16 @@
   }
   /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
   .gcanvas :global(.svelte-flow__handle) {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     background: var(--surface-2);
     border: 1.5px solid var(--border-strong);
+  }
+  .gcanvas :global(.svelte-flow__handle)::after {
+    content: '';
+    position: absolute;
+    inset: -20px;
+    border-radius: 50%;
   }
   .gcanvas :global(.svelte-flow__handle:hover),
   .gcanvas :global(.svelte-flow__handle.connectingfrom),
@@ -224,9 +230,10 @@
     stroke: var(--accent);
     stroke-width: 2;
     stroke-dasharray: 5 4;
-  }
+  } 
   .gcanvas :global(.svelte-flow__controls) {
     background: var(--surface);
+    padding: var(--space-1);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     box-shadow: var(--shadow-2);
@@ -234,7 +241,7 @@
   }
   .gcanvas :global(.svelte-flow__controls-button) {
     background: var(--surface);
-    border-bottom: 1px solid var(--border-faint);
+    border: 1px solid var(--border-faint);
     color: var(--text-muted);
     fill: currentColor;
   }
