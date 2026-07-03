@@ -733,6 +733,21 @@ export class TriggerLab {
   lastSectionFire = $state<{ key: string; seq: number } | null>(null);
   private fireSeq = 0;
 
+  /** Per-graph last-fire wall-clock (`performance.now()` ms), keyed by graph key — display-only
+      state that drives live-on-trigger node previews (TouchDesigner-style: a trigger-driven node
+      face is STATIC until its graph fires, then plays live from that instant). This is a UI
+      timestamp, NOT engine/render state, so core purity + determinism are untouched. */
+  graphFireAt = $state<Record<string, number>>({});
+  private markGraphFire(key: string): void {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.graphFireAt = { ...this.graphFireAt, [key]: now };
+  }
+  /** The fire epoch of the graph open in the editor (or null if it hasn't fired this session) —
+      threaded into that graph's node previews so they animate on the graph's own fire. */
+  get selectedGraphFireAt(): number | null {
+    return this.selectedPadKey ? (this.graphFireAt[this.selectedPadKey] ?? null) : null;
+  }
+
   /** Human label for a graph key (for the section lists + picker): the stored display name
       (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
       label, else the raw key. */
@@ -1686,28 +1701,32 @@ export class TriggerLab {
    * (Raw MIDI/OSC direct bindings resolve via the sim's `resolveGraphsForFire` / the server
    * input-router — U3 — not this pad path.)
    */
-  private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string }> {
+  private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string; key: string }> {
     const section = this.activeSection;
     // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
     // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
     const graphs = this.resolvedView.graphs;
     if (section) {
-      const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
+      const resolved: Array<{ graph: TriggerGraph; label: string; key: string }> = [];
       for (const key of section.graphs) {
         const g = graphs[key];
         if (g && sourceMatchesPad(triggerSourceOf(g), pad.drumId, String(pad.zone))) {
-          resolved.push({ graph: g, label: this.graphLabel(key) });
+          resolved.push({ graph: g, label: this.graphLabel(key), key });
         }
       }
       return resolved;
     }
-    const g = graphs[padKey(pad)];
-    return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}` }] : [];
+    const key = padKey(pad);
+    const g = graphs[key];
+    return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}`, key }] : [];
   }
 
   hit(pad: Pad): void {
     const toFire = this.resolveHitGraphsLocal(pad);
     if (toFire.length === 0) return;
+    // Mark each fired graph's UI fire-clock so its live-on-trigger node previews play (both
+    // online + offline — the preview is display-only and reacts to the local intent either way).
+    for (const { key } of toFire) this.markGraphFire(key);
     // Connected: the server owns resolution + render. Forward the hit and let its frames/levels
     // come back; do NOT fire the local sim (authority principle, doc 03). `onInput` has no `key`
     // echo branch, so this is a single authoritative fire.
@@ -1744,6 +1763,7 @@ export class TriggerLab {
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
     this.lastSectionFire = { key, seq: ++this.fireSeq }; // Graphs-dock card flash
+    this.markGraphFire(key); // live-on-trigger node previews
     const src = triggerSourceOf(graph);
     // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
     // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct

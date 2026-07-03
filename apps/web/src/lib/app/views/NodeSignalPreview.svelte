@@ -10,7 +10,7 @@
      canvas with theme-token colours. The SIGNAL moves; the chrome stays still. */
   import { voice } from '@ledrums/core';
   import SignalFace from '../../trigger-lab/SignalFace.svelte';
-  import { envelopeTrace, formatCcReadout, lfoTrace, type SignalTrace } from '../../trigger-lab/signal-preview';
+  import { envelopeTrace, formatCcReadout, lfoTrace, triggerClock, type SignalTrace } from '../../trigger-lab/signal-preview';
   import { readThemeTokens } from '../../ui/theme-tokens';
 
   interface Props {
@@ -22,8 +22,12 @@
     ccValue?: () => number;
     w?: number;
     h?: number;
+    /** The graph's fire epoch (`performance.now()` ms), or null until it fires. When provided,
+        an ENVELOPE preview is trigger-driven — static until the fire, then sweeps one hit from
+        t=0 (an envelope is a per-hit shape). LFO/CC ignore it: they are continuous by nature. */
+    fireAt?: number | null;
   }
-  let { kind, env, lfo, bpm = 120, ccValue, w = 56, h = 32 }: Props = $props();
+  let { kind, env, lfo, bpm = 120, ccValue, w = 56, h = 32, fireAt }: Props = $props();
 
   let root = $state<HTMLElement>();
   // Theme-aware canvas colours via the shared token reader — fixed fallbacks, never the
@@ -95,9 +99,11 @@
       ccReadout = formatCcReadout(v);
       return;
     }
+    // Envelope is a per-hit shape → trigger-driven: sample at the local time since the fire
+    // (static until it fires). LFO is continuous → sample the live clock as before.
     const trace =
       kind === 'envelope'
-        ? envelopeTrace(env ?? voice.defaultEnvelope('decay'), tMs)
+        ? envelopeTrace(env ?? voice.defaultEnvelope('decay'), triggerClock(fireAt, tMs).localMs)
         : lfoTrace(lfo ?? voice.defaultLfoSettings(), tMs, bpm);
     drawTrace(g, trace);
   };

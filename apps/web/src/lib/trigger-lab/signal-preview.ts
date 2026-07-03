@@ -30,6 +30,28 @@ const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 /** Fractional part in [0,1), correct for negatives (`frac(-0.25) === 0.75`). */
 export const frac = (x: number): number => x - Math.floor(x);
 
+/**
+ * The clock a TRIGGER-DRIVEN preview reads (TouchDesigner-style live-on-trigger): a node face is
+ * STATIC until its graph fires, then plays live from that instant for one `windowMs` hit, then
+ * settles back to the static frame. Pure: given the graph's fire epoch (`fireAt`, a
+ * `performance.now()` timestamp or null) and the shared ticker's `now`, it returns whether the
+ * preview is actively firing and the LOCAL time to sample at (0 at the fire instant).
+ *
+ * · not fired yet, or the hit window has elapsed → `{ firing:false, localMs: PREVIEW_STATIC_MS }`
+ *   (a readable representative still — same frame reduced-motion freezes at).
+ * · within the window → `{ firing:true, localMs: now - fireAt }` (live from t=0).
+ */
+export function triggerClock(
+  fireAt: number | null | undefined,
+  now: number,
+  windowMs = PREVIEW_LOOP_MS,
+): { firing: boolean; localMs: number } {
+  if (fireAt == null) return { firing: false, localMs: PREVIEW_STATIC_MS };
+  const elapsed = now - fireAt;
+  if (elapsed < 0 || elapsed > windowMs) return { firing: false, localMs: PREVIEW_STATIC_MS };
+  return { firing: true, localMs: elapsed };
+}
+
 /** A point on a preview polyline. `x` runs 0→1 left→right; `y` is the 0..1 signal (1 = top). */
 export interface PreviewPoint {
   x: number;

@@ -134,13 +134,26 @@
 
 {#snippet playThumb()}
   {#if node && node.kind === 'play' && eff}
-    <EffectThumb pattern={eff.pattern} params={store.liveParams(node)} w={56} h={32} />
+    <EffectThumb
+      pattern={eff.pattern}
+      params={store.liveParams(node)}
+      w={56}
+      h={32}
+      triggered
+      triggerAt={store.selectedGraphFireAt}
+    />
   {/if}
 {/snippet}
 
 {#snippet sourceThumb()}
   {#if node && node.kind === 'envelope'}
-    <NodeSignalPreview kind="envelope" env={store.envelopeNodeEnvelope(node) ?? undefined} w={56} h={32} />
+    <NodeSignalPreview
+      kind="envelope"
+      env={store.envelopeNodeEnvelope(node) ?? undefined}
+      fireAt={store.selectedGraphFireAt}
+      w={56}
+      h={32}
+    />
   {:else if node && node.kind === 'lfo'}
     <NodeSignalPreview kind="lfo" lfo={store.lfoSettings(node)} bpm={store.bpm} w={56} h={32} />
   {:else if node && node.kind === 'cc'}
