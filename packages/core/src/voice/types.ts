@@ -477,9 +477,8 @@ export interface Voice {
    * compositor reads it, so the hot path stays allocation-free.
    */
   liveParams: ParamValues;
-  /** The spawning effect's param specs (by reference) — drives envelope ranges. */
+  /** The spawning effect's param specs (by reference) — drives modulation ranges. */
   specs: ParamSpec[];
-  env: EnvMap;
   attackMs: number;
   sustainMs: number;
   releaseMs: number;

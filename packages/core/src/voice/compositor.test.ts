@@ -698,7 +698,6 @@ function mkVoice(over: Partial<Voice>): Voice {
     params: {},
     liveParams: { hue: 0, brightness: 0.3 },
     specs: [],
-    env: {},
     attackMs: 0,
     sustainMs: 5000,
     releaseMs: 100,

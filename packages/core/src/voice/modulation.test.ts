@@ -167,7 +167,6 @@ function mkVoice(over: Partial<Voice>): Voice {
     params: {},
     liveParams: {},
     specs: [],
-    env: {},
     attackMs: 100,
     sustainMs: 300,
     releaseMs: 100,

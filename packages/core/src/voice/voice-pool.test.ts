@@ -30,7 +30,6 @@ const action: PlayAction = {
   scope: 'kit',
   busId: '',
   params: {},
-  env: {},
   via: '',
   latchKey: null,
 };
