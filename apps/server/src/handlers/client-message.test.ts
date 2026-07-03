@@ -174,7 +174,6 @@ function voiceNode(kind: voice.GraphNode['kind'], id: string, over: Partial<voic
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: false,
     on: 'value',
     valueMode: 'gate',

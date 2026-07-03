@@ -184,7 +184,7 @@ function evalNode(
           scope: node.scope,
           targetId: node.targetId,
           busId: node.busId,
-          params: resolveNodeParams(state, node),
+          params: node.params,
           modifiers: mods.length ? mods : undefined,
           modulations: modulations.length ? modulations : undefined,
           via: label(modeWord(node.mode)),
@@ -312,11 +312,6 @@ function evalValueSwitch(
   return childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
     evalNode(state, graph, pad, c, ctx, label(bandVia), seen),
   );
-}
-
-function resolveNodeParams(state: EvalState, node: GraphNode): ParamValues {
-  if (node.linked) return state.presetsById.get(node.presetId)?.params ?? node.params;
-  return node.params;
 }
 
 function modeWord(m: PlayMode): string {
