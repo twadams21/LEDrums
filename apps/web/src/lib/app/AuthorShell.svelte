@@ -200,7 +200,7 @@
   .author {
     /* layout constants — single source for the grid tracks AND the splitter
        placement math below, so the resize handles stay on the divides. */
-    --pad: var(--space-3);
+    --pad: var(--shell-gap);
     /* inter-module gutter — one knob (tokens.css › --shell-gap) drives the grid
        gap AND the nested center/dock gaps below, so the shell tightens uniformly. */
     --gap: var(--shell-gap);

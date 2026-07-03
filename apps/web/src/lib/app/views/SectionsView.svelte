@@ -76,7 +76,7 @@
   .sections-view {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--space-3);
+    gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
     -webkit-font-smoothing: antialiased;

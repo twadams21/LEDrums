@@ -149,25 +149,28 @@
   .splitter:focus-visible {
     outline: none;
   }
-  /* Hover: clear tint + a visible thickening of the thin axis (2px → ~5px). */
+  /* Hover: clear tint + a slight thickening of the thin axis (2px → ~3px). */
   .splitter:hover::after {
     background: var(--accent-dim);
   }
-  .splitter.vertical:hover::after,
+  .splitter.vertical:hover::after {
+    transform: scaleX(1.6);
+  }
+  .splitter.horizontal:hover::after {
+    transform: scaleY(1.6);
+  }
+  /* Active drag / keyboard focus: full accent, a touch thicker than hover (no glow/shadow). */
   .splitter.vertical.dragging::after,
   .splitter.vertical:focus-visible::after {
-    transform: scaleX(2.5);
+    transform: scaleX(2);
   }
-  .splitter.horizontal:hover::after,
   .splitter.horizontal.dragging::after,
   .splitter.horizontal:focus-visible::after {
-    transform: scaleY(2.5);
+    transform: scaleY(2);
   }
-  /* Active drag / keyboard focus: full accent + glow (strongest state). */
   .splitter.dragging::after,
   .splitter:focus-visible::after {
     background: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent);
   }
   @media (prefers-reduced-motion: reduce) {
     .splitter::after {

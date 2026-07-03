@@ -65,7 +65,7 @@
   .md {
     display: grid;
     grid-template-columns: var(--md-rail-width) minmax(0, 1fr);
-    gap: var(--space-3);
+    gap: var(--shell-gap);
     height: 100%;
     min-height: 0;
     -webkit-font-smoothing: antialiased;
