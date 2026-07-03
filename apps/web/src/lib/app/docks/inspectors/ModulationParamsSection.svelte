@@ -66,7 +66,7 @@
   </div>
 
   {#if rows.length === 0}
-    <p class="hint">Expose a numeric parameter to modulate it — each becomes a handle on the node you can wire a source (envelope) into.</p>
+    <p class="hint">Add a parameter to animate it, then wire an envelope, LFO, or MIDI source into it.</p>
   {/if}
 
   {#each rows as row (row.param)}
@@ -88,7 +88,7 @@
       {/if}
 
       {#if maps.length === 0}
-        <p class="empty">No wires yet — drag from a modulation source into this row's handle.</p>
+        <p class="empty">Not wired yet — drag a source into this row to animate it.</p>
       {/if}
 
       {#each maps as m (m.id)}

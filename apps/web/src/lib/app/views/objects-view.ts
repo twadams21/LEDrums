@@ -8,9 +8,9 @@ import type { Song } from '../setlist';
 
 /** The four object types the Objects view indexes, in rail order. (Icons live in the
     .svelte; this module is DOM-free.) */
-export type ObjectTypeId = 'songs' | 'effects' | 'graphs' | 'presets';
+export type ObjectTypeId = 'songs' | 'library' | 'effects' | 'graphs' | 'presets';
 
-export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'effects', 'graphs', 'presets'];
+export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'library', 'effects', 'graphs', 'presets'];
 
 /** Stable name-then-id comparator, so equal names keep a deterministic order across reloads. */
 function byNameThenId(a: { name: string; id: string }, b: { name: string; id: string }): number {

@@ -20,7 +20,6 @@
   } from './objects-view';
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import ListItem from '../../ui/ListItem.svelte';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
@@ -59,6 +58,7 @@
 
   const TYPES: Array<{ id: ObjectTypeId; label: string; icon: Component }> = [
     { id: 'songs', label: 'Songs', icon: ListMusic },
+    { id: 'library', label: 'Song Library', icon: LibraryBig },
     { id: 'effects', label: 'Effects', icon: Sparkles },
     { id: 'graphs', label: 'Graphs', icon: Workflow },
     { id: 'presets', label: 'Presets', icon: Bookmark },
@@ -66,11 +66,13 @@
   const countOf = (id: ObjectTypeId): number =>
     id === 'songs'
       ? setlistCount
-      : id === 'effects'
-        ? effects.length
-        : id === 'graphs'
-          ? graphs.length
-          : presets.length;
+      : id === 'library'
+        ? librarySongs.length
+        : id === 'effects'
+          ? effects.length
+          : id === 'graphs'
+            ? graphs.length
+            : presets.length;
   const activeType = $derived(TYPES.find((t) => t.id === type)!);
   const HeadIcon = $derived(activeType.icon);
 
@@ -107,6 +109,14 @@
   {#snippet detail()}
     <PanelHeader icon={HeadIcon} title={activeType.label}>
       <span class="detail-count">{countOf(type)}</span>
+      {#if type === 'songs' && store.canEdit}
+        <IconButton
+          icon={ClipboardPaste}
+          label="Paste song from clipboard"
+          size={14}
+          onclick={() => store.openSongPaste()}
+        />
+      {/if}
       {#if type === 'graphs' && store.canEdit}
         <IconButton
           icon={ClipboardPaste}
@@ -119,40 +129,19 @@
 
     <div class="objlist">
       {#if type === 'songs'}
-        <section class="group">
-          <header class="grouphead">
-            <Eyebrow icon={ListMusic}>This show</Eyebrow>
-            <span class="detail-count">{localSongs.length + refSongs.length}</span>
-            {#if store.canEdit}
-              <IconButton
-                class="head-paste"
-                icon={ClipboardPaste}
-                label="Paste song from clipboard"
-                size={14}
-                onclick={() => store.openSongPaste()}
-              />
-            {/if}
-          </header>
-          {#each localSongs as song (song.id)}
-            <SongRow {store} {song} />
-          {/each}
-          {#each refSongs as row (row.id)}
-            <LibraryRefRow {store} {row} />
-          {/each}
-        </section>
-
-        <section class="group">
-          <header class="grouphead">
-            <Eyebrow icon={LibraryBig}>Song Library</Eyebrow>
-            <span class="detail-count">{librarySongs.length}</span>
-          </header>
-          {#each librarySongs as row (row.id)}
-            <LibrarySongRow {store} {row} />
-          {/each}
-          {#if librarySongs.length === 0}
-            <p class="empty">No library songs yet — use “Add to library” on a song to share it across shows.</p>
-          {/if}
-        </section>
+        {#each localSongs as song (song.id)}
+          <SongRow {store} {song} />
+        {/each}
+        {#each refSongs as row (row.id)}
+          <LibraryRefRow {store} {row} />
+        {/each}
+      {:else if type === 'library'}
+        {#each librarySongs as row (row.id)}
+          <LibrarySongRow {store} {row} />
+        {/each}
+        {#if librarySongs.length === 0}
+          <p class="empty">No saved songs yet. Save a song to the library to reuse it across shows.</p>
+        {/if}
       {:else if type === 'effects'}
         {#each effects as effect (effect.id)}
           <EffectRow {store} {effect} active={selectedId === effect.id} onSelect={() => (selectedId = effect.id)} />
@@ -187,10 +176,6 @@
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
   }
-  /* Group-level paste action sits at the far right of its row. */
-  .grouphead :global(.head-paste) {
-    margin-left: auto;
-  }
   .objlist {
     display: flex;
     flex-direction: column;
@@ -199,21 +184,6 @@
     flex: 1;
     overflow: auto;
     padding: var(--space-3);
-  }
-  /* Source groups within the Songs detail (This show · Song Library). */
-  .group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-  .group + .group {
-    margin-top: var(--space-3);
-  }
-  .grouphead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-1) var(--space-1) 0;
   }
   .empty {
     margin: 0;
