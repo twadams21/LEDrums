@@ -6,6 +6,7 @@
  */
 import type { ResolvedModifier } from '../modifiers/types';
 import type { Mapping } from './modulation';
+import type { LfoSettings } from './lfo'; // S36
 
 export type { ResolvedModifier };
 
@@ -230,7 +231,7 @@ export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'cha
  * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
  * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'envelope';
+export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'envelope' | 'lfo'; // S36 'lfo'
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -275,6 +276,9 @@ export interface GraphNode {
       incoming `param:<key>` edges (one edge = one mapping), so an exposed-but-unwired param
       is a row with no contribution. */
   modInputs?: { param: string }[];
+  // lfo source (doc 10, S36) — only meaningful when kind === 'lfo'. Optional + additive; unset
+  // falls back to defaults in `nodeModSource` so a freshly-wired LFO still animates.
+  lfo?: LfoSettings; // S36
   // random
   noRepeat: boolean;
   // switch

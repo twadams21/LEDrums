@@ -14,6 +14,7 @@
  * arm + a `nodeModSource` case — no reshape of {@link Mapping} or the resolver.
  */
 import { defaultEnvelope } from './envelope';
+import { defaultLfoSettings } from './lfo'; // S36
 import type { ModParamSpec, ModSource } from './modulation';
 import type { GraphEdge, GraphNode, TriggerGraph } from './types';
 import type { Mapping } from './modulation';
@@ -26,7 +27,7 @@ export const ENVELOPE_NODE_KEY = 'shape';
 /** The `NodeKind`s that are modulation SOURCES (wire from their output into a `param:<key>`
     input). Widens with S36 (`'lfo'`) / S37 (`'cc'`). Kept here so the web wiring layer and the
     resolver agree on one list. */
-export const MOD_SOURCE_KINDS = ['envelope'] as const;
+export const MOD_SOURCE_KINDS = ['envelope', 'lfo'] as const; // S36 append 'lfo'
 
 /** Whether a node kind is a modulation source. */
 export function isModSourceKind(kind: string): boolean {
@@ -49,6 +50,8 @@ export function nodeModSource(node: GraphNode): ModSource | null {
   switch (node.kind) {
     case 'envelope':
       return { kind: 'envelope', env: node.env?.[ENVELOPE_NODE_KEY] ?? defaultEnvelope('decay') };
+    case 'lfo': // S36 — settings live on node.lfo; unset falls back to a default so it still animates
+      return { kind: 'lfo', lfo: node.lfo ?? defaultLfoSettings() };
     default:
       return null;
   }

@@ -15,6 +15,7 @@
  * no reshaping of {@link Mapping} or the sweep.
  */
 import { sampleEnvelope } from './envelope';
+import { sampleLfo, type LfoSettings } from './lfo'; // S36
 import type { Envelope, ParamSpec, ParamValues } from './types';
 
 /**
@@ -24,7 +25,9 @@ import type { Envelope, ParamSpec, ParamValues } from './types';
  * an envelope carries its shape (sampled by the host voice's life phase, so each hit runs
  * its own instance).
  */
-export type ModSource = { kind: 'envelope'; env: Envelope };
+export type ModSource =
+  | { kind: 'envelope'; env: Envelope }
+  | { kind: 'lfo'; lfo: LfoSettings }; // S36
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
 export type ModSourceKind = ModSource['kind'];
@@ -89,6 +92,8 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
   switch (src.kind) {
     case 'envelope':
       return sampleEnvelope(src.env, ctx.phase);
+    case 'lfo': // S36 — continuous: absolute time + bpm, never the voice phase
+      return sampleLfo(src.lfo, ctx.timeMs, ctx.bpm);
   }
 }
 
