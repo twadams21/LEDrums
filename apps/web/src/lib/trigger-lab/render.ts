@@ -15,7 +15,6 @@ import {
 } from '@ledrums/core';
 import {
   applyModulations,
-  sampleEnvelope,
   type ModSampleCtx,
   type ParamValues,
   type Pattern,
@@ -35,26 +34,16 @@ function hash(n: number): number {
   return s - Math.floor(s);
 }
 
-/** Resolve a voice's params for this frame: apply envelopes + tempo sync. */
+/** Resolve a voice's params for this frame: apply modulation mappings + tempo sync. */
 function effectiveParams(v: Voice, sim: Sim): ParamValues {
   const out: ParamValues = { ...v.params };
   const eff = sim.effect(v.effectId);
-  const phase = sim.voicePhase(v);
-  for (const key of Object.keys(v.env)) {
-    const env = v.env[key];
-    if (!env || env.kind === 'none') continue;
-    const spec = eff?.params.find((s) => s.key === key);
-    if (!spec || spec.kind !== 'number') continue;
-    const lo = spec.min ?? 0;
-    const hi = spec.max ?? 1;
-    const base = num(v.params[key], lo);
-    const target = lo + sampleEnvelope(env, phase) * (hi - lo);
-    out[key] = base + (target - base) * env.amount; // amount = sweep depth
-  }
-  // Modulation mappings (doc 10, S34-wired) — mirror of the core compositor sweep: summed +
-  // clamped contributions over the spawn-snapshot base. Envelopes sample the same voice phase.
+  // Modulation mappings (doc 10) — mirror of the core compositor sweep: summed + clamped
+  // contributions over the spawn-snapshot base. Envelope sources sample the voice life phase
+  // (restart per hit). The legacy per-param env sweep folded into these mappings in S35.
   const mods = v.modulations;
   if (mods && mods.length && eff) {
+    const phase = sim.voicePhase(v);
     applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (sim.bpm / 120);

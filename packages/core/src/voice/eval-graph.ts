@@ -9,7 +9,6 @@
  */
 import type { Prng } from './prng';
 import type {
-  EnvMap,
   GraphNode,
   ParamValues,
   PlayMode,
@@ -37,7 +36,6 @@ export interface PlayAction {
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
-  env: EnvMap;
   /**
    * Resolved modifier chain for this play node's `mod` input (S28 seam). Carried verbatim to
    * the spawned voice. Populated by graph resolution in S29 (walk `mod` edges, order by
@@ -187,7 +185,6 @@ function evalNode(
           targetId: node.targetId,
           busId: node.busId,
           params: resolveNodeParams(state, node),
-          env: node.env,
           modifiers: mods.length ? mods : undefined,
           modulations: modulations.length ? modulations : undefined,
           via: label(modeWord(node.mode)),

@@ -23,11 +23,10 @@ import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { applyModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
-import { sampleEnvelope } from './envelope';
 import { applyModulations, type ModSampleCtx } from './modulation';
 import { buildPixelAttrs, createPatternRenderer, type PixelAttrs } from './pattern-renderer';
 import { createGeneratorBridge } from './generator-bridge';
-import type { ParamSpec, ParamValues, Voice } from './types';
+import type { ParamValues, Voice } from './types';
 
 // `buildPixelAttrs` / `PixelAttrs` live with the pattern renderer (which samples them);
 // re-exported here so the `./compositor` import surface — consumed by the engine and the
@@ -63,24 +62,12 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): Par
   // Refill the scratch from the spawn snapshot.
   for (const k of Object.keys(out)) delete out[k];
   for (const k of Object.keys(v.params)) out[k] = v.params[k]!;
-  const phase = voicePhase(v, timeMs);
-  for (const key of Object.keys(v.env)) {
-    const env = v.env[key];
-    if (!env || env.kind === 'none') continue;
-    const spec = specFor(v.specs, key);
-    if (!spec || spec.kind !== 'number') continue;
-    const lo = spec.min ?? 0;
-    const hi = spec.max ?? 1;
-    const base = num(v.params[key], lo);
-    const target = lo + sampleEnvelope(env, phase) * (hi - lo);
-    out[key] = base + (target - base) * env.amount; // amount = sweep depth
-  }
-  // Modulation mappings (doc 10, S34-wired): summed-and-clamped contributions over the same
-  // spawn-snapshot base. Envelopes sample the same voice-life `phase` (restart per hit). The
-  // legacy env loop above stays until S35 migrates it into mappings + removes `v.env`.
+  // Modulation mappings (doc 10): summed-and-clamped contributions over the spawn-snapshot base.
+  // Envelope sources sample the voice-life `phase` (restart per hit); continuous sources read the
+  // absolute clock + tempo. The legacy per-param env sweep folded into these mappings in S35.
   const mods = v.modulations;
   if (mods && mods.length) {
-    applyModulations(v.params, out, mods, v.specs, { phase, timeMs, bpm });
+    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
@@ -91,11 +78,6 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): Par
     read. Shared by the play-param sweep and the modifier chain so both restart together. */
 function modCtxFor(v: Voice, timeMs: number, bpm: number): ModSampleCtx {
   return { phase: voicePhase(v, timeMs), timeMs, bpm };
-}
-
-function specFor(specs: ParamSpec[], key: string): ParamSpec | undefined {
-  for (const s of specs) if (s.key === key) return s;
-  return undefined;
 }
 
 /**

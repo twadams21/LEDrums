@@ -471,7 +471,7 @@ class VoiceBusEngine implements RenderEngine {
     const effect = this.effectsById.get(effectId);
     if (!effect) return null;
     const params = this.presetsById.get(`${effectId}:default`)?.params ?? this.lookDefaultParams(effect);
-    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, env: {}, via, latchKey: null };
+    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, via, latchKey: null };
   }
 
   /** Default param record from an effect's spec — the fallback when no

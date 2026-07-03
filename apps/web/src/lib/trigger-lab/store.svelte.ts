@@ -663,7 +663,9 @@ export class TriggerLab {
       hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
       constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
   private normalizeGraphs(): void {
-    const { graphs, graphNames } = hydrateGraphs(this.graphs, this.graphNames, this.pads);
+    const { graphs, graphNames } = hydrateGraphs(this.graphs, this.graphNames, this.pads, (effectId) =>
+      this.effects.find((e) => e.id === effectId)?.params ?? [],
+    );
     this.graphs = graphs;
     this.graphNames = graphNames;
   }
