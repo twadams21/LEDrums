@@ -53,7 +53,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
 | I — Modulation system | 2 | #57 | group/I | **MERGED** | d591baf | docs/handoff/rock-solid/group-I.md |
-| J — Presets & Song Library | 3 | #53 | group/J | in-progress (S39/S40 merged; S41 in flight, S42 next) | — | — |
+| J — Presets & Song Library | 3 | #53 | group/J | in-progress (3/4 merged; S42 in flight, last) | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
 | D — Layout & kit geometry | 4 | #49 | group/D | pending | — | — |
@@ -62,6 +62,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T05:39 — Lane 3 J 3/4; review caught 2nd defect
+
+- **group/J 3/4 merged** (S39/S40/S41). **S41 review caught a 2nd real defect** (adopted song-pool ids not reserved → cross-process id collision) — fixed+tested pre-merge. Two Lane-3 defects caught by the stricter review (S40 closure aliasing, S41 id collision) → policy validated.
+- **S42-library-ui in flight** (opus/high, ui-significant — closes group J). Usage 5h 38%, 7d 50%. rock-solid 48b538c (has Trent styling eb97243).
+- **Next:** S42 merges → J integrate(+Trent styling)+review+handoff → master merge; then K (S43 needs S40✓ → S44∥S45). 30-min cadence.
 
 ### 2026-07-03T05:2x — out-of-band: Trent's styling merged to rock-solid
 
