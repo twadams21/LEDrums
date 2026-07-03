@@ -71,7 +71,9 @@ Trent iterated directly with the prototype agent and approved `~/TWA/ledrums-pro
 - **Full-height right column**: Kit preview (3D visualiser) + **Buses/Layers** with MONO/POLY + arm toggles.
 - **"Graphs" dock at the bottom**, spanning only the graph-view width (canvas + drawer): **section tabs** (Intro/Verse/Chorus/Bridge) and **graph cards each with a bordered hotkey number badge**; keys **1–9 fire graphs** (green fire flash), **←/→ switch sections**.
 
-Still open: decision 3 (modifier-order visibility) and decision 4 (envelope-trigger semantics).
+**Decision 3 (modifier-order visibility): both mockup options REJECTED** (Trent, 2026-07-03) — no numbered chips, no drag-to-reorder list. The underlying problem (y-position silently determines execution order) is still real and PARKED: revisit during the wave-3 shell work with fresh options (e.g. the Node Editor drawer's inspector could *display* the computed chain order read-only — visibility without a new interaction). Do NOT ship either rejected pattern.
+
+**Decision 4 (trigger-started envelopes + delay offset): DROPPED as a feature for now** (Trent, 2026-07-03). Remove from item C's scope — C remains retrigger-overlap correctness + per-trigger seeding only. The prototype (`decision-4-envelope-trigger.html`) stays in the vault if it's ever revived.
 
 ## Phase 0 status at capture time
 

@@ -106,7 +106,7 @@ Server broadcasts voice stats at **2 Hz** (`main.ts:550`, 500 ms interval); clie
 2. **Live smoke pass** of every ⚠️LIVE above (one dev-server session): visualiser render source, Share/tunnel server logs, LayersDock profile, delay-corruption repro attempt, the 9 UX bugs.
 
 **Wave 2 — correctness (P0/P1):**
-3. **B+C combined:** kill sim `Math.random()` via trigger-derived seeds (or collapse sim onto core); determinism test at compositor + visualiser seams; retrigger-overlap verification; per-trigger seeding for random effects (confetti). Include trigger-started-envelope design (with delay offset) as the C extension.
+3. **B+C combined:** ONE RENDER TRUTH (Trent-confirmed direction) — collapse the throwaway web sim onto the core engine; determinism test at compositor + visualiser seams; retrigger-overlap verification; per-trigger seeding for random effects (confetti). ~~Trigger-started envelopes~~ — DROPPED for now (Trent, 2026-07-03).
 4. **A:** fix the 9 mapped UX defects + delay-corruption root-cause + extract the theme-token helper + extend flow-guard hardening to the Patch graph.
 5. **H:** stats interpolation (after profile confirms).
 6. **Share/tunnel:** restore tunnel startup/reporting.
@@ -114,8 +114,7 @@ Server broadcasts voice stats at **2 Hz** (`main.ts:550`, 500 ms interval); clie
 **Wave 3 — cohesive design pass (P2, one coherent drop):**
 7. **D/E/F(iterate)/G + I-surfacing + logo:** header-primitive unification (Tabs treatment), icon+tooltip standardisation, params-inside-card, add-flow redesign (DnD-to-add vs modal — decision below), inspector rail/drawer rethink (covers both graphs), library entry point, node previews live-on-trigger, favicon+logo. Linear/Resend north star; one design-system regen; every change screenshot-verified via the new CLI.
 
-**Decisions for Trent (explain-then-decide, not grill):**
-- **Add flow:** DnD-from-drawer vs keep modals (+ smart spawn placement). The modal pattern he likes can coexist with DnD.
-- **Inspector:** full-height right rail vs slide-over sticky drawer (affects both graphs + visualiser placement).
-- **Modifier order UI:** keep y-position ordering but make it visible (numbered chips), or explicit reorder control.
-- **Trigger-started envelopes:** confirm desired semantics (does a delay offset shift phase start only, or gate the whole mapping?).
+**Decisions — RESOLVED 2026-07-03 (see TRENT-DICTATION-2.md for detail):**
+- **Add flow + Inspector:** superseded by the APPROVED app-shell re-layout (`~/TWA/ledrums-prototypes/relayout-shell.html`) — Node Editor side drawer (Add/Inspector tabs), full-height Kit+Buses/Layers right column, bottom Graphs dock with section tabs + 1–9 hotkey graph cards. This is the wave-3 target shell.
+- **Modifier order UI:** both proposed options REJECTED; problem parked — revisit within the new shell (candidate: read-only chain order display in the drawer inspector).
+- **Trigger-started envelopes:** DROPPED as a feature for now; out of item C's scope.
