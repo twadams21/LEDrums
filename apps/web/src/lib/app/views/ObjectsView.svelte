@@ -21,6 +21,8 @@
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
+  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import SongRow from './SongRow.svelte';
   import LibraryRefRow from './LibraryRefRow.svelte';
   import LibrarySongRow from './LibrarySongRow.svelte';
@@ -103,6 +105,15 @@
     <header class="detail-head">
       <Eyebrow icon={HeadIcon}>{activeType.label}</Eyebrow>
       <span class="detail-count">{countOf(type)}</span>
+      {#if type === 'graphs' && store.canEdit}
+        <IconButton
+          class="head-paste"
+          icon={ClipboardPaste}
+          label="Paste graph from clipboard"
+          size={14}
+          onclick={() => void store.pasteGraphFromClipboard()}
+        />
+      {/if}
     </header>
 
     <div class="objlist">
@@ -111,6 +122,15 @@
           <header class="grouphead">
             <Eyebrow icon={ListMusic}>This show</Eyebrow>
             <span class="detail-count">{localSongs.length + refSongs.length}</span>
+            {#if store.canEdit}
+              <IconButton
+                class="head-paste"
+                icon={ClipboardPaste}
+                label="Paste song from clipboard"
+                size={14}
+                onclick={() => store.openSongPaste()}
+              />
+            {/if}
           </header>
           {#each localSongs as song (song.id)}
             <SongRow {store} {song} />
@@ -176,6 +196,11 @@
     font-family: var(--font-mono);
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
+  }
+  /* Header paste action sits at the far right of its row. */
+  .detail-head :global(.head-paste),
+  .grouphead :global(.head-paste) {
+    margin-left: auto;
   }
   .objlist {
     display: flex;

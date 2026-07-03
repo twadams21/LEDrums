@@ -10,6 +10,7 @@
   import ListMusic from '@lucide/svelte/icons/list-music';
   import Pencil from '@lucide/svelte/icons/pencil';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
+  import Copy from '@lucide/svelte/icons/copy';
   import BookPlus from '@lucide/svelte/icons/book-plus';
   import Check from '@lucide/svelte/icons/check';
   import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -43,6 +44,7 @@
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Activate', icon: Play, onSelect: () => store.setActiveSong(song.id) },
     { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSong(song.id) },
+    { label: 'Copy', icon: Copy, onSelect: () => void store.copySongToClipboard(song.id) },
     { label: 'Add to library', icon: BookPlus, onSelect: addToLibrary },
     { label: 'Delete', icon: Trash2, danger: true, disabled: !canDelete, onSelect: remove },
   ]);
@@ -65,6 +67,7 @@
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename song" size={13} onclick={() => (editing = true)} />
     <IconButton icon={CopyPlus} label="Duplicate song" size={13} onclick={() => store.duplicateSong(song.id)} />
+    <IconButton icon={Copy} label="Copy song to clipboard" size={13} onclick={() => void store.copySongToClipboard(song.id)} />
     <IconButton
       icon={justAdded ? Check : BookPlus}
       label={justAdded ? 'Added to library' : 'Add to library'}
