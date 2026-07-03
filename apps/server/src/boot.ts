@@ -24,6 +24,7 @@ export interface BootDeps {
   statsTimer: ReturnType<typeof setInterval>;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
+  songLibraryAutosaver: Autosaver;
   /** Outbound Cloudflare tunnel (S3), or null when disabled. Started after the socket binds;
    * stopped on shutdown. */
   tunnelManager: TunnelManager | null;
@@ -130,11 +131,12 @@ export function boot(deps: BootDeps): void {
     deps.wss.close();
     deps.server.close();
     // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
-    // never rejects (write errors are logged), but guard exit-on-error just in case. Both the
-    // project and the show library are flushed (independent slots).
+    // never rejects (write errors are logged), but guard exit-on-error just in case. The project
+    // and both libraries are flushed (independent slots).
     await Promise.all([
       deps.autosaver.flush().catch(() => {}),
       deps.showLibraryAutosaver.flush().catch(() => {}),
+      deps.songLibraryAutosaver.flush().catch(() => {}),
     ]);
     process.exit(0);
   }

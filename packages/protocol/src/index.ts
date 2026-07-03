@@ -69,6 +69,10 @@ export type ClientMessage =
   // versioned blob — its schema is web-owned) on every authored change; the server persists
   // it and rebroadcasts it on cold load via the `state` message. Mode-independent.
   | { t: 'setShowLibrary'; library: ShowLibraryBlob }
+  // Server-authoritative SONG library (the canonical songs shows import). Same contract as
+  // `setShowLibrary`: the client pushes an opaque versioned blob on every library change; the
+  // server persists it as a second named blob and rebroadcasts it on cold load / live.
+  | { t: 'setSongLibrary'; library: SongLibraryBlob }
   | { t: 'key'; drumId: string; zone?: string; velocity?: number }
   // Keyboard performance intent (voice mode): play an EXACT authored graph by key. Sent
   // instead of a synthetic MIDI/OSC source so the server fires precisely that graph, with no
@@ -208,7 +212,9 @@ export type ServerMessage =
   // blob), or null when the server has none yet — the web adopts it on cold load.
   // `tunnel` carries the remote-access surface (share URL + room PIN) for the host UI; null when
   // neither a tunnel nor a PIN gate is configured (plain local dev). See {@link TunnelInfo}.
-  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null; tunnel: TunnelInfo | null }
+  // `songLibrary` carries the server's persisted authored SONG library (a second opaque versioned
+  // blob), or null when the server has none yet — adopted on cold load like `showLibrary`.
+  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null; songLibrary: SongLibraryBlob | null; tunnel: TunnelInfo | null }
   | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
   | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number; note?: number; channel?: number }
   | { t: 'monitor'; event: MonitorEvent }
@@ -222,4 +228,7 @@ export type ServerMessage =
   // viewers live-follow without a full `state` rebuild. Never echoed back to the editor that sent
   // it. Carries the same opaque versioned blob the server persists + ships on `state`.
   | { t: 'showLibrary'; library: ShowLibraryBlob }
+  // Live SONG-library push: the editor's `setSongLibrary` relayed to the OTHER clients, mirroring
+  // the `showLibrary` relay. Never echoed to the sender.
+  | { t: 'songLibrary'; library: SongLibraryBlob }
   | { t: 'error'; message: string };

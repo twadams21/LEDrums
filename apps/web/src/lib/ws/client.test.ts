@@ -83,6 +83,7 @@ describe('WSClient', () => {
       projects: ['default'],
       output: { state: 'disabled', protocol: 'artnet', host: '1.2.3.4', packetsSent: 0, lastError: null, universeCount: 0 },
       showLibrary: null,
+      songLibrary: null,
       tunnel: null,
     };
     ws.emitText(JSON.stringify(msg));

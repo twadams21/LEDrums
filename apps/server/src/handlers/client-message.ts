@@ -3,7 +3,7 @@ import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import type { ClientMessage, ServerMessage, ShowLibraryBlob } from '../ws-protocol';
+import type { ClientMessage, ServerMessage, ShowLibraryBlob, SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -53,6 +53,12 @@ export function requiresEditor(t: ClientMessage['t']): boolean {
   return !ENGINE_INPUTS.has(t) && !UNGATED_NON_INPUTS.has(t);
 }
 
+/** A pushed library payload is usable iff it is an object carrying a numeric `version` — the same
+    opaque-envelope gate the persistence layer applies. Shared by the show + song library branches. */
+function isVersionedBlob(lib: unknown): lib is { version: number; data: unknown } {
+  return !!lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number';
+}
+
 // ---------------------------------------------------------------------------
 // Handler factory
 // ---------------------------------------------------------------------------
@@ -71,6 +77,7 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   voiceHost: VoiceEngineHost | null;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
+  songLibraryAutosaver: Autosaver;
   /** Broadcast a JSON message to every client. */
   broadcastJson(msg: ServerMessage): void;
   /** Re-broadcast `presence` to every client (each gets its own `youAreEditor`). */
@@ -81,7 +88,9 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   stateMessage(): ServerMessage;
   /** Adopt a pushed show library as the live slot (owned by the server wiring). */
   setShowLibrary(lib: ShowLibraryBlob): void;
-  /** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
+  /** Adopt a pushed song library as the live slot (mirrors {@link setShowLibrary}). */
+  setSongLibrary(lib: SongLibraryBlob): void;
+  /** Relay a server message to every client EXCEPT `sender` (the live show/song-library relay). */
   relayToOthers(sender: S, msg: ServerMessage): void;
   /** Append a diagnostic event to the shared Monitor stream. */
   monitor?(event: MonitorDraft): void;
@@ -107,11 +116,13 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     voiceHost,
     autosaver,
     showLibraryAutosaver,
+    songLibraryAutosaver,
     broadcastJson,
     broadcastPresence,
     broadcastState,
     stateMessage,
     setShowLibrary,
+    setSongLibrary,
     relayToOthers,
     monitor,
   } = deps;
@@ -144,9 +155,8 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // viewers follow without a full `state` rebuild. Never echoed to the sender (it is the source);
     // cold-load adopt for a fresh client still happens via the `state` message on (re)connect.
     if (msg.t === 'setShowLibrary') {
-      const lib = msg.library;
-      if (lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number') {
-        const blob = lib as ShowLibraryBlob;
+      if (isVersionedBlob(msg.library)) {
+        const blob = msg.library;
         setShowLibrary(blob);
         showLibraryAutosaver.markDirty();
         monitor?.({
@@ -157,6 +167,26 @@ export function createClientMessageHandler<S extends HandlerSocket>(
           label: 'Show library update accepted',
         });
         relayToOthers(ws, { t: 'showLibrary', library: blob });
+      }
+      return;
+    }
+
+    // Song-library persistence — the song-library counterpart of `setShowLibrary` above, identical
+    // in shape (adopt live slot → debounce-autosave → relay to the other clients; cold-load adopt
+    // is via `state` on (re)connect). The two libraries persist to distinct named blobs.
+    if (msg.t === 'setSongLibrary') {
+      if (isVersionedBlob(msg.library)) {
+        const blob = msg.library;
+        setSongLibrary(blob);
+        songLibraryAutosaver.markDirty();
+        monitor?.({
+          type: 'persistence',
+          direction: 'local',
+          source: 'server',
+          destination: 'song-library',
+          label: 'Song library update accepted',
+        });
+        relayToOthers(ws, { t: 'songLibrary', library: blob });
       }
       return;
     }
