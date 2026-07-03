@@ -53,7 +53,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
 | I — Modulation system | 2 | #57 | group/I | **MERGED** | d591baf | docs/handoff/rock-solid/group-I.md |
-| J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
+| J — Presets & Song Library | 3 | #53 | group/J | in-progress (S39 merged; S40 in flight) | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
 | D — Layout & kit geometry | 4 | #49 | group/D | pending | — | — |
@@ -62,6 +62,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T04:38 — Lane 3 group/J underway
+
+- **Lane 3 progressing:** S39 (remove linked presets) merged → group/J (lane sweep green, 1622 tests). **S40-library-persist in flight opus/high** (J mechanism tracer — justified). Remaining J: S41, S42; then K (S43 needs S40 → S44∥S45). Lane orch cleaned up merged lane-2 branches (F–I). Applying new policy cleanly.
+- Usage 5h 17%, 7d 48% (slow climb). Inbox drained; rock-solid f280a00 — no handoff yet.
+- **Next:** J completes → integrate+review+handoff → master merge; then K. 30-min cadence.
 
 ### 2026-07-03T04:07 — reset; LANE 3 LAUNCHED (J→K)
 
