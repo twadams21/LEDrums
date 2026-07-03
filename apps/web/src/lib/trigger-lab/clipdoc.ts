@@ -223,8 +223,8 @@ export interface ClipParseError {
   message: string;
 }
 
-export function isClipParseError(x: ClipDoc | ClipParseError): x is ClipParseError {
-  return (x as ClipParseError).parseError === true;
+export function isClipParseError(x: unknown): x is ClipParseError {
+  return typeof x === 'object' && x !== null && (x as ClipParseError).parseError === true;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -363,11 +363,18 @@ export interface RemapMint {
 
 /** The reservation-safe default minter — graph/preset ids survive reload via {@link freshId}
     against the (post-merge) local sets; effect ids stay name-derived + unique; section/song ids
-    come off the shared monotonic counter. */
+    come off the shared monotonic counter. Effect minting also dedups against ids minted EARLIER
+    in the same pass (`freshEffectId` is name-derived, not counter-backed, so without this two
+    same-name effects in one closure would mint the same id — the other minters are immune). */
 export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets'>): RemapMint {
+  const mintedEffectIds = new Set<string>();
   return {
     graph: () => freshId('graph', (k) => k in ctx.graphs),
-    effect: (name) => freshEffectId(ctx.effects, name),
+    effect: (name) => {
+      const id = freshEffectId([...ctx.effects, ...[...mintedEffectIds].map((eid) => ({ id: eid }) as EffectDef)], name);
+      mintedEffectIds.add(id);
+      return id;
+    },
     preset: () => freshId('preset', (k) => ctx.presets.some((p) => p.id === k)),
     section: () => nid('section'),
     song: () => nid('song'),

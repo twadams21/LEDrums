@@ -343,6 +343,32 @@ describe('remapClipDoc — content reuse', () => {
     expect(r.presets[0]!.id).toBe(`${newEff}:default`);
   });
 
+  it('mints DISTINCT ids for two same-name, different-content effects in one pass', () => {
+    // A closure carrying two effects that share a display name but differ in id + content (a
+    // rename-then-recreate produces this). Both must be freshly minted (they collide with the
+    // local same-name effect below) to DISTINCT ids — the default effect minter is name-derived,
+    // so it must dedup against ids already minted earlier in the same pass.
+    const song = makeSong('song-1', 'Dup', [makeSection('s1', 'A', ['g-a', 'g-b'])]);
+    const src = sources({
+      graphs: { 'g-a': playGraph('fx-one', 'fx-one:default'), 'g-b': playGraph('fx-two', 'fx-two:default') },
+      effects: [effect('fx-one', { name: 'Shared', attackMs: 1 }), effect('fx-two', { name: 'Shared', attackMs: 2 })],
+      presets: [preset('fx-one:default', 'fx-one'), preset('fx-two:default', 'fx-two')],
+    });
+    const doc = buildSongClipDoc(song, src);
+    // Local show has a same-name effect so both incoming ones must re-key (name-derived collision).
+    const show = ctx({ effects: [effect('shared', { name: 'Shared', attackMs: 999 })], presets: [preset('shared:default', 'shared')] });
+
+    const r = remapClipDoc(doc, show) as RemapResult;
+    expect(r.effects).toHaveLength(2);
+    const ids = r.effects.map((e) => e.id);
+    expect(new Set(ids).size).toBe(2); // DISTINCT — no self-collision within the pass
+    // each emitted graph's play node points at a real, distinct emitted effect
+    const playEffs = Object.values(r.graphs).map((g) => g.nodes.find((n) => n.kind === 'play')!.effectId);
+    expect(new Set(playEffs)).toEqual(new Set(ids));
+    // default presets track their (distinct) effect ids
+    expect(r.presets.map((p) => p.id).sort()).toEqual(ids.map((id) => `${id}:default`).sort());
+  });
+
   it('never re-keys a built-in effect id, even when local content differs', () => {
     // Incoming doc references built-in 'swirl'; the local show has a DIFFERENT 'swirl' (renamed).
     const src = sources({ graphs: { g: playGraph('swirl', 'swirl:default') }, effects: [effect('swirl', { name: 'Swirl' })], presets: [preset('swirl:default', 'swirl')] });
