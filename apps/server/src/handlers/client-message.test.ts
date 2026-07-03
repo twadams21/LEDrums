@@ -227,7 +227,7 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
       expect(requiresEditor(t)).toBe(false);
     }
     // Authoring mutations are editor-only.
-    for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
+    for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
       expect(requiresEditor(t)).toBe(true);
     }
   });
@@ -407,5 +407,83 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     handle({ t: 'takeover' }, viewer); // c2 becomes the editor (live role switch)
     handle({ t: 'setShowLibrary', library: LIB }, viewer);
     expect(slot.lib).toEqual(LIB); // now accepted
+  });
+});
+
+describe('setProject — bulk device re-rig (S45): validate → apply-once → persist → broadcast', () => {
+  /** A valid patch derived from the live project, re-labelling + re-hosting the output so the
+      apply is observable. Whole-document Project slices, exactly what a `patch` ClipDoc carries. */
+  function patchFrom(host: ReturnType<typeof harness>['host']) {
+    const cur = host.engine.getProject();
+    return { name: 'Rig B', kit: cur.kit, inputMap: cur.inputMap, output: { ...cur.output, host: '10.0.0.9', protocol: 'sacn' as const } };
+  }
+
+  it('validates, applies once, persists, and broadcasts fresh state (legacy engine)', () => {
+    const { handle, join, host, autosaver, monitor } = harness();
+    const editor = join();
+
+    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+
+    const applied = host.engine.getProject();
+    expect(applied.name).toBe('Rig B');
+    expect(applied.output.host).toBe('10.0.0.9');
+    expect(applied.output.protocol).toBe('sacn');
+    // apply-once → exactly one state broadcast; persisted via markDirty; a monitor apply event.
+    expect(editor.sent.filter((m) => m.t === 'state')).toHaveLength(1);
+    expect(autosaver.markDirty).toHaveBeenCalledTimes(1);
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'system', label: 'Patch applied' }));
+  });
+
+  it('leaves authored composition/setlist untouched (re-rigs only the device)', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    const before = host.engine.getProject();
+    const composition = before.composition;
+    const setlist = before.setlist;
+
+    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+
+    expect(host.engine.getProject().composition).toEqual(composition);
+    expect(host.engine.getProject().setlist).toEqual(setlist);
+  });
+
+  it('rejects an invalid payload with a user-visible error and zero partial apply', () => {
+    const { handle, join, host, autosaver, monitor } = harness();
+    const editor = join();
+    const before = host.engine.getProject();
+
+    // kit is required (a kit with no drums fails kitSchema.drums.min(1)); no state may change.
+    handle({ t: 'setProject', patch: { kit: { drums: [] }, inputMap: {}, output: {} } } as unknown as ClientMessage, editor);
+
+    const err = editor.sent.find((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
+    expect(err?.message).toMatch(/Invalid patch/);
+    expect(editor.sent.some((m) => m.t === 'state')).toBe(false); // no broadcast
+    expect(autosaver.markDirty).not.toHaveBeenCalled(); // not persisted
+    expect(host.engine.getProject()).toEqual(before); // zero apply
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid)' }));
+  });
+
+  it('bulk-adopts the same slices into the voice host (single kit reload)', () => {
+    const { handle, join, host, voiceHost } = voiceHarness();
+    const editor = join();
+
+    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+
+    expect(voiceHost.getProject().name).toBe('Rig B');
+    expect(voiceHost.getProject().output.host).toBe('10.0.0.9');
+    expect(voiceHost.getProject().output.protocol).toBe('sacn');
+  });
+
+  it('ignores a viewer setProject (read-only gate), applies once taken over', () => {
+    const { handle, join, host } = harness();
+    join(); // editor (c1)
+    const viewer = join(); // c2
+
+    handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
+    expect(host.engine.getProject().name).not.toBe('Rig B'); // rejected
+
+    handle({ t: 'takeover' }, viewer);
+    handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
+    expect(host.engine.getProject().name).toBe('Rig B'); // now accepted
   });
 });

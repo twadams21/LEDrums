@@ -14,6 +14,7 @@ import type {
   OutputConfig,
   ParamSpec,
   Project,
+  ProjectPatch,
   Section,
   Song,
   TriggerBinding,
@@ -63,6 +64,13 @@ export type ClientMessage =
   | { t: 'removeSection'; songId: string; sectionId: string }
   | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
   | { t: 'setInputMap'; inputMap: InputMap }
+  // Bulk device re-rig (group K / S45): paste a `patch` ClipDoc's Project slices (kit incl.
+  // outputs, input map, output settings) as ONE message. The server schema-validates the whole
+  // payload BEFORE touching any state, applies it once (a single kit reload — NOT a replay of
+  // granular setKit*/setOutput/setInputMap messages), persists, and broadcasts fresh `state`.
+  // An invalid payload is rejected with an `error` reply and zero partial apply. Never merges
+  // authored composition/setlist — it re-rigs only the physical device.
+  | { t: 'setProject'; patch: ProjectPatch }
   // Voice-bus engine (additive, voice mode only): replace the authored Show.
   | { t: 'setShow'; show: voice.Show }
   // Server-authoritative show library: the client pushes the authored library (an opaque

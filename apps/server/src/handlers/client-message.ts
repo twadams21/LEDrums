@@ -1,9 +1,10 @@
+import { projectPatchSchema } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import type { ClientMessage, ServerMessage, ShowLibraryBlob, SongLibraryBlob } from '../ws-protocol';
+import { encodeServer, type ClientMessage, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -188,6 +189,52 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         });
         relayToOthers(ws, { t: 'songLibrary', library: blob });
       }
+      return;
+    }
+
+    // Bulk device re-rig (S45): a pasted `patch` ClipDoc's Project slices, applied as ONE message.
+    // Schema-validate the WHOLE payload FIRST — an invalid patch is a user-visible `error` reply to
+    // the sender with ZERO state touched (AGENTS.md: validate before any state, no partial apply).
+    // On accept, apply once: the legacy engine adopts the merged project (a single kit reload, never
+    // a granular setKit*/setInputMap/setOutput replay), the voice host bulk-adopts the same slices,
+    // then persist + broadcast fresh `state`. Authored composition/setlist are never touched.
+    if (msg.t === 'setProject') {
+      const parsed = projectPatchSchema.safeParse(msg.patch);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        const where = issue?.path.join('.') || 'patch';
+        ws.send(encodeServer({ t: 'error', message: `Invalid patch: ${where} — ${issue?.message ?? 'validation failed'}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Patch rejected (invalid)',
+          detail: `${where}: ${issue?.message ?? 'validation failed'}`,
+        });
+        return;
+      }
+      const patch = parsed.data;
+      const cur = host.engine.getProject();
+      host.engine.setProject({
+        ...cur,
+        name: patch.name ?? cur.name,
+        kit: patch.kit,
+        inputMap: patch.inputMap,
+        output: patch.output,
+      });
+      host.reloadOutputSettings();
+      if (voiceHost) voiceHost.adoptPatch(patch);
+      monitor?.({
+        type: 'system',
+        direction: 'in',
+        source: 'client',
+        destination: 'project',
+        label: 'Patch applied',
+        detail: `${patch.kit.drums.length} drums${patch.name ? ` · ${patch.name}` : ''}`,
+      });
+      broadcastJson(stateMessage());
+      autosaver.markDirty();
       return;
     }
 
