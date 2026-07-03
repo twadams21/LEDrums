@@ -184,7 +184,9 @@
     /* layout constants — single source for the grid tracks AND the splitter
        placement math below, so the resize handles stay on the divides. */
     --pad: var(--space-3);
-    --gap: var(--space-3);
+    /* inter-module gutter — one knob (tokens.css › --shell-gap) drives the grid
+       gap AND the nested center/dock gaps below, so the shell tightens uniformly. */
+    --gap: var(--shell-gap);
     --topbar: 58px;
     --transport: 46px;
     /* content (rail/center/dock) starts below TWO chrome rows now — TopBar + the
@@ -242,7 +244,7 @@
     grid-area: center;
     display: grid;
     grid-template-rows: minmax(0, 1fr) var(--bottom-h, 148px);
-    gap: var(--space-3);
+    gap: var(--gap);
     min-height: 0;
     min-width: 0;
   }
@@ -272,7 +274,7 @@
     grid-area: dock;
     display: grid;
     grid-template-rows: minmax(180px, 1fr) minmax(0, 1.2fr);
-    gap: var(--space-3);
+    gap: var(--gap);
     min-height: 0;
   }
   .viz {

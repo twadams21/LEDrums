@@ -92,6 +92,12 @@
   --space-7: 48px;
   --space-8: 64px;
 
+  /* ---- Shell gutter ------------------------------------------------------- */
+  /* The single gap between top-level chrome modules (top bar · transport · rails ·
+     center · docks). Its own knob so the shell can tighten toward flush (→ 0)
+     independently of --space-3, which most of these gaps used to hard-code. */
+  --shell-gap: var(--space-3);
+
   /* ---- Radii -------------------------------------------------------------- */
   --radius-1: 3px;
   --radius-2: 5px;
