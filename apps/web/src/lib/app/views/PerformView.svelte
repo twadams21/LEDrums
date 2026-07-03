@@ -63,7 +63,7 @@
         max={pvizMax}
         onResize={(v) => setPane(PVIZ_KEY, v)}
         label="Resize 3D and 2D split"
-        style="top:0; bottom:0; left:calc(var(--pviz-l) + var(--space-3) / 2); transform:translateX(-50%);"
+        style="top:0; bottom:0; left:calc(var(--pviz-l) + var(--shell-gap) / 2); transform:translateX(-50%);"
       />
     {/if}
   </div>
@@ -85,7 +85,7 @@
     min-width: 0;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) 176px;
-    gap: var(--space-3);
+    gap: var(--shell-gap);
   }
   .precall {
     display: flex;
@@ -101,7 +101,7 @@
     position: relative;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--space-3);
+    gap: var(--shell-gap);
     min-height: 0;
   }
   .pviz :global(.viz) {
@@ -110,7 +110,7 @@
   .ppads {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: var(--space-3);
+    gap: var(--shell-gap);
   }
   .bigpad {
     display: flex;

@@ -110,11 +110,11 @@
     user-select: none;
   }
   .splitter.vertical {
-    width: 2px;
+    width: 1px;
     cursor: col-resize;
   }
   .splitter.horizontal {
-    height: 2px;
+    height: 1px;
     cursor: row-resize;
   }
   /* generous (≥40px) grab zone straddling the hairline, via a pseudo-element */
@@ -141,7 +141,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: 2px;
+    border-radius: 1px;
     background: var(--border-faint);
     transition: background-color var(--dur-120) ease, box-shadow var(--dur-120) ease,
       transform var(--dur-120) var(--ease-control);
@@ -154,19 +154,19 @@
     background: var(--accent-dim);
   }
   .splitter.vertical:hover::after {
-    transform: scaleX(1.6);
+    transform: scaleX(1.5);
   }
   .splitter.horizontal:hover::after {
-    transform: scaleY(1.6);
+    transform: scaleY(1.5);
   }
   /* Active drag / keyboard focus: full accent, a touch thicker than hover (no glow/shadow). */
   .splitter.vertical.dragging::after,
   .splitter.vertical:focus-visible::after {
-    transform: scaleX(2);
+    transform: scaleX(1.5);
   }
   .splitter.horizontal.dragging::after,
   .splitter.horizontal:focus-visible::after {
-    transform: scaleY(2);
+    transform: scaleY(1.5);
   }
   .splitter.dragging::after,
   .splitter:focus-visible::after {
