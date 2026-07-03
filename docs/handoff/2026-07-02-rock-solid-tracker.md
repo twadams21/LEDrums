@@ -52,7 +52,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
-| I — Modulation system | 2 | #57 | group/I | pending | — | — |
+| I — Modulation system | 2 | #57 | group/I | in-progress (S33 gate in flight) | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
@@ -62,6 +62,11 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T00:10 — Lane 2 on Group I (last group)
+
+- **group/I started:** S33-modulation-core (gate; opus/high engine seam) in flight. Chain: S33→S34→{S35/S36/S37}→S38 (mostly serial). Usage 5h 36% (healthy). Inbox empty; rock-solid unchanged (36ae20c).
+- **Next:** I completes → integrate+review → handoff → master merge → **LANE 2 DONE** → fire Lane 3 orch (J→K) WITH new policy. 30-min cadence.
 
 ### 2026-07-03T00:0x — GROUP H MERGED (26/49)
 
