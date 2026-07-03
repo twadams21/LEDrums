@@ -1,52 +1,48 @@
 <script lang="ts">
-  /* The unified shell. Mode-less: it is simply whichever view is selected. Mirrors
-     the wireframe: top bar · left rail (songs + views) · center (workspace view ↑ +
-     Layers/Buses dock ↓) · right dock (Visualizer pinned ↑ + tabbed Inspector ⇄
-     Monitor ↓). The workspace swaps on shell.view; the right-dock lower panel swaps
-     on shell.dock. The **Perform view** is the exception: it hides the Layers/Buses
-     drawer + the right dock and fills the center with PerformView for a focused
-     performance layout. */
+  /* The unified shell (wave-3 re-layout, approved prototype). Mode-less: it is simply
+     whichever view is selected. Top bar · transport bar · left rail (views + songs) ·
+     center workspace · full-height right column (Kit preview pinned ↑ + Buses/Layers ↓).
+     Node/device editing lives INSIDE the graph views (the Node Editor drawer); bus
+     settings expand inline in the Buses panel; section settings inline in the Sections
+     view — there is no global inspector dock. The **Perform view** hides the right
+     column and fills the center for a focused performance layout; **Monitor** is a
+     first-class workspace view. */
   import type { TriggerLab } from '../trigger-lab/store.svelte';
   import type { ShellStore } from './shell-store.svelte';
-  import type { DockTab } from './shell-nav';
   import TopBar from './chrome/TopBar.svelte';
   import Transport from './chrome/Transport.svelte';
   import LeftRail from './chrome/LeftRail.svelte';
   import LayersDock from './docks/LayersDock.svelte';
   import Visualizer from './docks/Visualizer.svelte';
-  import Inspector from './docks/Inspector.svelte';
   import Monitor from './docks/Monitor.svelte';
   import TriggerGraphView from './views/TriggerGraphView.svelte';
   import PatchGraphView from './views/PatchGraphView.svelte';
   import SectionsView from './views/SectionsView.svelte';
   import ObjectsView from './views/ObjectsView.svelte';
   import PerformView from './views/PerformView.svelte';
-  import Eyebrow from '../ui/Eyebrow.svelte';
-  import Tabs from '../ui/Tabs.svelte';
+  import PanelHeader from '../ui/PanelHeader.svelte';
   import Splitter from '../ui/Splitter.svelte';
   import ToastHost from '../ui/ToastHost.svelte';
   import PasteSongDialog from './views/PasteSongDialog.svelte';
   import PasteFallbackDialog from './views/PasteFallbackDialog.svelte';
-  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
-  import Terminal from '@lucide/svelte/icons/terminal';
   import LayersIcon from '@lucide/svelte/icons/layers';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  // Perform is a chrome-light view: the shell hides the Layers/Buses drawer + the
-  // right Inspector/Monitor dock and fills the center with PerformView.
+  // Perform is a chrome-light view: the shell hides the right column and fills the
+  // center with PerformView.
   const perform = $derived(shell.view === 'perform');
-  const monitorWorkspace = $derived(shell.view === 'monitor');
 
-  // Keep the Inspector's selection consistent with the active model so it never shows stale
-  // info after the focus moves out from under it. The Inspector's deriveds are reactive, but
-  // the selection lives in the shell store while the active song / section / graph live in the
-  // engine store — the two are otherwise decoupled, so e.g. changing songs re-points
-  // `activeSectionId` (to the new song's first section) without the section the Inspector still
-  // shows knowing. This bridge re-syncs:
+  // Keep the selection consistent with the active model so an inspector surface never
+  // shows stale info after the focus moves out from under it. The selection lives in the
+  // shell store while the active song / section / graph live in the engine store — the
+  // two are otherwise decoupled, so e.g. changing songs re-points `activeSectionId` (to
+  // the new song's first section) without the section detail knowing. This bridge
+  // re-syncs:
   //  · a SECTION selection follows the active section (song switch, recall);
-  //  · a NODE selection is dropped once it no longer exists in the open graph (graph switch,
-  //    node removed / swapped) so the Inspector clears instead of describing a gone node.
+  //  · a NODE selection is dropped once it no longer exists in the open graph (graph
+  //    switch, node removed / swapped) so the inspector clears instead of describing a
+  //    gone node.
   $effect(() => {
     const sel = shell.selection;
     if (!sel) return;
@@ -63,30 +59,22 @@
     }
   });
 
-  const DOCK_TABS = [
-    { value: 'inspector', label: 'Inspector', icon: SlidersHorizontal },
-    { value: 'monitor', label: 'Monitor', icon: Terminal },
-  ];
-
   // Resizable layout tracks — sizes live in store.paneSizes (persisted live) with
-  // sensible defaults + clamps. Keys are namespaced so Perform's panes don't clash.
+  // sensible defaults + clamps.
   const RAIL = { key: 'authorRailW', def: 220, min: 168, max: 380 };
-  const DOCK = { key: 'authorDockW', def: 360, min: 300, max: 560 };
-  const BOTTOM = { key: 'authorBottomH', def: 148, min: 96, max: 360 };
-  // The visualiser's height inside the right dock — the boundary the new
-  // visualiser↔inspector rail drives. The Inspector/Monitor block below it takes
-  // the remaining space (minmax(0,1fr)).
-  const VIZ = { key: 'authorVizH', def: 300, min: 180, max: 620 };
+  const COL2 = { key: 'authorDockW', def: 340, min: 280, max: 560 };
+  // The visualiser's height at the top of the right column — the Buses/Layers panel
+  // below it takes the remaining space (minmax(0,1fr)).
+  const VIZ = { key: 'authorVizH', def: 280, min: 180, max: 620 };
   const railW = $derived(store.paneSizes[RAIL.key] ?? RAIL.def);
-  const dockW = $derived(store.paneSizes[DOCK.key] ?? DOCK.def);
-  const bottomH = $derived(store.paneSizes[BOTTOM.key] ?? BOTTOM.def);
+  const col2W = $derived(store.paneSizes[COL2.key] ?? COL2.def);
   const vizH = $derived(store.paneSizes[VIZ.key] ?? VIZ.def);
   const setPane = (key: string, v: number): void => {
     store.paneSizes = { ...store.paneSizes, [key]: v };
   };
 </script>
 
-<div class="author" class:solo={perform} style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px; --viz-h:{vizH}px;">
+<div class="author" class:solo={perform} style="--rail-w:{railW}px; --col2-w:{col2W}px; --viz-h:{vizH}px;">
   <div class="top"><TopBar {store} /></div>
 
   <!-- Transport rides its own slim bar directly under the TopBar: a global
@@ -97,54 +85,37 @@
   <div class="rail"><LeftRail {store} {shell} /></div>
 
   {#if perform}
-    <main class="center solo-center">
+    <main class="center">
       <PerformView {store} {shell} />
     </main>
   {:else}
-    <div class="center" class:monitor-center={monitorWorkspace}>
-      <main class="workspace">
-        {#if shell.view === 'trigger'}
-          <TriggerGraphView {store} {shell} />
-        {:else if shell.view === 'patch'}
-          <PatchGraphView {store} {shell} />
-        {:else if shell.view === 'objects'}
-          <ObjectsView {store} {shell} />
-        {:else if shell.view === 'monitor'}
-          <Monitor {store} variant="workspace" />
-        {:else}
-          <SectionsView {store} {shell} />
-        {/if}
-      </main>
-
-      {#if !monitorWorkspace}
-        <section class="bottom">
-          <header class="dockhead"><Eyebrow icon={LayersIcon}>Layers / Buses</Eyebrow></header>
-          <LayersDock {store} {shell} />
-        </section>
+    <main class="center">
+      {#if shell.view === 'trigger'}
+        <TriggerGraphView {store} {shell} />
+      {:else if shell.view === 'patch'}
+        <PatchGraphView {store} {shell} />
+      {:else if shell.view === 'objects'}
+        <ObjectsView {store} {shell} />
+      {:else if shell.view === 'monitor'}
+        <Monitor {store} variant="workspace" />
+      {:else}
+        <SectionsView {store} {shell} />
       {/if}
-    </div>
+    </main>
 
-    <aside class="dock">
+    <aside class="col2">
       <section class="viz"><Visualizer {store} /></section>
-      <div class="lower">
-        <div class="tabstrip">
-          <Tabs value={shell.dock} tabs={DOCK_TABS} onChange={(v) => shell.setDock(v as DockTab)} ariaLabel="Inspector or Monitor" />
-        </div>
-        <div class="panel">
-          {#if shell.dock === 'inspector'}
-            <Inspector {store} {shell} />
-          {:else}
-            <Monitor {store} />
-          {/if}
-        </div>
-      </div>
+      <section class="buses">
+        <PanelHeader icon={LayersIcon} title="Buses / Layers" />
+        <LayersDock {store} {shell} />
+      </section>
     </aside>
   {/if}
 
   <!-- Resize handles, positioned on the grid divides (direct children of .author so
        they paint above the panes — their ≥40px hit areas overhang each side). The
-       rail handle is always live; the dock + layers handles only exist when their
-       panes are rendered (i.e. not in Perform). -->
+       rail handle is always live; the right-column handles only exist when the column
+       is rendered (i.e. not in Perform). -->
   <Splitter
     orientation="vertical"
     size={railW}
@@ -158,28 +129,15 @@
     <Splitter
       orientation="vertical"
       invert
-      size={dockW}
-      min={DOCK.min}
-      max={DOCK.max}
-      onResize={(v) => setPane(DOCK.key, v)}
-      label="Resize right dock"
-      style="top:var(--content-top); bottom:var(--pad); right:calc(var(--pad) + var(--dock-w) + var(--gap) / 2); transform:translateX(50%);"
+      size={col2W}
+      min={COL2.min}
+      max={COL2.max}
+      onResize={(v) => setPane(COL2.key, v)}
+      label="Resize right column"
+      style="top:var(--content-top); bottom:var(--pad); right:calc(var(--pad) + var(--col2-w) + var(--gap) / 2); transform:translateX(50%);"
     />
-    {#if !monitorWorkspace}
-      <Splitter
-        orientation="horizontal"
-        invert
-        size={bottomH}
-        min={BOTTOM.min}
-        max={BOTTOM.max}
-        onResize={(v) => setPane(BOTTOM.key, v)}
-        label="Resize layers dock"
-        style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
-      />
-    {/if}
-    <!-- NEW: the visualiser↔inspector boundary inside the right dock. Not inverted —
-         the visualiser is anchored to the top, so dragging down grows its height.
-         Spans the dock column; sits on the divide `--viz-h` below the content top. -->
+    <!-- the visualiser↔buses boundary inside the right column. Not inverted — the
+         visualiser is anchored to the top, so dragging down grows its height. -->
     <Splitter
       orientation="horizontal"
       size={vizH}
@@ -187,7 +145,7 @@
       max={VIZ.max}
       onResize={(v) => setPane(VIZ.key, v)}
       label="Resize visualiser"
-      style="left:calc(100% - var(--pad) - var(--dock-w)); right:var(--pad); top:calc(var(--content-top) + var(--viz-h) + var(--gap) / 2); transform:translateY(-50%);"
+      style="left:calc(100% - var(--pad) - var(--col2-w)); right:var(--pad); top:calc(var(--content-top) + var(--viz-h) + var(--gap) / 2); transform:translateY(-50%);"
     />
   {/if}
 
@@ -206,11 +164,11 @@
        placement math below, so the resize handles stay on the divides. */
     --pad: var(--shell-gap);
     /* inter-module gutter — one knob (tokens.css › --shell-gap) drives the grid
-       gap AND the nested center/dock gaps below, so the shell tightens uniformly. */
+       gap AND the nested gaps below, so the shell tightens uniformly. */
     --gap: var(--shell-gap);
     --topbar: 58px;
     --transport: 46px;
-    /* content (rail/center/dock) starts below TWO chrome rows now — TopBar + the
+    /* content (rail/center/col2) starts below TWO chrome rows — TopBar + the
        transport bar — each followed by a grid gap. Keep this in sync with the
        grid-template-rows below so the splitter handles land on the divides. */
     --content-top: calc(var(--pad) + var(--topbar) + var(--gap) + var(--transport) + var(--gap));
@@ -218,12 +176,12 @@
     height: 100vh;
     width: 100vw;
     display: grid;
-    grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr) var(--dock-w, 360px);
+    grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr) var(--col2-w, 340px);
     grid-template-rows: var(--topbar) var(--transport) minmax(0, 1fr);
     grid-template-areas:
       'top top top'
       'xport xport xport'
-      'rail center dock';
+      'rail center col2';
     gap: var(--gap);
     padding: var(--pad);
     background: var(--bg);
@@ -232,7 +190,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  /* Perform: no right dock — collapse to rail + center only. The transport bar
+  /* Perform: no right column — collapse to rail + center only. The transport bar
      stays (it's a performance control), spanning both remaining columns. */
   .author.solo {
     grid-template-columns: var(--rail-w, 220px) minmax(0, 1fr);
@@ -263,59 +221,28 @@
   }
   .center {
     grid-area: center;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) var(--bottom-h, 148px);
-    gap: var(--gap);
     min-height: 0;
     min-width: 0;
   }
-  .center.monitor-center {
-    grid-template-rows: minmax(0, 1fr);
-  }
-  /* Perform: the center is a single full-height region (no Layers/Buses row). */
-  .center.solo-center {
-    grid-template-rows: minmax(0, 1fr);
-  }
-  .workspace {
-    min-height: 0;
-    min-width: 0;
-  }
-  .bottom {
+  .col2 {
+    grid-area: col2;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-  }
-  .dockhead {
-    padding: var(--space-2) var(--space-3) 0;
-  }
-  .dock {
-    grid-area: dock;
-    display: grid;
-    /* viz height is user-resizable (the visualiser↔inspector rail); the lower
-       Inspector/Monitor block takes what's left. */
-    grid-template-rows: var(--viz-h, 300px) minmax(0, 1fr);
+    /* viz height is user-resizable (the visualiser↔buses rail); the Buses/Layers
+       panel below takes what's left. */
+    grid-template-rows: var(--viz-h, 280px) minmax(0, 1fr);
     gap: var(--gap);
     min-height: 0;
   }
   .viz {
     min-height: 0;
   }
-  .lower {
+  .buses {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
     background: var(--surface);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
-  }
-  .tabstrip {
-    padding: var(--space-2) var(--space-3) 0;
-  }
-  .panel {
-    min-height: 0;
     overflow: hidden;
   }
 </style>

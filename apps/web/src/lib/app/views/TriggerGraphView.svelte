@@ -15,7 +15,6 @@
   import type { ToPort } from '../../trigger-lab/store/graph-wiring';
   import { listModifiersByCategory, voice } from '@ledrums/core';
   import Blend from '@lucide/svelte/icons/blend';
-  import Waves from '@lucide/svelte/icons/waves';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
@@ -39,9 +38,11 @@
   import TriggerNode from './TriggerNode.svelte';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
-  import GraphPalette from './GraphPalette.svelte';
-  import GraphAddMenu, { type PickerGroup } from './GraphAddMenu.svelte';
+  import type { FlowApi } from './FlowHandle.svelte';
+  import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
+  import AddPalette, { type AddGroup } from './AddPalette.svelte';
   import GraphListRail from './GraphListRail.svelte';
+  import Inspector from '../docks/Inspector.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -79,40 +80,36 @@
     shell.clearSelection();
   }
 
-  // ---- add-node palette (shared GraphPalette) -------------------------------
-  // One palette item per node kind (icon / tint / label from the shared node metadata).
-  // `modifier` and the modulation-source kinds are dropped from the flat kind palette — they are
-  // served by the two GraphAddMenu buttons (Add Modifier / Add Modulation), each a modal picker.
-  const PALETTE_ITEMS = NODE_KINDS.filter((kind) => kind !== 'modifier' && !voice.isModSourceKind(kind)).map((kind) => ({
-    key: kind,
-    label: kindLabel[kind],
-    icon: kindIcon[kind],
-    tint: tint[kind],
-    title: `Add ${kindLabel[kind]} node`,
-  }));
+  // ---- Node Editor drawer (wave-3 shell): Add palette + Inspector -----------
+  // The Add tab lists everything the graph can gain in one searchable surface:
+  // node kinds, then modulation sources, then the modifier registry grouped by
+  // category (registry-driven, so a newly registered modifier appears with no
+  // edit here). Selecting a node flips the drawer to its Inspector tab.
+  let neTab = $state<NodeEditorTab>('add');
+  $effect(() => {
+    if (shell.selection?.kind === 'node') neTab = 'inspector';
+  });
 
-  // "Add Modifier" picker groups — registry-driven (category-grouped over `listModifiersByCategory`),
-  // so a newly registered modifier appears with no edit here. Every modifier shares the Blend glyph
-  // (as the old palette did). Reactive so a registry change re-derives the modal.
-  const modifierGroups = $derived<PickerGroup[]>(
-    listModifiersByCategory().map((g) => ({
-      category: g.category,
-      label: g.label,
-      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend })),
-    })),
-  );
-
-  // "Add Modulation" picker — one flat group of the modulation-source kinds (envelope / lfo / cc),
-  // each with its shared node icon + tint and a one-line hint.
   const MOD_HINT: Partial<Record<NodeKind, string>> = {
-    envelope: 'Per-hit shape',
-    lfo: 'Continuous wave',
+    envelope: 'per-hit shape',
+    lfo: 'continuous wave',
     cc: 'MIDI CC or OSC',
   };
-  const modulationGroups: PickerGroup[] = [
+  const MODIFIER_GROUP_PREFIX = 'modifier:';
+  const addGroups = $derived<AddGroup[]>([
     {
-      category: 'all',
-      label: 'Sources',
+      key: 'kinds',
+      label: 'Nodes',
+      items: NODE_KINDS.filter((kind) => kind !== 'modifier' && !voice.isModSourceKind(kind)).map((kind) => ({
+        id: kind,
+        name: kindLabel[kind],
+        icon: kindIcon[kind],
+        tint: tint[kind],
+      })),
+    },
+    {
+      key: 'modulation',
+      label: 'Modulation',
       items: NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
         id: kind,
         name: kindLabel[kind],
@@ -121,7 +118,28 @@
         hint: MOD_HINT[kind],
       })),
     },
-  ];
+    ...listModifiersByCategory().map((g) => ({
+      key: `${MODIFIER_GROUP_PREFIX}${g.category}`,
+      label: `Modifiers · ${g.label}`,
+      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)' })),
+    })),
+  ]);
+
+  // Placement: new nodes land at a free spot near the visible canvas centre. The
+  // flow instance arrives via GraphCanvas's FlowHandle; the wrapper element gives
+  // the on-screen rect to centre on.
+  let flowApi = $state<FlowApi | null>(null);
+  let canvasWrap = $state<HTMLElement | null>(null);
+  function canvasCentre(): { x: number; y: number } {
+    const r = canvasWrap?.getBoundingClientRect();
+    if (!flowApi) return { x: 0, y: 0 };
+    return flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+  }
+  function handleAdd(id: string, groupKey: string): void {
+    const c = canvasCentre();
+    if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, c.x, c.y);
+    else addNodeAt(id as NodeKind, c.x, c.y);
+  }
   /** Estimated canvas footprint per existing node — the card plus room for mod rows /
       band fans. An estimate is fine: the probe only needs "roughly where nodes sit". */
   const PLACE_H = 96;
@@ -381,64 +399,55 @@
     canEdit={store.canEdit}
   />
 
-  <GraphCanvas
-    bind:nodes
-    bind:edges
-    {nodeTypes}
-    {edgeTypes}
-    fitPadding={0.2}
-    fitWatch={store.selectedPadKey}
-    onFitted={() => (fitted = true)}
-    ready={!!store.selectedGraph}
-    swapping={!fitted}
-    onNodeClick={(id) => shell.select({ kind: 'node', nodeId: id })}
-    onPaneClick={() => shell.clearSelection()}
-    onNodeEnter={(id) => hover.enter(id)}
-    onNodeLeave={() => hover.leave()}
-    onNodeDragStop={guard('drag', onDragStop)}
-    onConnect={guard('connect', onConnect)}
-    onConnectEnd={guard('connect-end', onConnectEnd)}
-    onReconnect={guard('reconnect', onReconnect)}
-    onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
-  >
-    {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit}>
-        {#snippet trailing()}
-          <GraphAddMenu
-            label="Modifier"
-            icon={Blend}
-            title="Add modifier"
-            subtitle="Insert a modifier into the chain — filter by category."
-            groups={modifierGroups}
-            add={addModifierNodeAt}
-            disabled={!store.canEdit}
-          />
-          <GraphAddMenu
-            label="Modulation"
-            icon={Waves}
-            tint="var(--role-modulation)"
-            title="Add modulation source"
-            subtitle="Drive parameters from an envelope, LFO, or MIDI CC / OSC."
-            groups={modulationGroups}
-            add={(id, cx, cy) => addNodeAt(id as NodeKind, cx, cy)}
-            disabled={!store.canEdit}
-          />
-        {/snippet}
-      </GraphPalette>
+  <div class="gwrap" bind:this={canvasWrap}>
+    <GraphCanvas
+      bind:nodes
+      bind:edges
+      {nodeTypes}
+      {edgeTypes}
+      fitPadding={0.2}
+      fitWatch={store.selectedPadKey}
+      onFitted={() => (fitted = true)}
+      ready={!!store.selectedGraph}
+      swapping={!fitted}
+      onFlow={(f) => (flowApi = f)}
+      onNodeClick={(id) => shell.select({ kind: 'node', nodeId: id })}
+      onPaneClick={() => shell.clearSelection()}
+      onNodeEnter={(id) => hover.enter(id)}
+      onNodeLeave={() => hover.leave()}
+      onNodeDragStop={guard('drag', onDragStop)}
+      onConnect={guard('connect', onConnect)}
+      onConnectEnd={guard('connect-end', onConnectEnd)}
+      onReconnect={guard('reconnect', onReconnect)}
+      onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
+    >
+      {#snippet empty()}
+        <p class="thint">Select a graph from the section to edit it.</p>
+      {/snippet}
+    </GraphCanvas>
+  </div>
+
+  <NodeEditor bind:tab={neTab}>
+    {#snippet add()}
+      <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
     {/snippet}
-    {#snippet empty()}
-      <p class="thint">Select a graph from the section to edit it.</p>
+    {#snippet inspector()}
+      <Inspector {store} {shell} />
     {/snippet}
-  </GraphCanvas>
+  </NodeEditor>
 </div>
 
 <style>
   .trigger-view {
     display: grid;
-    grid-template-columns: 232px minmax(0, 1fr);
+    grid-template-columns: 232px minmax(0, 1fr) 320px;
     gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
+  }
+  .gwrap {
+    min-width: 0;
+    min-height: 0;
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {

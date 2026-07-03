@@ -3,12 +3,13 @@
   generics="NodeType extends Node = Node, EdgeType extends Edge = Edge"
 >
   /* Shared SvelteFlow workspace for the Patch + Trigger graphs (#9) — the duplicated
-     <SvelteFlow> setup (Background / Controls / optional MiniMap, the top-left palette
-     Panel, the post-layout re-fit, node/edge types, the project-token theming, and the
-     hover/wiring event plumbing) lives here ONCE. Both views own their own node/edge
-     state + interaction handlers and pass them down; the locked graph UX (no node lift /
-     click motion, instant hover, drop-anywhere-on-node wiring) is identical, so this is
-     pure consolidation — no behaviour change.
+     <SvelteFlow> setup (Background / Controls / optional MiniMap, the post-layout
+     re-fit, node/edge types, the project-token theming, and the hover/wiring event
+     plumbing) lives here ONCE. Both views own their own node/edge state + interaction
+     handlers and pass them down; the locked graph UX (no node lift / click motion,
+     instant hover, drop-anywhere-on-node wiring) is identical. Adding happens in the
+     Node Editor drawer beside the canvas (wave-3 shell) — `onFlow` hands the flow
+     instance up so the view can place new nodes at the visible centre.
 
      Generic over the concrete node/edge types so each view keeps its typed arrays through
      the two-way `bind` (SvelteFlow owns live positions during a drag). */
@@ -17,7 +18,6 @@
     BackgroundVariant,
     Controls,
     MiniMap,
-    Panel,
     SvelteFlow,
     type Connection,
     type Edge,
@@ -29,6 +29,7 @@
   import '@xyflow/svelte/dist/style.css';
   import type { Snippet } from 'svelte';
   import GraphFitView from './GraphFitView.svelte';
+  import FlowHandle, { type FlowApi } from './FlowHandle.svelte';
 
   type DragStop = { nodes: NodeType[] };
   type DeleteDetail = { nodes: NodeType[]; edges: EdgeType[] };
@@ -55,7 +56,7 @@
     onDelete,
     onNodeDragStop,
     onConnectEnd,
-    palette,
+    onFlow,
     empty,
   }: {
     nodes: NodeType[];
@@ -84,7 +85,8 @@
     onDelete?: (detail: DeleteDetail) => void;
     onNodeDragStop?: (detail: DragStop) => void;
     onConnectEnd?: OnConnectEnd;
-    palette?: Snippet;
+    /** Receives the flow instance once mounted — for view-side placement math. */
+    onFlow?: (flow: FlowApi) => void;
     empty?: Snippet;
   } = $props();
 </script>
@@ -116,9 +118,7 @@
       onconnectend={onConnectEnd}
     >
       <GraphFitView padding={fitPadding} watch={fitWatch} onfitted={onFitted} />
-      {#if palette}
-        <Panel position="top-left">{@render palette()}</Panel>
-      {/if}
+      {#if onFlow}<FlowHandle onflow={onFlow} />{/if}
       <Background variant={BackgroundVariant.Dots} />
       <Controls />
       {#if minimap}<MiniMap />{/if}
@@ -145,15 +145,6 @@
     inset: 0;
     display: grid;
     place-items: center;
-  }
-
-  /* xyflow gives the top-left palette Panel `pointer-events: all`, and the panel is sized
-     to its widest bar — so the empty space beside/around narrower bars swallowed canvas
-     pans, clicks and wire-drops (only the strip directly below the stack stayed free). The
-     panel passes gestures through; each palette bar re-enables `pointer-events` on itself
-     (see GraphPalette / the add-menu bar), so ONLY the actual controls capture events. */
-  .gcanvas :global(.svelte-flow__panel) {
-    pointer-events: none;
   }
 
   /* --- @xyflow/svelte on the project tokens (shared theming) ----------------- */

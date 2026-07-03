@@ -49,7 +49,10 @@
   import { PATCH_STORE_KEY } from './patch-context';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
-  import GraphPalette from './GraphPalette.svelte';
+  import type { FlowApi } from './FlowHandle.svelte';
+  import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
+  import AddPalette, { type AddGroup } from './AddPalette.svelte';
+  import Inspector from '../docks/Inspector.svelte';
   import { GraphHover } from './graph-hover.svelte';
   import { findFreePosition } from './node-placement';
   import { guardFlowCallback } from './flow-guard';
@@ -104,12 +107,32 @@
     nodes = [...nodes, node];
   }
 
-  // The two user-addable device kinds for the shared GraphPalette. `add` hands back the
-  // flow-space centre; addDevice centres the new node on it (local, not persisted).
-  const PALETTE_ITEMS = [
-    { key: 'dataline', label: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, title: 'Add Data Line — local, not saved' },
-    { key: 'output', label: 'Output', icon: Plug, tint: DEVICE_ROLE.output, title: 'Add Output — local, not saved' },
-  ] as const;
+  // ---- Node Editor drawer (wave-3 shell): device palette + Inspector --------
+  // The two user-addable device kinds; a new device is local until its first wire
+  // materializes it into the committed routing. Selecting a device flips the
+  // drawer to its Inspector tab.
+  let neTab = $state<NodeEditorTab>('add');
+  $effect(() => {
+    if (shell.selection?.kind === 'patch') neTab = 'inspector';
+  });
+  const ADD_GROUPS: AddGroup[] = [
+    {
+      key: 'devices',
+      label: 'Devices',
+      items: [
+        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'pixel run' },
+        { id: 'output', name: 'Output', icon: Plug, tint: DEVICE_ROLE.output, hint: 'controller port' },
+      ],
+    },
+  ];
+  let flowApi = $state<FlowApi | null>(null);
+  let canvasWrap = $state<HTMLElement | null>(null);
+  function handleAdd(id: string): void {
+    const r = canvasWrap?.getBoundingClientRect();
+    if (!flowApi) return;
+    const c = flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+    addDevice(id as 'dataline' | 'output', c.x, c.y);
+  }
 
   /** Reject self-loops and exact duplicate wires; otherwise accept (xyflow applies
       the default `wire` type so the new edge is reconnectable). */
@@ -345,33 +368,43 @@
     <PatchClipboardToolbar {store} />
   </header>
 
-  <GraphCanvas
-    bind:nodes
-    bind:edges
-    {nodeTypes}
-    {edgeTypes}
-    defaultEdgeOptions={{ type: 'wire' }}
-    fitPadding={0.15}
-    minimap
-    onBeforeConnect={onBeforeConnect}
-    onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
-    onPaneClick={() => shell.clearSelection()}
-    onNodeEnter={onEnter}
-    onNodeLeave={onLeave}
-    onConnect={guard('connect', () => commitRouting())}
-    onReconnect={guard('reconnect', onReconnect)}
-    onDelete={guard('delete', () => commitRouting())}
-    onNodeDragStop={guard('drag', () => commitRouting())}
-    onConnectEnd={guard('connect-end', (event, conn) => {
-      if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
-      const toId = nodeIdAtEvent(event);
-      if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
-    })}
-  >
-    {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addDevice} ariaLabel="Add device (local, not saved)" disabled={!store.canEdit} />
-    {/snippet}
-  </GraphCanvas>
+  <div class="prow">
+    <div class="gwrap" bind:this={canvasWrap}>
+      <GraphCanvas
+        bind:nodes
+        bind:edges
+        {nodeTypes}
+        {edgeTypes}
+        defaultEdgeOptions={{ type: 'wire' }}
+        fitPadding={0.15}
+        minimap
+        onFlow={(f) => (flowApi = f)}
+        onBeforeConnect={onBeforeConnect}
+        onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
+        onPaneClick={() => shell.clearSelection()}
+        onNodeEnter={onEnter}
+        onNodeLeave={onLeave}
+        onConnect={guard('connect', () => commitRouting())}
+        onReconnect={guard('reconnect', onReconnect)}
+        onDelete={guard('delete', () => commitRouting())}
+        onNodeDragStop={guard('drag', () => commitRouting())}
+        onConnectEnd={guard('connect-end', (event, conn) => {
+          if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+          const toId = nodeIdAtEvent(event);
+          if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
+        })}
+      />
+    </div>
+
+    <NodeEditor bind:tab={neTab}>
+      {#snippet add()}
+        <AddPalette groups={ADD_GROUPS} onAdd={handleAdd} disabled={!store.canEdit} />
+      {/snippet}
+      {#snippet inspector()}
+        <Inspector {store} {shell} />
+      {/snippet}
+    </NodeEditor>
+  </div>
 </div>
 
 <style>
@@ -381,6 +414,16 @@
     gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
+  }
+  .prow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: var(--shell-gap);
+    min-height: 0;
+  }
+  .gwrap {
+    min-width: 0;
+    min-height: 0;
   }
   .phead {
     display: flex;
