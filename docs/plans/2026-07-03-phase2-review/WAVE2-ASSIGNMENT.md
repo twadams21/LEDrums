@@ -44,9 +44,14 @@ Direction confirmed by Trent: **collapse the throwaway web sim onto the core eng
 
 §8 hypothesis: server stats at 2 Hz adopted raw → dock steps visibly. Confirm by observation first. Fix by client-side interpolation/smoothing between stat frames (server stays the truth — authority principle intact; no sim writes while link open). Kill the worst per-tick allocation waste while there (per-bus `filter()` per render, per-voice style-string churn). **Acceptance:** visually smooth under real voice load; before/after observation noted.
 
-## Item 4 — Share/tunnel repair (P1 regression)
+## Item 4 — Share/tunnel: in-app start/stop (RESCOPED by Trent, 2026-07-04)
 
-Button self-hides because `store.tunnel` is empty (`ShareInfo.svelte:17-21`). Investigate server-side: does `tunnel-manager.ts`/boot spawn cloudflared under `pnpm dev`? Is cloudflared present? Does the tunnel url/pin message reach the web store? Fix the actual break (config, spawn, or message plumbing). If the root cause is environmental (cloudflared not installed), make the server surface that state and have ShareInfo show a disabled/explanatory state instead of vanishing — silent disappearance is the bug Trent hit. Check wave-1's report (when merged) before deep-diving — it may already have the root cause.
+Root cause is settled (WAVE1-REPORT.md item 2 + master follow-up): the tunnel is opt-in by design — `pnpm dev` never spawned cloudflared; Trent saw it working in the DESKTOP app (S4 sidecar enables it). cloudflared is now installed on this machine and `.env.local` (wt-master) sets `LEDRUMS_TUNNEL=1`. No archaeology needed. Build what Trent actually wants:
+
+- **In-app tunnel control:** the Share button is ALWAYS visible in the top bar. States: **off** (popover offers a "Start sharing" action), **starting** (progress state), **live** (url + PIN + copy, as today), **error** (cloudflared missing / spawn failed — explain plainly + how to fix, never vanish silently).
+- **Server seam:** a protocol message to start/stop the tunnel on demand — `TunnelManager` already encapsulates spawn/parse/shutdown (`tunnel-manager.ts`); add a lifecycle-control path from the web client. The env flag remains as "start at boot"; the in-app control works regardless of it. Keep S3's invariant: an enabled tunnel is ALWAYS PIN-gated (never a public un-gated URL), and only a local/non-viewer client may start or stop it (viewers over the tunnel must NOT be able to kill or restart the tunnel they rode in on).
+- Existing tests around `tunnelConfigFromEnv`/`parseTunnelUrl` stay green; add coverage for the start/stop protocol path.
+- **Acceptance:** from a plain `pnpm dev` with NO env flag: click Share → Start sharing → live trycloudflare url + PIN appear in the popover; stop works; a viewer connected via the tunnel cannot stop it. With cloudflared renamed away, the error state explains itself.
 
 ## Gates & report
 
