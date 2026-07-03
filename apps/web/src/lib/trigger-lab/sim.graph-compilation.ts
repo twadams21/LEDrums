@@ -91,7 +91,6 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: true,
     on: 'value',
     valueMode: 'gate',
@@ -129,7 +128,6 @@ function nodeFromBlock(b: Block): GraphNode {
         presetId: b.presetId,
         params: { ...b.params },
         env: cloneEnvMap(b.env),
-        linked: b.linked,
       });
     case 'random':
       return makeNode('random', b.id, 0, 0, { noRepeat: b.noRepeat });

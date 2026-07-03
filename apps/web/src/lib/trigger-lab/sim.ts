@@ -7,8 +7,8 @@
      3. Section change — timed morph (rides the bus crossfade/voice-stealing).
 
    An effect (e.g. Swirl) has parameters + named presets; a placed clip is an
-   INSTANCE of effect+preset, single-instance by default with an opt-in Link so
-   edits sync to the shared preset. Params can be driven by envelopes over a
+   INSTANCE of effect+preset that owns its params — a preset is a snapshot you
+   Apply onto a clip or Save from it, never a live binding. Params can be driven by envelopes over a
    voice's life. Voices are abstract "lights" (a pattern + params + envelope).
    Delete this whole directory once the branches are decided.
 
@@ -93,19 +93,18 @@ interface BlockBase {
   id: string;
 }
 
-/** Leaf: an instance of an effect+preset (single-instance unless `linked`). */
+/** Leaf: an instance of an effect+preset. Every play block owns its params; a preset is
+    a snapshot you Apply onto a block or Save from it, never a live binding. */
 export interface PlayBlock extends BlockBase {
   kind: 'play';
   mode: PlayMode;
   scope: Scope;
   effectId: string;
   presetId: string;
-  /** instance param values (used when not linked). */
+  /** node-local param values (a preset Apply forks a copy in here). */
   params: ParamValues;
   /** per-param envelope assignment. */
   env: EnvMap;
-  /** true → bound to the shared preset; edits sync everywhere it's used. */
-  linked: boolean;
 }
 export interface AllBlock extends BlockBase {
   kind: 'all';
@@ -546,7 +545,6 @@ export class Sim {
   }
 
   private resolveNodeParams(node: GraphNode): ParamValues {
-    if (node.linked) return this.preset(node.presetId)?.params ?? node.params;
     return node.params;
   }
   /** Count-based child index for the `section`/`beat` switch modes (the only modes that
@@ -585,9 +583,8 @@ export class Sim {
     );
   }
 
-  /** Resolve a Play block's live params (linked → shared preset, else instance). */
+  /** Resolve a Play block's live params — always the block's own node-local copy. */
   private resolveParams(block: PlayBlock): ParamValues {
-    if (block.linked) return this.preset(block.presetId)?.params ?? block.params;
     return block.params;
   }
 
