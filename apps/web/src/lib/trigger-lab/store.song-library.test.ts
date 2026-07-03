@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
+import { buildShow } from './show-builder';
 import { SONGS_STORAGE_KEY, serializeSongLibrary, type SongLibrary } from './persistence';
 import type { LibrarySong } from './store/song-library';
 import type { WSClient, WSCallbacks } from '../ws/client';
@@ -126,6 +127,81 @@ describe('canonical propagation + detach', () => {
     // …but show B still does, and still tracks the library
     store.openShow(showB);
     expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Changed Again');
+  });
+});
+
+describe('referenced songs are navigable + playable + editable (S42 consumption)', () => {
+  it('a referenced song is a valid active song, and its sections resolve', () => {
+    const store = new TriggerLab(fakeClient);
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+
+    // it is NOT a local song, yet setActiveSong accepts it (reads the resolved list)
+    expect(store.songs.some((s) => s.id === libId)).toBe(false);
+    store.setActiveSong(libId);
+    expect(store.activeSongId).toBe(libId);
+    expect(store.activeSong?.id).toBe(libId);
+    expect(store.activeSong!.sections.length).toBeGreaterThan(0);
+    expect(store.activeSection).toBeTruthy(); // its first section became active (playable)
+  });
+
+  it('editing a referenced graph writes through to the LIBRARY copy; authored state keeps the ref (no copy)', () => {
+    const store = new TriggerLab(fakeClient);
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+
+    // a referenced graph carrying a play node (keys are namespaced `lib:<libId>/…`)
+    const libGraphs = store.songLibrary.songs[libId]!.graphs;
+    const refKey = Object.keys(libGraphs).find((k) => libGraphs[k]!.nodes.some((n) => n.kind === 'play'))!;
+    expect(refKey).toBeTruthy();
+
+    // edit via the EXACT path the Trigger editor uses: select the graph, mutate a play node's param
+    store.selectedPadKey = refKey;
+    const play = store.selectedGraph!.nodes.find((n) => n.kind === 'play')!;
+    play.params = { ...play.params, __s42probe: 0.4242 };
+
+    // the canonical LIBRARY copy changed (S41 aliasing — resolved holds the library rune's proxies)
+    const libPlay = store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((n) => n.kind === 'play')!;
+    expect((libPlay.params as Record<string, number>).__s42probe).toBe(0.4242);
+
+    // …and the show did NOT absorb a copy: authored graphs stay local-only; the show still holds a REF
+    expect(store.graphs[refKey]).toBeUndefined();
+    expect(store.songRefs).toEqual([libId]);
+  });
+
+  it('buildShow carries a referenced song + its namespaced graphs (engine push; passes integrity)', () => {
+    const store = new TriggerLab(fakeClient);
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+    store.setActiveSong(libId);
+
+    // the resolved show source is what syncShowToServer sends — building it must NOT throw on the
+    // `lib:<id>/…` graph keys (core integrity exempts them) and must include the referenced content.
+    const show = buildShow({
+      buses: store.buses,
+      graphs: store.resolvedView.graphs,
+      sections: store.sections,
+      effects: store.resolvedView.effects,
+      presets: store.resolvedView.presets,
+      drums: store.drums,
+      songs: store.resolvedSongs,
+    });
+    expect(show.songs?.some((s) => s.id === libId)).toBe(true);
+    const refKey = Object.keys(store.songLibrary.songs[libId]!.graphs)[0]!;
+    expect(show.graphs[refKey]).toBeDefined();
+  });
+
+  it('removeSongReference drops the ref WITHOUT cloning (the inverse of import)', () => {
+    const store = new TriggerLab(fakeClient);
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(true);
+
+    store.removeSongReference(libId);
+    expect(store.songRefs).toEqual([]);
+    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(false); // left the resolved view
+    expect(store.songs.some((s) => s.id === libId)).toBe(false); // NOT cloned into local songs
+    expect(store.songLibrary.songs[libId]).toBeTruthy(); // the library copy is untouched
   });
 });
 

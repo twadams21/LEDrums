@@ -13,6 +13,7 @@
   import ListMusic from '@lucide/svelte/icons/list-music';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Unlink from '@lucide/svelte/icons/unlink';
+  import X from '@lucide/svelte/icons/x';
 
   let { store, row }: { store: TriggerLab; row: ShowSongRow } = $props();
 
@@ -28,6 +29,7 @@
 
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Detach copy', icon: Unlink, onSelect: detach },
+    { label: 'Remove from show', icon: X, onSelect: () => store.removeSongReference(row.id) },
   ]);
 </script>
 
@@ -46,5 +48,6 @@
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename (edits library copy)" size={13} onclick={() => (editing = true)} />
     <IconButton icon={Unlink} label="Detach copy" size={13} onclick={detach} />
+    <IconButton icon={X} label="Remove from show" size={13} onclick={() => store.removeSongReference(row.id)} />
   {/snippet}
 </EditableRow>

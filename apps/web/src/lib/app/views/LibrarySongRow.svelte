@@ -13,6 +13,7 @@
   import LibraryBig from '@lucide/svelte/icons/library-big';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Import from '@lucide/svelte/icons/import';
+  import X from '@lucide/svelte/icons/x';
   import Trash2 from '@lucide/svelte/icons/trash-2';
 
   let { store, row }: { store: TriggerLab; row: LibrarySongRow } = $props();
@@ -26,13 +27,12 @@
   // The delete verb carries its own block reason so the disabled item explains itself.
   const deleteLabel = $derived(row.deletable ? 'Delete' : `Delete — ${usedByLabel.toLowerCase()}`);
 
+  // Import when the active show doesn't reference it yet; once it does, the same slot becomes
+  // "Remove from show" (drops the ref without cloning — the inverse of import).
   const actions = $derived<ContextMenuAction[]>([
-    {
-      label: 'Import to show',
-      icon: Import,
-      disabled: row.inThisShow,
-      onSelect: () => store.importSongReference(row.id),
-    },
+    row.inThisShow
+      ? { label: 'Remove from show', icon: X, onSelect: () => store.removeSongReference(row.id) }
+      : { label: 'Import to show', icon: Import, onSelect: () => store.importSongReference(row.id) },
     { label: deleteLabel, icon: Trash2, danger: true, disabled: !row.deletable, onSelect: () => store.deleteLibrarySong(row.id) },
   ]);
 </script>
@@ -53,13 +53,11 @@
   {/snippet}
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename library song" size={13} onclick={() => (editing = true)} />
-    <IconButton
-      icon={Import}
-      label={row.inThisShow ? 'Already in this show' : 'Import to show'}
-      size={13}
-      disabled={row.inThisShow}
-      onclick={() => store.importSongReference(row.id)}
-    />
+    {#if row.inThisShow}
+      <IconButton icon={X} label="Remove from show" size={13} onclick={() => store.removeSongReference(row.id)} />
+    {:else}
+      <IconButton icon={Import} label="Import to show" size={13} onclick={() => store.importSongReference(row.id)} />
+    {/if}
     <IconButton
       icon={Trash2}
       label={row.deletable ? 'Delete from library' : usedByLabel}

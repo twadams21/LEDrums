@@ -58,9 +58,11 @@
   // the setlist · section index in the song); the strings come from the pure helper.
   const sectionSel = $derived.by(() => {
     if (sel?.kind !== 'section') return null;
-    const songIdx = store.songs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
+    // Resolve over the RESOLVED song list (S42) so a referenced section resolves, and the recall
+    // index matches the server (which receives the resolved setlist order via buildShow).
+    const songIdx = store.resolvedSongs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
     if (songIdx < 0) return null;
-    const song = store.songs[songIdx]!;
+    const song = store.resolvedSongs[songIdx]!;
     const sectionIdx = song.sections.findIndex((sec) => sec.id === sel.sectionId);
     const section = song.sections[sectionIdx]!;
     return { song, songIdx, section, sectionIdx, recall: sectionRecall(songIdx, sectionIdx) };
