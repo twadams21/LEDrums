@@ -37,9 +37,16 @@ export function drumIdOfPadKey(padKey: string): string {
  * so {@link assertShowIntegrity} must NOT try to resolve their key to a kit drum. Matching the
  * `graph` namespace (not "has no colon") keeps a genuinely-dangling padKey resolving and
  * throwing, and accepts both the `graph:` and `graph-` separators.
+ *
+ * The `lib:<songId>/…` namespace is also exempt: a resolved library-song closure (S41) re-keys
+ * its graphs under that prefix (e.g. a pad graph becomes `lib:song-9/kick:center`). Re-keying
+ * leaves the graph's trigger SOURCE untouched, so the engine still routes it by source (the
+ * kick), never by the namespaced map key — resolving that opaque key to a drum would falsely
+ * read the `lib` prefix as the drum id. The key is only ever produced by extraction, so it is
+ * never a genuinely-dangling padKey.
  */
 export function isAuthoredGraphKey(key: string): boolean {
-  return key.startsWith('graph:') || key.startsWith('graph-');
+  return key.startsWith('graph:') || key.startsWith('graph-') || key.startsWith('lib:');
 }
 
 /**

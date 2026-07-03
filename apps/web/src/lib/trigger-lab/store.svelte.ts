@@ -51,7 +51,7 @@ import { selectDockVoices, type DockVoice } from './dock-voices';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project } from '@ledrums/core';
 import { voice, listModifiers } from '@ledrums/core';
-import { buildShow } from './show-builder';
+import { buildShow, type ShowSource } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
 import {
@@ -559,7 +559,37 @@ export class TriggerLab {
   }
 
   selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
-  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.graphs[this.selectedPadKey] ?? null : null);
+
+  // --- resolved view (S41/S42): the active show with its library references materialized in ------
+  // Declared HERE (ahead of the graph/setlist derived that read it) so class-field init order is
+  // valid. The active show's runtime view is the INVERSE of closure extraction (S41): local songs +
+  // resolved references appear as one list; referenced graphs/effects/presets union in collision-free
+  // (per-song `lib:<id>/` namespace). The persisted authored state stays UN-resolved (refs, not
+  // copies) — every consumer that must SELECT / PLAY / EDIT a referenced song reads through here, so
+  // an edit writes to the library rune (canonical propagation) while persistence keeps refs.
+  resolvedView = $derived(
+    songRefsLib.resolveSongRefs(
+      { songs: this.songs, graphs: this.graphs, graphNames: this.graphNames, effects: this.effects, presets: this.presets },
+      this.songRefs,
+      this.songLibrary,
+    ),
+  );
+  /** The materialized song list (local + referenced) — the setlist the Songs rail + engine read. */
+  resolvedSongs = $derived(this.resolvedView.songs);
+  /** The song pool as an id+name list for the library UI, with the shows using each (delete-guard
+      surface). Insertion order. */
+  songLibraryList = $derived(
+    Object.values(this.songLibrary.songs).map((s) => ({
+      id: s.id,
+      name: s.name,
+      usedBy: songRefsLib.showsUsingSong(this.refBearingShows(), s.id),
+    })),
+  );
+
+  // Read through the RESOLVED graphs (S42): selecting a referenced library graph opens the
+  // library's rune-backed proxy, so editing its nodes writes through to the canonical copy
+  // (propagation) — while a local graph resolves to the same proxy it always did.
+  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.resolvedView.graphs[this.selectedPadKey] ?? null : null);
   beatPhase = $derived((this.beat % 4) / 4);
 
   // show derived
@@ -568,8 +598,10 @@ export class TriggerLab {
   /** The active show (id + name + its cached authored). null only before construction completes. */
   activeShow = $derived(this.showLibrary[this.activeShowId] ?? null);
 
-  // setlist derived
-  activeSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? this.songs[0] ?? null);
+  // setlist derived — over the RESOLVED song list (local + referenced), so a referenced library
+  // song is selectable/navigable/playable just like a local one (S42). Falls back to the first
+  // resolved song. `sections`, firing, and the engine push all read through this.
+  activeSong = $derived(this.resolvedSongs.find((s) => s.id === this.activeSongId) ?? this.resolvedSongs[0] ?? null);
   /** The active section (SetlistSection) in the active song — the section you play + edit.
       Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
   activeSection = $derived(this.activeSong?.sections.find((s) => s.id === this.activeSectionId) ?? null);
@@ -591,7 +623,9 @@ export class TriggerLab {
       (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
       label, else the raw key. */
   graphLabel(key: string): string {
-    return graphsLib.graphLabelOf(this.graphNames, key, this.pads);
+    // Resolved names (S42): a referenced library graph's display name lives in the resolved
+    // view, not the local `graphNames`; local names are a subset, so labels still resolve.
+    return graphsLib.graphLabelOf(this.resolvedView.graphNames, key, this.pads);
   }
 
   // --- lifecycle -----------------------------------------------------------
@@ -848,6 +882,13 @@ export class TriggerLab {
         const songLib = this.currentSongLibrary();
         this.scheduleSave(lib, songLib);
       });
+      // Keep the offline sim's effect/preset registries in step with the RESOLVED view (S42), so a
+      // referenced section fires its own effects/presets in the in-browser preview — not just over
+      // the engine link. register* are idempotent upserts; re-runs on any ref/library change.
+      $effect(() => {
+        for (const e of this.resolvedView.effects) this.sim.registerEffect(e);
+        for (const p of this.resolvedView.presets) this.sim.registerPreset(p);
+      });
     });
     if (typeof window !== 'undefined') {
       this.flushOnUnload = () => {
@@ -1017,30 +1058,6 @@ export class TriggerLab {
     }));
   }
 
-  /** The active show's runtime view with its referenced library songs materialized in — the
-      inverse of closure extraction (S41). Local songs + resolved references appear as one list;
-      referenced graphs/effects/presets union in collision-free (per-song `lib:<id>/` namespace).
-      The persisted authored state stays UN-resolved (refs, not copies), so propagation stays
-      canonical; consumers that must PLAY referenced songs read this derived. */
-  resolvedView = $derived(
-    songRefsLib.resolveSongRefs(
-      { songs: this.songs, graphs: this.graphs, graphNames: this.graphNames, effects: this.effects, presets: this.presets },
-      this.songRefs,
-      this.songLibrary,
-    ),
-  );
-  /** The materialized song list (local + referenced) for the Songs rail. */
-  resolvedSongs = $derived(this.resolvedView.songs);
-  /** The song pool as an id+name list for the library UI, with the shows using each (delete-guard
-      surface). Insertion order. */
-  songLibraryList = $derived(
-    Object.values(this.songLibrary.songs).map((s) => ({
-      id: s.id,
-      name: s.name,
-      usedBy: songRefsLib.showsUsingSong(this.refBearingShows(), s.id),
-    })),
-  );
-
   /** Export a LOCAL song into the canonical library: extract its dependency closure (namespaced,
       self-contained) under a fresh pool id and add it. Returns the new library-song id, or null on
       an unknown song id / a viewer. Does NOT alter the show's own songs or refs — importing a
@@ -1068,6 +1085,15 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!this.songLibrary.songs[librarySongId]) return; // nothing to reference
     this.songRefs = songRefsLib.addSongRef(this.songRefs, librarySongId);
+  }
+
+  /** Drop a library-song reference from the active show WITHOUT cloning — the exact inverse of
+      {@link importSongReference}. The referenced song leaves the resolved view; the canonical
+      library copy is untouched (other shows keep referencing it). No-op on an un-referenced id or a
+      viewer. Distinct from {@link detachSongReference}, which keeps the content as a local copy. */
+  removeSongReference(librarySongId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    this.songRefs = songRefsLib.removeSongRef(this.songRefs, librarySongId);
   }
 
   /** Detach a referenced library song into a LOCAL copy of the active show — clones the closure
@@ -1196,8 +1222,8 @@ export class TriggerLab {
         if (state === 'open') {
           // A successful handshake means any PIN we sent was accepted — clear the gate.
           this.authRequired = false;
-          // hand the server the authored content, then the current transport
-          const show = buildShow(this);
+          // hand the server the authored content (with library refs resolved in), then transport
+          const show = buildShow(this.showSource);
           this.client.send({ t: 'setShow', show });
           this.engineSync.baselineShow(show); // baseline so the first sync tick is a no-op
           const cur = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
@@ -1311,9 +1337,27 @@ export class TriggerLab {
       voices; transport lives on a separate message so tempo edits never resend the
       Show. NOTE: setShow reseeds the engine (voices clear) — acceptable for authoring;
       a finer-grained live-update message is a future refinement. */
+  /** The engine's Show source with library references RESOLVED IN (S42): the sent Show carries the
+      referenced songs' graphs/effects/presets/sections (namespaced, collision-free) so the engine can
+      recallSection + fire a referenced section. Persistence (`toAuthored`) is untouched — it still
+      stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
+      via {@link activeSong}. */
+  private get showSource(): ShowSource {
+    const rv = this.resolvedView;
+    return {
+      buses: this.buses,
+      graphs: rv.graphs,
+      sections: this.sections,
+      effects: rv.effects,
+      presets: rv.presets,
+      drums: this.drums,
+      songs: this.resolvedSongs,
+    };
+  }
+
   private syncShowToServer(): void {
     if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
-    const show = buildShow(this);
+    const show = buildShow(this.showSource);
     if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
     // setShow reseeds the active section to the first song/section — restore focus.
@@ -1467,7 +1511,7 @@ export class TriggerLab {
   }
 
   private fireRawMidiLocal(note: number, value: number): void {
-    const toFire = resolveGraphsForFire(this.graphs, { kind: 'midi', note, value });
+    const toFire = resolveGraphsForFire(this.resolvedView.graphs, { kind: 'midi', note, value });
     if (toFire.length === 0) return;
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
@@ -1509,17 +1553,20 @@ export class TriggerLab {
    */
   private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string }> {
     const section = this.activeSection;
+    // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
+    // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
+    const graphs = this.resolvedView.graphs;
     if (section) {
       const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
       for (const key of section.graphs) {
-        const g = this.graphs[key];
+        const g = graphs[key];
         if (g && sourceMatchesPad(triggerSourceOf(g), pad.drumId, String(pad.zone))) {
           resolved.push({ graph: g, label: this.graphLabel(key) });
         }
       }
       return resolved;
     }
-    const g = this.graphs[padKey(pad)];
+    const g = graphs[padKey(pad)];
     return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}` }] : [];
   }
 
@@ -1644,7 +1691,8 @@ export class TriggerLab {
    */
   selectGraphInSection(sectionId: string, graphKey: string): void {
     this.setActiveSection(sectionId);
-    if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
+    // Resolved lookup (S42) so a referenced section's `lib:<id>/…` graph is selectable/openable.
+    if (this.resolvedView.graphs[graphKey]) this.selectedPadKey = graphKey;
   }
 
   // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
@@ -1770,9 +1818,11 @@ export class TriggerLab {
   // section's slot graphs on a hit is the deeper engine change (see redesign plan).
 
   setActiveSong(songId: string): void {
-    if (!this.songs.some((s) => s.id === songId)) return;
+    // Resolved (S42): a referenced library song is a valid active song (navigable + playable),
+    // so validate + read its first section from the resolved list, not just the local songs.
+    if (!this.resolvedSongs.some((s) => s.id === songId)) return;
     this.activeSongId = songId;
-    const firstSectionId = this.songs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
+    const firstSectionId = this.resolvedSongs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
     this.activeSectionId = firstSectionId;
     if (this.link === 'open' && firstSectionId) {
       this.client.send({ t: 'recallSection', songId, sectionId: firstSectionId });
@@ -2015,7 +2065,8 @@ export class TriggerLab {
   /** The explicit trigger source for a graph (what the Inspector reads). undefined when
       the graph/trigger is missing, or an authored graph has no source bound yet. */
   triggerSource(graphKey: string): TriggerSource | undefined {
-    return this.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
+    // Resolved (S42): a referenced section's rows read their graph's source from the resolved view.
+    return this.resolvedView.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
   }
 
   // --- registries / lookups ------------------------------------------------

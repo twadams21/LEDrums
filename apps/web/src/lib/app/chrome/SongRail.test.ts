@@ -8,11 +8,14 @@ import SongRail from './SongRail.svelte';
    are tested in EditableRow.test). These lock the chrome→store wiring: the right store
    method fires with the right id, and the section count renders as the row's secondary. */
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
+  const songs = [
+    { id: 's1', name: 'Song One', sections: [{}, {}] },
+    { id: 's2', name: 'Song Two', sections: [{}] },
+  ];
   return {
-    songs: [
-      { id: 's1', name: 'Song One', sections: [{}, {}] },
-      { id: 's2', name: 'Song Two', sections: [{}] },
-    ],
+    songs,
+    // The rail renders the RESOLVED setlist (S42); with no references it mirrors `songs`.
+    resolvedSongs: songs,
     activeSongId: 's1',
     canEdit: true, // standalone/editor can author (S2); a viewer (false) hides the Add button
     createSong: vi.fn(),
@@ -20,6 +23,10 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     duplicateSong: vi.fn(),
     removeSong: vi.fn(),
     setActiveSong: vi.fn(),
+    // Library-reference verbs — present so the origin-aware row actions resolve (unused for local rows).
+    renameLibrarySong: vi.fn(),
+    detachSongReference: vi.fn(),
+    removeSongReference: vi.fn(),
     ...over,
   } as unknown as TriggerLab;
 }
@@ -59,6 +66,24 @@ describe('SongRail', () => {
   it('hides the Add song button for a read-only viewer (S2)', () => {
     const { queryByLabelText } = render(SongRail, { props: { store: mockStore({ canEdit: false }) } });
     expect(queryByLabelText('Add song')).toBeNull();
+  });
+
+  it('renders a referenced library song (in resolvedSongs, not songs) with a Library badge and selects it', async () => {
+    // A show that references one library song: it appears in the resolved setlist tail, badged.
+    const songs = [{ id: 's1', name: 'Local', sections: [{}] }];
+    const store = mockStore({
+      songs,
+      resolvedSongs: [...songs, { id: 'song-9', name: 'Shared', sections: [{}, {}] }],
+    });
+    const { container } = render(SongRail, { props: { store } });
+    const rows = container.querySelectorAll('.li');
+    expect(rows.length).toBe(2);
+    // the reference row carries the "Library" origin pill; the local row does not
+    expect(container.querySelectorAll('.pill').length).toBe(1);
+    expect(container.querySelector('.pill')?.textContent).toContain('Library');
+    // clicking the reference row selects it (navigable), by its library id
+    await fireEvent.click(container.querySelectorAll('.li-main')[1]!);
+    expect(store.setActiveSong).toHaveBeenCalledWith('song-9');
   });
 
   it('renames a song through the inline rename (double-click → type → Enter)', async () => {
