@@ -456,6 +456,9 @@ export class Sim {
         // Resolve this play node's `mod` input into a flat modifier chain (S29) — the SAME
         // pure core resolver the engine uses, so the offline preview and real output agree.
         const mods = voice.resolveModifierChain(graph, node);
+        // Resolve incoming `param:<key>` modulation edges into mappings (S34) — the SAME pure
+        // core resolver the engine uses, so offline preview and real output agree.
+        const modulations = voice.resolveNodeModulations(graph, node);
         return [
           {
             kind: 'play',
@@ -467,14 +470,17 @@ export class Sim {
             params: this.resolveNodeParams(node),
             env: node.env,
             modifiers: mods.length ? mods : undefined,
+            modulations: modulations.length ? modulations : undefined,
             via: label(this.modeWord(node.mode)),
             latchKey: null,
           },
         ];
       }
       case 'modifier':
-        // Inert in trigger-flow eval: a modifier node never fires children. Its effect
-        // reaches a voice via the play node's resolved `mod` chain, not here.
+      case 'envelope':
+        // Inert in trigger-flow eval: neither a modifier nor a modulation-source node fires
+        // children. A modifier reaches a voice via the play node's resolved `mod` chain; an
+        // envelope via a target's resolved `param:<key>` modulations — not here.
         return [];
       case 'all':
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2));

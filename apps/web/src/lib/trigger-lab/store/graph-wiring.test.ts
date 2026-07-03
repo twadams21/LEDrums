@@ -15,6 +15,7 @@ function sampleGraph(): TriggerGraph {
       makeNode('random', 'r1', 100, 0),
       makeNode('play', 'p1', 200, 0),
       makeNode('toggle', 't1', 100, 100),
+      makeNode('envelope', 'env1', 0, 200),
     ],
     edges: [
       { id: 'e1', from: 'trigger', to: 'r1' },
@@ -42,7 +43,7 @@ const knownIds = graph.nodes.map((n) => n.id);
 const alienIds = ['', 'trigger ', 'r1\n', 'n:9999', '💥', 'undefined', '__proto__', 'nodes', 'toString'];
 const idPool = [...knownIds, ...alienIds];
 const ports: Array<string | undefined> = [undefined, 'band-0', 'band-999', '', 'default', '💥'];
-const toPorts: ToPort[] = [undefined, 'in', 'mod'];
+const toPorts: ToPort[] = [undefined, 'in', 'mod', 'param:brightness', 'param:', 'param:💥'];
 
 function pick<T>(arr: readonly T[], rand: () => number): T {
   return arr[Math.floor(rand() * arr.length)]!;
@@ -144,6 +145,63 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
     expect(canReconnect(g, 'e2', 'm1', 'm2', undefined, 'mod')).toBe(true);
     // repoint the trigger-flow edge onto a mod port — illegal (trigger isn't a modifier)
     expect(canReconnect(g, 'e1', 'trigger', 'p1', undefined, 'mod')).toBe(false);
+  });
+});
+
+describe('graph-wiring — modulation (param) port scoping', () => {
+  /** trigger → play + modifier, with an envelope source node, all unwired. */
+  function modulGraph(): TriggerGraph {
+    return {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('play', 'p1', 200, 0),
+        makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
+        makeNode('envelope', 'env1', 0, 200),
+        makeNode('all', 'a1', 100, 300),
+      ],
+      edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
+    };
+  }
+
+  it('accepts an envelope → play param row wire', () => {
+    expect(canConnect(modulGraph(), 'env1', 'p1', undefined, 'param:brightness')).toBe(true);
+  });
+
+  it('accepts an envelope → modifier param row wire', () => {
+    expect(canConnect(modulGraph(), 'env1', 'm1', undefined, 'param:decayMs')).toBe(true);
+  });
+
+  it('rejects a modulation wire from a NON-source node (scoped handles)', () => {
+    expect(canConnect(modulGraph(), 'trigger', 'p1', undefined, 'param:brightness')).toBe(false);
+    expect(canConnect(modulGraph(), 'm1', 'p1', undefined, 'param:brightness')).toBe(false); // modifier isn't a mod source
+  });
+
+  it('rejects a modulation wire into a node with no params (a container)', () => {
+    expect(canConnect(modulGraph(), 'env1', 'a1', undefined, 'param:brightness')).toBe(false);
+  });
+
+  it("rejects an envelope's output on a trigger-flow wire (source only feeds param ports)", () => {
+    expect(canConnect(modulGraph(), 'env1', 'p1')).toBe(false); // no toPort = flow wire
+    expect(canConnect(modulGraph(), 'env1', 'a1')).toBe(false);
+  });
+
+  it('rejects a trigger-flow wire INTO an envelope node (source takes no flow input)', () => {
+    expect(canConnect(modulGraph(), 'trigger', 'env1')).toBe(false);
+    expect(canConnect(modulGraph(), 'a1', 'env1')).toBe(false);
+  });
+
+  it('flow, mod and param inputs on one node are distinct ports (not mutual duplicates)', () => {
+    const g = modulGraph();
+    g.edges.push({ id: 'e2', from: 'env1', to: 'p1', toPort: 'param:brightness' });
+    expect(canConnect(g, 'env1', 'p1', undefined, 'param:brightness')).toBe(false); // exact dup
+    expect(canConnect(g, 'env1', 'p1', undefined, 'param:size')).toBe(true); // a different row is fine
+  });
+
+  it('two envelopes may drive the same param row (they sum at render)', () => {
+    const g = modulGraph();
+    g.nodes.push(makeNode('envelope', 'env2', 0, 400));
+    g.edges.push({ id: 'e2', from: 'env1', to: 'p1', toPort: 'param:brightness' });
+    expect(canConnect(g, 'env2', 'p1', undefined, 'param:brightness')).toBe(true);
   });
 });
 
