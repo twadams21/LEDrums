@@ -87,6 +87,7 @@ import {
 
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
+import { findFreePosition } from '../app/views/node-placement';
 import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
@@ -2482,6 +2483,42 @@ export class TriggerLab {
   }
 
   // --- graph editing (freeform node wiring) --------------------------------
+
+  /** A single copied graph node (deep, non-reactive), ready to paste into any graph.
+      Node-only — wires are NOT captured (they reference other nodes). Transient: a fresh
+      session starts empty. The trigger node is never copyable (a graph has exactly one). */
+  nodeClipboard = $state<GraphNode | null>(null);
+
+  /** Clone `src` into the selected graph with a fresh id at a free position near `(x, y)`,
+      select it, and return it. Node-only (no wires). Refuses the trigger kind + viewers. */
+  private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
+    if (this.isViewer) return null;
+    const g = this.selectedGraph;
+    if (!g || src.kind === 'trigger') return null;
+    const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
+    const pos = findFreePosition(occupied, x, y, 184, 76);
+    const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: nid('n'), x: pos.x, y: pos.y };
+    g.nodes.push(clone);
+    return clone;
+  }
+
+  /** Copy a node onto the node clipboard (deep, non-reactive). No-op for the trigger node. */
+  copyNode(node: GraphNode): void {
+    if (node.kind === 'trigger') return;
+    this.nodeClipboard = structuredClone($state.snapshot(node));
+  }
+
+  /** Paste the node clipboard into the selected graph, offset so it doesn't stack on the
+      original. Returns the new node (selected) or null when the clipboard is empty. */
+  pasteNode(): GraphNode | null {
+    if (!this.nodeClipboard) return null;
+    return this.placeClone(this.nodeClipboard, this.nodeClipboard.x + 36, this.nodeClipboard.y + 36);
+  }
+
+  /** Duplicate a node in place (fresh id, offset position), node-only. Returns the copy. */
+  duplicateNode(node: GraphNode): GraphNode | null {
+    return this.placeClone(node, node.x + 36, node.y + 36);
+  }
 
   /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
   addNode(kind: NodeKind, x: number, y: number): GraphNode | null {

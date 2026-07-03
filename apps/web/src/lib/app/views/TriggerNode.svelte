@@ -25,6 +25,12 @@
   import ParamRowTick from './ParamRowTick.svelte';
   import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import Tooltip from '../../ui/Tooltip.svelte';
+  import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
+  import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
+  import Copy from '@lucide/svelte/icons/copy';
+  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
+  import CopyPlus from '@lucide/svelte/icons/copy-plus';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
   import { nodeHasInput, nodeHasModInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
@@ -105,6 +111,25 @@
       ? drumLinkHint(store.project.inputMap, node.source, store.drums)
       : null,
   );
+
+  // Right-click verbs (copy / paste / duplicate / delete). The trigger node is fixed — a graph
+  // has exactly one — so it only offers Paste; every other node offers the full set. Delete
+  // routes through a confirmation dialog. Hidden entirely for read-only viewers.
+  let confirmDelete = $state(false);
+  const actions = $derived.by<ContextMenuAction[]>(() => {
+    if (!node) return [];
+    const canPaste = store.nodeClipboard !== null;
+    if (node.kind === 'trigger') {
+      return [{ label: 'Paste', icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() }];
+    }
+    const n = node;
+    return [
+      { label: 'Copy', icon: Copy, onSelect: () => store.copyNode(n) },
+      { label: 'Paste', icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() },
+      { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateNode(n) },
+      { label: 'Delete', icon: Trash2, danger: true, onSelect: () => (confirmDelete = true) },
+    ];
+  });
 </script>
 
 {#snippet playThumb()}
@@ -138,6 +163,7 @@
        capture, not a silent blank. No handles: a stale node is not a valid wiring target. -->
   <NodeCard icon={TriangleAlert} title="Stale node" sub={id} tint="var(--warn)" stale selected={!!selected} />
 {:else}
+  <ContextMenu {actions} disabled={store.isViewer}>
   {#if isBandsSwitch}
     {#if nodeHasInput(kind)}
       <Handle type="target" position={Position.Left} />
@@ -197,6 +223,17 @@
         {/each}
       </ul>
     {/if}
+  {/if}
+  </ContextMenu>
+  {#if node.kind !== 'trigger'}
+    <ConfirmDialog
+      bind:open={confirmDelete}
+      title="Delete node?"
+      message={`Delete this ${kindLabel[node.kind]} node? This can’t be undone.`}
+      confirmLabel="Delete"
+      danger
+      onConfirm={() => node && store.removeNode(node)}
+    />
   {/if}
 {/if}
 
