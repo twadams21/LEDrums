@@ -33,7 +33,7 @@ describe('materializeLinkedNodes — S39 linked → snapshot migration', () => {
     const p1 = out.nodes.find((n) => n.id === 'p1')!;
     expect(p1.params).toEqual(PRESET_PARAMS);
     expect(p1.params).not.toBe(PRESET_PARAMS); // a private copy, not the shared object
-    expect('linked' in (p1 as Record<string, unknown>)).toBe(false);
+    expect('linked' in (p1 as unknown as Record<string, unknown>)).toBe(false);
   });
 
   it('an unlinked node keeps its own params; only the flag is dropped', () => {
@@ -41,7 +41,7 @@ describe('materializeLinkedNodes — S39 linked → snapshot migration', () => {
     const out = materializeLinkedNodes(linkedGraph(false, own), presetParamsFor);
     const p1 = out.nodes.find((n) => n.id === 'p1')!;
     expect(p1.params).toEqual(own);
-    expect('linked' in (p1 as Record<string, unknown>)).toBe(false);
+    expect('linked' in (p1 as unknown as Record<string, unknown>)).toBe(false);
   });
 
   it('a linked node whose preset is unknown keeps its own params (mirrors the old unlink branch)', () => {
@@ -49,7 +49,7 @@ describe('materializeLinkedNodes — S39 linked → snapshot migration', () => {
     const out = materializeLinkedNodes(linkedGraph(true, own), () => undefined);
     const p1 = out.nodes.find((n) => n.id === 'p1')!;
     expect(p1.params).toEqual(own);
-    expect('linked' in (p1 as Record<string, unknown>)).toBe(false);
+    expect('linked' in (p1 as unknown as Record<string, unknown>)).toBe(false);
   });
 
   it('is idempotent + alias-stable: a graph with no `linked` field is returned by reference', () => {
@@ -78,6 +78,6 @@ describe('materializeLinkedNodes — S39 linked → snapshot migration', () => {
     );
     const p1 = graphs['kick:1']!.nodes.find((n) => n.id === 'p1')!;
     expect(p1.params).toEqual(PRESET_PARAMS);
-    expect('linked' in (p1 as Record<string, unknown>)).toBe(false);
+    expect('linked' in (p1 as unknown as Record<string, unknown>)).toBe(false);
   });
 });

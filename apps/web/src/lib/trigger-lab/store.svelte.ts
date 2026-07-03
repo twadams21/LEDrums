@@ -226,7 +226,7 @@ export class TriggerLab {
   /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
       e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
-  /** mutable presets — linked instances read these live. */
+  /** mutable preset library — snapshots you Apply onto / Save from play nodes (S39). */
   presets = $state<Preset[]>(structuredClone(PRESETS));
 
   bpm = $state(120);
