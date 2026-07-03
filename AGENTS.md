@@ -17,6 +17,7 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - Never block the render loop with sync IO; output adapters must be fire-and-forget.
 - Any change that touches UI must apply the `/make-interfaces-feel-better` skill (design-engineering polish pass), alongside the Impeccable design context (`PRODUCT.md` / `DESIGN.md`).
 - UI work must **use or extend the design system** (`docs/design-system.html` — tokens, primitives, composites, interaction contracts; regenerate with `pnpm design-system`). Compose from its components; anything new and reusable gets added to the styleguide entry (`apps/web/src/lib/styleguide/` — see its README) and the file regenerated **in the same change**.
+- UI changes must be verified with `pnpm ui-shot` captures (see `scripts/ui-shot/README.md`) — screenshot the affected surface(s) against the running app; the tool also surfaces console errors.
 
 ## Commands
 - Install: `pnpm install`

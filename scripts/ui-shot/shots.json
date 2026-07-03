@@ -1,0 +1,37 @@
+{
+  "shell": { "route": "?view=trigger" },
+  "top-bar": { "route": "?view=trigger", "select": ".top" },
+  "transport": { "route": "?view=trigger", "select": ".xport" },
+  "left-rail": { "route": "?view=trigger", "select": ".rail" },
+  "trigger-graph": { "route": "?view=trigger", "select": "main.workspace" },
+  "trigger-node-selected": {
+    "route": "?view=trigger",
+    "actions": [{ "click": ".svelte-flow__node" }],
+    "select": "aside.dock .lower"
+  },
+  "inspector": { "route": "?view=trigger", "select": "aside.dock .lower" },
+  "visualizer": { "route": "?view=trigger", "select": "aside.dock .viz", "settle": 1500 },
+  "layers-dock": { "route": "?view=trigger", "select": "section.bottom" },
+  "patch-graph": { "route": "?view=patch", "select": "main.workspace", "settle": 1500 },
+  "objects": { "route": "?view=objects", "select": "main.workspace" },
+  "song-library": {
+    "route": "?view=objects",
+    "actions": [{ "scrollTo": "text=Song Library" }],
+    "select": "main.workspace"
+  },
+  "sections": { "route": "?view=sections", "select": "main.workspace" },
+  "perform": { "route": "?view=perform" },
+  "monitor": { "route": "?view=monitor", "select": "main.workspace" },
+  "settings-dialog": {
+    "route": "?view=trigger",
+    "actions": [{ "click": "button[aria-label=\"Settings\"]" }, { "wait": 400 }]
+  },
+  "add-modifier-modal": {
+    "route": "?view=trigger",
+    "actions": [{ "click": "button[title=\"Add modifier\"]" }, { "wait": 400 }]
+  },
+  "add-modulation-modal": {
+    "route": "?view=trigger",
+    "actions": [{ "click": "button[title=\"Add modulation source\"]" }, { "wait": 400 }]
+  }
+}
