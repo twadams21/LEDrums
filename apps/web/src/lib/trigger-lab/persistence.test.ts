@@ -58,6 +58,17 @@ describe('serializeAuthored / deserializeAuthored round-trip', () => {
     expect(restored?.paneSizes).toEqual(state.paneSizes);
   });
 
+  it('round-trips optional songRefs (S41), de-duplicating + dropping non-strings', () => {
+    const state = { ...authored(), songRefs: ['lib-1', 'lib-2'] };
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    expect(restored?.songRefs).toEqual(['lib-1', 'lib-2']);
+    // defensive coercion: a partially-corrupt list degrades to the unique string ids that survived
+    const dirty = deserializeAuthored({ version: VERSION, data: { songRefs: ['lib-1', 'lib-1', 7, null, 'lib-3'] } });
+    expect(dirty?.songRefs).toEqual(['lib-1', 'lib-3']);
+    // absent → the field stays undefined (references nothing)
+    expect(deserializeAuthored({ version: VERSION, data: { bpm: 120 } })?.songRefs).toBeUndefined();
+  });
+
   it('round-trips a modifier node + its `mod` edge (S29 kind + port)', () => {
     // A graph with a Trail modifier node wired to a play node's `mod` input.
     const modGraph: TriggerGraph = {

@@ -77,7 +77,7 @@ function withRaf(fn: () => void): void {
 }
 
 function fireState(h: Harness, tunnel: TunnelInfo | null): void {
-  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, tunnel);
+  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, null, tunnel);
 }
 
 let sessionStore: MemStorage;

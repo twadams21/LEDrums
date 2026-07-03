@@ -11,6 +11,7 @@ export type {
   SerializedModel,
   ServerMessage,
   ShowLibraryBlob,
+  SongLibraryBlob,
   TunnelInfo,
   VoiceStat,
   VoiceStats,
@@ -26,6 +27,7 @@ const SERVER_TYPES = new Set<ServerMessage['t']>([
   'projects',
   'presence',
   'showLibrary',
+  'songLibrary',
   'error',
 ]);
 
