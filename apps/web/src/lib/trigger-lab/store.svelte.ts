@@ -735,7 +735,11 @@ export class TriggerLab {
       this.last = now;
       this.sim.bpm = this.bpm;
       if (this.playing) this.sim.tick(dt);
-      this.renderFrame();
+      // Skip the sim composite while the visualiser is adopting SERVER frames — the local
+      // buffer would be rendered and thrown away every frame (wave-1 finding: wasted work,
+      // and a second render truth ticking in the background). The sim still ticks above so
+      // the offline preview resumes instantly when the link drops.
+      if (!this.useServer) this.renderFrame();
       this.snapshot();
       // measure local output rate — but only publish it when offline; when the
       // link is open the server reports the real LED output rate via onStats.

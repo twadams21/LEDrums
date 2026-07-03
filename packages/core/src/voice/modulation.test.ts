@@ -159,6 +159,7 @@ function mkVoice(over: Partial<Voice>): Voice {
     scope: 'kit',
     sourceDrumId: 'kick',
     velocity: 1,
+    seed: 0,
     generatorId: null,
     genState: null,
     modifiers: undefined,

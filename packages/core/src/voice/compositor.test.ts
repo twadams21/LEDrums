@@ -552,11 +552,23 @@ function fxShow(generatorId: string, polyphony: 'mono' | 'poly'): Show {
   };
 }
 
-/** Fire once, sample the frame at voice age `ageMs`. */
-function fxAtAge(generatorId: string, ageMs: number, polyphony: 'mono' | 'poly' = 'poly'): Readonly<Float32Array> {
+/** Fire once, sample the frame at voice age `ageMs`. `prime` spawns-and-steals one throwaway
+    voice first so the sampled voice is the engine's SECOND spawn — aligning its per-trigger
+    RNG seed (item C: seed derives from the pool's voice counter) with a retriggered voice's,
+    so retrigger-vs-fresh comparisons stay meaningful under per-trigger seeding. */
+function fxAtAge(
+  generatorId: string,
+  ageMs: number,
+  polyphony: 'mono' | 'poly' = 'poly',
+  prime = false,
+): Readonly<Float32Array> {
   const e = createVoiceBusEngine();
   e.setModel(chaseModel());
   e.setShow(fxShow(generatorId, polyphony));
+  if (prime) {
+    e.applyInput(hit('kick', 0));
+    e.tick(0, 0, transport(0)); // throwaway voice #1 (stolen by the next mono spawn)
+  }
   e.applyInput(hit('kick', 0));
   e.tick(0, 0, transport(0)); // spawn at t=0 → born 0; attack 0 → full level this same tick
   if (ageMs > 0) e.tick(ageMs, ageMs, transport(ageMs));
@@ -601,7 +613,8 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
   for (const id of S26_VOICE_EFFECTS) {
     it(`${id}: restarts on retrigger — retriggered voice matches a fresh voice age-for-age`, () => {
       for (const age of AGES) {
-        expect(Array.from(fxAfterRetrigger(id, age))).toEqual(Array.from(fxAtAge(id, age, 'mono')));
+        // prime=true: match voice-counter-derived per-trigger seeds (retriggered voice = spawn #2)
+        expect(Array.from(fxAfterRetrigger(id, age))).toEqual(Array.from(fxAtAge(id, age, 'mono', true)));
       }
     });
 
@@ -631,7 +644,8 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
     // A retrigger gets a fresh genState; if accumulated flash / sparkle / orbit state leaked
     // from the stolen voice, the retriggered frame would differ from a fresh one. It does not.
     for (const id of ['collisions', 'sacred-hogs', 'comet-trails']) {
-      expect(Array.from(fxAfterRetrigger(id, 800))).toEqual(Array.from(fxAtAge(id, 800, 'mono')));
+      // prime=true: align per-trigger seeds (item C) so only state leaks would differ
+      expect(Array.from(fxAfterRetrigger(id, 800))).toEqual(Array.from(fxAtAge(id, 800, 'mono', true)));
     }
   });
 
@@ -690,6 +704,7 @@ function mkVoice(over: Partial<Voice>): Voice {
     targetId: undefined,
     sourceDrumId: 'kick',
     velocity: 1,
+    seed: 0,
     generatorId: null,
     genState: null,
     modifiers: undefined,

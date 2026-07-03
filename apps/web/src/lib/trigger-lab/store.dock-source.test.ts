@@ -50,6 +50,7 @@ function simVoice(over: Partial<Voice> = {}): Voice {
     scope: 'kit',
     sourceDrumId: null,
     velocity: 1,
+    seed: 0,
     params: { hue: 200 },
     attackMs: 0,
     sustainMs: 0,

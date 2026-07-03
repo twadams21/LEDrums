@@ -82,8 +82,9 @@ export function createGeneratorBridge(): GeneratorBridge {
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
         genScratch = new Framebuffer(model.pixelCount);
       }
-      // Build per-voice state lazily and persist it for the voice's life.
-      if (v.genState == null && gen.createState) v.genState = gen.createState(model);
+      // Build per-voice state lazily and persist it for the voice's life. The voice's
+      // per-trigger seed (item C) decorrelates RNG-backed effects across fires.
+      if (v.genState == null && gen.createState) v.genState = gen.createState(model, v.seed);
 
       // Resolved params: generator defaults (incl. enum/colour) overlaid with the
       // voice's live numeric/bool params (envelopes already applied by the engine).

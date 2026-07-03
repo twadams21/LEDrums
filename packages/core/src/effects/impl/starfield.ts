@@ -18,12 +18,14 @@ export interface StarfieldState {
   seededFor: number;
   /** Star count the stars were seeded for (re-seed if `count` changes). */
   seededCount: number;
+  /** The per-voice seed the layout was built from (item C) — reused when count changes. */
+  seed: number;
 }
 
 const SEED = 0x57a4f1e1;
 
-function seedStars(model: PixelModel, count: number): Star[] {
-  const rng = mulberry32(SEED);
+function seedStars(model: PixelModel, count: number, seed: number): Star[] {
+  const rng = mulberry32(seed);
   const n = Math.max(0, model.pixelCount);
   const stars: Star[] = [];
   for (let k = 0; k < count; k++) {
@@ -57,9 +59,10 @@ export const starfield: EffectGenerator<StarfieldState> = {
     { key: 'saturation', label: 'Saturation', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
-  createState(model: PixelModel): StarfieldState {
+  createState(model: PixelModel, seed?: number): StarfieldState {
     const count = 48;
-    return { stars: seedStars(model, count), seededFor: model.pixelCount, seededCount: count };
+    const s = seed ?? SEED;
+    return { stars: seedStars(model, count, s), seededFor: model.pixelCount, seededCount: count, seed: s };
   },
   render(ctx, params, fb, state) {
     const count = Math.max(1, Math.round(pnum(params, 'count', 48)));
@@ -70,7 +73,7 @@ export const starfield: EffectGenerator<StarfieldState> = {
 
     // Re-seed if the model size or requested star count changed.
     if (state.seededFor !== ctx.model.pixelCount || state.seededCount !== count) {
-      state.stars = seedStars(ctx.model, count);
+      state.stars = seedStars(ctx.model, count, state.seed ?? SEED);
       state.seededFor = ctx.model.pixelCount;
       state.seededCount = count;
     }

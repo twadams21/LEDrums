@@ -27,8 +27,8 @@ export const pixelAccum: EffectGenerator<PixelAccumState> = {
     { key: 'addPerHit', label: 'Pixels / Hit', type: 'number', default: 6, min: 1, max: 64, step: 1 },
     { key: 'decayMs', label: 'Decay', type: 'number', default: 1200, min: 50, max: 8000, unit: 'ms' },
   ],
-  createState(model: PixelModel): PixelAccumState {
-    return { intensity: new Float32Array(model.pixelCount), rng: mulberry32(SEED), lastSeq: 0 };
+  createState(model: PixelModel, seed?: number): PixelAccumState {
+    return { intensity: new Float32Array(model.pixelCount), rng: mulberry32(seed ?? SEED), lastSeq: 0 };
   },
   render(ctx, params, fb, state) {
     const hue = pnum(params, 'hue', 200);
