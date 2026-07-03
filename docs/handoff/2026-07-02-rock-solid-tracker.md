@@ -63,6 +63,11 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-03T01:11 — Group I: S34 long-running (watching)
+
+- **group/I still 1/6** (S33 merged). **S34-modulation-graph in flight ~45min** (busy, NOT stalled — meaty ui-significant slice, opus/high). It gates the S35/S36/S37 wave, so I is bottlenecked on it. Lane orch owns liveness; no intervene unless it goes idle-stalled. If still running next wake (~75min) I'll capture.
+- Usage 5h 55%, climbing ~10%/30min → may hit 70% wall ~02:40 UTC before the 04:00 reset. Inbox empty; rock-solid 9a4abcb. No handoff.
+
 ### 2026-07-03T00:40 — Group I 1/6 (serial chain)
 
 - **group/I: S33 merged**; S34-modulation-graph in flight (opus/high, ui graph layer). Chain gates the rest: S35/S36/S37 need S34, S38 needs S36+S37. Usage 5h 45%. Inbox empty; rock-solid da145b5. No handoff.
