@@ -20,6 +20,8 @@ export interface CometTrailsState {
   seededCount: number;
   /** Whether the drum layout has been bound yet. */
   bound: boolean;
+  /** The per-voice seed the comets were built from (item C) — reused when count changes. */
+  seed: number;
 }
 
 const SEED = 0xc0117a11;
@@ -31,8 +33,8 @@ function angularDelta(from: number, to: number): number {
   return d;
 }
 
-function seedComets(model: PixelModel, count: number): Comet[] {
-  const rng = mulberry32(SEED);
+function seedComets(model: PixelModel, count: number, seed: number): Comet[] {
+  const rng = mulberry32(seed);
   const comets: Comet[] = [];
   if (model.drums.length === 0) return comets;
   for (let k = 0; k < count; k++) {
@@ -72,9 +74,10 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
-  createState(model: PixelModel): CometTrailsState {
+  createState(model: PixelModel, seed?: number): CometTrailsState {
     const count = 4;
-    return { comets: seedComets(model, count), seededCount: count, bound: true };
+    const s = seed ?? SEED;
+    return { comets: seedComets(model, count, s), seededCount: count, bound: true, seed: s };
   },
   render(ctx, params, fb, state) {
     const count = Math.max(1, Math.round(pnum(params, 'comets', 4)));
@@ -86,7 +89,7 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
 
     // Re-seed if comet count changed or state is unbound.
     if (!state.bound || state.seededCount !== count) {
-      state.comets = seedComets(ctx.model, count);
+      state.comets = seedComets(ctx.model, count, state.seed ?? SEED);
       state.seededCount = count;
       state.bound = true;
     }

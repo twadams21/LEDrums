@@ -8,9 +8,12 @@
  * (the engine, which owns transport), never read from a global clock.
  */
 import type { PlayAction } from './eval-graph';
+import { deriveSeed } from './prng';
 import type { Bus, EffectDef, ParamSpec, Voice } from './types';
 
 const VOICE_CAP = 256;
+/** Base mixed with the monotonic voice counter into each voice's per-trigger seed. */
+const VOICE_SEED_BASE = 0x1ed5eed5;
 
 /** The engine-owned lookups + frame time {@link VoicePool.spawn} needs to realise a
     {@link PlayAction} into a live voice. Held by reference, not copied. */
@@ -102,6 +105,9 @@ export class VoicePool {
     slot.targetId = a.targetId;
     slot.sourceDrumId = sourceDrumId;
     slot.velocity = velocity;
+    // Per-trigger seed (item C): a fresh derived stream per spawn — deterministic given the
+    // same input sequence (the counter advances identically), different on every fire.
+    slot.seed = deriveSeed(VOICE_SEED_BASE, this.voiceSeq);
     // Generator-backed effects host a legacy EffectGenerator; the compositor reads
     // `generatorId` + `genState`. Reset state on (re)spawn so a reused pool slot never
     // inherits a previous voice's accumulation buffers / RNG cursor.
@@ -147,6 +153,7 @@ function makeVoiceSlot(): Voice {
     targetId: undefined,
     sourceDrumId: null,
     velocity: 1,
+    seed: 0,
     generatorId: null,
     genState: null,
     modifiers: undefined,

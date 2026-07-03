@@ -49,8 +49,8 @@ export const gravityWells: EffectGenerator<GravityWellsState> = {
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
   ],
-  createState(model: PixelModel): GravityWellsState {
-    const rng = mulberry32(SEED);
+  createState(model: PixelModel, seed?: number): GravityWellsState {
+    const rng = mulberry32(seed ?? SEED);
     const wells: Well[] = [];
     // Build the maximum number of wells; render uses the first `wells` of them so
     // changing the param at runtime never reshuffles the seeded paths.

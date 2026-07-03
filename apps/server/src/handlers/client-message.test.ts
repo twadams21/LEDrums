@@ -37,7 +37,12 @@ function fakeAutosaver(): Autosaver {
 
 /** Build the handler + its wiring over a real registry/engine, mirroring main.ts. Returns the
     registry, the live show-library slot ref, and per-socket admit so tests drive a real scenario. */
-function harness() {
+interface TunnelHarnessOpts {
+  tunnelControl?: { start(): void; stop(): void };
+  isTunnelClient?(ws: FakeSocket): boolean;
+}
+
+function harness(opts: TunnelHarnessOpts = {}) {
   const clients = new ClientRegistry<FakeSocket>();
   const host = new EngineHost(defaultProject());
   const autosaver = fakeAutosaver();
@@ -87,6 +92,8 @@ function harness() {
       slot.songLib = lib;
     },
     relayToOthers,
+    tunnelControl: opts.tunnelControl,
+    isTunnelClient: opts.isTunnelClient,
     monitor,
   });
 
@@ -485,5 +492,56 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     handle({ t: 'takeover' }, viewer);
     handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
     expect(host.engine.getProject().name).toBe('Rig B'); // now accepted
+  });
+});
+
+describe('tunnel control message (item 4): editor-gated AND refused for tunnel-riding clients', () => {
+  function tunnelHarness(viaTunnel: Set<FakeSocket> = new Set()) {
+    const tunnelControl = { start: vi.fn(), stop: vi.fn() };
+    const h = harness({ tunnelControl, isTunnelClient: (ws) => viaTunnel.has(ws) });
+    return { ...h, tunnelControl, viaTunnel };
+  }
+
+  it("requiresEditor('tunnel') — deny-by-default covers the new message", () => {
+    expect(requiresEditor('tunnel')).toBe(true);
+  });
+
+  it('the local editor can start and stop the tunnel', () => {
+    const { handle, join, tunnelControl } = tunnelHarness();
+    const editor = join();
+    handle({ t: 'tunnel', action: 'start' }, editor);
+    expect(tunnelControl.start).toHaveBeenCalledTimes(1);
+    handle({ t: 'tunnel', action: 'stop' }, editor);
+    expect(tunnelControl.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('a viewer cannot control the tunnel (editor gate)', () => {
+    const { handle, join, tunnelControl } = tunnelHarness();
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'tunnel', action: 'stop' }, viewer);
+    handle({ t: 'tunnel', action: 'start' }, viewer);
+    expect(tunnelControl.start).not.toHaveBeenCalled();
+    expect(tunnelControl.stop).not.toHaveBeenCalled();
+  });
+
+  it('a tunnel-riding client cannot stop the tunnel EVEN after takeover — refused with a visible error', () => {
+    const viaTunnel = new Set<FakeSocket>();
+    const { handle, join, tunnelControl } = tunnelHarness(viaTunnel);
+    join(); // local editor
+    const remote = join();
+    viaTunnel.add(remote);
+    handle({ t: 'takeover' }, remote); // remote grabs the editor slot
+    handle({ t: 'tunnel', action: 'stop' }, remote);
+    handle({ t: 'tunnel', action: 'start' }, remote);
+    expect(tunnelControl.stop).not.toHaveBeenCalled();
+    expect(tunnelControl.start).not.toHaveBeenCalled();
+    const err = remote.sent.find((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
+    expect(err?.message).toMatch(/host/);
+  });
+
+  it('is a safe no-op when the wiring provides no tunnel control', () => {
+    const { handle, join } = harness();
+    expect(() => handle({ t: 'tunnel', action: 'start' }, join())).not.toThrow();
   });
 });

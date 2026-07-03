@@ -54,8 +54,12 @@
       const active = store.activeSectionId;
       if (active && active !== sel.sectionId) shell.select({ kind: 'section', sectionId: active });
     } else if (sel.kind === 'node') {
+      // Drop a node selection only when a graph IS open and the node is genuinely gone from
+      // it. A transiently-null selectedGraph (mid graph-switch / store rebuild) must NOT
+      // clear — that race made the Inspector lose a selection it should have kept (item 1.8);
+      // while null the Inspector just resolves the node to nothing and shows its empty state.
       const g = store.selectedGraph;
-      if (!g || !g.nodes.some((n) => n.id === sel.nodeId)) shell.clearSelection();
+      if (g && !g.nodes.some((n) => n.id === sel.nodeId)) shell.clearSelection();
     }
   });
 

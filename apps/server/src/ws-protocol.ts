@@ -18,6 +18,7 @@ export type {
   ShowLibraryBlob,
   SongLibraryBlob,
   TunnelInfo,
+  TunnelStatus,
   VoiceStats,
 } from '@ledrums/protocol';
 
@@ -30,7 +31,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap', 'setProject',
-  'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover',
+  'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
   'loadProject', 'saveProject', 'listProjects',
 ]);
 

@@ -259,7 +259,8 @@ function renderGeneratorVoice(
   if (!gen) return;
   const pm = lab.pm;
   if (!genScratch || genScratch.pixelCount !== pm.pixelCount) genScratch = new Framebuffer(pm.pixelCount);
-  if (v.genState == null && gen.createState) v.genState = gen.createState(pm);
+  // per-voice state seeded from the trigger (item C) — mirrors the core generator bridge
+  if (v.genState == null && gen.createState) v.genState = gen.createState(pm, v.seed);
 
   // Resolved params: generator defaults (incl. enum/colour) overlaid with the voice's
   // live numeric/bool params (envelopes applied via effectiveParams).

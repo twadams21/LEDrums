@@ -23,8 +23,26 @@ function directionOk(fromKind: NodeKind, toKind: NodeKind, toPort: ToPort): bool
   return nodeHasOutput(fromKind) && nodeHasInput(toKind) && fromKind !== 'modifier' && !nodeIsModSource(fromKind);
 }
 
-/** Equal (source-port, target-port) identity for duplicate-wire detection. */
-const samePorts = (a: ToPort, b: ToPort): boolean => (a ?? 'in') === (b ?? 'in');
+/** Canonical source-port: `''`/null/undefined all mean "the default output". Duplicate
+    detection and stored edges both go through this so no alias can slip past the dedup. */
+export const normalizeFromPort = (p?: string | null): string | undefined => (p ? p : undefined);
+/** Canonical target-port: `''`/`'in'`/null/undefined all mean the flow input. */
+export const normalizeToPort = (p?: ToPort | null): 'mod' | `param:${string}` | undefined =>
+  !p || p === 'in' ? undefined : p;
+
+/** Whether an existing edge occupies the same (from, to, source-port, target-port) slot —
+    the duplicate-wire identity, compared over canonical ports on BOTH sides. */
+const sameSlot = (
+  e: { from: string; to: string; fromPort?: string; toPort?: ToPort },
+  fromId: string,
+  toId: string,
+  fromPort?: string,
+  toPort?: ToPort,
+): boolean =>
+  e.from === fromId &&
+  e.to === toId &&
+  normalizeFromPort(e.fromPort) === normalizeFromPort(fromPort) &&
+  normalizeToPort(e.toPort) === normalizeToPort(toPort);
 
 /** Can node `targetId` reach node `startId` by following edges from `startId`? (cycle test). */
 export function reaches(graph: TriggerGraph, startId: string, targetId: string): boolean {
@@ -58,15 +76,7 @@ export function canConnect(
   if (!from || !to || !directionOk(from.kind, to.kind, toPort)) return false;
   // dup is per (source-port → target-port): two different bands MAY route to the same child,
   // and a node's flow `in` + `mod` inputs are distinct; the same wire on both ports is rejected.
-  if (
-    graph.edges.some(
-      (e) =>
-        e.from === fromId &&
-        e.to === toId &&
-        (e.fromPort ?? null) === (fromPort ?? null) &&
-        samePorts(e.toPort, toPort),
-    )
-  ) {
+  if (graph.edges.some((e) => sameSlot(e, fromId, toId, fromPort, toPort))) {
     return false;
   }
   return !reaches(graph, toId, fromId);
@@ -89,16 +99,7 @@ export function canReconnect(
   const from = graph.nodes.find((n) => n.id === fromId);
   const to = graph.nodes.find((n) => n.id === toId);
   if (!from || !to || !directionOk(from.kind, to.kind, toPort)) return false;
-  if (
-    graph.edges.some(
-      (e) =>
-        e.id !== edgeId &&
-        e.from === fromId &&
-        e.to === toId &&
-        (e.fromPort ?? null) === (fromPort ?? null) &&
-        samePorts(e.toPort, toPort),
-    )
-  ) {
+  if (graph.edges.some((e) => e.id !== edgeId && sameSlot(e, fromId, toId, fromPort, toPort))) {
     return false; // dup
   }
   // cycle check over the graph WITHOUT the edge being moved

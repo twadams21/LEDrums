@@ -448,6 +448,14 @@ export interface Voice {
    * synthetic trigger (intensity / wash falloff / particle spread). */
   velocity: number;
   /**
+   * Per-trigger RNG seed (item C): derived at spawn from the pool's monotonic voice
+   * counter via {@link deriveSeed}, so each fire of a random-look effect (confetti…)
+   * looks different, yet identical input sequences reproduce byte-identically —
+   * deterministic given the seed, never ambient `Math.random`. Passed to
+   * `EffectGenerator.createState(model, seed)`.
+   */
+  seed: number;
+  /**
    * Hosted legacy-effect generator id, or `null` for a pattern voice. When set, the
    * compositor renders that {@link EffectGenerator} into a scratch framebuffer and
    * composites it into the frame scaled by `level*deckGain`, masked to the drum range

@@ -106,9 +106,7 @@
     cursor: pointer;
     /* re-enable events on the actual button (the bar container is pointer-events:none) */
     pointer-events: auto;
-    transition:
-      border-color var(--dur-120) ease,
-      color var(--dur-120) ease;
+    /* no transition: hover feedback on graph chrome is instant (item 1.9 / locked prefs) */
   }
   .palette-btn:hover:not(:disabled) {
     border-color: var(--border-strong);
@@ -121,10 +119,5 @@
   .palette-btn :global(.palette-ico) {
     color: var(--tint);
     flex: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .palette-btn {
-      transition: none;
-    }
   }
 </style>

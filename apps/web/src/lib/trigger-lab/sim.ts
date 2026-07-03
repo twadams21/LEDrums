@@ -210,6 +210,9 @@ export interface Voice {
   sourceDrumId: string | null;
   /** hit velocity 0..1 at spawn — drives a hosted generator's synthetic trigger. */
   velocity: number;
+  /** per-trigger RNG seed (item C) — mirrors the core Voice field; derived at spawn so
+      random-look generator effects differ per fire yet replay exactly. */
+  seed: number;
   /** hosted legacy-generator id (offline preview delegates to the core generator), or
       null for a pattern voice. Mirrors the core Voice field. */
   generatorId?: string | null;
@@ -292,7 +295,10 @@ export interface TriggerCtx {
   bpm: number;
 }
 
-let voiceSeq = 0;
+/** Per-trigger voice seed — the core VoicePool recipe (same base constant). */
+function deriveSeedFromCounter(counter: number): number {
+  return voice.deriveSeed(0x1ed5eed5, counter);
+}
 
 /** Resolve a param spec list to its default values. */
 export function defaultParams(effect: EffectDef): ParamValues {
@@ -312,6 +318,9 @@ export class Sim {
 
   buses: Bus[];
   voices: Voice[] = [];
+  /** Per-instance monotonic voice counter (ids + per-trigger seeds). Instance-scoped so two
+      Sims fed identical inputs replay identically — a shared module counter would not. */
+  private voiceSeq = 0;
   log: LogEntry[] = [];
 
   private effectsById = new Map<string, EffectDef>();
@@ -336,6 +345,11 @@ export class Sim {
     seen: Set<string>;
   }> = [];
   private pendingFireCounter = 0;
+
+  /** Seeded PRNG for random/chance evaluation — the core Mulberry32, mirroring the
+      engine's own stream (engine.ts PRNG_SEED pattern). NO ambient Math.random anywhere
+      in the eval/render-truth path (item 2): identical input sequences replay exactly. */
+  private prng = new voice.Prng(0x1a2b3c4d);
 
   /** Live MIDI CC value table (S37) — the offline mirror of the core engine's `ccTable`.
       Keyed by controller+channel → 0..1 (see core `ccKey`). Fed by {@link setCc} from the
@@ -495,10 +509,10 @@ export class Sim {
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2));
       case 'random': {
         if (kids.length === 0) return [];
-        let i = Math.floor(Math.random() * kids.length);
+        let i = this.prng.nextInt(kids.length);
         if (node.noRepeat && kids.length > 1) {
           const prev = this.lastPick.get(node.id);
-          while (i === prev) i = Math.floor(Math.random() * kids.length);
+          while (i === prev) i = this.prng.nextInt(kids.length);
         }
         this.lastPick.set(node.id, i);
         return this.evalNode(graph, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2);
@@ -520,7 +534,7 @@ export class Sim {
         return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
       }
       case 'chance': {
-        if (Math.random() > node.p) return [];
+        if (this.prng.next() > node.p) return [];
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2));
       }
       case 'toggle': {
@@ -621,10 +635,10 @@ export class Sim {
         return block.children.flatMap((c) => this.evaluate(c, ctx, label('All')));
       case 'random': {
         if (block.children.length === 0) return [];
-        let i = Math.floor(Math.random() * block.children.length);
+        let i = this.prng.nextInt(block.children.length);
         if (block.noRepeat && block.children.length > 1) {
           const prev = this.lastPick.get(block.id);
-          while (i === prev) i = Math.floor(Math.random() * block.children.length);
+          while (i === prev) i = this.prng.nextInt(block.children.length);
         }
         this.lastPick.set(block.id, i);
         return this.evaluate(block.children[i]!, ctx, label(`Random[${i + 1}/${block.children.length}]`));
@@ -641,7 +655,7 @@ export class Sim {
         return this.evaluate(block.children[i]!, ctx, label(`Switch:${block.on}[${i + 1}]`));
       }
       case 'chance': {
-        if (Math.random() > block.p) return [];
+        if (this.prng.next() > block.p) return [];
         return this.evaluate(block.child, ctx, label(`Chance ${Math.round(block.p * 100)}%`));
       }
       case 'toggle': {
@@ -680,8 +694,12 @@ export class Sim {
       }
     }
 
+    // per-trigger seed (item C) — same recipe as the core VoicePool, so random-look
+    // generator effects differ per fire yet replay exactly given the same inputs.
+    // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
+    const seed = deriveSeedFromCounter(this.voiceSeq + 1);
     const voice: Voice = {
-      id: `v${++voiceSeq}`,
+      id: `v${++this.voiceSeq}`,
       effectId: a.effectId,
       pattern: effect.pattern,
       busId: bus.id,
@@ -690,6 +708,7 @@ export class Sim {
       targetId: a.targetId,
       sourceDrumId,
       velocity,
+      seed,
       generatorId: effect.generatorId ?? null,
       genState: null,
       modifiers: a.modifiers,

@@ -49,6 +49,7 @@ import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
 import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
+import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project } from '@ledrums/core';
 import { voice, listModifiers } from '@ledrums/core';
@@ -90,7 +91,7 @@ import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
-import { canConnect, canReconnect, type ToPort } from './store/graph-wiring';
+import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
@@ -500,6 +501,23 @@ export class TriggerLab {
     }),
   );
 
+  /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
+      them raw made meters/chips step visibly. These mirror {@link busLevels}/{@link dockVoices}
+      but exponentially approach the authoritative values, advanced every rAF frame by
+      {@link start}'s loop. Display-only — the server (or offline sim) stays the truth; nothing
+      writes back. The dock renders these. */
+  busLevelsDisplay = $state<Record<string, number>>({});
+  dockVoicesDisplay = $state.raw<DockVoice[]>([]);
+  /** Per-voice display levels backing {@link dockVoicesDisplay} (pruned as voices die). */
+  private voiceLevelDisplay = new Map<string, number>();
+
+  /** Advance the display-smoothed dock values one frame toward the authoritative ones. */
+  private tickDockDisplay(dtMs: number): void {
+    const alpha = smoothingAlpha(dtMs);
+    this.busLevelsDisplay = smoothBusLevels(this.busLevelsDisplay, this.busLevels, alpha);
+    this.dockVoicesDisplay = smoothDockVoices(this.voiceLevelDisplay, this.dockVoices, alpha);
+  }
+
   /** This client's authoring role, derived from {@link presence} (S1 multi-client):
       - 'standalone' — no presence yet (offline / single user): local-wins authoring, as before;
       - 'editor' — we hold the editor slot with other clients connected;
@@ -735,8 +753,13 @@ export class TriggerLab {
       this.last = now;
       this.sim.bpm = this.bpm;
       if (this.playing) this.sim.tick(dt);
-      this.renderFrame();
+      // Skip the sim composite while the visualiser is adopting SERVER frames — the local
+      // buffer would be rendered and thrown away every frame (wave-1 finding: wasted work,
+      // and a second render truth ticking in the background). The sim still ticks above so
+      // the offline preview resumes instantly when the link drops.
+      if (!this.useServer) this.renderFrame();
       this.snapshot();
+      this.tickDockDisplay(dt);
       // measure local output rate — but only publish it when offline; when the
       // link is open the server reports the real LED output rate via onStats.
       this.fpsFrames++;
@@ -777,6 +800,14 @@ export class TriggerLab {
       editor — pressing it as the editor just re-confirms the slot. */
   takeover(): void {
     this.client.send({ t: 'takeover' });
+  }
+
+  /** Ask the server to start or stop the share tunnel (S3 in-app control). Server-authoritative:
+      progress lands back as `TunnelInfo.status` on the next `state` broadcasts (off → starting →
+      live/error). The server refuses viewers (editor gate) and any client that arrived VIA the
+      tunnel; a no-op when offline. */
+  setSharing(on: boolean): void {
+    this.client.send({ t: 'tunnel', action: on ? 'start' : 'stop' });
   }
 
   /** Submit a room PIN from the entry gate (S3): remember it for this tab and retry the
@@ -2517,7 +2548,15 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
-    const edge: GraphEdge = { id: nid('e'), from: fromId, to: toId, fromPort, toPort };
+    // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
+    // never dodge the dedup guard under a differently-spelled duplicate later
+    const edge: GraphEdge = {
+      id: nid('e'),
+      from: fromId,
+      to: toId,
+      fromPort: normalizeFromPort(fromPort),
+      toPort: normalizeToPort(toPort),
+    };
     // A modulation wire (`param:<key>`) IS one mapping — bake its default settings from the
     // target param spec (amount 1, no invert, range = spec min/max) so it is editable + persists.
     const key = voice.paramKeyOf(toPort);
@@ -2547,8 +2586,8 @@ export class TriggerLab {
     const edge = g.edges.find((e) => e.id === edgeId)!;
     edge.from = fromId;
     edge.to = toId;
-    edge.fromPort = fromPort;
-    edge.toPort = toPort;
+    edge.fromPort = normalizeFromPort(fromPort);
+    edge.toPort = normalizeToPort(toPort);
   }
 
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */

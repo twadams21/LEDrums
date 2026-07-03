@@ -220,7 +220,8 @@ function gnode(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {
 function mkVoice(mods: ResolvedModifier[] | undefined): Voice {
   return {
     active: true, id: 'v1', effectId: 'fx', pattern: 'flash', busId: 'base', mode: 'oneshot',
-    scope: 'kit', targetId: undefined, sourceDrumId: 'kick', velocity: 1, generatorId: null,
+    scope: 'kit', targetId: undefined, sourceDrumId: 'kick', velocity: 1,
+    seed: 0, generatorId: null,
     genState: null, modifiers: mods, modState: undefined, params: {}, liveParams: { hue: 0, brightness: 0.6 },
     specs: [], env: {}, attackMs: 0, sustainMs: 5000, releaseMs: 100, phase: 'sustain', level: 1,
     bornAtMs: 0, releaseAtMs: null, releaseFromLevel: 1, via: '', deckGain: 1,

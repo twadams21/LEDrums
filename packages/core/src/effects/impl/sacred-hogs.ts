@@ -42,8 +42,8 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
     { key: 'speed', label: 'Speed', type: 'number', default: 60, min: 0, max: 720, unit: '°/s' },
     { key: 'hogWidthDeg', label: 'Hog Width', type: 'number', default: 18, min: 2, max: 90, unit: '°' },
   ],
-  createState(model: PixelModel): SacredHogsState {
-    return { rng: mulberry32(SEED), sparkle: new Float32Array(model.pixelCount) };
+  createState(model: PixelModel, seed?: number): SacredHogsState {
+    return { rng: mulberry32(seed ?? SEED), sparkle: new Float32Array(model.pixelCount) };
   },
   render(ctx, params, fb, state) {
     const hogHue = pnum(params, 'hogHue', 200);

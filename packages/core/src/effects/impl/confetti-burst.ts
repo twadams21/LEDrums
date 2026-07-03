@@ -43,8 +43,9 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
-  createState(_model: PixelModel): ConfettiBurstState {
-    return { particles: [], rng: mulberry32(SEED), lastSeq: 0 };
+  createState(_model: PixelModel, seed?: number): ConfettiBurstState {
+    // per-trigger seed (item C): each fire scatters differently, replays identically
+    return { particles: [], rng: mulberry32(seed ?? SEED), lastSeq: 0 };
   },
   render(ctx, params, fb, state) {
     const count = Math.max(1, Math.round(pnum(params, 'count', 24)));

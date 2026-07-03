@@ -31,6 +31,7 @@
     type TriggerProjectionCache,
   } from './trigger-flow-projection';
   import { GraphHover } from './graph-hover.svelte';
+  import { findFreePosition, type Rect } from './node-placement';
   import { nodeIdAtEvent } from './flow-dom';
   import { guardFlowCallback } from './flow-guard';
   import { TRIGGER_STORE_KEY } from './trigger-context';
@@ -121,13 +122,37 @@
       })),
     },
   ];
-  /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
-  function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
-    store.addNode(kind, cx - NODE_W / 2, cy - 40);
+  /** Estimated canvas footprint per existing node — the card plus room for mod rows /
+      band fans. An estimate is fine: the probe only needs "roughly where nodes sit". */
+  const PLACE_H = 96;
+  /** Occupied rects of the open graph's nodes, preferring xyflow's measured live size. */
+  function occupiedRects(): Rect[] {
+    const measured = new Map(nodes.map((n) => [n.id, n]));
+    return (store.selectedGraph?.nodes ?? []).map((n) => {
+      const m = measured.get(n.id);
+      return {
+        x: m?.position.x ?? n.x,
+        y: m?.position.y ?? n.y,
+        w: m?.measured?.width ?? NODE_W,
+        h: m?.measured?.height ?? PLACE_H,
+      };
+    });
   }
-  /** Add a specific modifier node (category palette) at the palette-supplied flow centre. */
+  /** Free spawn position near the palette-supplied flow centre — repeated adds fan out
+      instead of stacking on the exact centre (phase-2 item 1.5 + the "corrupted node"
+      pointer-theft illusion it caused). */
+  function spawnAt(cx: number, cy: number): { x: number; y: number } {
+    return findFreePosition(occupiedRects(), cx - NODE_W / 2, cy - 40, NODE_W, PLACE_H);
+  }
+  /** Add a node through the store (source of truth) near the palette-supplied flow centre. */
+  function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
+    const p = spawnAt(cx, cy);
+    store.addNode(kind, p.x, p.y);
+  }
+  /** Add a specific modifier node (category palette) near the palette-supplied flow centre. */
   function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
-    store.addModifierNode(modifierId, cx - NODE_W / 2, cy - 40);
+    const p = spawnAt(cx, cy);
+    store.addModifierNode(modifierId, p.x, p.y);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------

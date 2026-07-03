@@ -54,8 +54,11 @@ export interface EffectGenerator<State = unknown> {
    * {@link EffectTimebase}.
    */
   timebase?: EffectTimebase;
-  /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color). */
-  createState?(model: PixelModel): State;
+  /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
+      `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
+      stream from it so each fire looks different yet replays exactly; absent (older callers,
+      thumbnails) they fall back to their fixed default seed. */
+  createState?(model: PixelModel, seed?: number): State;
   render(ctx: RenderContext, params: ResolvedParams, fb: Framebuffer, state: State): void;
 }
 

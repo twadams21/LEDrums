@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
+  createMutablePinGate,
   admitDecision,
   createPinGate,
   generateHostToken,
@@ -210,6 +211,27 @@ describe('resolvePin', () => {
   it('leaves the gate open (null) for plain local dev', () => {
     expect(resolvePin({}, false)).toBeNull();
     expect(resolvePin({ LEDRUMS_PIN: '' }, false)).toBeNull();
+  });
+});
+
+describe('createMutablePinGate', () => {
+  it('starts open, then ensurePin mints a stable PIN that the gate enforces', () => {
+    const gate = createMutablePinGate(null);
+    expect(gate.pin).toBeNull();
+    expect(gate.check(null)).toBe(true); // open gate admits everyone
+    const pin = gate.ensurePin();
+    expect(pin).toMatch(/^\d{6}$/);
+    expect(gate.ensurePin()).toBe(pin); // stable across calls
+    expect(gate.pin).toBe(pin);
+    expect(gate.check(pin)).toBe(true);
+    expect(gate.check('000000' === pin ? '111111' : '000000')).toBe(false);
+    expect(gate.check(null)).toBe(false); // no longer open
+  });
+
+  it('keeps an explicit initial PIN (env pin wins over minting)', () => {
+    const gate = createMutablePinGate('4242');
+    expect(gate.ensurePin()).toBe('4242');
+    expect(gate.check('4242')).toBe(true);
   });
 });
 

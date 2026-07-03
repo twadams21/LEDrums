@@ -5,6 +5,7 @@
      shared {@link SignalFace} (one ticker, viewport-gated, reduced-motion → static). A row
      with no wired source sits at 0. */
   import SignalFace from '../../trigger-lab/SignalFace.svelte';
+  import { readThemeTokens } from '../../ui/theme-tokens';
 
   interface Props {
     /** The row's current 0..1 signal at ticker time `tMs` (0 when no source is wired). */
@@ -15,20 +16,13 @@
   let { sample, w = 22, h = 6 }: Props = $props();
 
   let root = $state<HTMLElement>();
+  // token colours via the shared helper — fixed fallbacks, never the reactive `c` (the
+  // self-referential-$effect P0 the helper exists to make unwritable)
   const FALLBACK_COLOURS = { signal: '#7c9cff', track: '#3a4056' };
+  const TOKENS = { signal: '--role-modulation', track: '--border-faint' };
   let c = $state({ ...FALLBACK_COLOURS });
   $effect(() => {
-    const el = root;
-    if (!el || typeof getComputedStyle === 'undefined') return;
-    const cs = getComputedStyle(el);
-    const read = (name: string, fallback: string): string => cs.getPropertyValue(name).trim() || fallback;
-    // Fall back to the fixed defaults, NOT the reactive `c`: reading `c` here while also writing
-    // it made this effect self-referential → effect_update_depth_exceeded (halts Svelte's effect
-    // flush app-wide → every delegated onclick dies). Same bug class as the NodeSignalPreview P0.
-    c = {
-      signal: read('--role-modulation', FALLBACK_COLOURS.signal),
-      track: read('--border-faint', FALLBACK_COLOURS.track),
-    };
+    c = readThemeTokens(root, TOKENS, FALLBACK_COLOURS);
   });
 
   const draw = (g: CanvasRenderingContext2D, tMs: number): void => {

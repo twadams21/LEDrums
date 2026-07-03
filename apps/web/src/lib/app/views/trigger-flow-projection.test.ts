@@ -55,6 +55,43 @@ describe('projectTriggerFlowNodes', () => {
     expect(second.nodes[0]).toBe(first.nodes[0]);
   });
 
+  // Item 1.4 regression: a selection-only change must clone the PREVIOUS flow node (live
+  // position + measured handleBounds), never rebuild from the store projection — otherwise
+  // selecting a just-dragged node snaps it back to its stale store position.
+  it('preserves the live position when only the selection changes', () => {
+    const graph: TriggerGraph = { nodes: [makeNode('trigger', 'trigger', 10, 20)], edges: [] };
+
+    const first = projectTriggerFlowNodes({
+      graph,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: [],
+      cache: emptyTriggerProjectionCache(),
+    });
+    // simulate an xyflow drag the store has not synced yet
+    const dragged = first.nodes.map((n) => ({ ...n, position: { x: 500, y: 600 } }));
+
+    const selected = projectTriggerFlowNodes({
+      graph,
+      graphKey: 'graph-a',
+      selectedNodeId: 'trigger',
+      previousNodes: dragged,
+      cache: first.cache,
+    });
+    expect(selected.nodes[0]!.selected).toBe(true);
+    expect(selected.nodes[0]!.position).toEqual({ x: 500, y: 600 }); // live position kept
+
+    const deselected = projectTriggerFlowNodes({
+      graph,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: selected.nodes,
+      cache: selected.cache,
+    });
+    expect(deselected.nodes[0]!.selected).toBe(false);
+    expect(deselected.nodes[0]!.position).toEqual({ x: 500, y: 600 }); // still kept on deselect
+  });
+
   // Incident 09 regression (extends the PR #37 suite): a graph switch must rebuild same-id
   // nodes from the NEW graph — never reuse the previous graph's node object OR its cache.
   it('rebuilds same-id nodes from the new graph after a switch (no cross-graph reuse of kind/position/cache)', () => {

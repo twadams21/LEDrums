@@ -93,6 +93,12 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   setSongLibrary(lib: SongLibraryBlob): void;
   /** Relay a server message to every client EXCEPT `sender` (the live show/song-library relay). */
   relayToOthers(sender: S, msg: ServerMessage): void;
+  /** In-app share-tunnel lifecycle control (S3 follow-up), or absent when the wiring has none
+   * (the `tunnel` message is then a no-op). Status changes surface via `state` re-broadcasts. */
+  tunnelControl?: { start(): void; stop(): void };
+  /** Whether `ws` connected VIA the share tunnel (cf-* headers at admit). Such a client must
+   * never control the tunnel it rode in on — even if it holds the editor slot. */
+  isTunnelClient?(ws: S): boolean;
   /** Append a diagnostic event to the shared Monitor stream. */
   monitor?(event: MonitorDraft): void;
 }
@@ -143,6 +149,28 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // silent no-op (the viewer's UI already disables the affordance — this is the authoritative
     // server backstop). Engine inputs (the drummer's hardware) + pure reads always pass.
     if (requiresEditor(msg.t) && !clients.canMutate(ws)) return;
+
+    // Share-tunnel lifecycle (S3 follow-up). Editor-gated above (deny-by-default), PLUS: a client
+    // that arrived VIA the tunnel can never control it — a remote viewer must not be able to kill
+    // or restart the tunnel it rode in on, even after a `takeover`. That refusal is user-visible
+    // (`error` reply), not silent, so the remote UI can explain itself.
+    if (msg.t === 'tunnel') {
+      if (deps.isTunnelClient?.(ws)) {
+        ws.send(encodeServer({ t: 'error', message: 'Sharing can only be started or stopped from the host.' }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'remote-access',
+          label: 'Tunnel control rejected (remote client)',
+          detail: msg.action,
+        });
+        return;
+      }
+      if (msg.action === 'start') deps.tunnelControl?.start();
+      else deps.tunnelControl?.stop();
+      return;
+    }
 
     // Project IO (load/save/list) is handled here, not by the reducer.
     if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;

@@ -8,6 +8,7 @@
   import type { ShellStore } from '../shell-store.svelte';
   import type { Polyphony } from '../../trigger-lab/sim';
   import type { DockVoice } from '../../trigger-lab/dock-voices';
+  import { groupVoicesByBus } from '../../trigger-lab/dock-smoothing';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import { busIcon } from '../views/trigger-node-meta';
@@ -23,6 +24,11 @@
     { value: 'poly', label: 'poly' },
   ];
 
+  // Display-smoothed voices (item H — the 2 Hz server stats glide instead of stepping),
+  // grouped by bus in ONE pass instead of a per-bus filter() every render.
+  const voicesByBus = $derived(groupVoicesByBus(store.dockVoicesDisplay));
+  const NO_VOICES: DockVoice[] = [];
+
   function voiceStyle(v: DockVoice): string {
     const L = v.level;
     const hue = v.hue;
@@ -33,7 +39,7 @@
 
 <div class="layers">
   {#each store.buses as bus (bus.id)}
-    {@const voices = store.dockVoices.filter((v) => v.busId === bus.id)}
+    {@const voices = voicesByBus.get(bus.id) ?? NO_VOICES}
     {@const selected = shell.isSelected({ kind: 'bus', busId: bus.id })}
     {@const I = busIcon[bus.id]}
     <article class="bus" class:selected>
@@ -51,7 +57,7 @@
         <IconButton icon={Square} label="Release {bus.name}" size={13} onclick={() => store.stopBus(bus.id)} />
       </header>
 
-      <div class="meter" aria-hidden="true"><span style="transform:scaleX({store.busLevels[bus.id] ?? 0})"></span></div>
+      <div class="meter" aria-hidden="true"><span style="transform:scaleX({store.busLevelsDisplay[bus.id] ?? 0})"></span></div>
 
       <div class="voices" class:empty={voices.length === 0}>
         {#if voices.length === 0}
@@ -131,7 +137,8 @@
     width: 100%;
     transform-origin: left;
     background: linear-gradient(90deg, var(--accent-dim), var(--accent));
-    transition: transform 60ms linear;
+    /* no CSS transition: the store's display smoothing already glides the value every
+       frame (item H) — a transition on top would just add lag */
   }
   .voices {
     display: flex;
@@ -166,10 +173,5 @@
   .voice :global(svg) {
     flex: none;
     opacity: 0.85;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .meter span {
-      transition: none;
-    }
   }
 </style>

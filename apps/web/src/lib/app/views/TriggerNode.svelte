@@ -138,25 +138,33 @@
        capture, not a silent blank. No handles: a stale node is not a valid wiring target. -->
   <NodeCard icon={TriangleAlert} title="Stale node" sub={id} tint="var(--warn)" stale selected={!!selected} />
 {:else}
-  {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} />
-  {/if}
-  <!-- distinct `mod` input handle (play + modifier nodes) — a modifier-chain wire lands here.
-       Offset below the flow input when the node also has one; centred otherwise. -->
-  {#if nodeHasModInput(kind)}
-    <Handle
-      type="target"
-      id="mod"
-      position={Position.Left}
-      class="mod-handle"
-      style={nodeHasInput(kind) ? 'top: 74%' : 'top: 50%'}
-    />
-  {/if}
-
   {#if isBandsSwitch}
+    {#if nodeHasInput(kind)}
+      <Handle type="target" position={Position.Left} />
+    {/if}
     <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
   {:else}
     <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass}>
+      <!-- Handles live INSIDE the card wrapper so their offsets are derived from the actual
+           card layout — a node that grows extra rows below the card (mod rows) no longer
+           drags a %-of-whole-node handle off the card face (item 1.7). -->
+      {#if nodeHasInput(kind)}
+        <Handle type="target" position={Position.Left} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+      {/if}
+      <!-- distinct `mod` input handle (play + modifier nodes) — a modifier-chain wire lands
+           here. Below the flow input when the node also has one; centred otherwise. -->
+      {#if nodeHasModInput(kind)}
+        <Handle
+          type="target"
+          id="mod"
+          position={Position.Left}
+          class="mod-handle"
+          style={nodeHasInput(kind) ? 'top: 72%' : 'top: 50%'}
+        />
+      {/if}
+      {#if nodeHasOutput(kind)}
+        <Handle type="source" position={Position.Right} />
+      {/if}
       <NodeCard
         icon={Icon}
         {title}
@@ -188,9 +196,6 @@
           </li>
         {/each}
       </ul>
-    {/if}
-    {#if nodeHasOutput(kind)}
-      <Handle type="source" position={Position.Right} />
     {/if}
   {/if}
 {/if}
