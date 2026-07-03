@@ -55,7 +55,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
 | I — Modulation system | 2 | #57 | group/I | **MERGED** | d591baf | docs/handoff/rock-solid/group-I.md |
 | J — Presets & Song Library | 3 | #53 | group/J | **MERGED** | 94c8158 | docs/handoff/rock-solid/group-J.md |
-| K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
+| K — Clipboard portability | 3 | #55 | group/K | in-progress (S43 merged; S44∥S45 in flight) | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
 | D — Layout & kit geometry | 4 | #49 | group/D | pending | — | — |
 | L — PixLite integration | 4 | #56 | group/L | pending | — | — |
@@ -63,6 +63,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T06:59 — Lane 3 group K underway (last of Lane 3)
+
+- **group/K:** S43 (clipdoc) merged; review caught a 4th Lane-3 defect (same-pass effect-id mint collision) fixed pre-merge. **S44 (clipboard UI) ∥ S45 (patch paste) in flight** (opus/medium, collision pre-fenced). Last two of K → then K review → **Lane 3 DONE**.
+- Usage 5h 68% (nearing 70%; S44/S45 already launched so K finishes regardless), 7d 53%. rock-solid 71de89d.
+- **Next:** K completes → integrate+review+handoff → master merge → Lane 3 DONE → fire Lane 4 (C→D→L, LAST; watch disk; live smoke-load in review per P0 lesson). 30-min cadence.
 
 ### 2026-07-03T06:2x — GROUP J MERGED (36/49) + P0 hotfix
 
