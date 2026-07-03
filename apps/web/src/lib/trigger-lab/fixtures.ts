@@ -220,7 +220,6 @@ export const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
     presetId,
     params: { ...(p?.params ?? defaultParams(eff)) },
     env: {},
-    linked: false,
   };
 };
 

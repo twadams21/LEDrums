@@ -94,7 +94,7 @@ describe('migrateGraphsEnvelopes / normalizeGraphs', () => {
 
   it('normalizeGraphs runs ADSR-v2 BEFORE the S35 env→node fold: the spawned envelope node carries the v2 shape', () => {
     const specs: ParamSpec[] = [{ key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: 0 }];
-    const { graphs } = normalizeGraphs({ 'kick:1': graphWith(legacyCurve0) }, {}, [], () => specs);
+    const { graphs } = normalizeGraphs({ 'kick:1': graphWith(legacyCurve0) }, {}, [], () => specs, () => undefined);
     const g = graphs['kick:1']!;
     // The legacy play env is folded into an envelope source node whose shape is already v2-normalized.
     const src = g.nodes.find((n) => n.kind === 'envelope')!;

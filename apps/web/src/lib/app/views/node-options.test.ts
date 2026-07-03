@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { ParamSpec } from '../../trigger-lab/sim';
 import {
   KIND_OPTS,
-  LINK_OPTS,
   MIDI_OPTS,
   MODE_OPTS,
   POLY_OPTS,
@@ -99,11 +98,7 @@ describe('static option arrays — values / order / labels', () => {
     expect(RGB_OPTS.every((o) => o.value === o.label)).toBe(true);
   });
 
-  it('LINK_OPTS / POLY_OPTS / MIDI_OPTS', () => {
-    expect(LINK_OPTS).toEqual([
-      { value: 'instance', label: 'Instance' },
-      { value: 'linked', label: 'Linked' },
-    ]);
+  it('POLY_OPTS / MIDI_OPTS', () => {
     expect(POLY_OPTS).toEqual([
       { value: 'mono', label: 'mono' },
       { value: 'poly', label: 'poly' },

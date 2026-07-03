@@ -110,8 +110,8 @@ describe('S35 EnvMap migration — idempotent + alias-stable', () => {
   });
 
   it('an already-migrated graph loaded through normalizeGraphs is unchanged', () => {
-    const first = normalizeGraphs({ 'kick:1': playGraph('brightness', env, 1) }, {}, [], specsFor).graphs;
-    const second = normalizeGraphs(first, {}, [], specsFor).graphs;
+    const first = normalizeGraphs({ 'kick:1': playGraph('brightness', env, 1) }, {}, [], specsFor, () => undefined).graphs;
+    const second = normalizeGraphs(first, {}, [], specsFor, () => undefined).graphs;
     // No new envelope nodes appear on the second load (idempotent through the full hydrate pass).
     const count = (g: Record<string, TriggerGraph>) =>
       g['kick:1']!.nodes.filter((n) => n.kind === 'envelope').length;

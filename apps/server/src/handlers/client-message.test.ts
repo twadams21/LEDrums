@@ -4,7 +4,7 @@ import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
-import { encodeServer, serializeModel, type ClientMessage, type ServerMessage, type ShowLibraryBlob } from '../ws-protocol';
+import { encodeServer, serializeModel, type ClientMessage, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import { createClientMessageHandler, requiresEditor, type HandlerSocket } from './client-message';
 
 /* S2 server handler integration (multi-socket capturing harness, same style as the S1 registry
@@ -42,7 +42,8 @@ function harness() {
   const host = new EngineHost(defaultProject());
   const autosaver = fakeAutosaver();
   const showLibraryAutosaver = fakeAutosaver();
-  const slot: { lib: ShowLibraryBlob | null } = { lib: null };
+  const songLibraryAutosaver = fakeAutosaver();
+  const slot: { lib: ShowLibraryBlob | null; songLib: SongLibraryBlob | null } = { lib: null, songLib: null };
   const monitor = vi.fn();
 
   const broadcastJson = (msg: ServerMessage): void => {
@@ -59,6 +60,7 @@ function harness() {
     projects: [],
     output: host.getOutputStatus(),
     showLibrary: slot.lib,
+    songLibrary: slot.songLib,
     tunnel: null,
   });
   const broadcastState = (): void => broadcastJson(stateMessage());
@@ -73,12 +75,16 @@ function harness() {
     voiceHost: null,
     autosaver,
     showLibraryAutosaver,
+    songLibraryAutosaver,
     broadcastJson,
     broadcastPresence,
     broadcastState,
     stateMessage,
     setShowLibrary: (lib) => {
       slot.lib = lib;
+    },
+    setSongLibrary: (lib) => {
+      slot.songLib = lib;
     },
     relayToOthers,
     monitor,
@@ -91,7 +97,7 @@ function harness() {
     return s;
   };
 
-  return { clients, host, autosaver, showLibraryAutosaver, slot, handle, join, monitor };
+  return { clients, host, autosaver, showLibraryAutosaver, songLibraryAutosaver, slot, handle, join, monitor };
 }
 
 function voiceHarness() {
@@ -105,6 +111,7 @@ function voiceHarness() {
     voiceHost,
     autosaver: base.autosaver,
     showLibraryAutosaver: base.showLibraryAutosaver,
+    songLibraryAutosaver: base.songLibraryAutosaver,
     broadcastJson: (msg) => {
       for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer(msg));
     },
@@ -120,10 +127,14 @@ function voiceHarness() {
       projects: [],
       output: voiceHost.getOutputStatus(),
       showLibrary: base.slot.lib,
+      songLibrary: base.slot.songLib,
       tunnel: null,
     }),
     setShowLibrary: (lib) => {
       base.slot.lib = lib;
+    },
+    setSongLibrary: (lib) => {
+      base.slot.songLib = lib;
     },
     relayToOthers: (sender, msg) => {
       const data = encodeServer(msg);
@@ -174,7 +185,6 @@ function voiceNode(kind: voice.GraphNode['kind'], id: string, over: Partial<voic
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: false,
     on: 'value',
     valueMode: 'gate',
@@ -208,6 +218,7 @@ function midiVoiceShow(note: number): voice.Show {
 }
 
 const LIB: ShowLibraryBlob = { version: 1, data: { hello: 'world' } };
+const SONG_LIB: SongLibraryBlob = { version: 1, data: { songs: { 'lib-1': { id: 'lib-1' } } } };
 
 describe('requiresEditor — read-only gating policy (S2)', () => {
   it('exempts engine inputs and pure reads, gates everything authoring (deny-by-default)', () => {
@@ -285,6 +296,39 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     const relayed = viewer.sent.find((m) => m.t === 'showLibrary');
     expect(relayed).toEqual({ t: 'showLibrary', library: LIB });
     expect(editor.has('showLibrary')).toBe(false);
+  });
+
+  it("rejects a non-editor's setSongLibrary (no relay, slot untouched)", () => {
+    const { handle, join, slot, songLibraryAutosaver, monitor } = harness();
+    join(); // editor
+    const viewer = join();
+
+    handle({ t: 'setSongLibrary', library: SONG_LIB }, viewer);
+
+    expect(slot.songLib).toBeNull();
+    expect(songLibraryAutosaver.markDirty).not.toHaveBeenCalled();
+    expect(monitor).not.toHaveBeenCalled();
+  });
+
+  it("accepts the editor's setSongLibrary (adopts the slot + relays to others)", () => {
+    const { handle, join, slot, songLibraryAutosaver, monitor } = harness();
+    const editor = join();
+    const viewer = join();
+
+    handle({ t: 'setSongLibrary', library: SONG_LIB }, editor);
+
+    expect(slot.songLib).toEqual(SONG_LIB);
+    expect(songLibraryAutosaver.markDirty).toHaveBeenCalledOnce();
+    expect(monitor).toHaveBeenCalledWith({
+      type: 'persistence',
+      direction: 'local',
+      source: 'server',
+      destination: 'song-library',
+      label: 'Song library update accepted',
+    });
+    // relayed to the viewer, never echoed to the sender
+    expect(viewer.sent.find((m) => m.t === 'songLibrary')).toEqual({ t: 'songLibrary', library: SONG_LIB });
+    expect(editor.has('songLibrary')).toBe(false);
   });
 
   it('accepts engine inputs (midi) from a viewer regardless of role', () => {

@@ -39,17 +39,13 @@ export const SCOPE_OPTS: Array<{ value: 'kit' | 'drum' | 'hoop'; label: string }
   { value: 'hoop', label: 'Hoop' },
 ];
 
-// --- Play-node options (iconed play-mode + link + layer-poly) --------------------
+// --- Play-node options (iconed play-mode + layer-poly) ---------------------------
 // iconed play-mode group (Zap/Repeat/Hand) — same SegmentedControl, just an icon per
 // option (ported from the old node header).
 export const MODE_OPTS: Array<{ value: 'oneshot' | 'loop' | 'hold'; label: string; icon: Component }> = [
   { value: 'oneshot', label: 'One-shot', icon: Zap },
   { value: 'loop', label: 'Loop', icon: Repeat },
   { value: 'hold', label: 'Hold', icon: Hand },
-];
-export const LINK_OPTS = [
-  { value: 'instance', label: 'Instance' },
-  { value: 'linked', label: 'Linked' },
 ];
 export const POLY_OPTS = [
   { value: 'mono', label: 'mono' },

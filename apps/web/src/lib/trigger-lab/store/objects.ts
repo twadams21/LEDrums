@@ -68,9 +68,9 @@ export function clonePreset(src: Preset, newId: string): Preset {
   return { id: newId, name: `${src.name} copy`, effectId: src.effectId, params: { ...src.params } };
 }
 
-/** How many play nodes — across EVERY graph (pad + authored) — reference this preset, whether
-    linked (reads the shared preset live) or instance-origin (forked its own params from it,
-    keeping `presetId` as the origin). Pure read: gates {@link canDeletePreset}. */
+/** How many play nodes — across EVERY graph (pad + authored) — carry this preset as their
+    `presetId` provenance (forked their own params from it; presets are snapshots now — S39). Pure
+    read: gates {@link canDeletePreset}. */
 export function presetUsageCount(graphs: Record<string, TriggerGraph>, id: string): number {
   let count = 0;
   for (const graph of Object.values(graphs)) {

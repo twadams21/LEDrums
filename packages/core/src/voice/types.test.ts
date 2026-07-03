@@ -19,7 +19,6 @@ function triggerNode(source?: TriggerSource): GraphNode {
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: true,
     on: 'value',
     valueMode: 'gate',

@@ -10,6 +10,7 @@ function input(overrides: Partial<StartupDiagnosticsInput> = {}): StartupDiagnos
     webRootExists: true,
     project: { name: 'default.local', path: '/projects/default.local.json', source: 'file' },
     showLibrary: { path: '/projects/default.shows.local.json', source: 'loaded' },
+    songLibrary: { path: '/projects/default.songs.local.json', source: 'absent' },
     tunnel: { enabled: true, url: null },
     pinRequired: true,
     hostTokenPresent: true,
@@ -27,10 +28,12 @@ describe('startupDiagnostics', () => {
     const events = startupDiagnostics(input({
       project: { name: 'default.local', path: '/p/default.local.json', source: 'seed' },
       showLibrary: { path: '/p/default.shows.local.json', source: 'invalid' },
+      songLibrary: { path: '/p/default.songs.local.json', source: 'loaded' },
     }));
 
     expect(events.find((e) => e.destination === 'project')).toMatchObject({ label: 'Project loaded from seed', detail: 'default.local; /p/default.local.json' });
     expect(events.find((e) => e.destination === 'show-library')).toMatchObject({ label: 'Show library invalid', detail: '/p/default.shows.local.json' });
+    expect(events.find((e) => e.destination === 'song-library')).toMatchObject({ label: 'Song library loaded', detail: '/p/default.songs.local.json' });
   });
 
   it('does not include secret values in labels or details', () => {

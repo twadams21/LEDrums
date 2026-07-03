@@ -85,6 +85,24 @@ describe('assertShowIntegrity', () => {
     ).not.toThrow();
   });
 
+  it('accepts namespaced library-song graph keys (`lib:<id>/…`) — routed by trigger source (S42)', () => {
+    // A resolved library reference re-keys its graphs under `lib:<songId>/`, e.g. a pad graph
+    // becomes `lib:song-9/kick:center`. Re-keying leaves the trigger SOURCE intact, so the engine
+    // routes it by source (the kick), never by the namespaced key — the key must NOT be read as a
+    // drum (`lib`). Slot refs into those keys still resolve.
+    expect(() =>
+      assertShowIntegrity({
+        drumIds,
+        graphKeys: ['kick:0', 'lib:song-9/snare:0', 'lib:song-9/graph-3'],
+        slotRefs: ['lib:song-9/snare:0', 'lib:song-9/graph-3'],
+      }),
+    ).not.toThrow();
+    // but a slot referencing a missing namespaced graph still throws
+    expect(() =>
+      assertShowIntegrity({ drumIds, graphKeys: ['kick:0'], slotRefs: ['lib:song-9/tom1:0'] }),
+    ).toThrow(/setlist slot → graph "lib:song-9\/tom1:0"/);
+  });
+
   it('accepts authored graph keys alongside real pad graphs', () => {
     expect(() =>
       assertShowIntegrity({ drumIds, graphKeys: ['kick:0', 'graph:1', 'snare:0', 'graph-2'] }),
