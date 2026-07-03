@@ -35,6 +35,7 @@ describe('ws-protocol', () => {
 
   it('rejects an unknown message type', () => {
     expect(() => decodeClient(JSON.stringify({ t: 'bogus' }))).toThrow(/Unknown client message/);
+    expect(decodeClient(JSON.stringify({ t: 'tunnel', action: 'start' }))).toEqual({ t: 'tunnel', action: 'start' });
     expect(() => decodeClient('{}')).toThrow();
   });
 

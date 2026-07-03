@@ -93,6 +93,11 @@ export type ClientMessage =
   // role converges (last-press-wins for near-simultaneous takeovers). Carries no payload — the
   // sender IS the claimant.
   | { t: 'takeover' }
+  // Remote-access lifecycle control (S3 follow-up): start/stop the outbound share tunnel from
+  // the app. Editor-only (deny-by-default gate) AND refused for clients that arrived VIA the
+  // tunnel — a remote viewer must never kill or restart the tunnel it rode in on. The server
+  // reports progress via `TunnelInfo.status` on the `state` message.
+  | { t: 'tunnel'; action: 'start' | 'stop' }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
   | { t: 'listProjects' };
@@ -203,16 +208,24 @@ export interface MonitorEvent {
   detail?: string;
 }
 
-/** Remote-access surface (S3): the public share URL of the outbound Cloudflare tunnel and the
- * room PIN, so an authenticated client's UI can display "scan/visit this URL, enter this PIN".
- * Carried on the `state` message (only ever sent to already-admitted clients), so an un-authed
- * connection — refused before any `state` — never learns either. A field is null when that
- * facility is disabled: `url` null = no tunnel running; `pin` null = no PIN gate (open server). */
+/** Tunnel lifecycle phase, driven by the server's tunnel control (in-app start/stop). */
+export type TunnelStatus = 'off' | 'starting' | 'live' | 'error';
+
+/** Remote-access surface (S3): the share-tunnel lifecycle state, the public URL of the outbound
+ * Cloudflare tunnel and the room PIN, so an authenticated client's UI can display "scan/visit
+ * this URL, enter this PIN" — and offer Start/Stop sharing. Carried on the `state` message (only
+ * ever sent to already-admitted clients), so an un-authed connection — refused before any
+ * `state` — never learns the PIN. Always present on `state` (the Share button is always shown);
+ * `status: 'off'` + null fields is plain un-shared local dev. */
 export interface TunnelInfo {
+  /** Lifecycle phase of the share tunnel. */
+  status: TunnelStatus;
   /** Resolved public URL (e.g. `https://foo.trycloudflare.com`), or null when no tunnel runs. */
   url: string | null;
   /** Active room PIN, or null when the server is open (no PIN gate). */
   pin: string | null;
+  /** Plain-language failure description, present only when `status === 'error'`. */
+  error?: string;
 }
 
 export type ServerMessage =

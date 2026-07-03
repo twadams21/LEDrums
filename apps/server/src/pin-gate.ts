@@ -37,6 +37,33 @@ export function createPinGate(pin: string | null): PinGate {
   };
 }
 
+/** A {@link PinGate} whose PIN can be minted AFTER boot — the in-app tunnel start on an
+ * otherwise-open server generates a PIN just before the public URL exists (S3 invariant:
+ * never an un-gated tunnel). Once set, the PIN is stable for the server run. */
+export interface MutablePinGate extends PinGate {
+  /** Return the active PIN, generating (and keeping) one when the gate was open. */
+  ensurePin(): string;
+}
+
+/** Build a {@link MutablePinGate}. `initial` mirrors {@link createPinGate} (explicit/env or
+ * boot-generated PIN, or null = open until {@link MutablePinGate.ensurePin} is called). */
+export function createMutablePinGate(initial: string | null): MutablePinGate {
+  let pin = initial;
+  return {
+    get pin() {
+      return pin;
+    },
+    check(supplied) {
+      if (pin === null) return true; // gate disabled → admit everyone
+      return typeof supplied === 'string' && supplied.length > 0 && supplied === pin;
+    },
+    ensurePin() {
+      if (pin === null) pin = generatePin();
+      return pin;
+    },
+  };
+}
+
 /** A random N-digit numeric PIN (default 6) from a CSPRNG. */
 export function generatePin(digits = 6): string {
   let out = '';

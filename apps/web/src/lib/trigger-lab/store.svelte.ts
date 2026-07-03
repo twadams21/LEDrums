@@ -802,6 +802,14 @@ export class TriggerLab {
     this.client.send({ t: 'takeover' });
   }
 
+  /** Ask the server to start or stop the share tunnel (S3 in-app control). Server-authoritative:
+      progress lands back as `TunnelInfo.status` on the next `state` broadcasts (off → starting →
+      live/error). The server refuses viewers (editor gate) and any client that arrived VIA the
+      tunnel; a no-op when offline. */
+  setSharing(on: boolean): void {
+    this.client.send({ t: 'tunnel', action: on ? 'start' : 'stop' });
+  }
+
   /** Submit a room PIN from the entry gate (S3): remember it for this tab and retry the
       connection. A correct PIN opens the link (clearing {@link authRequired}); a wrong one
       refuses again and re-shows the gate. */

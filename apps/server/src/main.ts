@@ -22,11 +22,13 @@ import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
+import { TunnelControl } from './tunnel-control';
 import {
   admitDecision,
-  createPinGate,
+  createMutablePinGate,
   generateHostToken,
   isTrustedHost,
+  isViaCloudflare,
   resolvePin,
 } from './pin-gate';
 import { boot } from './boot';
@@ -53,14 +55,47 @@ const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
 
 // --- remote access: outbound tunnel + room PIN (S3) --------------------------
 
-/** Outbound Cloudflare tunnel config (null = disabled, the default — so plain `pnpm dev`
- * never spawns cloudflared). Enabled + tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv). */
+/** Outbound Cloudflare tunnel config from env (null = don't start at boot — plain `pnpm dev`
+ * never spawns cloudflared on its own). Tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv).
+ * The IN-APP Share control works regardless: it starts a plain quick tunnel when no env config
+ * exists. */
 const tunnelConfig = tunnelConfigFromEnv(process.env, port);
-const tunnelManager = tunnelConfig ? new TunnelManager(tunnelConfig) : null;
+const tunnelAtBoot = tunnelConfig !== null;
 
-/** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, and an enabled
- * tunnel auto-generates a per-run PIN so a public URL is never un-gated. */
-const pinGate = createPinGate(resolvePin(process.env, tunnelManager !== null));
+/** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, a boot-enabled
+ * tunnel generates a per-run PIN now, and an in-app tunnel start mints one on demand
+ * (ensurePin) — so a public URL is NEVER un-gated. */
+const pinGate = createMutablePinGate(resolvePin(process.env, tunnelAtBoot));
+
+/** Share-tunnel lifecycle control (in-app start/stop + boot-time env start — one status truth).
+ * Every status change re-broadcasts `state` so all clients' Share surfaces follow. */
+const tunnelControl = new TunnelControl({
+  createManager: (config) => new TunnelManager(config),
+  config: tunnelConfig ?? { mode: 'quick', port },
+  ensurePinGated: () => {
+    pinGate.ensurePin();
+  },
+  onChange: () => broadcastState(),
+  report: (event) => {
+    switch (event.kind) {
+      case 'ready':
+        monitor({ type: 'system', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel ready', detail: event.detail });
+        console.log(`  Tunnel: ${event.detail}${pinGate.pin ? ` (PIN ${pinGate.pin})` : ''}`);
+        return;
+      case 'start-failed':
+        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel failed to start', detail: event.detail });
+        console.error(`[tunnel] failed to start (is cloudflared installed?): ${event.detail}`);
+        return;
+      case 'unexpected-exit':
+        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel exited unexpectedly', detail: event.detail });
+        console.error(`[tunnel] cloudflared exited unexpectedly (${event.detail}) — remote access is down`);
+        return;
+      case 'error':
+        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel error', detail: event.detail });
+        console.error('[tunnel] error:', event.detail);
+    }
+  },
+});
 
 /** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
  * hash, printed in the boot banner for the shell to read) so the host's own window is admitted
@@ -165,6 +200,11 @@ const wss = new WebSocketServer({ server, path: WS_PATH });
  * never stops transmission. */
 const clients = new ClientRegistry<WebSocket>();
 
+/** Sockets that connected VIA the share tunnel (cf-* headers at admit). Such a client can never
+ * start/stop the tunnel it rode in on — checked by the message handler. WeakSet: entries vanish
+ * with the socket. */
+const tunnelClients = new WeakSet<WebSocket>();
+
 function broadcastJson(msg: ServerMessage): void {
   const data = encodeServer(msg);
   for (const ws of clients) {
@@ -186,7 +226,7 @@ for (const event of startupDiagnostics({
   project: projectLoad,
   showLibrary: showLibraryLoad,
   songLibrary: songLibraryLoad,
-  tunnel: { enabled: tunnelManager !== null, url: tunnelManager?.url ?? null },
+  tunnel: { enabled: tunnelAtBoot, url: tunnelControl.url },
   pinRequired: pinGate.pin !== null,
   hostTokenPresent: !!hostToken,
 })) {
@@ -255,12 +295,13 @@ function broadcastBinary(rgb: Uint8Array): void {
   }
 }
 
-/** The remote-access surface for the host UI: the resolved tunnel URL + room PIN. Null when
- * neither is configured (plain local dev). Only ever reaches already-admitted clients (it rides
- * the `state` message), so an un-authed connection never learns the PIN. */
-function tunnelInfo(): TunnelInfo | null {
-  if (tunnelManager === null && pinGate.pin === null) return null;
-  return { url: tunnelManager?.url ?? null, pin: pinGate.pin };
+/** The remote-access surface for the host UI: tunnel lifecycle status + resolved URL + room
+ * PIN. Always present (the Share button always renders, offering Start sharing when off). Only
+ * ever reaches already-admitted clients (it rides the `state` message), so an un-authed
+ * connection never learns the PIN. */
+function tunnelInfo(): TunnelInfo {
+  const error = tunnelControl.error;
+  return { status: tunnelControl.status, url: tunnelControl.url, pin: pinGate.pin, ...(error ? { error } : {}) };
 }
 
 /** Build the full `state` message reflecting the current engine/project. In voice mode
@@ -312,6 +353,7 @@ wss.on('connection', (ws, req) => {
   // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
   // the `state` below — messages are ordered on the socket), then ship its initial state.
   clients.admit(ws);
+  if (isViaCloudflare(req.headers)) tunnelClients.add(ws);
   monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
   broadcastPresence();
   ws.send(encodeServer(stateMessage()));
@@ -380,6 +422,8 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
     liveSongLibrary = lib;
   },
   relayToOthers,
+  tunnelControl,
+  isTunnelClient: (ws) => tunnelClients.has(ws),
   monitor,
 });
 
@@ -589,9 +633,9 @@ boot({
   autosaver,
   showLibraryAutosaver,
   songLibraryAutosaver,
-  tunnelManager,
+  tunnelControl,
+  tunnelAtBoot,
   pin: pinGate.pin,
   hostToken,
-  broadcastState,
   monitor,
 });
