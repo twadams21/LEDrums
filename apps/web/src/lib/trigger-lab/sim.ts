@@ -340,6 +340,12 @@ export class Sim {
   }> = [];
   private pendingFireCounter = 0;
 
+  /** Live MIDI CC value table (S37) — the offline mirror of the core engine's `ccTable`.
+      Keyed by controller+channel → 0..1 (see core `ccKey`). Fed by {@link setCc} from the
+      store's WebMIDI forward so the preview tracks CC exactly like the connected engine; the
+      render sweep reads it per frame via `render.ts` `modCtxFor`. */
+  ccTable = new Map<string, number>();
+
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
     for (const e of effects) this.effectsById.set(e.id, e);
@@ -729,6 +735,15 @@ export class Sim {
   clearPendingFires(): void {
     this.pendingFires = [];
     this.pendingFireCounter = 0;
+  }
+
+  /** Update the CC table from a raw MIDI CC (value 0..127). Writes both the specific-channel
+      key and the omni slot, matching the core engine's `processEvent` — so an omni mapping
+      (channel filter off) always reads the latest value regardless of the sending channel. */
+  setCc(controller: number, value: number, channel: number | null): void {
+    const v = voice.ccValue01(value);
+    this.ccTable.set(voice.ccKey(controller, channel), v);
+    this.ccTable.set(voice.ccKey(controller, null), v);
   }
 
   // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------

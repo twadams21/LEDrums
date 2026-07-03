@@ -55,7 +55,7 @@ function effectiveParams(v: Voice, sim: Sim): ParamValues {
   // clamped contributions over the spawn-snapshot base. Envelopes sample the same voice phase.
   const mods = v.modulations;
   if (mods && mods.length && eff) {
-    applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm });
+    applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable }); // cc: S37
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (sim.bpm / 120);
   return out;
@@ -65,7 +65,7 @@ function effectiveParams(v: Voice, sim: Sim): ParamValues {
     `modCtxFor`: life phase (envelope restart per hit) + absolute clock/tempo for continuous
     sources (S36/S37). Shared by the play-param sweep and the modifier chain. */
 function modCtxFor(v: Voice, sim: Sim): ModSampleCtx {
-  return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm };
+  return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable }; // cc: S37
 }
 
 /** Returns [intensity 0..1, hueOffset deg] for a pixel given pattern + params. */

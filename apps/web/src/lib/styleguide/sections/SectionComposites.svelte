@@ -41,6 +41,7 @@
     delay: '1/8 dotted',
     modifier: 'Trail',
     envelope: 'modulation source',
+    cc: 'CC 74 · ch 1',
   };
   const faceKinds = Object.keys(faceSubs) as NodeKind[];
 

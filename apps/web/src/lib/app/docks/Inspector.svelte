@@ -19,6 +19,7 @@
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Spline from '@lucide/svelte/icons/spline';
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
@@ -26,6 +27,7 @@
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
+  import CcNodeInspector from './inspectors/CcNodeInspector.svelte';
   import BusInspector from './inspectors/BusInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
@@ -86,6 +88,14 @@
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
     <EnvelopeNodeInspector {store} {node} />
+  {:else if node && node.kind === 'cc'}
+    <!-- modulation SOURCE node: no kind selector (not a conversion target) — its CC settings -->
+    <header class="nodehead">
+      <Eyebrow icon={SlidersHorizontal}>CC source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <CcNodeInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">

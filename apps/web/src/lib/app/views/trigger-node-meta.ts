@@ -18,6 +18,7 @@ import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
 import Blend from '@lucide/svelte/icons/blend';
 import Spline from '@lucide/svelte/icons/spline';
+import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
@@ -34,6 +35,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   delay: Timer,
   modifier: Blend,
   envelope: Spline,
+  cc: SlidersHorizontal, // S37
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -56,6 +58,7 @@ export const tint: Record<NodeKind, string> = {
   delay: 'var(--role-mod)',
   modifier: 'var(--role-mod)',
   envelope: 'var(--role-modulation)',
+  cc: 'var(--role-modulation)', // S37
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -71,6 +74,7 @@ export const kindLabel: Record<NodeKind, string> = {
   delay: 'Delay',
   modifier: 'Modifier',
   envelope: 'Envelope',
+  cc: 'CC', // S37
 };
 
 /** Human name for a modifier id (the registry's display name), falling back to the id. */
@@ -101,6 +105,8 @@ export function kindSummary(node: GraphNode): string {
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
     case 'envelope':
       return 'modulation source';
+    case 'cc':
+      return `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
     default:
       return '';
   }
