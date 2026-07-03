@@ -68,6 +68,11 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-03 — Phase-2 item F MERGED
+
+- **Item F MERGED** → rock-solid (`--shell-gap` default 0 = flush chrome; darker surface/bg token scale; Splitter hover thicken+accent-tint + NEW visualiser↔inspector rail; +Splitter.test.ts). Reviewed (web-shell only, no new self-ref effects, conflict-free) + full sweep GREEN **1769 tests/0 skips**. impl shell-theme-rails-542767 killed; wt-1 freed. Awaiting Trent's visual judgment (darkness/flush/hover feel) — iterate if needed.
+- **🛑 Lane 4 STILL ON HOLD.** Phase-2 items A/B/C/D/E/G/H/I still pending (see docs/plans/2026-07-03-phase2-review/HANDOFF.md).
+
 ### 2026-07-03 (post-compaction-hold era) — Phase-2 item F dispatched
 
 - **Phase 2 review doc exists:** `docs/plans/2026-07-03-phase2-review/HANDOFF.md` (10 items for a Fable review; item C updated with confetti/random-seed reconciled vs B determinism).
