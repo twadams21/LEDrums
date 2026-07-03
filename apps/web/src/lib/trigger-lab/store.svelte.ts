@@ -43,6 +43,7 @@ import {
 } from './sim';
 import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
+import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
@@ -87,7 +88,7 @@ import {
 import { nid, freshId, reserveIds } from './store/ids';
 import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
-import { authoredIdsFromLibrary } from './store/reserve-library-ids';
+import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
 import { canConnect, canReconnect, type ToPort } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
@@ -97,6 +98,23 @@ import * as showsLib from './store/shows';
 import * as songRefsLib from './store/song-library-refs';
 import { extractSongClosure, type ClosureSources } from './store/song-library';
 import { ShowLibrarySync } from './store/show-library-sync';
+import {
+  buildGraphClipDoc,
+  buildSectionClipDoc,
+  buildSongClipDoc,
+  serialize,
+  parse,
+  isClipParseError,
+  remapClipDoc,
+  type ClipDoc,
+  type ClipDocMeta,
+  type ClipParseReason,
+  type RemapContext,
+  type RemapMint,
+  type RemapResult,
+} from './clipdoc';
+import { readClipboardText, writeClipboardText } from './clipboard-io';
+import { pushToast } from '../ui/toast.svelte';
 import { SongLibrarySync } from './store/song-library-sync';
 import { EngineLinkSync } from './store/transport';
 import {
@@ -238,6 +256,64 @@ function writeStoredHostToken(token: string): void {
   }
 }
 
+/** The authored clipboard kinds a paste can target, one per UI context (S44). */
+export type PasteContext = 'graph' | 'section' | 'song';
+/** Where a pasted song lands: the active show's setlist, or the shared Song Library pool. */
+export type SongPasteDest = 'show' | 'library';
+
+/** The typed outcome of {@link TriggerLab.materializePaste} — the caller toasts `message`. */
+export type PasteResult =
+  | { ok: true; kind: PasteContext; message: string }
+  | { ok: false; message: string };
+
+/** Turn a defensive-parse reason into a friendly, user-facing paste message. */
+function friendlyParseMessage(reason: ClipParseReason): string {
+  switch (reason) {
+    case 'foreign':
+      return 'That clipboard content isn’t from LEDrums.';
+    case 'unsupported-version':
+      return 'That was copied from a newer version of LEDrums.';
+    case 'unknown-kind':
+      return 'That clipboard content can’t be pasted here.';
+    default:
+      return 'The clipboard didn’t contain anything pasteable.';
+  }
+}
+
+/** Every generated id a materialized paste introduces that must be reserved against the global id
+    counter BEFORE it enters the show. The critical ones are the graphs' NODE + EDGE ids: remap
+    carries them verbatim (so wiring/modulation ports survive), so a cross-machine paste can bring a
+    high `n-<n>` the local counter is below — a later `nid('n')` would then re-mint it, duplicating a
+    node id in one graph. The remapped graph/section/song/preset ids come off the counter already,
+    but yielding them too is harmless and future-proof. */
+function* remapResultIds(res: RemapResult): Iterable<string> {
+  for (const [key, graph] of Object.entries(res.graphs)) {
+    yield key;
+    for (const node of graph.nodes) yield node.id;
+    for (const edge of graph.edges) yield edge.id;
+  }
+  if (res.graphKey) yield res.graphKey;
+  for (const effect of res.effects) yield effect.id;
+  for (const preset of res.presets) yield preset.id;
+  if (res.section) yield res.section.id;
+  if (res.song) {
+    yield res.song.id;
+    for (const section of res.song.sections) yield section.id;
+  }
+}
+
+/** The success message for a materialized authored paste. */
+function pasteSuccessMessage(res: RemapResult): string {
+  switch (res.kind) {
+    case 'graph':
+      return 'Pasted graph.';
+    case 'section':
+      return 'Pasted section.';
+    case 'song':
+      return 'Pasted song.';
+  }
+}
+
 export class TriggerLab {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
@@ -287,6 +363,14 @@ export class TriggerLab {
       list), or null when nothing is on the clipboard. Transient (NOT persisted): a fresh
       session starts with an empty clipboard. `pasteSection` clones this under a new id. */
   sectionClipboard = $state<SetlistSection | null>(null);
+
+  // --- clipboard paste dialogs (S44) ---------------------------------------------
+  /** Open when the Songs paste flow is active — the dialog picks a destination (this show vs the
+      Song Library) and offers a manual-paste textarea when the browser blocks clipboard reads. */
+  songPasteOpen = $state(false);
+  /** Non-null when a graph/section paste hit a blocked clipboard read: drives the manual paste-text
+      fallback dialog, remembering which context the pasted text should materialize into. */
+  pasteFallback = $state<{ context: 'graph' | 'section' } | null>(null);
 
   /** persisted shell pane sizes in px, keyed by a stable pane id (set by the
       resizable docks — step 3). Empty until the user drags a splitter. */
@@ -382,6 +466,10 @@ export class TriggerLab {
       "incorrect PIN" hint after a failed retry (authRequired alone can't signal a re-failure
       since it stays true across the retry). */
   authFailCount = $state(0);
+  /** The last server `error` message (e.g. a rejected patch paste — S45), or null once cleared.
+      Surfaced as a dismissible notice so an invalid `setProject` is user-visible with no silent
+      failure; cleared on the next successful patch send or when the user dismisses it. */
+  serverError = $state<string | null>(null);
 
   /** mutable effect registry — the effect creator appends here (synced to the sim). */
   effects = $state<EffectDef[]>([...EFFECTS]);
@@ -545,9 +633,10 @@ export class TriggerLab {
     this.songLibrary = loadSongLibrary(rawSongLib);
     // Reserve the POOL ids too (they share the global `song-N` counter with local songs): without
     // this a later local-song mint could reuse a restored pool id, so `resolvedSongs` would carry a
-    // local AND a referenced song under one id. Closure-internal ids are safe via the `lib:<id>/`
-    // prefix — only the pool id itself collides. Mirrored in adoptSongLibrary for the server path.
-    reserveIds(Object.keys(this.songLibrary.songs));
+    // local AND a referenced song under one id. ALSO reserve each closure's node/edge ids — those
+    // travel raw (un-namespaced) inside library graphs, and S42 lets a user edit a referenced graph,
+    // so a fresh node mint must clear them too. Mirrored in adoptSongLibrary for the server path.
+    reserveIds(idsFromSongLibrary(this.songLibrary));
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
@@ -1269,6 +1358,11 @@ export class TriggerLab {
         this.serverFrame = frame;
       },
       onInput: (kind, label, value, note, channel) => this.receiveInputEcho(kind, label, value, note, channel),
+      // Server-side rejection (e.g. an invalid patch paste — S45): surface it as a dismissible
+      // notice so the failure is user-visible rather than silent.
+      onError: (message) => {
+        this.serverError = message;
+      },
       onMonitor: (event) => this.addMonitor(event),
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
@@ -1398,10 +1492,10 @@ export class TriggerLab {
       plain rune replace (the shows that reference it re-resolve reactively). */
   private adoptSongLibrary(lib: SongLibrary): void {
     this.songLibrary = lib;
-    // Reserve the adopted pool ids into the global counter, so a later local-song mint can't reuse
-    // one and collide in `resolvedSongs` (the cross-process case: machine A's exported `song-N`
-    // arrives here before this client mints its own). See the constructor's boot reserve.
-    reserveIds(Object.keys(lib.songs));
+    // Reserve the adopted pool ids AND each closure's raw node/edge ids into the global counter, so a
+    // later local mint can't reuse one and collide (the cross-process case: machine A's exported
+    // `song-N` / `n-N` arrives here before this client mints its own). See the constructor's boot reserve.
+    reserveIds(idsFromSongLibrary(lib));
   }
 
   /** Push the current song library to the server when it actually changed (sig-guarded, gated on
@@ -1813,6 +1907,48 @@ export class TriggerLab {
     this.patchLabels = routing.setPatchLabel(this.patchLabels, nodeId, label);
   }
 
+  // --- patch copy / paste (group K, S45) -------------------------------------
+  // Copy serializes the device slices (kit incl. outputs, input map, output settings) as a
+  // portable `patch` ClipDoc; paste re-rigs the device via the bulk `setProject` message —
+  // schema-validated + applied wholesale server-side, behind an explicit diff confirm dialog.
+
+  /** The current rig's device slices as a `patch` ClipDoc, ready to write to the clipboard.
+      null offline (no live project). Reads the authoritative server project so a copy round-trips
+      the REAL wiring, not a local optimistic edit that hasn't confirmed. */
+  buildPatchDoc(): string | null {
+    if (!this.project) return null;
+    const { name, kit, inputMap, output } = this.project;
+    return clipdoc.serialize(clipdoc.buildPatchClipDoc({ name, kit, inputMap, output }));
+  }
+
+  /** Write the current rig as a `patch` ClipDoc to the system clipboard. Returns false when there
+      is nothing to copy (offline) or the clipboard is unavailable — the toolbar surfaces the result. */
+  async copyPatch(): Promise<boolean> {
+    const text = this.buildPatchDoc();
+    if (!text || !navigator.clipboard?.writeText) return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false; // clipboard write refused (permissions / insecure context)
+    }
+  }
+
+  /** Send a validated-shape patch to the server as the bulk `setProject` re-rig. The server is the
+      authoritative validator (zod) + applier — it round-trips the next `state`, which re-adopts
+      above — so this does NOT optimistically write `project`. Clears any prior server error; a new
+      rejection re-populates {@link serverError}. No-op for a read-only viewer. */
+  setProjectPatch(patch: clipdoc.PatchPayload): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    this.serverError = null;
+    this.client.send({ t: 'setProject', patch });
+  }
+
+  /** Dismiss the current server-error notice (S45 paste failure surface). */
+  clearServerError(): void {
+    this.serverError = null;
+  }
+
   // --- setlist arranging (songs → sections → per-drum graph slots) ----------
   // Authoring only today: edits the arrangement + links to graph editing. Firing a
   // section's slot graphs on a hit is the deeper engine change (see redesign plan).
@@ -1985,6 +2121,220 @@ export class TriggerLab {
   duplicateSection(sectionId: string): void {
     this.copySection(sectionId);
     this.pasteSection();
+  }
+
+  // --- system clipboard copy / paste (S44, group K) ------------------------------
+  // Copy lifts an authored thing PLUS its dependency closure into a portable ClipDoc (clipdoc.ts)
+  // and writes the JSON to the system clipboard, so it pastes across browser sessions and servers.
+  // Sources are the RESOLVED view (S42) so a referenced-library graph/section/song copies its
+  // materialized content, not a dangling ref. Paste parses defensively (foreign/malformed ⇒ a
+  // friendly toast, never a crash), remaps every incoming id against THIS show (built-ins kept,
+  // content-equal deps reused — no duplicates on re-paste), then unions the fresh closure and
+  // inserts the primary object. The pure build/parse/remap lives in clipdoc.ts; this region is the
+  // thin store adapter (clipboard IO + rune mutation + toasts).
+
+  /** The resolved-view slices a copy extracts its closure from — snapshotted so the serialized
+      envelope carries plain data, never live rune proxies. */
+  private clipSources(): ClosureSources {
+    return {
+      graphs: $state.snapshot(this.resolvedView.graphs),
+      graphNames: $state.snapshot(this.resolvedView.graphNames),
+      effects: $state.snapshot(this.resolvedView.effects) as EffectDef[],
+      presets: $state.snapshot(this.resolvedView.presets) as Preset[],
+    };
+  }
+
+  /** Provenance stamped on every exported ClipDoc (advisory only — never gates paste). */
+  private clipMeta(): Partial<ClipDocMeta> {
+    const name = this.activeShow?.name;
+    return name ? { sourceShow: name } : {};
+  }
+
+  /** Find a section by id anywhere in the resolved setlist (local or referenced song). */
+  private findResolvedSection(sectionId: string): SetlistSection | undefined {
+    for (const song of this.resolvedView.songs) {
+      const sec = song.sections.find((s) => s.id === sectionId);
+      if (sec) return sec;
+    }
+    return undefined;
+  }
+
+  /** Serialize a ClipDoc to the system clipboard and toast the outcome. */
+  private async writeClip(doc: ClipDoc, okMessage: string): Promise<void> {
+    const wrote = await writeClipboardText(serialize(doc));
+    pushToast(wrote ? okMessage : 'Couldn’t reach the clipboard — copy blocked by the browser.', {
+      tone: wrote ? 'success' : 'error',
+    });
+  }
+
+  /** Copy a graph (by key) + its effect/preset closure to the system clipboard. */
+  async copyGraphToClipboard(key: string): Promise<void> {
+    if (!this.resolvedView.graphs[key]) return;
+    await this.writeClip(buildGraphClipDoc(key, this.clipSources(), this.clipMeta()), 'Graph copied.');
+  }
+
+  /** Copy a section + its graphs' closure to the system clipboard. Keeps the in-app section
+      clipboard ({@link copySection}) written in PARALLEL as a same-session fast path. */
+  async copySectionToClipboard(sectionId: string): Promise<void> {
+    const section = this.findResolvedSection(sectionId);
+    if (!section) return;
+    this.copySection(sectionId); // in-app fast path (no-op for a referenced song's section)
+    await this.writeClip(
+      buildSectionClipDoc($state.snapshot(section), this.clipSources(), this.clipMeta()),
+      'Section copied.',
+    );
+  }
+
+  /** Copy a song + its full closure to the system clipboard. */
+  async copySongToClipboard(songId: string): Promise<void> {
+    const song = this.resolvedView.songs.find((s) => s.id === songId);
+    if (!song) return;
+    await this.writeClip(buildSongClipDoc($state.snapshot(song), this.clipSources(), this.clipMeta()), 'Song copied.');
+  }
+
+  /** The local-show reconciliation context a paste remaps against: this show's registries (for
+      content-reuse) + which effect ids are built-in registry vocabulary (kept verbatim). `mint` is
+      injected only by tests; production uses the reservation-safe default. */
+  private remapCtx(mint?: RemapMint): RemapContext {
+    return {
+      graphs: $state.snapshot(this.graphs),
+      effects: $state.snapshot(this.effects) as EffectDef[],
+      presets: $state.snapshot(this.presets) as Preset[],
+      isBuiltInEffectId: (id) => EFFECTS.some((e) => e.id === id),
+      mint,
+    };
+  }
+
+  /** Union a materialized paste's fresh closure into the runes (reused/built-in deps are absent)
+      and insert its primary object — mirrors {@link detachSongReference}. Sim registries re-sync
+      through the resolved-view effect. */
+  private applyRemapResult(res: RemapResult): void {
+    // Reserve the carried node/edge ids (and remapped domain ids) FIRST, so a later mint into the
+    // pasted content can't collide with an id that arrived verbatim from another machine.
+    reserveIds(remapResultIds(res));
+    if (Object.keys(res.graphs).length > 0) this.graphs = { ...this.graphs, ...res.graphs };
+    if (Object.keys(res.graphNames).length > 0) this.graphNames = { ...this.graphNames, ...res.graphNames };
+    if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
+    if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
+    if (res.kind === 'graph' && res.graphKey) {
+      this.selectedPadKey = res.graphKey;
+    } else if (res.kind === 'section' && res.section) {
+      const section = res.section;
+      this.updateActiveSong((song) => setlist.addSection(song, section));
+      this.activeSectionId = section.id;
+    } else if (res.kind === 'song' && res.song) {
+      const song = res.song;
+      this.songs = [...this.songs, song];
+      this.activeSongId = song.id;
+    }
+  }
+
+  /**
+   * Materialize pasted clipboard text into this show — the PURE, IO-free heart of paste (parse →
+   * validate context → remap/union → insert), returning a typed {@link PasteResult} the caller
+   * toasts. No clipboard access here, so it's unit-testable with injected text + mint. A song paste
+   * with `songDest: 'library'` instead lifts the closure into the Song Library pool (mirrors
+   * {@link exportSongToLibrary}); every other authored kind remaps into the active show.
+   */
+  materializePaste(text: string, opts: { context: PasteContext; songDest?: SongPasteDest; mint?: RemapMint }): PasteResult {
+    if (this.isViewer) return { ok: false, message: 'This show is read-only — paste is disabled.' };
+
+    const doc = parse(text);
+    if (isClipParseError(doc)) return { ok: false, message: friendlyParseMessage(doc.reason) };
+    if (doc.kind === 'patch') return { ok: false, message: 'That’s a patch — paste it in the Patch view.' };
+    if (doc.kind !== opts.context) {
+      return { ok: false, message: `Clipboard holds a ${doc.kind}, not a ${opts.context}.` };
+    }
+
+    // Song → Library: extract a fresh, self-contained namespaced closure into the pool.
+    if (doc.kind === 'song' && opts.songDest === 'library') {
+      const libId = freshId('song', (id) => id in this.songLibrary.songs);
+      const sources: ClosureSources = {
+        graphs: doc.deps.graphs ?? {},
+        graphNames: doc.deps.graphNames ?? {},
+        effects: doc.deps.effects ?? [],
+        presets: doc.deps.presets ?? [],
+      };
+      const closure = extractSongClosure(doc.payload.song, sources, libId);
+      this.songLibrary = songRefsLib.withLibrarySong(this.songLibrary, closure);
+      // Reserve the new pool entry's raw node/edge ids: S42 lets a user edit this referenced graph,
+      // so a fresh node mint must clear any high id the pasted closure carried in.
+      reserveIds(idsFromLibrarySong(closure));
+      return { ok: true, kind: 'song', message: `Pasted “${doc.payload.song.name || 'song'}” into the library.` };
+    }
+
+    const res = remapClipDoc(doc, this.remapCtx(opts.mint));
+    if (isClipParseError(res)) return { ok: false, message: friendlyParseMessage(res.reason) };
+    this.applyRemapResult(res);
+    return { ok: true, kind: res.kind, message: pasteSuccessMessage(res) };
+  }
+
+  /** Toast the outcome of a paste. */
+  private finishPaste(result: PasteResult): void {
+    pushToast(result.message, { tone: result.ok ? 'success' : 'error' });
+  }
+
+  /** Paste a graph from the system clipboard into the show. Opens the manual paste-text fallback
+      when the browser blocks clipboard reads. */
+  async pasteGraphFromClipboard(): Promise<void> {
+    const text = await readClipboardText();
+    if (text === null) {
+      this.pasteFallback = { context: 'graph' };
+      return;
+    }
+    this.finishPaste(this.materializePaste(text, { context: 'graph' }));
+  }
+
+  /** Paste a section from the system clipboard into the active song. When clipboard reads are
+      blocked, fall back to the in-app section clipboard if present, else the paste-text dialog. */
+  async pasteSectionFromClipboard(): Promise<void> {
+    const text = await readClipboardText();
+    if (text === null) {
+      if (this.sectionClipboard) {
+        this.pasteSection();
+        return;
+      }
+      this.pasteFallback = { context: 'section' };
+      return;
+    }
+    this.finishPaste(this.materializePaste(text, { context: 'section' }));
+  }
+
+  /** Submit manually-pasted text from the graph/section fallback dialog. */
+  submitPasteFallback(text: string): void {
+    const ctx = this.pasteFallback;
+    this.pasteFallback = null;
+    if (!ctx) return;
+    this.finishPaste(this.materializePaste(text, { context: ctx.context }));
+  }
+
+  /** Dismiss the paste-text fallback dialog without pasting. */
+  cancelPasteFallback(): void {
+    this.pasteFallback = null;
+  }
+
+  /** Open / close the Songs paste dialog (destination chooser + fallback). */
+  openSongPaste(): void {
+    this.songPasteOpen = true;
+  }
+  closeSongPaste(): void {
+    this.songPasteOpen = false;
+  }
+
+  /** Paste a song from the system clipboard into the chosen destination. Returns `'blocked'` when
+      clipboard reads are unavailable so the dialog can reveal its manual paste-text field. */
+  async pasteSong(dest: SongPasteDest): Promise<'ok' | 'blocked'> {
+    const text = await readClipboardText();
+    if (text === null) return 'blocked';
+    this.pasteSongText(dest, text);
+    return 'ok';
+  }
+
+  /** Materialize a song from explicit text (manual fallback) into the chosen destination, then
+      close the dialog. */
+  pasteSongText(dest: SongPasteDest, text: string): void {
+    this.finishPaste(this.materializePaste(text, { context: 'song', songDest: dest }));
+    this.songPasteOpen = false;
   }
 
   /** Author a brand-new, empty trigger graph (just the implicit trigger input) and

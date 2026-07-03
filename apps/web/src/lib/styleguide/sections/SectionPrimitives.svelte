@@ -25,6 +25,8 @@
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import Dialog from '../../ui/Dialog.svelte';
   import Drawer from '../../ui/Drawer.svelte';
+  import ToastHost from '../../ui/ToastHost.svelte';
+  import { pushToast } from '../../ui/toast.svelte';
   import Splitter from '../../ui/Splitter.svelte';
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import DemoCard from '../DemoCard.svelte';
@@ -308,6 +310,18 @@
         <button onclick={() => (drawerOpen = true)}>Open drawer…</button>
       </div>
     </DemoCard>
+
+    <DemoCard
+      title="Toast"
+      src="lib/ui/ToastHost"
+      note="Transient notifications: a singleton store (pushToast) + one ToastHost near the app root. Role colour always rides an icon + text; each is dismissible; enter rises + fades, exit is subtler; reduced motion collapses both. Used for clipboard paste feedback (S44)."
+    >
+      <div class="comp-row">
+        <button onclick={() => pushToast('Section copied.', { tone: 'success' })}>Success toast</button>
+        <button onclick={() => pushToast('Pasted 3 layers.')}>Info toast</button>
+        <button class="danger" onclick={() => pushToast('That clipboard content isn’t from LEDrums.', { tone: 'error' })}>Error toast</button>
+      </div>
+    </DemoCard>
   </div>
 </section>
 
@@ -327,6 +341,9 @@
 <Drawer open={drawerOpen} onClose={() => (drawerOpen = false)} title="Example drawer" side="right" width="320px">
   <p class="ov-text">A slide-in <code>Drawer</code> — same <code>--overlay</code> scrim, <code>--z-overlay</code> tier.</p>
 </Drawer>
+
+<!-- One host renders the shared toast store; the demo buttons above push into it. -->
+<ToastHost />
 
 <style>
   .comp-grid {
