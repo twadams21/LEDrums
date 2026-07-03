@@ -35,8 +35,8 @@ export function firstEffectId(effects: readonly EffectDef[]): string {
   return effects.find((e) => e.scope === 'drum')?.id ?? effects[0]!.id;
 }
 
-/** The seed fields for a fresh play node (effect + its Default preset's params). The store
-    passes its preset lookup so a linked/instance param baseline resolves identically. */
+/** The seed fields for a fresh play node (effect + a forked copy of its Default preset's
+    params). The store passes its preset lookup so the param baseline resolves identically. */
 export function playNodeInit(
   effects: readonly EffectDef[],
   presetById: (id: string) => Preset | undefined,

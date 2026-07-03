@@ -1,14 +1,17 @@
 <script lang="ts">
   /* Clip (instance) settings: pick a preset, edit parameters, assign per-param
-     envelopes, and link/unlink to the shared preset. Bits UI Dialog. Throwaway. */
+     envelopes. A preset is a snapshot (S39): selecting one forks its params onto the
+     clip; params are always clip-local. Bits UI Dialog. Throwaway. */
   import EffectThumb from './EffectThumb.svelte';
   import Slider from '../ui/Slider.svelte';
   import Select from '../ui/Select.svelte';
-  import SegmentedControl from '../ui/SegmentedControl.svelte';
   import Toggle from '../ui/Toggle.svelte';
   import Dialog from '../ui/Dialog.svelte';
+  import IconButton from '../ui/IconButton.svelte';
   import X from '@lucide/svelte/icons/x';
   import Spline from '@lucide/svelte/icons/spline';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
   import type { ParamSpec, ParamValue } from './sim';
   import type { TriggerLab } from './store.svelte';
 
@@ -19,11 +22,6 @@
   const live = $derived(block ? store.liveParams(block) : {});
   const open = $derived(!!block && block.kind === 'play' && !!eff);
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
-
-  const LINK_OPTS = [
-    { value: 'instance', label: 'Instance' },
-    { value: 'linked', label: 'Linked' },
-  ];
 
   function num(v: ParamValue | undefined, d: number): number {
     return typeof v === 'number' ? v : d;
@@ -52,14 +50,10 @@
         <Select value={block.presetId} options={presetOptions} onChange={(v) => store.selectPreset(block, v)} ariaLabel="Preset" />
       </span>
       <span class="spacer"></span>
-      <SegmentedControl
-        value={block.linked ? 'linked' : 'instance'}
-        options={LINK_OPTS}
-        onChange={(v) => {
-          if ((v === 'linked') !== block.linked) store.toggleLink(block);
-        }}
-        ariaLabel="Instance or linked preset"
-      />
+      <div class="presetActions">
+        <IconButton icon={RotateCcw} label="Apply preset — reset params to it" variant="soft" size={14} onclick={() => store.applyPreset(block)} />
+        <IconButton icon={BookmarkPlus} label="Save params as a new preset" variant="soft" size={14} onclick={() => store.saveNodeAsPreset(block)} />
+      </div>
     </div>
 
     <div class="params">
@@ -99,8 +93,7 @@
     </div>
 
     <p class="foot">
-      {block.linked ? 'Linked — edits change the shared preset everywhere it’s used.' : 'Instance — edits stay on this clip. Link to sync across songs/sections.'}
-      Changes apply on the next hit.
+      Edits stay on this clip. Save them as a preset to reuse, or Apply the preset to reset. Changes apply on the next hit.
     </p>
   {/if}
 </Dialog>
@@ -181,6 +174,12 @@
   }
   .spacer {
     flex: 1;
+  }
+  .presetActions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
   }
   .params {
     padding: var(--space-3) var(--space-4);

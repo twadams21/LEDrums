@@ -166,14 +166,14 @@ describe('presetUsageCount', () => {
     const id = store.duplicatePreset('swirl:wide')!; // fresh preset → nothing references it
     expect(store.presetUsageCount(id)).toBe(0);
 
-    // one linked + one instance node in two separate graphs both reference it (count = both).
+    // two play nodes in two separate graphs both carry it as provenance (count = both).
     store.graphs = {
       ...store.graphs,
       'graph-a': {
-        nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 0, 0, { presetId: id, linked: true })],
+        nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 0, 0, { presetId: id })],
         edges: [],
       },
-      'graph-b': { nodes: [makeNode('play', 'p2', 0, 0, { presetId: id, linked: false })], edges: [] },
+      'graph-b': { nodes: [makeNode('play', 'p2', 0, 0, { presetId: id })], edges: [] },
     };
     expect(store.presetUsageCount(id)).toBe(2);
   });

@@ -1,13 +1,15 @@
 <script lang="ts">
-  /* Play-node editor — the effect header (thumb + name + swap), preset/link bar, play-mode
-     + layer segments, scope selector + target dropdown, and the per-param controls (slider /
-     toggle + optional envelope button). The shared node header (kind selector + remove) lives
-     in the parent Inspector. */
+  /* Play-node editor — the effect header (thumb + name + swap), preset bar (select + apply/save),
+     play-mode + layer segments, scope selector + target dropdown, and the per-param controls
+     (slider / toggle + optional envelope button). The shared node header (kind selector + remove)
+     lives in the parent Inspector. A preset is a snapshot (S39): selecting one forks its params
+     onto the node, Apply re-forks (resets local edits), Save captures the node's params as a new
+     preset. Params are always node-local — editing one clip never touches another. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
   import type { Hsv } from '@ledrums/core';
   import { busIcon } from '../../views/trigger-node-meta';
-  import { MODE_OPTS, LINK_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
+  import { MODE_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -17,6 +19,8 @@
   import IconButton from '../../../ui/IconButton.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Replace from '@lucide/svelte/icons/replace';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -78,14 +82,10 @@
       <span class="k">Preset</span>
       <Select value={node.presetId} options={presetOptions} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
     </label>
-    <SegmentedControl
-      value={node.linked ? 'linked' : 'instance'}
-      options={LINK_OPTS}
-      onChange={(v) => {
-        if ((v === 'linked') !== node.linked) store.toggleLink(node);
-      }}
-      ariaLabel="Instance or linked preset"
-    />
+    <div class="presetActions">
+      <IconButton icon={RotateCcw} label="Apply preset — reset params to it" variant="soft" size={14} onclick={() => store.applyPreset(node)} />
+      <IconButton icon={BookmarkPlus} label="Save params as a new preset" variant="soft" size={14} onclick={() => store.saveNodeAsPreset(node)} />
+    </div>
   </div>
 
   <div class="seg2">
@@ -163,7 +163,7 @@
   <ModulationParamsSection {store} {node} />
 
   <p class="foot">
-    {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.
+    Edits stay on this clip. Save them as a preset to reuse, or Apply the preset to reset. Applies on the next hit.
   </p>
 {:else}
   <div class="kindbody">
@@ -223,6 +223,12 @@
     letter-spacing: var(--tracking-label);
     font-size: var(--text-2xs);
     white-space: nowrap;
+  }
+  .presetActions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
   }
   .seg2 {
     display: flex;
