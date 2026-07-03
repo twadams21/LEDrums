@@ -126,6 +126,11 @@ export function paramRowSignal(
  * `cc` are the live continuous inputs LFO/CC read. One helper so every preview builds the context
  * identically.
  */
-export function previewCtx(tMs: number, bpm: number, cc: voice.CcTable | undefined): voice.ModSampleCtx {
-  return { phase: frac(tMs / PREVIEW_LOOP_MS), timeMs: tMs, bpm, cc };
+export function previewCtx(
+  tMs: number,
+  bpm: number,
+  cc: voice.CcTable | undefined,
+  osc?: voice.OscTable | undefined,
+): voice.ModSampleCtx {
+  return { phase: frac(tMs / PREVIEW_LOOP_MS), timeMs: tMs, bpm, cc, osc };
 }

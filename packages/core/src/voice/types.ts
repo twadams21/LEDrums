@@ -284,6 +284,12 @@ export interface GraphNode {
   ccController?: number; // S37
   /** MIDI channel filter (1..16), or `null` for omni (any channel). Absent → omni. */
   ccChannel?: number | null; // S37
+  /** Which live input drives this CC/controller source: MIDI Control Change (default) or an OSC
+      address. Absent → 'midi' (back-compat: graphs authored before OSC modulation). */
+  ccSource?: 'midi' | 'osc';
+  /** OSC address this source reads a 0..1 value from when {@link ccSource} is 'osc'. Absent → ''
+      (⇒ `sampleOsc` neutral until an address is set). */
+  oscAddress?: string;
   // random
   noRepeat: boolean;
   // switch

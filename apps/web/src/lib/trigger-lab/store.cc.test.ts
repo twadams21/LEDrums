@@ -127,3 +127,27 @@ describe('WebMIDI forward feeds the offline sim CC table', () => {
     expect(table.get(voice.ccKey(30, 4))).toBe(1); // channel slot
   });
 });
+
+describe('OSC modulation input — the cc node reads an OSC address', () => {
+  it('defaults to MIDI mode; switching to OSC + an address flips its live source', () => {
+    const { store, cc } = withCc();
+    expect(store.ccNodeSource(cc)).toBe('midi');
+    store.setCcNodeSource(cc, 'osc');
+    store.setOscNodeAddress(cc, '  /fader/1  '); // trimmed
+    expect(store.ccNodeSource(cc)).toBe('osc');
+    expect(store.oscNodeAddress(cc)).toBe('/fader/1');
+    expect(voice.nodeModSource(cc)).toEqual({ kind: 'osc', address: '/fader/1' });
+  });
+
+  it('ccNodeLiveValue reads the sim OSC table when in OSC mode', () => {
+    const { store, cc } = withCc();
+    store.setCcNodeSource(cc, 'osc');
+    store.setOscNodeAddress(cc, '/fader/1');
+    const sim = (store as unknown as { sim: { setOsc(a: string, v: number): void } }).sim;
+    expect(store.ccNodeLiveValue(cc)).toBe(0); // unheard → neutral
+    sim.setOsc('/fader/1', 0.6);
+    expect(store.ccNodeLiveValue(cc)).toBeCloseTo(0.6, 10);
+    sim.setOsc('/fader/1', 3); // clamps to 1
+    expect(store.ccNodeLiveValue(cc)).toBe(1);
+  });
+});

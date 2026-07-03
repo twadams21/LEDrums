@@ -343,6 +343,11 @@ export class Sim {
       render sweep reads it per frame via `render.ts` `modCtxFor`. */
   ccTable = new Map<string, number>();
 
+  /** Live OSC value table — the offline mirror of the core engine's `oscTable`. Keyed by OSC
+      address → 0..1. Fed by {@link setOsc} from the store's OSC input path so an OSC-bound
+      modulation source previews live; the render sweep reads it per frame via `render.ts`. */
+  oscTable = new Map<string, number>();
+
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
     for (const e of effects) this.effectsById.set(e.id, e);
@@ -737,6 +742,12 @@ export class Sim {
     const v = voice.ccValue01(value);
     this.ccTable.set(voice.ccKey(controller, channel), v);
     this.ccTable.set(voice.ccKey(controller, null), v);
+  }
+
+  /** Update the OSC table from a raw OSC value at `address` (clamped to 0..1), mirroring the
+      core engine's `processEvent` OSC-table write so an `osc` modulation source previews live. */
+  setOsc(address: string, value: number): void {
+    this.oscTable.set(address, voice.oscValue01(value));
   }
 
   // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------

@@ -114,7 +114,9 @@ export function kindSummary(node: GraphNode): string {
         ? `${node.lfo.waveform} · ${node.lfo.division}`
         : `${node.lfo?.waveform ?? 'sine'} · ${node.lfo?.rateHz ?? 1}Hz`;
     case 'cc':
-      return `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
+      return node.ccSource === 'osc'
+        ? `OSC ${node.oscAddress || '—'}`
+        : `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
     default:
       return '';
   }
