@@ -24,6 +24,7 @@
   import Eyebrow from '../ui/Eyebrow.svelte';
   import Tabs from '../ui/Tabs.svelte';
   import Splitter from '../ui/Splitter.svelte';
+  import ToastHost from '../ui/ToastHost.svelte';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import Terminal from '@lucide/svelte/icons/terminal';
   import LayersIcon from '@lucide/svelte/icons/layers';
@@ -166,6 +167,9 @@
       />
     {/if}
   {/if}
+
+  <!-- Transient notifications (paste errors, confirmations) — one host for the whole shell. -->
+  <ToastHost />
 </div>
 
 <style>
