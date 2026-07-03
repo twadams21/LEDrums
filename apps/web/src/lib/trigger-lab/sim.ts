@@ -22,7 +22,7 @@
    ============================================================================= */
 
 import { voice, type EffectCategory, type ResolvedModifier } from '@ledrums/core';
-import { cloneEnvelope, type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
+import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
@@ -229,7 +229,6 @@ export interface Voice {
   modulations?: Mapping[];
   /** resolved param snapshot at spawn. */
   params: ParamValues;
-  env: EnvMap;
   attackMs: number;
   sustainMs: number;
   releaseMs: number;
@@ -270,7 +269,6 @@ type PlayAction = {
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
-  env: EnvMap;
   /** Resolved modifier chain for this play node's `mod` input (S29 populates from graph
       topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modifiers`. */
   modifiers?: ResolvedModifier[];
@@ -468,7 +466,6 @@ export class Sim {
             targetId: node.targetId,
             busId: node.busId,
             params: this.resolveNodeParams(node),
-            env: node.env,
             modifiers: mods.length ? mods : undefined,
             modulations: modulations.length ? modulations : undefined,
             via: label(this.modeWord(node.mode)),
@@ -605,7 +602,6 @@ export class Sim {
             scope: block.scope,
             busId: '',
             params: this.resolveParams(block),
-            env: block.env,
             via: label(this.modeWord(block.mode)),
             latchKey: null,
           },
@@ -690,7 +686,6 @@ export class Sim {
       modState: undefined,
       modulations: a.modulations,
       params: { ...a.params },
-      env: Object.fromEntries(Object.entries(a.env).map(([k, e]) => [k, cloneEnvelope(e)])),
       attackMs: effect.attackMs,
       sustainMs: effect.sustainMs,
       releaseMs: effect.releaseMs,
@@ -813,7 +808,7 @@ export class Sim {
     const effect = this.effect(effectId);
     if (!effect) return null;
     const params = this.preset(`${effectId}:default`)?.params ?? defaultParams(effect);
-    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, env: {}, via, latchKey: null };
+    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, via, latchKey: null };
   }
 
   /** Recall a section as a timed morph — releases the old look loops and spawns

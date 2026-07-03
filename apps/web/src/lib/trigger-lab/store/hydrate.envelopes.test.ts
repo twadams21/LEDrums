@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { migrateGraphEnvelopes, migrateGraphsEnvelopes, normalizeGraphs } from './hydrate';
-import { adsrToPoints, makeNode, type AdsrShape, type Envelope, type TriggerGraph } from '../sim';
+import { adsrToPoints, makeNode, type AdsrShape, type Envelope, type ParamSpec, type TriggerGraph } from '../sim';
+import { voice } from '@ledrums/core';
 
 /* S24 — the S23-deferred hydrate wiring: persisted legacy envelope shapes normalize to v2
    (attackLevel + per-segment eases) on load, behaviour-preserving, idempotent, alias-stable. */
@@ -91,10 +92,16 @@ describe('migrateGraphsEnvelopes / normalizeGraphs', () => {
     expect(out.b).toBe(unchanged);
   });
 
-  it('normalizeGraphs applies the envelope migration on load', () => {
-    const { graphs } = normalizeGraphs({ 'kick:1': graphWith(legacyCurve0) }, {}, []);
-    const adsr = graphs['kick:1']!.nodes.find((n) => n.id === 'p1')!.env.hue!.adsr!;
+  it('normalizeGraphs runs ADSR-v2 BEFORE the S35 env→node fold: the spawned envelope node carries the v2 shape', () => {
+    const specs: ParamSpec[] = [{ key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: 0 }];
+    const { graphs } = normalizeGraphs({ 'kick:1': graphWith(legacyCurve0) }, {}, [], () => specs);
+    const g = graphs['kick:1']!;
+    // The legacy play env is folded into an envelope source node whose shape is already v2-normalized.
+    const src = g.nodes.find((n) => n.kind === 'envelope')!;
+    const adsr = src.env[voice.ENVELOPE_NODE_KEY]!.adsr!;
     expect(adsr.attackEase).toEqual({ fn: 'linear', dir: 'in' });
     expect(adsr.curve).toBeUndefined();
+    // …and the legacy play-node field is dropped (no dual mechanism).
+    expect(g.nodes.find((n) => n.id === 'p1')!.env).toEqual({});
   });
 });
