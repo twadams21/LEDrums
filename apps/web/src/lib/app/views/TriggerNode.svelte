@@ -72,6 +72,20 @@
       ? voice.resolveModifierChain(store.selectedGraph, node).length
       : 0,
   );
+
+  // Exposed modulation-target rows (doc 10, S34): each renders its own labelled node-face row
+  // with a `param:<key>` input handle scoped to modulation sources. Play + modifier nodes only.
+  const modRows = $derived.by(() => {
+    if (!node || (node.kind !== 'play' && node.kind !== 'modifier')) return [];
+    const rows = node.modInputs ?? [];
+    if (rows.length === 0) return [];
+    const specs = store.modTargetSpecs(node);
+    return rows.map((r) => ({
+      param: r.param,
+      label: specs.find((s) => s.key === r.param)?.label ?? r.param,
+      wired: store.mappingsFor(node, r.param).length,
+    }));
+  });
   const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
 
@@ -140,6 +154,19 @@
         </span>
       {/if}
     </div>
+    {#if modRows.length > 0}
+      <!-- exposed modulation-target rows: each is its own drop target (a `param:<key>` handle
+           scoped to modulation sources). Precedent: the value+bands switch's per-band handles. -->
+      <ul class="modrows">
+        {#each modRows as row (row.param)}
+          <li class="modrow" class:wired={row.wired > 0}>
+            <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
+            <span class="pdot" aria-hidden="true"></span>
+            <span class="plabel">{row.label}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if nodeHasOutput(kind)}
       <Handle type="source" position={Position.Right} />
     {/if}
@@ -163,6 +190,56 @@
   /* a bypassed modifier reads as muted but present (its wire + state slot survive) */
   .tnode.bypassed {
     opacity: 0.55;
+  }
+  /* exposed modulation-target rows under the card — each carries a scoped `param:` handle */
+  .modrows {
+    list-style: none;
+    margin: var(--space-1) 0 0;
+    padding: var(--space-1);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-1);
+  }
+  .modrow {
+    position: relative; /* offset parent for the per-row param handle (sits at the row's left) */
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 22px;
+    padding: 0 var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .pdot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
+    background: transparent;
+  }
+  .modrow.wired .pdot {
+    background: var(--role-modulation);
+    border-color: var(--role-modulation);
+  }
+  .plabel {
+    flex: 1;
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* the scoped modulation input handle rides the row's left edge */
+  .modrow :global(.param-handle) {
+    background: var(--role-modulation);
+    border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
   }
   /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
   .modcount {

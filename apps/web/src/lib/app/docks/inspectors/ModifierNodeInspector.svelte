@@ -13,6 +13,7 @@
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Spline from '@lucide/svelte/icons/spline';
   import Blend from '@lucide/svelte/icons/blend';
 
@@ -103,6 +104,10 @@
   <div class="kindbody">
     <p class="hint">This modifier node has no modifier selected — pick one above.</p>
   </div>
+{/if}
+
+{#if def}
+  <ModulationParamsSection {store} {node} />
 {/if}
 
 <p class="foot">
