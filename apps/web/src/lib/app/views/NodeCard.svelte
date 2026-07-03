@@ -3,8 +3,8 @@
      original PatchNode so the Patch look is literally the shared look. A role/kind-
      tinted icon chip on the left, a title + mono sub line, and an optional thumbnail
      snippet on the right (play nodes pass an EffectThumb). Presentational only: it
-     reflects the selected / hovered / dropTarget state it's handed; the lift + wire
-     highlight live in the view (see graph-hover). */
+     reflects the selected / dropTarget state it's handed; hover is pure CSS (instant) and
+     the wire highlight lives in the view (see graph-hover). */
   import type { Component, Snippet } from 'svelte';
 
   type Props = {
@@ -14,7 +14,6 @@
     /** CSS colour for the role/kind-tinted icon chip. */
     tint: string;
     selected?: boolean;
-    hovered?: boolean;
     dropTarget?: boolean;
     /** Degraded placeholder: the node's live model could not be resolved (a "stale node").
         Renders a dashed warn-tinted card so a projection/desync fault is VISIBLE on the
@@ -34,7 +33,6 @@
     sub,
     tint,
     selected = false,
-    hovered = false,
     dropTarget = false,
     stale = false,
     thumb,
@@ -45,7 +43,6 @@
 <div
   class="card"
   class:sel={selected}
-  class:hov={hovered}
   class:drop={dropTarget}
   class:stale
   class:has-thumb={!!thumb}
@@ -86,10 +83,9 @@
     min-width: 176px;
     max-width: 260px;
   }
-  /* hover highlights the border accent — the LIFT comes from the view nudging the
-     node's xyflow position (a CSS transform here would detach handles + edges). */
-  .card:hover,
-  .card.hov {
+  /* hover highlights the border accent — pure CSS so it is INSTANT (one hover pattern per
+     element class, item 1.9); the wire highlight that follows hover lives in graph-hover. */
+  .card:hover {
     border-color: var(--accent-bright);
   }
   /* selected into the Inspector — same full-accent border as hover, plus a crisp ring

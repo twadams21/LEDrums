@@ -90,7 +90,7 @@ import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
-import { canConnect, canReconnect, type ToPort } from './store/graph-wiring';
+import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
@@ -2517,7 +2517,15 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
-    const edge: GraphEdge = { id: nid('e'), from: fromId, to: toId, fromPort, toPort };
+    // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
+    // never dodge the dedup guard under a differently-spelled duplicate later
+    const edge: GraphEdge = {
+      id: nid('e'),
+      from: fromId,
+      to: toId,
+      fromPort: normalizeFromPort(fromPort),
+      toPort: normalizeToPort(toPort),
+    };
     // A modulation wire (`param:<key>`) IS one mapping — bake its default settings from the
     // target param spec (amount 1, no invert, range = spec min/max) so it is editable + persists.
     const key = voice.paramKeyOf(toPort);
@@ -2547,8 +2555,8 @@ export class TriggerLab {
     const edge = g.edges.find((e) => e.id === edgeId)!;
     edge.from = fromId;
     edge.to = toId;
-    edge.fromPort = fromPort;
-    edge.toPort = toPort;
+    edge.fromPort = normalizeFromPort(fromPort);
+    edge.toPort = normalizeToPort(toPort);
   }
 
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */

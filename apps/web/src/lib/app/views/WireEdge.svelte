@@ -25,6 +25,8 @@
   );
 </script>
 
-<BaseEdge {id} {path} {markerStart} {markerEnd} {style} />
+<!-- interactionWidth widens the invisible hit-path so thin wires select reliably; the
+     stroke paint that makes it hit-testable at all is applied in GraphCanvas's CSS. -->
+<BaseEdge {id} {path} {markerStart} {markerEnd} {style} interactionWidth={24} />
 <EdgeReconnectAnchor type="source" position={{ x: sourceX, y: sourceY }} />
 <EdgeReconnectAnchor type="target" position={{ x: targetX, y: targetY }} />

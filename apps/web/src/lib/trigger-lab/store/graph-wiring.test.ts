@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode, type TriggerGraph } from '../sim';
-import { canConnect, canReconnect, type ToPort } from './graph-wiring';
+import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './graph-wiring';
 
 /* Incident 09 acceptance: wiring validation must RETURN a verdict, never throw — a throw from
    a connect/reconnect guard is what propagates into xyflow mid-gesture and blanks the canvas.
@@ -246,5 +246,45 @@ describe('graph-wiring validation — targeted verdicts (no throw)', () => {
 
   it('canReconnect rejects an unknown edge id without throwing', () => {
     expect(canReconnect(graph, 'no-such-edge', 'r1', 't1')).toBe(false);
+  });
+});
+
+// Item 1.2 hardening: every alias of "the default port" ('', 'in', null-ish) must hit the
+// SAME duplicate slot — a differently-spelled duplicate can't slip past the dedup guard.
+describe('duplicate detection over canonical ports', () => {
+  it('rejects a duplicate spelled with alias ports', () => {
+    const g: TriggerGraph = {
+      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('random', 'r1', 100, 0)],
+      edges: [{ id: 'e1', from: 'trigger', to: 'r1', fromPort: '', toPort: 'in' }],
+    };
+    expect(canConnect(g, 'trigger', 'r1')).toBe(false); // undefined ports ≡ ''/'in'
+    expect(canConnect(g, 'trigger', 'r1', '', 'in')).toBe(false); // same spelling
+    expect(canConnect(g, 'trigger', 'r1', undefined, 'in')).toBe(false); // mixed
+  });
+
+  it('canReconnect applies the same canonical-port dedup', () => {
+    const g: TriggerGraph = {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('random', 'r1', 100, 0),
+        makeNode('toggle', 't1', 100, 100),
+      ],
+      edges: [
+        { id: 'e1', from: 'trigger', to: 'r1', toPort: 'in' },
+        { id: 'e2', from: 'trigger', to: 't1' },
+      ],
+    };
+    // repointing e2 onto r1's default input duplicates e1 (spelled 'in') → reject
+    expect(canReconnect(g, 'e2', 'trigger', 'r1')).toBe(false);
+  });
+
+  it('normalizeFromPort / normalizeToPort collapse the aliases', () => {
+    expect(normalizeFromPort('')).toBeUndefined();
+    expect(normalizeFromPort(null)).toBeUndefined();
+    expect(normalizeFromPort('band-1')).toBe('band-1');
+    expect(normalizeToPort('in')).toBeUndefined();
+    expect(normalizeToPort(undefined)).toBeUndefined();
+    expect(normalizeToPort('mod')).toBe('mod');
+    expect(normalizeToPort('param:brightness')).toBe('param:brightness');
   });
 });

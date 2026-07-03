@@ -51,6 +51,8 @@
   import GraphCanvas from './GraphCanvas.svelte';
   import GraphPalette from './GraphPalette.svelte';
   import { GraphHover } from './graph-hover.svelte';
+  import { findFreePosition } from './node-placement';
+  import { guardFlowCallback } from './flow-guard';
   import { nodeIdAtEvent } from './flow-dom';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Cable from '@lucide/svelte/icons/cable';
@@ -83,10 +85,18 @@
   function addDevice(stage: 'dataline' | 'output', cx: number, cy: number): void {
     const n = ++deviceSeq;
     const label = stage === 'dataline' ? `Data Line ${n}` : `Output ${n}`;
+    // spawn on a free spot near the viewport centre — repeated adds fan out (item 1.5)
+    const rects = nodes.map((nd) => ({
+      x: nd.position.x,
+      y: nd.position.y,
+      w: nd.measured?.width ?? NODE_W,
+      h: nd.measured?.height ?? NODE_H,
+    }));
+    const pos = findFreePosition(rects, cx - NODE_W / 2, cy - NODE_H / 2, NODE_W, NODE_H);
     const node: PatchFlowNode = {
       id: `${stage}:new-${n}`,
       type: 'patch',
-      position: { x: cx - NODE_W / 2, y: cy - NODE_H / 2 },
+      position: pos,
       initialWidth: NODE_W,
       initialHeight: NODE_H,
       data: { label, sub: 'new — wire it up', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
@@ -107,6 +117,17 @@
     if (!c.source || !c.target || c.source === c.target) return false;
     if (edges.some((e) => e.source === c.source && e.target === c.target)) return false;
     return c;
+  }
+
+  /** Group-A flow-guard hardening extended to the Patch graph (phase-2 item 1c): a throw
+      inside an xyflow event callback becomes a reported fault (console + Monitor error
+      event) instead of propagating into xyflow's internals and freezing the canvas. */
+  function guard<A extends unknown[]>(where: string, fn: (...args: A) => void): (...args: A) => void {
+    return guardFlowCallback(where, fn, (w, err) => {
+      const detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
+      console.error(`[patch-graph] ${w} failed`, err);
+      store.reportError('patch-graph', w, detail);
+    });
   }
 
   /* Hover accents the node (border, via CSS) + every wire one level connected to it.
@@ -337,15 +358,15 @@
     onPaneClick={() => shell.clearSelection()}
     onNodeEnter={onEnter}
     onNodeLeave={onLeave}
-    onConnect={() => commitRouting()}
-    onReconnect={onReconnect}
-    onDelete={() => commitRouting()}
-    onNodeDragStop={() => commitRouting()}
-    onConnectEnd={(event, conn) => {
+    onConnect={guard('connect', () => commitRouting())}
+    onReconnect={guard('reconnect', onReconnect)}
+    onDelete={guard('delete', () => commitRouting())}
+    onNodeDragStop={guard('drag', () => commitRouting())}
+    onConnectEnd={guard('connect-end', (event, conn) => {
       if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
       const toId = nodeIdAtEvent(event);
       if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
-    }}
+    })}
   >
     {#snippet palette()}
       <GraphPalette items={PALETTE_ITEMS} add={addDevice} ariaLabel="Add device (local, not saved)" disabled={!store.canEdit} />

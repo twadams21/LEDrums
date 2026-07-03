@@ -55,7 +55,13 @@ export function projectTriggerFlowNodes(args: {
     const sig = triggerNodeSignature(sn);
     const wantSel = fn.id === selectedNodeId;
     const prev = prevById.get(fn.id);
-    if (prev && cache.nodeSigs.get(fn.id) === sig && !!prev.selected === wantSel) return prev;
+    if (prev && cache.nodeSigs.get(fn.id) === sig) {
+      // Structure unchanged: keep the existing flow-node object (xyflow's measured
+      // handleBounds + live position). A selection-only change clones the PREVIOUS node —
+      // never the fresh store projection — so selecting/deselecting a node can't snap it
+      // back to a stale store position or momentarily drop its wires (item 1.4).
+      return !!prev.selected === wantSel ? prev : { ...prev, selected: wantSel };
+    }
     return wantSel ? { ...fn, selected: true } : fn;
   });
 

@@ -100,6 +100,7 @@
       fitView
       fitViewOptions={{ padding: fitPadding }}
       nodesConnectable
+      elevateNodesOnSelect={false}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
       deleteKey={['Delete', 'Backspace']}
@@ -183,6 +184,14 @@
   .gcanvas :global(.svelte-flow__edge-path) {
     stroke: var(--border-strong);
     stroke-width: 1.6;
+  }
+  /* The invisible wide hit-path BaseEdge renders (`interactionWidth`) has no stroke paint by
+     default — and the edge wrapper hit-tests with `pointer-events: visibleStroke`, which never
+     hits an unpainted stroke. Paint it transparent so the generous hit area actually works
+     (the "some wires are unselectable" bug); the visual stroke above is untouched. */
+  .gcanvas :global(.svelte-flow__edge-interaction) {
+    stroke: transparent;
+    stroke-opacity: 0;
   }
   .gcanvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
