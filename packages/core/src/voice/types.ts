@@ -231,7 +231,7 @@ export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'cha
  * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
  * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'envelope' | 'lfo'; // S36 'lfo'
+export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'envelope' | 'lfo' | 'cc'; // S36 'lfo' + S37 'cc'
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -279,6 +279,12 @@ export interface GraphNode {
   // lfo source (doc 10, S36) — only meaningful when kind === 'lfo'. Optional + additive; unset
   // falls back to defaults in `nodeModSource` so a freshly-wired LFO still animates.
   lfo?: LfoSettings; // S36
+  // cc source (S37) — meaningful only on a `cc` modulation-source node
+  /** MIDI controller number this CC node reads (0..127). Controller 0 is reserved for
+      section recall and rejected in the editor. Absent → 1 (nodeModSource falls back). */
+  ccController?: number; // S37
+  /** MIDI channel filter (1..16), or `null` for omni (any channel). Absent → omni. */
+  ccChannel?: number | null; // S37
   // random
   noRepeat: boolean;
   // switch

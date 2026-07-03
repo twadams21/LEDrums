@@ -20,6 +20,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Spline from '@lucide/svelte/icons/spline';
   import Waves from '@lucide/svelte/icons/waves'; // S36
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
@@ -28,6 +29,7 @@
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
+  import CcNodeInspector from './inspectors/CcNodeInspector.svelte'; // S37
   import BusInspector from './inspectors/BusInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
@@ -96,6 +98,14 @@
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
     <LfoNodeInspector {store} {node} />
+  {:else if node && node.kind === 'cc'}
+    <!-- S37 — modulation SOURCE node: no kind selector (not a conversion target) — its CC settings -->
+    <header class="nodehead">
+      <Eyebrow icon={SlidersHorizontal}>CC source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <CcNodeInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">

@@ -27,10 +27,45 @@ import type { Envelope, ParamSpec, ParamValues } from './types';
  */
 export type ModSource =
   | { kind: 'envelope'; env: Envelope }
-  | { kind: 'lfo'; lfo: LfoSettings }; // S36
+  | { kind: 'lfo'; lfo: LfoSettings } // S36
+  | { kind: 'cc'; controller: number; channel: number | null }; // S37
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
 export type ModSourceKind = ModSource['kind'];
+
+// ---- CC value table (S37) ---------------------------------------------------
+//
+// The engine holds a live table of the latest MIDI CC values (updated deterministically
+// from the queued CC input events); a `cc` {@link ModSource} reads it per frame. Read-only
+// at sample time — the engine owns the mutable map, the sweep only looks values up — so
+// determinism is preserved: same event log ⇒ same table ⇒ same frames.
+
+/** Latest MIDI CC values, keyed by controller+channel → 0..1. See {@link ccKey}. */
+export type CcTable = ReadonlyMap<string, number>;
+
+/**
+ * Table key for a CC value. `channel === null` is the OMNI slot — the engine writes every
+ * incoming CC to both its specific-channel key AND the omni key, so an omni mapping (channel
+ * filter off) always reads the latest value regardless of the sending channel.
+ */
+export function ccKey(controller: number, channel: number | null): string {
+  return channel === null ? `c${controller}` : `c${controller}@${channel}`;
+}
+
+/** Normalize a raw 0..127 MIDI CC value to 0..1 (clamped). The engine calls this when it
+    writes an incoming CC event into the table, so the table always holds 0..1. */
+export function ccValue01(raw: number): number {
+  const v = raw / 127;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** A `cc` source's current 0..1 value from `table`. Absent — no table yet, or that
+    controller/channel not heard — reads as `0`, so an unheard CC maps to the mapping's
+    `rangeMin` (a defined, deterministic neutral) rather than throwing. */
+export function sampleCc(table: CcTable | undefined, controller: number, channel: number | null): number {
+  if (!table) return 0;
+  return table.get(ccKey(controller, channel)) ?? 0;
+}
 
 /**
  * One resolved modulation mapping onto a single param. `targetParam` is a bare param key
@@ -62,6 +97,10 @@ export interface ModSampleCtx {
   phase: number;
   timeMs: number;
   bpm: number;
+  /** Live CC value table (S37) — a `cc` source reads its controller/channel here. Optional:
+      absent when no CC has been received (⇒ `sampleCc` neutral), so envelope-only sweeps and
+      tests need not supply it. */
+  cc?: CcTable; // S37
 }
 
 const num = (v: number | boolean | string | undefined, d: number): number =>
@@ -94,6 +133,8 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
       return sampleEnvelope(src.env, ctx.phase);
     case 'lfo': // S36 — continuous: absolute time + bpm, never the voice phase
       return sampleLfo(src.lfo, ctx.timeMs, ctx.bpm);
+    case 'cc': // S37
+      return sampleCc(ctx.cc, src.controller, src.channel);
   }
 }
 

@@ -195,6 +195,7 @@ function evalNode(
     case 'modifier':
     case 'envelope':
     case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
+    case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
       // Inert in trigger-flow eval: neither a modifier node nor a modulation-source node fires
       // children. A modifier reaches a voice via a play node's resolved `mod` chain; an envelope
       // via a target's resolved `param:<key>` modulations — never through the fire flow here.
