@@ -69,15 +69,20 @@
   const RAIL = { key: 'authorRailW', def: 220, min: 168, max: 380 };
   const DOCK = { key: 'authorDockW', def: 360, min: 300, max: 560 };
   const BOTTOM = { key: 'authorBottomH', def: 148, min: 96, max: 360 };
+  // The visualiser's height inside the right dock — the boundary the new
+  // visualiser↔inspector rail drives. The Inspector/Monitor block below it takes
+  // the remaining space (minmax(0,1fr)).
+  const VIZ = { key: 'authorVizH', def: 300, min: 180, max: 620 };
   const railW = $derived(store.paneSizes[RAIL.key] ?? RAIL.def);
   const dockW = $derived(store.paneSizes[DOCK.key] ?? DOCK.def);
   const bottomH = $derived(store.paneSizes[BOTTOM.key] ?? BOTTOM.def);
+  const vizH = $derived(store.paneSizes[VIZ.key] ?? VIZ.def);
   const setPane = (key: string, v: number): void => {
     store.paneSizes = { ...store.paneSizes, [key]: v };
   };
 </script>
 
-<div class="author" class:solo={perform} style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px;">
+<div class="author" class:solo={perform} style="--rail-w:{railW}px; --dock-w:{dockW}px; --bottom-h:{bottomH}px; --viz-h:{vizH}px;">
   <div class="top"><TopBar {store} /></div>
 
   <!-- Transport rides its own slim bar directly under the TopBar: a global
@@ -168,6 +173,18 @@
         style="left:calc(var(--pad) + var(--rail-w) + var(--gap)); right:calc(var(--pad) + var(--dock-w) + var(--gap)); bottom:calc(var(--pad) + var(--bottom-h) + var(--gap) / 2); transform:translateY(50%);"
       />
     {/if}
+    <!-- NEW: the visualiser↔inspector boundary inside the right dock. Not inverted —
+         the visualiser is anchored to the top, so dragging down grows its height.
+         Spans the dock column; sits on the divide `--viz-h` below the content top. -->
+    <Splitter
+      orientation="horizontal"
+      size={vizH}
+      min={VIZ.min}
+      max={VIZ.max}
+      onResize={(v) => setPane(VIZ.key, v)}
+      label="Resize visualiser"
+      style="left:calc(100% - var(--pad) - var(--dock-w)); right:var(--pad); top:calc(var(--content-top) + var(--viz-h) + var(--gap) / 2); transform:translateY(-50%);"
+    />
   {/if}
 
   <!-- Transient notifications (paste errors, confirmations) — one host for the whole shell. -->
@@ -184,7 +201,9 @@
     /* layout constants — single source for the grid tracks AND the splitter
        placement math below, so the resize handles stay on the divides. */
     --pad: var(--space-3);
-    --gap: var(--space-3);
+    /* inter-module gutter — one knob (tokens.css › --shell-gap) drives the grid
+       gap AND the nested center/dock gaps below, so the shell tightens uniformly. */
+    --gap: var(--shell-gap);
     --topbar: 58px;
     --transport: 46px;
     /* content (rail/center/dock) starts below TWO chrome rows now — TopBar + the
@@ -242,7 +261,7 @@
     grid-area: center;
     display: grid;
     grid-template-rows: minmax(0, 1fr) var(--bottom-h, 148px);
-    gap: var(--space-3);
+    gap: var(--gap);
     min-height: 0;
     min-width: 0;
   }
@@ -271,8 +290,10 @@
   .dock {
     grid-area: dock;
     display: grid;
-    grid-template-rows: minmax(180px, 1fr) minmax(0, 1.2fr);
-    gap: var(--space-3);
+    /* viz height is user-resizable (the visualiser↔inspector rail); the lower
+       Inspector/Monitor block takes what's left. */
+    grid-template-rows: var(--viz-h, 300px) minmax(0, 1fr);
+    gap: var(--gap);
     min-height: 0;
   }
   .viz {
