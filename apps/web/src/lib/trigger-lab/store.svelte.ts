@@ -2403,6 +2403,36 @@ export class TriggerLab {
     return g.edges.filter((e) => e.to === node.id && e.toPort === `param:${param}`);
   }
 
+  /** The resolved modulation SOURCES wired into an exposed param row, each with its edge's
+      `invert` — drives the S38 node-face live tick (`paramRowSignal`). Dangling / non-source
+      wires are skipped (never thrown), mirroring `resolveNodeModulations`. */
+  modSourcesFor(node: GraphNode, param: string): { source: voice.ModSource; invert: boolean }[] {
+    const g = this.selectedGraph;
+    if (!g) return [];
+    const out: { source: voice.ModSource; invert: boolean }[] = [];
+    for (const e of g.edges) {
+      if (e.to !== node.id || e.toPort !== `param:${param}`) continue;
+      const src = g.nodes.find((n) => n.id === e.from);
+      if (!src) continue;
+      const source = voice.nodeModSource(src);
+      if (!source) continue;
+      out.push({ source, invert: e.invert === true });
+    }
+    return out;
+  }
+
+  /** A `cc` source node's current live 0..1 level, read from the sim's CC table (the offline
+      mirror of the engine table). Drives the CC node-face value bar + readout (S38). */
+  ccNodeLiveValue(node: GraphNode): number {
+    if (node.kind !== 'cc') return 0;
+    return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
+  }
+
+  /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
+  get liveCcTable(): voice.CcTable {
+    return this.sim.ccTable;
+  }
+
   private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const edge = this.selectedGraph?.edges.find((e) => e.id === edgeId);
