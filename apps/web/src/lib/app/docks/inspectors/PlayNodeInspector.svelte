@@ -15,6 +15,7 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import Spline from '@lucide/svelte/icons/spline';
 
@@ -168,6 +169,8 @@
       </div>
     {/each}
   </div>
+
+  <ModulationParamsSection {store} {node} />
 
   <p class="foot">
     {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.

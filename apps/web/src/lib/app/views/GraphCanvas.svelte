@@ -186,6 +186,12 @@
     stroke: var(--role-mod);
     stroke-dasharray: 5 4;
   }
+  /* modulation wires (source→param) get the third wire role colour + a finer dotted stroke, so
+     they read distinctly from both trigger-flow and modifier-chain wires at a glance */
+  .gcanvas :global(.svelte-flow__edge.edge-modulation .svelte-flow__edge-path) {
+    stroke: var(--role-modulation);
+    stroke-dasharray: 2 3;
+  }
   /* a wire one level connected to the hovered node lights up (see graph-hover) */
   .gcanvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
     stroke: var(--accent);

@@ -9,13 +9,14 @@
    its wires do not light up. Only hover lights wires. */
 
 /** Minimal shape this helper needs from an xyflow edge. `data.mod` marks a modifier-chain
-    wire (styled distinctly from trigger-flow wires); it is intrinsic to the edge and must
-    survive the transient hover-highlight decoration. */
+    wire and `data.modulation` a modulation (source→param) wire — each styled distinctly from
+    trigger-flow wires; both are intrinsic to the edge and must survive the transient
+    hover-highlight decoration. */
 interface FlowEdgeLike {
   source: string;
   target: string;
   class?: unknown;
-  data?: { mod?: boolean };
+  data?: { mod?: boolean; modulation?: boolean };
 }
 
 export class GraphHover {
@@ -34,7 +35,13 @@ export class GraphHover {
       hover accent (`edge-hot`, later in the CSS cascade) still wins its stroke on a mod wire. */
   decorate<E extends FlowEdgeLike>(edges: E[]): E[] {
     return edges.map((e) => {
-      const cls = [e.data?.mod ? 'edge-mod' : null, this.isHot(e) ? 'edge-hot' : null].filter(Boolean).join(' ');
+      const cls = [
+        e.data?.mod ? 'edge-mod' : null,
+        e.data?.modulation ? 'edge-modulation' : null,
+        this.isHot(e) ? 'edge-hot' : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
       return { ...e, class: cls || undefined };
     });
   }

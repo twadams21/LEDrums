@@ -22,6 +22,7 @@ import type {
 import type { Mapping } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain } from './modifier-graph';
+import { resolveNodeModulations } from './modulation-graph';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -173,6 +174,10 @@ function evalNode(
       // Resolve this play node's `mod` input into a flat modifier chain (S29). Empty →
       // undefined so the spawned voice keeps the zero-alloc, unmodified hot path.
       const mods = resolveModifierChain(graph, node);
+      // Resolve incoming `param:<key>` modulation edges into mappings (S34). Effect specs
+      // aren't available here, so ranges come from the edge (the store bakes spec min/max at
+      // wire time); the render sweep filters non-number params against the live voice specs.
+      const modulations = resolveNodeModulations(graph, node);
       return [
         {
           kind: 'play',
@@ -184,14 +189,17 @@ function evalNode(
           params: resolveNodeParams(state, node),
           env: node.env,
           modifiers: mods.length ? mods : undefined,
+          modulations: modulations.length ? modulations : undefined,
           via: label(modeWord(node.mode)),
           latchKey: null,
         },
       ];
     }
     case 'modifier':
-      // A modifier node is inert in trigger-flow eval: it never fires children. Its effect
-      // is applied via a play node's resolved `mod` chain (resolveModifierChain), not here.
+    case 'envelope':
+      // Inert in trigger-flow eval: neither a modifier node nor a modulation-source node fires
+      // children. A modifier reaches a voice via a play node's resolved `mod` chain; an envelope
+      // via a target's resolved `param:<key>` modulations — never through the fire flow here.
       return [];
     case 'all':
       return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, label('All'), seen2));

@@ -18,12 +18,14 @@
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Spline from '@lucide/svelte/icons/spline';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
+  import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import BusInspector from './inspectors/BusInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
@@ -76,6 +78,14 @@
 <fieldset class="inspector" disabled={!store.canEdit}>
   {#if node && node.kind === 'trigger'}
     <TriggerSourceInspector {store} {node} />
+  {:else if node && node.kind === 'envelope'}
+    <!-- modulation SOURCE node: no kind selector (not a conversion target) — its shape editor -->
+    <header class="nodehead">
+      <Eyebrow icon={Spline}>Envelope source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <EnvelopeNodeInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">
@@ -210,6 +220,10 @@
     display: inline-flex;
     flex: 1;
     min-width: 0;
+  }
+  /* source-node header (no kind selector): eyebrow, spacer, remove */
+  .nodehead .grow {
+    flex: 1;
   }
   .kindsel :global(.sel-trigger) {
     font-weight: 700;

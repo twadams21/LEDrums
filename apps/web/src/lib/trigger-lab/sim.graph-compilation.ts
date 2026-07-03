@@ -15,7 +15,7 @@
    still live in `./sim`.
    ============================================================================= */
 
-import type { voice } from '@ledrums/core';
+import { voice } from '@ledrums/core';
 import { cloneEnvelope, type EnvMap } from './sim.envelopes';
 import type { Block, BlockKind } from './sim';
 
@@ -47,22 +47,29 @@ export type GraphNode = voice.GraphNode;
 export type GraphEdge = voice.GraphEdge;
 export type TriggerGraph = voice.TriggerGraph;
 
-/** Node kinds a user can add from the palette (the trigger input is implicit). `delay` +
-    `modifier` are `NodeKind`s but not block types in the Block union, so the element type is
-    widened to `Exclude<NodeKind, 'trigger'>`. */
-export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier'];
+/** Node kinds a user can add from the palette (the trigger input is implicit). `delay`,
+    `modifier` + `envelope` are `NodeKind`s but not block types in the Block union, so the
+    element type is widened to `Exclude<NodeKind, 'trigger'>`. `envelope` is a modulation
+    source (doc 10) — palette-grouped separately, but addable like the rest. */
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'envelope'];
 
-/** Whether a kind emits a trigger-flow / mod OUTPUT handle. 'play' is a sink (no children);
-    'trigger' is a source. A 'modifier' emits its `mod` output (wired into a play/modifier
-    `mod` input), so it counts as having an output. */
+/** Whether a kind emits a trigger-flow / mod / modulation OUTPUT handle. 'play' is a sink (no
+    children); 'trigger' is a source. A 'modifier' emits its `mod` output; a modulation source
+    ('envelope', doc 10) emits its modulation output — both wire from the right, so both count. */
 export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'play';
 /** Whether a kind takes a trigger-FLOW input (the default `in` handle). 'trigger' is the
-    root; 'modifier' takes NO flow input — its only input is the `mod` handle (see
-    {@link nodeHasModInput}), so it is excluded here. */
-export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && kind !== 'modifier';
+    root; 'modifier' + modulation sources ('envelope') take NO flow input — their inputs are
+    the `mod` handle / none, so they are excluded here. */
+export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && kind !== 'modifier' && !voice.isModSourceKind(kind);
 /** Whether a kind exposes a `mod` INPUT handle (a modifier chain lands here). Play nodes
     take modifiers; modifier nodes take upstream modifiers (mod→mod chains). */
 export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'play' || kind === 'modifier';
+/** Whether a kind carries exposable modulation-target params (play + modifier nodes). A
+    `param:<key>` modulation wire may land only on these. */
+export const nodeHasParams = (kind: NodeKind): boolean => kind === 'play' || kind === 'modifier';
+/** Whether a kind is a modulation SOURCE (wires from its output into a `param:<key>` input).
+    Re-exported from core so the wiring layer and the resolver share one list. */
+export const nodeIsModSource = (kind: NodeKind): boolean => voice.isModSourceKind(kind);
 
 function cloneEnvMap(env: EnvMap): EnvMap {
   const out: EnvMap = {};

@@ -40,6 +40,7 @@
     toggle: 'on · off',
     delay: '1/8 dotted',
     modifier: 'Trail',
+    envelope: 'modulation source',
   };
   const faceKinds = Object.keys(faceSubs) as NodeKind[];
 

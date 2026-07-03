@@ -17,6 +17,7 @@ import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
 import Blend from '@lucide/svelte/icons/blend';
+import Spline from '@lucide/svelte/icons/spline';
 import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
@@ -32,6 +33,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   toggle: Power,
   delay: Timer,
   modifier: Blend,
+  envelope: Spline,
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -53,6 +55,7 @@ export const tint: Record<NodeKind, string> = {
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
   modifier: 'var(--role-mod)',
+  envelope: 'var(--role-modulation)',
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -67,6 +70,7 @@ export const kindLabel: Record<NodeKind, string> = {
   toggle: 'Toggle',
   delay: 'Delay',
   modifier: 'Modifier',
+  envelope: 'Envelope',
 };
 
 /** Human name for a modifier id (the registry's display name), falling back to the id. */
@@ -95,6 +99,8 @@ export function kindSummary(node: GraphNode): string {
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
     case 'modifier':
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
+    case 'envelope':
+      return 'modulation source';
     default:
       return '';
   }

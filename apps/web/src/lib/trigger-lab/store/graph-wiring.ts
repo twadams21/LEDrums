@@ -3,18 +3,24 @@
    `reconnect` consult these, then push / repoint the edge on the live `$state` graph.
    Extracted from store.svelte.ts unchanged in behaviour. */
 
-import { type NodeKind, type TriggerGraph, nodeHasInput, nodeHasModInput, nodeHasOutput } from '../sim';
+import { type NodeKind, type TriggerGraph, nodeHasInput, nodeHasModInput, nodeHasOutput, nodeHasParams, nodeIsModSource } from '../sim';
+import { voice } from '@ledrums/core';
 
 /** A wire's target port. `'mod'` = a modifier-chain wire into a play/modifier node's `mod`
-    input; `undefined`/`'in'` = the trigger-flow input. */
-export type ToPort = 'in' | 'mod' | undefined;
+    input; `` `param:<key>` `` (doc 10) = a modulation wire into a target's exposed param row;
+    `undefined`/`'in'` = the trigger-flow input. */
+export type ToPort = 'in' | 'mod' | `param:${string}` | undefined;
 
-/** Whether a wire `from →(toPort) to` is directionally legal given the two node kinds. A
-    `mod` wire may leave ONLY a modifier node and land ONLY on a `mod`-input node; a flow
-    wire follows the normal in/out rule and a modifier's output is NOT a flow source. */
+/** Whether a wire `from →(toPort) to` is directionally legal given the two node kinds.
+     - a `param:<key>` (modulation) wire leaves ONLY a modulation source and lands ONLY on a
+       params-bearing (play/modifier) node's exposed row;
+     - a `mod` wire leaves ONLY a modifier node and lands ONLY on a `mod`-input node;
+     - a flow wire follows the normal in/out rule, and neither a modifier NOR a modulation
+       source is a flow source. */
 function directionOk(fromKind: NodeKind, toKind: NodeKind, toPort: ToPort): boolean {
+  if (voice.paramKeyOf(toPort) !== null) return nodeIsModSource(fromKind) && nodeHasParams(toKind);
   if (toPort === 'mod') return fromKind === 'modifier' && nodeHasModInput(toKind);
-  return nodeHasOutput(fromKind) && nodeHasInput(toKind) && fromKind !== 'modifier';
+  return nodeHasOutput(fromKind) && nodeHasInput(toKind) && fromKind !== 'modifier' && !nodeIsModSource(fromKind);
 }
 
 /** Equal (source-port, target-port) identity for duplicate-wire detection. */

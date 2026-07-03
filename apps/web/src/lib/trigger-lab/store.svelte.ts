@@ -13,10 +13,12 @@ import {
   Sim,
   defaultParams,
   defaultEnvelope,
+  defaultAdsr,
   adsrToPoints,
   type AdsrShape,
   type Bus,
   type EffectDef,
+  type GraphEdge,
   type Envelope,
   type EnvKind,
   type EnvPoint,
@@ -47,7 +49,8 @@ import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } fr
 import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
+import type { InputMap, OutputConfig, Project } from '@ledrums/core';
+import { voice, listModifiers } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
@@ -1791,6 +1794,13 @@ export class TriggerLab {
       node = makeNode('play', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
       node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
+    } else if (kind === 'envelope') {
+      // Seed a modulation-source envelope with a default shape in the well-known slot so it
+      // animates the moment it is wired (the inspector edits this shape via the S24 editor).
+      const adsr = defaultAdsr();
+      node = makeNode('envelope', nid('n'), x, y, {
+        env: { [voice.ENVELOPE_NODE_KEY]: { kind: 'custom', amount: 1, points: adsrToPoints(adsr), adsr } },
+      });
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
@@ -1839,7 +1849,19 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
-    g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort, toPort });
+    const edge: GraphEdge = { id: nid('e'), from: fromId, to: toId, fromPort, toPort };
+    // A modulation wire (`param:<key>`) IS one mapping — bake its default settings from the
+    // target param spec (amount 1, no invert, range = spec min/max) so it is editable + persists.
+    const key = voice.paramKeyOf(toPort);
+    if (key !== null) {
+      const to = g.nodes.find((n) => n.id === toId);
+      const spec = to ? this.modTargetSpecs(to).find((s) => s.key === key) : undefined;
+      edge.amount = 1;
+      edge.invert = false;
+      edge.rangeMin = spec?.min ?? 0;
+      edge.rangeMax = spec?.max ?? 1;
+    }
+    g.edges.push(edge);
   }
   disconnect(edgeId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -2283,6 +2305,109 @@ export class TriggerLab {
     if (!e) {
       e = { kind: 'custom', amount: 1, points: [] };
       node.env[key] = e;
+    }
+    e.adsr = { ...adsr };
+    e.points = adsrToPoints(adsr);
+    e.kind = 'custom';
+  }
+
+  // --- modulation graph layer (doc 10, S34) --------------------------------
+
+  /** The numeric params a target node can expose as modulation targets, normalized to
+      `{ key, label, min, max }` — effect params for play nodes, modifier params for modifier
+      nodes (which use the core `type` spec field). Non-number params are excluded. */
+  modTargetSpecs(node: GraphNode): { key: string; label: string; min?: number; max?: number }[] {
+    if (node.kind === 'play') {
+      const eff = this.effectOf(node);
+      return (eff?.params ?? [])
+        .filter((s) => s.kind === 'number')
+        .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
+    }
+    if (node.kind === 'modifier') {
+      const def = listModifiers().find((m) => m.id === node.modifierId);
+      return (def?.paramSpec ?? [])
+        .filter((s) => s.type === 'number')
+        .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
+    }
+    return [];
+  }
+
+  /** The ordered exposed modulation-target rows on a node. */
+  modInputsOf(node: GraphNode): { param: string }[] {
+    return node.modInputs ?? [];
+  }
+
+  /** Numeric params not yet exposed — the "Add parameter" picker options. */
+  availableModParams(node: GraphNode): { key: string; label: string }[] {
+    const exposed = new Set((node.modInputs ?? []).map((m) => m.param));
+    return this.modTargetSpecs(node)
+      .filter((s) => !exposed.has(s.key))
+      .map((s) => ({ key: s.key, label: s.label }));
+  }
+
+  /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
+  addModInput(node: GraphNode, param: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'play' && node.kind !== 'modifier') return;
+    if (!node.modInputs) node.modInputs = [];
+    if (node.modInputs.some((m) => m.param === param)) return;
+    node.modInputs.push({ param });
+  }
+
+  /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */
+  removeModInput(node: GraphNode, param: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    node.modInputs = (node.modInputs ?? []).filter((m) => m.param !== param);
+    const g = this.selectedGraph;
+    if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort === `param:${param}`));
+  }
+
+  /** The incoming mapping edges for a node's exposed param — one per wire, each editable. */
+  mappingsFor(node: GraphNode, param: string): GraphEdge[] {
+    const g = this.selectedGraph;
+    if (!g) return [];
+    return g.edges.filter((e) => e.to === node.id && e.toPort === `param:${param}`);
+  }
+
+  private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    const edge = this.selectedGraph?.edges.find((e) => e.id === edgeId);
+    if (edge) mut(edge);
+  }
+  /** Per-mapping depth 0..1 (edited target-side, under the param row). */
+  setMappingAmount(edgeId: string, amount: number): void {
+    this.editEdge(edgeId, (e) => (e.amount = amount));
+  }
+  /** Per-mapping invert (flips the source before scaling into the range). */
+  setMappingInvert(edgeId: string, invert: boolean): void {
+    this.editEdge(edgeId, (e) => (e.invert = invert));
+  }
+  /** Per-mapping output range the source maps into (clamped to the param spec at render). */
+  setMappingRange(edgeId: string, min: number, max: number): void {
+    this.editEdge(edgeId, (e) => {
+      e.rangeMin = min;
+      e.rangeMax = max;
+    });
+  }
+
+  // --- envelope SOURCE node shape (the S24 editor drives this via the node inspector) -------
+
+  /** The envelope source node's ADSR shape (stored in the well-known slot). */
+  envelopeNodeAdsr(node: GraphNode): AdsrShape {
+    return (node.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY]?.adsr : undefined) ?? defaultAdsr();
+  }
+  /** The envelope source node's full envelope (shape + render points), or null. */
+  envelopeNodeEnvelope(node: GraphNode): Envelope | null {
+    return node.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY] ?? null : null;
+  }
+  /** Set the envelope source node's shape (regenerates its render curve; single source). */
+  setEnvelopeNodeAdsr(node: GraphNode, adsr: AdsrShape): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'envelope') return;
+    let e = node.env[voice.ENVELOPE_NODE_KEY];
+    if (!e) {
+      e = { kind: 'custom', amount: 1, points: [] };
+      node.env[voice.ENVELOPE_NODE_KEY] = e;
     }
     e.adsr = { ...adsr };
     e.points = adsrToPoints(adsr);

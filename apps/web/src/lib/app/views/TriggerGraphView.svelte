@@ -12,6 +12,8 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
+  import type { ToPort } from '../../trigger-lab/store/graph-wiring';
+  import { voice } from '@ledrums/core';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
@@ -78,12 +80,22 @@
   // One palette item per node kind (icon / tint / label from the shared node metadata).
   // The generic `modifier` kind is served by the dedicated ModifierPalette below (which lists
   // every registered modifier by category), so it's dropped from the flat kind palette.
-  const PALETTE_ITEMS = NODE_KINDS.filter((kind) => kind !== 'modifier').map((kind) => ({
+  // Flow-node kinds only. `modifier` is served by ModifierPalette (by category); `envelope` +
+  // the other modulation sources are grouped into their own palette below.
+  const PALETTE_ITEMS = NODE_KINDS.filter((kind) => kind !== 'modifier' && !voice.isModSourceKind(kind)).map((kind) => ({
     key: kind,
     label: kindLabel[kind],
     icon: kindIcon[kind],
     tint: tint[kind],
     title: `Add ${kindLabel[kind]} node`,
+  }));
+  // Modulation sources (doc 10) — their own palette group (Envelope now; LFO/CC in S36/S37).
+  const MODULATION_ITEMS = NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
+    key: kind,
+    label: kindLabel[kind],
+    icon: kindIcon[kind],
+    tint: tint[kind],
+    title: `Add ${kindLabel[kind]} modulation source`,
   }));
   /** Add a node through the store (source of truth) at the palette-supplied flow centre. */
   function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
@@ -236,9 +248,11 @@
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
     if (sn) store.moveNode(sn, fn.position.x, fn.position.y);
   }
-  /** The target handle id ('mod' or the default flow input) as a store `toPort`. */
-  function toPortOf(handle: string | null | undefined): 'mod' | undefined {
-    return handle === 'mod' ? 'mod' : undefined;
+  /** The target handle id (`mod`, a `param:<key>` modulation row, or the default flow input)
+      as a store `toPort`. A dropped param handle must pass through so its mapping edge lands. */
+  function toPortOf(handle: string | null | undefined): ToPort {
+    if (handle === 'mod') return 'mod';
+    return handle && voice.paramKeyOf(handle as ToPort) !== null ? (handle as `param:${string}`) : undefined;
   }
   function onConnect(c: Connection): void {
     // store validates (dup / cycle / direction / port scoping)
@@ -272,6 +286,16 @@
   function kindOf(id: string): string | undefined {
     return store.selectedGraph?.nodes.find((n) => n.id === id)?.kind;
   }
+  /** The `param:<key>` port a modulation-source drop on `toId` should land on: the target's
+      first exposed row, else auto-expose its first numeric param (a sensible default so a drop
+      onto a bare node still lands). Undefined when the target has no modulatable params. */
+  function paramPortFor(toId: string): ToPort {
+    const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
+    if (!to) return undefined;
+    let key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
+    if (key && !store.modInputsOf(to).some((r) => r.param === key)) store.addModInput(to, key);
+    return key ? (`param:${key}` as const) : undefined;
+  }
   function dropConnect(
     fromId: string,
     fromType: 'source' | 'target' | null,
@@ -281,7 +305,14 @@
     if (fromId === toId) return;
     if (fromType === 'target') {
       // drag began at an INPUT handle → the dropped-on node becomes the source; route by ITS kind.
-      store.connect(toId, fromId, undefined, kindOf(toId) === 'modifier' ? 'mod' : undefined);
+      // If the drag left a `param:<key>` row, keep that port (the dropped node must be a source).
+      const paramPort = toPortOf(fromPort);
+      const toPort = paramPort && voice.paramKeyOf(paramPort) !== null ? paramPort : kindOf(toId) === 'modifier' ? 'mod' : undefined;
+      store.connect(toId, fromId, undefined, toPort);
+    } else if (kindOf(fromId) && voice.isModSourceKind(kindOf(fromId)!)) {
+      // Drop-anywhere from a modulation source routes to a param row (memory `graph-interaction-prefs`).
+      const port = paramPortFor(toId);
+      if (port) store.connect(fromId, toId, fromPort ?? undefined, port);
     } else {
       store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
     }
@@ -325,6 +356,7 @@
       <div class="palette-stack">
         <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
         <ModifierPalette add={addModifierNodeAt} disabled={!store.canEdit} />
+        <GraphPalette items={MODULATION_ITEMS} add={addNodeAt} ariaLabel="Add modulation source" disabled={!store.canEdit} />
       </div>
     {/snippet}
     {#snippet empty()}
