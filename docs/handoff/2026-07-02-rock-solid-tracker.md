@@ -40,7 +40,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 |---|---|---|---|---|
 | 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | lane-1-b0cea3 (killed, done) | **✅ DONE** |
 | 2 — Effects & graph | F → G → H → I | S18–S38 (21) | lane-2-988e46 (killed, done) | **✅ DONE** |
-| 3 — Data & portability | J → K | S39–S45 (7) | lane-3-c9f2bf | **ACTIVE** |
+| 3 — Data & portability | J → K | S39–S45 (7) | lane-3-c9f2bf (killed, done) | **✅ DONE** |
 | 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | — | pending |
 
 ## Feature groups
@@ -55,7 +55,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
 | I — Modulation system | 2 | #57 | group/I | **MERGED** | d591baf | docs/handoff/rock-solid/group-I.md |
 | J — Presets & Song Library | 3 | #53 | group/J | **MERGED** | 94c8158 | docs/handoff/rock-solid/group-J.md |
-| K — Clipboard portability | 3 | #55 | group/K | in-progress (S43/S45 merged; S44 in flight, last) | — | — |
+| K — Clipboard portability | 3 | #55 | group/K | **MERGED** | b57745c | docs/handoff/rock-solid/group-K.md |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
 | D — Layout & kit geometry | 4 | #49 | group/D | pending | — | — |
 | L — PixLite integration | 4 | #56 | group/L | pending | — | — |
@@ -63,6 +63,15 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T07:3x — ✅ LANE 3 COMPLETE (39/49); Lane 4 deferred to reset
+
+- **group/K MERGED** (#55, S43–S45) → rock-solid **b57745c** (`--no-ff`, NO conflicts). Review PASS (S43+S44 each bounced once, fixed; S44 id-reservation fix applied at 3 sites incl. the S41 adopt seam; S45 clean).
+- **Master sweep GREEN:** typecheck 0 (web 2327); **1752 tests / 0 skips** (io 13 · core 533 · protocol 1 · server 190 · web 1015).
+- **✅ LANE 3 DONE (J+K, 7 slices). Killed lane-3-c9f2bf** (resumable). **Progress: 39/49.** Groups merged: A,B,E,F,G,H,I,J,K. Only **Lane 4 (C→D→L, 10 slices)** remains.
+- **Review-catch scorecard (policy validation):** Lane 3's stricter review caught 5 real defects across S40/S41/S42/S43/S44 — all fixed+tested pre-merge, zero rework post-merge.
+- **⛔ Usage 5h 81% — Lane 4 launch DEFERRED to 09:00 UTC reset.** Master reset wake bgbeq1z0n (~09:07 UTC) fires Lane 4 (C→D→L) with full policy + disk-watch + live-smoke-load guardrails. NO other master action until then.
+- **Next at reset:** fire Lane 4 orch. Lane 4 = the finish line → then pre-final-gate cross-lane seam review → FINAL GATE with Trent (rock-solid→main + live spot-check via AskUserQuestion).
 
 ### 2026-07-03T07:29 — K 2/3; budget wall, Lane 4 waits for reset
 
