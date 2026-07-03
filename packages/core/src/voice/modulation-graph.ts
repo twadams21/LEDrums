@@ -26,7 +26,7 @@ export const ENVELOPE_NODE_KEY = 'shape';
 /** The `NodeKind`s that are modulation SOURCES (wire from their output into a `param:<key>`
     input). Widens with S36 (`'lfo'`) / S37 (`'cc'`). Kept here so the web wiring layer and the
     resolver agree on one list. */
-export const MOD_SOURCE_KINDS = ['envelope'] as const;
+export const MOD_SOURCE_KINDS = ['envelope', 'cc'] as const; // S37: append 'cc'
 
 /** Whether a node kind is a modulation source. */
 export function isModSourceKind(kind: string): boolean {
@@ -49,6 +49,8 @@ export function nodeModSource(node: GraphNode): ModSource | null {
   switch (node.kind) {
     case 'envelope':
       return { kind: 'envelope', env: node.env?.[ENVELOPE_NODE_KEY] ?? defaultEnvelope('decay') };
+    case 'cc': // S37: controller/channel drive an engine CC-table read at sample time
+      return { kind: 'cc', controller: node.ccController ?? 1, channel: node.ccChannel ?? null };
     default:
       return null;
   }

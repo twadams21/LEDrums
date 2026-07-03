@@ -31,7 +31,8 @@ export type VoicePartialInput =
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number }
-  | { kind: 'recallSection'; songId?: string; sectionId: string };
+  | { kind: 'recallSection'; songId?: string; sectionId: string }
+  | { kind: 'cc'; controller: number; value: number; channel?: number }; // S37
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -265,6 +266,16 @@ export class VoiceEngineHost {
           timeMs,
         };
       }
+      case 'cc':
+        // S37: raw MIDI CC → the engine's CC value table. Value stays raw 0..127 (the engine
+        // normalizes to 0..1); channel is forwarded for the per-node channel filter.
+        return {
+          kind: 'cc',
+          controller: partial.controller,
+          value: partial.value,
+          ...(partial.channel !== undefined ? { channel: partial.channel } : {}),
+          timeMs,
+        };
     }
   }
 

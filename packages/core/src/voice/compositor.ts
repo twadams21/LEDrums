@@ -24,7 +24,7 @@ import type { TransportState } from '../engine/render-context';
 import { applyModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
 import { sampleEnvelope } from './envelope';
-import { applyModulations, type ModSampleCtx } from './modulation';
+import { applyModulations, type CcTable, type ModSampleCtx } from './modulation';
 import { buildPixelAttrs, createPatternRenderer, type PixelAttrs } from './pattern-renderer';
 import { createGeneratorBridge } from './generator-bridge';
 import type { ParamSpec, ParamValues, Voice } from './types';
@@ -58,7 +58,7 @@ export function voicePhase(v: Voice, timeMs: number): number {
  * `bpm` is supplied by the engine (which owns transport); the compositor reads the
  * already-resolved `liveParams`, keeping its `render` signature narrow.
  */
-export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): ParamValues {
+export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable): ParamValues {
   const out = v.liveParams;
   // Refill the scratch from the spawn snapshot.
   for (const k of Object.keys(out)) delete out[k];
@@ -80,7 +80,7 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): Par
   // legacy env loop above stays until S35 migrates it into mappings + removes `v.env`.
   const mods = v.modulations;
   if (mods && mods.length) {
-    applyModulations(v.params, out, mods, v.specs, { phase, timeMs, bpm });
+    applyModulations(v.params, out, mods, v.specs, { phase, timeMs, bpm, cc }); // cc: S37
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
@@ -89,8 +89,8 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): Par
 /** Build the per-frame modulation-sample context for a voice — its life phase (envelope
     sources restart per hit) plus the absolute clock + tempo continuous sources (S36/S37)
     read. Shared by the play-param sweep and the modifier chain so both restart together. */
-function modCtxFor(v: Voice, timeMs: number, bpm: number): ModSampleCtx {
-  return { phase: voicePhase(v, timeMs), timeMs, bpm };
+function modCtxFor(v: Voice, timeMs: number, bpm: number, cc?: CcTable): ModSampleCtx {
+  return { phase: voicePhase(v, timeMs), timeMs, bpm, cc }; // cc: S37
 }
 
 function specFor(specs: ParamSpec[], key: string): ParamSpec | undefined {
@@ -107,6 +107,9 @@ export interface CompositorFrame {
   timeMs: number;
   dt: number;
   transport: TransportState;
+  /** Live CC value table (S37) — threaded to the per-voice modulation sweep so `cc` sources
+      read the engine's current controller values this frame. Absent → no CC contribution. */
+  cc?: CcTable; // S37
 }
 
 /** Voices → pixels. The inner seam. */
@@ -184,7 +187,7 @@ export function createDefaultCompositor(): Compositor {
 
         if (v.generatorId) {
           // Hosted legacy-generator voice — never falls through to the pattern path.
-          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm);
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc);
           generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
           continue;
         }
@@ -203,7 +206,7 @@ export function createDefaultCompositor(): Compositor {
           modRange.start = start;
           modRange.end = end;
           const age = timeMs - v.bornAtMs;
-          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm);
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc);
           applyModifierChain(mods, v.modState, patScratch, modRange, model, age > 0 ? age : 0, frame.dt, modCtx);
           const src = patScratch.rgba;
           for (let i = start; i < end; i++) {

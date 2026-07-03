@@ -51,7 +51,7 @@ export type TriggerGraph = voice.TriggerGraph;
     `modifier` + `envelope` are `NodeKind`s but not block types in the Block union, so the
     element type is widened to `Exclude<NodeKind, 'trigger'>`. `envelope` is a modulation
     source (doc 10) — palette-grouped separately, but addable like the rest. */
-export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'envelope'];
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'envelope', 'cc']; // S37: append 'cc'
 
 /** Whether a kind emits a trigger-flow / mod / modulation OUTPUT handle. 'play' is a sink (no
     children); 'trigger' is a source. A 'modifier' emits its `mod` output; a modulation source

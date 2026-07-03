@@ -478,6 +478,7 @@ export class Sim {
       }
       case 'modifier':
       case 'envelope':
+      case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
         // Inert in trigger-flow eval: neither a modifier nor a modulation-source node fires
         // children. A modifier reaches a voice via the play node's resolved `mod` chain; an
         // envelope via a target's resolved `param:<key>` modulations — not here.
