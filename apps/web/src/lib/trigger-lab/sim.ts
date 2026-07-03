@@ -22,7 +22,7 @@
    ============================================================================= */
 
 import { voice, type EffectCategory, type ResolvedModifier } from '@ledrums/core';
-import { cloneEnvelope, type EnvMap, type ParamSpec, type ParamValues } from './sim.envelopes';
+import { cloneEnvelope, type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
@@ -50,6 +50,11 @@ export {
   sampleEnvelope,
   migrateAdsr,
   ease,
+  applyModulations,
+  envelopeToMapping,
+  type Mapping,
+  type ModSource,
+  type ModSampleCtx,
 } from './sim.envelopes';
 export * from './sim.trigger-source';
 export * from './sim.graph-compilation';
@@ -218,6 +223,10 @@ export interface Voice {
   /** per-voice, per-modifier state (parallel to `modifiers`), built lazily by the chain
       runner and reset per voice — mirrors `genState`. */
   modState?: unknown[];
+  /** resolved modulation mappings onto this voice's effect params (doc 10) — mirrors the
+      core Voice field; applied by the offline renderer's param sweep. Populated from graph
+      topology at spawn (S34). */
+  modulations?: Mapping[];
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   env: EnvMap;
@@ -265,6 +274,9 @@ type PlayAction = {
   /** Resolved modifier chain for this play node's `mod` input (S29 populates from graph
       topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modifiers`. */
   modifiers?: ResolvedModifier[];
+  /** Resolved modulation mappings for this play node's exposed params (S34 populates from
+      graph topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modulations`. */
+  modulations?: Mapping[];
   via: string;
   latchKey: string | null;
 };
@@ -670,6 +682,7 @@ export class Sim {
       genState: null,
       modifiers: a.modifiers,
       modState: undefined,
+      modulations: a.modulations,
       params: { ...a.params },
       env: Object.fromEntries(Object.entries(a.env).map(([k, e]) => [k, cloneEnvelope(e)])),
       attackMs: effect.attackMs,
