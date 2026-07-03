@@ -1801,6 +1801,9 @@ export class TriggerLab {
       node = makeNode('envelope', nid('n'), x, y, {
         env: { [voice.ENVELOPE_NODE_KEY]: { kind: 'custom', amount: 1, points: adsrToPoints(adsr), adsr } },
       });
+    } else if (kind === 'lfo') {
+      // S36 — seed default LFO settings so it animates the moment it is wired.
+      node = makeNode('lfo', nid('n'), x, y, { lfo: voice.defaultLfoSettings() });
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
@@ -2412,5 +2415,18 @@ export class TriggerLab {
     e.adsr = { ...adsr };
     e.points = adsrToPoints(adsr);
     e.kind = 'custom';
+  }
+
+  // --- LFO SOURCE node settings (doc 10, S36) — edited via the LFO node inspector ----------
+
+  /** The LFO source node's settings (defaults when unset). */
+  lfoSettings(node: GraphNode): voice.LfoSettings {
+    return (node.kind === 'lfo' ? node.lfo : undefined) ?? voice.defaultLfoSettings();
+  }
+  /** Patch the LFO source node's settings (seeds defaults first so partial edits are safe). */
+  setLfo(node: GraphNode, patch: Partial<voice.LfoSettings>): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'lfo') return;
+    node.lfo = { ...(node.lfo ?? voice.defaultLfoSettings()), ...patch };
   }
 }

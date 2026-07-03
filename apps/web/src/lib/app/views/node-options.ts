@@ -102,6 +102,17 @@ export const DIVISION_OPTS: Array<{ value: string; label: string }> = voice.DELA
   (d) => ({ value: d, label: divisionLabel(d) }),
 );
 
+// --- LFO node options (doc 10, S36) ----------------------------------------------
+/** Waveform picker options — value = canonical `LfoWaveform`, label = human title. */
+export const LFO_WAVEFORM_OPTS: Array<{ value: string; label: string }> = voice.LFO_WAVEFORMS.map(
+  (w) => ({ value: w, label: w === 'sample-hold' ? 'S&H' : w.charAt(0).toUpperCase() + w.slice(1) }),
+);
+/** LFO rate mode: free frequency (Hz) vs bpm-synced division — reuses `DIVISION_OPTS`. */
+export const LFO_RATE_MODE_OPTS: Array<{ value: 'hz' | 'beats'; label: string }> = [
+  { value: 'hz', label: 'Hz' },
+  { value: 'beats', label: 'Division' },
+];
+
 // --- Value formatters ------------------------------------------------------------
 /** A 0–1 ratio as a whole-percent label (e.g. 0.5 → "50%"). */
 export const pct = (v: number): string => `${Math.round(v * 100)}%`;
