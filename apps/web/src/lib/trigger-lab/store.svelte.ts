@@ -226,7 +226,7 @@ export class TriggerLab {
   /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
       e.g. "Kick · center"), authored keys named at create/duplicate time. */
   graphNames = $state<Record<string, string>>({});
-  /** mutable presets — linked instances read these live. */
+  /** mutable preset library — snapshots you Apply onto / Save from play nodes (S39). */
   presets = $state<Preset[]>(structuredClone(PRESETS));
 
   bpm = $state(120);
@@ -673,8 +673,12 @@ export class TriggerLab {
       hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
       constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
   private normalizeGraphs(): void {
-    const { graphs, graphNames } = hydrateGraphs(this.graphs, this.graphNames, this.pads, (effectId) =>
-      this.effects.find((e) => e.id === effectId)?.params ?? [],
+    const { graphs, graphNames } = hydrateGraphs(
+      this.graphs,
+      this.graphNames,
+      this.pads,
+      (effectId) => this.effects.find((e) => e.id === effectId)?.params ?? [],
+      (presetId) => this.presetById(presetId)?.params,
     );
     this.graphs = graphs;
     this.graphNames = graphNames;
@@ -1803,10 +1807,11 @@ export class TriggerLab {
   presetById(id: string): Preset | undefined {
     return this.presets.find((p) => p.id === id);
   }
-  /** Live params shown for a play node (linked → shared preset, else instance). */
+  /** Live params shown for a play node — always its own node-local copy (a preset is a
+      snapshot, not a live binding — S39). */
   liveParams(node: GraphNode): voice.ParamValues {
     if (node.kind !== 'play') return {};
-    return node.linked ? this.presetById(node.presetId)?.params ?? node.params : node.params;
+    return node.params;
   }
 
   // --- graph editing (freeform node wiring) --------------------------------
@@ -2172,9 +2177,8 @@ export class TriggerLab {
 
   /** Rename a preset. No-op on an unknown id or a blank name (mirrors {@link renameSong}).
       Replaces the Preset IMMUTABLY (re-added built-in presets share the module fixture by
-      reference) and re-points the sim's id-map, so linked play instances (which resolve by id)
-      see the new name. Persists via the autosave ({@link unionPresets} keeps a renamed built-in
-      preset on reload). */
+      reference) and re-points the sim's id-map. Persists via the autosave ({@link unionPresets}
+      keeps a renamed built-in preset on reload). */
   renamePreset(id: string, name: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const trimmed = name.trim();
@@ -2200,10 +2204,10 @@ export class TriggerLab {
     return newId;
   }
 
-  /** How many play nodes — across EVERY graph (pad + authored) — reference this preset, whether
-      linked (reads the shared preset live) or instance-origin (forked its own params from it,
-      keeping `presetId` as the origin). Pure read: gates {@link deletePreset} and is shown in
-      the Objects view. */
+  /** How many play nodes — across EVERY graph (pad + authored) — carry this preset as their
+      `presetId` provenance (they forked their own params from it; presets are snapshots now, so
+      no node depends on it at runtime — S39). Advisory: shown in the Objects view and still gates
+      {@link deletePreset}. */
   presetUsageCount(id: string): number {
     return objects.presetUsageCount(this.graphs, id);
   }
@@ -2249,39 +2253,54 @@ export class TriggerLab {
     return node.busId || this.effectOf(node)?.busId || '';
   }
 
-  /** Select a preset for this instance. Forks its params (or rebinds if linked). */
+  /** Select a preset for this play node and APPLY it — points `presetId` at the preset (kept as
+      a provenance label) and forks a private copy of its params onto the node. A preset is a
+      snapshot, never a live binding (S39): later param edits stay node-local. No-op off a play
+      node or for an unknown preset. */
   selectPreset(node: GraphNode, presetId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
     const pr = this.presetById(presetId);
     if (!pr) return;
     node.presetId = presetId;
-    if (!node.linked) node.params = { ...pr.params };
+    node.params = { ...pr.params };
   }
 
-  toggleLink(node: GraphNode): void {
+  /** Re-apply the node's CURRENT preset — copy its params onto the node, discarding local edits
+      (the explicit "Apply" action; {@link selectPreset} already applies when the choice changes).
+      No-op when the node's `presetId` resolves to nothing. */
+  applyPreset(node: GraphNode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
-    if (node.linked) {
-      // unlink → fork the shared preset into a private copy
-      const pr = this.presetById(node.presetId);
-      if (pr) node.params = { ...pr.params };
-      node.linked = false;
-    } else {
-      node.linked = true;
-    }
+    const pr = this.presetById(node.presetId);
+    if (!pr) return;
+    node.params = { ...pr.params };
   }
 
+  /** Snapshot this play node's current params as a NEW preset for its effect, register it, and
+      point the node's `presetId` at it (provenance). `name` defaults to "<Effect> preset".
+      Returns the new preset id, or null off a play node / unknown effect. Persists via the
+      authored autosave. */
+  saveNodeAsPreset(node: GraphNode, name?: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'play') return null;
+    const eff = this.effectOf(node);
+    if (!eff) return null;
+    const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
+    const label = name?.trim() || `${eff.name} preset`;
+    const preset: Preset = { id: newId, name: label, effectId: eff.id, params: { ...node.params } };
+    this.presets.push(preset);
+    this.sim.registerPreset(preset);
+    node.presetId = newId;
+    return newId;
+  }
+
+  /** Author a param value onto a play or modifier node — always node-local now that presets are
+      snapshots (S39: no linked write-through to a shared preset). */
   setParam(node: GraphNode, key: string, value: ParamValue): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!nodeHasParams(node)) return;
-    if (node.kind === 'play' && node.linked) {
-      const pr = this.presetById(node.presetId);
-      if (pr) pr.params[key] = value;
-    } else {
-      // play (instance) + modifier both author directly into node.params.
-      node.params[key] = value;
-    }
+    node.params[key] = value;
   }
 
   /** Set the modifier a modifier node applies (its `modifierId`), seeding the new

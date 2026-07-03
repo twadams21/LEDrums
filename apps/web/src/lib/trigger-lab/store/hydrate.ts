@@ -113,6 +113,49 @@ export function hydratePadNames(
   return out ?? names;
 }
 
+/** A play node persisted before `linked` was removed still carries the flag; read it via a
+    cast (the field is gone from {@link GraphNode}, mirroring `foldVelocitySwitch`'s legacy
+    read). */
+type MaybeLinked = { linked?: boolean };
+
+/** Look up a preset's params by id — the store threads this in from its `presets` rune. */
+export type PresetParamsFor = (presetId: string) => Readonly<Record<string, unknown>> | undefined;
+
+/** Materialize every formerly-`linked:true` play node's params from its shared preset (exactly
+    the store's old `toggleLink` unlink branch — copy `preset.params` onto the node, keeping the
+    node's own params when the preset is unknown), then drop the `linked` flag from every node so
+    the field leaves the model. Presets are now snapshots, not live bindings: after this a node's
+    params never depend on a preset at runtime (proven by the eval-graph change).
+
+    Idempotent + alias-stable: a graph whose nodes carry no `linked` field keeps its reference, so
+    re-running — or a graph authored after the removal — is a no-op. `presetId` is preserved as a
+    provenance label ("based on X" + re-apply); only `linked` is stripped. */
+export function materializeLinkedNodes(graph: TriggerGraph, presetParamsFor: PresetParamsFor): TriggerGraph {
+  if (!graph.nodes.some((n) => 'linked' in (n as MaybeLinked))) return graph; // nothing to migrate → same ref
+  const nodes = graph.nodes.map((n) => {
+    if (!('linked' in (n as MaybeLinked))) return n; // already migrated — keep the ref
+    const wasLinked = (n as MaybeLinked).linked === true;
+    const { linked: _drop, ...rest } = n as GraphNode & MaybeLinked;
+    if (wasLinked && n.kind === 'play') {
+      const shared = presetParamsFor(n.presetId);
+      if (shared) return { ...rest, params: { ...(shared as Record<string, unknown>) } } as GraphNode;
+    }
+    return rest as GraphNode;
+  });
+  return { nodes, edges: graph.edges };
+}
+
+/** Apply {@link materializeLinkedNodes} across a keyed map of graphs (each unchanged graph keeps
+    its reference — alias-stable + idempotent, mirrors {@link foldVelocitySwitches}). */
+export function materializeLinkedNodesAll(
+  graphs: Record<string, TriggerGraph>,
+  presetParamsFor: PresetParamsFor,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) out[key] = materializeLinkedNodes(graph, presetParamsFor);
+  return out;
+}
+
 /** Structural equality for two ADSR shapes (times, levels, legacy curve, and each
     per-segment ease by fn/dir) — lets the migrator keep the original object when a
     shape is already normalized, so the pass stays alias-stable. */
@@ -262,18 +305,23 @@ export function migrateGraphsEnvMaps(
 }
 
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
-    every pad-bound graph's trigger source explicit, fold legacy velocity switches into the
-    canonical value+bands form, migrate persisted envelope shapes to v2, and hydrate a friendly
-    display name onto every pad-keyed graph. Returns the new `{ graphs, graphNames }` — the store
-    assigns them back into its runes. */
+    every pad-bound graph's trigger source explicit, materialize formerly-linked play nodes' params
+    and drop the `linked` flag, fold legacy velocity switches into the canonical value+bands form,
+    migrate persisted envelope shapes to v2, and hydrate a friendly display name onto every
+    pad-keyed graph. Returns the new `{ graphs, graphNames }` — the store assigns them back into its
+    runes. */
 export function normalizeGraphs(
   graphs: Record<string, TriggerGraph>,
   graphNames: Record<string, string>,
   pads: readonly Pad[],
   specsFor: SpecsFor,
+  presetParamsFor: PresetParamsFor,
 ): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
   const padKeys = new Set(pads.map(padKey));
   let next = unionTriggerSources(graphs, padKeys);
+  // Materialize formerly-linked play nodes' params from their preset, then drop `linked` (S39) —
+  // before the env/switch folds so every later pass sees node-local params.
+  next = materializeLinkedNodesAll(next, presetParamsFor);
   next = foldVelocitySwitches(next);
   next = migrateGraphsEnvelopes(next);
   // AFTER the ADSR-v2 normalize (so envelope nodes carry v2 shapes): fold legacy play-node

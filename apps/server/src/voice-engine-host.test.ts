@@ -48,7 +48,6 @@ function makeShow(drumId: string, zone: string): voice.Show {
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: false,
     on: 'value',
     valueMode: 'gate',
@@ -226,7 +225,7 @@ describe('VoiceEngineHost', () => {
   const trigNode = (source?: voice.TriggerSource): voice.GraphNode =>
     ({
       id: 'trig', kind: 'trigger', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '',
-      presetId: '', busId: '', params: {}, env: {}, linked: false, noRepeat: false, on: 'value',
+      presetId: '', busId: '', params: {}, env: {}, noRepeat: false, on: 'value',
       valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
       delayMode: 'time', ms: 0, division: '1/8', source,
     }) as voice.GraphNode;
@@ -234,7 +233,7 @@ describe('VoiceEngineHost', () => {
   const playNode = (busId: string): voice.GraphNode =>
     ({
       id: 'play', kind: 'play', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
-      presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {}, linked: false,
+      presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {},
       noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
       delayMode: 'time', ms: 0, division: '1/8',
     }) as voice.GraphNode;

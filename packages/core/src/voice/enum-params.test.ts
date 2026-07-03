@@ -27,7 +27,7 @@ function testModel(): PixelModel {
 function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
   return {
     id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, linked: false, noRepeat: true, on: 'value', valueMode: 'gate',
+    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate',
     threshold: 0.5, invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8', ...over,
   };
 }

@@ -65,7 +65,6 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: true,
     on: 'value',
     valueMode: 'gate',

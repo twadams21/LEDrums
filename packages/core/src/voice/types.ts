@@ -259,7 +259,6 @@ export interface GraphNode {
   targetId?: string;
   params: ParamValues;
   env: EnvMap;
-  linked: boolean;
   // modifier (only meaningful when kind === 'modifier')
   /** Which {@link ModifierDef} this modifier node applies (registry id). Optional +
       additive — only modifier nodes carry it; graphs authored before modifiers lack it.
