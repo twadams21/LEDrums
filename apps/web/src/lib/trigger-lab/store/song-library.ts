@@ -108,14 +108,16 @@ export function extractSongClosure(song: Song, sources: ClosureSources, libraryS
     if (typeof name === 'string') graphNames[nsKey(prefix, key)] = name;
   }
 
-  // (4) Reached defs only, re-keyed (order-preserving). `preset.effectId` is remapped through the
-  //     same prefix so a `:default` preset still points at its (re-keyed) effect.
+  // (4) Reached defs only, re-keyed (order-preserving). Deep-cloned (see rekeyGraph) so the
+  //     closure aliases NOTHING in the source show — `effect.params` (a ParamSpec[]) /
+  //     `preset.params` are fresh. `preset.effectId` is remapped through the same prefix so a
+  //     `:default` preset still points at its (re-keyed) effect.
   const effects = sources.effects
     .filter((e) => effectIds.has(e.id))
-    .map((e) => ({ ...e, id: nsKey(prefix, e.id) }));
+    .map((e) => ({ ...structuredClone(e), id: nsKey(prefix, e.id) }));
   const presets = sources.presets
     .filter((p) => presetIds.has(p.id))
-    .map((p) => ({ ...p, id: nsKey(prefix, p.id), effectId: nsKey(prefix, p.effectId) }));
+    .map((p) => ({ ...structuredClone(p), id: nsKey(prefix, p.id), effectId: nsKey(prefix, p.effectId) }));
 
   // (5) Re-keyed sections — ids + graph refs + look values namespaced; unresolved graph refs
   //     dropped so every `section.graphs` entry maps to an included graph.
@@ -124,14 +126,19 @@ export function extractSongClosure(song: Song, sources: ClosureSources, libraryS
   return { id: librarySongId, name: song.name, sections, graphs, graphNames, effects, presets };
 }
 
-/** Copy a graph, namespacing each node's `effectId`/`presetId` (empty ids untouched, so
+/** Deep-copy a graph, namespacing each node's `effectId`/`presetId` (empty ids untouched, so
     modifier/lfo/cc/envelope nodes are carried verbatim). `modifierId` + `generatorId` are global
-    registry ids and are NOT namespaced. Edges are structural (node-id references) and copied as-is. */
+    registry ids and are NOT namespaced. `structuredClone` FIRST so the closure aliases nothing in
+    the source show — a node's `params`/`env`/`bands`/`modInputs` are fresh objects, and a later
+    source-show edit can never write through into a held LibrarySong (S41 keeps them in memory).
+    Extraction is not on the render loop, so the clone cost is irrelevant. */
 function rekeyGraph(graph: TriggerGraph, prefix: string): TriggerGraph {
-  return {
-    nodes: graph.nodes.map((n) => ({ ...n, effectId: nsKey(prefix, n.effectId), presetId: nsKey(prefix, n.presetId) })),
-    edges: graph.edges.map((e) => ({ ...e })),
-  };
+  const clone = structuredClone(graph);
+  for (const n of clone.nodes) {
+    n.effectId = nsKey(prefix, n.effectId);
+    n.presetId = nsKey(prefix, n.presetId);
+  }
+  return clone;
 }
 
 /** Re-key a section: own id + graph refs + look effect values under the prefix. Graph refs not in

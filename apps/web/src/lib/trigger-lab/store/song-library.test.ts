@@ -207,6 +207,27 @@ describe('extractSongClosure — defensive', () => {
     expect(play.presetId).toBe(`${ns}fx-missing`);
   });
 
+  it('is self-contained: mutating the source after extraction never touches the closure', () => {
+    const g = playGraph('fx', 'fx:default');
+    const src = sources({
+      graphs: { g },
+      effects: [effect('fx')],
+      presets: [preset('fx:default', 'fx')],
+    });
+    const song = makeSong('song-1', 'Iso', [makeSection('s1', 'A', ['g'])]);
+    const closure = extractSongClosure(song, src, 'lib-1');
+    const before = structuredClone(closure);
+
+    // Mutate the source show's live objects that a shallow copy would alias.
+    const srcPlay = src.graphs.g!.nodes.find((n) => n.kind === 'play')!;
+    srcPlay.params.hue = 0.99;
+    srcPlay.bands.push(0.123);
+    (src.effects[0]!.params as unknown[]).push({ key: 'injected' });
+    src.presets[0]!.params.injected = 1;
+
+    expect(closure).toEqual(before); // closure is unchanged — nothing was aliased
+  });
+
   it('is deterministic — same inputs yield an identical closure', () => {
     const song = makeSong('song-1', 'Det', [makeSection('s1', 'A', ['g'])]);
     const src = sources({ graphs: { g: playGraph('fx', 'fx:default') }, effects: [effect('fx')], presets: [preset('fx:default', 'fx')] });
