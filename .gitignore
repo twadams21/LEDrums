@@ -6,6 +6,7 @@ build/
 .vite/
 *.tsbuildinfo
 coverage/
+.ui-shots/
 .DS_Store
 *.log
 .env

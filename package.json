@@ -12,6 +12,7 @@
     "build": "pnpm -r --filter \"./packages/*\" run build && pnpm --filter @ledrums/web run build && pnpm --filter @ledrums/server run build",
     "design-system": "pnpm --filter @ledrums/web run design-system",
     "dev": "node scripts/dev.mjs",
+    "ui-shot": "node scripts/ui-shot/ui-shot.mjs",
     "start": "pnpm --filter @ledrums/server run start",
     "tauri:build": "node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build",
     "ota": "pnpm --filter @ledrums/desktop ota",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "playwright-core": "^1.61.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
