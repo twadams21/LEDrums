@@ -11,6 +11,7 @@ import {
   type OutputConfig,
   type OutputSettings,
   type Project,
+  type ProjectPatch,
   type Transport,
   type TransportState,
 } from '@ledrums/core';
@@ -174,6 +175,23 @@ export class VoiceEngineHost {
     this.kit.outputs = outputs;
     this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
+  }
+
+  /** Bulk-adopt a validated project PATCH (kit incl. outputs, input map, output settings) in ONE
+   * step — the live end of the S45 `setProject` message. Swaps the three device slices wholesale
+   * and rebuilds geometry ONCE ({@link reloadKit} → model + dmxMap + output re-apply), never a
+   * granular replay. Authored composition/setlist are untouched. The caller has already
+   * schema-validated `patch`, so this only touches state once acceptance is guaranteed. */
+  adoptPatch(patch: ProjectPatch): void {
+    this.project = {
+      ...this.project,
+      name: patch.name ?? this.project.name,
+      kit: patch.kit,
+      inputMap: patch.inputMap,
+      output: patch.output,
+    };
+    this.kit = this.project.kit;
+    this.reloadKit();
   }
 
   /** Replace the show the engine runs (authored voice-bus content). Retains it + reseeds

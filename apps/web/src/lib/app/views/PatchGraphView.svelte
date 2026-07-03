@@ -45,6 +45,7 @@
     type OutputScalars,
   } from '../patch-graph';
   import PatchNode from './PatchNode.svelte';
+  import PatchClipboardToolbar from './PatchClipboardToolbar.svelte';
   import { PATCH_STORE_KEY } from './patch-context';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
@@ -316,8 +317,11 @@
 
 <div class="patch-view">
   <header class="phead">
-    <Eyebrow icon={Cable}>Patch Graph · device routing</Eyebrow>
-    <span class="hint">input → trigger → zone → drum → hoop → data line → output → controller</span>
+    <div class="phead-lead">
+      <Eyebrow icon={Cable}>Patch Graph · device routing</Eyebrow>
+      <span class="hint">input → trigger → zone → drum → hoop → data line → output → controller</span>
+    </div>
+    <PatchClipboardToolbar {store} />
   </header>
 
   <GraphCanvas
@@ -359,13 +363,19 @@
   }
   .phead {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
     padding: var(--space-2) var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
+  }
+  .phead-lead {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
   }
   .hint {
     font-size: var(--text-2xs);

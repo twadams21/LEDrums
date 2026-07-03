@@ -158,6 +158,21 @@ export const projectSchema = z.object({
   output: outputSettingsSchema.default({}),
 });
 
+/**
+ * The device-portable slices of a Project — kit geometry (incl. output topology), the input
+ * map, and output settings — carried by a `patch` ClipDoc (doc 11 / group K) and applied
+ * WHOLESALE by the `setProject` bulk message. It deliberately excludes `composition` and
+ * `setlist` (the authored show), so pasting a patch re-rigs the physical device without
+ * touching authored content. `name` is optional (a patch may re-label the project). Every
+ * slice is schema-validated here BEFORE any live state is touched — an invalid payload is a
+ * user-visible error with zero partial apply. */
+export const projectPatchSchema = z.object({
+  name: z.string().optional(),
+  kit: kitSchema,
+  inputMap: inputMapSchema.default({}),
+  output: outputSettingsSchema.default({}),
+});
+
 export type ControlSource = z.infer<typeof controlSourceSchema>;
 export type Curve = z.infer<typeof curveSchema>;
 export type Modulation = z.infer<typeof modulationSchema>;
@@ -179,8 +194,16 @@ export type OutputState = z.infer<typeof outputStateSchema>;
 export type RgbOrder = z.infer<typeof rgbOrderSchema>;
 export type OutputSettings = z.infer<typeof outputSettingsSchema>;
 export type Project = z.infer<typeof projectSchema>;
+export type ProjectPatch = z.infer<typeof projectPatchSchema>;
 
 /** Parse + validate a project JSON, applying defaults. Throws ZodError on invalid input. */
 export function parseProject(raw: unknown): Project {
   return projectSchema.parse(raw);
+}
+
+/** Parse + validate a project PATCH (kit + inputMap + output slices), applying defaults.
+ * Throws ZodError on invalid input; server callers use `projectPatchSchema.safeParse` so a
+ * bad payload becomes a user-visible error rather than an apply. */
+export function parseProjectPatch(raw: unknown): ProjectPatch {
+  return projectPatchSchema.parse(raw);
 }
