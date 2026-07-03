@@ -57,14 +57,20 @@ import type { SetlistSection, Song } from '../app/setlist';
 import {
   STORAGE_KEY,
   SHOWS_STORAGE_KEY,
+  SONGS_STORAGE_KEY,
   loadShowLibrary,
+  loadSongLibrary,
   serializeShowLibrary,
+  serializeSongLibrary,
   deserializeShowLibrary,
+  deserializeSongLibrary,
   deserializeAuthored,
   type AuthoredState,
   type Show,
   type ShowLibrary,
   type PersistedShowLibrary,
+  type SongLibrary,
+  type PersistedSongLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
 import { SvelteMap } from 'svelte/reactivity';
@@ -88,7 +94,10 @@ import * as vsw from './store/value-switch';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
 import * as showsLib from './store/shows';
+import * as songRefsLib from './store/song-library-refs';
+import { extractSongClosure, type ClosureSources } from './store/song-library';
 import { ShowLibrarySync } from './store/show-library-sync';
+import { SongLibrarySync } from './store/song-library-sync';
 import { EngineLinkSync } from './store/transport';
 import {
   DEFAULT_MONITOR_FILTERS,
@@ -138,12 +147,27 @@ function readLegacyAuthored(): unknown {
   return readStoredKey(STORAGE_KEY);
 }
 
+/** The persisted SONG library (the canonical song pool shows reference). */
+function readStoredSongLibrary(): unknown {
+  return readStoredKey(SONGS_STORAGE_KEY);
+}
+
 /** Write the versioned library envelope. Best-effort — quota / private-mode failures are
     swallowed (persistence must never throw into the render loop or lifecycle). */
 function writeStoredLibrary(payload: PersistedShowLibrary): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Write the versioned SONG-library envelope (best-effort, mirrors {@link writeStoredLibrary}). */
+function writeStoredSongLibrary(payload: PersistedSongLibrary): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(SONGS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     /* ignore */
   }
@@ -247,6 +271,11 @@ export class TriggerLab {
   /** authored arrangement: songs, each with sections that hold a FLAT ordered list of
       graph KEYS (reuse-by-reference; layering = two graphs sharing a source). */
   songs = $state<Song[]>(seedSongs());
+  /** Library-song references (S41): ids into {@link songLibrary} this show resolves into its
+      runtime view (canonical propagation — the referenced closure lives in the library, edited
+      once, reflected in every show that references it). Authored state (persisted per show); an
+      ordered set. See {@link resolvedSongs} for the materialized view. */
+  songRefs = $state<string[]>([]);
   /** which song the Sections view + Songs rail show. */
   activeSongId = $state<string>('set-1');
   /** The ONE active section (U4 merged the old `activeSectionId` look-recall +
@@ -276,6 +305,13 @@ export class TriggerLab {
   private showLibrary = $state<Record<string, Show>>({});
   /** Which show is live — its `authored` is what the authored runes above mirror. */
   activeShowId = $state<string>('');
+
+  // --- song library (canonical songs above shows; S40 persistence, S41 refs/resolve) --------
+  /** The canonical song pool shows reference (a second server-authoritative library, sibling of
+      {@link showLibrary}). Persisted to its own localStorage key + opaque server blob; adopted on
+      cold load and pushed on change via the {@link songSync} controller. Seeded empty; loaded from
+      storage in the constructor. */
+  songLibrary = $state<SongLibrary>({ songs: {} });
 
   // transient snapshot
   voices = $state<Voice[]>([]);
@@ -465,6 +501,12 @@ export class TriggerLab {
   private readonly engineSync = new EngineLinkSync();
   /** Server-authoritative show-library controller (cold-load adopt + write-through). */
   private readonly libSync = new ShowLibrarySync();
+  /** Server-authoritative SONG-library controller — the sibling of {@link libSync}. */
+  private readonly songSync = new SongLibrarySync();
+  /** Whether boot found a REAL local song library (a valid blob) — the same local-wins signal as
+      {@link bootedFromLocalLibrary}, so the server's cold-load song library can't clobber unsynced
+      local song-library edits on a single-writer refresh. */
+  private bootedFromLocalSongLibrary = false;
   /** Whether boot found REAL local content (a valid library, or a migratable legacy blob).
       When true, the localStorage cache is the freshest source (written on every edit) and the
       server's cold-load library must not clobber it — see {@link ShowLibrarySync.planReconcile}. */
@@ -495,6 +537,12 @@ export class TriggerLab {
     // hydrate did, but sourced from the active show. A migrated/fresh slice is partial, so the
     // seed fills any absent field.
     this.applyAuthored($state.snapshot(this.showLibrary[this.activeShowId]!.authored));
+    // Load the canonical SONG library from its own blob (a pool shows reference — never wedges
+    // boot: a valid blob wins, else a fresh empty pool). Same local-wins signal as the show
+    // library, so a single-writer refresh keeps its unsynced song-library edits.
+    const rawSongLib = readStoredSongLibrary();
+    this.bootedFromLocalSongLibrary = deserializeSongLibrary(rawSongLib) !== null;
+    this.songLibrary = loadSongLibrary(rawSongLib);
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
@@ -726,12 +774,20 @@ export class TriggerLab {
     };
   }
 
+  /** The SONG library to persist — a plain snapshot of the pool rune (no active-slot flush like
+      the show library: song refs live in each show's `authored`, so the pool itself is the whole
+      truth). Built fresh each tick so the written blob is current without churning the rune. */
+  private currentSongLibrary(): SongLibrary {
+    return $state.snapshot(this.songLibrary) as SongLibrary;
+  }
+
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped). */
   private toAuthored(): AuthoredState {
     return $state.snapshot({
       graphs: this.graphs,
       graphNames: this.graphNames,
       songs: this.songs,
+      songRefs: this.songRefs,
       buses: this.buses,
       presets: this.presets,
       effects: this.effects,
@@ -752,6 +808,9 @@ export class TriggerLab {
     if (a.graphs) this.graphs = a.graphs;
     if (a.graphNames) this.graphNames = a.graphNames;
     if (a.songs) this.songs = a.songs;
+    // Always assigned (even when absent) so a show that references nothing CLEARS the outgoing
+    // show's refs on a swap — no cross-show bleed of references (seed/applyShow reset to []).
+    this.songRefs = a.songRefs ?? [];
     if (a.buses) this.buses = a.buses;
     // Union, never replace (mirrors effects below): a stale localStorage slice must
     // not drop the built-in generator `:default` presets, or play nodes that point at
@@ -779,7 +838,10 @@ export class TriggerLab {
     this.persistDispose = $effect.root(() => {
       $effect(() => {
         const lib = this.currentLibrary();
-        this.scheduleSave(lib);
+        // Deep-read the song library too, so a song-library edit (export / rename / delete)
+        // re-schedules a save on the SAME debounce as any authored edit.
+        const songLib = this.currentSongLibrary();
+        this.scheduleSave(lib, songLib);
       });
     });
     if (typeof window !== 'undefined') {
@@ -788,6 +850,7 @@ export class TriggerLab {
         clearTimeout(this.saveTimer);
         this.saveTimer = null;
         writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
+        writeStoredSongLibrary(serializeSongLibrary(this.currentSongLibrary()));
       };
       window.addEventListener('beforeunload', this.flushOnUnload);
     }
@@ -802,6 +865,7 @@ export class TriggerLab {
       this.saveTimer = null;
     }
     writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
+    writeStoredSongLibrary(serializeSongLibrary(this.currentSongLibrary()));
     this.persistDispose();
     this.persistDispose = null;
     if (this.flushOnUnload && typeof window !== 'undefined') {
@@ -813,7 +877,7 @@ export class TriggerLab {
     this.autosaveArmed = false;
   }
 
-  private scheduleSave(lib: ShowLibrary): void {
+  private scheduleSave(lib: ShowLibrary, songLib: SongLibrary): void {
     // Show "Saving…" the moment an edit schedules a write — but skip the autosave $effect's
     // first (mount) run, which fires with no user edit and shouldn't blip the indicator.
     if (this.autosaveArmed) this.saveStatusCtl.saving();
@@ -822,12 +886,15 @@ export class TriggerLab {
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       writeStoredLibrary(serializeShowLibrary(lib)); // localStorage cache (write-through)
+      writeStoredSongLibrary(serializeSongLibrary(songLib)); // the song pool's own cache
       // Same debounced tick re-syncs the active show's authored Show to the engine (guarded so
       // it only sends on a real change) — so live edits AND show switches reach the server.
       this.syncShowToServer();
       // …and pushes the authored show library to the server (the source of truth), so a
       // browser-storage clear no longer loses shows. Sig-guarded; no-op until the first state.
       this.syncLibraryToServer();
+      // …and the canonical song library (the sibling pool), same gated write-through.
+      this.syncSongLibraryToServer();
       // The write (local cache + server push) has flushed → settle to "Saved" (held at
       // "Saving…" for the min-visible window first). A no-op for the skipped mount save.
       this.saveStatusCtl.saved();
@@ -928,12 +995,125 @@ export class TriggerLab {
     return freshId('show', (id) => id in this.showLibrary);
   }
 
+  // --- song library references (export / import / detach / CRUD + delete guard) ------------
+  // The inverse of extraction: a show REFERENCES canonical library songs (`songRefs`), which
+  // {@link resolvedView} materializes back into the runtime view. Editing a referenced song edits
+  // the LIBRARY copy (canonical propagation — every referencing show re-resolves); detach clones
+  // the closure locally to sever that link; deleting an in-use song is blocked. Pure decisions live
+  // in store/song-library-refs.ts; these thin methods own the rune swap + id minting.
+
+  /** The show list adapted to the delete guard's shape — each show's `songRefs` (the ACTIVE show's
+      LIVE refs, inactive shows their saved slot), so "used by" reflects unsaved edits too. */
+  private refBearingShows(): songRefsLib.RefBearingShow[] {
+    return Object.values(this.showLibrary).map((s) => ({
+      id: s.id,
+      name: s.name,
+      songRefs: s.id === this.activeShowId ? this.songRefs : s.authored.songRefs,
+    }));
+  }
+
+  /** The active show's runtime view with its referenced library songs materialized in — the
+      inverse of closure extraction (S41). Local songs + resolved references appear as one list;
+      referenced graphs/effects/presets union in collision-free (per-song `lib:<id>/` namespace).
+      The persisted authored state stays UN-resolved (refs, not copies), so propagation stays
+      canonical; consumers that must PLAY referenced songs read this derived. */
+  resolvedView = $derived(
+    songRefsLib.resolveSongRefs(
+      { songs: this.songs, graphs: this.graphs, graphNames: this.graphNames, effects: this.effects, presets: this.presets },
+      this.songRefs,
+      this.songLibrary,
+    ),
+  );
+  /** The materialized song list (local + referenced) for the Songs rail. */
+  resolvedSongs = $derived(this.resolvedView.songs);
+  /** The song pool as an id+name list for the library UI, with the shows using each (delete-guard
+      surface). Insertion order. */
+  songLibraryList = $derived(
+    Object.values(this.songLibrary.songs).map((s) => ({
+      id: s.id,
+      name: s.name,
+      usedBy: songRefsLib.showsUsingSong(this.refBearingShows(), s.id),
+    })),
+  );
+
+  /** Export a LOCAL song into the canonical library: extract its dependency closure (namespaced,
+      self-contained) under a fresh pool id and add it. Returns the new library-song id, or null on
+      an unknown song id / a viewer. Does NOT alter the show's own songs or refs — importing a
+      reference (so edits propagate) is a separate, explicit step. */
+  exportSongToLibrary(songId: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    const song = this.songs.find((s) => s.id === songId);
+    if (!song) return null;
+    const libId = freshId('song', (id) => id in this.songLibrary.songs);
+    const sources: ClosureSources = {
+      graphs: $state.snapshot(this.graphs),
+      graphNames: $state.snapshot(this.graphNames),
+      effects: $state.snapshot(this.effects),
+      presets: $state.snapshot(this.presets),
+    };
+    const closure = extractSongClosure($state.snapshot(song), sources, libId);
+    this.songLibrary = songRefsLib.withLibrarySong(this.songLibrary, closure);
+    return libId;
+  }
+
+  /** Reference a library song from the active show — it then resolves into the runtime view and
+      tracks the library copy (canonical propagation). No-op on an unknown library id, an already-
+      referenced id, or a viewer. */
+  importSongReference(librarySongId: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.songLibrary.songs[librarySongId]) return; // nothing to reference
+    this.songRefs = songRefsLib.addSongRef(this.songRefs, librarySongId);
+  }
+
+  /** Detach a referenced library song into a LOCAL copy of the active show — clones the closure
+      under a fresh namespace, merges it into the authored runes, and drops the reference (severing
+      canonical propagation). Returns the new local song id, or null on an unknown/un-referenced id
+      or a viewer. */
+  detachSongReference(librarySongId: string): string | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    const libSong = this.songLibrary.songs[librarySongId];
+    if (!libSong) return null;
+    const newId = freshId('song', (id) => this.songs.some((s) => s.id === id));
+    const detached = songRefsLib.detachLibrarySong($state.snapshot(libSong), newId);
+    this.graphs = { ...this.graphs, ...detached.graphs };
+    this.graphNames = { ...this.graphNames, ...detached.graphNames };
+    this.effects = [...this.effects, ...detached.effects];
+    this.presets = [...this.presets, ...detached.presets];
+    this.songs = [...this.songs, detached.song];
+    this.songRefs = songRefsLib.removeSongRef(this.songRefs, librarySongId);
+    return newId;
+  }
+
+  /** Rename a library song. No-op on an unknown id, a blank name, or a viewer. The rename
+      propagates to every referencing show's resolved view (canonical). */
+  renameLibrarySong(librarySongId: string, name: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    this.songLibrary = songRefsLib.renameLibrarySongIn(this.songLibrary, librarySongId, name);
+  }
+
+  /** Delete a library song, BLOCKED while any show references it. Returns the using shows (id +
+      name) when blocked — a non-empty list means nothing was deleted; an empty list means it was
+      removed (or the id was unknown). A viewer is always a no-op (empty). */
+  deleteLibrarySong(librarySongId: string): { id: string; name: string }[] {
+    if (this.isViewer) return []; // read-only viewer (S2): authoring no-op
+    const plan = songRefsLib.planDeleteLibrarySong(this.songLibrary, this.refBearingShows(), librarySongId);
+    if (plan.kind === 'blocked') return plan.usedBy;
+    this.songLibrary = plan.library;
+    return [];
+  }
+
+  /** Which shows (id + name) reference a library song — the "used by" list the UI shows and the
+      delete guard reports. */
+  showsUsingSong(librarySongId: string): { id: string; name: string }[] {
+    return songRefsLib.showsUsingSong(this.refBearingShows(), librarySongId);
+  }
+
   // --- engine link plumbing ------------------------------------------------
 
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, output, showLibrary, tunnel) => {
+      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
@@ -961,6 +1141,16 @@ export class TriggerLab {
           // Server has no library yet → seed it from our localStorage cache.
           this.syncLibraryToServer();
         }
+        // Cold-load reconcile of the canonical SONG library — the exact sibling of the show-library
+        // path above (adopt server on cold load / seed it from our cache / viewer follows).
+        this.songSync.markServerStateSeen();
+        const songPlan = this.songSync.planReconcile(songLibrary, this.bootedFromLocalSongLibrary, this.isViewer);
+        if (songPlan.kind === 'adopt') {
+          this.adoptSongLibrary(songPlan.library);
+          this.songSync.noteSynced(this.songSync.librarySig(this.currentSongLibrary()));
+        } else if (songPlan.kind === 'seed') {
+          this.syncSongLibraryToServer();
+        }
       },
       onPresence: (editorId, youAreEditor, clientCount) => {
         // Adopt the server's view of who edits + the headcount. Drives `role`/`isViewer`, which
@@ -976,6 +1166,16 @@ export class TriggerLab {
         if (plan.kind === 'adopt') {
           this.adoptLibrary(plan.library);
           this.libSync.noteSynced(this.libSync.librarySig(this.currentLibrary()));
+        }
+      },
+      onSongLibrary: (library) => {
+        // Live SONG-library push from the editor, relayed by the server — the sibling of
+        // onShowLibrary. Only a viewer follows it; adopt sig-guarded, then mark synced.
+        if (!this.isViewer) return;
+        const plan = this.songSync.planFollow(library);
+        if (plan.kind === 'adopt') {
+          this.adoptSongLibrary(plan.library);
+          this.songSync.noteSynced(this.songSync.librarySig(this.currentSongLibrary()));
         }
       },
       onAuthError: () => {
@@ -1142,6 +1342,22 @@ export class TriggerLab {
     const envelope = serializeShowLibrary(this.currentLibrary());
     if (!this.libSync.planPush(envelope)) return;
     this.client.send({ t: 'setShowLibrary', library: envelope });
+  }
+
+  /** Swap the live song-pool rune to the adopted server song library — the sibling of
+      {@link adoptLibrary}. The pool has no active pointer + no live authored mirror, so this is a
+      plain rune replace (the shows that reference it re-resolve reactively). */
+  private adoptSongLibrary(lib: SongLibrary): void {
+    this.songLibrary = lib;
+  }
+
+  /** Push the current song library to the server when it actually changed (sig-guarded, gated on
+      the first `state`) — the sibling of {@link syncLibraryToServer}. */
+  private syncSongLibraryToServer(): void {
+    if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
+    const envelope = serializeSongLibrary(this.currentSongLibrary());
+    if (!this.songSync.planPush(envelope)) return;
+    this.client.send({ t: 'setSongLibrary', library: envelope });
   }
 
   /** Send setTransport to the server iff bpm/playing/beatsPerBar changed. */

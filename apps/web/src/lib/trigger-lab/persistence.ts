@@ -33,6 +33,10 @@ export interface AuthoredState {
       Kept beside `graphs` so a created graph keeps its name across reloads. */
   graphNames: Record<string, string>;
   songs: Song[];
+  /** Library-song references (S41): ids into the {@link SongLibrary} pool this show resolves into
+      its runtime view (canonical propagation — the closure lives in the library, not here). An
+      ordered set. Tolerated when absent (older blobs / a show that references nothing). */
+  songRefs?: string[];
   buses: Bus[];
   presets: Preset[];
   effects: EffectDef[];
@@ -105,6 +109,9 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   // migrateSongs flattens each section's `slots` into the flat `graphs` list (idempotent,
   // so a U4 blob is untouched). See migrateSongs / sectionGraphList.
   if (Array.isArray(data.songs)) out.songs = migrateSongs(data.songs);
+  // songRefs (S41): a string-id set; keep only string entries, de-duplicated — a partially-corrupt
+  // list degrades to the ids that survived. Absent → the field stays undefined (references nothing).
+  if (Array.isArray(data.songRefs)) out.songRefs = dedupeStrings(data.songRefs);
   if (Array.isArray(data.buses)) out.buses = data.buses as Bus[];
   if (Array.isArray(data.presets)) out.presets = data.presets as Preset[];
   if (Array.isArray(data.effects)) out.effects = data.effects as EffectDef[];

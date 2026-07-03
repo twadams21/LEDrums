@@ -52,6 +52,7 @@ export function seedAuthored(): AuthoredState {
     graphs: seedGraphs(),
     graphNames: {},
     songs: seedSongs(),
+    songRefs: [],
     buses: BUSES.map((b) => ({ ...b })),
     presets: structuredClone(PRESETS),
     effects: [...EFFECTS],
