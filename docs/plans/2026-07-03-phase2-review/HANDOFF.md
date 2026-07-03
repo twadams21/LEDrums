@@ -34,9 +34,11 @@ Each: **Intent · What we know · Pointers · Acceptance.** Suggested priority i
 
 ### C. Temporal scope of effects / modifiers / modulation — overlapping retriggers · **P1**
 - **Intent:** on a received trigger, every effect/modifier/modulation begins at **t=0**. It must be **retriggerable**, and a retrigger must NOT cut off the running instance — **the original envelope keeps going to its natural end while the new instance starts at t=0, so they OVERLAP** (polyphonic voices; no hard cutoff on retrigger).
-- **What we know:** relates to the voice engine spawn/release, the envelope core (S23/S24), and the timebase (group G, S25–S27). The "authority principle" (group E/S12) governs who fires. Confirm each effect's clock is per-voice-from-its-own-t=0, not a shared global phase.
+- **Also — random effects seeded per trigger:** random-type effects (e.g. **confetti**) must be **randomly seeded on each trigger** so they don't look identical every fire.
+  - **Reconcile with item B (determinism), they are NOT in conflict:** the seed must be **derived from the trigger** (voice/event id + trigger time), NOT ambient `Math.random()`. So each fire looks different, yet the render stays fully reproducible given the same inputs — *deterministic given the seed*. Read B's "identical settings render identically" as "identical (settings **+ trigger seed**)"; it does NOT mean confetti should look the same every time. The determinism bug in B is almost certainly *unseeded/ambient* randomness or hidden state — this item fixes the same root the right way (seed it from the trigger).
+- **What we know:** relates to the voice engine spawn/release, the envelope core (S23/S24), and the timebase (group G, S25–S27). The "authority principle" (group E/S12) governs who fires. Confirm each effect's clock is per-voice-from-its-own-t=0, not a shared global phase. Route all effect randomness through a per-voice seeded RNG keyed on the trigger.
 - **Pointers:** `packages/core/src/voice/` engine/envelope/timebase; sim mirror in `apps/web/src/lib/trigger-lab/`.
-- **Acceptance:** rapid retriggers spawn independent overlapping voices; each runs its full envelope from its own t=0; the earlier voice finishes on its own timeline uninterrupted.
+- **Acceptance:** rapid retriggers spawn independent overlapping voices; each runs its full envelope from its own t=0; the earlier voice finishes on its own timeline uninterrupted. Random effects (confetti etc.) visibly differ across fires but reproduce **exactly** given the same trigger seed (seeded RNG keyed on the trigger — no ambient `Math.random()`).
 
 ### D. UI review — scaling, microcopy, design-language consistency, polish · **P2**
 - **Intent:** clean up + add general polish; make the design language coherent.
