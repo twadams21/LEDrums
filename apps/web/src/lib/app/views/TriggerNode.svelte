@@ -156,6 +156,50 @@
   {/if}
 {/snippet}
 
+<!-- Wiring handles anchored to the card HEAD row (NodeCard renders these inside its
+     position:relative head, so their %-offsets track the head — a param footer growing
+     the card can't drag them off the face (item 1.7 / E). -->
+{#snippet cardHandles()}
+  {#if nodeHasInput(kind)}
+    <Handle type="target" position={Position.Left} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+  {/if}
+  {#if nodeHasModInput(kind)}
+    <Handle
+      type="target"
+      id="mod"
+      position={Position.Left}
+      class="mod-handle"
+      style={nodeHasInput(kind) ? 'top: 72%' : 'top: 50%'}
+    />
+  {/if}
+  {#if nodeHasOutput(kind)}
+    <Handle type="source" position={Position.Right} />
+  {/if}
+  {#if modCount > 0}
+    <span class="modcount" title={`${modCount} modifier${modCount === 1 ? '' : 's'} in chain`}>
+      <Blend size={9} aria-hidden="true" />{modCount}
+    </span>
+  {/if}
+{/snippet}
+
+<!-- Exposed modulation-target rows — rendered INSIDE the node card (NodeCard footer): one
+     border, one surface, concentric radii (item E). Each row is its own drop target (a
+     `param:<key>` handle scoped to modulation sources). -->
+{#snippet paramFooter()}
+  <ul class="modrows">
+    {#each modRows as row (row.param)}
+      <li class="modrow" class:wired={row.sources.length > 0}>
+        <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
+        <span class="pdot" aria-hidden="true"></span>
+        <span class="plabel">{row.label}</span>
+        <ParamRowTick
+          sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
+        />
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
 {#if !node}
   <!-- The live model for this id is gone from the current graph — a projection / cache
        desync (incident 09). Render a VISIBLE stale placeholder (dashed warn card, id in the
@@ -171,26 +215,6 @@
     <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
   {:else}
     <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass}>
-      <!-- Handles live INSIDE the card wrapper so their offsets are derived from the actual
-           card layout — a node that grows extra rows below the card (mod rows) no longer
-           drags a %-of-whole-node handle off the card face (item 1.7). -->
-      {#if nodeHasInput(kind)}
-        <Handle type="target" position={Position.Left} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
-      {/if}
-      <!-- distinct `mod` input handle (play + modifier nodes) — a modifier-chain wire lands
-           here. Below the flow input when the node also has one; centred otherwise. -->
-      {#if nodeHasModInput(kind)}
-        <Handle
-          type="target"
-          id="mod"
-          position={Position.Left}
-          class="mod-handle"
-          style={nodeHasInput(kind) ? 'top: 72%' : 'top: 50%'}
-        />
-      {/if}
-      {#if nodeHasOutput(kind)}
-        <Handle type="source" position={Position.Right} />
-      {/if}
       <NodeCard
         icon={Icon}
         {title}
@@ -199,30 +223,10 @@
         selected={!!selected}
         thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
+        leadHandles={cardHandles}
+        footer={modRows.length > 0 ? paramFooter : undefined}
       />
-      {#if modCount > 0}
-        <span class="modcount" title={`${modCount} modifier${modCount === 1 ? '' : 's'} in chain`}>
-          <Blend size={9} aria-hidden="true" />{modCount}
-        </span>
-      {/if}
     </div>
-    {#if modRows.length > 0}
-      <!-- exposed modulation-target rows: each is its own drop target (a `param:<key>` handle
-           scoped to modulation sources). Precedent: the value+bands switch's per-band handles. -->
-      <ul class="modrows">
-        {#each modRows as row (row.param)}
-          <li class="modrow" class:wired={row.sources.length > 0}>
-            <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
-            <span class="pdot" aria-hidden="true"></span>
-            <span class="plabel">{row.label}</span>
-            <!-- live value tick (S38): the row's current source signal while the engine runs -->
-            <ParamRowTick
-              sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
-            />
-          </li>
-        {/each}
-      </ul>
-    {/if}
   {/if}
   </ContextMenu>
   {#if node.kind !== 'trigger'}
@@ -255,18 +259,15 @@
   .tnode.bypassed {
     opacity: 0.55;
   }
-  /* exposed modulation-target rows under the card — each carries a scoped `param:` handle */
+  /* exposed modulation-target rows — now INSIDE the node card (NodeCard footer), so no
+     border / surface / shadow of their own: the card supplies the single border + surface. */
   .modrows {
     list-style: none;
-    margin: var(--space-1) 0 0;
-    padding: var(--space-1);
+    margin: 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
     gap: 3px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-3);
-    box-shadow: var(--shadow-1);
   }
   .modrow {
     position: relative; /* offset parent for the per-row param handle (sits at the row's left) */
