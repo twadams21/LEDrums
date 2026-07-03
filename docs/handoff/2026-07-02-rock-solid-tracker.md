@@ -52,7 +52,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | F — Effect params & envelopes | 2 | #51 | group/F | **MERGED** | 0cb5c73 | docs/handoff/rock-solid/group-F.md |
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
-| I — Modulation system | 2 | #57 | group/I | in-progress (S33 merged; S34 in flight) | — | — |
+| I — Modulation system | 2 | #57 | group/I | in-progress (S33–S36 merged; S37 in flight, S38 last) | — | — |
 | J — Presets & Song Library | 3 | #53 | group/J | pending | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
@@ -62,6 +62,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T01:42 — Group I 4/6; budget wall, S38 may wait for reset
+
+- **group/I 4/6 merged** (S33/S34/S35/S36 — S34 landed fine). S37-cc-in-node in flight (opus/medium); **S38 (last slice, needs S37) remains**.
+- **Usage 5h 78%** (over 70% wall). After S37, S38 launch likely BLOCKED until **04:00 UTC reset** → Lane 2 stalls 1 slice from done ~2h. Policy-correct (protects Trent headroom); NOT overriding without Trent. (If lane orch pushes S38 through anyway, fine.)
+- **Master wake aligned to ~04:07 UTC reset** (conserve shared budget at 78%); the group/I handoff re-invokes master via inbox sooner if Lane 2 finishes before reset.
+- **Next:** merge group/I on handoff → LANE 2 DONE → fire Lane 3 orch (J→K) with new policy. If Lane 2 parked at reset, verify/nudge.
 
 ### 2026-07-03T01:11 — Group I: S34 long-running (watching)
 
