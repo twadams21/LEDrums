@@ -68,6 +68,15 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-03 (post-compaction-hold era) — Phase-2 item F dispatched
+
+- **Phase 2 review doc exists:** `docs/plans/2026-07-03-phase2-review/HANDOFF.md` (10 items for a Fable review; item C updated with confetti/random-seed reconciled vs B determinism).
+- **Item F dispatched NOW (Trent):** impl **shell-theme-rails-542767** (opus/high) on **wt-1**, branch `feat/shell-theme-rails` off rock-solid. Scope: darker surface/bg tokens; flush high-level chrome modules (no gaps); adjustable rails on module boundaries incl. NEW visualiser↔inspector rail (extend `ui/Splitter.svelte`); **rails highlight on hover** (discoverability). Assignment: docs/handoff/rock-solid/fix-shell-theme-rails.md. Master reviews (+ live smoke-load) + merges to rock-solid.
+- **🛑 Lane 4 STILL ON HOLD.** wt-1 = this F task; if Lane 4 resumes, use wt-2/wt-3.
+- Usage 5h 8% at launch. rock-solid HEAD 50e0b1e (all P0/palette/OSC/ParamRowTick fixes + Phase-2 docs).
+- **Next:** review shell-theme-rails-542767 on report (inbox) → merge. Await Trent on Lane 4 + other Phase-2 items.
+
+
 ### 2026-07-03T09:1x — side-task MERGED (39/49 holds); Lane 4 held; HANDOFF written
 
 - **Side-task MERGED** → rock-solid **75ea23f** (`--no-ff`): trigger-graph palette→single top-bar buttons + type modals (GraphAddMenu; ModifierPalette retired), pointer-events bug fixed, OSC modulation (cc-source toggle `ccSource` midi|osc + `oscAddress`, back-compat, core pure). Reviewed (purity ✓, back-compat ✓) + full sweep GREEN **1763 tests/0 skips**. impl fix-graph-palette-30094a killed; wt-1 freed; branch deleted.
