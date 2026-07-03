@@ -64,6 +64,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-03T08:46 — side-task phases 1+2 DONE, OSC in progress
+
+- **fix-graph-palette-30094a:** pointer-events bug FIXED (826e9bf); Add Modifier/Add Modulation top-bar buttons + type modals, ModifierPalette retired, design-system regen (eab24d6). Typecheck+tests green (impl-reported). **Phase 3 (OSC modulation) in progress** (busy).
+- **Usage 5h 91%** — may brush account cap before 09:00 reset; impl is resumable (paused work resumes post-reset). No new launches.
+- **Next:** at 09:07 reset wake (bgbeq1z0n): (a) if impl reported → REVIEW (full diff + gates + LIVE smoke-load) → merge to rock-solid; (b) fire Lane 4 (C→D→L) on **wt-2/wt-3** (wt-1 = side-task). Read this tracker at wake for allocation.
+
 ### 2026-07-03T07:4x — SIDE-TASK launched (Trent direct): trigger-graph palette
 
 - **Trent hit a live bug + asked for a redesign+feature** on the Trigger graph. Launched impl **fix-graph-palette-30094a** (opus/HIGH per Trent) on **wt-1**, branch `fix/trigger-graph-node-palette` off rock-solid. Assignment: docs/handoff/rock-solid/fix-trigger-graph-palette.md. Scope: (1) pointer-events bug (palette blocks canvas horizontally), (2) modifier + modulation add → single top-bar buttons + type-picker MODALS (Dialog primitive), (3) OSC support for the cc modulation source (in addition to MIDI). Master REVIEWS (incl. mandatory live smoke-load per P0 lesson) + merges to rock-solid.
