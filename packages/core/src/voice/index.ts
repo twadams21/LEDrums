@@ -25,6 +25,14 @@ export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
 export { resolveModifierChain } from './modifier-graph';
 export {
+  resolveNodeModulations,
+  nodeModSource,
+  paramKeyOf,
+  isModSourceKind,
+  ENVELOPE_NODE_KEY,
+  MOD_SOURCE_KINDS,
+} from './modulation-graph';
+export {
   buildPixelAttrs,
   createDefaultCompositor,
   applyEffectiveParams,

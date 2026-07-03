@@ -152,7 +152,11 @@ export function applyModulations(
  * S35's EnvMap→envelope-node migration builds mappings this way and proves parity against
  * `modulation-parity.ts`; exported from core so that slice reuses it verbatim.
  */
-export function envelopeToMapping(param: string, env: Envelope, spec: ParamSpec): Mapping {
+export function envelopeToMapping(
+  param: string,
+  env: Envelope,
+  spec: Pick<ParamSpec, 'min' | 'max'>,
+): Mapping {
   return {
     targetParam: param,
     source: { kind: 'envelope', env },
