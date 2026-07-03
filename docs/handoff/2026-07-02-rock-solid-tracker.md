@@ -39,7 +39,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 |---|---|---|---|---|
 | 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | lane-1-b0cea3 (killed, done) | **✅ DONE** |
 | 2 — Effects & graph | F → G → H → I | S18–S38 (21) | lane-2-988e46 (killed, done) | **✅ DONE** |
-| 3 — Data & portability | J → K | S39–S45 (7) | — | pending |
+| 3 — Data & portability | J → K | S39–S45 (7) | lane-3-c9f2bf | **ACTIVE** |
 | 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | — | pending |
 
 ## Feature groups
@@ -62,6 +62,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T04:07 — reset; LANE 3 LAUNCHED (J→K)
+
+- **5h reset to 0%** (next 09:00 UTC). 7d **46%** — watch over Lanes 3+4 (should be OK).
+- **Lane 3 orch launched: lane-3-c9f2bf** (fable/high, own window). Assigned J→K (msg 57e282) WITH the new effort/cost policy baked in (opus/medium default, never xhigh, own windows, slim reports, followers get slice+tracer only, stricter review) + cwd-safety + integrate-before-handoff. J serial chain S39→S40→S41→S42; K needs J.S40 (S43→S44/S45).
+- **Progress: 32/49.** rock-solid at Lane 2 complete (d591baf merged). No handoff yet.
+- **Next:** 30-min cadence; merge group/J then group/K on handoff. When Lane 3 done → fire Lane 4 orch (C→D→L) — LAST lane; WATCH DISK for tauri target/ builds (Lane 4 = desktop).
 
 ### 2026-07-03T02:1x — ✅ LANE 2 COMPLETE (32/49); Lane 3 deferred to reset
 
