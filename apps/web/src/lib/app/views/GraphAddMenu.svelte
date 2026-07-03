@@ -108,7 +108,7 @@
   style="--tint:{tint}"
 >
   <ButtonIcon size={14} aria-hidden="true" class="palette-ico" />
-  Add {label}
+  {label}
 </button>
 
 <Dialog {open} onClose={() => (open = false)} title={title ?? `Add ${label}`} class="graph-add-dialog">
@@ -168,6 +168,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-1);
     cursor: pointer;
+    /* re-enable events on the button (the enclosing palette bar is pointer-events:none) */
+    pointer-events: auto;
     transition-property: border-color, color, scale;
     transition-duration: var(--dur-120);
     transition-timing-function: ease;

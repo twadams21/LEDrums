@@ -175,10 +175,8 @@
         }}
       >
         {#snippet palette()}
-          <div class="palette-stack">
-            <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node" />
-            <div class="add-bar" role="toolbar" aria-label="Add modifier or modulation">
-              <span class="add-label">Add</span>
+          <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node">
+            {#snippet trailing()}
               <GraphAddMenu
                 label="Modifier"
                 icon={Blend}
@@ -196,8 +194,8 @@
                 groups={modulationGroups}
                 add={(id, cx, cy) => add(id as NodeKind, cx, cy)}
               />
-            </div>
-          </div>
+            {/snippet}
+          </GraphPalette>
         {/snippet}
       </GraphCanvas>
     </div>
@@ -244,7 +242,7 @@
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Add Modifier / Add Modulation open a modal picker.</strong> Two palette buttons (<code>GraphAddMenu</code>) open the shared <code>Dialog</code>: the modifier picker is category-grouped with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list); the modulation picker lists the source kinds (Envelope / LFO / CC). Selecting adds the node at the visible canvas centre and closes — the always-expanded palettes no longer cover the canvas.</li>
+      <li><strong>Modifier / Modulation open a modal picker.</strong> The Modifier and Modulation buttons sit in the ONE add palette alongside the node kinds (<code>GraphAddMenu</code> in the palette's <code>trailing</code> slot) and open the shared <code>Dialog</code>: the modifier picker is category-grouped with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list); the modulation picker lists the source kinds (Envelope / LFO / CC). Selecting adds the node at the visible canvas centre and closes — the always-expanded palettes no longer cover the canvas.</li>
       <li><strong>Delete / Backspace</strong> removes the selection; the palette adds at the visible canvas centre.</li>
     </ul>
   </div>
@@ -285,34 +283,6 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
-  }
-  .palette-stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    align-items: flex-start;
-    width: fit-content;
-    pointer-events: none;
-  }
-  .add-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-    width: fit-content;
-    padding: var(--space-1);
-    background: color-mix(in oklch, var(--surface) 86%, transparent);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    backdrop-filter: blur(4px);
-    pointer-events: auto;
-  }
-  .add-label {
-    padding: 0 var(--space-1);
-    font-size: var(--text-2xs);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    color: var(--text-faint);
   }
   .contract {
     margin-top: var(--space-5);

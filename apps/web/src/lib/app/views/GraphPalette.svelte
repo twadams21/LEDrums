@@ -6,7 +6,7 @@
      Patch graph drops a local, ephemeral device node). The caller owns any per-item
      offset so the two graphs keep their existing drop positions exactly. */
   import { useSvelteFlow } from '@xyflow/svelte';
-  import type { Component } from 'svelte';
+  import type { Component, Snippet } from 'svelte';
 
   type PaletteItem<K extends string> = {
     key: K;
@@ -23,6 +23,7 @@
     add,
     ariaLabel = 'Add node',
     disabled = false,
+    trailing,
   }: {
     items: ReadonlyArray<PaletteItem<K>>;
     /** Place a new item — `cx`/`cy` are the flow-space centre of the visible canvas. */
@@ -30,6 +31,9 @@
     ariaLabel?: string;
     /** Read-only (S2 viewer): the add buttons are disabled — no new nodes/devices. */
     disabled?: boolean;
+    /** Extra buttons rendered at the end of the SAME bar (e.g. the modifier / modulation
+        modal-openers), so one palette holds every add affordance. */
+    trailing?: Snippet;
   } = $props();
 
   const flow = useSvelteFlow();
@@ -60,6 +64,7 @@
       {item.label}
     </button>
   {/each}
+  {@render trailing?.()}
 </div>
 
 <style>
@@ -75,9 +80,11 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     backdrop-filter: blur(4px);
-    /* The enclosing xyflow Panel is `pointer-events: none` (so empty canvas beside the bar
-       stays interactive) — the toolbar itself re-enables events. */
-    pointer-events: auto;
+    /* The bar CONTAINER passes gestures through — only the actual buttons capture events (below).
+       So the empty canvas beside the bar AND any empty wrapped corner inside the bar's box stay
+       pannable / clickable / wire-drop-connectable. (Task: container none + interactive children
+       auto; the enclosing xyflow Panel is `pointer-events: none` too.) */
+    pointer-events: none;
   }
   .palette-label {
     padding: 0 var(--space-1);
@@ -97,6 +104,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-1);
     cursor: pointer;
+    /* re-enable events on the actual button (the bar container is pointer-events:none) */
+    pointer-events: auto;
     transition:
       border-color var(--dur-120) ease,
       color var(--dur-120) ease;

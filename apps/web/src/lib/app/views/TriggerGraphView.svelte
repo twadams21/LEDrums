@@ -377,10 +377,8 @@
     onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
   >
     {#snippet palette()}
-      <div class="palette-stack">
-        <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit} />
-        <div class="add-bar" role="toolbar" aria-label="Add modifier or modulation">
-          <span class="add-label">Add</span>
+      <GraphPalette items={PALETTE_ITEMS} add={addNodeAt} disabled={!store.canEdit}>
+        {#snippet trailing()}
           <GraphAddMenu
             label="Modifier"
             icon={Blend}
@@ -400,8 +398,8 @@
             add={(id, cx, cy) => addNodeAt(id as NodeKind, cx, cy)}
             disabled={!store.canEdit}
           />
-        </div>
-      </div>
+        {/snippet}
+      </GraphPalette>
     {/snippet}
     {#snippet empty()}
       <p class="thint">Select a graph from the section to edit it.</p>
@@ -416,39 +414,6 @@
     gap: var(--space-3);
     min-height: 0;
     height: 100%;
-  }
-  /* the add-node kind palette + the add-menu bar, stacked top-left. The stack passes
-     gestures through (pointer-events:none) so the gaps between bars stay pannable; each
-     bar re-enables events on itself. */
-  .palette-stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    align-items: flex-start;
-    width: fit-content;
-    pointer-events: none;
-  }
-  /* the Add Modifier / Add Modulation menu bar — same treatment as GraphPalette's `.palette`. */
-  .add-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-    width: fit-content;
-    max-width: 100%;
-    padding: var(--space-1);
-    background: color-mix(in oklch, var(--surface) 86%, transparent);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    backdrop-filter: blur(4px);
-    pointer-events: auto;
-  }
-  .add-label {
-    padding: 0 var(--space-1);
-    font-size: var(--text-2xs);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    color: var(--text-faint);
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {
