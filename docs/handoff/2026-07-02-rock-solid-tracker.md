@@ -53,7 +53,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | G — Timebase & thumbnails | 2 | #52 | group/G | **MERGED** | 6b80d0e | docs/handoff/rock-solid/group-G.md |
 | H — Modifier nodes | 2 | #54 | group/H | **MERGED** | f852eb4 | docs/handoff/rock-solid/group-H.md |
 | I — Modulation system | 2 | #57 | group/I | **MERGED** | d591baf | docs/handoff/rock-solid/group-I.md |
-| J — Presets & Song Library | 3 | #53 | group/J | in-progress (S39 merged; S40 in flight) | — | — |
+| J — Presets & Song Library | 3 | #53 | group/J | in-progress (S39/S40 merged; S41 in flight, S42 next) | — | — |
 | K — Clipboard portability | 3 | #55 | group/K | pending | — | — |
 | C — Desktop shell & updates | 4 | #48 | group/C | pending | — | — |
 | D — Layout & kit geometry | 4 | #49 | group/D | pending | — | — |
@@ -62,6 +62,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-03T05:09 — Lane 3 J 2/4; stricter review caught a defect
+
+- **group/J 2/4 merged** (S39, S40). **S40 review caught a real defect** (closure aliased live graph objects) → impl fixed with structuredClone + mutation-isolation test BEFORE merge. Validates the policy: medium impl + rigorous orch review catches what xhigh would've. Sweep green (1661 tests).
+- **S41-library-refs in flight** (opus/medium); S42 next. Usage 5h 27%, 7d 49%. rock-solid 9b8736f — no handoff.
+- **Next:** S41/S42 merge → J integrate+review+handoff → master merge; then K (S43 needs S40✓ → S44∥S45). 30-min cadence.
 
 ### 2026-07-03T04:38 — Lane 3 group/J underway
 
