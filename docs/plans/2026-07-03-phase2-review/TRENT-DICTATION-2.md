@@ -62,6 +62,17 @@ Build a really good way for agents to **view their UI changes and verify them**:
 - **Information density is wrong in both directions:** the app is too small to view on a small screen, yet displays too few pieces of information without scrolling. Density/scale is a first-class review axis, not polish.
 - "One render truth" confirmed as the item-B direction (collapse the throwaway web sim onto the core engine rather than re-seeding it).
 
+## ✅ APPROVED — app-shell re-layout ("the one", 2026-07-03, via prototype session)
+
+Trent iterated directly with the prototype agent and approved `~/TWA/ledrums-prototypes/relayout-shell.html` as THE target shell for wave 3. It supersedes decisions 1 and 2 (add-flow + inspector) by merging them into one layout:
+
+- **Graph canvas fills the main area** (left).
+- **"Node Editor" side drawer** on the canvas: tabs for **Add palette** and **Inspector** (click a node → inspect). This replaces both the add-modal-vs-drawer question and the short stacked inspector.
+- **Full-height right column**: Kit preview (3D visualiser) + **Buses/Layers** with MONO/POLY + arm toggles.
+- **"Graphs" dock at the bottom**, spanning only the graph-view width (canvas + drawer): **section tabs** (Intro/Verse/Chorus/Bridge) and **graph cards each with a bordered hotkey number badge**; keys **1–9 fire graphs** (green fire flash), **←/→ switch sections**.
+
+Still open: decision 3 (modifier-order visibility) and decision 4 (envelope-trigger semantics).
+
 ## Phase 0 status at capture time
 
 - 7 haiku Explore agents dispatched to reconcile groups A/B/E/F/G/H/I/J/K + side-tasks vs the actual wired code, plus sweeps: determinism suspects, self-referential `$effect` recurrence, Share-button archaeology, thumbnail time-source inventory, graph-UX bug code location, title-style inventory, modifier/modulation chaining semantics.
