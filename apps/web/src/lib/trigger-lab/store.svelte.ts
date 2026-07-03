@@ -43,6 +43,7 @@ import {
 } from './sim';
 import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, SECTIONS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
+import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
@@ -382,6 +383,10 @@ export class TriggerLab {
       "incorrect PIN" hint after a failed retry (authRequired alone can't signal a re-failure
       since it stays true across the retry). */
   authFailCount = $state(0);
+  /** The last server `error` message (e.g. a rejected patch paste — S45), or null once cleared.
+      Surfaced as a dismissible notice so an invalid `setProject` is user-visible with no silent
+      failure; cleared on the next successful patch send or when the user dismisses it. */
+  serverError = $state<string | null>(null);
 
   /** mutable effect registry — the effect creator appends here (synced to the sim). */
   effects = $state<EffectDef[]>([...EFFECTS]);
@@ -1269,6 +1274,11 @@ export class TriggerLab {
         this.serverFrame = frame;
       },
       onInput: (kind, label, value, note, channel) => this.receiveInputEcho(kind, label, value, note, channel),
+      // Server-side rejection (e.g. an invalid patch paste — S45): surface it as a dismissible
+      // notice so the failure is user-visible rather than silent.
+      onError: (message) => {
+        this.serverError = message;
+      },
       onMonitor: (event) => this.addMonitor(event),
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
@@ -1811,6 +1821,48 @@ export class TriggerLab {
   setPatchLabel(nodeId: string, label: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     this.patchLabels = routing.setPatchLabel(this.patchLabels, nodeId, label);
+  }
+
+  // --- patch copy / paste (group K, S45) -------------------------------------
+  // Copy serializes the device slices (kit incl. outputs, input map, output settings) as a
+  // portable `patch` ClipDoc; paste re-rigs the device via the bulk `setProject` message —
+  // schema-validated + applied wholesale server-side, behind an explicit diff confirm dialog.
+
+  /** The current rig's device slices as a `patch` ClipDoc, ready to write to the clipboard.
+      null offline (no live project). Reads the authoritative server project so a copy round-trips
+      the REAL wiring, not a local optimistic edit that hasn't confirmed. */
+  buildPatchDoc(): string | null {
+    if (!this.project) return null;
+    const { name, kit, inputMap, output } = this.project;
+    return clipdoc.serialize(clipdoc.buildPatchClipDoc({ name, kit, inputMap, output }));
+  }
+
+  /** Write the current rig as a `patch` ClipDoc to the system clipboard. Returns false when there
+      is nothing to copy (offline) or the clipboard is unavailable — the toolbar surfaces the result. */
+  async copyPatch(): Promise<boolean> {
+    const text = this.buildPatchDoc();
+    if (!text || !navigator.clipboard?.writeText) return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false; // clipboard write refused (permissions / insecure context)
+    }
+  }
+
+  /** Send a validated-shape patch to the server as the bulk `setProject` re-rig. The server is the
+      authoritative validator (zod) + applier — it round-trips the next `state`, which re-adopts
+      above — so this does NOT optimistically write `project`. Clears any prior server error; a new
+      rejection re-populates {@link serverError}. No-op for a read-only viewer. */
+  setProjectPatch(patch: clipdoc.PatchPayload): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    this.serverError = null;
+    this.client.send({ t: 'setProject', patch });
+  }
+
+  /** Dismiss the current server-error notice (S45 paste failure surface). */
+  clearServerError(): void {
+    this.serverError = null;
   }
 
   // --- setlist arranging (songs → sections → per-drum graph slots) ----------
