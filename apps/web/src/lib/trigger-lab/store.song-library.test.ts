@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
-import type { WSClient } from '../ws/client';
+import { SONGS_STORAGE_KEY, serializeSongLibrary, type SongLibrary } from './persistence';
+import type { LibrarySong } from './store/song-library';
+import type { WSClient, WSCallbacks } from '../ws/client';
+import type { ClientMessage, OutputStatus, SerializedModel } from '../ws/protocol-types';
 
 /* Song library on the store (S41): export a local song into the canonical pool, reference it from
    a show (resolve materializes it into the runtime view), canonical propagation across shows, detach
@@ -30,6 +34,19 @@ class MemStorage {
 }
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
+
+/** A WSClient that captures the callbacks the store registers, so a test can drive onState. */
+const harnessClient =
+  (h: { cb: WSCallbacks | null }): (() => WSClient) =>
+  () =>
+    ({ on(cb: WSCallbacks) { h.cb = cb; }, connect() {}, close() {}, send(_m: ClientMessage) {} }) as unknown as WSClient;
+
+const MODEL: SerializedModel = { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } };
+const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
+
+/** A minimal, valid pool song under `id` (empty closure — enough to reserve its id). */
+const libSong = (id: string): LibrarySong => ({ id, name: id, sections: [], graphs: {}, graphNames: {}, effects: [], presets: [] });
+const suffix = (id: string): number => Number(id.split('-')[1]);
 
 function withRaf(fn: () => void): void {
   const raf = globalThis.requestAnimationFrame;
@@ -127,6 +144,38 @@ describe('delete-in-use guard', () => {
     store.detachSongReference(libId);
     expect(store.deleteLibrarySong(libId)).toEqual([]);
     expect(store.songLibraryList).toEqual([]);
+  });
+});
+
+describe('pool-id reservation (no collision with local song mints)', () => {
+  // Pool ids share the global `song-N` counter with local songs; a restored/adopted pool id must
+  // be reserved so a later local mint can't reuse it (which would duplicate an id in resolvedSongs).
+  // The pool id is chosen far above any counter value a test process reaches, so the next mint's
+  // number exceeds it ONLY because the reserve advanced the counter — without the fix the counter
+  // stays small and the mint's number would NOT exceed the pool id.
+  it('reserves a RESTORED pool id at boot', () => {
+    const POOL = 'song-2000000000';
+    localStorage.setItem(SONGS_STORAGE_KEY, JSON.stringify(serializeSongLibrary({ songs: { [POOL]: libSong(POOL) } } as SongLibrary)));
+    const store = new TriggerLab(fakeClient);
+    expect(store.songLibraryList.map((s) => s.id)).toEqual([POOL]);
+    const local = store.createSong('Local');
+    expect(local).not.toBe(POOL);
+    expect(suffix(local)).toBeGreaterThan(2_000_000_000); // counter advanced past the pool id
+  });
+
+  it('reserves an ADOPTED pool id (server cold-load)', () => {
+    const POOL = 'song-3000000000';
+    const h: { cb: WSCallbacks | null } = { cb: null };
+    withRaf(() => {
+      const store = new TriggerLab(harnessClient(h));
+      store.start(); // attaches the WS callbacks
+      const blob = serializeSongLibrary({ songs: { [POOL]: libSong(POOL) } } as SongLibrary);
+      h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, blob, null);
+      expect(store.songLibraryList.map((s) => s.id)).toEqual([POOL]); // adopted
+      const local = store.createSong('Local');
+      expect(suffix(local)).toBeGreaterThan(3_000_000_000); // counter advanced past the adopted id
+      store.stop();
+    });
   });
 });
 

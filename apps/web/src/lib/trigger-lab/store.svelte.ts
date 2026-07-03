@@ -543,6 +543,11 @@ export class TriggerLab {
     const rawSongLib = readStoredSongLibrary();
     this.bootedFromLocalSongLibrary = deserializeSongLibrary(rawSongLib) !== null;
     this.songLibrary = loadSongLibrary(rawSongLib);
+    // Reserve the POOL ids too (they share the global `song-N` counter with local songs): without
+    // this a later local-song mint could reuse a restored pool id, so `resolvedSongs` would carry a
+    // local AND a referenced song under one id. Closure-internal ids are safe via the `lib:<id>/`
+    // prefix — only the pool id itself collides. Mirrored in adoptSongLibrary for the server path.
+    reserveIds(Object.keys(this.songLibrary.songs));
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
@@ -1349,6 +1354,10 @@ export class TriggerLab {
       plain rune replace (the shows that reference it re-resolve reactively). */
   private adoptSongLibrary(lib: SongLibrary): void {
     this.songLibrary = lib;
+    // Reserve the adopted pool ids into the global counter, so a later local-song mint can't reuse
+    // one and collide in `resolvedSongs` (the cross-process case: machine A's exported `song-N`
+    // arrives here before this client mints its own). See the constructor's boot reserve.
+    reserveIds(Object.keys(lib.songs));
   }
 
   /** Push the current song library to the server when it actually changed (sig-guarded, gated on
