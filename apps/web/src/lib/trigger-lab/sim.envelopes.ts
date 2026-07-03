@@ -22,6 +22,15 @@ export type EaseFn = voice.EaseFn;
 export type EaseDir = voice.EaseDir;
 export type EaseSpec = voice.EaseSpec;
 
+// ---- Modulation model (doc 10, S33) — single-sourced in core, re-exported here ----
+// The mapping model + sweep are core (`voice/modulation.ts`); the web sim mirrors the engine
+// by importing them, so the offline preview can never drift from real output.
+export type Mapping = voice.Mapping;
+export type ModSource = voice.ModSource;
+export type ModSourceKind = voice.ModSourceKind;
+export type ModSampleCtx = voice.ModSampleCtx;
+export const { applyModulations, envelopeToMapping } = voice;
+
 // Re-exported by value so identity holds (`sampleEnvelope === voice.sampleEnvelope`):
 // proof there is one implementation, not a copy.
 export const {

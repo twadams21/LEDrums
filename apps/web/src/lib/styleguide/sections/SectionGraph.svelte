@@ -13,6 +13,24 @@
   import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
   import DemoCard from '../DemoCard.svelte';
+  import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
+  import ParamRowTick from '../../app/views/ParamRowTick.svelte';
+  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
+  import { voice } from '@ledrums/core';
+
+  // S38 signal-preview demo inputs — real core data, sampled by the previews through core.
+  const demoEnv = voice.defaultEnvelope('decay');
+  const demoLfo: voice.LfoSettings = { ...voice.defaultLfoSettings(), waveform: 'triangle', rateHz: 0.7 };
+  // A gently wobbling synthetic CC so the live bar + param tick visibly move in the styleguide
+  // (the real bar reads the engine CC table; this stand-in keeps the demo honest about "live").
+  const demoCcTable = new Map<string, number>();
+  const demoCc = (): number => {
+    const v = 0.5 + 0.5 * Math.sin(performance.now() / 900);
+    demoCcTable.set(voice.ccKey(1, null), v);
+    return v;
+  };
+  const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
+  const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
 
   const face = (kind: NodeKind, sub: string) => ({
     icon: kindIcon[kind],
@@ -33,6 +51,8 @@
     { id: 'p2', type: 'demo', position: { x: 750, y: 160 }, data: { ...face('play', 'Shimmer'), title: 'Sparkle' } },
     // a modifier node wired into a play node's mod input — the dashed mod wire reads distinctly
     { id: 'm', type: 'demo', position: { x: 250, y: 260 }, data: { ...face('modifier', 'add · smear'), title: 'Trail' } },
+    // a modulation SOURCE (envelope) wired into a play node's exposed param — the dotted mod wire
+    { id: 'env', type: 'demo', position: { x: 250, y: 380 }, data: { ...face('envelope', 'modulation source'), title: 'Envelope' } },
   ]);
   let edges = $state<Edge[]>([
     { id: 'e1', source: 't', target: 'r', type: 'wire' },
@@ -40,6 +60,7 @@
     { id: 'e3', source: 'r', target: 'd', type: 'wire' },
     { id: 'e4', source: 'd', target: 'p2', type: 'wire' },
     { id: 'e5', source: 'm', target: 'p2', targetHandle: 'mod', type: 'wire', data: { mod: true } },
+    { id: 'e6', source: 'env', target: 'p1', type: 'wire', data: { modulation: true } },
   ]);
 
   const hover = new GraphHover();
@@ -143,6 +164,35 @@
     </div>
   </DemoCard>
 
+  <DemoCard
+    title="Signal previews · node-face live ticks"
+    src={[
+      'lib/app/views/NodeSignalPreview',
+      'lib/app/views/ParamRowTick',
+      'lib/trigger-lab/SignalFace',
+      'lib/trigger-lab/signal-preview',
+    ]}
+  >
+    <div class="sig-demo">
+      <div class="sig-cell">
+        <NodeSignalPreview kind="envelope" env={demoEnv} />
+        <span class="sig-label">Envelope · shape + phase cursor</span>
+      </div>
+      <div class="sig-cell">
+        <NodeSignalPreview kind="lfo" lfo={demoLfo} bpm={120} />
+        <span class="sig-label">LFO · waveform + moving phase</span>
+      </div>
+      <div class="sig-cell">
+        <NodeSignalPreview kind="cc" ccValue={demoCc} />
+        <span class="sig-label">CC · live value bar + readout</span>
+      </div>
+      <div class="sig-cell">
+        <span class="sig-row"><span class="sig-plabel">brightness</span><ParamRowTick sample={demoTick} /></span>
+        <span class="sig-label">Param row · live value tick</span>
+      </div>
+    </div>
+  </DemoCard>
+
   <div class="contract">
     <h3>The locked graph interaction contract</h3>
     <ul>
@@ -153,6 +203,8 @@
       <li><strong>Rejected rewires keep the wire.</strong> The store validates reconnects; an invalid drop restores the original wire instead of deleting it.</li>
       <li><strong>Per-band handles.</strong> A value+bands switch emits one source handle per band (<code>band-&#123;i&#125;</code>) so each band wires a different child (<code>BandSwitchNode</code>).</li>
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
+      <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
+      <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
       <li><strong>Modifiers add by category.</strong> The <code>ModifierPalette</code> lists every registered modifier grouped by category with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list), so new modifiers appear automatically.</li>
       <li><strong>Delete / Backspace</strong> removes the selection; the palette adds at the visible canvas centre.</li>
     </ul>
@@ -162,6 +214,38 @@
 <style>
   .canvas-demo {
     height: 360px;
+  }
+  /* S38 signal-preview demo grid */
+  .sig-demo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+    padding: var(--space-3);
+  }
+  .sig-cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+  .sig-label {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+  .sig-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .sig-plabel {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
   }
   .palette-stack {
     display: flex;

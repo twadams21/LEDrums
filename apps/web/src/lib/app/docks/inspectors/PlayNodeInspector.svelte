@@ -15,8 +15,8 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Replace from '@lucide/svelte/icons/replace';
-  import Spline from '@lucide/svelte/icons/spline';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -32,7 +32,9 @@
       that writes through to all three (the picker is UI-only — persistence stays numeric). */
   const COLOR_KEYS = ['hue', 'saturation', 'brightness'] as const;
   const hasColorSwatch = $derived(!!eff && COLOR_KEYS.every((k) => eff.params.some((p) => p.key === k)));
-  const colorModulated = $derived(hasColorSwatch && COLOR_KEYS.some((k) => store.isEnveloped(node, k)));
+  // A colour param is "modulated" when it's an exposed target with at least one incoming
+  // modulation wire (doc 10) — the legacy per-param envelope was folded into these mappings (S35).
+  const colorModulated = $derived(hasColorSwatch && COLOR_KEYS.some((k) => store.mappingsFor(node, k).length > 0));
 
   function applyColor(hsv: Hsv): void {
     store.setParam(node, 'hue', hsv.h);
@@ -126,11 +128,9 @@
           onChange={applyColor}
           ariaLabel="Effect colour"
         />
-        <span class="envspace"></span>
       </div>
     {/if}
     {#each eff.params as spec (spec.key)}
-      {@const enveloped = store.isEnveloped(node, spec.key)}
       <div class="prow">
         <span class="plabel">{spec.label}</span>
         {#if spec.kind === 'number'}
@@ -139,8 +139,7 @@
             min={spec.min}
             max={spec.max}
             step={spec.step}
-            disabled={enveloped}
-            format={(v) => (enveloped ? 'swept' : fmt(spec, v))}
+            format={(v) => fmt(spec, v)}
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
           />
@@ -157,17 +156,11 @@
                control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
         {/if}
-        {#if spec.envable}
-          <button class="envbtn" class:on={enveloped} onclick={() => store.openEnv(node, spec.key)} title="Assign envelope">
-            <Spline size={12} aria-hidden="true" />
-            {store.envKind(node, spec.key)}
-          </button>
-        {:else}
-          <span class="envspace"></span>
-        {/if}
       </div>
     {/each}
   </div>
+
+  <ModulationParamsSection {store} {node} />
 
   <p class="foot">
     {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.
@@ -275,7 +268,7 @@
   }
   .prow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) auto;
+    grid-template-columns: 84px minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
   }
@@ -290,27 +283,6 @@
   .prow :global(.paramsel) {
     width: 100%;
     min-width: 0;
-  }
-  .envbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: 3px var(--space-2);
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    text-transform: capitalize;
-  }
-  .envbtn.on {
-    color: var(--ink);
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-    background: var(--accent-soft);
-  }
-  .envspace {
-    width: 1px;
   }
   .foot {
     margin: 0;

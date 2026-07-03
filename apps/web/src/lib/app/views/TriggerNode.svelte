@@ -21,6 +21,9 @@
   import NodeCard from './NodeCard.svelte';
   import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
+  import NodeSignalPreview from './NodeSignalPreview.svelte';
+  import ParamRowTick from './ParamRowTick.svelte';
+  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import Tooltip from '../../ui/Tooltip.svelte';
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
@@ -72,6 +75,25 @@
       ? voice.resolveModifierChain(store.selectedGraph, node).length
       : 0,
   );
+
+  // Exposed modulation-target rows (doc 10, S34): each renders its own labelled node-face row
+  // with a `param:<key>` input handle scoped to modulation sources. Play + modifier nodes only.
+  const modRows = $derived.by(() => {
+    if (!node || (node.kind !== 'play' && node.kind !== 'modifier')) return [];
+    const rows = node.modInputs ?? [];
+    if (rows.length === 0) return [];
+    const specs = store.modTargetSpecs(node);
+    return rows.map((r) => ({
+      param: r.param,
+      label: specs.find((s) => s.key === r.param)?.label ?? r.param,
+      // resolved wired sources drive both the "wired" state and the S38 live value tick
+      sources: store.modSourcesFor(node, r.param),
+    }));
+  });
+
+  // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
+  // mirroring how a play node shows its EffectThumb (S38). Sampled through core, ticker-driven.
+  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc');
   const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
 
@@ -88,6 +110,16 @@
 {#snippet playThumb()}
   {#if node && node.kind === 'play' && eff}
     <EffectThumb pattern={eff.pattern} params={store.liveParams(node)} w={56} h={32} />
+  {/if}
+{/snippet}
+
+{#snippet sourceThumb()}
+  {#if node && node.kind === 'envelope'}
+    <NodeSignalPreview kind="envelope" env={store.envelopeNodeEnvelope(node) ?? undefined} w={56} h={32} />
+  {:else if node && node.kind === 'lfo'}
+    <NodeSignalPreview kind="lfo" lfo={store.lfoSettings(node)} bpm={store.bpm} w={56} h={32} />
+  {:else if node && node.kind === 'cc'}
+    <NodeSignalPreview kind="cc" ccValue={() => store.ccNodeLiveValue(node)} w={56} h={32} />
   {/if}
 {/snippet}
 
@@ -131,7 +163,7 @@
         {sub}
         tint={chipTint}
         selected={!!selected}
-        thumb={kind === 'play' && eff ? playThumb : undefined}
+        thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
       />
       {#if modCount > 0}
@@ -140,6 +172,23 @@
         </span>
       {/if}
     </div>
+    {#if modRows.length > 0}
+      <!-- exposed modulation-target rows: each is its own drop target (a `param:<key>` handle
+           scoped to modulation sources). Precedent: the value+bands switch's per-band handles. -->
+      <ul class="modrows">
+        {#each modRows as row (row.param)}
+          <li class="modrow" class:wired={row.sources.length > 0}>
+            <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
+            <span class="pdot" aria-hidden="true"></span>
+            <span class="plabel">{row.label}</span>
+            <!-- live value tick (S38): the row's current source signal while the engine runs -->
+            <ParamRowTick
+              sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable))}
+            />
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if nodeHasOutput(kind)}
       <Handle type="source" position={Position.Right} />
     {/if}
@@ -163,6 +212,56 @@
   /* a bypassed modifier reads as muted but present (its wire + state slot survive) */
   .tnode.bypassed {
     opacity: 0.55;
+  }
+  /* exposed modulation-target rows under the card — each carries a scoped `param:` handle */
+  .modrows {
+    list-style: none;
+    margin: var(--space-1) 0 0;
+    padding: var(--space-1);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-1);
+  }
+  .modrow {
+    position: relative; /* offset parent for the per-row param handle (sits at the row's left) */
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 22px;
+    padding: 0 var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .pdot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
+    background: transparent;
+  }
+  .modrow.wired .pdot {
+    background: var(--role-modulation);
+    border-color: var(--role-modulation);
+  }
+  .plabel {
+    flex: 1;
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* the scoped modulation input handle rides the row's left edge */
+  .modrow :global(.param-handle) {
+    background: var(--role-modulation);
+    border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
   }
   /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
   .modcount {

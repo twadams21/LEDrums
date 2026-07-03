@@ -17,12 +17,45 @@
  * two chains can never drift.
  */
 import type { GraphNode, ResolvedModifier, TriggerGraph } from './types';
+import { tryGetModifier } from '../modifiers/registry';
+import { envelopeToMapping, type Mapping } from './modulation';
+import { resolveNodeModulations } from './modulation-graph';
+
+/**
+ * Resolve a modifier node's modulations onto its params (doc 10, S34): the per-param authored
+ * envelopes (`node.env`, closing group-H's "modifier env authored but not applied" residual —
+ * bridged to mappings via {@link envelopeToMapping} over the modifier's param spec) PLUS any
+ * incoming `param:<key>` modulation edges (envelope/LFO/CC source nodes wired to the modifier's
+ * exposed rows). Both feed the SAME sweep (contributions sum, clamped to the modifier's spec).
+ * Returns `[]` when nothing modulates this link, so the chain runner keeps it allocation-free.
+ */
+function resolveModifierModulations(graph: TriggerGraph, node: GraphNode): Mapping[] {
+  const specs = tryGetModifier(node.modifierId ?? '')?.paramSpec ?? [];
+  const mappings: Mapping[] = [];
+  // Authored per-param envelopes → mappings over the param spec's range (legacy bridge).
+  const env = node.env;
+  if (env) {
+    for (const key of Object.keys(env)) {
+      const e = env[key];
+      if (!e || e.kind === 'none') continue;
+      const spec = specs.find((s) => s.key === key);
+      if (!spec || spec.type !== 'number') continue;
+      mappings.push(envelopeToMapping(key, e, spec));
+    }
+  }
+  // Graph-wired modulation edges onto this modifier's exposed param rows.
+  mappings.push(...resolveNodeModulations(graph, node, specs));
+  return mappings;
+}
 
 /** Map a modifier node to its resolved link (params/bypass passed verbatim; unknown
-    `modifierId` is left as-is — the chain runner skips it, never throwing on the hot path). */
-function toResolvedModifier(node: GraphNode): ResolvedModifier {
+    `modifierId` is left as-is — the chain runner skips it, never throwing on the hot path).
+    `modulations` (S34) are resolved from the node's authored env + incoming param edges. */
+function toResolvedModifier(graph: TriggerGraph, node: GraphNode): ResolvedModifier {
   const link: ResolvedModifier = { modifierId: node.modifierId ?? '', params: node.params };
   if (node.bypass) link.bypass = true;
+  const modulations = resolveModifierModulations(graph, node);
+  if (modulations.length) link.modulations = modulations;
   return link;
 }
 
@@ -52,7 +85,7 @@ export function resolveModifierChain(
   const chain: ResolvedModifier[] = [];
   for (const m of sources) {
     chain.push(...resolveModifierChain(graph, m, seen2)); // upstream (mod→mod) applies first
-    chain.push(toResolvedModifier(m));
+    chain.push(toResolvedModifier(graph, m));
   }
   return chain;
 }

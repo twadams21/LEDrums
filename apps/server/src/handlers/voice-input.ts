@@ -57,8 +57,12 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       if (msg.controller === SECTION_RECALL_CC) {
         const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
         if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
+      } else {
+        // S37: any other controller feeds the engine's CC value table (queued input event),
+        // where `cc` modulation sources read it per frame. Determinism preserved — same events,
+        // same frames. Controller 0 is reserved above for section recall and never reaches here.
+        voiceHost.applyInput({ kind: 'cc', controller: msg.controller, value: msg.value, channel: msg.channel });
       }
-      // Other controllers have no engine path yet — consume without falling through.
       return true;
     }
     if (msg.t === 'setShow') {

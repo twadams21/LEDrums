@@ -5,6 +5,8 @@
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
 import type { ResolvedModifier } from '../modifiers/types';
+import type { Mapping } from './modulation';
+import type { LfoSettings } from './lfo'; // S36
 
 export type { ResolvedModifier };
 
@@ -222,8 +224,14 @@ export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'cha
  * at voice spawn its closure is resolved into `PlayAction.modifiers` (see
  * `resolveModifierChain` in `modifier-graph.ts`). Kept out of {@link BlockKind} so the
  * block-tree types (web `Block` union, `treeToGraph`) are unaffected.
+ *
+ * `envelope` (doc 10, S34) is a MODULATION SOURCE node — like `modifier` it is inert in
+ * trigger-flow eval (fires no children) and takes no flow/mod input; it carries a shape and
+ * wires from its output into a play/modifier node's exposed `param:<key>` input rows, where
+ * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
+ * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier';
+export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'envelope' | 'lfo' | 'cc'; // S36 'lfo' + S37 'cc'
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -260,6 +268,23 @@ export interface GraphNode {
   /** Modifier bypass: when true the resolved link is identity (kept in the chain so its
       per-voice state slot survives toggling). Optional; defaults to not-bypassed. */
   bypass?: boolean;
+  // modulation targets (doc 10, S34) — meaningful on play + modifier nodes
+  /** Ordered list of params this node has EXPOSED as modulation targets (doc 10). Empty /
+      absent by default; the target Inspector's "Add parameter" appends one. Each entry
+      renders as its own node-face row with a `param:<param>` input handle scoped to
+      modulation sources. The rows are the exposed surface; the actual mappings live on the
+      incoming `param:<key>` edges (one edge = one mapping), so an exposed-but-unwired param
+      is a row with no contribution. */
+  modInputs?: { param: string }[];
+  // lfo source (doc 10, S36) — only meaningful when kind === 'lfo'. Optional + additive; unset
+  // falls back to defaults in `nodeModSource` so a freshly-wired LFO still animates.
+  lfo?: LfoSettings; // S36
+  // cc source (S37) — meaningful only on a `cc` modulation-source node
+  /** MIDI controller number this CC node reads (0..127). Controller 0 is reserved for
+      section recall and rejected in the editor. Absent → 1 (nodeModSource falls back). */
+  ccController?: number; // S37
+  /** MIDI channel filter (1..16), or `null` for omni (any channel). Absent → omni. */
+  ccChannel?: number | null; // S37
   // random
   noRepeat: boolean;
   // switch
@@ -300,8 +325,21 @@ export interface GraphEdge {
   fromPort?: string;
   /** target handle this edge lands on. `undefined`/`'in'` = the node's trigger-flow input
       (back-compat). `'mod'` = a play/modifier node's modifier input (a modifier-chain wire).
-      Shared with doc 10, which extends it with `param:<key>` modulation targets. */
-  toPort?: 'in' | 'mod';
+      `` `param:<key>` `` (doc 10, S34) = a modulation wire landing on the target's exposed
+      param row `<key>` — one such edge IS one {@link import('./modulation').Mapping} onto that
+      param, carrying its own `amount`/`invert`/`rangeMin`/`rangeMax` below. */
+  toPort?: 'in' | 'mod' | `param:${string}`;
+  // per-mapping settings (doc 10, S34) — meaningful ONLY on a `param:<key>` modulation edge.
+  // Edited target-side (the target node's Inspector), one entry per incoming wire. Absent →
+  // the resolver's defaults (amount 1, no invert, range = the target param spec's min/max).
+  /** modulation depth 0..1 (default 1). */
+  amount?: number;
+  /** flip the source signal (1 − s) before scaling into the range (default false). */
+  invert?: boolean;
+  /** low bound the source maps into (default = target param spec min). */
+  rangeMin?: number;
+  /** high bound the source maps into (default = target param spec max). */
+  rangeMax?: number;
 }
 
 export interface TriggerGraph {
@@ -433,6 +471,14 @@ export interface Voice {
    * `genState` lifecycle).
    */
   modState?: unknown[];
+  /**
+   * Resolved modulation mappings onto this voice's effect params (doc 10). Populated from
+   * graph topology at spawn (S34); `undefined`/empty → params take their unmodulated value.
+   * The per-frame param sweep (`applyEffectiveParams`) sums each param's contributions and
+   * clamps to the spec range. Same {@link Mapping} model + sampler as the modifier chain's
+   * `ResolvedModifier.modulations` — one model, two carriers.
+   */
+  modulations?: Mapping[];
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
   /**
@@ -441,9 +487,8 @@ export interface Voice {
    * compositor reads it, so the hot path stays allocation-free.
    */
   liveParams: ParamValues;
-  /** The spawning effect's param specs (by reference) — drives envelope ranges. */
+  /** The spawning effect's param specs (by reference) — drives modulation ranges. */
   specs: ParamSpec[];
-  env: EnvMap;
   attackMs: number;
   sustainMs: number;
   releaseMs: number;

@@ -13,10 +13,12 @@ import {
   Sim,
   defaultParams,
   defaultEnvelope,
+  defaultAdsr,
   adsrToPoints,
   type AdsrShape,
   type Bus,
   type EffectDef,
+  type GraphEdge,
   type Envelope,
   type EnvKind,
   type EnvPoint,
@@ -47,7 +49,8 @@ import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } fr
 import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { InputMap, OutputConfig, Project, voice } from '@ledrums/core';
+import type { InputMap, OutputConfig, Project } from '@ledrums/core';
+import { voice, listModifiers } from '@ledrums/core';
 import { buildShow } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
@@ -97,9 +100,14 @@ import {
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 
+/** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
+    so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
+const RESERVED_CC_CONTROLLER = 0;
+
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
-  | { kind: 'trigger'; graphKey: string };
+  | { kind: 'trigger'; graphKey: string }
+  | { kind: 'cc-node'; nodeId: string }; // S37: bind a CC source node to the next incoming CC
 
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */
@@ -646,6 +654,11 @@ export class TriggerLab {
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
+        // S37: a CC source node can MIDI-learn the next incoming controller; the live value
+        // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
+        // Controller 0 is reserved for section recall and never learns/binds here.
+        if (this.acceptsMidiChannel(ev.channel)) this.applyCcLearn(ev.controller, ev.channel);
+        this.sim.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
       case 'programChange':
@@ -660,7 +673,9 @@ export class TriggerLab {
       hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
       constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
   private normalizeGraphs(): void {
-    const { graphs, graphNames } = hydrateGraphs(this.graphs, this.graphNames, this.pads);
+    const { graphs, graphNames } = hydrateGraphs(this.graphs, this.graphNames, this.pads, (effectId) =>
+      this.effects.find((e) => e.id === effectId)?.params ?? [],
+    );
     this.graphs = graphs;
     this.graphNames = graphNames;
   }
@@ -1484,9 +1499,24 @@ export class TriggerLab {
         ...this.project.inputMap,
         midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
       });
-    } else {
+    } else if (target.kind === 'trigger') {
       this.setTriggerSource(target.graphKey, { kind: 'midi', note });
+    } else {
+      return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
+    this.midiLearnTarget = null;
+  }
+
+  /** Bind an armed CC-node learn target to the next incoming controller (S37). Controller 0 is
+      reserved for section recall, so it is never learned — the target stays armed for a real CC.
+      No-op unless a `cc-node` learn is armed and its node still exists. */
+  private applyCcLearn(controller: number, _channel: number): void {
+    const target = this.midiLearnTarget;
+    if (!target || target.kind !== 'cc-node' || this.isViewer) return;
+    if (controller === RESERVED_CC_CONTROLLER) return; // reserved → keep waiting for a real CC
+    const node = this.selectedGraph?.nodes.find((n) => n.id === target.nodeId);
+    if (!node || node.kind !== 'cc') return;
+    node.ccController = controller;
     this.midiLearnTarget = null;
   }
 
@@ -1791,6 +1821,20 @@ export class TriggerLab {
       node = makeNode('play', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
       node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
+    } else if (kind === 'envelope') {
+      // Seed a modulation-source envelope with a default shape in the well-known slot so it
+      // animates the moment it is wired (the inspector edits this shape via the S24 editor).
+      const adsr = defaultAdsr();
+      node = makeNode('envelope', nid('n'), x, y, {
+        env: { [voice.ENVELOPE_NODE_KEY]: { kind: 'custom', amount: 1, points: adsrToPoints(adsr), adsr } },
+      });
+    } else if (kind === 'lfo') {
+      // S36 — seed default LFO settings so it animates the moment it is wired.
+      node = makeNode('lfo', nid('n'), x, y, { lfo: voice.defaultLfoSettings() });
+    } else if (kind === 'cc') {
+      // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
+      // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
+      node = makeNode('cc', nid('n'), x, y, { ccController: 1, ccChannel: null });
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
@@ -1839,7 +1883,19 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
-    g.edges.push({ id: nid('e'), from: fromId, to: toId, fromPort, toPort });
+    const edge: GraphEdge = { id: nid('e'), from: fromId, to: toId, fromPort, toPort };
+    // A modulation wire (`param:<key>`) IS one mapping — bake its default settings from the
+    // target param spec (amount 1, no invert, range = spec min/max) so it is editable + persists.
+    const key = voice.paramKeyOf(toPort);
+    if (key !== null) {
+      const to = g.nodes.find((n) => n.id === toId);
+      const spec = to ? this.modTargetSpecs(to).find((s) => s.key === key) : undefined;
+      edge.amount = 1;
+      edge.invert = false;
+      edge.rangeMin = spec?.min ?? 0;
+      edge.rangeMax = spec?.max ?? 1;
+    }
+    g.edges.push(edge);
   }
   disconnect(edgeId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -2287,5 +2343,193 @@ export class TriggerLab {
     e.adsr = { ...adsr };
     e.points = adsrToPoints(adsr);
     e.kind = 'custom';
+  }
+
+  // --- modulation graph layer (doc 10, S34) --------------------------------
+
+  /** The numeric params a target node can expose as modulation targets, normalized to
+      `{ key, label, min, max }` — effect params for play nodes, modifier params for modifier
+      nodes (which use the core `type` spec field). Non-number params are excluded. */
+  modTargetSpecs(node: GraphNode): { key: string; label: string; min?: number; max?: number }[] {
+    if (node.kind === 'play') {
+      const eff = this.effectOf(node);
+      return (eff?.params ?? [])
+        .filter((s) => s.kind === 'number')
+        .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
+    }
+    if (node.kind === 'modifier') {
+      const def = listModifiers().find((m) => m.id === node.modifierId);
+      return (def?.paramSpec ?? [])
+        .filter((s) => s.type === 'number')
+        .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
+    }
+    return [];
+  }
+
+  /** The ordered exposed modulation-target rows on a node. */
+  modInputsOf(node: GraphNode): { param: string }[] {
+    return node.modInputs ?? [];
+  }
+
+  /** Numeric params not yet exposed — the "Add parameter" picker options. */
+  availableModParams(node: GraphNode): { key: string; label: string }[] {
+    const exposed = new Set((node.modInputs ?? []).map((m) => m.param));
+    return this.modTargetSpecs(node)
+      .filter((s) => !exposed.has(s.key))
+      .map((s) => ({ key: s.key, label: s.label }));
+  }
+
+  /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
+  addModInput(node: GraphNode, param: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'play' && node.kind !== 'modifier') return;
+    if (!node.modInputs) node.modInputs = [];
+    if (node.modInputs.some((m) => m.param === param)) return;
+    node.modInputs.push({ param });
+  }
+
+  /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */
+  removeModInput(node: GraphNode, param: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    node.modInputs = (node.modInputs ?? []).filter((m) => m.param !== param);
+    const g = this.selectedGraph;
+    if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort === `param:${param}`));
+  }
+
+  /** The incoming mapping edges for a node's exposed param — one per wire, each editable. */
+  mappingsFor(node: GraphNode, param: string): GraphEdge[] {
+    const g = this.selectedGraph;
+    if (!g) return [];
+    return g.edges.filter((e) => e.to === node.id && e.toPort === `param:${param}`);
+  }
+
+  /** The resolved modulation SOURCES wired into an exposed param row, each with its edge's
+      `invert` — drives the S38 node-face live tick (`paramRowSignal`). Dangling / non-source
+      wires are skipped (never thrown), mirroring `resolveNodeModulations`. */
+  modSourcesFor(node: GraphNode, param: string): { source: voice.ModSource; invert: boolean }[] {
+    const g = this.selectedGraph;
+    if (!g) return [];
+    const out: { source: voice.ModSource; invert: boolean }[] = [];
+    for (const e of g.edges) {
+      if (e.to !== node.id || e.toPort !== `param:${param}`) continue;
+      const src = g.nodes.find((n) => n.id === e.from);
+      if (!src) continue;
+      const source = voice.nodeModSource(src);
+      if (!source) continue;
+      out.push({ source, invert: e.invert === true });
+    }
+    return out;
+  }
+
+  /** A `cc` source node's current live 0..1 level, read from the sim's CC table (the offline
+      mirror of the engine table). Drives the CC node-face value bar + readout (S38). */
+  ccNodeLiveValue(node: GraphNode): number {
+    if (node.kind !== 'cc') return 0;
+    return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
+  }
+
+  /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
+  get liveCcTable(): voice.CcTable {
+    return this.sim.ccTable;
+  }
+
+  private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    const edge = this.selectedGraph?.edges.find((e) => e.id === edgeId);
+    if (edge) mut(edge);
+  }
+  /** Per-mapping depth 0..1 (edited target-side, under the param row). */
+  setMappingAmount(edgeId: string, amount: number): void {
+    this.editEdge(edgeId, (e) => (e.amount = amount));
+  }
+  /** Per-mapping invert (flips the source before scaling into the range). */
+  setMappingInvert(edgeId: string, invert: boolean): void {
+    this.editEdge(edgeId, (e) => (e.invert = invert));
+  }
+  /** Per-mapping output range the source maps into (clamped to the param spec at render). */
+  setMappingRange(edgeId: string, min: number, max: number): void {
+    this.editEdge(edgeId, (e) => {
+      e.rangeMin = min;
+      e.rangeMax = max;
+    });
+  }
+
+  // --- envelope SOURCE node shape (the S24 editor drives this via the node inspector) -------
+
+  /** The envelope source node's ADSR shape (stored in the well-known slot). */
+  envelopeNodeAdsr(node: GraphNode): AdsrShape {
+    return (node.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY]?.adsr : undefined) ?? defaultAdsr();
+  }
+  /** The envelope source node's full envelope (shape + render points), or null. */
+  envelopeNodeEnvelope(node: GraphNode): Envelope | null {
+    return node.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY] ?? null : null;
+  }
+  /** Set the envelope source node's shape (regenerates its render curve; single source). */
+  setEnvelopeNodeAdsr(node: GraphNode, adsr: AdsrShape): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'envelope') return;
+    let e = node.env[voice.ENVELOPE_NODE_KEY];
+    if (!e) {
+      e = { kind: 'custom', amount: 1, points: [] };
+      node.env[voice.ENVELOPE_NODE_KEY] = e;
+    }
+    e.adsr = { ...adsr };
+    e.points = adsrToPoints(adsr);
+    e.kind = 'custom';
+  }
+
+  // --- LFO SOURCE node settings (doc 10, S36) — edited via the LFO node inspector ----------
+
+  /** The LFO source node's settings (defaults when unset). */
+  lfoSettings(node: GraphNode): voice.LfoSettings {
+    return (node.kind === 'lfo' ? node.lfo : undefined) ?? voice.defaultLfoSettings();
+  }
+  /** Patch the LFO source node's settings (seeds defaults first so partial edits are safe). */
+  setLfo(node: GraphNode, patch: Partial<voice.LfoSettings>): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'lfo') return;
+    node.lfo = { ...(node.lfo ?? voice.defaultLfoSettings()), ...patch };
+  }
+
+  // --- CC SOURCE node settings (S37) ---------------------------------------
+  // The node's controller number + channel filter drive an engine CC-table read at sample
+  // time. MIDI-learn reuses the shared learn flow (see startMidiLearn + applyCcLearn).
+
+  /** The CC source node's controller number (default 1). */
+  ccNodeController(node: GraphNode): number {
+    return node.kind === 'cc' ? node.ccController ?? 1 : 1;
+  }
+  /** The CC source node's channel filter (1..16), or null for omni (any channel). */
+  ccNodeChannel(node: GraphNode): number | null {
+    return node.kind === 'cc' ? node.ccChannel ?? null : null;
+  }
+
+  /** Whether a controller number is bindable — rejects the reserved section-recall CC 0 and
+      anything outside the MIDI range (1..127). Drives the inspector's validation. */
+  isBindableCcController(controller: number): boolean {
+    return Number.isFinite(controller) && controller >= 1 && controller <= 127;
+  }
+
+  /** Set the CC node's controller. Controller 0 is reserved for section recall and REJECTED
+      (validation, not a throw); an out-of-range value is likewise ignored, leaving the prior
+      binding untouched. Valid range 1..127. */
+  setCcController(node: GraphNode, controller: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'cc') return;
+    if (!this.isBindableCcController(controller)) return; // 0 reserved + out-of-range rejected
+    node.ccController = Math.round(controller);
+  }
+
+  /** Set the CC node's channel filter (1..16), or null for omni (any channel). Out-of-range
+      numeric channels are ignored (the prior filter stays). */
+  setCcChannel(node: GraphNode, channel: number | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'cc') return;
+    if (channel === null) {
+      node.ccChannel = null;
+      return;
+    }
+    if (!Number.isFinite(channel) || channel < 1 || channel > 16) return;
+    node.ccChannel = Math.round(channel);
   }
 }

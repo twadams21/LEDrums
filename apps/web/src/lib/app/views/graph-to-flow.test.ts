@@ -60,6 +60,24 @@ describe('graphToFlowEdges', () => {
     };
     expect(graphToFlowEdges(g)[0]!.sourceHandle).toBe('band-1');
   });
+
+  it('routes a modulation edge to its `param:<key>` targetHandle and flags it for styling', () => {
+    const g: TriggerGraph = {
+      nodes: [makeNode('envelope', 'e', 0, 0), makeNode('play', 'p', 300, 0)],
+      edges: [{ id: 'e0', from: 'e', to: 'p', toPort: 'param:brightness' }],
+    };
+    const [edge] = graphToFlowEdges(g);
+    expect(edge!.targetHandle).toBe('param:brightness');
+    expect(edge!.data).toEqual({ modulation: true });
+  });
+
+  it('flags a mod-chain wire distinctly from a modulation wire', () => {
+    const g: TriggerGraph = {
+      nodes: [makeNode('modifier', 'm', 0, 0, { modifierId: 'trail' }), makeNode('play', 'p', 300, 0)],
+      edges: [{ id: 'e0', from: 'm', to: 'p', toPort: 'mod' }],
+    };
+    expect(graphToFlowEdges(g)[0]!.data).toEqual({ mod: true });
+  });
 });
 
 describe('graphToFlow + applyFlowPositions round-trip', () => {

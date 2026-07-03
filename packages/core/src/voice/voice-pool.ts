@@ -7,9 +7,8 @@
  * Pure + deterministic: no IO, no wall-clock — `timeMs` is always supplied by the caller
  * (the engine, which owns transport), never read from a global clock.
  */
-import { cloneEnvelope } from './envelope';
 import type { PlayAction } from './eval-graph';
-import type { Bus, EffectDef, EnvMap, ParamSpec, Voice } from './types';
+import type { Bus, EffectDef, ParamSpec, Voice } from './types';
 
 const VOICE_CAP = 256;
 
@@ -113,9 +112,12 @@ export class VoicePool {
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
     slot.modifiers = a.modifiers;
     slot.modState = undefined;
+    // Resolved modulation mappings (S34 populates `a.modulations` from graph topology); no
+    // per-voice state — envelopes sample the voice's own life phase, so a reused slot just
+    // takes the new list (or undefined) with nothing to reset.
+    slot.modulations = a.modulations;
     slot.params = { ...a.params };
     slot.specs = effect.params;
-    slot.env = cloneEnvMap(a.env);
     slot.attackMs = effect.attackMs;
     slot.sustainMs = effect.sustainMs;
     slot.releaseMs = effect.releaseMs;
@@ -130,12 +132,6 @@ export class VoicePool {
     if (a.latchKey) deps.latched.set(a.latchKey, slot.id);
     return slot;
   }
-}
-
-function cloneEnvMap(env: EnvMap): EnvMap {
-  const out: EnvMap = {};
-  for (const k of Object.keys(env)) out[k] = cloneEnvelope(env[k]!);
-  return out;
 }
 
 /** Pre-allocated voice pool slot (inactive). */
@@ -155,10 +151,10 @@ function makeVoiceSlot(): Voice {
     genState: null,
     modifiers: undefined,
     modState: undefined,
+    modulations: undefined,
     params: {},
     liveParams: {},
     specs: EMPTY_SPECS,
-    env: {},
     attackMs: 0,
     sustainMs: 0,
     releaseMs: 0,

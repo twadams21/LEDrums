@@ -55,7 +55,8 @@
   --role-effect: oklch(0.785 0.150 68); /* modifier                            */
   --role-layer: oklch(0.745 0.150 152); /* composite / blend                   */
   --role-output: oklch(0.720 0.120 205); /* to the wire (Art-Net/sACN)         */
-  --role-mod: oklch(0.760 0.130 330); /* modulation (control → param)          */
+  --role-mod: oklch(0.760 0.130 330); /* modifier chain (media effect → play)   */
+  --role-modulation: oklch(0.820 0.130 195); /* modulation (source → param)     */
 
   /* ---- Live-reactive tint (opt-in; runtime sets to dominant LED colour) ---- */
   --reactive-tint: transparent;

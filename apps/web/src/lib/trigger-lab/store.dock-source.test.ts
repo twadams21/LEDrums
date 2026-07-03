@@ -51,7 +51,6 @@ function simVoice(over: Partial<Voice> = {}): Voice {
     sourceDrumId: null,
     velocity: 1,
     params: { hue: 200 },
-    env: {},
     attackMs: 0,
     sustainMs: 0,
     releaseMs: 0,

@@ -24,6 +24,7 @@ import { defaultParams, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
 import { applyModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
+import type { ModSampleCtx } from './modulation';
 import type { Voice } from './types';
 
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
@@ -35,9 +36,11 @@ export interface GeneratorBridge {
   /**
    * Render one generator voice into `dst` over pixel range `[start, end)`, scaled by
    * `level` (voice envelope × deck gain). Unknown generator ids render nothing (the
-   * voice never falls through to the pattern path).
+   * voice never falls through to the pattern path). `modCtx` (built by the compositor from
+   * the voice's life phase + transport) lets a modified generator's chain modulate its
+   * modifier params (doc 10); it is inert for an unmodified / unmodulated voice.
    */
-  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, start: number, end: number, dst: Framebuffer): void;
+  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, start: number, end: number, dst: Framebuffer, modCtx: ModSampleCtx): void;
 }
 
 export function createGeneratorBridge(): GeneratorBridge {
@@ -72,7 +75,7 @@ export function createGeneratorBridge(): GeneratorBridge {
       }
     },
 
-    renderVoice(v, model, timeMs, level, start, end, dst): void {
+    renderVoice(v, model, timeMs, level, start, end, dst, modCtx): void {
       const gen = tryGetEffect(v.generatorId!);
       if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
       if (!genCtx || !frameTransport) return; // beginFrame not called this frame (never happens in practice)
@@ -145,7 +148,7 @@ export function createGeneratorBridge(): GeneratorBridge {
         if (!v.modState) v.modState = [];
         modRange.start = start;
         modRange.end = end;
-        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt);
+        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt, modCtx);
       }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is

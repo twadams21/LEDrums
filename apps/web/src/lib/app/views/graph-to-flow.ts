@@ -11,6 +11,7 @@
 
 import type { Edge, Node } from '@xyflow/svelte';
 import type { GraphNode, NodeKind, TriggerGraph } from '../../trigger-lab/sim';
+import { voice } from '@ledrums/core';
 
 export type TriggerNodeData = { kind: NodeKind };
 export type TriggerFlowNode = Node<TriggerNodeData>;
@@ -29,8 +30,9 @@ export function graphToFlowNodes(graph: TriggerGraph): TriggerFlowNode[] {
 
 /** Map the store graph's edges to xyflow edges (from→source, to→target). An edge's
     `fromPort` becomes the xyflow `sourceHandle` (a value+bands switch's `band-${i}`) and its
-    `toPort` the `targetHandle` (`'mod'` for a modifier-chain wire); undefined leaves each on
-    the node's default handle. `data.mod` flags a modifier wire so it can be styled distinctly
+    `toPort` the `targetHandle` (`'mod'` for a modifier-chain wire, `` `param:<key>` `` for a
+    modulation wire); undefined leaves each on the node's default handle. `data.mod` flags a
+    modifier wire and `data.modulation` a modulation wire so each gets its own visual role
     (graph-hover combines it with the hover-highlight class). */
 export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
   return graph.edges.map((e) => ({
@@ -40,7 +42,11 @@ export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
     sourceHandle: e.fromPort,
     targetHandle: e.toPort,
     type: 'wire',
-    ...(e.toPort === 'mod' ? { data: { mod: true } } : {}),
+    ...(e.toPort === 'mod'
+      ? { data: { mod: true } }
+      : voice.paramKeyOf(e.toPort) !== null
+        ? { data: { modulation: true } }
+        : {}),
   }));
 }
 

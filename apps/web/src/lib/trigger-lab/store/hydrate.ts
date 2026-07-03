@@ -8,13 +8,21 @@ import {
   type EaseSpec,
   type EffectDef,
   type EnvMap,
+  type GraphEdge,
+  type GraphNode,
+  type ParamSpec,
   type Preset,
   type TriggerGraph,
   type TriggerSource,
+  NODE_W,
+  cloneEnvelope,
   foldVelocitySwitches,
+  makeNode,
   migrateAdsr,
 } from '../sim';
+import { voice } from '@ledrums/core';
 import { EFFECTS, PRESETS, type Pad } from '../fixtures';
+import { nid } from './ids';
 import { padKey, padLabel } from './seed';
 
 /** Union built-in effects with persisted USER-CREATED ones. Hydration must never
@@ -167,6 +175,92 @@ export function migrateGraphsEnvelopes(
   return out;
 }
 
+/** Horizontal gap the migrator leaves between a spawned envelope node and its target play
+    node (mirrors `sim.graph-compilation`'s `H_GAP`), plus the vertical stagger when one play
+    node migrates several params so their source nodes don't overlap. Cosmetic only — the
+    mappings are position-independent. */
+const MIGRATE_H_GAP = 90;
+const MIGRATE_V_GAP = 120;
+
+/** Effect param specs for a play node's `effectId` (empty when the effect is unknown — a
+    persisted graph can reference an effect a later blob dropped; those envs are then inert
+    just as the legacy sweep left them, so nothing is migrated). */
+export type SpecsFor = (effectId: string) => readonly ParamSpec[];
+
+/**
+ * Migrate a play node's LEGACY per-param envelope map (`node.env`) into the S34 modulation
+ * graph: each `env[key]` with a live shape becomes an `envelope` SOURCE node (its shape in the
+ * `ENVELOPE_NODE_KEY` slot), the key is exposed as a `modInputs` row on the play node, and a
+ * `param:<key>` edge carries the equivalent {@link import('@ledrums/core').voice.Mapping}
+ * (`amount = env.amount`, no invert, range = the param spec's `[min, max]`) — the exact shape
+ * {@link import('@ledrums/core').voice.envelopeToMapping} produces, so pre-migration env
+ * behaviour is sample-identical afterwards (proven by the S33 parity fixture). The play node's
+ * `env` is then cleared: the legacy runtime sweep is gone, so a leftover entry would be dead.
+ *
+ * Idempotent + alias-stable: a graph whose play nodes carry no live env entry keeps its
+ * reference, so re-running on an already-migrated graph is a no-op (migrated play nodes have an
+ * empty `env`). Only play nodes are touched — envelope/modifier `env` (the source-shape slot and
+ * the modifier bridge) is left intact. Never throws: an env on an unknown / non-number param is
+ * silently dropped, exactly as the sweep ignored it.
+ */
+export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): TriggerGraph {
+  // Any play node still carrying an `env` map is un-migrated (post-migration play env is `{}`), so
+  // its mere presence is the trigger — including a map with only inert (`none` / non-number)
+  // entries, which must still be cleared or the pass would never reach its fixed point.
+  const hasLegacyEnv = graph.nodes.some((n) => n.kind === 'play' && Object.keys(n.env).length > 0);
+  if (!hasLegacyEnv) return graph; // nothing to migrate → same reference (idempotent)
+
+  const nodes: GraphNode[] = [];
+  const addedEdges: GraphEdge[] = [];
+  for (const n of graph.nodes) {
+    if (n.kind !== 'play' || Object.keys(n.env).length === 0) {
+      nodes.push(n); // non-play, or an already-migrated play node — untouched (alias-stable)
+      continue;
+    }
+    const specs = specsFor(n.effectId);
+    const modInputs = [...(n.modInputs ?? [])];
+    let placed = 0;
+    for (const [key, env] of Object.entries(n.env)) {
+      if (!env || env.kind === 'none') continue; // no envelope authored on this param
+      const spec = specs.find((s) => s.key === key);
+      if (!spec || spec.kind !== 'number') continue; // inert in the legacy sweep → drop, no node
+      const src = makeNode('envelope', nid('n'), n.x - (NODE_W + MIGRATE_H_GAP), n.y + placed * MIGRATE_V_GAP, {
+        env: { [voice.ENVELOPE_NODE_KEY]: cloneEnvelope(env) },
+      });
+      nodes.push(src);
+      placed += 1;
+      if (!modInputs.some((m) => m.param === key)) modInputs.push({ param: key });
+      // One `param:<key>` edge IS one mapping — bake the equivalent of `envelopeToMapping`
+      // (the store's `connect` does the same at authoring time).
+      addedEdges.push({
+        id: nid('e'),
+        from: src.id,
+        to: n.id,
+        toPort: `param:${key}`,
+        amount: env.amount,
+        invert: false,
+        rangeMin: spec.min ?? 0,
+        rangeMax: spec.max ?? 1,
+      });
+    }
+    // Drop the legacy field now that its behaviour lives on the mappings (no dual mechanism);
+    // extend the exposed rows only when a param was actually wired.
+    nodes.push(placed > 0 ? { ...n, env: {}, modInputs } : { ...n, env: {} });
+  }
+  return { nodes, edges: [...graph.edges, ...addedEdges] };
+}
+
+/** Apply {@link migrateGraphEnvMaps} across a keyed map of graphs (each unchanged graph keeps
+    its reference — alias-stable + idempotent, mirrors {@link migrateGraphsEnvelopes}). */
+export function migrateGraphsEnvMaps(
+  graphs: Record<string, TriggerGraph>,
+  specsFor: SpecsFor,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) out[key] = migrateGraphEnvMaps(graph, specsFor);
+  return out;
+}
+
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
     every pad-bound graph's trigger source explicit, fold legacy velocity switches into the
     canonical value+bands form, migrate persisted envelope shapes to v2, and hydrate a friendly
@@ -176,11 +270,15 @@ export function normalizeGraphs(
   graphs: Record<string, TriggerGraph>,
   graphNames: Record<string, string>,
   pads: readonly Pad[],
+  specsFor: SpecsFor,
 ): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
   const padKeys = new Set(pads.map(padKey));
   let next = unionTriggerSources(graphs, padKeys);
   next = foldVelocitySwitches(next);
   next = migrateGraphsEnvelopes(next);
+  // AFTER the ADSR-v2 normalize (so envelope nodes carry v2 shapes): fold legacy play-node
+  // env maps into envelope nodes + `param:<key>` mappings, then drop the legacy field (S35).
+  next = migrateGraphsEnvMaps(next, specsFor);
   const names = hydratePadNames(next, graphNames, pads);
   return { graphs: next, graphNames: names };
 }

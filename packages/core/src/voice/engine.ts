@@ -33,6 +33,7 @@ import {
 } from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
+import { ccKey, ccValue01 } from './modulation';
 import {
   emptyShow,
   normalizeTriggerValue,
@@ -56,13 +57,17 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc';
   drumId?: string;
   zone?: string;
   note?: number;
   velocity?: number;
   address?: string;
   value?: number;
+  /** cc (S37): the MIDI controller number (0..127) and its channel (1..16). `value` carries
+      the raw 0..127 CC value; the engine normalizes it to 0..1 in its CC table. */
+  controller?: number; // S37
+  channel?: number; // S37
   /** recallSection: activate a song's section so hits fire its slot graphs. */
   songId?: string;
   sectionId?: string;
@@ -155,6 +160,14 @@ class VoiceBusEngine implements RenderEngine {
 
   private prng = new Prng(PRNG_SEED);
 
+  /**
+   * Live MIDI CC value table (S37): keyed by controller+channel → 0..1 (see `ccKey`).
+   * Updated ONLY inside the queue drain (`processEvent`), so it is a pure function of the
+   * event log — same events ⇒ same table ⇒ same frames. Threaded into the per-frame
+   * modulation sweep each tick; a `cc` modulation source reads its controller here.
+   */
+  private ccTable = new Map<string, number>();
+
   private queue: InputEvent[] = [];
   private timeMs = 0;
   private beat = 0;
@@ -205,6 +218,7 @@ class VoiceBusEngine implements RenderEngine {
     this.prng.reseed(PRNG_SEED);
     this.pendingFires = [];
     this.pendingFireCounter = 0;
+    this.ccTable.clear(); // S37: fresh show → no lingering CC values
     // Seed active section from the first song/section (a recallSection event can
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
@@ -242,6 +256,17 @@ class VoiceBusEngine implements RenderEngine {
     }
     if (e.kind === 'fireGraph') {
       this.processFireGraph(e);
+      return;
+    }
+    if (e.kind === 'cc') {
+      // Update the CC value table (S37): write the normalized 0..1 value under BOTH the
+      // specific-channel key and the omni key, so an omni mapping (channel filter off) always
+      // reads the latest regardless of the sending channel. Deterministic: state only ever
+      // changes here, on the drained event log.
+      const controller = e.controller ?? 0;
+      const value01 = ccValue01(e.value ?? 0);
+      this.ccTable.set(ccKey(controller, e.channel ?? null), value01);
+      this.ccTable.set(ccKey(controller, null), value01);
       return;
     }
     // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
@@ -471,7 +496,7 @@ class VoiceBusEngine implements RenderEngine {
     const effect = this.effectsById.get(effectId);
     if (!effect) return null;
     const params = this.presetsById.get(`${effectId}:default`)?.params ?? this.lookDefaultParams(effect);
-    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, env: {}, via, latchKey: null };
+    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, via, latchKey: null };
   }
 
   /** Default param record from an effect's spec — the fallback when no
@@ -589,13 +614,13 @@ class VoiceBusEngine implements RenderEngine {
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.attrs && this.finalFb) {
       for (const v of this.voices.pool) {
-        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm);
+        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable); // cc: S37
       }
       this.compositor.render(
         this.voices.pool,
         this.model,
         this.attrs,
-        { timeMs: this.timeMs, dt, transport },
+        { timeMs: this.timeMs, dt, transport, cc: this.ccTable }, // cc: S37
         this.finalFb,
       );
     }

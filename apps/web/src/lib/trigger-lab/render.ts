@@ -13,7 +13,14 @@ import {
   type ResolvedParams,
   type Trigger,
 } from '@ledrums/core';
-import { sampleEnvelope, type ParamValues, type Pattern, type Sim, type Voice } from './sim';
+import {
+  applyModulations,
+  type ModSampleCtx,
+  type ParamValues,
+  type Pattern,
+  type Sim,
+  type Voice,
+} from './sim';
 import type { LabModel, PixelAttrs } from './kit';
 import { hueToRgb } from './kit';
 
@@ -27,24 +34,27 @@ function hash(n: number): number {
   return s - Math.floor(s);
 }
 
-/** Resolve a voice's params for this frame: apply envelopes + tempo sync. */
+/** Resolve a voice's params for this frame: apply modulation mappings + tempo sync. */
 function effectiveParams(v: Voice, sim: Sim): ParamValues {
   const out: ParamValues = { ...v.params };
   const eff = sim.effect(v.effectId);
-  const phase = sim.voicePhase(v);
-  for (const key of Object.keys(v.env)) {
-    const env = v.env[key];
-    if (!env || env.kind === 'none') continue;
-    const spec = eff?.params.find((s) => s.key === key);
-    if (!spec || spec.kind !== 'number') continue;
-    const lo = spec.min ?? 0;
-    const hi = spec.max ?? 1;
-    const base = num(v.params[key], lo);
-    const target = lo + sampleEnvelope(env, phase) * (hi - lo);
-    out[key] = base + (target - base) * env.amount; // amount = sweep depth
+  // Modulation mappings (doc 10) — mirror of the core compositor sweep: summed + clamped
+  // contributions over the spawn-snapshot base. Envelope sources sample the voice life phase
+  // (restart per hit). The legacy per-param env sweep folded into these mappings in S35.
+  const mods = v.modulations;
+  if (mods && mods.length && eff) {
+    const phase = sim.voicePhase(v);
+    applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable }); // cc: S37
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (sim.bpm / 120);
   return out;
+}
+
+/** Per-frame modulation-sample context for a voice — mirror of the core compositor's
+    `modCtxFor`: life phase (envelope restart per hit) + absolute clock/tempo for continuous
+    sources (S36/S37). Shared by the play-param sweep and the modifier chain. */
+function modCtxFor(v: Voice, sim: Sim): ModSampleCtx {
+  return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable }; // cc: S37
 }
 
 /** Returns [intensity 0..1, hueOffset deg] for a pixel given pattern + params. */
@@ -210,7 +220,7 @@ function renderModifiedPatternVoice(
   }
   if (!v.modState) v.modState = [];
   const age = sim.timeMs - v.bornAtMs;
-  applyModifierChain(mods, v.modState, patScratch, { start, end }, pm, age > 0 ? age : 0, sim.lastDt);
+  applyModifierChain(mods, v.modState, patScratch, { start, end }, pm, age > 0 ? age : 0, sim.lastDt, modCtxFor(v, sim));
   const src = patScratch.rgba;
   for (let i = start; i < end; i++) {
     const j4 = i * 4;
@@ -309,7 +319,7 @@ function renderGeneratorVoice(
   const mods = v.modifiers;
   if (mods && mods.length) {
     if (!v.modState) v.modState = [];
-    applyModifierChain(mods, v.modState, genScratch, { start, end }, pm, genTrigger.ageMs, sim.lastDt);
+    applyModifierChain(mods, v.modState, genScratch, { start, end }, pm, genTrigger.ageMs, sim.lastDt, modCtxFor(v, sim));
   }
 
   // Blit scratch (float RGBA) → buf (0..255 RGB), scaled by the voice envelope.
