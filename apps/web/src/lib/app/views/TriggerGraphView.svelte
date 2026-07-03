@@ -373,12 +373,16 @@
     min-height: 0;
     height: 100%;
   }
-  /* the add-node kind palette + the modifier category palette, stacked top-left */
+  /* the add-node kind palette + the add-menu bar, stacked top-left. The stack passes
+     gestures through (pointer-events:none) so the gaps between bars stay pannable; each
+     bar re-enables events on itself. */
   .palette-stack {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     align-items: flex-start;
+    width: fit-content;
+    pointer-events: none;
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {

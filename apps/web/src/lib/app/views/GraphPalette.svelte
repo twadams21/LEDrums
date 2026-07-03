@@ -68,12 +68,16 @@
     align-items: center;
     flex-wrap: wrap;
     gap: var(--space-1);
+    width: fit-content;
     max-width: 100%;
     padding: var(--space-1);
     background: color-mix(in oklch, var(--surface) 86%, transparent);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     backdrop-filter: blur(4px);
+    /* The enclosing xyflow Panel is `pointer-events: none` (so empty canvas beside the bar
+       stays interactive) — the toolbar itself re-enables events. */
+    pointer-events: auto;
   }
   .palette-label {
     padding: 0 var(--space-1);

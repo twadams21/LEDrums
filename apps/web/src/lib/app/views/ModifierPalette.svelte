@@ -85,12 +85,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    width: fit-content;
     max-width: 100%;
     padding: var(--space-1);
     background: color-mix(in oklch, var(--surface) 86%, transparent);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     backdrop-filter: blur(4px);
+    /* re-enable events on the bar; the enclosing xyflow Panel is pointer-events:none */
+    pointer-events: auto;
   }
   .head {
     display: flex;

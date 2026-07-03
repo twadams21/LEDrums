@@ -146,6 +146,15 @@
     place-items: center;
   }
 
+  /* xyflow gives the top-left palette Panel `pointer-events: all`, and the panel is sized
+     to its widest bar — so the empty space beside/around narrower bars swallowed canvas
+     pans, clicks and wire-drops (only the strip directly below the stack stayed free). The
+     panel passes gestures through; each palette bar re-enables `pointer-events` on itself
+     (see GraphPalette / the add-menu bar), so ONLY the actual controls capture events. */
+  .gcanvas :global(.svelte-flow__panel) {
+    pointer-events: none;
+  }
+
   /* --- @xyflow/svelte on the project tokens (shared theming) ----------------- */
   .gcanvas :global(.svelte-flow) {
     background: var(--bg-perform);
