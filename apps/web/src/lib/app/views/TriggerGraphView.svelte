@@ -34,14 +34,13 @@
   import { nodeIdAtEvent } from './flow-dom';
   import { guardFlowCallback } from './flow-guard';
   import { TRIGGER_STORE_KEY } from './trigger-context';
-  import { describeTriggerSource } from '../trigger-source-label';
   import TriggerNode from './TriggerNode.svelte';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
   import type { FlowApi } from './FlowHandle.svelte';
   import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
   import AddPalette, { type AddGroup } from './AddPalette.svelte';
-  import GraphListRail from './GraphListRail.svelte';
+  import GraphsDock from './GraphsDock.svelte';
   import Inspector from '../docks/Inspector.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
@@ -57,28 +56,6 @@
   const nodeTypes: NodeTypes = { trigger: TriggerNode };
   const edgeTypes: EdgeTypes = { wire: WireEdge };
   const hover = new GraphHover();
-
-  // ---- active section's graph list (replaces the old drum-grouped Play Surface) ----
-  // The rail is the ACTIVE section's flat graph list: click a graph → it activates its
-  // section, opens on the canvas, and highlights here. Selecting + opening is one store call.
-  const activeSection = $derived(store.activeSection);
-
-  function openGraph(key: string): void {
-    const id = store.activeSectionId;
-    projectionCache = resetProjectionCache(); // graph-open: never reuse the old graph's signatures
-    if (id) store.selectGraphInSection(id, key);
-    shell.clearSelection(); // switching graphs clears the node inspector
-  }
-  /** The graph's trigger-source sub line (e.g. "Kick · center", "MIDI D2", "unbound"). */
-  function sourceSub(key: string): string {
-    return describeTriggerSource(store.triggerSource(key), store.drums).sub;
-  }
-  /** Author a new graph, add it to the active section, and open it for editing. */
-  function newGraph(): void {
-    const key = store.createGraph();
-    if (store.activeSectionId) store.addGraphToSection(store.activeSectionId, key);
-    shell.clearSelection();
-  }
 
   // ---- Node Editor drawer (wave-3 shell): Add palette + Inspector -----------
   // The Add tab lists everything the graph can gain in one searchable surface:
@@ -388,17 +365,7 @@
 </script>
 
 <div class="trigger-view">
-  <GraphListRail
-    title={activeSection?.name ?? 'Section'}
-    graphs={activeSection?.graphs ?? null}
-    selectedKey={store.selectedPadKey}
-    labelFor={(key) => store.graphLabel(key)}
-    subFor={sourceSub}
-    onOpen={openGraph}
-    onNew={newGraph}
-    canEdit={store.canEdit}
-  />
-
+  <div class="graphrow">
   <div class="gwrap" bind:this={canvasWrap}>
     <GraphCanvas
       bind:nodes
@@ -435,15 +402,24 @@
       <Inspector {store} {shell} />
     {/snippet}
   </NodeEditor>
+  </div>
+
+  <GraphsDock {store} {shell} />
 </div>
 
 <style>
   .trigger-view {
     display: grid;
-    grid-template-columns: 232px minmax(0, 1fr) 320px;
+    grid-template-rows: minmax(0, 1fr) 172px;
     gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
+  }
+  .graphrow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: var(--shell-gap);
+    min-height: 0;
   }
   .gwrap {
     min-width: 0;

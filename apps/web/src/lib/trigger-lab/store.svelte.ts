@@ -726,6 +726,12 @@ export class TriggerLab {
       out (it's no longer in `graphs`). */
   graphLibrary = $derived(Object.keys(this.graphs).map((key) => ({ key, label: this.graphLabel(key) })));
 
+  /** The last graph fired through {@link fireSectionGraph} (the hotkey / graph-card path) —
+      display-only, so the Graphs dock can flash the fired card. `seq` distinguishes repeat
+      fires of the same key. */
+  lastSectionFire = $state<{ key: string; seq: number } | null>(null);
+  private fireSeq = 0;
+
   /** Human label for a graph key (for the section lists + picker): the stored display name
       (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
       label, else the raw key. */
@@ -1736,6 +1742,7 @@ export class TriggerLab {
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
+    this.lastSectionFire = { key, seq: ++this.fireSeq }; // Graphs-dock card flash
     const src = triggerSourceOf(graph);
     // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
     // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct
