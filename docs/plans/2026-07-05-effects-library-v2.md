@@ -25,8 +25,10 @@ Four workstreams, in dependency order:
   thumbnails.
 - **B. Library rehab** — lift every pre-Gen-3 effect to the Gen-3 bar (emissions,
   descriptions, 3D-awareness), merge near-duplicates, retire the rest behind an alias map.
-- **C. Play types** — the play node grows a `playType`; the **canvas** play type (2D scene
-  → sampled through drum geometry placements + coordinate-transform lenses) is the
+- **C. Typed play nodes + canvas** — play nodes become typed by effect category
+  (Particles / Waves / Textures / … / Canvas); swapping is scoped to the node's type. The
+  **canvas** type (2D scene → sampled through drum-geometry placements +
+  coordinate-transform lenses, an upgrade of the existing field path) is the
   extensibility engine.
 - **D. Day-1 library fill + verification** — authored canvas/lens presets, ui-shot suite,
   determinism + perf gates.
@@ -106,9 +108,11 @@ Tags are data, not code paths — the gallery filters on them; nothing else may 
 
 **Category rework:** current `EffectCategory` (base/trigger/wash/meter/utility/texture/
 particle) stays as the *engine* category; the gallery's primary grouping becomes
-user-facing **collections** derived from tags: `Hits` (hit+), `Waves & Ripples`,
-`Particles & Air`, `Textures`, `Ambient & Base`, `Meters & Utility`. Mapping lives in one
-web-side table; effects can appear in one collection only (first match wins, ordered).
+user-facing **collections** derived from tags: `Hits`, `Waves & Ripples`,
+`Particles & Air`, `Textures`, `Ambient & Base`, `Meters & Utility`, `Canvas`. This is the
+SAME taxonomy as the typed play nodes (D3) — the mapping lives in ONE core vocabulary
+module (`PlayType`); an effect belongs to exactly one collection/type (first tag match
+wins, ordered).
 
 **Alias map** (`packages/core/src/effects/aliases.ts`): `Record<oldId, newId>` consulted at
 show hydrate + `setShow` so existing shows referencing retired ids keep working forever.
@@ -131,34 +135,53 @@ a real description.
 Unit U3 re-audits this table against source before the batch runs; the table is the
 default, not gospel.
 
-### D3. Play types — the extensibility seam
+### D3. Typed play nodes — category-scoped, one taxonomy (LOCKED with Trent 2026-07-05)
 
-The play node gains a **`playType`** discriminant (default `'hosted'` — today's behaviour,
-zero migration):
+Play nodes become **typed by effect category** — the same taxonomy that drives the gallery
+collections (D1). One source of truth:
 
 ```ts
+// packages/core (single vocabulary module):
+type PlayType = 'hits' | 'waves' | 'particles' | 'textures' | 'ambient' | 'meters' | 'canvas';
 // GraphNode play fields gain:
-playType?: 'hosted' | 'canvas';        // future: 'scene3d' | …
-canvas?: CanvasSceneRef;               // playType 'canvas' only
+playType: PlayType;            // migration: inferred from the node's current effectId
+canvasScene?: string;          // playType 'canvas' only — authored scene doc id
 ```
 
-- **`hosted`** — the existing `EffectGenerator` path, unchanged. All 45 effects.
-- **`canvas`** — the new engine (D4). Voice carries `canvasScene` instead of `generatorId`;
-  compositor grows a third dispatch branch beside generator/pattern
-  (`compositor.ts:173-190`). Modifier chains and modulation sweep apply identically (they
-  operate on the framebuffer / on params — playType-agnostic by construction).
-- **Deliberately NOT a play type:** coordinate transforms. A transform is a *lens* in the
-  canvas sampling chain (D5) — making it a play type would fork the engine; making it a
-  lens makes it compose with every canvas scene. (Design-it-twice outcome: rejected
-  "transform play type" and "transform as framebuffer modifier" — a modifier sees pixels,
-  too late to bend coordinates.)
-- Seam test: one voice determinism test per playType at the compositor seam, mirroring
-  `voice/determinism.test.ts`.
+- Every effect belongs to EXACTLY ONE PlayType (derived from its tags, first-match — the
+  same mapping as the gallery collections, so gallery and node types can never drift).
+- **Swap is scoped:** the EffectGallery opens pre-filtered AND locked to the node's
+  `playType` — a Particle node swaps only among particle effects. The palette offers typed
+  play nodes (Add → Play ▸ Particles / Waves / Textures / … / Canvas).
+- **The engine stays uniform underneath.** All types resolve through the one
+  `EffectGenerator` seam and the existing generator bridge — `playType` is authoring-layer
+  taxonomy, not an engine fork. `canvas` nodes resolve a scene document (D4) instead of a
+  code-registered generator id; the scene engine presents as an `EffectGenerator` adapter,
+  so the compositor and bridge are UNTOUCHED (no third dispatch path).
+- **Migration:** persisted play nodes without `playType` infer it from `effectId` at
+  hydrate (total mapping — every effect has a type); node face shows the type as the icon
+  chip sub-label.
+- **Deliberately NOT node types:** coordinate transforms (they are lenses inside canvas
+  scenes, D5) and engine internals (hosted-vs-canvas is invisible to the user beyond the
+  Canvas type existing).
 
-### D4. The canvas play type (core engine, pure)
+### D4. The canvas engine — an UPGRADE of the existing field path, not a sibling engine
+(LOCKED with Trent 2026-07-05: reuse/restructure existing seams freely — better structure wins)
 
 A canvas effect = **a 2D scene document sampled through a placement of the kit's geometry
-onto that canvas**. Authored as DATA → new looks without new code.
+onto that canvas**. Authored as DATA → new looks without new code. Structurally this is
+`effects/field.ts` grown up, not a new engine beside it:
+
+- `UvMode` (cylindrical/planar-*) → the **sampler** set (hoop/strip/cylinder/footprint);
+  `field.ts` is refactored INTO the canvas module (API seams may change — existing texture
+  callers updated in the same commit).
+- `FieldSample` closures → data-driven **scene evaluation** (the 12 Gen-2 textures are
+  exactly hardcoded FieldSamples; spiral/tunnel hardcode the polar math the `polar` lens
+  generalizes).
+- The scene engine presents as an `EffectGenerator` adapter → flows through the EXISTING
+  generator bridge and compositor untouched.
+- **Payoff (stretch, U6/later):** re-express Gen-2 textures as canvas scene presets and
+  delete their bespoke impls — the codebase shrinks per look.
 
 ```ts
 // packages/core/src/canvas/types.ts (new)
@@ -271,6 +294,8 @@ the background so cross-drum travel reads. Reduced-motion picks each effect's
 | 3 | Canvas authoring day-1 | **Presets + param tweaking** (scene JSON editable in Objects view); visual scene editor = separate later initiative |
 | 4 | Merge list | As tabled in D2; the U3 audit may adjust details without re-asking |
 | 5 | Thumb camera | **Isometric drum** (¾-angle stacked ellipses, glowing dots, background mini-drum for kit-wide effects) |
+| 6 | Play node model | **Typed play nodes, category-scoped** — one PlayType taxonomy shared with gallery collections; effect swap locked to the node's type; engine uniform underneath (D3) |
+| 7 | Canvas engine structure | **Upgrade `field.ts` into the canvas module** (API seams may change; existing textures re-anchored) rather than a sibling engine; no compositor fork (D4) |
 
 ---
 
@@ -311,8 +336,10 @@ plumbing once nothing references it (locked decision 2). Hydrate-migration test:
 with retired ids renders via aliases.
 
 ### U4 — Canvas engine (core, one continuous build; after U1)
-`playType` seam (`GraphNode.playType?/canvas?`, `PlayAction`/`Voice` carry-through,
-compositor third dispatch branch — no stub: the seam lands WITH the engine) → scene model
+Typed-play-node seam (`GraphNode.playType` + hydrate inference from effectId,
+`PlayAction`/`Voice` carry-through; NO compositor fork — the scene engine is an
+`EffectGenerator` adapter through the existing bridge) → refactor `field.ts` into the
+canvas module (UvMode → samplers; texture callers updated in-commit) → scene model
 (`canvas/types.ts`) → element renderers (stripes/circle/gradient/polygon/checker/noise) →
 all four samplers (`hoop`, `strip`, `cylinder`, `footprint`) → scene-level params via
 `paramSpec` (modulation sweep drives them — test an LFO on `canvasRotDeg`) → full lens
@@ -321,8 +348,9 @@ world-space path). Tests throughout: byte-determinism at the compositor seam per
 sampler unit tests, stripes+polar==rings golden, lens chain composition. Perf: under the
 5ms effect budget on the 548px kit (bench like the 2026-07-05 confetti bench).
 
-### U5 — Canvas UI (after U4)
-Palette/play-node type selector, Inspector scene picker + scene param editing, Objects
+### U5 — Typed play nodes UI + Canvas UI (after U4)
+Typed palette (Add → Play ▸ type), gallery pre-filtered AND locked to the node's playType,
+node-face type chip, Inspector scene picker + scene param editing, Objects
 view Canvas Scenes section (JSON-level editing day-1 per locked decision 3), show-doc
 persistence for authored scenes. ui-shot: node face, inspector, objects view.
 
@@ -342,6 +370,11 @@ Full ui-shot sweep of gallery states; end-to-end spot-check checklist entry (liv
 ```
 U1 → (U2 ∥ U3 ∥ U4) ; U4 → U5 → U6 ; U7 last (U6, U2, U3 feed it)
 ```
+
+### Model routing (LOCKED with Trent 2026-07-05)
+**Fable:** U2 (thumb look = taste), U4 (novel engine + math + determinism), U6 (library
+content quality IS the product). **Opus:** U1, U3, U5, U7 (well-specified UI assembly,
+mechanical batches, verification).
 
 ---
 
