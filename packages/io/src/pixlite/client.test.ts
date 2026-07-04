@@ -46,6 +46,21 @@ describe('HttpPixliteClient (injected transport)', () => {
     await expect(c.identify(1)).rejects.toThrow(/HTTP 403/);
   });
 
+  it('posts modeTestData then modeLive with the exact ordered bodies (S49)', async () => {
+    const bodies: string[] = [];
+    const transport: HttpTransport = async (spec) => {
+      bodies.push(spec.body!);
+      return { status: 200, body: '{"resp":"modeTestData","result":{}}' };
+    };
+    const c = new HttpPixliteClient({ host: 'h', transport });
+    await c.modeTestData({ op: 'setColor', color: [0, 100, 255, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 });
+    await c.modeLive();
+    expect(bodies[0]).toBe(
+      '{"req":"modeTestData","id":1,"params":{"op":"setColor","color":[0,100,255,0],"colorRes":"8Bit","pixPortNum":0,"pixNum":0}}',
+    );
+    expect(bodies[1]).toBe('{"req":"modeLive","id":2}');
+  });
+
   it('serializes concurrent calls through one queue (never overlaps) with incrementing ids', async () => {
     let inFlight = 0;
     let maxInFlight = 0;

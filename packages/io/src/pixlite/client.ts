@@ -6,6 +6,7 @@ import {
   parseStatisticResponse,
   parseVersionResponse,
   serializeIdentify,
+  serializeModeLive,
   serializeModeTestData,
   serializeStatisticRead,
 } from './protocol';
@@ -163,6 +164,13 @@ export class HttpPixliteClient implements PixliteClient {
   modeTestData(params: ModeTestDataParams): Promise<void> {
     return this.queue.run(async () => {
       const body = await this.post(serializeModeTestData(this.nextId(), params));
+      parseResponse(body);
+    });
+  }
+
+  modeLive(): Promise<void> {
+    return this.queue.run(async () => {
+      const body = await this.post(serializeModeLive(this.nextId()));
       parseResponse(body);
     });
   }

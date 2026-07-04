@@ -44,6 +44,11 @@ export function serializeIdentify(id: number, durationS: number): string {
   return serializeRequest('identify', id, om(['duration', durationS]));
 }
 
+/** `modeLive` request (§7.7.1) — no params. Returns the controller to live mode (exits test data). */
+export function serializeModeLive(id: number): string {
+  return serializeRequest('modeLive', id);
+}
+
 /** `modeTestData` params in strict doc order: op, color, colorRes, pixPortNum, pixNum (§7.7.2). */
 export function serializeModeTestData(id: number, p: ModeTestDataParams): string {
   const entries: Array<readonly [string, OrderedJson]> = [['op', p.op]];

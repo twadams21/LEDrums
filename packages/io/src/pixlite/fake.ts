@@ -68,6 +68,8 @@ export class FakePixliteClient implements PixliteClient {
   readonly identifyCalls: number[] = [];
   /** Params passed to `modeTestData()`, in order (S49 hook). */
   readonly testDataCalls: ModeTestDataParams[] = [];
+  /** Count of `modeLive()` calls — the back-to-live path (S49). */
+  modeLiveCalls = 0;
 
   constructor(opts: FakePixliteClientOptions = {}) {
     this.host = opts.host ?? '192.168.0.100';
@@ -105,6 +107,12 @@ export class FakePixliteClient implements PixliteClient {
   modeTestData(params: ModeTestDataParams): Promise<void> {
     return this.enter('modeTestData', () => {
       this.testDataCalls.push(params);
+    });
+  }
+
+  modeLive(): Promise<void> {
+    return this.enter('modeLive', () => {
+      this.modeLiveCalls += 1;
     });
   }
 }

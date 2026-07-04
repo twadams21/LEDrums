@@ -110,4 +110,7 @@ export interface PixliteClient {
   identify(durationS: number): Promise<void>;
   /** Drive built-in test patterns (S49). Serialized like any other request. */
   modeTestData(params: ModeTestDataParams): Promise<void>;
+  /** Return the controller to live mode (§7.7.1) — the exit from {@link modeTestData}. Once test
+   * data is running the controller ignores the network stream; this is how S49 gives it back. */
+  modeLive(): Promise<void>;
 }

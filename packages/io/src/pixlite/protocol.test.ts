@@ -5,6 +5,7 @@ import {
   parseVersionResponse,
   PixliteError,
   serializeIdentify,
+  serializeModeLive,
   serializeModeTestData,
   serializeRequest,
   serializeStatisticRead,
@@ -54,6 +55,10 @@ describe('request serialization (strict member order)', () => {
     expect(serializeModeTestData(3, { op: 'rgbwCycle' })).toBe(
       '{"req":"modeTestData","id":3,"params":{"op":"rgbwCycle"}}',
     );
+  });
+
+  it('serializes modeLive as a bare request (doc §7.7.1) — no params', () => {
+    expect(serializeModeLive(4)).toBe('{"req":"modeLive","id":4}');
   });
 });
 
