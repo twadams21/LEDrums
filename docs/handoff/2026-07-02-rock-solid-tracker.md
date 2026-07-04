@@ -8,9 +8,9 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 
 ## ESCALATIONS / notes
 
-- **🛑 LANE 4 ON HOLD (Trent, 2026-07-03 ~08:5x): DO NOT launch the Lane 4 orch (C→D→L) until Trent explicitly says go — he wants to discuss first.** The bgbeq1z0n reset wake (~09:07 UTC) is set to fire Lane 4 — when it fires, SKIP the Lane 4 launch; only check/review the side-task. This overrides all prior "fire Lane 4 at reset" instructions until Trent lifts the hold.
+- **✅ LANE 4 HOLD LIFTED (Trent, 2026-07-04): launching Lane 4 (C→D→L).** Interim: Phase-2 "waves 1–4" (aka "lane 3.5", UI/effects polish) were done + merged on rock-solid (HEAD 5738f59, baseline green 1830 tests). **NEW model directive (Trent 2026-07-04): NO Fable — ALL OPUS.** Lane orch = opus/high (was fable/high); impls opus per the effort policy. Everything else in the effort/cost policy still applies.
 
-- **Disk headroom (MONITOR — TIGHTENING):** 8.3 GB free at start → **4.7 GB free @ 07:4x** (build caches / design-system regens). Still OK, but Lane 4's tauri `target/` builds are the real risk. Watch `df -h` closely around Lane 4; ENOSPC = blocking escalation. pnpm's hardlinked global store makes each worktree `node_modules` nearly free (verified: 4 installs, no measurable disk delta). **Risk remains for Lane 4** (desktop/tauri) — Rust `target/` build dirs are NOT hardlinked and can be large. Watch `df -h /Users/trent` before/around Lane 4; if a build fails on ENOSPC, that is a blocking escalation to Trent.
+- **Disk headroom (RELIEVED):** Trent cleared space → **~12 GB free @ 2026-07-04** (was 4.7). Lane 4 tauri `target/` builds are still the main risk — watch `df -h` around desktop builds; ENOSPC = blocking escalation. Still OK, but Lane 4's tauri `target/` builds are the real risk. Watch `df -h` closely around Lane 4; ENOSPC = blocking escalation. pnpm's hardlinked global store makes each worktree `node_modules` nearly free (verified: 4 installs, no measurable disk delta). **Risk remains for Lane 4** (desktop/tauri) — Rust `target/` build dirs are NOT hardlinked and can be large. Watch `df -h /Users/trent` before/around Lane 4; if a build fails on ENOSPC, that is a blocking escalation to Trent.
 - **Non-blocking future-slice residuals (from group reports; NOT in scope for Rock Solid):** (F) — none blocking. (G, group-G.md) per-hosting timebase for trigger-hosted textures (doc 06 wish; needs a voice/bus-level flag — future slice); helix/wipe-3d timebase conversion follow-ups; 2 thumbnails static by nature. (H, group-H.md) modifier per-param envelopes persist but DON'T render-apply yet — deferred to doc 10 = **group I (S33–S38)**, so NOT open once I lands; 1D-only Mirror/Bloom (geometry at modifier seam = future); Echo ring ~1s. (I, group-I.md, all non-blocking) modifier-env authoring convergence candidate; wire-time-baked play ranges; server→web CC-learn echo; no shape-dedup in migration. (J, group-J.md, non-blocking) duplicate CRUD absent; hard drum-id targets not flagged at export; structural ref edits require detach. Surface to Trent post-initiative, not now.
 - **Cross-group merge drift (process lesson):** group/E was branched off rock-solid PRE-group-B, so B×E independently edited shared files (`store.svelte.ts`, two inspectors) → non-trivial semantic conflict at master-merge time. Handed back to the lane orch to integrate (merge rock-solid into group/E + resolve) rather than hand-merge entangled feature code as master. **Guidance for Lane 2+:** lane orch should `git merge rock-solid` into a group branch (resolving) BEFORE handing it off, so master merges are clean — especially when groups within a lane overlap in time.
 - **🐞 TESTING-SEAM GAP (from a P0 Trent hit live, fix 6d19f14):** group I's modulation node-face preview (S38) shipped two BROWSER-RUNTIME bugs that vitest could not catch — (a) a self-referential colour `$effect` (read+wrote `c`) → `effect_update_depth_exceeded` → Svelte halted effect flush app-wide → **every delegated onclick died** (hover/drag/keyboard still worked); (b) source getters deref'd `node.kind`, and the rAF ticker samples them via a reactive getter one frame AFTER node deletion → null-deref. **Lesson for remaining UI/effect groups (esp. Lane 4 S48 controller panel + any effect-heavy group review): the group review MUST include a live app smoke-load** (dev server loads with a clean console — no effect_update_depth_exceeded, no uncaught throws in rAF loops); unit tests alone are blind to effect loops and animation-frame lifecycle races. Fix null-guarded all 5 source getters + de-self-referenced the effect + added a null-safety regression test.
@@ -45,7 +45,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | lane-1-b0cea3 (killed, done) | **✅ DONE** |
 | 2 — Effects & graph | F → G → H → I | S18–S38 (21) | lane-2-988e46 (killed, done) | **✅ DONE** |
 | 3 — Data & portability | J → K | S39–S45 (7) | lane-3-c9f2bf (killed, done) | **✅ DONE** |
-| 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | — | pending |
+| 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | _(launching, opus)_ | **ACTIVE** |
 
 ## Feature groups
 
@@ -67,6 +67,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-04 — LANE 4 LAUNCHING (all-Opus); waves 1–4 (lane 3.5) done
+
+- **Context re-sync:** since the Lane-4 hold, Phase-2 waves 1–4 ("lane 3.5") were executed+merged on rock-solid (UI/effects polish; incl. a review-caught self-write-effect fix 6b88cff). rock-solid HEAD **5738f59**, baseline sweep GREEN (typecheck 0; **1830 tests/0 skips**: io 13·core 548·proto 1·server 204·web 1064). Pool worktrees detached off wave branches; wave branches dropped.
+- **Lane 4 launching, ALL OPUS** (Trent: no Fable). Lane orch opus/high; impls opus (medium default, high for ui/engine seams, never xhigh). Same strategy: integrate-before-handoff, cwd-safety, live-smoke-load for UI (esp. S48), watch disk for tauri builds, budget 70%.
+- **Budgets:** 5h 6% (fresh, resets 20:40+10). **7d 74% — WATCH:** Lane 4 = 10 opus slices; 7d may become the binding constraint (resets 2026-07-09). Flag to Trent if it nears the gates.
+- **Next:** launch lane-4 orch (opus/high) + assignment (C→D→L); 30-min cadence; merge each group→rock-solid + sweep; final gate with Trent after L.
+
 
 ### 2026-07-04 — Wave-4 MERGED → rock-solid (design audit + polish; waves 1–4 COMPLETE)
 
