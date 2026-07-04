@@ -70,6 +70,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 07:3x — GROUP D MERGED (geometry); only L left
+
+- **group/D MERGED** (#49, S10–S11; S09 done-by-prior-work) → rock-solid **0d78389** (`--no-ff`, NO conflicts). PASS no fixes. Core purity verified; geometry golden tests (dmxMap byte-identical, mirror∘flip compose) + latent pixelsPerHoop cross-engine fix. Live smoke clean.
+- Master sweep GREEN: typecheck 0; **1893 tests/0 skips** (core 560·server 212·web 1107·io 13·proto 1).
+- **ONLY group L (PixLite, S46–S49) LEFT** — the final group of the final lane. Lane orch on it now.
+- 7d 78% (<85% trigger).
+- **Next:** merge group/L → **LANE 4 DONE (49/49)** → cross-lane seam review → FINAL GATE w/ Trent.
+
 ### 2026-07-04 07:36 — Lane 4 group D (S09 skipped via reconcile)
 
 - **group/D:** ✅ RECONCILE WORKED — **S09 (right-dock resize rail) SKIPPED as done-by-Phase-2** (acceptance already met by the lane-3.5 shell rework; not re-implemented → no duplication/conflict). **S10 (per-drum flip) merged** (core geometry + end-to-end plumb + golden flip suite). **S11 (kit mirror) in flight** (opus/med). Then D integrate+review+handoff → L (last group).
