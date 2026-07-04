@@ -12,9 +12,10 @@
  * key (LEDRUMS_TAURI_SIGNING_PRIVATE_KEY) and R2 creds are present.
  *
  * Sub-commands:
- *   bump [--level]     full pipeline (bump + build + sign + publish)   ← the everyday release command
- *   version [--level]  bump the version files ONLY (no build/publish)
- *   publish            publish an already-built signed bundle (e.g. to add another platform's arch)
+ *   bump [--level] [--dry-run]  full pipeline (bump + build + sign + publish)  ← everyday release
+ *                               --dry-run prints the plan without changing/building/publishing
+ *   version                     print the current version (read-only)
+ *   publish                     publish an already-built signed bundle (e.g. another platform's arch)
  *
  * The build signs the updater artifact inline (via with-tauri-signing-env.mjs, which prefers the
  * LEDRUMS_-namespaced key and strips any whitespace the secret store introduced). publish-ota.mjs
@@ -123,8 +124,30 @@ function publish() {
   process.exit(child.status ?? 1);
 }
 
-/** The everyday release: bump → build (sign) → publish. */
-function release(level) {
+/** The current desktop version (tauri.conf.json is the source of truth). */
+function currentVersion() {
+  return JSON.parse(readFileSync(tauriConf, 'utf8')).version;
+}
+
+/** True if any `--dry-run` / `--dryrun` flag is present. */
+function hasDryRun(args) {
+  return args.some((a) => a === '--dry-run' || a === '--dryrun');
+}
+
+/** The everyday release: bump → build (sign) → publish. `--dry-run` prints the plan and exits
+ *  without changing, building, or publishing anything. */
+function release(level, dryRun) {
+  const current = currentVersion();
+  const next = bumpVersion(current, level);
+  if (dryRun) {
+    console.log(`[ota] DRY RUN — would release ${current} -> ${next} (${level}):`);
+    console.log('  1. bump the version in tauri.conf.json, package.json, Cargo.toml');
+    console.log('  2. build a signed desktop bundle (tauri build)');
+    console.log("  3. verify the signature key matches the app's updater pubkey");
+    console.log('  4. publish the artifact + manifest to R2');
+    console.log('[ota] dry run — nothing was changed, built, or published.');
+    return;
+  }
   bumpFiles(level);
   build();
   publish(); // exits with publish-ota's status
@@ -133,13 +156,14 @@ function release(level) {
 const [, , command = 'bump', ...rest] = process.argv;
 
 try {
-  if (command === 'bump') release(parseLevel(rest));
-  else if (command === 'version') bumpFiles(parseLevel(rest));
+  if (command === 'bump') release(parseLevel(rest), hasDryRun(rest));
+  else if (command === 'version') console.log(currentVersion());
   else if (command === 'publish') publish();
   else {
-    console.error('usage: pnpm ota <bump|version|publish> [--major|--minor|--patch]');
-    console.error('  bump      bump + build + sign + publish (run under `infisical run --env=prod`)');
-    console.error('  version   bump the version files only');
+    console.error('usage: pnpm ota <bump|version|publish> [--major|--minor|--patch] [--dry-run]');
+    console.error('  bump      bump + build + sign + publish  (run under `infisical run --env=prod`)');
+    console.error('  bump --dry-run   print the release plan without changing anything');
+    console.error('  version   print the current version');
     console.error('  publish   publish an already-built signed bundle');
     process.exit(2);
   }
