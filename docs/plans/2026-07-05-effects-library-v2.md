@@ -128,8 +128,8 @@ a real description.
 | **Keep (describe+tag only)** | `solid-base`, `whole-kit`, `strobe`, `synced-hoops`, `meter-eq`, `breathing-kit`, `hue-rotate-kit`, all 12 UV textures, `starfield`, `comet-trails`, `lightning`, `confetti-burst`, `helix`, `orbit-rings`, `gravity-wells`, `temp-sweep` | Gen-2 textures/particles already meet the bar minus metadata |
 | **Gen-3 (done)** | `chase-bands`, `ripple-3d`, `spark-arc`, `rain-3d` | Descriptions exist in source docblocks — extract into `description` |
 
-An early slice (B1) re-audits this table against source before the batch runs; the table is
-the default, not gospel.
+Unit U3 re-audits this table against source before the batch runs; the table is the
+default, not gospel.
 
 ### D3. Play types — the extensibility seam
 
@@ -255,9 +255,9 @@ the background so cross-drum travel reads. Reduced-motion picks each effect's
   contract, the modifier/modulation systems (consumed, not modified), the perf-SLA
   telemetry plan (`docs/plans/perf-sla-telemetry.md` — canvas renders inside the same
   per-effect profiling unit).
-- The Rock Solid initiative's scope: this plan COMPOSES with docs 06/10/11; if a Rock Solid
-  lane touches `GraphNode` play fields concurrently, sequence B/C slices behind it (check
-  the lanes tracker before starting C1).
+- The Rock Solid initiative's scope: this plan COMPOSES with docs 06/10/11 — Rock Solid is
+  fully merged to main (confirmed 2026-07-05), so its modifier/modulation infra is live and
+  no lane coordination is needed.
 
 ---
 
@@ -265,87 +265,82 @@ the background so cross-drum travel reads. Reduced-motion picks each effect's
 
 | # | Decision | LOCKED answer |
 |---|---|---|
-| 0 | Scope | **Full plan, all 21 slices** (lean cut offered and declined — "rich library from day 1") |
+| 0 | Scope | **Full scope** (lean cut offered and declined; later restructured into 7 natural work units, same content — "rich library from day 1") |
 | 1 | Retired effects | **Hidden-but-aliased forever** (alias map; never hard-delete) |
 | 2 | Pattern path | **Retire + DELETE** `pattern-renderer.ts` once its 10 effects are aliased (D2 proceeds) |
 | 3 | Canvas authoring day-1 | **Presets + param tweaking** (scene JSON editable in Objects view); visual scene editor = separate later initiative |
-| 4 | Merge list | As tabled in D2; B1 audit may adjust details without re-asking |
+| 4 | Merge list | As tabled in D2; the U3 audit may adjust details without re-asking |
 | 5 | Thumb camera | **Isometric drum** (¾-angle stacked ellipses, glowing dots, background mini-drum for kit-wide effects) |
 
 ---
 
-## Slices
 
-Uniform ~15–25 min, one seam each, `pnpm test` + `pnpm typecheck` green per slice; UI
-slices additionally design-system + `/make-interfaces-feel-better` + `pnpm ui-shot` against
-the running dev server (**:4321/:5173**). Tags: `[mech]` mechanical batch, `[ui]`
-ui-significant (strongest tier), `[core]` pure core.
+## Work units (natural-sized — takes as long as it takes)
 
-### Phase A — metadata + gallery
-- **A1 `[core]`** — `description`/`tags`/`deprecated` on `EffectGenerator` (types.ts) +
-  controlled tag vocabulary module + `aliases.ts` (empty map) + registry test that every
-  non-deprecated effect HAS description+tags (initially skipped-list, shrinks per batch).
-- **A2 `[plumbing]`** — flow metadata core→web: `fixtures.ts` mapping + `EffectDef` fields +
-  alias resolution at hydrate/`setShow` (both sim + core show-builder).
-- **A3 `[ui]`** — gallery card anatomy: description line, tag pills, param-count pill
-  (hover popover with param names/units). ui-shot: card grid.
-- **A4 `[ui]`** — fake-drum thumb renderer (projected-dot painter in `EffectThumb`,
-  precomputed projection table; both generator + interim pattern paths; background
-  mini-drum for `kit-wide`-tagged effects; representative-age reduced-motion). ui-shot:
-  gallery + inspector + clip-settings thumbs.
-- **A5 `[ui]`** — gallery filters: collection tabs, tag chips (AND), has-param filter,
-  search over description/tags, scope demoted to chip. ui-shot: each filter state.
-- **A6 `[mech]`** — author descriptions+tags for all KEEP effects (Gen-2 textures,
-  particles, bases) in the Gen-3 voice; extract Gen-3 docblocks into `description`.
+Restructured 2026-07-05 from 21 uniform slices to 7 natural units at Trent's direction
+(uniform slicing was adding boundary-artifact overhead: standalone audit/QA slices,
+seam+stub splits). Each unit ends at a semantically complete, gate-green point
+(`pnpm test` + `pnpm typecheck`; UI units additionally design-system +
+`/make-interfaces-feel-better` + `pnpm ui-shot` against the dev server on :4321/:5173).
+Verification is woven into each unit — no standalone QA passes.
 
-### Phase B — library rehab (after A1; B2+ after B1)
-- **B1** — disposition audit: verify the D2 table per effect against source; write the
-  final alias map + merge param unions into this doc (update the table in place).
-- **B2 `[mech]`** — emission-lift batch 1: `follow-hoop`, `wipe-3d`, `wave-collapse`,
-  `velocity-flames` (+descriptions/tags). Reference: `chase-bands`.
-- **B3 `[mech]`** — emission-lift batch 2: `pixel-accum`, `swing`, `sidechain`,
-  `sacred-hogs`, `collisions` (+descriptions/tags).
-- **B4** — retire + merge: implement D2 merges (param unions, presets preserved), populate
-  `aliases.ts`, mark `deprecated`, hydrate-migration test (old show → renders via new ids,
-  byte-plausible), gallery hides deprecated.
-- **B5 `[core]`** — gap-fill Gen-3 natives (pick 3–4 from: `orbit-comet` kit-orbit,
-  `scan-plane` beat-locked 3D plane sweep, `drum-sonar` ping-pong between drums,
-  `gravity-drops` bounce off hoops via grid). Each: emissions + description + tags + tests.
+### U1 — Effect metadata + gallery redesign
+`description`/`tags`/`deprecated` on `EffectGenerator` + controlled tag vocabulary +
+`aliases.ts` (consulted at hydrate/`setShow`, sim + show-builder); flow through
+`fixtures.ts` → `EffectDef`; gallery cards (description line, tag pills, param-count pill
+with hover popover); filters (collection tabs, tag chips AND, has-param filter, search
+over name/description/tags, scope demoted to chip); author descriptions+tags for the whole
+KEEP set (extract Gen-3 docblocks). Registry test: every non-deprecated effect has
+description+tags. ui-shot: card grid + each filter state.
 
-### Phase C — play types + canvas engine (C1 after A1; check Rock Solid lane overlap first)
-- **C1 `[core]`** — `playType` seam: `GraphNode.playType?/canvas?`, `PlayAction`/`Voice`
-  carry-through, compositor third dispatch branch (no-op renderer stub), zod/persistence
-  defaults (`hosted`), determinism test at the seam. Web sim mirrors structurally.
-- **C2 `[core]`** — canvas engine: `canvas/types.ts` scene model, element renderers
-  (stripes/circle/gradient first), `hoop` + `cylinder` samplers, scene→`EffectGenerator`
-  adapter, byte-determinism + sampler unit tests.
-- **C3 `[core]`** — samplers 2: `strip` + `footprint`; scene-level params
-  (rot/offset/scale/samplerRot/speed) exposed via paramSpec (modulation sweep drives them —
-  test an LFO on `canvasRotDeg`).
-- **C4 `[core]`** — lens chain: `polar`, `unpolar`, `tile`, `swirl`, `kaleido` + chain
-  evaluator + tests (stripes+polar == rings golden test).
-- **C5 `[core]`** — lenses 2: `log-polar`, `mobius`, `hyper4d` (world-space path) + tests.
-- **C6 `[ui]`** — canvas node UI: palette entry / play-node type selector, Inspector scene
-  picker + scene param editing, Objects view Canvas Scenes section (JSON-level editing
-  day-1 per locked decision 3). ui-shot.
-- **C7** — seed preset library: ≥10 canvas scenes (Stripe Band, Tunnel Rings, Checker
-  Spin, Kaleido Bloom, Hyper Drift, Strip Rain, …) with descriptions/tags; gallery
-  collections for canvas + lens presets. ui-shot: gallery with canvas collection.
+### U2 — Isometric fake-drum thumbnails (parallel with U3/U4 after U1)
+Projected-dot painter in `EffectThumb` (precomputed projection table from
+`buildThumbPixelModel`, ¾-angle stacked ellipses, soft glowing dots, additive glow);
+background mini-drum for `kit-wide`-tagged effects; representative-age reduced-motion
+(35% of dominant life param); works for generator + (interim) pattern paths. QA inline:
+audit ALL library entries at multiple loop phases — none black, none frozen. ui-shot:
+gallery, inspector, clip-settings thumbs.
 
-### Phase D — polish + verification
-- **D1** — thumbnail QA pass across ALL library entries on the fake drum (black/frozen
-  audit — telemetry: none should be black at any loop phase); fix stragglers.
-- **D2** — pattern-path deletion (post B4, open-decision 2): remove `pattern-renderer.ts`
-  path + `Pattern` plumbing, or record why kept.
-- **D3** — full ui-shot suite of the gallery states + a live spot-check checklist entry;
-  perf: canvas + lens under the 5ms effect budget on the 548px kit (bench like the
-  2026-07-05 confetti bench); update `.mex/ROUTER.md` + this tracker to COMPLETE.
+### U3 — Library rehab, merges, retirement (parallel with U2/U4 after U1)
+Audit the D2 disposition table against source (adjust details inline — merge list locked,
+no re-asking); emission-lift the hit-driven Gen-0/1 effects (reference: `chase-bands`;
+audit kit-fraction reaches → drum-relative); implement merges (param unions, presets
+preserved); populate `aliases.ts` + mark `deprecated` (gallery hides them); retire the 10
+pattern effects onto generator equivalents and DELETE `pattern-renderer.ts` + `Pattern`
+plumbing once nothing references it (locked decision 2). Hydrate-migration test: old show
+with retired ids renders via aliases.
 
-### Dependency sketch
+### U4 — Canvas engine (core, one continuous build; after U1)
+`playType` seam (`GraphNode.playType?/canvas?`, `PlayAction`/`Voice` carry-through,
+compositor third dispatch branch — no stub: the seam lands WITH the engine) → scene model
+(`canvas/types.ts`) → element renderers (stripes/circle/gradient/polygon/checker/noise) →
+all four samplers (`hoop`, `strip`, `cylinder`, `footprint`) → scene-level params via
+`paramSpec` (modulation sweep drives them — test an LFO on `canvasRotDeg`) → full lens
+chain (`polar`, `unpolar`, `tile`, `swirl`, `kaleido`, `log-polar`, `mobius`, `hyper4d`
+world-space path). Tests throughout: byte-determinism at the compositor seam per playType,
+sampler unit tests, stripes+polar==rings golden, lens chain composition. Perf: under the
+5ms effect budget on the 548px kit (bench like the 2026-07-05 confetti bench).
+
+### U5 — Canvas UI (after U4)
+Palette/play-node type selector, Inspector scene picker + scene param editing, Objects
+view Canvas Scenes section (JSON-level editing day-1 per locked decision 3), show-doc
+persistence for authored scenes. ui-shot: node face, inspector, objects view.
+
+### U6 — Day-1 library fill (after U4; UI parts after U5)
+≥10 seed canvas scenes (Stripe Band, Tunnel Rings, Checker Spin, Kaleido Bloom, Hyper
+Drift, Strip Rain, …) + 2–3 presets per lens, all with descriptions/tags; gallery
+collections for canvas + lens presets; 3–4 gap-fill Gen-3 natives (from: `orbit-comet`,
+`scan-plane`, `drum-sonar`, `gravity-drops`) with emissions + tests. ui-shot: gallery
+with canvas collection populated.
+
+### U7 — Close-out
+Full ui-shot sweep of gallery states; end-to-end spot-check checklist entry (live
+`:5173`); confirm perf + determinism gates across the new library; update
+`.mex/ROUTER.md` + this tracker to COMPLETE.
+
+### Dependencies
 ```
-A1 → A2 → A3 → A5      A1 → C1 → C2 → C3 → C4 → C5 → C6 → C7
-A4 (independent after A2)          B1 → B2/B3 (parallel) → B4 → B5
-D1–D3 last; B5/C7 feed D1.
+U1 → (U2 ∥ U3 ∥ U4) ; U4 → U5 → U6 ; U7 last (U6, U2, U3 feed it)
 ```
 
 ---
@@ -353,31 +348,18 @@ D1–D3 last; B5/C7 feed D1.
 ## Status tracker + resume protocol
 
 **Resume protocol:** (1) read this doc top-to-bottom; (2) `git log --oneline -20` and
-match commits against the tracker below; (3) trust the tracker only after verifying the
-last claimed slice's tests exist and pass; (4) update the tracker row (status + commit)
-in the SAME commit as each slice; (5) all decisions are LOCKED (see Decisions table) —
-do not re-ask them.
+match commits against the tracker; (3) trust the tracker only after verifying the last
+claimed unit's tests exist and pass; (4) update the tracker row (status + commits) in the
+SAME commit(s) as the unit lands — for multi-commit units, update `notes` with progress
+("samplers done, lenses next") so an interrupted unit is resumable mid-way; (5) all
+decisions are LOCKED (see Decisions table) — do not re-ask.
 
-| Slice | Status | Commit | Notes |
+| Unit | Status | Commits | Notes |
 |---|---|---|---|
-| A1 metadata fields | planned | — | |
-| A2 metadata flow | planned | — | |
-| A3 gallery cards | planned | — | |
-| A4 fake-drum thumbs | planned | — | isometric (locked) |
-| A5 gallery filters | planned | — | |
-| A6 descriptions (keep set) | planned | — | |
-| B1 disposition audit | planned | — | merge list locked as tabled |
-| B2 emission-lift 1 | planned | — | |
-| B3 emission-lift 2 | planned | — | |
-| B4 retire + merge | planned | — | alias-forever (locked) |
-| B5 gap-fill natives | planned | — | |
-| C1 playType seam | planned | — | Rock Solid merged; no coordination needed |
-| C2 canvas engine | planned | — | |
-| C3 samplers 2 + params | planned | — | |
-| C4 lens chain | planned | — | |
-| C5 lenses 2 (hyper4d) | planned | — | |
-| C6 canvas UI | planned | — | presets+tweaking (locked) |
-| C7 preset library | planned | — | |
-| D1 thumb QA | planned | — | |
-| D2 pattern-path removal | planned | — | DELETE (locked) |
-| D3 verification + close | planned | — | |
+| U1 metadata + gallery | planned | — | |
+| U2 isometric thumbs | planned | — | isometric locked |
+| U3 rehab + retirement | planned | — | pattern-path DELETE locked |
+| U4 canvas engine | planned | — | Rock Solid merged; infra live on main |
+| U5 canvas UI | planned | — | presets+tweaking locked |
+| U6 library fill | planned | — | |
+| U7 close-out | planned | — | |
