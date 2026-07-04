@@ -10,13 +10,22 @@
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
+  // S08: the single app-root desktop-bridge start + the boot overlay it drives.
+  import { desktopBridge } from './lib/app/desktop-bridge.svelte';
+  import BootOverlay from './lib/app/chrome/BootOverlay.svelte';
 
   const store = new TriggerLab();
   const shell = new ShellStore(parseSearch(typeof location !== 'undefined' ? location.search : ''));
 
   onMount(() => {
     store.start();
-    return () => store.stop();
+    // S08: connect the desktop boot/update bridge once, here at the app root — the boot overlay and
+    // ShareInfo gating both read its reactive bootStatus. Idempotent + a no-op in a plain browser.
+    void desktopBridge.start();
+    return () => {
+      store.stop();
+      desktopBridge.stop();
+    };
   });
 
   // Performance keys (approved wave-3 shell): 1–9 fire the active section's graphs
@@ -52,6 +61,9 @@
 <Overlays {store} />
 
 <PinGate {store} />
+
+<!-- S08: desktop boot/update takeover — renders only inside the shell, nothing in a plain browser. -->
+<BootOverlay status={desktopBridge.bootStatus} active={desktopBridge.isDesktop} />
 
 <style>
   .shell-root {
