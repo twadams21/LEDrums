@@ -8,6 +8,8 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 
 ## ESCALATIONS / notes
 
+- **🟡 FINAL-GATE LIVE SPOT-CHECKS (need a signed desktop build; run WITH Trent at the gate):** (C.S07/S06) mid-download update progress visible in settings + boot overlay AND the remote web app receives `boot://status`. (More may accrue from D/L — collect here.)
+
 - **✅ LANE 4 HOLD LIFTED (Trent, 2026-07-04): launching Lane 4 (C→D→L).** Interim: Phase-2 "waves 1–4" (aka "lane 3.5", UI/effects polish) were done + merged on rock-solid (HEAD 5738f59, baseline green 1830 tests). **NEW model directive (Trent 2026-07-04): NO Fable — ALL OPUS.** Lane orch = opus/high (was fable/high); impls opus per the effort policy. Everything else in the effort/cost policy still applies.
 
 - **Disk headroom (RELIEVED):** Trent cleared space → **~12 GB free @ 2026-07-04** (was 4.7). Lane 4 tauri `target/` builds are still the main risk — watch `df -h` around desktop builds; ENOSPC = blocking escalation. Still OK, but Lane 4's tauri `target/` builds are the real risk. Watch `df -h` closely around Lane 4; ENOSPC = blocking escalation. pnpm's hardlinked global store makes each worktree `node_modules` nearly free (verified: 4 installs, no measurable disk delta). **Risk remains for Lane 4** (desktop/tauri) — Rust `target/` build dirs are NOT hardlinked and can be large. Watch `df -h /Users/trent` before/around Lane 4; if a build fails on ENOSPC, that is a blocking escalation to Trent.
@@ -45,7 +47,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | lane-1-b0cea3 (killed, done) | **✅ DONE** |
 | 2 — Effects & graph | F → G → H → I | S18–S38 (21) | lane-2-988e46 (killed, done) | **✅ DONE** |
 | 3 — Data & portability | J → K | S39–S45 (7) | lane-3-c9f2bf (killed, done) | **✅ DONE** |
-| 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | _(launching, opus)_ | **ACTIVE** |
+| 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | lane-4-e6d958 (opus) | **ACTIVE** |
 
 ## Feature groups
 
@@ -67,6 +69,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-04 07:0x — GROUP C MERGED (desktop shell)
+
+- **group/C MERGED** (#48, S06–S08) → rock-solid **15ff1d0** (`--no-ff`; pre-integrated @ba391ca, NO conflicts). PASS after 1 group-review fix. **Live-smoke-load caught a real bug** (S06 desktop-detection false-positived in browsers → boot overlay covered the web app; vitest blind → fixed to gate on window.__TAURI_INTERNALS__ + regression test). Core pure.
+- Master sweep GREEN: typecheck 0; **1871 JS tests + 6 desktop, 0 skips** (web 1105·server 204·core 548·io 13·proto 1).
+- Deferred final-gate spot-check recorded above. Lane orch → group D now (watch S09 Phase-2 reconcile).
+- Usage 5h 29%, **7d 77%** (climbing, <85% trigger).
+- **Next:** merge group/D then group/L; then cross-lane seam review → FINAL GATE.
 
 ### 2026-07-04 06:34 — Lane 4 group C underway
 
