@@ -25,6 +25,13 @@
         that doesn't disturb the icon/title/sub/thumb grid. The trigger node passes the
         drum-link badge here (a source that is ALSO zone-mapped). */
     badge?: Snippet;
+    /** Optional content rendered INSIDE the card, below the head row and a divider (one
+        border, one surface, concentric radii). Play/modifier nodes pass their exposed
+        modulation-param rows here so params live in the node card, not a bolted-on card. */
+    footer?: Snippet;
+    /** Optional wiring handles anchored to the card HEAD row (position:relative parent), so
+        their offsets track the head layout and don't drift when a footer grows the card. */
+    leadHandles?: Snippet;
   };
 
   let {
@@ -37,6 +44,8 @@
     stale = false,
     thumb,
     badge,
+    footer,
+    leadHandles,
   }: Props = $props();
 </script>
 
@@ -46,18 +55,34 @@
   class:drop={dropTarget}
   class:stale
   class:has-thumb={!!thumb}
+  class:has-footer={!!footer}
   style="--tint:{tint}"
 >
-  <span class="icon"><Icon size={16} aria-hidden="true" /></span>
-  <span class="title">{title}</span>
-  <span class="sub">{sub}</span>
-  {#if thumb}<span class="thumb">{@render thumb()}</span>{/if}
+  <div class="card-head">
+    {#if leadHandles}{@render leadHandles()}{/if}
+    <span class="icon"><Icon size={16} aria-hidden="true" /></span>
+    <span class="title">{title}</span>
+    <span class="sub">{sub}</span>
+    {#if thumb}<span class="thumb">{@render thumb()}</span>{/if}
+  </div>
+  {#if footer}<div class="card-footer">{@render footer()}</div>{/if}
   {#if badge}<span class="badge">{@render badge()}</span>{/if}
 </div>
 
 <style>
   .card {
     position: relative; /* anchors the corner badge */
+    width: 176px;
+    text-align: left;
+    background: var(--surface-2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-1);
+  }
+  /* head row — the icon/title/sub grid. position:relative so leadHandles anchor to the
+     HEAD, not the whole card, so a footer growing the card never drifts them. */
+  .card-head {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
@@ -65,23 +90,25 @@
       'icon sub';
     align-items: center;
     column-gap: var(--space-2);
-    width: 176px;
     padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
-    text-align: left;
-    background: var(--surface-2);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius-3);
-    box-shadow: var(--shadow-1);
   }
   /* with a right-side thumbnail: add the third column + grow to fit it */
   .card.has-thumb {
+    width: auto;
+    min-width: 176px;
+    max-width: 260px;
+  }
+  .card.has-thumb .card-head {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       'icon title thumb'
       'icon sub thumb';
-    width: auto;
-    min-width: 176px;
-    max-width: 260px;
+  }
+  /* exposed-param footer lives INSIDE the card: one border, one surface, an internal
+     divider, and radii that echo the card corners (concentric). */
+  .card-footer {
+    padding: var(--space-1_5) var(--space-2) var(--space-2);
+    border-top: 1px solid var(--border-faint);
   }
   /* hover highlights the border accent — pure CSS so it is INSTANT (one hover pattern per
      element class, item 1.9); the wire highlight that follows hover lives in graph-hover. */

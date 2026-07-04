@@ -10,6 +10,7 @@ import {
   lfoTrace,
   paramRowSignal,
   previewCtx,
+  triggerClock,
 } from './signal-preview';
 
 const env = (kind: voice.EnvKind = 'decay'): voice.Envelope => voice.defaultEnvelope(kind);
@@ -163,5 +164,33 @@ describe('signal-preview — pure sampling (S38)', () => {
       expect(a).toEqual(b);
       expect(a.cursor).toBeCloseTo(0.25, 10);
     });
+  });
+});
+
+describe('triggerClock (live-on-trigger gate)', () => {
+  it('is static (at the representative still) before any fire', () => {
+    const r = triggerClock(null, 5000);
+    expect(r.firing).toBe(false);
+    expect(r.localMs).toBe(PREVIEW_STATIC_MS);
+  });
+
+  it('plays live from t=0 within the hit window', () => {
+    const fireAt = 1000;
+    const r = triggerClock(fireAt, 1000 + 250);
+    expect(r.firing).toBe(true);
+    expect(r.localMs).toBe(250);
+  });
+
+  it('settles back to the static still once the window elapses', () => {
+    const fireAt = 1000;
+    const r = triggerClock(fireAt, 1000 + PREVIEW_LOOP_MS + 1);
+    expect(r.firing).toBe(false);
+    expect(r.localMs).toBe(PREVIEW_STATIC_MS);
+  });
+
+  it('treats a not-yet-reached fire epoch as static', () => {
+    const r = triggerClock(2000, 1000); // now < fireAt (clock skew guard)
+    expect(r.firing).toBe(false);
+    expect(r.localMs).toBe(PREVIEW_STATIC_MS);
   });
 });

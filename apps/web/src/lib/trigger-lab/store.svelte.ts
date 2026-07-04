@@ -87,6 +87,7 @@ import {
 
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
+import { findFreePosition } from '../app/views/node-placement';
 import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
@@ -725,6 +726,27 @@ export class TriggerLab {
       created/duplicated graphs). Drives the section picker + slot labels. A deleted graph drops
       out (it's no longer in `graphs`). */
   graphLibrary = $derived(Object.keys(this.graphs).map((key) => ({ key, label: this.graphLabel(key) })));
+
+  /** The last graph fired through {@link fireSectionGraph} (the hotkey / graph-card path) —
+      display-only, so the Graphs dock can flash the fired card. `seq` distinguishes repeat
+      fires of the same key. */
+  lastSectionFire = $state<{ key: string; seq: number } | null>(null);
+  private fireSeq = 0;
+
+  /** Per-graph last-fire wall-clock (`performance.now()` ms), keyed by graph key — display-only
+      state that drives live-on-trigger node previews (TouchDesigner-style: a trigger-driven node
+      face is STATIC until its graph fires, then plays live from that instant). This is a UI
+      timestamp, NOT engine/render state, so core purity + determinism are untouched. */
+  graphFireAt = $state<Record<string, number>>({});
+  private markGraphFire(key: string): void {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.graphFireAt = { ...this.graphFireAt, [key]: now };
+  }
+  /** The fire epoch of the graph open in the editor (or null if it hasn't fired this session) —
+      threaded into that graph's node previews so they animate on the graph's own fire. */
+  get selectedGraphFireAt(): number | null {
+    return this.selectedPadKey ? (this.graphFireAt[this.selectedPadKey] ?? null) : null;
+  }
 
   /** Human label for a graph key (for the section lists + picker): the stored display name
       (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
@@ -1679,28 +1701,32 @@ export class TriggerLab {
    * (Raw MIDI/OSC direct bindings resolve via the sim's `resolveGraphsForFire` / the server
    * input-router — U3 — not this pad path.)
    */
-  private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string }> {
+  private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string; key: string }> {
     const section = this.activeSection;
     // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
     // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
     const graphs = this.resolvedView.graphs;
     if (section) {
-      const resolved: Array<{ graph: TriggerGraph; label: string }> = [];
+      const resolved: Array<{ graph: TriggerGraph; label: string; key: string }> = [];
       for (const key of section.graphs) {
         const g = graphs[key];
         if (g && sourceMatchesPad(triggerSourceOf(g), pad.drumId, String(pad.zone))) {
-          resolved.push({ graph: g, label: this.graphLabel(key) });
+          resolved.push({ graph: g, label: this.graphLabel(key), key });
         }
       }
       return resolved;
     }
-    const g = graphs[padKey(pad)];
-    return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}` }] : [];
+    const key = padKey(pad);
+    const g = graphs[key];
+    return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}`, key }] : [];
   }
 
   hit(pad: Pad): void {
     const toFire = this.resolveHitGraphsLocal(pad);
     if (toFire.length === 0) return;
+    // Mark each fired graph's UI fire-clock so its live-on-trigger node previews play (both
+    // online + offline — the preview is display-only and reacts to the local intent either way).
+    for (const { key } of toFire) this.markGraphFire(key);
     // Connected: the server owns resolution + render. Forward the hit and let its frames/levels
     // come back; do NOT fire the local sim (authority principle, doc 03). `onInput` has no `key`
     // echo branch, so this is a single authoritative fire.
@@ -1736,6 +1762,8 @@ export class TriggerLab {
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
+    this.lastSectionFire = { key, seq: ++this.fireSeq }; // Graphs-dock card flash
+    this.markGraphFire(key); // live-on-trigger node previews
     const src = triggerSourceOf(graph);
     // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
     // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct
@@ -2475,6 +2503,42 @@ export class TriggerLab {
   }
 
   // --- graph editing (freeform node wiring) --------------------------------
+
+  /** A single copied graph node (deep, non-reactive), ready to paste into any graph.
+      Node-only — wires are NOT captured (they reference other nodes). Transient: a fresh
+      session starts empty. The trigger node is never copyable (a graph has exactly one). */
+  nodeClipboard = $state<GraphNode | null>(null);
+
+  /** Clone `src` into the selected graph with a fresh id at a free position near `(x, y)`,
+      select it, and return it. Node-only (no wires). Refuses the trigger kind + viewers. */
+  private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
+    if (this.isViewer) return null;
+    const g = this.selectedGraph;
+    if (!g || src.kind === 'trigger') return null;
+    const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
+    const pos = findFreePosition(occupied, x, y, 184, 76);
+    const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: nid('n'), x: pos.x, y: pos.y };
+    g.nodes.push(clone);
+    return clone;
+  }
+
+  /** Copy a node onto the node clipboard (deep, non-reactive). No-op for the trigger node. */
+  copyNode(node: GraphNode): void {
+    if (node.kind === 'trigger') return;
+    this.nodeClipboard = structuredClone($state.snapshot(node));
+  }
+
+  /** Paste the node clipboard into the selected graph, offset so it doesn't stack on the
+      original. Returns the new node (selected) or null when the clipboard is empty. */
+  pasteNode(): GraphNode | null {
+    if (!this.nodeClipboard) return null;
+    return this.placeClone(this.nodeClipboard, this.nodeClipboard.x + 36, this.nodeClipboard.y + 36);
+  }
+
+  /** Duplicate a node in place (fresh id, offset position), node-only. Returns the copy. */
+  duplicateNode(node: GraphNode): GraphNode | null {
+    return this.placeClone(node, node.x + 36, node.y + 36);
+  }
 
   /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
   addNode(kind: NodeKind, x: number, y: number): GraphNode | null {

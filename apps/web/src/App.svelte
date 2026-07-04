@@ -19,14 +19,27 @@
     return () => store.stop();
   });
 
-  // Number keys play the active section's graph list: 1–9 → graphs 1–9, 0 → graph 10.
-  // Extra keys (beyond the section's graph count) do nothing. Skip while typing in a control.
+  // Performance keys (approved wave-3 shell): 1–9 fire the active section's graphs
+  // 1–9 (0 → graph 10); ←/→ step through the active song's sections. Skip while
+  // typing in a control; leave arrows alone inside the flow canvas (xyflow nudges
+  // the selected node with them).
   function onKey(e: KeyboardEvent): void {
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
-    if (!/^[0-9]$/.test(e.key)) return;
-    const index = e.key === '0' ? 9 : Number(e.key) - 1;
-    store.fireSectionGraph(index);
+    if (/^[0-9]$/.test(e.key)) {
+      const index = e.key === '0' ? 9 : Number(e.key) - 1;
+      store.fireSectionGraph(index);
+      return;
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
+      const sections = store.activeSong?.sections ?? [];
+      if (sections.length === 0) return;
+      const cur = sections.findIndex((s) => s.id === store.activeSectionId);
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      const next = sections[(cur + step + sections.length) % sections.length];
+      if (next) store.setActiveSection(next.id);
+    }
   }
 </script>
 

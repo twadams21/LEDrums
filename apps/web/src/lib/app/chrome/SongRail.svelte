@@ -14,7 +14,7 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import { showSongRows, type ShowSongRow } from '../views/objects-view';
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
@@ -64,14 +64,19 @@
 </script>
 
 <div class="songrail">
-  <div class="head">
-    {#if heading}<Eyebrow icon={ListMusic}>Setlist</Eyebrow>{/if}
-    {#if store.canEdit}
+  {#if heading}
+    <PanelHeader icon={ListMusic} title="Setlist">
+      {#if store.canEdit}
+        <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.createSong()} />
+      {/if}
+    </PanelHeader>
+  {:else if store.canEdit}
+    <div class="head">
       <span class="add">
         <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.createSong()} />
       </span>
-    {/if}
-  </div>
+    </div>
+  {/if}
   <ul class="list">
     {#each rows as row (row.id)}
       <li>
@@ -99,22 +104,22 @@
   .songrail {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
     min-height: 0;
   }
   .head {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) 0;
   }
-  /* keep the add control flush-right whether or not the Eyebrow heading is shown */
+  /* keep the add control flush-right whether or not the heading is shown */
   .add {
     margin-inline-start: auto;
   }
   .list {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: var(--space-2);
     display: flex;
     flex-direction: column;
     gap: var(--space-1);

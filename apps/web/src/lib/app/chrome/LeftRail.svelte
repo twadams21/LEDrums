@@ -7,7 +7,7 @@
   import type { View } from '../shell-nav';
   import type { Component } from 'svelte';
   import SongRail from './SongRail.svelte';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
   import Cable from '@lucide/svelte/icons/cable';
@@ -31,16 +31,18 @@
 
 <div class="rail">
   <nav class="views" aria-label="Views">
-    <Eyebrow icon={Navigation}>Views</Eyebrow>
-    {#each NAV as v (v.id)}
-      <ListItem
-        icon={v.icon}
-        label={v.label}
-        secondary={v.sub}
-        active={shell.view === v.id}
-        onclick={() => shell.setView(v.id)}
-      />
-    {/each}
+    <PanelHeader icon={Navigation} title="Views" />
+    <div class="views-body">
+      {#each NAV as v (v.id)}
+        <ListItem
+          icon={v.icon}
+          label={v.label}
+          secondary={v.sub}
+          active={shell.view === v.id}
+          onclick={() => shell.setView(v.id)}
+        />
+      {/each}
+    </div>
   </nav>
 
   <section class="songs">
@@ -59,7 +61,6 @@
   .songs {
     min-height: 0;
     overflow: hidden;
-    padding: var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
@@ -70,15 +71,15 @@
     min-height: 0;
   }
   .views {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
+    overflow: hidden;
   }
-  .views :global(.eyebrow) {
-    margin-bottom: var(--space-1);
+  .views-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
   }
 </style>

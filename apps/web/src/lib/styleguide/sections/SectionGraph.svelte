@@ -1,12 +1,14 @@
 <script lang="ts">
   /* The graph system, LIVE: the real GraphCanvas (shared SvelteFlow chrome + token
-     theming), GraphPalette, WireEdge and NodeCard — wired to demo data. Drag nodes,
-     hover to light connected wires, drag handles to wire, Delete to remove, add
-     kinds from the palette. The locked interaction contract is printed below. */
+     theming), the Node Editor drawer (Add palette + Inspector tabs), WireEdge and
+     NodeCard — wired to demo data. Drag nodes, hover to light connected wires, drag
+     handles to wire, Delete to remove, add kinds from the drawer's Add tab. The
+     locked interaction contract is printed below. */
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
-  import GraphPalette from '../../app/views/GraphPalette.svelte';
-  import GraphAddMenu, { type PickerGroup } from '../../app/views/GraphAddMenu.svelte';
+  import NodeEditor from '../../app/views/NodeEditor.svelte';
+  import AddPalette, { type AddGroup } from '../../app/views/AddPalette.svelte';
+  import type { FlowApi } from '../../app/views/FlowHandle.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
   import { GraphHover } from '../../app/views/graph-hover.svelte';
@@ -14,7 +16,6 @@
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
   import { listModifiersByCategory } from '@ledrums/core';
   import Blend from '@lucide/svelte/icons/blend';
-  import Waves from '@lucide/svelte/icons/waves';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import ParamRowTick from '../../app/views/ParamRowTick.svelte';
@@ -71,32 +72,43 @@
     edges = hover.decorate(edges);
   }
 
-  // Modifiers + modulation sources are added from the two GraphAddMenu buttons (modal pickers),
-  // so they're dropped from the flat kind palette — mirroring the real Trigger graph.
+  // Node Editor drawer Add groups — node kinds, modulation sources, then the modifier
+  // registry grouped by category (same shape the real Trigger graph builds).
   const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
-  const paletteItems = paletteKinds.map((k) => ({
-    key: k,
-    label: kindLabel[k],
-    icon: kindIcon[k],
-    tint: tint[k],
-  }));
-  // Registry-driven "Add Modifier" groups, and a flat "Add Modulation" group — same shape the real
-  // Trigger graph feeds GraphAddMenu.
-  const modifierGroups = $derived<PickerGroup[]>(
-    listModifiersByCategory().map((g) => ({
-      category: g.category,
-      label: g.label,
-      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend })),
-    })),
-  );
   const modSourceKinds: NodeKind[] = ['envelope', 'lfo', 'cc'];
-  const modulationGroups: PickerGroup[] = [
+  const MODIFIER_GROUP_PREFIX = 'modifier:';
+  const addGroups = $derived<AddGroup[]>([
     {
-      category: 'all',
-      label: 'Sources',
+      key: 'kinds',
+      label: 'Nodes',
+      items: paletteKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
+    },
+    {
+      key: 'modulation',
+      label: 'Modulation',
       items: modSourceKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
     },
-  ];
+    ...listModifiersByCategory().map((g) => ({
+      key: `${MODIFIER_GROUP_PREFIX}${g.category}`,
+      label: `Modifiers · ${g.label}`,
+      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)' })),
+    })),
+  ]);
+
+  // Placement: the drawer adds at the visible canvas centre via the flow instance
+  // (FlowHandle) — the same mechanism the real views use.
+  let flowApi = $state<FlowApi | null>(null);
+  let canvasWrap = $state<HTMLElement | null>(null);
+  function demoCentre(): { x: number; y: number } {
+    const r = canvasWrap?.getBoundingClientRect();
+    if (!flowApi) return { x: 0, y: 0 };
+    return flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+  }
+  function handleAdd(id: string, groupKey: string): void {
+    const c = demoCentre();
+    if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addMod(id, c.x, c.y);
+    else add(id as NodeKind, c.x, c.y);
+  }
 
   let nid = 0;
   const demoSubs: Partial<Record<NodeKind, string>> = {
@@ -144,60 +156,47 @@
   </div>
 
   <DemoCard
-    title="Canvas · palette · wires"
+    title="Canvas · Node Editor drawer · wires"
     src={[
       'lib/app/views/GraphCanvas',
-      'lib/app/views/GraphPalette',
-      'lib/app/views/GraphAddMenu',
+      'lib/app/views/NodeEditor',
+      'lib/app/views/AddPalette',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
     wide
   >
     <div class="canvas-demo">
-      <GraphCanvas
-        bind:nodes
-        bind:edges
-        nodeTypes={{ demo: GraphDemoNode }}
-        edgeTypes={{ wire: WireEdge }}
-        defaultEdgeOptions={{ type: 'wire' }}
-        fitPadding={0.25}
-        onNodeEnter={(id) => {
-          hover.enter(id);
-          restamp();
-        }}
-        onNodeLeave={() => {
-          hover.leave();
-          restamp();
-        }}
-        onConnect={(c) => {
-          edges = [...edges, { id: `e${c.source}-${c.target}-${++nid}`, source: c.source, target: c.target, type: 'wire' }];
-        }}
-      >
-        {#snippet palette()}
-          <GraphPalette items={paletteItems} {add} ariaLabel="Add demo node">
-            {#snippet trailing()}
-              <GraphAddMenu
-                label="Modifier"
-                icon={Blend}
-                title="Add modifier"
-                subtitle="Insert a modifier into the chain — filter by category."
-                groups={modifierGroups}
-                add={addMod}
-              />
-              <GraphAddMenu
-                label="Modulation"
-                icon={Waves}
-                tint="var(--role-modulation)"
-                title="Add modulation source"
-                subtitle="Drive parameters from an envelope, LFO, or MIDI CC / OSC."
-                groups={modulationGroups}
-                add={(id, cx, cy) => add(id as NodeKind, cx, cy)}
-              />
-            {/snippet}
-          </GraphPalette>
+      <div class="canvas-cell" bind:this={canvasWrap}>
+        <GraphCanvas
+          bind:nodes
+          bind:edges
+          nodeTypes={{ demo: GraphDemoNode }}
+          edgeTypes={{ wire: WireEdge }}
+          defaultEdgeOptions={{ type: 'wire' }}
+          fitPadding={0.25}
+          onFlow={(f) => (flowApi = f)}
+          onNodeEnter={(id) => {
+            hover.enter(id);
+            restamp();
+          }}
+          onNodeLeave={() => {
+            hover.leave();
+            restamp();
+          }}
+          onConnect={(c) => {
+            edges = [...edges, { id: `e${c.source}-${c.target}-${++nid}`, source: c.source, target: c.target, type: 'wire' }];
+          }}
+        />
+      </div>
+      <NodeEditor>
+        {#snippet add()}
+          <AddPalette groups={addGroups} onAdd={handleAdd} />
         {/snippet}
-      </GraphCanvas>
+        {#snippet inspector()}
+          <p class="insp-hint">In the app, the selected node's editor mounts here (see the Trigger / Patch views).</p>
+        {/snippet}
+      </NodeEditor>
     </div>
   </DemoCard>
 
@@ -242,15 +241,28 @@
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Modifier / Modulation open a modal picker.</strong> The Modifier and Modulation buttons sit in the ONE add palette alongside the node kinds (<code>GraphAddMenu</code> in the palette's <code>trailing</code> slot) and open the shared <code>Dialog</code>: the modifier picker is category-grouped with a filter (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list); the modulation picker lists the source kinds (Envelope / LFO / CC). Selecting adds the node at the visible canvas centre and closes — the always-expanded palettes no longer cover the canvas.</li>
-      <li><strong>Delete / Backspace</strong> removes the selection; the palette adds at the visible canvas centre.</li>
+      <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> — ONE searchable, grouped palette of node kinds, modulation sources, and the modifier registry by category (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list); <strong>Inspector</strong> — the selected node's editor. Selecting a node flips the drawer to Inspector; clicking an Add item spawns at a free spot near the visible canvas centre. Nothing floats over the canvas.</li>
+      <li><strong>Delete / Backspace</strong> removes the selection.</li>
     </ul>
   </div>
 </section>
 
 <style>
   .canvas-demo {
-    height: 360px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    height: 400px;
+  }
+  .canvas-cell {
+    min-width: 0;
+    min-height: 0;
+  }
+  .insp-hint {
+    margin: 0;
+    padding: var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+    line-height: var(--leading-normal);
   }
   /* S38 signal-preview demo grid */
   .sig-demo {

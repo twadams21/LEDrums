@@ -17,6 +17,7 @@
   import { renderGeneratorThumbFrame } from './effect-thumb-render';
   import { tryGetEffect } from '@ledrums/core';
   import { ticker } from './effect-thumb-ticker';
+  import { triggerClock } from './signal-preview';
 
   interface Props {
     pattern: Pattern;
@@ -27,8 +28,14 @@
     labModel?: LabModel;
     w?: number;
     h?: number;
+    /** Live-on-trigger mode (node faces): STATIC until the node's graph fires, then plays live
+        from t=0 for one hit, then settles. Off by default → the continuous loop the effect
+        library/gallery browses with. */
+    triggered?: boolean;
+    /** The graph's fire epoch (`performance.now()` ms) when `triggered`; null until it fires. */
+    triggerAt?: number | null;
   }
-  let { pattern, params, generatorId, w = 64, h = 36 }: Props = $props();
+  let { pattern, params, generatorId, w = 64, h = 36, triggered = false, triggerAt = null }: Props = $props();
 
   const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
@@ -74,6 +81,19 @@
     } else if (!generatorId) {
       genState = null;
       genStateId = null;
+    }
+  });
+
+  // Per-fire reset (live-on-trigger): each new fire replays the effect from a clean state, so a
+  // stateful generator (confetti / accumulators) restarts on the hit instead of drifting across
+  // fires. Reads triggerAt (the dep) + generatorId and WRITES genState — never reads genState, so
+  // it cannot form the self-referential-$effect loop that halts the app.
+  $effect(() => {
+    if (!triggered) return;
+    triggerAt; // re-run on each fire
+    if (generatorId) {
+      const gen = tryGetEffect(generatorId);
+      if (gen?.createState) genState = gen.createState(buildThumbPixelModel());
     }
   });
 
@@ -148,9 +168,21 @@
       ctx.fillStyle = '#0a0d12';
       ctx.fillRect(0, 0, w, h);
 
-      // Use a static frame (t=400ms) if reduced-motion is enabled.
-      const effectiveT = prefersReduced ? 0.4 : t;
-      const effectiveTms = prefersReduced ? 400 : tMs;
+      // Time base: reduced-motion → a static 400ms still; live-on-trigger → local time since the
+      // node's graph fired (static 400ms still until it does); else the continuous gallery loop.
+      let effectiveT: number;
+      let effectiveTms: number;
+      if (prefersReduced) {
+        effectiveT = 0.4;
+        effectiveTms = 400;
+      } else if (triggered) {
+        const localMs = triggerClock(triggerAt, tMs).localMs;
+        effectiveT = localMs / 1000;
+        effectiveTms = localMs;
+      } else {
+        effectiveT = t;
+        effectiveTms = tMs;
+      }
 
       // Branch: generator-backed vs pattern effect
       if (genId) {

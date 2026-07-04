@@ -23,7 +23,7 @@ function usage() {
   pnpm ui-shot --all                capture every named shot
   pnpm ui-shot --list               list named shots
   pnpm ui-shot --route "?view=patch" [--select "css"] [--name out]   ad-hoc capture
-Options: --full (full page), --strict (exit 1 if any console/page errors)
+Options: --full (full page), --strict (exit 1 if any console/page errors), --viewport WxH (default 1600x1000)
 Output: .ui-shots/<name>.png (gitignored)`);
 }
 
@@ -43,13 +43,23 @@ const opt = (f) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 
+// Optional viewport override — `--viewport 1280x800` (default 1600x1000). Handy for the
+// density review (check 1280x800 vs 1920x1080) without editing the script.
+const OPTS_WITH_VALUE = ['--route', '--name', '--select', '--viewport'];
+function parseViewport(spec) {
+  const m = /^(\d+)x(\d+)$/.exec(spec ?? '');
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 1600, height: 1000 };
+}
+const viewport = parseViewport(opt('--viewport'));
+
 let shots;
 if (opt('--route') !== undefined) {
   shots = [{ name: opt('--name') ?? 'adhoc', route: opt('--route'), select: opt('--select') }];
 } else if (flag('--all')) {
   shots = Object.entries(CATALOGUE).map(([name, s]) => ({ name, ...s }));
 } else {
-  const names = args.filter((a) => !a.startsWith('--'));
+  // shot names = positionals that are neither flags nor an option's value
+  const names = args.filter((a, i) => !a.startsWith('--') && !OPTS_WITH_VALUE.includes(args[i - 1]));
   shots = names.map((name) => {
     if (!CATALOGUE[name]) {
       console.error(`Unknown shot "${name}". Use --list.`);
@@ -96,7 +106,7 @@ await ensureServer();
 mkdirSync(OUT_DIR, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
+const context = await browser.newContext({ viewport, deviceScaleFactor: 2 });
 
 let totalErrors = 0;
 for (const shot of shots) {

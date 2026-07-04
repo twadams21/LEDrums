@@ -10,11 +10,11 @@
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import Select from '../../../ui/Select.svelte';
   import Slider from '../../../ui/Slider.svelte';
-  import Toggle from '../../../ui/Toggle.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import X from '@lucide/svelte/icons/x';
   import Unplug from '@lucide/svelte/icons/unplug';
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -66,7 +66,7 @@
   </div>
 
   {#if rows.length === 0}
-    <p class="hint">Expose a numeric parameter to modulate it — each becomes a handle on the node you can wire a source (envelope) into.</p>
+    <p class="hint">Add a parameter to animate it, then wire an envelope, LFO, or MIDI source into it.</p>
   {/if}
 
   {#each rows as row (row.param)}
@@ -88,7 +88,7 @@
       {/if}
 
       {#if maps.length === 0}
-        <p class="empty">No wires yet — drag from a modulation source into this row's handle.</p>
+        <p class="empty">Not wired yet — drag a source into this row to animate it.</p>
       {/if}
 
       {#each maps as m (m.id)}
@@ -96,10 +96,13 @@
           <div class="maphead">
             <span class="src">{sourceLabel(m.from)}</span>
             <span class="grow"></span>
-            <label class="inv">
-              <Toggle pressed={m.invert === true} onChange={(v) => store.setMappingInvert(m.id, v)} ariaLabel="Invert" class="invtoggle" />
-              <span>invert</span>
-            </label>
+            <IconButton
+              icon={ArrowUpDown}
+              label={m.invert === true ? 'Invert (on)' : 'Invert'}
+              variant={m.invert === true ? 'solid' : 'ghost'}
+              size={13}
+              onclick={() => store.setMappingInvert(m.id, !(m.invert === true))}
+            />
             <IconButton icon={Unplug} label="Disconnect wire" variant="ghost" size={13} onclick={() => store.disconnect(m.id)} />
           </div>
           <div class="amt">
@@ -212,13 +215,6 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--role-modulation);
-  }
-  .inv {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-size: var(--text-2xs);
-    color: var(--text-faint);
   }
   .amt,
   .range {
