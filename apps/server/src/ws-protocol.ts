@@ -33,6 +33,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap', 'setProject',
   'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
   'loadProject', 'saveProject', 'listProjects',
+  'discoverControllers', 'adoptController', 'identifyController', 'watchController',
 ]);
 
 export function decodeClient(raw: string): ClientMessage {

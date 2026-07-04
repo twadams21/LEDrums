@@ -149,6 +149,25 @@ export const outputSettingsSchema = z.object({
   priority: z.number().int().min(1).max(200).default(100),
 });
 
+/**
+ * The adopted PixLite controller for this project (group L / S47). DATA ONLY — `core` stays pure,
+ * so this holds no client, socket, or IO of any kind; the server's controller-monitor service reads
+ * these fields to construct its `@ledrums/io` client. Optional: a project may have no controller
+ * adopted yet. Rehydrates with the Project across restarts.
+ *
+ * `auth` is the **Base64URL(SHA256(password)) HASH**, never the plaintext password (LOCKED — the
+ * server hashes at adoption time and only ever persists/transmits the hash). Absent when the
+ * controller needs no auth.
+ */
+export const controllerSchema = z.object({
+  /** Controller host/IP the client binds to. */
+  host: z.string().min(1),
+  /** User-facing label — the device's own nickname captured at adoption. */
+  nickname: z.string().default(''),
+  /** Pre-computed auth hash (Base64URL-SHA256), NEVER plaintext. Absent = unauthenticated. */
+  auth: z.string().optional(),
+});
+
 export const projectSchema = z.object({
   name: z.string().default('Untitled'),
   kit: kitSchema,
@@ -156,6 +175,8 @@ export const projectSchema = z.object({
   inputMap: inputMapSchema.default({}),
   setlist: setlistSchema.default({}),
   output: outputSettingsSchema.default({}),
+  /** The adopted PixLite controller (group L). Optional — absent until one is adopted. */
+  controller: controllerSchema.optional(),
 });
 
 /**
@@ -193,6 +214,7 @@ export type Setlist = z.infer<typeof setlistSchema>;
 export type OutputState = z.infer<typeof outputStateSchema>;
 export type RgbOrder = z.infer<typeof rgbOrderSchema>;
 export type OutputSettings = z.infer<typeof outputSettingsSchema>;
+export type Controller = z.infer<typeof controllerSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectPatch = z.infer<typeof projectPatchSchema>;
 
