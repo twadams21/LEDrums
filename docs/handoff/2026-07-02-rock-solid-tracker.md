@@ -8,7 +8,7 @@ Master orch state for issues #46–#57 (49 slices). Operating manual: `docs/plan
 
 ## ESCALATIONS / notes
 
-- **🟡 FINAL-GATE LIVE SPOT-CHECKS (need a signed desktop build; run WITH Trent at the gate):** (C.S07/S06) mid-download update progress visible in settings + boot overlay AND the remote web app receives `boot://status`. (More may accrue from D/L — collect here.)
+- **🟡 FINAL-GATE LIVE SPOT-CHECKS (need a signed desktop build; run WITH Trent at the gate):** (C.S07/S06) mid-download update progress visible in settings + boot overlay AND the remote web app receives `boot://status` (needs SIGNED desktop build). (L.S47–S49) real PixLite discover/adopt/rx-verify/identify + test-pattern takeover (needs a real DEVICE). (D.S09) confirm right-dock resize rail live (satisfied by Phase-2, not this lane).
 
 - **✅ LANE 4 HOLD LIFTED (Trent, 2026-07-04): launching Lane 4 (C→D→L).** Interim: Phase-2 "waves 1–4" (aka "lane 3.5", UI/effects polish) were done + merged on rock-solid (HEAD 5738f59, baseline green 1830 tests). **NEW model directive (Trent 2026-07-04): NO Fable — ALL OPUS.** Lane orch = opus/high (was fable/high); impls opus per the effort policy. Everything else in the effort/cost policy still applies.
 
@@ -47,7 +47,7 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 | 1 — Core reliability | A → B → E | S01–S05, S12–S17 (11) | lane-1-b0cea3 (killed, done) | **✅ DONE** |
 | 2 — Effects & graph | F → G → H → I | S18–S38 (21) | lane-2-988e46 (killed, done) | **✅ DONE** |
 | 3 — Data & portability | J → K | S39–S45 (7) | lane-3-c9f2bf (killed, done) | **✅ DONE** |
-| 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | lane-4-e6d958 (opus) | **ACTIVE** |
+| 4 — Shell & hardware | C → D → L | S06–S11, S46–S49 (10) | lane-4-e6d958 (killed, done) | **✅ DONE** |
 
 ## Feature groups
 
@@ -69,6 +69,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 ---
 
 ## State snapshot (per wake — newest on top)
+
+### 2026-07-04 09:1x — 🎉 ALL 49 SLICES DONE — LANE 4 COMPLETE
+
+- **group/L MERGED** (#56, S46–S49) → rock-solid **ddd5c81** (`--no-ff`, NO conflicts). PASS no fixes. Confidence chain closed end-to-end (app→server→controller→output); core pure (only core touch = S47 data-only field); controller-panel live-smoke clean.
+- **✅ LANE 4 DONE. ALL 4 LANES COMPLETE — 49/49 slices on rock-solid.** Master FULL sweep GREEN: typecheck 0; **2009 tests/0 skips** (io 51·core 560·proto 1·server 227·web 1170). Killed lane-4-e6d958.
+- **REMAINING BEFORE SHIP:** (1) cross-lane seam review (launching opus reviewer); (2) FINAL GATE w/ Trent via AskUserQuestion — rock-solid→main + the 2 deferred live spot-checks (signed-build OTA progress; PixLite hardware) recorded in notes.
+- 5h 67% (near 70%), 7d 80%.
 
 ### 2026-07-04 09:08 — group L 3/4; S49 = LAST slice in flight
 
