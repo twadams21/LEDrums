@@ -18,6 +18,7 @@
   import Separator from '../../ui/Separator.svelte';
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
+  import Pill from '../../ui/Pill.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
   import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
   import ListItem from '../../ui/ListItem.svelte';
@@ -48,6 +49,7 @@
   import Wand2 from '@lucide/svelte/icons/wand-2';
 
   let textVal = $state('Opening set');
+  let pillTags = $state<string[]>(['hit']);
   let searchVal = $state('');
   let renameVal = $state('Kick base');
   let bpm = $state('120');
@@ -248,6 +250,27 @@
         <span class="dot-demo"><StatusDot tone="ok" /> ok</span>
         <span class="dot-demo"><StatusDot tone="live" pulse /> live</span>
         <span class="dot-demo"><StatusDot tone="warn" /> warn</span>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Pill"
+      src="lib/ui/Pill"
+      note="Small tag/label pill. Static (span) for read-only tags + count badges; interactive (button + selected) for filter chips. Used across the effect gallery cards + filter row."
+    >
+      <div class="comp-row">
+        <Pill label="hit" />
+        <Pill label="3d" />
+        <Pill tone="accent" label="6 params" />
+      </div>
+      <div class="comp-row">
+        {#each ['hit', 'wave', 'particle', 'texture'] as t (t)}
+          <Pill
+            label={t}
+            selected={pillTags.includes(t)}
+            onclick={() => (pillTags = pillTags.includes(t) ? pillTags.filter((x) => x !== t) : [...pillTags, t])}
+          />
+        {/each}
       </div>
     </DemoCard>
 

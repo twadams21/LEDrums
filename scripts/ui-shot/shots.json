@@ -117,5 +117,104 @@
     ],
     "select": ".node-editor",
     "settle": 1500
+  },
+  "effect-gallery": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Take over')",
+        "force": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": "button[aria-label='Change effect']",
+        "force": true
+      },
+      {
+        "wait": 600
+      }
+    ],
+    "select": ".dlg-gallery",
+    "settle": 1200
+  },
+  "effect-gallery-collection": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Take over')",
+        "force": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": "button[aria-label='Change effect']",
+        "force": true
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": ".dlg-gallery .tabs-trigger:has-text('Particles')"
+      },
+      {
+        "wait": 600
+      }
+    ],
+    "select": ".dlg-gallery",
+    "settle": 1200
+  },
+  "effect-gallery-filtered": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Take over')",
+        "force": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": "button[aria-label='Change effect']",
+        "force": true
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": ".dlg-gallery .seg-btn:has-text('Kit')"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": ".dlg-gallery .tagrow button:has-text('texture')"
+      },
+      {
+        "wait": 600
+      }
+    ],
+    "select": ".dlg-gallery",
+    "settle": 1200
   }
 }

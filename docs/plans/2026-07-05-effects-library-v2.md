@@ -389,7 +389,7 @@ decisions are LOCKED (see Decisions table) — do not re-ask.
 
 | Unit | Status | Commits | Notes |
 |---|---|---|---|
-| U1 metadata + gallery | planned | — | |
+| U1 metadata + gallery | done | 2093a77, 8dce68b, 46df520 | Seam+vocabulary+aliases (2093a77); web flow-through + alias consult points at hydrate/buildShow (8dce68b); gallery redesign (collection tabs, tag chips AND, has-param filter, desc/tag/param pills), new `Pill` primitive + styleguide + regen design-system.html, ui-shot captures (effect-gallery, -collection, -filtered). All 45 non-deprecated effects described+tagged. Pattern effects still listed (untagged) — U3 retires them. |
 | U2 isometric thumbs | planned | — | isometric locked |
 | U3 rehab + retirement | planned | — | pattern-path DELETE locked |
 | U4 canvas engine | planned | — | Rock Solid merged; infra live on main |

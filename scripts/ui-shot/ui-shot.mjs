@@ -96,7 +96,7 @@ async function ensureServer() {
 
 async function runActions(page, actions = []) {
   for (const a of actions) {
-    if (a.click) await page.locator(a.click).first().click({ timeout: 5000 });
+    if (a.click) await page.locator(a.click).first().click({ timeout: 5000, force: a.force === true });
     else if (a.scrollTo) await page.locator(a.scrollTo).first().scrollIntoViewIfNeeded({ timeout: 5000 });
     else if (a.wait) await page.waitForTimeout(a.wait);
   }
