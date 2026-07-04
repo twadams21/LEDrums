@@ -647,7 +647,7 @@ const statsTimer = setInterval(() => {
   }
   const s = host.getStats();
   broadcastJson({ t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output });
-}, 500);
+}, 10);
 
 // --- boot + shutdown --------------------------------------------------------
 
