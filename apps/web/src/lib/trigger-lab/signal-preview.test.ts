@@ -7,6 +7,9 @@ import {
   envelopeTrace,
   formatCcReadout,
   frac,
+  delayProgress,
+  firePick,
+  firePulse,
   lfoTrace,
   paramRowSignal,
   previewCtx,
@@ -192,5 +195,51 @@ describe('triggerClock (live-on-trigger gate)', () => {
     const r = triggerClock(2000, 1000); // now < fireAt (clock skew guard)
     expect(r.firing).toBe(false);
     expect(r.localMs).toBe(PREVIEW_STATIC_MS);
+  });
+});
+
+describe('firePulse (state-face flash)', () => {
+  it('is 0 when idle (no fire epoch)', () => {
+    expect(firePulse(null, 5000)).toBe(0);
+  });
+
+  it('is 1 at the fire instant and eases out to 0 over the window', () => {
+    expect(firePulse(1000, 1000)).toBe(1);
+    const mid = firePulse(1000, 1000 + 210, 420);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+    expect(firePulse(1000, 1000 + 420, 420)).toBe(0);
+  });
+
+  it('guards a not-yet-reached epoch and a non-positive window', () => {
+    expect(firePulse(2000, 1000)).toBe(0);
+    expect(firePulse(1000, 1100, 0)).toBe(0);
+  });
+});
+
+describe('firePick (deterministic fan pick)', () => {
+  it('is deterministic for the same epoch and in range', () => {
+    for (const n of [1, 2, 3, 7]) {
+      const a = firePick(1234.5, n);
+      expect(a).toBe(firePick(1234.5, n));
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(a).toBeLessThan(n);
+    }
+  });
+
+  it('varies across epochs and guards n <= 0', () => {
+    const picks = new Set([100, 200, 300, 400, 500].map((t) => firePick(t, 5)));
+    expect(picks.size).toBeGreaterThan(1);
+    expect(firePick(1000, 0)).toBe(0);
+  });
+});
+
+describe('delayProgress (delay-node wait bar)', () => {
+  it('is 0 idle, fills across the wait, 0 once elapsed', () => {
+    expect(delayProgress(null, 5000, 200)).toBe(0);
+    expect(delayProgress(1000, 1100, 200)).toBeCloseTo(0.5);
+    expect(delayProgress(1000, 1200, 200)).toBe(0);
+    expect(delayProgress(1000, 900, 200)).toBe(0);
+    expect(delayProgress(1000, 1100, 0)).toBe(0);
   });
 });

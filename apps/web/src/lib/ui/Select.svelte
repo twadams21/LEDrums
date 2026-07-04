@@ -71,7 +71,8 @@
     justify-content: space-between;
     gap: var(--space-2);
     width: 100%;
-    padding: var(--space-1) var(--space-2);
+    height: var(--control-h, 26px);
+    padding: 0 var(--space-2);
     font-family: inherit;
     font-size: var(--text-xs);
     color: var(--text);

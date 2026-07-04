@@ -22,6 +22,7 @@
   import BandSwitchNode from './BandSwitchNode.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import NodeSignalPreview from './NodeSignalPreview.svelte';
+  import NodeStatePreview from './NodeStatePreview.svelte';
   import ParamRowTick from './ParamRowTick.svelte';
   import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import Tooltip from '../../ui/Tooltip.svelte';
@@ -100,6 +101,16 @@
   // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
   // mirroring how a play node shows its EffectThumb (S38). Sampled through core, ticker-driven.
   const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc');
+  // Gating / routing kinds get a STATE face (wave-4 decision 1): static configured state +
+  // a trigger-driven flash. (Bands switches keep their dedicated BandSwitchNode face.)
+  const isStateKind = $derived(
+    kind === 'chance' || kind === 'toggle' || kind === 'delay' || kind === 'sequence' ||
+    kind === 'all' || kind === 'random' || kind === 'switch' || kind === 'modifier',
+  );
+  // Wired default-port children — sizes the fan / sequence-step faces.
+  const wiredChildren = $derived(
+    store.selectedGraph ? store.selectedGraph.edges.filter((e) => e.from === id && !e.fromPort).length : 0,
+  );
   const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
 
@@ -158,6 +169,20 @@
     <NodeSignalPreview kind="lfo" lfo={store.lfoSettings(node)} bpm={store.bpm} w={56} h={32} />
   {:else if node && node.kind === 'cc'}
     <NodeSignalPreview kind="cc" ccValue={() => store.ccNodeLiveValue(node)} w={56} h={32} />
+  {/if}
+{/snippet}
+
+{#snippet stateThumb()}
+  {#if node}
+    <NodeStatePreview
+      {node}
+      childCount={wiredChildren}
+      bpm={store.bpm}
+      fireAt={store.selectedGraphFireAt}
+      tintToken={(tint[kind] ?? 'var(--accent)').slice(4, -1)}
+      w={56}
+      h={32}
+    />
   {/if}
 {/snippet}
 
@@ -234,7 +259,7 @@
         {sub}
         tint={chipTint}
         selected={!!selected}
-        thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : undefined}
+        thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
         leadHandles={cardHandles}
         footer={modRows.length > 0 ? paramFooter : undefined}

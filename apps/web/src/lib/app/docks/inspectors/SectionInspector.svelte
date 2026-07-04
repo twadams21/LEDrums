@@ -37,7 +37,7 @@
   </div>
 </header>
 <div class="sectionbody">
-  <Field label="Name" hint="display label">
+  <Field layout="row" label="Name" hint="display label">
     <CommitInput
       value={sectionName}
       placeholder="Section"
@@ -135,7 +135,7 @@
   }
   .look-row {
     display: grid;
-    grid-template-columns: 5rem 1fr;
+    grid-template-columns: var(--field-label-col, 6.5rem) 1fr;
     align-items: center;
     gap: var(--space-2);
   }
@@ -174,7 +174,7 @@
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--ink);
-    padding: var(--space-2);
+    padding: var(--space-1) var(--space-2);
     background: var(--surface-inset);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);

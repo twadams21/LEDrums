@@ -10,7 +10,7 @@
   let { store, nodeId, fallback }: { store: TriggerLab; nodeId: string; fallback: string } = $props();
 </script>
 
-<Field label="Name" hint="display label">
+<Field layout="row" label="Name" hint="display label">
   <CommitInput
     value={patchLabel(store, nodeId, fallback)}
     autofocus={false}

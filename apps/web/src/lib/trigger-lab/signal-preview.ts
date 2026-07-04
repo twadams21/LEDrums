@@ -52,6 +52,46 @@ export function triggerClock(
   return { firing: true, localMs: elapsed };
 }
 
+/**
+ * Trigger-driven pulse intensity for a STATE face (chance/toggle/all/random/switch/modifier
+ * previews): 1 at the fire instant, easing out to 0 over `windowMs`; 0 when idle or before the
+ * fire. Pure — same contract as {@link triggerClock}, but for a flash rather than a sweep.
+ */
+export function firePulse(fireAt: number | null | undefined, now: number, windowMs = 420): number {
+  if (fireAt == null || windowMs <= 0) return 0;
+  const elapsed = now - fireAt;
+  if (elapsed < 0 || elapsed >= windowMs) return 0;
+  const t = 1 - elapsed / windowMs;
+  return t * t; // ease-out
+}
+
+/**
+ * Deterministic pick of one of `n` fan lines from a fire epoch — the random node's preview
+ * highlights a different (but reproducible-given-the-epoch) child line per fire. Display-only:
+ * the ENGINE's pick uses its own seeded PRNG; this only needs to look plausibly random.
+ */
+export function firePick(fireAt: number, n: number): number {
+  if (n <= 0) return 0;
+  let h = Math.imul((Math.floor(fireAt) >>> 0) ^ 0x9e3779b9, 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) % n;
+}
+
+/**
+ * Delay-node preview progress: 0 idle, fills 0→1 across the wait after a fire, then back to 0
+ * once the delayed children have fired (the arrival flash is `firePulse(fireAt + delayMs, now)`).
+ */
+export function delayProgress(
+  fireAt: number | null | undefined,
+  now: number,
+  delayMs: number,
+): number {
+  if (fireAt == null || delayMs <= 0) return 0;
+  const elapsed = now - fireAt;
+  if (elapsed < 0 || elapsed >= delayMs) return 0;
+  return elapsed / delayMs;
+}
+
 /** A point on a preview polyline. `x` runs 0→1 left→right; `y` is the 0..1 signal (1 = top). */
 export interface PreviewPoint {
   x: number;

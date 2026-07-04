@@ -144,6 +144,24 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Field · row layout"
+      src="lib/ui/Field"
+      note="The inspector rhythm: label column left (--field-label-col), control right, one --control-h height across TextField / CommitInput / Select. Hint renders under the control. Use layout=&quot;row&quot; in every inspector/editor panel; the stacked default is for dialogs and wide forms."
+    >
+      <div class="comp-stack">
+        <Field layout="row" label="Name" hint="display label">
+          <TextField bind:value={textVal} placeholder="Untitled" ariaLabel="Row name" />
+        </Field>
+        <Field layout="row" label="Protocol">
+          <Select bind:value={protocol} options={protocolOptions} ariaLabel="Row protocol" />
+        </Field>
+        <Field layout="row" label="BPM" hint="Clamped number 20–300">
+          <CommitInput type="number" min={20} max={300} value={bpm} suffix="bpm" ariaLabel="Row BPM" autofocus={false} onCommit={(v) => (bpm = v)} />
+        </Field>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Commit input" src="lib/ui/CommitInput" note="Inline rename / numeric entry: commits on Enter or blur, reverts on Esc.">
       <div class="comp-stack">
         <Field label="Inline rename">

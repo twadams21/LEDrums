@@ -62,7 +62,7 @@
 </script>
 
 <p class="grouphint">What fires this zone — <b>{drumName(editor.drumId)}</b> · slot {editor.slot}.</p>
-<Field label="MIDI note" hint={note === null ? 'C-1 - G9' : String(note)}>
+<Field layout="row" label="MIDI note" hint={note === null ? 'C-1 - G9' : String(note)}>
   <div class="note-row">
     <CommitInput
       value={note === null ? '' : formatMidiNote(note)}
@@ -92,7 +92,7 @@
 {#if heardNote}
   <div class="heard"><InputActivityBadge {...heardNote} /></div>
 {/if}
-<Field label="OSC address" hint="Sensory Percussion / Ableton">
+<Field layout="row" label="OSC address" hint="Sensory Percussion / Ableton">
   <CommitInput
     value={addr ?? ''}
     mono

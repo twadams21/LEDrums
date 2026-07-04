@@ -1,35 +1,108 @@
 {
-  "shell": { "route": "?view=trigger" },
-  "top-bar": { "route": "?view=trigger", "select": ".top" },
-  "transport": { "route": "?view=trigger", "select": ".xport" },
-  "left-rail": { "route": "?view=trigger", "select": ".rail" },
-  "trigger-graph": { "route": "?view=trigger", "select": "main.center" },
-  "node-editor-add": { "route": "?view=trigger", "select": ".node-editor" },
-  "trigger-node-selected": {
+  "shell": {
+    "route": "?view=trigger"
+  },
+  "top-bar": {
     "route": "?view=trigger",
-    "actions": [{ "click": ".svelte-flow__node" }],
+    "select": ".top"
+  },
+  "transport": {
+    "route": "?view=trigger",
+    "select": ".xport"
+  },
+  "left-rail": {
+    "route": "?view=trigger",
+    "select": ".rail"
+  },
+  "trigger-graph": {
+    "route": "?view=trigger",
+    "select": "main.center"
+  },
+  "node-editor-add": {
+    "route": "?view=trigger",
     "select": ".node-editor"
   },
-  "graphs-dock": { "route": "?view=trigger", "select": ".graphbar" },
-  "visualizer": { "route": "?view=trigger", "select": "aside.col2 .viz", "settle": 1500 },
-  "buses": { "route": "?view=trigger", "select": "aside.col2 .buses" },
-  "patch-graph": { "route": "?view=patch", "select": "main.center", "settle": 1500 },
-  "objects": { "route": "?view=objects", "select": "main.center" },
+  "trigger-node-selected": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": ".svelte-flow__node"
+      }
+    ],
+    "select": ".node-editor"
+  },
+  "graphs-dock": {
+    "route": "?view=trigger",
+    "select": ".graphbar"
+  },
+  "visualizer": {
+    "route": "?view=trigger",
+    "select": "aside.col2 .viz",
+    "settle": 1500
+  },
+  "buses": {
+    "route": "?view=trigger",
+    "select": "aside.col2 .buses"
+  },
+  "patch-graph": {
+    "route": "?view=patch",
+    "select": "main.center",
+    "settle": 1500
+  },
+  "objects": {
+    "route": "?view=objects",
+    "select": "main.center"
+  },
   "song-library": {
     "route": "?view=objects",
-    "actions": [{ "scrollTo": "text=Song Library" }],
+    "actions": [
+      {
+        "click": "text=Song Library"
+      }
+    ],
     "select": "main.center"
   },
-  "sections": { "route": "?view=sections", "select": "main.center" },
+  "sections": {
+    "route": "?view=sections",
+    "select": "main.center"
+  },
   "section-detail": {
     "route": "?view=sections",
-    "actions": [{ "click": "section.col .li" }, { "wait": 300 }],
+    "actions": [
+      {
+        "click": "section.col .li"
+      },
+      {
+        "wait": 300
+      }
+    ],
     "select": "main.center"
   },
-  "perform": { "route": "?view=perform" },
-  "monitor": { "route": "?view=monitor", "select": "main.center" },
+  "perform": {
+    "route": "?view=perform"
+  },
+  "monitor": {
+    "route": "?view=monitor",
+    "select": "main.center"
+  },
   "settings-dialog": {
     "route": "?view=trigger",
-    "actions": [{ "click": "button[aria-label=\"Settings\"]" }, { "wait": 400 }]
+    "actions": [
+      {
+        "click": "button[aria-label=\"Settings\"]"
+      },
+      {
+        "wait": 400
+      }
+    ]
+  },
+  "node-editor-play": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+      }
+    ],
+    "select": ".node-editor"
   }
 }

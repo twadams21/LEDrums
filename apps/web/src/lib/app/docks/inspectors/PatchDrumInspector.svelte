@@ -62,7 +62,7 @@
       {/each}
     </div>
   </div>
-  <Field label="Starting angle" hint="all 4 hoops">
+  <Field layout="row" label="Starting angle" hint="all 4 hoops">
     <CommitInput
       type="number"
       value={drum.startAngleDeg}
@@ -72,7 +72,7 @@
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { startAngleDeg: n }))}
     />
   </Field>
-  <Field label="Spin" hint="rotates pixel 0 around the hoop">
+  <Field layout="row" label="Spin" hint="rotates pixel 0 around the hoop">
     <CommitInput
       type="number"
       value={drum.localSpinDeg}
@@ -82,7 +82,7 @@
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { localSpinDeg: n }))}
     />
   </Field>
-  <Field label="Pixels per hoop" hint="literal LED count">
+  <Field layout="row" label="Pixels per hoop" hint="literal LED count">
     <CommitInput
       type="number"
       min={1}
@@ -93,7 +93,7 @@
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { pixelsPerHoop: n }))}
     />
   </Field>
-  <Field label="Hoop spacing" hint="vertical gap between hoops">
+  <Field layout="row" label="Hoop spacing" hint="vertical gap between hoops">
     <CommitInput
       type="number"
       min={1}
@@ -104,7 +104,7 @@
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { hoopSpacingMm: n }))}
     />
   </Field>
-  <Field label="Diameter" hint="drum size — sets ring radius">
+  <Field layout="row" label="Diameter" hint="drum size — sets ring radius">
     <CommitInput
       type="number"
       min={1}

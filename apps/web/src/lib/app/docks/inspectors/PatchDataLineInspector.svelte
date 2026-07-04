@@ -52,7 +52,7 @@
   <ReadRow label="Order" value={`#${entry.pos} in transmit order`} />
   <ReadRow label="Output" value={`${patchLabel(store, `output:${entry.output.id}`, 'Output')} · ${uLabel(entry.output.startUniverse)}`} />
   <ReadRow label="First / last pixel" value={fmtSpan(ranges?.byDataLine[entry.line.id])} />
-  <Field label="Start universe" hint="blank = dense / auto">
+  <Field layout="row" label="Start universe" hint="blank = dense / auto">
     <CommitInput
       type="number"
       min={0}

@@ -18,8 +18,13 @@
   import Blend from '@lucide/svelte/icons/blend';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
+  import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
   import ParamRowTick from '../../app/views/ParamRowTick.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
+  import Workflow from '@lucide/svelte/icons/workflow';
   import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
+  import { makeNode } from '../../trigger-lab/sim';
+  import { graphThumb } from '../../app/views/graph-thumb';
   import { voice } from '@ledrums/core';
 
   // S38 signal-preview demo inputs — real core data, sampled by the previews through core.
@@ -35,6 +40,39 @@
   };
   const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
   const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
+
+  // Wave-4 state-face demo: one node per gating/routing kind, plus a Fire button that
+  // stamps the same epoch contract the store's selectedGraphFireAt provides.
+  let demoFireAt = $state<number | null>(null);
+  const stateNodes = [
+    { node: makeNode('chance', 'sg-chance', 0, 0, { p: 0.45 }), label: 'Chance · donut = p, flash on fire' },
+    { node: makeNode('toggle', 'sg-toggle'), label: 'Toggle · flips per fire' },
+    { node: makeNode('delay', 'sg-delay', 0, 0, { delayMode: 'time', ms: 800 }), label: 'Delay · wait bar + arrival flash' },
+    { node: makeNode('sequence', 'sg-seq'), label: 'Sequence · step dots advance', children: 4 },
+    { node: makeNode('all', 'sg-all'), label: 'All · full fan flash', children: 3 },
+    { node: makeNode('random', 'sg-random'), label: 'Random · one line per fire', children: 3 },
+    { node: makeNode('switch', 'sg-switch', 0, 0, { on: 'value', valueMode: 'gate', threshold: 0.6 }), label: 'Switch gate · threshold bar' },
+    { node: makeNode('modifier', 'sg-mod'), label: 'Modifier · transform curve' },
+  ];
+
+  // Graphs-dock stub data: two doodle graphs through the real graphThumb projection.
+  const dockThumbA = graphThumb({
+    nodes: [
+      { id: 't', x: 0, y: 60 }, { id: 'r', x: 120, y: 60 },
+      { id: 'a', x: 240, y: 10 }, { id: 'b', x: 240, y: 110 },
+    ],
+    edges: [
+      { from: 't', to: 'r' }, { from: 'r', to: 'a' }, { from: 'r', to: 'b' },
+    ],
+  });
+  const dockThumbB = graphThumb({
+    nodes: [{ id: 't', x: 0, y: 0 }, { id: 'p', x: 200, y: 90 }],
+    edges: [{ from: 't', to: 'p' }],
+  });
+  const dockCards = [
+    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: dockThumbA, sel: true },
+    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: dockThumbB, sel: false },
+  ];
 
   const face = (kind: NodeKind, sub: string) => ({
     icon: kindIcon[kind],
@@ -229,6 +267,53 @@
     </div>
   </DemoCard>
 
+  <DemoCard
+    title="State previews · gating & routing node faces"
+    src={['lib/app/views/NodeStatePreview', 'lib/trigger-lab/signal-preview']}
+    note="Wave-4 full preview coverage: a static face reading the node's configured state, plus a trigger-driven response (firePulse / firePick / delayProgress) when the graph fires. Fire to see the chance flash, toggle flip, delay fill + arrival, sequence step, and the random pick."
+  >
+    <button class="fire-btn" type="button" onclick={() => (demoFireAt = performance.now())}>Fire</button>
+    <div class="sig-demo">
+      {#each stateNodes as s (s.node.id)}
+        <div class="sig-cell">
+          <NodeStatePreview node={s.node} childCount={s.children ?? 0} bpm={120} fireAt={demoFireAt} tintToken={tint[s.node.kind].slice(4, -1)} />
+          <span class="sig-label">{s.label}</span>
+        </div>
+      {/each}
+    </div>
+  </DemoCard>
+
+  <DemoCard
+    title="Graphs dock (store-free stub)"
+    src="lib/app/views/GraphsDock"
+    note="A faithful markup stub of the bottom Graphs dock — section tabs in the PanelHeader, hotkey-badged graph cards with real graphThumb mini-maps, and the dashed new-graph card. The live dock binds the TriggerLab store (fire flash rides store.lastSectionFire)."
+    wide
+  >
+    <div class="dock-stub">
+      <PanelHeader icon={Workflow} title="Graphs">
+        <nav class="stub-tabs" aria-label="Sections (demo)">
+          <button type="button" class="stub-tab on">Intro<span class="stub-cnt">5</span></button>
+          <button type="button" class="stub-tab">Verse<span class="stub-cnt">1</span></button>
+          <button type="button" class="stub-tab">Chorus<span class="stub-cnt">0</span></button>
+        </nav>
+        <span class="stub-hint" aria-hidden="true"><kbd>1</kbd>–<kbd>9</kbd> fire · <kbd>←</kbd><kbd>→</kbd> section</span>
+      </PanelHeader>
+      <div class="stub-cards">
+        {#each dockCards as cItem (cItem.hk)}
+          <button type="button" class="stub-card" class:sel={cItem.sel}>
+            <span class="stub-hot">{cItem.hk}</span>
+            <svg class="stub-thumb" viewBox="0 0 172 104" aria-hidden="true">
+              {#each cItem.thumb.paths as d (d)}<path {d} />{/each}
+              {#each cItem.thumb.dots as p, di (di)}<circle cx={p.x} cy={p.y} r="3.5" />{/each}
+            </svg>
+            <span class="stub-meta"><span class="stub-name">{cItem.name}</span><span class="stub-sub">{cItem.sub}</span></span>
+          </button>
+        {/each}
+        <button type="button" class="stub-new">+ New graph</button>
+      </div>
+    </div>
+  </DemoCard>
+
   <div class="contract">
     <h3>The locked graph interaction contract</h3>
     <ul>
@@ -298,6 +383,181 @@
   }
   .contract {
     margin-top: var(--space-5);
+  }
+  /* state-preview demo */
+  .fire-btn {
+    align-self: flex-start;
+    margin-bottom: var(--space-3);
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--on-accent);
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-2);
+    cursor: pointer;
+  }
+  .fire-btn:active {
+    scale: 0.97;
+  }
+  /* graphs-dock stub — mirrors GraphsDock.svelte's chrome (see the src pointer) */
+  .dock-stub {
+    display: grid;
+    grid-template-rows: auto auto;
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    overflow: hidden;
+  }
+  .stub-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .stub-tab {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 4px var(--space-3);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-2);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .stub-tab.on {
+    background: var(--surface-3);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .stub-cnt {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .stub-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: var(--space-3);
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  .stub-hint kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--surface-2);
+    box-shadow: 0 1px 0 var(--border);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+  }
+  .stub-cards {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    overflow-x: auto;
+  }
+  .stub-card {
+    position: relative;
+    flex: none;
+    width: 172px;
+    height: 116px;
+    padding: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-3);
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .stub-card:hover {
+    border-color: var(--border-strong);
+  }
+  .stub-card.sel {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .stub-hot {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius-2);
+    background: var(--surface-3);
+    box-shadow: 0 2px 0 var(--border);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--text);
+  }
+  .stub-card.sel .stub-hot {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+  .stub-thumb {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .stub-thumb path {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1.4;
+  }
+  .stub-thumb circle {
+    fill: var(--accent-dim);
+  }
+  .stub-meta {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .stub-name {
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .stub-sub {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+  .stub-new {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 172px;
+    height: 116px;
+    background: transparent;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius-3);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .stub-new:hover {
+    border-color: var(--accent-dim);
+    color: var(--accent);
   }
   h3 {
     font-size: var(--text-sm);
