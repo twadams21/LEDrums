@@ -3,6 +3,7 @@
 
 import {
   DEFAULT_KIT,
+  collectionOf,
   listEffects,
   type EffectCategory,
   type ParamSpec as CoreParamSpec,
@@ -153,6 +154,10 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
     pattern: 'flash', // ignored — generatorId drives rendering
     generatorId: gen.id,
     category: gen.category,
+    description: gen.description,
+    tags: gen.tags,
+    playType: collectionOf(gen.tags),
+    deprecated: gen.deprecated,
     busId: CATEGORY_BUS[gen.category],
     scope: 'kit',
     params: gen.paramSpec.map(mapParamSpec),

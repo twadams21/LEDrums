@@ -9,7 +9,7 @@
    If a future divergence appears between the two type sets, this is the single
    place to map it explicitly (rather than casting at the call site). */
 
-import { assertShowIntegrity, type voice } from '@ledrums/core';
+import { assertShowIntegrity, resolveEffectAlias, type voice } from '@ledrums/core';
 import { referencedGraphs, type Song } from '../app/setlist';
 import { triggerSourceOf, type Bus, type EffectDef, type Preset, type Section, type TriggerGraph } from './sim';
 
@@ -47,7 +47,9 @@ export function buildShow(source: ShowSource): voice.Show {
     // Graphs (incl. the `value` switch mode + per-band edge `fromPort`s) pass through
     // by structural assignment: core's `voice` types now model `on:'value'` and
     // `fromPort`, so the web↔core graph types have re-converged (no cast needed).
-    graphs: { ...source.graphs },
+    // Effect aliases (D1) are consulted here too so a Show pushed to the engine never
+    // carries a retired effect id — retired ids resolve to their live replacement.
+    graphs: aliasResolvedGraphs(source.graphs),
     // Section snapshots carry the per-bus `looks` the engine spawns on recall (S15).
     // Deep-copy `looks` so the sent Show is a true snapshot, never a live alias of the
     // rune-backed section state (the header's snapshot invariant).
@@ -67,6 +69,26 @@ export function buildShow(source: ShowSource): voice.Show {
       })),
     })),
   };
+}
+
+/** Rewrite play-node effect ids through the alias map so the pushed Show never references a
+    retired id (D1). Copies only graphs that actually change — identity while the map is empty. */
+function aliasResolvedGraphs(
+  graphs: Record<string, TriggerGraph>,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    let changed = false;
+    const nodes = graph.nodes.map((n) => {
+      if (n.kind !== 'play' || !n.effectId) return n;
+      const resolved = resolveEffectAlias(n.effectId);
+      if (resolved === n.effectId) return n;
+      changed = true;
+      return { ...n, effectId: resolved, presetId: `${resolved}:default` };
+    });
+    out[key] = changed ? { ...graph, nodes } : graph;
+  }
+  return out;
 }
 
 /**

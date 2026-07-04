@@ -20,7 +20,7 @@ import {
   makeNode,
   migrateAdsr,
 } from '../sim';
-import { voice } from '@ledrums/core';
+import { voice, resolveEffectAlias } from '@ledrums/core';
 import { EFFECTS, PRESETS, type Pad } from '../fixtures';
 import { nid } from './ids';
 import { padKey, padLabel } from './seed';
@@ -304,6 +304,29 @@ export function migrateGraphsEnvMaps(
   return out;
 }
 
+/** Rewrite every play node's `effectId` (and its `presetId` prefix) through the effect
+    alias map so a retired id resolves to its live replacement. Pure + idempotent — only
+    touches graphs that actually reference an aliased id, so it's free when the map is empty. */
+export function resolveGraphAliases(
+  graphs: Record<string, TriggerGraph>,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    let changed = false;
+    const nodes = graph.nodes.map((n) => {
+      if (n.kind !== 'play' || !n.effectId) return n;
+      const resolved = resolveEffectAlias(n.effectId);
+      if (resolved === n.effectId) return n;
+      changed = true;
+      // Retarget the preset ref to the new effect's Default unless it already points elsewhere
+      // valid; the safe, always-resolvable choice is the replacement's `:default`.
+      return { ...n, effectId: resolved, presetId: `${resolved}:default` };
+    });
+    out[key] = changed ? { ...graph, nodes } : graph;
+  }
+  return out;
+}
+
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
     every pad-bound graph's trigger source explicit, materialize formerly-linked play nodes' params
     and drop the `linked` flag, fold legacy velocity switches into the canonical value+bands form,
@@ -318,7 +341,11 @@ export function normalizeGraphs(
   presetParamsFor: PresetParamsFor,
 ): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
   const padKeys = new Set(pads.map(padKey));
-  let next = unionTriggerSources(graphs, padKeys);
+  // Consult the effect alias map FIRST (D1, locked decision 1): a show referencing a
+  // retired effect id has its play nodes rewritten to the live target before anything
+  // else resolves them. Empty map today (U3 populates it) → an identity pass for now.
+  let next = resolveGraphAliases(graphs);
+  next = unionTriggerSources(next, padKeys);
   // Materialize formerly-linked play nodes' params from their preset, then drop `linked` (S39) —
   // before the env/switch folds so every later pass sees node-local params.
   next = materializeLinkedNodesAll(next, presetParamsFor);

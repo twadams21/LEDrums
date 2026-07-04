@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type EffectCategory, type ResolvedModifier } from '@ledrums/core';
+import { voice, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
 import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
@@ -170,6 +170,15 @@ export interface EffectDef {
   /** Legacy effect category (base/trigger/wash/meter/texture/particle/utility) —
       surfaced so the gallery can group/filter generator effects. */
   category?: EffectCategory;
+  /** Gallery card / inspector blurb (from core `metadata.ts`, via the generator seam). */
+  description?: string;
+  /** Controlled-vocabulary tags — the gallery filters on these (D1). */
+  tags?: readonly EffectTag[];
+  /** User-facing collection derived from tags (first-match) — the gallery's primary rail
+      and the taxonomy the typed play nodes (D3) will share. */
+  playType?: PlayType;
+  /** When set, the effect is retired: never listed in the gallery (aliases keep shows working). */
+  deprecated?: { replacedBy: string; note?: string };
   busId: string;
   scope: Scope;
   params: ParamSpec[];
