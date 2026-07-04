@@ -261,15 +261,16 @@ the background so cross-drum travel reads. Reduced-motion picks each effect's
 
 ---
 
-## Open decisions (resolve with Trent before the marked slices)
+## Decisions (LOCKED with Trent, 2026-07-05 — nothing blocks execution)
 
-| # | Decision | Recommendation | Blocks |
-|---|---|---|---|
-| 1 | Retired effects: hidden-but-aliased forever vs hard-delete after a deprecation window | Hidden-but-aliased (shows are forever; code cost is one map) | B4 |
-| 2 | Pattern path (`pattern-renderer.ts` + 10 pattern effects): retire entirely? | Yes — fold into generator/canvas equivalents, delete the path in D2 once nothing references it | B4/D2 |
-| 3 | Canvas authoring day-1 depth: presets-only vs full scene editor | Presets + param tweaking day-1 (scene JSON editable via Objects view); dedicated visual scene editor is its own later initiative | C4 |
-| 4 | Merge list in D2 (esp. burst/radial-wash, colour-melody/whole-drum) | As tabled | B1 |
-| 5 | Thumb camera style (isometric ellipse stack vs front-on cylinder) | Isometric-ish, matches the app's 3D visualizer feel | A4 |
+| # | Decision | LOCKED answer |
+|---|---|---|
+| 0 | Scope | **Full plan, all 21 slices** (lean cut offered and declined — "rich library from day 1") |
+| 1 | Retired effects | **Hidden-but-aliased forever** (alias map; never hard-delete) |
+| 2 | Pattern path | **Retire + DELETE** `pattern-renderer.ts` once its 10 effects are aliased (D2 proceeds) |
+| 3 | Canvas authoring day-1 | **Presets + param tweaking** (scene JSON editable in Objects view); visual scene editor = separate later initiative |
+| 4 | Merge list | As tabled in D2; B1 audit may adjust details without re-asking |
+| 5 | Thumb camera | **Isometric drum** (¾-angle stacked ellipses, glowing dots, background mini-drum for kit-wide effects) |
 
 ---
 
@@ -326,7 +327,7 @@ ui-significant (strongest tier), `[core]` pure core.
 - **C5 `[core]`** — lenses 2: `log-polar`, `mobius`, `hyper4d` (world-space path) + tests.
 - **C6 `[ui]`** — canvas node UI: palette entry / play-node type selector, Inspector scene
   picker + scene param editing, Objects view Canvas Scenes section (JSON-level editing
-  day-1 per open-decision 3). ui-shot.
+  day-1 per locked decision 3). ui-shot.
 - **C7** — seed preset library: ≥10 canvas scenes (Stripe Band, Tunnel Rings, Checker
   Spin, Kaleido Bloom, Hyper Drift, Strip Rain, …) with descriptions/tags; gallery
   collections for canvas + lens presets. ui-shot: gallery with canvas collection.
@@ -354,29 +355,29 @@ D1–D3 last; B5/C7 feed D1.
 **Resume protocol:** (1) read this doc top-to-bottom; (2) `git log --oneline -20` and
 match commits against the tracker below; (3) trust the tracker only after verifying the
 last claimed slice's tests exist and pass; (4) update the tracker row (status + commit)
-in the SAME commit as each slice; (5) open decisions block their listed slices — ask
-Trent, record the answer in the Open decisions table, then proceed.
+in the SAME commit as each slice; (5) all decisions are LOCKED (see Decisions table) —
+do not re-ask them.
 
 | Slice | Status | Commit | Notes |
 |---|---|---|---|
 | A1 metadata fields | planned | — | |
 | A2 metadata flow | planned | — | |
 | A3 gallery cards | planned | — | |
-| A4 fake-drum thumbs | planned | — | open-dec 5 |
+| A4 fake-drum thumbs | planned | — | isometric (locked) |
 | A5 gallery filters | planned | — | |
 | A6 descriptions (keep set) | planned | — | |
-| B1 disposition audit | planned | — | open-dec 4 |
+| B1 disposition audit | planned | — | merge list locked as tabled |
 | B2 emission-lift 1 | planned | — | |
 | B3 emission-lift 2 | planned | — | |
-| B4 retire + merge | planned | — | open-dec 1, 2 |
+| B4 retire + merge | planned | — | alias-forever (locked) |
 | B5 gap-fill natives | planned | — | |
 | C1 playType seam | planned | — | check Rock Solid lanes |
 | C2 canvas engine | planned | — | |
 | C3 samplers 2 + params | planned | — | |
 | C4 lens chain | planned | — | |
 | C5 lenses 2 (hyper4d) | planned | — | |
-| C6 canvas UI | planned | — | open-dec 3 |
+| C6 canvas UI | planned | — | presets+tweaking (locked) |
 | C7 preset library | planned | — | |
 | D1 thumb QA | planned | — | |
-| D2 pattern-path removal | planned | — | open-dec 2 |
+| D2 pattern-path removal | planned | — | DELETE (locked) |
 | D3 verification + close | planned | — | |
