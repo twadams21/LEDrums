@@ -18,19 +18,27 @@ that isn't yet committed as landed work. A successor orch reads: handoff → pla
 unless Trent approves parallel spend at the gate.
 
 ## Current position (2026-07-05)
-- **U1 metadata + gallery** — IN FLIGHT. Impl session `elv2-u1-c99a09` (Opus, low),
-  launched from `docs/prompts/elv2-u1.md`, plan doc as extra reading. Brief committed
-  `290f624`.
-- Usage at launch: 7d **89%** (resets 2026-07-09T04:00+10:00), 5h 13%.
-- **Expectation: hit the 92% gate right after U1.** U2/U3/U4 require Trent's explicit yes
-  (asked via AskUserQuestion at the gate) OR waiting for the 7d reset on 2026-07-09.
+- **U1 metadata + gallery — DONE & VERIFIED by orch.** Commits `2093a77`, `8dce68b`,
+  `d998e54`, `8f60453`. Typecheck clean; clean-sweep tests green (core 584 / io 51 /
+  protocol 1 / server 227 / web 1174). New core: `vocabulary.ts`, `metadata.ts`,
+  `aliases.ts` (empty map) + `aliases.test.ts`. Registry test enforces desc+tag+collection.
+  Session `elv2-u1-c99a09` (parked/idle). U1 flagged: the 10 legacy pattern effects still
+  show untagged in the gallery → U3 retires them.
+- **U3 rehab + retirement — IN FLIGHT.** Impl session `<PENDING launch>` (Opus, low), from
+  `docs/prompts/elv2-u3.md`. Populates the alias map + deprecates retired effects, emission-
+  lifts the Lift row, implements the locked merges, DELETES `pattern-renderer.ts`.
+- **Budget reality:** U1 cost ~1% weekly (89→90%). ~2% headroom before the 92% gate; 7d
+  resets 2026-07-09T04:00+10:00. Can fit ~1-2 more units before the gate → strategy:
+  finish independent gallery units (U3 now, then U2 if budget) BEFORE the gate; defer the
+  canvas-engine chain (U4→U5→U6) + U7 to post-reset or Trent's explicit go past 92%.
+- Usage after U1: 7d **90%**, 5h 22%.
 
 ## Units — quick status
 | Unit | Model | Status | Session |
 |---|---|---|---|
-| U1 metadata + gallery | Opus | in-flight | elv2-u1-c99a09 |
+| U1 metadata + gallery | Opus | DONE (verified) | elv2-u1-c99a09 |
 | U2 isometric thumbs | Fable | pending (after U1) | — |
-| U3 rehab + retirement | Opus | pending (after U1) | — |
+| U3 rehab + retirement | Opus | in-flight | (launching) |
 | U4 canvas engine | Fable | pending (after U1) | — |
 | U5 canvas UI | Opus | pending (after U4) | — |
 | U6 library fill | Fable | pending (after U4/U5) | — |
