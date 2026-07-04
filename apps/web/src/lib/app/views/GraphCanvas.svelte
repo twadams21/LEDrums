@@ -3,12 +3,13 @@
   generics="NodeType extends Node = Node, EdgeType extends Edge = Edge"
 >
   /* Shared SvelteFlow workspace for the Patch + Trigger graphs (#9) — the duplicated
-     <SvelteFlow> setup (Background / Controls / optional MiniMap, the top-left palette
-     Panel, the post-layout re-fit, node/edge types, the project-token theming, and the
-     hover/wiring event plumbing) lives here ONCE. Both views own their own node/edge
-     state + interaction handlers and pass them down; the locked graph UX (no node lift /
-     click motion, instant hover, drop-anywhere-on-node wiring) is identical, so this is
-     pure consolidation — no behaviour change.
+     <SvelteFlow> setup (Background / Controls / optional MiniMap, the post-layout
+     re-fit, node/edge types, the project-token theming, and the hover/wiring event
+     plumbing) lives here ONCE. Both views own their own node/edge state + interaction
+     handlers and pass them down; the locked graph UX (no node lift / click motion,
+     instant hover, drop-anywhere-on-node wiring) is identical. Adding happens in the
+     Node Editor drawer beside the canvas (wave-3 shell) — `onFlow` hands the flow
+     instance up so the view can place new nodes at the visible centre.
 
      Generic over the concrete node/edge types so each view keeps its typed arrays through
      the two-way `bind` (SvelteFlow owns live positions during a drag). */
@@ -17,7 +18,6 @@
     BackgroundVariant,
     Controls,
     MiniMap,
-    Panel,
     SvelteFlow,
     type Connection,
     type Edge,
@@ -29,6 +29,7 @@
   import '@xyflow/svelte/dist/style.css';
   import type { Snippet } from 'svelte';
   import GraphFitView from './GraphFitView.svelte';
+  import FlowHandle, { type FlowApi } from './FlowHandle.svelte';
 
   type DragStop = { nodes: NodeType[] };
   type DeleteDetail = { nodes: NodeType[]; edges: EdgeType[] };
@@ -55,7 +56,7 @@
     onDelete,
     onNodeDragStop,
     onConnectEnd,
-    palette,
+    onFlow,
     empty,
   }: {
     nodes: NodeType[];
@@ -84,7 +85,8 @@
     onDelete?: (detail: DeleteDetail) => void;
     onNodeDragStop?: (detail: DragStop) => void;
     onConnectEnd?: OnConnectEnd;
-    palette?: Snippet;
+    /** Receives the flow instance once mounted — for view-side placement math. */
+    onFlow?: (flow: FlowApi) => void;
     empty?: Snippet;
   } = $props();
 </script>
@@ -100,6 +102,7 @@
       fitView
       fitViewOptions={{ padding: fitPadding }}
       nodesConnectable
+      elevateNodesOnSelect={false}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
       deleteKey={['Delete', 'Backspace']}
@@ -115,9 +118,7 @@
       onconnectend={onConnectEnd}
     >
       <GraphFitView padding={fitPadding} watch={fitWatch} onfitted={onFitted} />
-      {#if palette}
-        <Panel position="top-left">{@render palette()}</Panel>
-      {/if}
+      {#if onFlow}<FlowHandle onflow={onFlow} />{/if}
       <Background variant={BackgroundVariant.Dots} />
       <Controls />
       {#if minimap}<MiniMap />{/if}
@@ -175,20 +176,57 @@
     stroke: var(--border-strong);
     stroke-width: 1.6;
   }
+  /* The invisible wide hit-path BaseEdge renders (`interactionWidth`) has no stroke paint by
+     default — and the edge wrapper hit-tests with `pointer-events: visibleStroke`, which never
+     hits an unpainted stroke. Paint it transparent so the generous hit area actually works
+     (the "some wires are unselectable" bug); the visual stroke above is untouched. */
+  .gcanvas :global(.svelte-flow__edge-interaction) {
+    stroke: transparent;
+    stroke-opacity: 0;
+  }
   .gcanvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
     stroke: var(--accent);
+  }
+  /* modifier-chain wires read distinctly from trigger-flow wires: the mod role colour +
+     a dashed stroke, so the two flows separate at a glance (declared BEFORE edge-hot so the
+     hover accent still wins the stroke on a hovered mod wire; the dash stays either way) */
+  .gcanvas :global(.svelte-flow__edge.edge-mod .svelte-flow__edge-path) {
+    stroke: var(--role-mod);
+    stroke-dasharray: 5 4;
+  }
+  /* modulation wires (source→param) get the third wire role colour + a finer dotted stroke, so
+     they read distinctly from both trigger-flow and modifier-chain wires at a glance */
+  .gcanvas :global(.svelte-flow__edge.edge-modulation .svelte-flow__edge-path) {
+    stroke: var(--role-modulation);
+    stroke-dasharray: 2 3;
   }
   /* a wire one level connected to the hovered node lights up (see graph-hover) */
   .gcanvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
+  /* the `mod` input handle — mod role colour so it reads as the modifier port, not flow in */
+  .gcanvas :global(.svelte-flow__handle.mod-handle) {
+    background: color-mix(in oklch, var(--role-mod) 30%, var(--surface-2));
+    border-color: var(--role-mod);
+  }
+  .gcanvas :global(.svelte-flow__handle.mod-handle:hover),
+  .gcanvas :global(.svelte-flow__handle.mod-handle.connectingto) {
+    background: var(--role-mod);
+    border-color: var(--role-mod);
+  }
   /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
   .gcanvas :global(.svelte-flow__handle) {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     background: var(--surface-2);
     border: 1.5px solid var(--border-strong);
+  }
+  .gcanvas :global(.svelte-flow__handle)::after {
+    content: '';
+    position: absolute;
+    inset: -20px;
+    border-radius: 50%;
   }
   .gcanvas :global(.svelte-flow__handle:hover),
   .gcanvas :global(.svelte-flow__handle.connectingfrom),
@@ -201,9 +239,10 @@
     stroke: var(--accent);
     stroke-width: 2;
     stroke-dasharray: 5 4;
-  }
+  } 
   .gcanvas :global(.svelte-flow__controls) {
     background: var(--surface);
+    padding: var(--space-1);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     box-shadow: var(--shadow-2);
@@ -211,7 +250,7 @@
   }
   .gcanvas :global(.svelte-flow__controls-button) {
     background: var(--surface);
-    border-bottom: 1px solid var(--border-faint);
+    border: 1px solid var(--border-faint);
     color: var(--text-muted);
     fill: currentColor;
   }

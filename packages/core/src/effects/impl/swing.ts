@@ -20,6 +20,7 @@ export const swing: EffectGenerator<SwingState> = {
   category: 'trigger',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 300, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'gain', label: 'Gain / Hit', type: 'number', default: 0.5, min: 0.01, max: 1, step: 0.01 },
     { key: 'decayMs', label: 'Decay', type: 'number', default: 900, min: 50, max: 8000, unit: 'ms' },
@@ -29,6 +30,7 @@ export const swing: EffectGenerator<SwingState> = {
   },
   render(ctx, params, fb, state) {
     const hue = pnum(params, 'hue', 300);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const gain = pnum(params, 'gain', 0.5);
     const decay = Math.max(1, pnum(params, 'decayMs', 900));
@@ -55,7 +57,7 @@ export const swing: EffectGenerator<SwingState> = {
       const e = state.energy.get(p.drumId);
       if (e === undefined || e < 0.004) continue;
       const v = clamp01(bri * e);
-      const rgb = hsvToRgb(hue, 1, v);
+      const rgb = hsvToRgb(hue, sat, v);
       fb.max(p.id, rgb.r, rgb.g, rgb.b, v);
     }
   },

@@ -57,6 +57,48 @@ describe('serializeAuthored / deserializeAuthored round-trip', () => {
     const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
     expect(restored?.paneSizes).toEqual(state.paneSizes);
   });
+
+  it('round-trips optional songRefs (S41), de-duplicating + dropping non-strings', () => {
+    const state = { ...authored(), songRefs: ['lib-1', 'lib-2'] };
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    expect(restored?.songRefs).toEqual(['lib-1', 'lib-2']);
+    // defensive coercion: a partially-corrupt list degrades to the unique string ids that survived
+    const dirty = deserializeAuthored({ version: VERSION, data: { songRefs: ['lib-1', 'lib-1', 7, null, 'lib-3'] } });
+    expect(dirty?.songRefs).toEqual(['lib-1', 'lib-3']);
+    // absent → the field stays undefined (references nothing)
+    expect(deserializeAuthored({ version: VERSION, data: { bpm: 120 } })?.songRefs).toBeUndefined();
+  });
+
+  it('round-trips a modifier node + its `mod` edge (S29 kind + port)', () => {
+    // A graph with a Trail modifier node wired to a play node's `mod` input.
+    const modGraph: TriggerGraph = {
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('play', 'p', 200, 0, { effectId: 'flash', presetId: 'flash:default' }),
+        makeNode('modifier', 'm', 100, 100, {
+          modifierId: 'trail',
+          bypass: true,
+          params: { decayMs: 400, mode: 'max' },
+        }),
+      ],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'p' },
+        { id: 'e1', from: 'm', to: 'p', toPort: 'mod' },
+      ],
+    };
+    const state: AuthoredState = { ...authored(), graphs: { 'kick:1': modGraph } };
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    const g = restored?.graphs?.['kick:1'];
+    const mod = g?.nodes.find((n) => n.id === 'm');
+    expect(mod?.kind).toBe('modifier');
+    expect(mod?.modifierId).toBe('trail');
+    expect(mod?.bypass).toBe(true);
+    expect(mod?.params).toEqual({ decayMs: 400, mode: 'max' });
+    // the `mod` target port survives the round-trip verbatim
+    expect(g?.edges.find((e) => e.id === 'e1')?.toPort).toBe('mod');
+    // whole-graph equality — nothing dropped or reshaped
+    expect(g).toEqual(modGraph);
+  });
 });
 
 describe('version gate', () => {
@@ -175,8 +217,8 @@ describe('U4 back-compat — section slots → flat graphs migration', () => {
         id: 'set-1',
         name: 'Set 1',
         sections: [
-          { id: 'intro', name: 'Intro', graphs: ['kick:0', 'snare:0'] },
-          { id: 'verse', name: 'Verse', graphs: ['snare:0', 'snare:2'] },
+          { id: 'intro', name: 'Intro', graphs: ['kick:0', 'snare:0'], looks: {} },
+          { id: 'verse', name: 'Verse', graphs: ['snare:0', 'snare:2'], looks: {} },
         ],
       },
     ]);
@@ -192,8 +234,45 @@ describe('U4 back-compat — section slots → flat graphs migration', () => {
       },
     });
     expect(restored?.songs).toEqual([
-      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'] }] },
+      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'], looks: {} }] },
     ]);
+  });
+});
+
+// S16 — per-bus section looks: authored, coerced defensively, migrated idempotently.
+describe('S16 — section looks migration + round-trip', () => {
+  it('defaults a pre-S16 section (no looks field) to an empty looks map', () => {
+    const migrated = migrateSongs([
+      { id: 'set-1', name: 'Set 1', sections: [{ id: 'intro', name: 'Intro', graphs: ['kick:0'] }] },
+    ]);
+    expect(migrated[0]!.sections[0]!.looks).toEqual({});
+  });
+
+  it('carries authored looks through, keeping string ids + explicit null (None), dropping junk', () => {
+    const migrated = migrateSongs([
+      {
+        id: 'set-1',
+        name: 'Set 1',
+        sections: [
+          { id: 'intro', name: 'Intro', graphs: [], looks: { base: 'drift', trigger: null, effect: 42, bogus: {} } },
+        ],
+      },
+    ]);
+    expect(migrated[0]!.sections[0]!.looks).toEqual({ base: 'drift', trigger: null }); // 42 + {} dropped
+  });
+
+  it('is idempotent — a section already carrying looks round-trips untouched', () => {
+    const once = migrateSongs([
+      { id: 's', name: 'S', sections: [{ id: 'a', name: 'A', graphs: ['g1'], looks: { base: 'swirl' } }] },
+    ]);
+    expect(migrateSongs(once)).toEqual(once);
+  });
+
+  it('round-trips authored looks through serialize → JSON → deserialize', () => {
+    const state = authored();
+    state.songs[0]!.sections[0]!.looks = { base: 'drift', trigger: null, effect: 'haze' };
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    expect(restored?.songs?.[0]!.sections[0]!.looks).toEqual({ base: 'drift', trigger: null, effect: 'haze' });
   });
 });
 
@@ -280,7 +359,7 @@ describe('show library — version gate + malformed tolerance', () => {
     });
     expect(restored!.shows.s!.name).toBe('Untitled Show'); // missing name defaulted
     expect(restored!.shows.s!.authored.songs).toEqual([
-      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'] }] }, // slots → flat graphs, per show
+      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'], looks: {} }] }, // slots → flat graphs, per show
     ]);
   });
 });
@@ -323,7 +402,7 @@ describe('loadShowLibrary — boot migration', () => {
     };
     const lib = loadShowLibrary(null, single, () => 'show-1');
     expect(lib.shows['show-1']!.authored.songs).toEqual([
-      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'] }] },
+      { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'], looks: {} }] },
     ]);
   });
 });

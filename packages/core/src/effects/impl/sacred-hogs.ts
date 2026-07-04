@@ -22,25 +22,33 @@ function angularDist(a: number, b: number): number {
  * Sacred HOGs: the top hoop of each drum sparkles orange like a halo, while every
  * hoop below it carries a set of "hogs" — bright nodes that circle around the hoop
  * over time. Pixels near a hog angle light up. Stateful (seeded sparkle).
+ *
+ * Voice timebase (S26): the hog travel angle reads `ctx.timeMs` (hit-relative via the
+ * bridge), so hogs start at angle 0 on the hit and restart on retrigger. The halo sparkle
+ * decays on `ctx.dt` into per-voice `genState` (seeded RNG + sparkle buffer), which is
+ * reset on (re)spawn → the sparkle replays from a fresh seed and never leaks across voices.
  */
 export const sacredHogs: EffectGenerator<SacredHogsState> = {
   id: 'sacred-hogs',
   name: 'Sacred HOGs',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hogHue', label: 'Hog Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'haloHue', label: 'Halo Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'hogsPerHoop', label: 'Hogs / Hoop', type: 'number', default: 3, min: 1, max: 12, step: 1 },
     { key: 'speed', label: 'Speed', type: 'number', default: 60, min: 0, max: 720, unit: '°/s' },
     { key: 'hogWidthDeg', label: 'Hog Width', type: 'number', default: 18, min: 2, max: 90, unit: '°' },
   ],
-  createState(model: PixelModel): SacredHogsState {
-    return { rng: mulberry32(SEED), sparkle: new Float32Array(model.pixelCount) };
+  createState(model: PixelModel, seed?: number): SacredHogsState {
+    return { rng: mulberry32(seed ?? SEED), sparkle: new Float32Array(model.pixelCount) };
   },
   render(ctx, params, fb, state) {
     const hogHue = pnum(params, 'hogHue', 200);
     const haloHue = pnum(params, 'haloHue', 30);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const hogsPerHoop = Math.max(1, Math.round(pnum(params, 'hogsPerHoop', 3)));
     const speed = pnum(params, 'speed', 60);
@@ -69,7 +77,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
           const s = clamp01(state.sparkle[p]!);
           if (s < 0.004) continue;
           const v = clamp01(bri * s);
-          const rgb = hsvToRgb(haloHue, 1, v);
+          const rgb = hsvToRgb(haloHue, sat, v);
           fb.max(p, rgb.r, rgb.g, rgb.b, v);
         } else {
           // Lower hoops carry circling hogs. Spread hogs evenly, offset per hoop.
@@ -82,7 +90,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
           }
           if (best < 0.004) continue;
           const v = clamp01(bri * best);
-          const rgb = hsvToRgb(hogHue, 1, v);
+          const rgb = hsvToRgb(hogHue, sat, v);
           fb.max(p, rgb.r, rgb.g, rgb.b, v);
         }
       }

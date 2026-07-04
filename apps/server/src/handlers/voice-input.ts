@@ -57,8 +57,12 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       if (msg.controller === SECTION_RECALL_CC) {
         const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
         if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
+      } else {
+        // S37: any other controller feeds the engine's CC value table (queued input event),
+        // where `cc` modulation sources read it per frame. Determinism preserved — same events,
+        // same frames. Controller 0 is reserved above for section recall and never reaches here.
+        voiceHost.applyInput({ kind: 'cc', controller: msg.controller, value: msg.value, channel: msg.channel });
       }
-      // Other controllers have no engine path yet — consume without falling through.
       return true;
     }
     if (msg.t === 'setShow') {
@@ -68,6 +72,15 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
     if (msg.t === 'key') {
       voiceHost.applyInput({ kind: 'key', drumId: msg.drumId, zone: msg.zone, velocity: msg.velocity });
       deps.broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
+      return true;
+    }
+    if (msg.t === 'fireGraph') {
+      // Keyboard performance intent: fire the EXACT authored graph, no re-resolution. The
+      // engine validates the key (emits `graph-missed` → "No graph resolved" on a stale key)
+      // and emits the normal input-resolved / graph-fired diagnostics for a valid one. No
+      // `input` broadcast: the fire is surfaced by those diagnostics + the server ingress line
+      // (`monitorInput` in main.ts), so there is no note/address to echo for MIDI-learn.
+      voiceHost.applyInput({ kind: 'fireGraph', graphKey: msg.graphKey, velocity: msg.velocity });
       return true;
     }
     if (msg.t === 'recallSection') {
@@ -103,6 +116,7 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
   if (
     msg.t === 'setShow' ||
     msg.t === 'key' ||
+    msg.t === 'fireGraph' ||
     msg.t === 'recallSection' ||
     msg.t === 'cc' ||
     msg.t === 'programChange'
@@ -128,6 +142,12 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
         ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
+        ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
+      });
+      break;
+    case 'setKitGlobal':
+      voiceHost.setKitGlobal({
+        ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
       });
       break;
     case 'setKitOutputs':

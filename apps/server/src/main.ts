@@ -6,7 +6,7 @@ import {
   WS_PORT,
   type Project,
 } from '@ledrums/core';
-import { OscInput, OSC_DEFAULT_PORT } from '@ledrums/io';
+import { HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe as probeController } from '@ledrums/io';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
@@ -17,18 +17,22 @@ import {
 } from './input-router';
 import { listProjects, loadProject, projectExists, projectFilePath, saveProjectAsync } from './projects';
 import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
+import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
+import { TunnelControl } from './tunnel-control';
 import {
   admitDecision,
-  createPinGate,
+  createMutablePinGate,
   generateHostToken,
   isTrustedHost,
+  isViaCloudflare,
   resolvePin,
 } from './pin-gate';
 import { boot } from './boot';
+import { createControllerMonitor } from './controller-monitor';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
@@ -52,14 +56,47 @@ const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
 
 // --- remote access: outbound tunnel + room PIN (S3) --------------------------
 
-/** Outbound Cloudflare tunnel config (null = disabled, the default — so plain `pnpm dev`
- * never spawns cloudflared). Enabled + tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv). */
+/** Outbound Cloudflare tunnel config from env (null = don't start at boot — plain `pnpm dev`
+ * never spawns cloudflared on its own). Tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv).
+ * The IN-APP Share control works regardless: it starts a plain quick tunnel when no env config
+ * exists. */
 const tunnelConfig = tunnelConfigFromEnv(process.env, port);
-const tunnelManager = tunnelConfig ? new TunnelManager(tunnelConfig) : null;
+const tunnelAtBoot = tunnelConfig !== null;
 
-/** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, and an enabled
- * tunnel auto-generates a per-run PIN so a public URL is never un-gated. */
-const pinGate = createPinGate(resolvePin(process.env, tunnelManager !== null));
+/** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, a boot-enabled
+ * tunnel generates a per-run PIN now, and an in-app tunnel start mints one on demand
+ * (ensurePin) — so a public URL is NEVER un-gated. */
+const pinGate = createMutablePinGate(resolvePin(process.env, tunnelAtBoot));
+
+/** Share-tunnel lifecycle control (in-app start/stop + boot-time env start — one status truth).
+ * Every status change re-broadcasts `state` so all clients' Share surfaces follow. */
+const tunnelControl = new TunnelControl({
+  createManager: (config) => new TunnelManager(config),
+  config: tunnelConfig ?? { mode: 'quick', port },
+  ensurePinGated: () => {
+    pinGate.ensurePin();
+  },
+  onChange: () => broadcastState(),
+  report: (event) => {
+    switch (event.kind) {
+      case 'ready':
+        monitor({ type: 'system', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel ready', detail: event.detail });
+        console.log(`  Tunnel: ${event.detail}${pinGate.pin ? ` (PIN ${pinGate.pin})` : ''}`);
+        return;
+      case 'start-failed':
+        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel failed to start', detail: event.detail });
+        console.error(`[tunnel] failed to start (is cloudflared installed?): ${event.detail}`);
+        return;
+      case 'unexpected-exit':
+        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel exited unexpectedly', detail: event.detail });
+        console.error(`[tunnel] cloudflared exited unexpectedly (${event.detail}) — remote access is down`);
+        return;
+      case 'error':
+        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel error', detail: event.detail });
+        console.error('[tunnel] error:', event.detail);
+    }
+  },
+});
 
 /** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
  * hash, printed in the boot banner for the shell to read) so the host's own window is admitted
@@ -113,6 +150,12 @@ const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engi
 const showLibraryLoad = inspectShowLibraryFile();
 let liveShowLibrary: ShowLibraryBlob | null = loadShowLibrary();
 
+/** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
+ * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
+ * flushed on shutdown). `null` until the first client pushes one. */
+const songLibraryLoad = inspectSongLibraryFile();
+let liveSongLibrary: SongLibraryBlob | null = loadSongLibrary();
+
 /** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
  * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
  * yet) is a no-op. */
@@ -123,6 +166,17 @@ const showLibraryAutosaver = createAutosaver(
     onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave scheduled' }),
     onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave saved' }),
     onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'show-library', label: 'Show library autosave failed', detail: message }),
+  },
+);
+
+/** Debounce-autosave the live song library (mirrors {@link showLibraryAutosaver}). */
+const songLibraryAutosaver = createAutosaver(
+  () => (liveSongLibrary ? saveSongLibraryAsync(liveSongLibrary) : Promise.resolve()),
+  400,
+  {
+    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave scheduled' }),
+    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave saved' }),
+    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'song-library', label: 'Song library autosave failed', detail: message }),
   },
 );
 
@@ -147,6 +201,11 @@ const wss = new WebSocketServer({ server, path: WS_PATH });
  * never stops transmission. */
 const clients = new ClientRegistry<WebSocket>();
 
+/** Sockets that connected VIA the share tunnel (cf-* headers at admit). Such a client can never
+ * start/stop the tunnel it rode in on — checked by the message handler. WeakSet: entries vanish
+ * with the socket. */
+const tunnelClients = new WeakSet<WebSocket>();
+
 function broadcastJson(msg: ServerMessage): void {
   const data = encodeServer(msg);
   for (const ws of clients) {
@@ -167,7 +226,8 @@ for (const event of startupDiagnostics({
   webRootExists: existsSync(webRoot),
   project: projectLoad,
   showLibrary: showLibraryLoad,
-  tunnel: { enabled: tunnelManager !== null, url: tunnelManager?.url ?? null },
+  songLibrary: songLibraryLoad,
+  tunnel: { enabled: tunnelAtBoot, url: tunnelControl.url },
   pinRequired: pinGate.pin !== null,
   hostTokenPresent: !!hostToken,
 })) {
@@ -213,6 +273,9 @@ function monitorInput(msg: ClientMessage, origin: string): void {
     case 'key':
       monitor({ type: 'input', direction: 'in', source: origin, destination, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
       return;
+    case 'fireGraph':
+      monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Fire graph ${msg.graphKey}`, detail: `velocity=${msg.velocity}` });
+      return;
     case 'recallSection':
       monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
       return;
@@ -233,12 +296,13 @@ function broadcastBinary(rgb: Uint8Array): void {
   }
 }
 
-/** The remote-access surface for the host UI: the resolved tunnel URL + room PIN. Null when
- * neither is configured (plain local dev). Only ever reaches already-admitted clients (it rides
- * the `state` message), so an un-authed connection never learns the PIN. */
-function tunnelInfo(): TunnelInfo | null {
-  if (tunnelManager === null && pinGate.pin === null) return null;
-  return { url: tunnelManager?.url ?? null, pin: pinGate.pin };
+/** The remote-access surface for the host UI: tunnel lifecycle status + resolved URL + room
+ * PIN. Always present (the Share button always renders, offering Start sharing when off). Only
+ * ever reaches already-admitted clients (it rides the `state` message), so an un-authed
+ * connection never learns the PIN. */
+function tunnelInfo(): TunnelInfo {
+  const error = tunnelControl.error;
+  return { status: tunnelControl.status, url: tunnelControl.url, pin: pinGate.pin, ...(error ? { error } : {}) };
 }
 
 /** Build the full `state` message reflecting the current engine/project. In voice mode
@@ -253,6 +317,7 @@ function stateMessage(): ServerMessage {
     projects: listProjects(),
     output: (voiceHost ?? host).getOutputStatus(),
     showLibrary: liveShowLibrary,
+    songLibrary: liveSongLibrary,
     tunnel: tunnelInfo(),
   };
 }
@@ -289,6 +354,7 @@ wss.on('connection', (ws, req) => {
   // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
   // the `state` below — messages are ordered on the socket), then ship its initial state.
   clients.admit(ws);
+  if (isViaCloudflare(req.headers)) tunnelClients.add(ws);
   monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
   broadcastPresence();
   ws.send(encodeServer(stateMessage()));
@@ -317,10 +383,12 @@ wss.on('connection', (ws, req) => {
   // slot may have moved per the registry's election rule).
   ws.on('close', () => {
     clients.remove(ws);
+    controllerMonitor.dropWatcher(ws);
     broadcastPresence();
   });
   ws.on('error', () => {
     clients.remove(ws);
+    controllerMonitor.dropWatcher(ws);
     broadcastPresence();
   });
 });
@@ -337,12 +405,33 @@ function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
   }
 }
 
+/** PixLite controller monitor (S47, group L): discovery + adoption + the client-interest-gated poll
+ * loop. ONE HttpPixliteClient per controller (its internal queue enforces the sequential rule). The
+ * adopted controller is persisted as `project.controller` (data-only) and rehydrated at boot below.
+ * All emitted `controllerStatus`/`controllerDiscovery` messages ride the normal JSON broadcast. */
+const controllerMonitor = createControllerMonitor({
+  createClient: ({ host: controllerHost, auth }) => new HttpPixliteClient({ host: controllerHost, auth }),
+  probe: (controllerHost, timeoutMs) => probeController(controllerHost, timeoutMs),
+  getOutputSettings: () => host.engine.getProject().output,
+  getController: () => host.engine.getProject().controller,
+  persistController: (controller) => {
+    // Store on the live project in place (no engine rebuild — the controller isn't geometry), then
+    // autosave + re-broadcast state so every client sees the adopted controller.
+    host.engine.getProject().controller = controller ?? undefined;
+    autosaver.markDirty();
+    broadcastState();
+  },
+  broadcast: broadcastJson,
+  monitor,
+});
+
 const handleClientMessage = createClientMessageHandler<WebSocket>({
   clients,
   host,
   voiceHost,
   autosaver,
   showLibraryAutosaver,
+  songLibraryAutosaver,
   broadcastJson,
   broadcastPresence,
   broadcastState,
@@ -352,8 +441,22 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   setShowLibrary: (lib) => {
     liveShowLibrary = lib;
   },
+  setSongLibrary: (lib) => {
+    liveSongLibrary = lib;
+  },
   relayToOthers,
+  tunnelControl,
+  isTunnelClient: (ws) => tunnelClients.has(ws),
   monitor,
+  controller: {
+    discover: () => controllerMonitor.discover(),
+    adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),
+    identify: (durationS) => controllerMonitor.identify(durationS),
+    setTestData: (pattern) => controllerMonitor.setTestData(pattern),
+    backToLive: () => controllerMonitor.backToLive(),
+    watch: (key) => controllerMonitor.watch(key),
+    dropWatcher: (key) => controllerMonitor.dropWatcher(key),
+  },
 });
 
 const NATIVE_MIDI_PATH = '/api/native-midi';
@@ -538,7 +641,7 @@ const statsTimer = setInterval(() => {
       latencyMs: s.latencyMs,
       fps: s.fps,
       output: s.output,
-      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels },
+      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
     });
     return;
   }
@@ -548,6 +651,10 @@ const statsTimer = setInterval(() => {
 
 // --- boot + shutdown --------------------------------------------------------
 
+// Rehydrate a controller already adopted on the loaded project (boot recovery) — sets up the
+// per-controller client so the first watcher's poll reports live status. No traffic until watched.
+controllerMonitor.hydrate();
+
 boot({
   server,
   wss,
@@ -555,15 +662,17 @@ boot({
   host,
   voiceHost,
   oscInput,
+  controllerMonitor,
   port,
   oscPort,
   voiceMode: VOICE_MODE,
   statsTimer,
   autosaver,
   showLibraryAutosaver,
-  tunnelManager,
+  songLibraryAutosaver,
+  tunnelControl,
+  tunnelAtBoot,
   pin: pinGate.pin,
   hostToken,
-  broadcastState,
   monitor,
 });

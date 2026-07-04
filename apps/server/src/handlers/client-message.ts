@@ -1,9 +1,10 @@
+import { projectPatchSchema } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import type { ClientMessage, ServerMessage, ShowLibraryBlob } from '../ws-protocol';
+import { encodeServer, type ClientMessage, type ControllerTestPattern, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -38,10 +39,12 @@ function acceptsMidiChannel(msg: ClientMessage, channel: number | null): boolean
 }
 
 /**
- * Non-authoring messages any client may send: pure reads (`listProjects`) and the role-claim
- * (`takeover`). These mutate no shared authored state, so they bypass the editor gate.
+ * Non-authoring messages any client may send: pure reads (`listProjects`), the role-claim
+ * (`takeover`), and the controller-panel interest signal (`watchController`). These mutate no
+ * shared authored state, so they bypass the editor gate — a VIEWER watching the controller panel
+ * must keep live status flowing (discover/adopt/identify stay editor-gated by deny-by-default).
  */
-const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover']);
+const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover', 'watchController']);
 
 /**
  * Whether `t` is an AUTHORING mutation that only the editor may apply (S2 read-only policy).
@@ -51,6 +54,12 @@ const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjec
  */
 export function requiresEditor(t: ClientMessage['t']): boolean {
   return !ENGINE_INPUTS.has(t) && !UNGATED_NON_INPUTS.has(t);
+}
+
+/** A pushed library payload is usable iff it is an object carrying a numeric `version` — the same
+    opaque-envelope gate the persistence layer applies. Shared by the show + song library branches. */
+function isVersionedBlob(lib: unknown): lib is { version: number; data: unknown } {
+  return !!lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number';
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +80,7 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   voiceHost: VoiceEngineHost | null;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
+  songLibraryAutosaver: Autosaver;
   /** Broadcast a JSON message to every client. */
   broadcastJson(msg: ServerMessage): void;
   /** Re-broadcast `presence` to every client (each gets its own `youAreEditor`). */
@@ -81,10 +91,31 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   stateMessage(): ServerMessage;
   /** Adopt a pushed show library as the live slot (owned by the server wiring). */
   setShowLibrary(lib: ShowLibraryBlob): void;
-  /** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
+  /** Adopt a pushed song library as the live slot (mirrors {@link setShowLibrary}). */
+  setSongLibrary(lib: SongLibraryBlob): void;
+  /** Relay a server message to every client EXCEPT `sender` (the live show/song-library relay). */
   relayToOthers(sender: S, msg: ServerMessage): void;
+  /** In-app share-tunnel lifecycle control (S3 follow-up), or absent when the wiring has none
+   * (the `tunnel` message is then a no-op). Status changes surface via `state` re-broadcasts. */
+  tunnelControl?: { start(): void; stop(): void };
+  /** Whether `ws` connected VIA the share tunnel (cf-* headers at admit). Such a client must
+   * never control the tunnel it rode in on — even if it holds the editor slot. */
+  isTunnelClient?(ws: S): boolean;
   /** Append a diagnostic event to the shared Monitor stream. */
   monitor?(event: MonitorDraft): void;
+  /** PixLite controller monitor (S47), or absent when the wiring runs without one (the controller
+   * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
+   * that client's interest. `adopt` resolves to a result the handler turns into an `error` reply on
+   * failure; discover/adopt/identify broadcast their own `controllerDiscovery`/`controllerStatus`. */
+  controller?: {
+    discover(): Promise<unknown>;
+    adopt(host: string): Promise<{ ok: boolean; error?: string }>;
+    identify(durationS: number): Promise<void>;
+    setTestData(pattern: ControllerTestPattern): Promise<void>;
+    backToLive(): Promise<void>;
+    watch(key: object): void;
+    dropWatcher(key: object): void;
+  };
 }
 
 /**
@@ -107,11 +138,13 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     voiceHost,
     autosaver,
     showLibraryAutosaver,
+    songLibraryAutosaver,
     broadcastJson,
     broadcastPresence,
     broadcastState,
     stateMessage,
     setShowLibrary,
+    setSongLibrary,
     relayToOthers,
     monitor,
   } = deps;
@@ -132,6 +165,60 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // server backstop). Engine inputs (the drummer's hardware) + pure reads always pass.
     if (requiresEditor(msg.t) && !clients.canMutate(ws)) return;
 
+    // Share-tunnel lifecycle (S3 follow-up). Editor-gated above (deny-by-default), PLUS: a client
+    // that arrived VIA the tunnel can never control it — a remote viewer must not be able to kill
+    // or restart the tunnel it rode in on, even after a `takeover`. That refusal is user-visible
+    // (`error` reply), not silent, so the remote UI can explain itself.
+    if (msg.t === 'tunnel') {
+      if (deps.isTunnelClient?.(ws)) {
+        ws.send(encodeServer({ t: 'error', message: 'Sharing can only be started or stopped from the host.' }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'remote-access',
+          label: 'Tunnel control rejected (remote client)',
+          detail: msg.action,
+        });
+        return;
+      }
+      if (msg.action === 'start') deps.tunnelControl?.start();
+      else deps.tunnelControl?.stop();
+      return;
+    }
+
+    // PixLite controller monitor (S47, group L). discover/adopt/identify are editor-gated (they
+    // sweep the network, re-rig the device, or flash hardware); `watchController` is ungated above
+    // so a viewer's open panel keeps live status flowing. Each is fire-and-forget: the service
+    // broadcasts its own `controllerDiscovery`/`controllerStatus`; a failed adopt replies `error`.
+    if (msg.t === 'discoverControllers') {
+      void deps.controller?.discover();
+      return;
+    }
+    if (msg.t === 'adoptController') {
+      void deps.controller?.adopt(msg.host).then((r) => {
+        if (!r.ok && r.error) ws.send(encodeServer({ t: 'error', message: r.error }));
+      });
+      return;
+    }
+    if (msg.t === 'identifyController') {
+      void deps.controller?.identify(msg.durationS);
+      return;
+    }
+    if (msg.t === 'controllerTestData') {
+      void deps.controller?.setTestData(msg.pattern);
+      return;
+    }
+    if (msg.t === 'controllerBackToLive') {
+      void deps.controller?.backToLive();
+      return;
+    }
+    if (msg.t === 'watchController') {
+      if (msg.watching) deps.controller?.watch(ws);
+      else deps.controller?.dropWatcher(ws);
+      return;
+    }
+
     // Project IO (load/save/list) is handled here, not by the reducer.
     if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;
 
@@ -144,9 +231,8 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // viewers follow without a full `state` rebuild. Never echoed to the sender (it is the source);
     // cold-load adopt for a fresh client still happens via the `state` message on (re)connect.
     if (msg.t === 'setShowLibrary') {
-      const lib = msg.library;
-      if (lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number') {
-        const blob = lib as ShowLibraryBlob;
+      if (isVersionedBlob(msg.library)) {
+        const blob = msg.library;
         setShowLibrary(blob);
         showLibraryAutosaver.markDirty();
         monitor?.({
@@ -158,6 +244,72 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         });
         relayToOthers(ws, { t: 'showLibrary', library: blob });
       }
+      return;
+    }
+
+    // Song-library persistence — the song-library counterpart of `setShowLibrary` above, identical
+    // in shape (adopt live slot → debounce-autosave → relay to the other clients; cold-load adopt
+    // is via `state` on (re)connect). The two libraries persist to distinct named blobs.
+    if (msg.t === 'setSongLibrary') {
+      if (isVersionedBlob(msg.library)) {
+        const blob = msg.library;
+        setSongLibrary(blob);
+        songLibraryAutosaver.markDirty();
+        monitor?.({
+          type: 'persistence',
+          direction: 'local',
+          source: 'server',
+          destination: 'song-library',
+          label: 'Song library update accepted',
+        });
+        relayToOthers(ws, { t: 'songLibrary', library: blob });
+      }
+      return;
+    }
+
+    // Bulk device re-rig (S45): a pasted `patch` ClipDoc's Project slices, applied as ONE message.
+    // Schema-validate the WHOLE payload FIRST — an invalid patch is a user-visible `error` reply to
+    // the sender with ZERO state touched (AGENTS.md: validate before any state, no partial apply).
+    // On accept, apply once: the legacy engine adopts the merged project (a single kit reload, never
+    // a granular setKit*/setInputMap/setOutput replay), the voice host bulk-adopts the same slices,
+    // then persist + broadcast fresh `state`. Authored composition/setlist are never touched.
+    if (msg.t === 'setProject') {
+      const parsed = projectPatchSchema.safeParse(msg.patch);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        const where = issue?.path.join('.') || 'patch';
+        ws.send(encodeServer({ t: 'error', message: `Invalid patch: ${where} — ${issue?.message ?? 'validation failed'}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Patch rejected (invalid)',
+          detail: `${where}: ${issue?.message ?? 'validation failed'}`,
+        });
+        return;
+      }
+      const patch = parsed.data;
+      const cur = host.engine.getProject();
+      host.engine.setProject({
+        ...cur,
+        name: patch.name ?? cur.name,
+        kit: patch.kit,
+        inputMap: patch.inputMap,
+        output: patch.output,
+      });
+      host.reloadOutputSettings();
+      if (voiceHost) voiceHost.adoptPatch(patch);
+      monitor?.({
+        type: 'system',
+        direction: 'in',
+        source: 'client',
+        destination: 'project',
+        label: 'Patch applied',
+        detail: `${patch.kit.drums.length} drums${patch.name ? ` · ${patch.name}` : ''}`,
+      });
+      broadcastJson(stateMessage());
+      autosaver.markDirty();
       return;
     }
 

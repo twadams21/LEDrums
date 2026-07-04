@@ -2,6 +2,7 @@
   /* Patch controller node — the Art-Net / sACN transport: protocol, host, port, interface,
      RGB order, FPS, broadcast/multicast, and sACN priority. Writes through store.setOutput.
      Offline-safe (controls disabled, rename still works). */
+  import { onMount } from 'svelte';
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { RgbOrder } from '@ledrums/core';
   import Field from '../../../ui/Field.svelte';
@@ -9,6 +10,8 @@
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import RenameField from './RenameField.svelte';
+  import Separator from '../../../ui/Separator.svelte';
+  import OutputStatusPanel from './OutputStatusPanel.svelte';
   import { onNum } from './forms';
   import { PROTOCOL_OPTS, RGB_OPTS } from '../../views/node-options';
 
@@ -16,11 +19,35 @@
 
   const project = $derived(store.project);
   const out = $derived(project?.output ?? null);
+
+  // S48: subscribe to controller status while this panel is open — the ONLY thing that gates the
+  // server's poll loop (no idle traffic). Watch on mount, un-watch on teardown; a link drop clears
+  // it server-side. onMount's cleanup fires on unmount, so a closed panel stops the poll.
+  onMount(() => {
+    store.watchController(true);
+    return () => store.watchController(false);
+  });
 </script>
+
+<OutputStatusPanel
+  output={store.output}
+  packetsPerSec={store.outputPacketsPerSec}
+  port={out?.port}
+  controller={store.controllerStatus}
+  candidates={store.controllerCandidates}
+  takeover={store.controllerTakeover}
+  canEdit={store.canEdit}
+  onDiscover={() => store.discoverControllers()}
+  onAdopt={(host) => store.adoptController(host)}
+  onIdentify={() => store.identifyController()}
+  onTestData={(pattern) => store.setControllerTestData(pattern)}
+  onBackToLive={() => store.backToLive()}
+/>
+<Separator />
 
 {#if out}
   <p class="grouphint">Art-Net / sACN transport — where the pixel stream is sent.</p>
-  <Field label="Protocol">
+  <Field layout="row" label="Protocol">
     <Select
       value={out.protocol}
       options={PROTOCOL_OPTS}
@@ -29,7 +56,7 @@
       ariaLabel="Protocol"
     />
   </Field>
-  <Field label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
+  <Field layout="row" label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
     <CommitInput
       value={out.host}
       mono
@@ -41,7 +68,7 @@
     />
   </Field>
   <div class="tworow">
-    <Field label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
+    <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
       <CommitInput
         type="number"
         min={1}
@@ -53,7 +80,7 @@
         onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
       />
     </Field>
-    <Field label="Interface" hint="source NIC · blank = default">
+    <Field layout="row" label="Interface" hint="source NIC · blank = default">
       <CommitInput
         value={out.iface ?? ''}
         mono
@@ -67,7 +94,7 @@
     </Field>
   </div>
   <div class="tworow">
-    <Field label="RGB order">
+    <Field layout="row" label="RGB order">
       <Select
         value={out.rgbOrder}
         options={RGB_OPTS}
@@ -76,7 +103,7 @@
         ariaLabel="RGB order"
       />
     </Field>
-    <Field label="FPS" hint="≤ 120">
+    <Field layout="row" label="FPS" hint="≤ 120">
       <CommitInput
         type="number"
         min={1}
@@ -99,7 +126,7 @@
     <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
   </label>
   {#if out.protocol === 'sacn'}
-    <Field label="Priority" hint="1–200 · higher wins at a merge">
+    <Field layout="row" label="Priority" hint="1–200 · higher wins at a merge">
       <CommitInput
         type="number"
         min={1}

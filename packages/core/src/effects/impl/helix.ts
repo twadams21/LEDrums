@@ -17,6 +17,7 @@ export const helix: EffectGenerator = {
     { key: 'ka', label: 'Turns', type: 'number', default: 2, min: 0.25, max: 12, step: 0.25 },
     { key: 'speed', label: 'Speed', type: 'number', default: 1.5, min: 0, max: 12, step: 0.05, unit: 'rad/s' },
     { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
   render(ctx, params, fb) {
@@ -24,6 +25,7 @@ export const helix: EffectGenerator = {
     const ka = pnum(params, 'ka', 2);
     const speed = pnum(params, 'speed', 1.5);
     const hue = pnum(params, 'hue', 280);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
 
     const t = ctx.timeMs / 1000;
@@ -41,7 +43,7 @@ export const helix: EffectGenerator = {
       const v = clamp01(bri * band);
       if (v < 0.004) continue;
       const pixHue = hue + (phase * 30) / Math.PI;
-      const rgb = hsvToRgb(pixHue, 1, v);
+      const rgb = hsvToRgb(pixHue, sat, v);
       fb.max(p.id, rgb.r, rgb.g, rgb.b, v);
     }
   },

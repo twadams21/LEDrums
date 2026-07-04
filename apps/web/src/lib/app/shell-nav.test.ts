@@ -6,15 +6,14 @@ import {
   isSelected,
   parseSearch,
   select,
-  setDock,
   setView,
   type Selection,
 } from './shell-nav';
 
 describe('initialNav', () => {
-  it('defaults to trigger / inspector with nothing selected', () => {
+  it('defaults to trigger with nothing selected', () => {
     const nav = initialNav();
-    expect(nav).toEqual({ view: 'trigger', dock: 'inspector', selection: null });
+    expect(nav).toEqual({ view: 'trigger', selection: null });
   });
 
   it('honours a seeded view', () => {
@@ -29,7 +28,7 @@ describe('VIEWS', () => {
 });
 
 describe('setView', () => {
-  it('clears the Inspector selection on a real view change', () => {
+  it('clears the selection on a real view change', () => {
     let nav = select(initialNav(), { kind: 'bus', busId: 'base' });
     expect(nav.selection).not.toBeNull();
     nav = setView(nav, 'patch');
@@ -44,36 +43,22 @@ describe('setView', () => {
 });
 
 describe('select', () => {
-  it('surfaces the Inspector tab whenever something is selected', () => {
-    const nav = setDock(initialNav(), 'monitor');
-    expect(nav.dock).toBe('monitor');
-    const next = select(nav, { kind: 'node', nodeId: 'n-1' });
-    expect(next.dock).toBe('inspector');
+  it('loads the selection and keeps the view', () => {
+    const next = select(initialNav(), { kind: 'node', nodeId: 'n-1' });
+    expect(next.view).toBe('trigger');
     expect(next.selection).toEqual({ kind: 'node', nodeId: 'n-1' });
   });
 
-  it('clearSelection drops the selection but leaves the dock', () => {
+  it('clearSelection drops the selection', () => {
     let nav = select(initialNav(), { kind: 'patch', nodeId: 'output' });
     nav = clearSelection(nav);
     expect(nav.selection).toBeNull();
-    expect(nav.dock).toBe('inspector');
   });
 
-  it('exposes a selected section to the Inspector (rename + recall panel)', () => {
-    const nav = setDock(initialNav({ view: 'sections' }), 'monitor');
-    const next = select(nav, { kind: 'section', sectionId: 'sec-2' });
-    expect(next.dock).toBe('inspector');
-    expect(next.selection).toEqual({ kind: 'section', sectionId: 'sec-2' });
-  });
-});
-
-describe('setDock preserves view + selection', () => {
-  it('switching dock keeps the current view + selection', () => {
-    const nav = select(initialNav({ view: 'sections' }), { kind: 'bus', busId: 'effect' });
-    const next = setDock(nav, 'monitor');
-    expect(next.dock).toBe('monitor');
+  it('exposes a selected section (rename + recall panel)', () => {
+    const next = select(initialNav({ view: 'sections' }), { kind: 'section', sectionId: 'sec-2' });
     expect(next.view).toBe('sections');
-    expect(next.selection).toEqual({ kind: 'bus', busId: 'effect' });
+    expect(next.selection).toEqual({ kind: 'section', sectionId: 'sec-2' });
   });
 });
 

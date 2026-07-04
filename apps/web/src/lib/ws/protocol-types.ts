@@ -4,6 +4,10 @@
 // runtime helper (`decodeServer`) that parses inbound server frames.
 export type {
   ClientMessage,
+  ControllerStatus,
+  ControllerTestPattern,
+  ControllerUniverseRx,
+  DiscoveredController,
   EffectSpec,
   MonitorEvent,
   OutputStatus,
@@ -11,7 +15,9 @@ export type {
   SerializedModel,
   ServerMessage,
   ShowLibraryBlob,
+  SongLibraryBlob,
   TunnelInfo,
+  VoiceStat,
   VoiceStats,
 } from '@ledrums/protocol';
 
@@ -25,6 +31,9 @@ const SERVER_TYPES = new Set<ServerMessage['t']>([
   'projects',
   'presence',
   'showLibrary',
+  'songLibrary',
+  'controllerDiscovery',
+  'controllerStatus',
   'error',
 ]);
 

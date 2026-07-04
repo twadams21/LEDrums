@@ -22,6 +22,32 @@ import { swing } from './impl/swing';
 import { sidechain } from './impl/sidechain';
 import { sacredHogs } from './impl/sacred-hogs';
 import { collisions } from './impl/collisions';
+import { breathingKit } from './impl/breathing-kit';
+import { hueRotateKit } from './impl/hue-rotate-kit';
+import { tempSweep } from './impl/temp-sweep';
+// S21 — texture effects (colour batch 3)
+import { plasma } from './impl/plasma';
+import { fire } from './impl/fire';
+import { ripplePond } from './impl/ripple-pond';
+import { rainbowFlow } from './impl/rainbow-flow';
+import { tunnel } from './impl/tunnel';
+import { checkerPulse } from './impl/checker-pulse';
+import { perlinClouds } from './impl/perlin-clouds';
+import { lavaLamp } from './impl/lava-lamp';
+import { interference } from './impl/interference';
+import { caustics } from './impl/caustics';
+import { spiral } from './impl/spiral';
+import { gridGlow } from './impl/grid-glow';
+import { waveCollapse } from './impl/wave-collapse';
+// S22 — particle effects (colour batch 4)
+import { starfield } from './impl/starfield';
+import { cometTrails } from './impl/comet-trails';
+import { lightning } from './impl/lightning';
+import { confettiBurst } from './impl/confetti-burst';
+import { helix } from './impl/helix';
+import { orbitRings } from './impl/orbit-rings';
+import { gravityWells } from './impl/gravity-wells';
+import { velocityFlames } from './impl/velocity-flames';
 
 function model(drums = 1, hoopCount = 4): PixelModel {
   const drumDefs = [];
@@ -307,6 +333,330 @@ describe('collisions', () => {
     }
     expect(litCount(fb)).toBeGreaterThan(0);
     for (let i = 0; i < fb.rgba.length; i++) expect(Number.isFinite(fb.rgba[i]!)).toBe(true);
+  });
+});
+
+// S19 — Colour batch 1 (swatch + hit/trigger effects). Saturation is now exposed on
+// chase, whole-drum, whole-kit, follow-hoop, burst, pixel-accum, synced-hoops, swing
+// (colour-melody already had it). The contract: saturation 0 desaturates every lit pixel
+// to achromatic white/grey (r===g===b), which the hardcoded `hsvToRgb(hue, 1, …)` could
+// never produce. Each case uses a coloured hue so a leak would show as a chromatic pixel.
+describe('S19 colour batch 1 — saturation 0 ⇒ white on lit pixels', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  const hit = (id: string) => trig(1, id, 38, 1, 0);
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'chase', run: (m) => render(chase, m, ctx(m, { transport: transport(0) }), { hue: 120, saturation: 0 }) },
+    { name: 'whole-drum', run: (m) => render(wholeDrum, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
+    { name: 'whole-kit', run: (m) => render(wholeKit, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
+    { name: 'follow-hoop', run: (m) => render(followHoop, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, delayMs: 0, decayMs: 2000 }) },
+    { name: 'burst', run: (m) => render(burst, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
+    { name: 'pixel-accum', run: (m) => render(pixelAccum, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }, pixelAccum.createState!(m)) },
+    { name: 'synced-hoops', run: (m) => render(syncedHoops, m, ctx(m, { transport: transport(1.3, 700) }), { hue: 120, saturation: 0 }) },
+    { name: 'swing', run: (m) => render(swing, m, ctx(m, { dt: 0, triggers: [hit('d0')] }), { hue: 120, saturation: 0 }, swing.createState!(m)) },
+    { name: 'colour-melody', run: (m) => render(colourMelody, m, ctx(m, { triggers: [hit('d0')] }), { saturation: 0 }) },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured hue at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(chase, m, ctx(m, { transport: transport(0) }), { hue: 120, saturation: 1 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+});
+
+// S20 — Colour batch 2 (wash / base / utility / meter). Saturation is now exposed and threaded
+// through hsvToRgb on radial-wash, wipe-3d, solid-base, breathing-kit, strobe, hue-rotate-kit
+// (multi: base hue + vertical spread, no swatch), temp-sweep (multi: warm/cool endpoints, no
+// swatch), meter-eq and sidechain. Same contract as S19: saturation 0 desaturates every lit
+// pixel to achromatic white/grey (r===g===b), which the old hardcoded `hsvToRgb(hue, 1, …)`
+// could never produce. Each coloured case uses hue 120 so a leak shows as a chromatic pixel.
+describe('S20 colour batch 2 — saturation 0 ⇒ white on lit pixels', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  const hit = (id: string) => trig(1, id, 38, 1, 0);
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'radial-wash', run: (m) => render(radialWash, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, width: 400 }) },
+    { name: 'wipe-3d', run: (m) => render(wipe3d, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, width: 400 }) },
+    { name: 'solid-base', run: (m) => render(solidBase, m, ctx(m), { hue: 120, saturation: 0, brightness: 1 }) },
+    { name: 'breathing-kit', run: (m) => render(breathingKit, m, ctx(m), { hue: 120, saturation: 0, brightness: 1 }) },
+    { name: 'hue-rotate-kit', run: (m) => render(hueRotateKit, m, ctx(m), { saturation: 0, brightness: 0.8 }) },
+    { name: 'strobe', run: (m) => render(strobe, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, brightness: 1 }) },
+    { name: 'temp-sweep', run: (m) => render(tempSweep, m, ctx(m, { timeMs: 0 }), { saturation: 0, brightness: 0.8 }) },
+    { name: 'meter-eq', run: (m) => render(meterEq, m, ctx(m), { hue: 120, saturation: 0, level: 1 }) },
+    { name: 'sidechain', run: (m) => render(sidechain, m, ctx(m, { dt: 0, triggers: [] }), { hue: 120, saturation: 0 }, sidechain.createState!(m)) },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured meter at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(meterEq, m, ctx(m), { hue: 120, saturation: 1, level: 1 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+
+  it('defaults preserve current output: saturation default 1 == the old hardcoded look', () => {
+    const m = model(1, 4);
+    const same = (a: Framebuffer, b: Framebuffer): void => {
+      expect(a.rgba.length).toBe(b.rgba.length);
+      for (let i = 0; i < a.rgba.length; i++) expect(a.rgba[i]).toBe(b.rgba[i]);
+    };
+    // radial-wash / wipe-3d / meter-eq: the new saturation defaults to 1, so explicitly
+    // setting saturation 1 must be byte-identical to the default (i.e. the pre-S20 output).
+    same(
+      render(radialWash, m, ctx(m, { triggers: [hit('d0')] }), { width: 400 }),
+      render(radialWash, m, ctx(m, { triggers: [hit('d0')] }), { width: 400, saturation: 1 }),
+    );
+    same(render(wipe3d, m, ctx(m, { timeMs: 0 }), {}), render(wipe3d, m, ctx(m, { timeMs: 0 }), { saturation: 1 }));
+    same(render(meterEq, m, ctx(m), { level: 1 }), render(meterEq, m, ctx(m), { level: 1, saturation: 1 }));
+    // temp-sweep: default warm/cool endpoints reproduce the old amber↔blue at full saturation.
+    same(
+      render(tempSweep, m, ctx(m, { timeMs: 0 }), {}),
+      render(tempSweep, m, ctx(m, { timeMs: 0 }), { warmHue: 30, coolHue: 210, saturation: 1 }),
+    );
+  });
+});
+
+// S21 — Colour batch 3 (textures). Saturation is now exposed and threaded into every
+// hsvToRgb on all thirteen texture effects. Same contract as S19: saturation 0 desaturates
+// every lit pixel to achromatic white/grey (r===g===b), which the old hardcoded S-slots
+// (1, 0.95, 0.9, or a computed sat) could never reach. tunnel and rainbow-flow are the two
+// full-wheel "multi" effects — a single hue can't represent them, so they carry no bare
+// `hue` param (hueOffset/hueRange instead), but saturation still desaturates them to grey.
+describe('S21 colour batch 3 — saturation 0 ⇒ white on lit pixels (textures)', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  // Field textures read ctx.timeMs; wave-collapse is trigger-driven (a shell at `reach`).
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'plasma', run: (m) => render(plasma, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'fire', run: (m) => render(fire, m, ctx(m, { timeMs: 250 }), { hue: 30, saturation: 0 }) },
+    { name: 'ripple-pond', run: (m) => render(ripplePond, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'rainbow-flow', run: (m) => render(rainbowFlow, m, ctx(m, { timeMs: 250 }), { saturation: 0 }) },
+    { name: 'tunnel', run: (m) => render(tunnel, m, ctx(m, { timeMs: 250 }), { hueOffset: 120, saturation: 0 }) },
+    { name: 'checker-pulse', run: (m) => render(checkerPulse, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'perlin-clouds', run: (m) => render(perlinClouds, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'lava-lamp', run: (m) => render(lavaLamp, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'interference', run: (m) => render(interference, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'caustics', run: (m) => render(caustics, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'spiral', run: (m) => render(spiral, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    { name: 'grid-glow', run: (m) => render(gridGlow, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
+    {
+      name: 'wave-collapse',
+      run: (m) =>
+        render(waveCollapse, m, ctx(m, { triggers: [trig(1, 'd0', 38, 1, 0)] }), {
+          hue: 120,
+          saturation: 0,
+          reach: 100,
+          width: 800,
+        }),
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured texture at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(plasma, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 1 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+});
+
+// S22 — Colour batch 4 (particles). Saturation is now exposed and threaded through hsvToRgb on
+// every particle effect: starfield (default 0.15 near-white), comet-trails, lightning (default
+// 0.35 blue-white), helix, orbit-rings and collisions get the generic hue+sat+bri swatch;
+// confetti-burst / gravity-wells (random palettes → baseHue+hueSpan range), sacred-hogs (hog+halo
+// hues) and velocity-flames (baseHue→tipHue gradient) are multi-colour and stay swatch-less but
+// gain a shared `saturation`. Same contract as S19/S20: saturation 0 desaturates every lit pixel
+// to achromatic white/grey (r===g===b), which the old hardcoded `hsvToRgb(hue, 1|0.15|0.35, …)`
+// could never reach for an arbitrary hue.
+describe('S22 colour batch 4 — saturation 0 ⇒ white on lit pixels', () => {
+  /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
+  function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
+    let lit = 0;
+    let allWhite = true;
+    for (let i = 0; i < fb.pixelCount; i++) {
+      const j = i * 4;
+      const r = fb.rgba[j]!;
+      const g = fb.rgba[j + 1]!;
+      const b = fb.rgba[j + 2]!;
+      if (r > 0.004 || g > 0.004 || b > 0.004) {
+        lit++;
+        if (Math.abs(r - g) > 1e-6 || Math.abs(g - b) > 1e-6) allWhite = false;
+      }
+    }
+    return { lit, allWhite };
+  }
+
+  /** Render `frames` sequential frames on one fresh seeded state; return the last framebuffer. */
+  function sweep<S>(
+    effect: EffectGenerator<S>,
+    m: PixelModel,
+    params: ResolvedParams,
+    frames: number,
+    opts: (f: number) => Partial<RenderContext>,
+  ): Framebuffer {
+    const s = effect.createState ? effect.createState(m) : (undefined as S);
+    let fb = new Framebuffer(m.pixelCount);
+    for (let f = 0; f < frames; f++) fb = render(effect, m, ctx(m, opts(f)), params, s);
+    return fb;
+  }
+
+  /**
+   * Like `sweep`, but returns the most-lit frame rather than the last. Confetti particles
+   * spawn at the drum origin and fly outward, so they only cross (and light) the pixel shell
+   * mid-flight — the final frame is empty. Deterministic given the seeded state + schedule.
+   */
+  function sweepPeak<S>(
+    effect: EffectGenerator<S>,
+    m: PixelModel,
+    params: ResolvedParams,
+    frames: number,
+    opts: (f: number) => Partial<RenderContext>,
+  ): Framebuffer {
+    const s = effect.createState ? effect.createState(m) : (undefined as S);
+    let best = new Framebuffer(m.pixelCount);
+    let bestLit = -1;
+    for (let f = 0; f < frames; f++) {
+      const fb = render(effect, m, ctx(m, opts(f)), params, s);
+      const { lit } = scanLit(fb);
+      if (lit > bestLit) {
+        bestLit = lit;
+        best = fb;
+      }
+    }
+    return best;
+  }
+  const confettiBurstAt = (f: number): Partial<RenderContext> => ({ triggers: f === 0 ? [hit('d0')] : [], dt: 16, timeMs: f * 16 });
+
+  const hit = (id: string) => trig(1, id, 38, 1, 0);
+  const cases: Array<{ name: string; run: (m: PixelModel) => Framebuffer }> = [
+    { name: 'starfield', run: (m) => render(starfield, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0 }, starfield.createState!(m)) },
+    // Comets orbit a hoop; sweep a few frames so a head+tail overlaps some pixels.
+    { name: 'comet-trails', run: (m) => sweep(cometTrails, m, { hue: 120, saturation: 0 }, 8, (f) => ({ timeMs: f * 50, dt: 50 })) },
+    { name: 'lightning', run: (m) => render(lightning, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, boltWidth: 500 }) },
+    // Confetti spawns at the drum origin then flies outward; take the peak-lit crossing frame.
+    { name: 'confetti-burst', run: (m) => sweepPeak(confettiBurst, m, { saturation: 0, count: 200, spread: 2 }, 40, confettiBurstAt) },
+    { name: 'helix', run: (m) => render(helix, m, ctx(m, { timeMs: 500 }), { hue: 120, saturation: 0 }) },
+    { name: 'orbit-rings', run: (m) => render(orbitRings, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, width: 400 }) },
+    { name: 'gravity-wells', run: (m) => render(gravityWells, m, ctx(m, { timeMs: 100 }), { saturation: 0 }, gravityWells.createState!(m)) },
+    // Collisions circle over time and flash on contact; sweep frames like the base coverage test.
+    { name: 'collisions', run: (m) => sweep(collisions, m, { hue: 120, flashHue: 60, saturation: 0 }, 30, (f) => ({ timeMs: f * 100, dt: 100 })) },
+    { name: 'sacred-hogs', run: (m) => render(sacredHogs, m, ctx(m, { timeMs: 500, dt: 16 }), { hogHue: 120, haloHue: 200, saturation: 0 }, sacredHogs.createState!(m)) },
+    { name: 'velocity-flames', run: (m) => render(velocityFlames, m, ctx(m, { triggers: [hit('d0')], timeMs: 0 }), { saturation: 0 }) },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: lights pixels and every lit pixel is white`, () => {
+      const m = model(1, 4);
+      const { lit, allWhite } = scanLit(c.run(m));
+      expect(lit, `${c.name} lit nothing`).toBeGreaterThan(0);
+      expect(allWhite, `${c.name} left a chromatic pixel`).toBe(true);
+    });
+  }
+
+  it('saturation is a real knob: a coloured orbit-rings at sat 1 is NOT white', () => {
+    const m = model(1, 4);
+    const fb = render(orbitRings, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 1, width: 400 });
+    expect(scanLit(fb).allWhite).toBe(false);
+  });
+
+  it('defaults preserve current output: the new colour params default to the old hardcoded look', () => {
+    const m = model(1, 4);
+    const same = (a: Framebuffer, b: Framebuffer): void => {
+      expect(a.rgba.length).toBe(b.rgba.length);
+      for (let i = 0; i < a.rgba.length; i++) expect(a.rgba[i]).toBe(b.rgba[i]);
+    };
+    // starfield/lightning kept their non-1 hardcoded saturation as the new default.
+    same(
+      render(starfield, m, ctx(m, { timeMs: 0 }), {}, starfield.createState!(m)),
+      render(starfield, m, ctx(m, { timeMs: 0 }), { saturation: 0.15 }, starfield.createState!(m)),
+    );
+    same(
+      render(lightning, m, ctx(m, { triggers: [hit('d0')] }), {}),
+      render(lightning, m, ctx(m, { triggers: [hit('d0')] }), { saturation: 0.35 }),
+    );
+    // confetti-burst / gravity-wells remapped random hues to a range whose defaults are identical
+    // to the old full-spectrum draw (baseHue 0 + rng()·360).
+    same(
+      sweepPeak(confettiBurst, m, { count: 200, spread: 2 }, 40, confettiBurstAt),
+      sweepPeak(confettiBurst, m, { count: 200, spread: 2, baseHue: 0, hueSpan: 360, saturation: 1 }, 40, confettiBurstAt),
+    );
+    same(
+      render(gravityWells, m, ctx(m, { timeMs: 100 }), {}, gravityWells.createState!(m)),
+      render(gravityWells, m, ctx(m, { timeMs: 100 }), { baseHue: 0, hueSpan: 360, saturation: 1 }, gravityWells.createState!(m)),
+    );
+    // velocity-flames exposed its yellow→red gradient endpoints + a saturation scaler.
+    same(
+      render(velocityFlames, m, ctx(m, { triggers: [hit('d0')] }), {}),
+      render(velocityFlames, m, ctx(m, { triggers: [hit('d0')] }), { baseHue: 55, tipHue: 0, saturation: 1 }),
+    );
   });
 });
 

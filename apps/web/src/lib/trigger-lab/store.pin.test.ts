@@ -77,7 +77,7 @@ function withRaf(fn: () => void): void {
 }
 
 function fireState(h: Harness, tunnel: TunnelInfo | null): void {
-  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, tunnel);
+  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, null, tunnel);
 }
 
 let sessionStore: MemStorage;
@@ -119,8 +119,36 @@ describe('store — room PIN + tunnel (S3)', () => {
     withRaf(() => {
       store.start();
       expect(store.tunnel).toBeNull();
-      fireState(h, { url: 'https://foo.trycloudflare.com', pin: '123456' });
-      expect(store.tunnel).toEqual({ url: 'https://foo.trycloudflare.com', pin: '123456' });
+      fireState(h, { status: 'live', url: 'https://foo.trycloudflare.com', pin: '123456' });
+      expect(store.tunnel).toEqual({ status: 'live', url: 'https://foo.trycloudflare.com', pin: '123456' });
+      store.stop();
+    });
+  });
+
+  it('setSharing sends the tunnel start/stop control message (item 4)', () => {
+    const h: Harness = { cb: null, reconnects: [] };
+    const sent: unknown[] = [];
+    const client = (): WSClient =>
+      ({
+        on(cb: WSCallbacks) {
+          h.cb = cb;
+        },
+        connect() {},
+        close() {},
+        send(msg: unknown) {
+          sent.push(msg);
+        },
+        reconnectWithPin() {},
+      }) as unknown as WSClient;
+    const store = new TriggerLab(client);
+    withRaf(() => {
+      store.start();
+      store.setSharing(true);
+      store.setSharing(false);
+      expect(sent).toEqual([
+        { t: 'tunnel', action: 'start' },
+        { t: 'tunnel', action: 'stop' },
+      ]);
       store.stop();
     });
   });

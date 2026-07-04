@@ -149,7 +149,8 @@
     gap: var(--space-2);
     width: 100%;
     min-width: 0;
-    padding: var(--space-1) var(--space-2);
+    height: var(--control-h, 26px);
+    padding: 0 var(--space-2);
     background: var(--surface-inset);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);

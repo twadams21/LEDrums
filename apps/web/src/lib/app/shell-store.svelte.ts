@@ -1,14 +1,14 @@
 /* Reactive wrapper over the pure shell-nav reducer. Holds the navigation state
    as a single $state object and forwards every transition to shell-nav, so the
-   invariants (view-switch clears selection, select surfaces the Inspector) have
-   exactly one home and stay unit-tested in node. Components read shell.view /
-   shell.dock / shell.selection and call the setters. */
+   invariant (view-switch clears selection) has exactly one home and stays
+   unit-tested in node. Components read shell.view / shell.selection and call
+   the setters. */
 
 import * as nav from './shell-nav';
-import type { DockTab, Selection, ShellNav, View } from './shell-nav';
+import type { Selection, ShellNav, View } from './shell-nav';
 import type { PatchRouting } from './patch-routing';
 
-export type { DockTab, PatchNodeId, Selection, View } from './shell-nav';
+export type { PatchNodeId, Selection, View } from './shell-nav';
 
 export class ShellStore {
   private s = $state<ShellNav>(nav.initialNav());
@@ -28,9 +28,6 @@ export class ShellStore {
   get view(): View {
     return this.s.view;
   }
-  get dock(): DockTab {
-    return this.s.dock;
-  }
   get selection(): Selection | null {
     return this.s.selection;
   }
@@ -45,9 +42,6 @@ export class ShellStore {
 
   setView(view: View): void {
     this.s = nav.setView(this.s, view);
-  }
-  setDock(dock: DockTab): void {
-    this.s = nav.setDock(this.s, dock);
   }
   select(selection: Selection): void {
     this.s = nav.select(this.s, selection);

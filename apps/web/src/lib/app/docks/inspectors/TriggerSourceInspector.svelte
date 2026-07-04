@@ -6,8 +6,9 @@
      key is store.selectedPadKey. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, TriggerSource } from '../../../trigger-lab/sim';
-  import { describeTriggerSource, zoneLabel } from '../../trigger-source-label';
+  import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
+  import Link2 from '@lucide/svelte/icons/link-2';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
@@ -15,16 +16,23 @@
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Radio from '@lucide/svelte/icons/radio';
   import ReadRow from './ReadRow.svelte';
   import { onNum } from './forms';
   import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
+  import { bindingFromSource } from '../../../trigger-lab/input-activity';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const src = $derived(node.source);
+  // Last-heard confirmation for the active MIDI-note / OSC field (null for drum/CC/empty).
+  const heard = $derived(store.inputBadge(bindingFromSource(src)));
   const gkey = $derived(store.selectedPadKey);
+  // Cross-reference: this MIDI/OSC source is ALSO a mapped drum zone → both fire per hit
+  // (by design). Same phrasing as the trigger node's drum-link badge. Null offline.
+  const drumHint = $derived(store.project ? drumLinkHint(store.project.inputMap, src, store.drums) : null);
   const kindNow = $derived(src?.kind ?? 'drum');
   const learning = $derived(
     !!gkey && store.midiLearnTarget?.kind === 'trigger' && store.midiLearnTarget.graphKey === gkey,
@@ -94,7 +102,7 @@
 </header>
 <div class="trigbody">
   <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
-  <Field label="Trigger source">
+  <Field layout="row" label="Trigger source">
     <SegmentedControl
       value={kindNow}
       options={SOURCE_OPTS}
@@ -106,7 +114,7 @@
   {#if kindNow === 'drum'}
     {@const drumId = src?.kind === 'drum' ? src.drumId : store.drums[0]?.id ?? ''}
     {@const zone = src?.kind === 'drum' ? src.zone : '0'}
-    <Field label="Drum">
+    <Field layout="row" label="Drum">
       <Select
         value={drumId}
         options={DRUM_OPTS}
@@ -114,7 +122,7 @@
         ariaLabel="Drum"
       />
     </Field>
-    <Field label="Zone">
+    <Field layout="row" label="Zone">
       <Select
         value={zone}
         options={zoneOptsFor(drumId, zone)}
@@ -124,7 +132,7 @@
     </Field>
   {:else if src?.kind === 'midi'}
     {@const isCc = src.cc !== undefined}
-    <Field label="Type">
+    <Field layout="row" label="Type">
       <SegmentedControl
         value={isCc ? 'cc' : 'note'}
         options={MIDI_OPTS}
@@ -133,7 +141,7 @@
       />
     </Field>
     {#if isCc}
-      <Field label="CC number" hint="1-127">
+      <Field layout="row" label="CC number" hint="1-127">
         <CommitInput
           type="number"
           min={RESERVED_CC + 1}
@@ -146,7 +154,7 @@
       </Field>
       <p class="hint">CC 0 reserved for section recall.</p>
     {:else}
-      <Field label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
+      <Field layout="row" label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
         <div class="note-row">
           <CommitInput
             value={src.note === undefined ? '' : formatMidiNote(src.note)}
@@ -172,10 +180,13 @@
           </button>
         </div>
       </Field>
+      {#if heard}
+        <div class="heard"><InputActivityBadge {...heard} /></div>
+      {/if}
     {/if}
     <p class="hint">Channel filter is in Settings.</p>
   {:else if src?.kind === 'osc'}
-    <Field label="Address" hint="e.g. /kick">
+    <Field layout="row" label="Address" hint="e.g. /kick">
       <CommitInput
         value={src.address}
         mono
@@ -185,13 +196,20 @@
         onCommit={(v) => gkey && store.setTriggerSource(gkey, { kind: 'osc', address: v.trim() })}
       />
     </Field>
+    {#if heard}
+      <div class="heard"><InputActivityBadge {...heard} /></div>
+    {/if}
     <p class="hint">Namespace / host comes from the patch device, not here.</p>
   {/if}
 
   <ReadRow label="Resolves to" value={describeTriggerSource(src, store.drums).sub} />
 
+  {#if drumHint}
+    <p class="hint linkhint"><Link2 size={12} aria-hidden="true" />{drumHint}</p>
+  {/if}
+
   {#if gkey && gkey in store.graphs}
-    <Field label="Name" hint="display label">
+    <Field layout="row" label="Name" hint="display label">
       <CommitInput
         value={store.graphLabel(gkey)}
         autofocus={false}
@@ -269,5 +287,22 @@
     font-size: var(--text-xs);
     color: var(--text-muted);
     line-height: var(--leading-normal);
+  }
+  /* Last-heard confirmation, tucked just under its field. */
+  .heard {
+    margin-top: calc(-1 * var(--space-1));
+    padding-left: var(--space-1);
+    min-width: 0;
+  }
+  /* the drum-link cross-reference — accent glyph + hint, matches the node's badge tooltip */
+  .linkhint {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--text);
+  }
+  .linkhint :global(svg) {
+    color: var(--accent);
+    flex: none;
   }
 </style>

@@ -22,6 +22,9 @@ import type { PixelModel } from '../geometry/pixel-model';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
 import { defaultParams, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
+import { applyModifierChain } from '../modifiers/chain';
+import type { PixelRange } from '../modifiers/types';
+import type { ModSampleCtx } from './modulation';
 import type { Voice } from './types';
 
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
@@ -33,9 +36,11 @@ export interface GeneratorBridge {
   /**
    * Render one generator voice into `dst` over pixel range `[start, end)`, scaled by
    * `level` (voice envelope × deck gain). Unknown generator ids render nothing (the
-   * voice never falls through to the pattern path).
+   * voice never falls through to the pattern path). `modCtx` (built by the compositor from
+   * the voice's life phase + transport) lets a modified generator's chain modulate its
+   * modifier params (doc 10); it is inert for an unmodified / unmodulated voice.
    */
-  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, start: number, end: number, dst: Framebuffer): void;
+  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, start: number, end: number, dst: Framebuffer, modCtx: ModSampleCtx): void;
 }
 
 export function createGeneratorBridge(): GeneratorBridge {
@@ -47,9 +52,19 @@ export function createGeneratorBridge(): GeneratorBridge {
   const genTriggers: Trigger[] = [genTrigger];
   /** Reused RenderContext (rebuilt only when the model identity changes). */
   let genCtx: RenderContext | null = null;
+  /** This frame's absolute transport (engine's, held by reference — never mutated). */
+  let frameTransport: TransportState | null = null;
+  /** Bridge-owned voice-local transport, refilled per voice-timebase voice so we never
+      touch the shared frame transport (a `timebase:'voice'` generator reads this). */
+  const voiceTransport: TransportState = {
+    timeMs: 0, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true,
+  };
+  /** Reused pixel-range for the modifier chain (only touched by modified voices). */
+  const modRange: PixelRange = { start: 0, end: 0 };
 
   return {
     beginFrame(model, timeMs, dt, transport): void {
+      frameTransport = transport;
       // The triggers array reference is stable; its single element is mutated per voice.
       if (!genCtx || genCtx.model !== model) {
         genCtx = { model, timeMs, dt, transport, triggers: genTriggers };
@@ -60,15 +75,16 @@ export function createGeneratorBridge(): GeneratorBridge {
       }
     },
 
-    renderVoice(v, model, timeMs, level, start, end, dst): void {
+    renderVoice(v, model, timeMs, level, start, end, dst, modCtx): void {
       const gen = tryGetEffect(v.generatorId!);
       if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
-      if (!genCtx) return; // beginFrame not called this frame (never happens in practice)
+      if (!genCtx || !frameTransport) return; // beginFrame not called this frame (never happens in practice)
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
         genScratch = new Framebuffer(model.pixelCount);
       }
-      // Build per-voice state lazily and persist it for the voice's life.
-      if (v.genState == null && gen.createState) v.genState = gen.createState(model);
+      // Build per-voice state lazily and persist it for the voice's life. The voice's
+      // per-trigger seed (item C) decorrelates RNG-backed effects across fires.
+      if (v.genState == null && gen.createState) v.genState = gen.createState(model, v.seed);
 
       // Resolved params: generator defaults (incl. enum/colour) overlaid with the
       // voice's live numeric/bool params (envelopes already applied by the engine).
@@ -97,8 +113,44 @@ export function createGeneratorBridge(): GeneratorBridge {
       const age = timeMs - v.bornAtMs;
       genTrigger.ageMs = age > 0 ? age : 0;
 
+      // Timebase: swap the clock the generator reads, without changing its signature.
+      // 'absolute' (default) — the engine's wall-clock + transport, exactly as before, so
+      //   free-running base/ambient effects are byte-for-byte unchanged.
+      // 'voice' — a hit-relative clock: ctx.timeMs = trig.ageMs and a voice-local transport
+      //   whose beat is derived from age×bpm (so beat-indexed effects like chase start at
+      //   their start position on the hit and restart on retrigger, since a retrigger is a
+      //   new voice whose age is 0).
+      if ((gen.timebase ?? 'absolute') === 'voice') {
+        const ft = frameTransport;
+        const beats = (genTrigger.ageMs / 60000) * ft.bpm; // age×bpm; matches transport.beat's accumulation
+        voiceTransport.timeMs = genTrigger.ageMs;
+        voiceTransport.beat = beats;
+        voiceTransport.bar = Math.floor(beats / ft.beatsPerBar);
+        voiceTransport.beatInBar = beats - voiceTransport.bar * ft.beatsPerBar;
+        voiceTransport.bpm = ft.bpm;
+        voiceTransport.beatsPerBar = ft.beatsPerBar;
+        voiceTransport.playing = ft.playing;
+        genCtx.timeMs = genTrigger.ageMs;
+        genCtx.transport = voiceTransport;
+      } else {
+        genCtx.timeMs = timeMs;
+        genCtx.transport = frameTransport;
+      }
+
       genScratch.clear();
       gen.render(genCtx, params, genScratch, v.genState);
+
+      // Modifier chain (media effects) — pure framebuffer transforms applied between render
+      // and blend, over the voice's pixel range. Only modified voices pay this; unmodified
+      // voices fall straight through to the composite loop (zero-alloc path preserved).
+      // Modifiers inherit the host voice's local clock (age) — never re-derived downstream.
+      const mods = v.modifiers;
+      if (mods && mods.length) {
+        if (!v.modState) v.modState = [];
+        modRange.start = start;
+        modRange.end = end;
+        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt, modCtx);
+      }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is
       // applied inside the generator), masked to [start, end). dst.add clamps.

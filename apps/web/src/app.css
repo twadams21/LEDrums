@@ -138,6 +138,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   padding: var(--space-1) var(--space-2);
+  min-height: 22px;
 }
 input::placeholder,
 textarea::placeholder {
@@ -152,11 +153,13 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  /* The box shadow was adding a second border within the text input area */
+  box-shadow: 0 0 0 3px transparent;
 }
 input[type='number'] {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  
 }
 
 /* ---- Range: a console fader --------------------------------------------- */

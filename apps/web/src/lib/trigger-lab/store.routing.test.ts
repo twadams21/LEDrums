@@ -70,6 +70,25 @@ describe('setDrumTransform', () => {
     expect(store.project!.kit.drums.find((d) => d.id === drumId)!.pixelsPerHoop).toBe(50);
     expect(sent).toContainEqual({ t: 'setKitTransform', drumId, pixelsPerHoop: 50 });
   });
+
+  it('toggles flip live — writes the drum flag locally and sends setKitTransform', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    const drumId = store.project!.kit.drums[0]!.id;
+    store.setDrumTransform(drumId, { flip: true });
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.flip).toBe(true);
+    expect(sent).toContainEqual({ t: 'setKitTransform', drumId, flip: true });
+  });
+});
+
+describe('setKitMirror', () => {
+  it('sets the kit-global mirror live — writes kit.global.mirror locally and sends setKitGlobal', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setKitMirror('x');
+    expect(store.project!.kit.global.mirror).toBe('x');
+    expect(sent).toContainEqual({ t: 'setKitGlobal', mirror: 'x' });
+  });
 });
 
 describe('setInputMap / setOutput', () => {

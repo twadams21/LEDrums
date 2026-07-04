@@ -39,6 +39,8 @@
 
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSection(section.id) },
+    { label: 'Copy', icon: Copy, onSelect: () => void store.copySectionToClipboard(section.id) },
+    { label: 'Paste', icon: ClipboardPaste, onSelect: () => void store.pasteSectionFromClipboard() },
     { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.removeSection(section.id) },
   ]);
 </script>
@@ -55,14 +57,8 @@
   >
     {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
     {#snippet quickActions()}
-      <IconButton icon={Copy} label="Copy section" size={13} onclick={() => store.copySection(section.id)} />
-      <IconButton
-        icon={ClipboardPaste}
-        label="Paste section"
-        size={13}
-        disabled={!store.sectionClipboard}
-        onclick={() => store.pasteSection()}
-      />
+      <IconButton icon={Copy} label="Copy section to clipboard" size={13} onclick={() => void store.copySectionToClipboard(section.id)} />
+      <IconButton icon={ClipboardPaste} label="Paste section" size={13} onclick={() => void store.pasteSectionFromClipboard()} />
     {/snippet}
   </EditableRow>
 

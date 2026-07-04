@@ -18,20 +18,22 @@
  * path; generators run far fewer voices (mono buses, level gating), so the bridge's
  * per-voice merged-params object stays well within budget — see the perf note below.
  */
-import type { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../engine/framebuffer';
 import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
-import { sampleEnvelope } from './envelope';
+import { applyModifierChain } from '../modifiers/chain';
+import type { PixelRange } from '../modifiers/types';
+import { applyModulations, type CcTable, type ModSampleCtx, type OscTable } from './modulation';
 import { buildPixelAttrs, createPatternRenderer, type PixelAttrs } from './pattern-renderer';
 import { createGeneratorBridge } from './generator-bridge';
-import type { ParamSpec, ParamValues, Voice } from './types';
+import type { ParamValues, Voice } from './types';
 
 // `buildPixelAttrs` / `PixelAttrs` live with the pattern renderer (which samples them);
 // re-exported here so the `./compositor` import surface — consumed by the engine and the
 // voice barrel — is unchanged.
 export { buildPixelAttrs, type PixelAttrs };
 
-const num = (v: number | boolean | undefined, d: number): number => (typeof v === 'number' ? v : d);
+const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
 /**
  * 0..1 progress through a voice's life — drives param envelopes. Ported from
@@ -55,30 +57,27 @@ export function voicePhase(v: Voice, timeMs: number): number {
  * `bpm` is supplied by the engine (which owns transport); the compositor reads the
  * already-resolved `liveParams`, keeping its `render` signature narrow.
  */
-export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number): ParamValues {
+export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable): ParamValues {
   const out = v.liveParams;
   // Refill the scratch from the spawn snapshot.
   for (const k of Object.keys(out)) delete out[k];
   for (const k of Object.keys(v.params)) out[k] = v.params[k]!;
-  const phase = voicePhase(v, timeMs);
-  for (const key of Object.keys(v.env)) {
-    const env = v.env[key];
-    if (!env || env.kind === 'none') continue;
-    const spec = specFor(v.specs, key);
-    if (!spec || spec.kind !== 'number') continue;
-    const lo = spec.min ?? 0;
-    const hi = spec.max ?? 1;
-    const base = num(v.params[key], lo);
-    const target = lo + sampleEnvelope(env, phase) * (hi - lo);
-    out[key] = base + (target - base) * env.amount; // amount = sweep depth
+  // Modulation mappings (doc 10): summed-and-clamped contributions over the spawn-snapshot base.
+  // Envelope sources sample the voice-life `phase` (restart per hit); continuous sources read the
+  // absolute clock + tempo (LFO) or a live table (CC / OSC). The legacy env sweep folded in S35.
+  const mods = v.modulations;
+  if (mods && mods.length) {
+    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
 }
 
-function specFor(specs: ParamSpec[], key: string): ParamSpec | undefined {
-  for (const s of specs) if (s.key === key) return s;
-  return undefined;
+/** Build the per-frame modulation-sample context for a voice — its life phase (envelope
+    sources restart per hit) plus the absolute clock + tempo continuous sources (S36/S37)
+    read. Shared by the play-param sweep and the modifier chain so both restart together. */
+function modCtxFor(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable): ModSampleCtx {
+  return { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc };
 }
 
 /**
@@ -90,6 +89,12 @@ export interface CompositorFrame {
   timeMs: number;
   dt: number;
   transport: TransportState;
+  /** Live CC value table (S37) — threaded to the per-voice modulation sweep so `cc` sources
+      read the engine's current controller values this frame. Absent → no CC contribution. */
+  cc?: CcTable; // S37
+  /** Live OSC value table — threaded alongside {@link cc} so `osc` modulation sources read the
+      engine's current per-address values this frame. Absent → no OSC contribution. */
+  osc?: OscTable;
 }
 
 /** Voices → pixels. The inner seam. */
@@ -116,6 +121,10 @@ export interface Compositor {
 export function createDefaultCompositor(): Compositor {
   const patterns = createPatternRenderer();
   const generators = createGeneratorBridge();
+  /** Scratch framebuffer for MODIFIED pattern voices only — an unmodified pattern voice
+      writes straight to `dst` (zero-alloc hot path). Lazily sized to the model. */
+  let patScratch: Framebuffer | null = null;
+  const modRange: PixelRange = { start: 0, end: 0 };
 
   return {
     render(voices, model, attrs, frame, dst): void {
@@ -163,11 +172,39 @@ export function createDefaultCompositor(): Compositor {
 
         if (v.generatorId) {
           // Hosted legacy-generator voice — never falls through to the pattern path.
-          generators.renderVoice(v, model, timeMs, level, start, end, dst);
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc);
+          generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
           continue;
         }
 
-        // Pattern voice (fast path).
+        // Pattern voice. Modified voices route through a scratch so the chain can transform
+        // the rendered pixels before they blend into `dst`; unmodified voices write directly
+        // (the zero-alloc fast path is untouched).
+        const mods = v.modifiers;
+        if (mods && mods.length) {
+          if (!patScratch || patScratch.pixelCount !== model.pixelCount) {
+            patScratch = new Framebuffer(model.pixelCount);
+          }
+          patScratch.clear();
+          patterns.renderVoice(v, t, level, start, end, attrs, patScratch);
+          if (!v.modState) v.modState = [];
+          modRange.start = start;
+          modRange.end = end;
+          const age = timeMs - v.bornAtMs;
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc);
+          applyModifierChain(mods, v.modState, patScratch, modRange, model, age > 0 ? age : 0, frame.dt, modCtx);
+          const src = patScratch.rgba;
+          for (let i = start; i < end; i++) {
+            const j = i * 4;
+            const r = src[j]!;
+            const g = src[j + 1]!;
+            const b = src[j + 2]!;
+            const a = src[j + 3]!;
+            if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+            dst.add(i, r, g, b, a);
+          }
+          continue;
+        }
         patterns.renderVoice(v, t, level, start, end, attrs, dst);
       }
     },

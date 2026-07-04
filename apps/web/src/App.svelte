@@ -10,23 +10,45 @@
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
+  // S08: the single app-root desktop-bridge start + the boot overlay it drives.
+  import { desktopBridge } from './lib/app/desktop-bridge.svelte';
+  import BootOverlay from './lib/app/chrome/BootOverlay.svelte';
 
   const store = new TriggerLab();
   const shell = new ShellStore(parseSearch(typeof location !== 'undefined' ? location.search : ''));
 
   onMount(() => {
     store.start();
-    return () => store.stop();
+    // S08: connect the desktop boot/update bridge once, here at the app root — the boot overlay and
+    // ShareInfo gating both read its reactive bootStatus. Idempotent + a no-op in a plain browser.
+    void desktopBridge.start();
+    return () => {
+      store.stop();
+      desktopBridge.stop();
+    };
   });
 
-  // Number keys play the active section's graph list: 1–9 → graphs 1–9, 0 → graph 10.
-  // Extra keys (beyond the section's graph count) do nothing. Skip while typing in a control.
+  // Performance keys (approved wave-3 shell): 1–9 fire the active section's graphs
+  // 1–9 (0 → graph 10); ←/→ step through the active song's sections. Skip while
+  // typing in a control; leave arrows alone inside the flow canvas (xyflow nudges
+  // the selected node with them).
   function onKey(e: KeyboardEvent): void {
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
-    if (!/^[0-9]$/.test(e.key)) return;
-    const index = e.key === '0' ? 9 : Number(e.key) - 1;
-    store.fireSectionGraph(index);
+    if (/^[0-9]$/.test(e.key)) {
+      const index = e.key === '0' ? 9 : Number(e.key) - 1;
+      store.fireSectionGraph(index);
+      return;
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
+      const sections = store.activeSong?.sections ?? [];
+      if (sections.length === 0) return;
+      const cur = sections.findIndex((s) => s.id === store.activeSectionId);
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      const next = sections[(cur + step + sections.length) % sections.length];
+      if (next) store.setActiveSection(next.id);
+    }
   }
 </script>
 
@@ -39,6 +61,9 @@
 <Overlays {store} />
 
 <PinGate {store} />
+
+<!-- S08: desktop boot/update takeover — renders only inside the shell, nothing in a plain browser. -->
+<BootOverlay status={desktopBridge.bootStatus} active={desktopBridge.isDesktop} />
 
 <style>
   .shell-root {

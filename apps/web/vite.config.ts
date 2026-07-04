@@ -4,8 +4,11 @@ import { svelteTesting } from '@testing-library/svelte/vite';
 import { sourceManifestPlugin } from './scripts/vite-plugin-source-manifest.mjs';
 
 // Must match @ledrums/core WS_PORT / WS_PATH (apps/server binds the same).
-const WS_PORT = 4321;
+// Overridable so a second worktree's stack can run beside the default one
+// (server: PORT=<n>; web: LEDRUMS_WEB_PORT / LEDRUMS_WS_PORT to match).
+const WS_PORT = Number(process.env.LEDRUMS_WS_PORT) || 4321;
 const WS_PATH = '/ws';
+const WEB_PORT = Number(process.env.LEDRUMS_WEB_PORT) || 5173;
 
 export default defineConfig({
   // `svelteTesting()` is a no-op outside Vitest; under test it adds the `browser` resolve
@@ -24,7 +27,7 @@ export default defineConfig({
     exclude: ['@ledrums/core'],
   },
   server: {
-    port: 5173,
+    port: WEB_PORT,
     proxy: {
       [WS_PATH]: {
         target: `ws://localhost:${WS_PORT}`,

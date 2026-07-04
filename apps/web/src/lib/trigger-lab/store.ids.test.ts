@@ -53,7 +53,7 @@ function persistLibrary(suffix: number, graph: TriggerGraph): { graphKey: string
   const authored = {
     graphs: { [graphKey]: graph },
     graphNames: { [graphKey]: 'Reloaded graph' },
-    songs: [{ id: songId, name: 'Song', sections: [{ id: sectionId, name: 'Section', graphs: [graphKey] }] }],
+    songs: [{ id: songId, name: 'Song', sections: [{ id: sectionId, name: 'Section', graphs: [graphKey], looks: {} }] }],
     buses: [],
     presets: [],
     effects: [],

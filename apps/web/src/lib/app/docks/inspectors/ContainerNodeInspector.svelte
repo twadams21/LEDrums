@@ -112,25 +112,31 @@
     padding: var(--space-3);
   }
   .lblrow {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: var(--space-2);
     font-size: var(--text-xs);
     color: var(--text-muted);
-    flex: 1;
     min-width: 0;
-    justify-content: space-between;
+  }
+  .lblrow > .k {
+    width: var(--field-label-col, 6.5rem);
+    flex: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lblrow > :global(.sel) {
+    flex: 1;
   }
   .k {
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
+    color: var(--text-muted);
+    font-weight: 500;
     font-size: var(--text-2xs);
   }
   .sld {
     display: flex;
     flex: 1;
-    max-width: 60%;
   }
   .bandlist {
     display: flex;

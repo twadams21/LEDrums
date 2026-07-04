@@ -7,8 +7,8 @@
      3. Section change — timed morph (rides the bus crossfade/voice-stealing).
 
    An effect (e.g. Swirl) has parameters + named presets; a placed clip is an
-   INSTANCE of effect+preset, single-instance by default with an opt-in Link so
-   edits sync to the shared preset. Params can be driven by envelopes over a
+   INSTANCE of effect+preset that owns its params — a preset is a snapshot you
+   Apply onto a clip or Save from it, never a live binding. Params can be driven by envelopes over a
    voice's life. Voices are abstract "lights" (a pattern + params + envelope).
    Delete this whole directory once the branches are decided.
 
@@ -21,8 +21,8 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type EffectCategory } from '@ledrums/core';
-import { cloneEnvelope, type EnvMap, type ParamSpec, type ParamValues } from './sim.envelopes';
+import { voice, type EffectCategory, type ResolvedModifier } from '@ledrums/core';
+import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
@@ -42,9 +42,19 @@ export {
   defaultEnvelope,
   cloneEnvelope,
   type AdsrShape,
+  type EaseFn,
+  type EaseDir,
+  type EaseSpec,
   defaultAdsr,
   adsrToPoints,
   sampleEnvelope,
+  migrateAdsr,
+  ease,
+  applyModulations,
+  envelopeToMapping,
+  type Mapping,
+  type ModSource,
+  type ModSampleCtx,
 } from './sim.envelopes';
 export * from './sim.trigger-source';
 export * from './sim.graph-compilation';
@@ -83,19 +93,18 @@ interface BlockBase {
   id: string;
 }
 
-/** Leaf: an instance of an effect+preset (single-instance unless `linked`). */
+/** Leaf: an instance of an effect+preset. Every play block owns its params; a preset is
+    a snapshot you Apply onto a block or Save from it, never a live binding. */
 export interface PlayBlock extends BlockBase {
   kind: 'play';
   mode: PlayMode;
   scope: Scope;
   effectId: string;
   presetId: string;
-  /** instance param values (used when not linked). */
+  /** node-local param values (a preset Apply forks a copy in here). */
   params: ParamValues;
   /** per-param envelope assignment. */
   env: EnvMap;
-  /** true → bound to the shared preset; edits sync everywhere it's used. */
-  linked: boolean;
 }
 export interface AllBlock extends BlockBase {
   kind: 'all';
@@ -201,15 +210,27 @@ export interface Voice {
   sourceDrumId: string | null;
   /** hit velocity 0..1 at spawn — drives a hosted generator's synthetic trigger. */
   velocity: number;
+  /** per-trigger RNG seed (item C) — mirrors the core Voice field; derived at spawn so
+      random-look generator effects differ per fire yet replay exactly. */
+  seed: number;
   /** hosted legacy-generator id (offline preview delegates to the core generator), or
       null for a pattern voice. Mirrors the core Voice field. */
   generatorId?: string | null;
   /** per-voice generator state (from the core EffectGenerator's createState) — built
       lazily by the offline renderer and persisted for the voice's life. */
   genState?: unknown;
+  /** resolved modifier chain (mirrors the core Voice field) — applied by the offline
+      renderer between render and blend. Resolved from graph topology at spawn (S29). */
+  modifiers?: ResolvedModifier[];
+  /** per-voice, per-modifier state (parallel to `modifiers`), built lazily by the chain
+      runner and reset per voice — mirrors `genState`. */
+  modState?: unknown[];
+  /** resolved modulation mappings onto this voice's effect params (doc 10) — mirrors the
+      core Voice field; applied by the offline renderer's param sweep. Populated from graph
+      topology at spawn (S34). */
+  modulations?: Mapping[];
   /** resolved param snapshot at spawn. */
   params: ParamValues;
-  env: EnvMap;
   attackMs: number;
   sustainMs: number;
   releaseMs: number;
@@ -250,7 +271,12 @@ type PlayAction = {
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
-  env: EnvMap;
+  /** Resolved modifier chain for this play node's `mod` input (S29 populates from graph
+      topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modifiers`. */
+  modifiers?: ResolvedModifier[];
+  /** Resolved modulation mappings for this play node's exposed params (S34 populates from
+      graph topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modulations`. */
+  modulations?: Mapping[];
   via: string;
   latchKey: string | null;
 };
@@ -269,7 +295,10 @@ export interface TriggerCtx {
   bpm: number;
 }
 
-let voiceSeq = 0;
+/** Per-trigger voice seed — the core VoicePool recipe (same base constant). */
+function deriveSeedFromCounter(counter: number): number {
+  return voice.deriveSeed(0x1ed5eed5, counter);
+}
 
 /** Resolve a param spec list to its default values. */
 export function defaultParams(effect: EffectDef): ParamValues {
@@ -289,6 +318,9 @@ export class Sim {
 
   buses: Bus[];
   voices: Voice[] = [];
+  /** Per-instance monotonic voice counter (ids + per-trigger seeds). Instance-scoped so two
+      Sims fed identical inputs replay identically — a shared module counter would not. */
+  private voiceSeq = 0;
   log: LogEntry[] = [];
 
   private effectsById = new Map<string, EffectDef>();
@@ -313,6 +345,22 @@ export class Sim {
     seen: Set<string>;
   }> = [];
   private pendingFireCounter = 0;
+
+  /** Seeded PRNG for random/chance evaluation — the core Mulberry32, mirroring the
+      engine's own stream (engine.ts PRNG_SEED pattern). NO ambient Math.random anywhere
+      in the eval/render-truth path (item 2): identical input sequences replay exactly. */
+  private prng = new voice.Prng(0x1a2b3c4d);
+
+  /** Live MIDI CC value table (S37) — the offline mirror of the core engine's `ccTable`.
+      Keyed by controller+channel → 0..1 (see core `ccKey`). Fed by {@link setCc} from the
+      store's WebMIDI forward so the preview tracks CC exactly like the connected engine; the
+      render sweep reads it per frame via `render.ts` `modCtxFor`. */
+  ccTable = new Map<string, number>();
+
+  /** Live OSC value table — the offline mirror of the core engine's `oscTable`. Keyed by OSC
+      address → 0..1. Fed by {@link setOsc} from the store's OSC input path so an OSC-bound
+      modulation source previews live; the render sweep reads it per frame via `render.ts`. */
+  oscTable = new Map<string, number>();
 
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
@@ -425,8 +473,14 @@ export class Sim {
     switch (node.kind) {
       case 'trigger':
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2));
-      case 'play':
+      case 'play': {
         if (!node.effectId) return [];
+        // Resolve this play node's `mod` input into a flat modifier chain (S29) — the SAME
+        // pure core resolver the engine uses, so the offline preview and real output agree.
+        const mods = voice.resolveModifierChain(graph, node);
+        // Resolve incoming `param:<key>` modulation edges into mappings (S34) — the SAME pure
+        // core resolver the engine uses, so offline preview and real output agree.
+        const modulations = voice.resolveNodeModulations(graph, node);
         return [
           {
             kind: 'play',
@@ -436,19 +490,29 @@ export class Sim {
             targetId: node.targetId,
             busId: node.busId,
             params: this.resolveNodeParams(node),
-            env: node.env,
+            modifiers: mods.length ? mods : undefined,
+            modulations: modulations.length ? modulations : undefined,
             via: label(this.modeWord(node.mode)),
             latchKey: null,
           },
         ];
+      }
+      case 'modifier':
+      case 'envelope':
+      case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
+      case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
+        // Inert in trigger-flow eval: neither a modifier nor a modulation-source node fires
+        // children. A modifier reaches a voice via the play node's resolved `mod` chain; an
+        // envelope via a target's resolved `param:<key>` modulations — not here.
+        return [];
       case 'all':
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2));
       case 'random': {
         if (kids.length === 0) return [];
-        let i = Math.floor(Math.random() * kids.length);
+        let i = this.prng.nextInt(kids.length);
         if (node.noRepeat && kids.length > 1) {
           const prev = this.lastPick.get(node.id);
-          while (i === prev) i = Math.floor(Math.random() * kids.length);
+          while (i === prev) i = this.prng.nextInt(kids.length);
         }
         this.lastPick.set(node.id, i);
         return this.evalNode(graph, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2);
@@ -470,7 +534,7 @@ export class Sim {
         return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
       }
       case 'chance': {
-        if (Math.random() > node.p) return [];
+        if (this.prng.next() > node.p) return [];
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2));
       }
       case 'toggle': {
@@ -507,7 +571,6 @@ export class Sim {
   }
 
   private resolveNodeParams(node: GraphNode): ParamValues {
-    if (node.linked) return this.preset(node.presetId)?.params ?? node.params;
     return node.params;
   }
   /** Count-based child index for the `section`/`beat` switch modes (the only modes that
@@ -546,9 +609,8 @@ export class Sim {
     );
   }
 
-  /** Resolve a Play block's live params (linked → shared preset, else instance). */
+  /** Resolve a Play block's live params — always the block's own node-local copy. */
   private resolveParams(block: PlayBlock): ParamValues {
-    if (block.linked) return this.preset(block.presetId)?.params ?? block.params;
     return block.params;
   }
 
@@ -564,7 +626,6 @@ export class Sim {
             scope: block.scope,
             busId: '',
             params: this.resolveParams(block),
-            env: block.env,
             via: label(this.modeWord(block.mode)),
             latchKey: null,
           },
@@ -574,10 +635,10 @@ export class Sim {
         return block.children.flatMap((c) => this.evaluate(c, ctx, label('All')));
       case 'random': {
         if (block.children.length === 0) return [];
-        let i = Math.floor(Math.random() * block.children.length);
+        let i = this.prng.nextInt(block.children.length);
         if (block.noRepeat && block.children.length > 1) {
           const prev = this.lastPick.get(block.id);
-          while (i === prev) i = Math.floor(Math.random() * block.children.length);
+          while (i === prev) i = this.prng.nextInt(block.children.length);
         }
         this.lastPick.set(block.id, i);
         return this.evaluate(block.children[i]!, ctx, label(`Random[${i + 1}/${block.children.length}]`));
@@ -594,7 +655,7 @@ export class Sim {
         return this.evaluate(block.children[i]!, ctx, label(`Switch:${block.on}[${i + 1}]`));
       }
       case 'chance': {
-        if (Math.random() > block.p) return [];
+        if (this.prng.next() > block.p) return [];
         return this.evaluate(block.child, ctx, label(`Chance ${Math.round(block.p * 100)}%`));
       }
       case 'toggle': {
@@ -633,8 +694,12 @@ export class Sim {
       }
     }
 
+    // per-trigger seed (item C) — same recipe as the core VoicePool, so random-look
+    // generator effects differ per fire yet replay exactly given the same inputs.
+    // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
+    const seed = deriveSeedFromCounter(this.voiceSeq + 1);
     const voice: Voice = {
-      id: `v${++voiceSeq}`,
+      id: `v${++this.voiceSeq}`,
       effectId: a.effectId,
       pattern: effect.pattern,
       busId: bus.id,
@@ -643,10 +708,13 @@ export class Sim {
       targetId: a.targetId,
       sourceDrumId,
       velocity,
+      seed,
       generatorId: effect.generatorId ?? null,
       genState: null,
+      modifiers: a.modifiers,
+      modState: undefined,
+      modulations: a.modulations,
       params: { ...a.params },
-      env: Object.fromEntries(Object.entries(a.env).map(([k, e]) => [k, cloneEnvelope(e)])),
       attackMs: effect.attackMs,
       sustainMs: effect.sustainMs,
       releaseMs: effect.releaseMs,
@@ -684,6 +752,21 @@ export class Sim {
   clearPendingFires(): void {
     this.pendingFires = [];
     this.pendingFireCounter = 0;
+  }
+
+  /** Update the CC table from a raw MIDI CC (value 0..127). Writes both the specific-channel
+      key and the omni slot, matching the core engine's `processEvent` — so an omni mapping
+      (channel filter off) always reads the latest value regardless of the sending channel. */
+  setCc(controller: number, value: number, channel: number | null): void {
+    const v = voice.ccValue01(value);
+    this.ccTable.set(voice.ccKey(controller, channel), v);
+    this.ccTable.set(voice.ccKey(controller, null), v);
+  }
+
+  /** Update the OSC table from a raw OSC value at `address` (clamped to 0..1), mirroring the
+      core engine's `processEvent` OSC-table write so an `osc` modulation source previews live. */
+  setOsc(address: string, value: number): void {
+    this.oscTable.set(address, voice.oscValue01(value));
   }
 
   // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------
@@ -769,7 +852,7 @@ export class Sim {
     const effect = this.effect(effectId);
     if (!effect) return null;
     const params = this.preset(`${effectId}:default`)?.params ?? defaultParams(effect);
-    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, env: {}, via, latchKey: null };
+    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, via, latchKey: null };
   }
 
   /** Recall a section as a timed morph — releases the old look loops and spawns

@@ -16,6 +16,14 @@ export interface DrumTransformPartial {
   pixelsPerHoop?: number;
   hoopSpacingMm?: number;
   diameterIn?: number;
+  /** Physically flip the drum (geometry-only reflection; DMX bytes unchanged). */
+  flip?: boolean;
+}
+
+/** Partial kit-global geometry change (S11): mirror is kit-wide, not per-drum. */
+export interface KitGlobalPartial {
+  /** Kit-wide mirror mode (geometry-only world reflection; DMX bytes unchanged). */
+  mirror?: 'none' | 'x' | 'y';
 }
 
 /** Partial output-settings change (controller node: protocol/host/rgb/fps/transport fields). */
@@ -37,6 +45,11 @@ export function applyDrumTransform(project: Project, drumId: string, partial: Dr
     ...project,
     kit: { ...project.kit, drums: project.kit.drums.map((d) => (d.id === drumId ? { ...d, ...partial } : d)) },
   };
+}
+
+/** Kit-global geometry change (S11 mirror): merge onto project.kit.global (immutable). */
+export function applyKitGlobal(project: Project, partial: KitGlobalPartial): Project {
+  return { ...project, kit: { ...project.kit, global: { ...project.kit.global, ...partial } } };
 }
 
 /** Replace the physical-output topology (a Patch rewire → PixLite patch order). Keeps the

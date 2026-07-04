@@ -29,13 +29,20 @@ function angularDist(a: number, b: number): number {
  * in opposite directions so they periodically meet. When two nodes pass within a
  * threshold angle they "collide", flashing a localized arc in `flashHue`. Stateful;
  * node phases are seeded from a hash of drumId+hoop for deterministic replay.
+ *
+ * Voice timebase (S26): node angles read `ctx.timeMs` (hit-relative via the bridge), so
+ * nodes start at their seeded phase on the hit and restart on retrigger. The flash decay
+ * accumulates on `ctx.dt` (real frame delta, unchanged by timebase) into per-voice
+ * `genState`, which is reset on (re)spawn → no flash state leaks across voices.
  */
 export const collisions: EffectGenerator<CollisionsState> = {
   id: 'collisions',
   name: 'Collisions',
   category: 'wash',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 180, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'flashHue', label: 'Flash Hue', type: 'number', default: 50, min: 0, max: 360, unit: '°' },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'nodesPerHoop', label: 'Nodes / Hoop', type: 'number', default: 2, min: 2, max: 8, step: 1 },
@@ -63,6 +70,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
   },
   render(ctx, params, fb, state) {
     const hue = pnum(params, 'hue', 180);
+    const sat = pnum(params, 'saturation', 1);
     const flashHue = pnum(params, 'flashHue', 50);
     const bri = pnum(params, 'brightness', 1);
     const nodesPerHoop = Math.max(2, Math.round(pnum(params, 'nodesPerHoop', 2)));
@@ -121,7 +129,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
           if (fd < flashWidth) {
             const v = clamp01(bri * hoop.flashLevel * (1 - fd / flashWidth));
             if (v >= 0.004) {
-              const rgb = hsvToRgb(flashHue, 1, v);
+              const rgb = hsvToRgb(flashHue, sat, v);
               fb.max(p, rgb.r, rgb.g, rgb.b, v);
             }
           }
@@ -135,7 +143,7 @@ export const collisions: EffectGenerator<CollisionsState> = {
         }
         if (best < 0.004) continue;
         const v = clamp01(bri * best * 0.7);
-        const rgb = hsvToRgb(hue, 1, v);
+        const rgb = hsvToRgb(hue, sat, v);
         fb.max(p, rgb.r, rgb.g, rgb.b, v);
       }
     }

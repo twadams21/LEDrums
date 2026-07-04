@@ -66,3 +66,22 @@ export function toByte(v: number, gamma = 1): number {
   const g = gamma === 1 ? x : Math.pow(x, gamma);
   return Math.round(g * 255);
 }
+
+/** Normalized RGB [0,1] → `#rrggbb` (lowercase). */
+export function rgbToHex(r: number, g: number, b: number): string {
+  const h = (x: number) => toByte(x).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+/** HSV (hue in degrees, s/v in [0,1]) → `#rrggbb`. Composes hsvToRgb + rgbToHex so the
+ *  swatch/picker round-trips against {@link hexToHsv} the same way the engine renders. */
+export function hsvToHex(h: number, s: number, v: number): string {
+  const { r, g, b } = hsvToRgb(h, s, v);
+  return rgbToHex(r, g, b);
+}
+
+/** `#rrggbb` (or `#rgb`) → HSV (hue in degrees, s/v in [0,1]). Inverse of {@link hsvToHex}. */
+export function hexToHsv(hex: string): Hsv {
+  const { r, g, b } = hexToRgb(hex);
+  return rgbToHsv(r, g, b);
+}

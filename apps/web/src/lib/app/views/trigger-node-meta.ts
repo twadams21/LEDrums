@@ -16,6 +16,11 @@ import Disc3 from '@lucide/svelte/icons/disc-3';
 import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
+import Blend from '@lucide/svelte/icons/blend';
+import Spline from '@lucide/svelte/icons/spline';
+import Waves from '@lucide/svelte/icons/waves'; // S36
+import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
+import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
 /** Icon per node kind (add palette, node card chip, kind selector). */
@@ -29,6 +34,10 @@ export const kindIcon: Record<NodeKind, Component> = {
   chance: Dices,
   toggle: Power,
   delay: Timer,
+  modifier: Blend,
+  envelope: Spline,
+  lfo: Waves, // S36
+  cc: SlidersHorizontal, // S37
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -49,6 +58,10 @@ export const tint: Record<NodeKind, string> = {
   chance: 'var(--role-mod)',
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
+  modifier: 'var(--role-mod)',
+  envelope: 'var(--role-modulation)',
+  lfo: 'var(--role-modulation)', // S36
+  cc: 'var(--role-modulation)', // S37
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -62,7 +75,17 @@ export const kindLabel: Record<NodeKind, string> = {
   chance: 'Chance',
   toggle: 'Toggle',
   delay: 'Delay',
+  modifier: 'Modifier',
+  envelope: 'Envelope',
+  lfo: 'LFO', // S36
+  cc: 'CC', // S37
 };
+
+/** Human name for a modifier id (the registry's display name), falling back to the id. */
+export function modifierName(id: string | undefined): string {
+  if (!id) return 'none';
+  return listModifiers().find((m) => m.id === id)?.name ?? id;
+}
 
 /** One-line summary for a container/modifier node's card sub line. Play + trigger
     nodes carry their own (effect/preset, drum·zone) and don't use this. */
@@ -82,6 +105,18 @@ export function kindSummary(node: GraphNode): string {
       return 'on · off';
     case 'delay':
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
+    case 'modifier':
+      return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
+    case 'envelope':
+      return 'modulation source';
+    case 'lfo': // S36
+      return node.lfo?.rateMode === 'beats'
+        ? `${node.lfo.waveform} · ${node.lfo.division}`
+        : `${node.lfo?.waveform ?? 'sine'} · ${node.lfo?.rateHz ?? 1}Hz`;
+    case 'cc':
+      return node.ccSource === 'osc'
+        ? `OSC ${node.oscAddress || '—'}`
+        : `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
     default:
       return '';
   }

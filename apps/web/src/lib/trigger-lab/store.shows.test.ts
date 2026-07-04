@@ -7,7 +7,14 @@ import type { WSClient } from '../ws/client';
    "Untitled Show" when storage is empty); switching FULLY swaps the authored runes so no
    field bleeds between shows, deleteShow never leaves zero shows, and the library survives a
    reload (driven by the real autosave, mirroring store.persistence.test.ts). The pure
-   library serialize/deserialize + migration contract is covered in persistence.test.ts. */
+   library serialize/deserialize + migration contract is covered in persistence.test.ts.
+
+   LIBRARY EXCEPTION (S41): "no cross-show bleed" governs a show's OWN authored content — a graph
+   or bpm edit in show A never reaches show B. The Song Library is the ONE deliberate shared
+   channel: a show REFERENCES a canonical library song (it holds a ref, not a copy), so editing
+   that library song is meant to reach every referencing show's resolved view. That shared, opt-in
+   propagation — and the detach that severs it — is exercised in store.song-library.test.ts, not
+   here; local authored content still never bleeds (asserted below). */
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -114,6 +121,31 @@ describe('openShow', () => {
     expect(store.graphNames[gB]).toBe('Graph B');
     expect(store.bpm).toBe(90);
     expect(store.graphs[gA]).toBeUndefined(); // A's edits do not bleed into B
+  });
+
+  it('local authored content never bleeds, but a library-song reference is the shared channel (S41)', () => {
+    const store = new TriggerLab(fakeClient);
+    const showA = store.activeShowId;
+    const gA = store.createGraph('Local A'); // A's OWN content — must never reach B
+
+    // A references a canonical library song; B references the SAME song
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+    store.newShow(); // show B
+    store.importSongReference(libId);
+
+    // B does NOT see A's local graph — own-content isolation still holds
+    expect(store.graphs[gA]).toBeUndefined();
+    // but B DOES resolve the shared library song (the deliberate exception)
+    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(true);
+
+    // editing the one library copy reaches BOTH shows' resolved views
+    store.renameLibrarySong(libId, 'Shared Edit');
+    expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Shared Edit');
+    store.openShow(showA);
+    expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Shared Edit');
+    expect(store.graphs[gA]).toBeTruthy(); // A still has its own local graph back
+    expect(store.activeShowId).toBe(showA);
   });
 
   it('is a no-op for an unknown id or the already-active show (no reset of the runes)', () => {

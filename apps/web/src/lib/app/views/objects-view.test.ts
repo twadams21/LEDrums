@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { OBJECT_TYPE_IDS, effectRows, graphRows, presetRows } from './objects-view';
+import {
+  OBJECT_TYPE_IDS,
+  effectRows,
+  graphRows,
+  librarySongRows,
+  presetRows,
+  showSongRows,
+} from './objects-view';
 import type { EffectDef, Preset } from '../../trigger-lab/sim';
+import type { Song } from '../setlist';
 
 /* Pure view-models behind the Objects view. The joins (effect→preset-count, preset→effect-name +
    usage), the sort order, and — most importantly — the preset delete-gating (`deletable`, which the
@@ -26,8 +34,8 @@ function pre(id: string, name: string, effectId: string): Preset {
 }
 
 describe('OBJECT_TYPE_IDS', () => {
-  it('is the rail order — Songs · Effects · Graphs · Presets', () => {
-    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'effects', 'graphs', 'presets']);
+  it('is the rail order — Songs · Song Library · Effects · Graphs · Presets', () => {
+    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'library', 'effects', 'graphs', 'presets']);
   });
 });
 
@@ -84,6 +92,62 @@ describe('presetRows', () => {
     expect(rows[0]!.isDefault).toBe(false); // effect 'ghost' no longer exists
     expect(rows[0]!.deletable).toBe(true);
     expect(rows[0]!.effectName).toBe('ghost'); // falls back to the id when the effect is missing
+  });
+});
+
+function song(id: string, name: string, sectionCount = 1): Song {
+  return {
+    id,
+    name,
+    sections: Array.from({ length: sectionCount }, (_, i) => ({
+      id: `${id}-s${i}`,
+      name: `Section ${i}`,
+      graphs: [],
+      looks: {},
+    })),
+  };
+}
+
+describe('showSongRows', () => {
+  it('marks local songs and library references by origin, in resolved order', () => {
+    const local = [song('song-1', 'Opener'), song('song-2', 'Bridge')];
+    // resolveSongRefs returns [...local, ...referenced]; the tail is a library ref.
+    const resolved = [...local, song('song-9', 'Anthem (lib)', 3)];
+    const rows = showSongRows(local, resolved);
+    expect(rows.map((r) => r.origin)).toEqual(['local', 'local', 'reference']);
+    expect(rows.map((r) => r.name)).toEqual(['Opener', 'Bridge', 'Anthem (lib)']);
+    expect(rows.find((r) => r.id === 'song-9')!.sectionCount).toBe(3);
+  });
+
+  it('is all-local when the show references nothing', () => {
+    const local = [song('song-1', 'Only')];
+    const rows = showSongRows(local, local);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.origin).toBe('local');
+  });
+});
+
+describe('librarySongRows', () => {
+  const list = [
+    { id: 'song-1', name: 'Shared', usedBy: [{ id: 'show-a', name: 'Show A' }, { id: 'show-b', name: 'Show B' }] },
+    { id: 'song-2', name: 'Orphan', usedBy: [] as { id: string; name: string }[] },
+  ];
+
+  it('carries the used-by count/names and gates delete like the store', () => {
+    const rows = librarySongRows(list, []);
+    const shared = rows.find((r) => r.id === 'song-1')!;
+    expect(shared.usedByCount).toBe(2);
+    expect(shared.usedByNames).toEqual(['Show A', 'Show B']);
+    expect(shared.deletable).toBe(false); // referenced → delete blocked
+    const orphan = rows.find((r) => r.id === 'song-2')!;
+    expect(orphan.usedByCount).toBe(0);
+    expect(orphan.deletable).toBe(true);
+  });
+
+  it('flags rows the active show already references (Import → Detach)', () => {
+    const rows = librarySongRows(list, ['song-1']);
+    expect(rows.find((r) => r.id === 'song-1')!.inThisShow).toBe(true);
+    expect(rows.find((r) => r.id === 'song-2')!.inThisShow).toBe(false);
   });
 });
 

@@ -1,25 +1,50 @@
 <script lang="ts">
-  /* Play-node editor — the effect header (thumb + name + swap), preset/link bar, play-mode
-     + layer segments, scope selector + target dropdown, and the per-param controls (slider /
-     toggle + optional envelope button). The shared node header (kind selector + remove) lives
-     in the parent Inspector. */
+  /* Play-node editor — the effect header (thumb + name + swap), preset bar (select + apply/save),
+     play-mode + layer segments, scope selector + target dropdown, and the per-param controls
+     (slider / toggle + optional envelope button). The shared node header (kind selector + remove)
+     lives in the parent Inspector. A preset is a snapshot (S39): selecting one forks its params
+     onto the node, Apply re-forks (resets local edits), Save captures the node's params as a new
+     preset. Params are always node-local — editing one clip never touches another. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
+  import type { Hsv } from '@ledrums/core';
   import { busIcon } from '../../views/trigger-node-meta';
-  import { MODE_OPTS, LINK_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
+  import { MODE_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Replace from '@lucide/svelte/icons/replace';
-  import Spline from '@lucide/svelte/icons/spline';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
+
+  /** Read a param as a string (enum choice / colour hex), falling back to `d`. */
+  const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
+  /** Enum value → a friendly Select label ("out" → "Out", "x" → "X"). */
+  const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+  /** Effects that carry hue + saturation + brightness numeric params get a colour swatch
+      that writes through to all three (the picker is UI-only — persistence stays numeric). */
+  const COLOR_KEYS = ['hue', 'saturation', 'brightness'] as const;
+  const hasColorSwatch = $derived(!!eff && COLOR_KEYS.every((k) => eff.params.some((p) => p.key === k)));
+  // A colour param is "modulated" when it's an exposed target with at least one incoming
+  // modulation wire (doc 10) — the legacy per-param envelope was folded into these mappings (S35).
+  const colorModulated = $derived(hasColorSwatch && COLOR_KEYS.some((k) => store.mappingsFor(node, k).length > 0));
+
+  function applyColor(hsv: Hsv): void {
+    store.setParam(node, 'hue', hsv.h);
+    store.setParam(node, 'saturation', hsv.s);
+    store.setParam(node, 'brightness', hsv.v);
+  }
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
@@ -57,14 +82,10 @@
       <span class="k">Preset</span>
       <Select value={node.presetId} options={presetOptions} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
     </label>
-    <SegmentedControl
-      value={node.linked ? 'linked' : 'instance'}
-      options={LINK_OPTS}
-      onChange={(v) => {
-        if ((v === 'linked') !== node.linked) store.toggleLink(node);
-      }}
-      ariaLabel="Instance or linked preset"
-    />
+    <div class="presetActions">
+      <IconButton icon={RotateCcw} label="Apply preset — reset params to it" variant="soft" size={14} onclick={() => store.applyPreset(node)} />
+      <IconButton icon={BookmarkPlus} label="Save params as a new preset" variant="soft" size={14} onclick={() => store.saveNodeAsPreset(node)} />
+    </div>
   </div>
 
   <div class="seg2">
@@ -96,8 +117,20 @@
   {/if}
 
   <div class="params">
+    {#if hasColorSwatch}
+      <div class="prow">
+        <span class="plabel">Colour</span>
+        <ColorSwatch
+          hue={num(live['hue'], 0)}
+          saturation={num(live['saturation'], 1)}
+          brightness={num(live['brightness'], 1)}
+          modulated={colorModulated}
+          onChange={applyColor}
+          ariaLabel="Effect colour"
+        />
+      </div>
+    {/if}
     {#each eff.params as spec (spec.key)}
-      {@const enveloped = store.isEnveloped(node, spec.key)}
       <div class="prow">
         <span class="plabel">{spec.label}</span>
         {#if spec.kind === 'number'}
@@ -106,28 +139,31 @@
             min={spec.min}
             max={spec.max}
             step={spec.step}
-            disabled={enveloped}
-            format={(v) => (enveloped ? 'swept' : fmt(spec, v))}
+            format={(v) => fmt(spec, v)}
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
           />
+        {:else if spec.kind === 'enum'}
+          <Select
+            value={str(live[spec.key], spec.options?.[0] ?? '')}
+            options={(spec.options ?? []).map((o) => ({ value: o, label: titleCase(o) }))}
+            onChange={(v) => store.setParam(node, spec.key, v)}
+            ariaLabel={spec.label}
+            class="paramsel"
+          />
         {:else}
+          <!-- bool → Toggle. `color` specs map (fixtures.mapParamSpec) but their inspector
+               control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
-        {/if}
-        {#if spec.envable}
-          <button class="envbtn" class:on={enveloped} onclick={() => store.openEnv(node, spec.key)} title="Assign envelope">
-            <Spline size={12} aria-hidden="true" />
-            {store.envKind(node, spec.key)}
-          </button>
-        {:else}
-          <span class="envspace"></span>
         {/if}
       </div>
     {/each}
   </div>
 
+  <ModulationParamsSection {store} {node} />
+
   <p class="foot">
-    {node.linked ? 'Linked — edits change the shared preset everywhere.' : 'Instance — edits stay on this clip.'} Applies on the next hit.
+    Edits stay on this clip. Save them as a preset to reuse, or Apply the preset to reset. Applies on the next hit.
   </p>
 {:else}
   <div class="kindbody">
@@ -182,11 +218,16 @@
     min-width: 0;
   }
   .k {
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
+    color: var(--text-muted);
+    font-weight: 500;
     font-size: var(--text-2xs);
     white-space: nowrap;
+  }
+  .presetActions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
   }
   .seg2 {
     display: flex;
@@ -232,7 +273,7 @@
   }
   .prow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) auto;
+    grid-template-columns: 84px minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
   }
@@ -243,26 +284,10 @@
   .prow :global(.boolcell) {
     justify-self: start;
   }
-  .envbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: 3px var(--space-2);
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    text-transform: capitalize;
-  }
-  .envbtn.on {
-    color: var(--ink);
-    border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-    background: var(--accent-soft);
-  }
-  .envspace {
-    width: 1px;
+  /* Enum Select fills the middle (value) column, like the scope-target select. */
+  .prow :global(.paramsel) {
+    width: 100%;
+    min-width: 0;
   }
   .foot {
     margin: 0;

@@ -39,17 +39,13 @@ export const SCOPE_OPTS: Array<{ value: 'kit' | 'drum' | 'hoop'; label: string }
   { value: 'hoop', label: 'Hoop' },
 ];
 
-// --- Play-node options (iconed play-mode + link + layer-poly) --------------------
+// --- Play-node options (iconed play-mode + layer-poly) ---------------------------
 // iconed play-mode group (Zap/Repeat/Hand) — same SegmentedControl, just an icon per
 // option (ported from the old node header).
 export const MODE_OPTS: Array<{ value: 'oneshot' | 'loop' | 'hold'; label: string; icon: Component }> = [
   { value: 'oneshot', label: 'One-shot', icon: Zap },
   { value: 'loop', label: 'Loop', icon: Repeat },
   { value: 'hold', label: 'Hold', icon: Hand },
-];
-export const LINK_OPTS = [
-  { value: 'instance', label: 'Instance' },
-  { value: 'linked', label: 'Linked' },
 ];
 export const POLY_OPTS = [
   { value: 'mono', label: 'mono' },
@@ -59,7 +55,9 @@ export const POLY_OPTS = [
 // --- Node-kind selector + switch / value routing options -------------------------
 // kind selector (every node but the trigger root) — the iconed variant built from the
 // shared `trigger-node-meta` maps.
-export const KIND_OPTS = NODE_KINDS.map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
+// Modulation sources (envelope/LFO/CC) are not conversion targets — they're added from the
+// modulation palette and edited in their own inspector, so they're excluded from the kind selector.
+export const KIND_OPTS = NODE_KINDS.filter((k) => !voice.isModSourceKind(k)).map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
 export const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
   { value: 'value', label: 'value' },
   { value: 'section', label: 'section' },
@@ -99,6 +97,17 @@ function divisionLabel(d: string): string {
 export const DIVISION_OPTS: Array<{ value: string; label: string }> = voice.DELAY_DIVISIONS.map(
   (d) => ({ value: d, label: divisionLabel(d) }),
 );
+
+// --- LFO node options (doc 10, S36) ----------------------------------------------
+/** Waveform picker options — value = canonical `LfoWaveform`, label = human title. */
+export const LFO_WAVEFORM_OPTS: Array<{ value: string; label: string }> = voice.LFO_WAVEFORMS.map(
+  (w) => ({ value: w, label: w === 'sample-hold' ? 'S&H' : w.charAt(0).toUpperCase() + w.slice(1) }),
+);
+/** LFO rate mode: free frequency (Hz) vs bpm-synced division — reuses `DIVISION_OPTS`. */
+export const LFO_RATE_MODE_OPTS: Array<{ value: 'hz' | 'beats'; label: string }> = [
+  { value: 'hz', label: 'Hz' },
+  { value: 'beats', label: 'Division' },
+];
 
 // --- Value formatters ------------------------------------------------------------
 /** A 0–1 ratio as a whole-percent label (e.g. 0.5 → "50%"). */

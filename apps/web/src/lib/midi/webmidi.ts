@@ -38,10 +38,31 @@ export type MidiEvent =
 
 export type MidiEventHandler = (ev: MidiEvent) => void;
 
+/** Live connection state of a MIDI port. A `disconnected` port is not removed from the
+    access map (WebMIDI keeps it and flips its state) so the settings list can show it
+    greyed rather than have it silently vanish on unplug. */
+export type MidiDeviceState = 'connected' | 'disconnected';
+
+/** A WebMIDI input port surfaced to the settings device list: identity + live state. */
+export interface MidiDeviceInfo {
+  /** Stable port id (WebMIDI `MIDIInput.id`); falls back to the access-map key when absent. */
+  id: string;
+  name: string;
+  state: MidiDeviceState;
+  /** Manufacturer string when the browser reports one. */
+  manufacturer?: string;
+}
+
+/** Notified with the full device snapshot on init and again on every hot-plug
+    (`statechange`), so the UI list refreshes without a reload. */
+export type MidiDevicesHandler = (devices: MidiDeviceInfo[]) => void;
+
 export interface MidiInitResult {
   available: boolean;
   /** Names of the enumerated MIDI inputs (empty when unavailable). */
   inputs: string[];
+  /** Enumerated input devices with live connection state (empty when unavailable). */
+  devices: MidiDeviceInfo[];
   /** Detail when unavailable (e.g. 'no-api' or an access error message). */
   reason?: string;
   /** Stop listening and release the access handle. */
@@ -53,7 +74,11 @@ interface MidiMessageEventLike {
   data: Uint8Array | number[] | null;
 }
 interface MidiInputLike {
+  id?: string;
   name?: string | null;
+  manufacturer?: string | null;
+  /** 'connected' | 'disconnected' per the WebMIDI spec. */
+  state?: string | null;
   onmidimessage: ((ev: MidiMessageEventLike) => void) | null;
 }
 interface MidiAccessLike {
@@ -67,6 +92,30 @@ interface MidiNavigatorLike {
 function inputValues(access: MidiAccessLike): MidiInputLike[] {
   const inputs = access.inputs as { values(): Iterable<MidiInputLike> };
   return [...inputs.values()];
+}
+
+/** [portId, input] pairs — the Map key is the WebMIDI port id; a plain `values()`-only
+    handle (test fakes) falls back to a positional index. */
+function inputEntries(access: MidiAccessLike): Array<[string, MidiInputLike]> {
+  const inputs = access.inputs;
+  if (inputs instanceof Map) return [...inputs.entries()];
+  return [...(inputs as { values(): Iterable<MidiInputLike> }).values()].map(
+    (input, idx) => [String(idx), input] as [string, MidiInputLike],
+  );
+}
+
+/** Snapshot the input ports as {@link MidiDeviceInfo}. Pure over the access handle so the
+    settings device list and its hot-plug refresh are unit-testable without real hardware. */
+export function enumerateDevices(access: MidiAccessLike): MidiDeviceInfo[] {
+  return inputEntries(access).map(([key, input]) => {
+    const device: MidiDeviceInfo = {
+      id: input.id ?? key,
+      name: input.name ?? 'MIDI Input',
+      state: input.state === 'disconnected' ? 'disconnected' : 'connected',
+    };
+    if (input.manufacturer) device.manufacturer = input.manufacturer;
+    return device;
+  });
 }
 
 /**
@@ -106,11 +155,12 @@ export function parseMidiMessage(data: Uint8Array | number[] | null): MidiEvent 
 export async function initMidi(
   handler: MidiEventHandler,
   nav?: MidiNavigatorLike,
+  onDevices?: MidiDevicesHandler,
 ): Promise<MidiInitResult> {
   const navigator_ =
     nav ?? (typeof navigator !== 'undefined' ? (navigator as unknown as MidiNavigatorLike) : undefined);
 
-  const noop: MidiInitResult = { available: false, inputs: [], reason: 'no-api', stop: () => {} };
+  const noop: MidiInitResult = { available: false, inputs: [], devices: [], reason: 'no-api', stop: () => {} };
 
   if (!navigator_ || typeof navigator_.requestMIDIAccess !== 'function') {
     return noop;
@@ -123,6 +173,7 @@ export async function initMidi(
     return {
       available: false,
       inputs: [],
+      devices: [],
       reason: err instanceof Error ? err.message : 'access-denied',
       stop: () => {},
     };
@@ -139,13 +190,19 @@ export async function initMidi(
       };
     }
   };
+  const emitDevices = (): void => onDevices?.(enumerateDevices(access));
   bind();
-  // Re-bind when devices are hot-plugged.
-  access.onstatechange = () => bind();
+  emitDevices();
+  // Re-bind and re-publish the list when devices are hot-plugged.
+  access.onstatechange = () => {
+    bind();
+    emitDevices();
+  };
 
   return {
     available: true,
     inputs: inputValues(access).map((i) => i.name ?? 'MIDI Input'),
+    devices: enumerateDevices(access),
     stop: () => {
       for (const input of bound) input.onmidimessage = null;
       access.onstatechange = null;

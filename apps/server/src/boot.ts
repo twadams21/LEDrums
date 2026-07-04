@@ -6,7 +6,6 @@ import type { Autosaver } from './autosave';
 import type { ClientRegistry } from './client-registry';
 import type { EngineHost } from './engine-host';
 import type { VoiceEngineHost } from './voice-engine-host';
-import type { TunnelManager } from './tunnel-manager';
 import type { MonitorDraft } from './monitor';
 
 /** Collaborators the boot/shutdown orchestration drives. */
@@ -17,6 +16,8 @@ export interface BootDeps {
   host: EngineHost;
   voiceHost: VoiceEngineHost | null;
   oscInput: OscInput;
+  /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
+  controllerMonitor?: { stop(): void };
   port: number;
   oscPort: number;
   voiceMode: boolean;
@@ -24,18 +25,19 @@ export interface BootDeps {
   statsTimer: ReturnType<typeof setInterval>;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
-  /** Outbound Cloudflare tunnel (S3), or null when disabled. Started after the socket binds;
-   * stopped on shutdown. */
-  tunnelManager: TunnelManager | null;
+  songLibraryAutosaver: Autosaver;
+  /** Share-tunnel lifecycle control (S3). Boot only starts/stops it; status reporting +
+   * broadcasting live inside the control's own wiring. */
+  tunnelControl: { start(): void; stop(): void };
+  /** Whether the env (`LEDRUMS_TUNNEL`) asked for the tunnel to come up at boot. The in-app
+   * Share control can start it later regardless. */
+  tunnelAtBoot: boolean;
   /** Active room PIN (S3), or null when the gate is open — printed in the boot banner. */
   pin: string | null;
   /** Per-run host-session token (S4 desktop). Printed in the boot banner (local stdout only) so the
    * desktop shell can read it and inject it into the host app window — never sent to remote clients.
    * Only banner-printed when the gate is active (the bypass is moot on an open gate). */
   hostToken: string | null;
-  /** Re-broadcast the `state` message — called once the tunnel URL resolves so already-connected
-   * host clients pick up the share URL. */
-  broadcastState: () => void;
   monitor?: (event: MonitorDraft) => void;
 }
 
@@ -49,44 +51,6 @@ export function lanUrls(p: number): string[] {
     }
   }
   return urls;
-}
-
-/**
- * Bring up the outbound tunnel (if configured) once the socket is bound, so cloudflared has a
- * live origin to forward to. Fire-and-forget: the public URL is logged + re-broadcast to
- * connected clients when it resolves; a startup failure or later crash is logged (reported, not
- * silent) and never wedges the server — local + LAN access keep working.
- */
-function startTunnel(deps: BootDeps): void {
-  const tunnel = deps.tunnelManager;
-  if (!tunnel) return;
-  tunnel.onUnexpectedExit = ({ code, signal }) => {
-    deps.monitor?.({
-      type: 'error',
-      direction: 'local',
-      source: 'server/tunnel',
-      destination: 'remote-access',
-      label: 'Tunnel exited unexpectedly',
-      detail: `code=${code ?? 'null'}; signal=${signal ?? 'null'}`,
-    });
-    console.error(`[tunnel] cloudflared exited unexpectedly (code ${code ?? 'null'}, signal ${signal ?? 'null'}) — remote access is down`);
-  };
-  tunnel.onError = (err) => {
-    deps.monitor?.({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel error', detail: err.message });
-    console.error('[tunnel] error:', err.message);
-  };
-  tunnel
-    .start()
-    .then((url) => {
-      deps.monitor?.({ type: 'system', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel ready', detail: url });
-      console.log(`  Tunnel: ${url}${deps.pin ? ` (PIN ${deps.pin})` : ''}`);
-      deps.broadcastState(); // host UIs connected before the URL resolved now learn it
-    })
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.monitor?.({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel failed to start', detail: message });
-      console.error(`[tunnel] failed to start (is cloudflared installed?): ${message}`);
-    });
 }
 
 /**
@@ -108,7 +72,10 @@ export function boot(deps: BootDeps): void {
     }
     // Local-only token for the desktop shell: it admits the host webview and native MIDI bridge.
     if (deps.hostToken) console.log(`  Host token: ${deps.hostToken}`);
-    startTunnel(deps);
+    // Env-requested boot tunnel — started only once the socket is bound, so cloudflared has a
+    // live origin to forward to. Fire-and-forget: the control reports readiness/failure itself
+    // and never wedges the server — local + LAN access keep working.
+    if (deps.tunnelAtBoot) deps.tunnelControl.start();
   });
 
   let shuttingDown = false;
@@ -116,7 +83,8 @@ export function boot(deps: BootDeps): void {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(deps.statsTimer);
-    deps.tunnelManager?.stop();
+    deps.controllerMonitor?.stop();
+    deps.tunnelControl.stop();
     if (deps.voiceHost) deps.voiceHost.stop();
     else deps.host.stop();
     deps.oscInput.close();
@@ -130,11 +98,12 @@ export function boot(deps: BootDeps): void {
     deps.wss.close();
     deps.server.close();
     // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
-    // never rejects (write errors are logged), but guard exit-on-error just in case. Both the
-    // project and the show library are flushed (independent slots).
+    // never rejects (write errors are logged), but guard exit-on-error just in case. The project
+    // and both libraries are flushed (independent slots).
     await Promise.all([
       deps.autosaver.flush().catch(() => {}),
       deps.showLibraryAutosaver.flush().catch(() => {}),
+      deps.songLibraryAutosaver.flush().catch(() => {}),
     ]);
     process.exit(0);
   }

@@ -110,11 +110,11 @@
     user-select: none;
   }
   .splitter.vertical {
-    width: 2px;
+    width: 1px;
     cursor: col-resize;
   }
   .splitter.horizontal {
-    height: 2px;
+    height: 1px;
     cursor: row-resize;
   }
   /* generous (≥40px) grab zone straddling the hairline, via a pseudo-element */
@@ -134,25 +134,43 @@
     top: -19px;
     bottom: -19px;
   }
-  /* the visible hairline */
+  /* The visible hairline. Rest: it hides in the flush module seam (border-faint).
+     Hover/focus/drag: it thickens (scale on the thin axis) and tints toward the
+     accent, so a gutter-less boundary still announces "I'm draggable". */
   .splitter::after {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: 2px;
+    border-radius: 1px;
     background: var(--border-faint);
-    transition: background-color var(--dur-120) ease, box-shadow var(--dur-120) ease;
-  }
-  .splitter:hover::after {
-    background: var(--border-strong);
+    transition: background-color var(--dur-120) ease, box-shadow var(--dur-120) ease,
+      transform var(--dur-120) var(--ease-control);
   }
   .splitter:focus-visible {
     outline: none;
   }
+  /* Hover: clear tint + a slight thickening of the thin axis (2px → ~3px). */
+  .splitter:hover::after {
+    background: var(--accent-dim);
+  }
+  .splitter.vertical:hover::after {
+    transform: scaleX(1.5);
+  }
+  .splitter.horizontal:hover::after {
+    transform: scaleY(1.5);
+  }
+  /* Active drag / keyboard focus: full accent, a touch thicker than hover (no glow/shadow). */
+  .splitter.vertical.dragging::after,
+  .splitter.vertical:focus-visible::after {
+    transform: scaleX(1.5);
+  }
+  .splitter.horizontal.dragging::after,
+  .splitter.horizontal:focus-visible::after {
+    transform: scaleY(1.5);
+  }
   .splitter.dragging::after,
   .splitter:focus-visible::after {
     background: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent);
   }
   @media (prefers-reduced-motion: reduce) {
     .splitter::after {

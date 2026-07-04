@@ -8,9 +8,11 @@ import {
   type DrumConfig,
   type InputMap,
   type KitConfig,
+  type KitGlobalConfig,
   type OutputConfig,
   type OutputSettings,
   type Project,
+  type ProjectPatch,
   type Transport,
   type TransportState,
 } from '@ledrums/core';
@@ -30,7 +32,9 @@ export type VoicePartialInput =
   | { kind: 'noteOff'; note: number }
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
-  | { kind: 'recallSection'; songId?: string; sectionId: string };
+  | { kind: 'fireGraph'; graphKey: string; velocity?: number }
+  | { kind: 'recallSection'; songId?: string; sectionId: string }
+  | { kind: 'cc'; controller: number; value: number; channel?: number }; // S37
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -157,12 +161,19 @@ export class VoiceEngineHost {
   setKitTransform(
     drumId: string,
     partial: Partial<
-      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn'>
+      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip'>
     >,
   ): void {
     const drum = this.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
+    this.reloadKit();
+  }
+
+  /** Edit a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry live. Kit-global,
+   * not per-drum — the whole model reflects. Rebuilds the model (not just dmxMap). */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+    Object.assign(this.kit.global, partial);
     this.reloadKit();
   }
 
@@ -172,6 +183,23 @@ export class VoiceEngineHost {
     this.kit.outputs = outputs;
     this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
+  }
+
+  /** Bulk-adopt a validated project PATCH (kit incl. outputs, input map, output settings) in ONE
+   * step — the live end of the S45 `setProject` message. Swaps the three device slices wholesale
+   * and rebuilds geometry ONCE ({@link reloadKit} → model + dmxMap + output re-apply), never a
+   * granular replay. Authored composition/setlist are untouched. The caller has already
+   * schema-validated `patch`, so this only touches state once acceptance is guaranteed. */
+  adoptPatch(patch: ProjectPatch): void {
+    this.project = {
+      ...this.project,
+      name: patch.name ?? this.project.name,
+      kit: patch.kit,
+      inputMap: patch.inputMap,
+      output: patch.output,
+    };
+    this.kit = this.project.kit;
+    this.reloadKit();
   }
 
   /** Replace the show the engine runs (authored voice-bus content). Retains it + reseeds
@@ -230,6 +258,15 @@ export class VoiceEngineHost {
           velocity: partial.velocity ?? 1,
           timeMs,
         };
+      case 'fireGraph':
+        // Authoritative graph intent (keyboard performance): the engine plays this exact
+        // graph key — no zone-map, no source re-resolution. Velocity defaults to full.
+        return {
+          kind: 'fireGraph',
+          graphKey: partial.graphKey,
+          velocity: partial.velocity ?? 1,
+          timeMs,
+        };
       case 'noteOn': {
         // Zone-map first; a miss forwards the raw note (no pad) for direct binding.
         const pad = zoneForNote(this.project.inputMap, partial.note);
@@ -255,6 +292,16 @@ export class VoiceEngineHost {
           timeMs,
         };
       }
+      case 'cc':
+        // S37: raw MIDI CC → the engine's CC value table. Value stays raw 0..127 (the engine
+        // normalizes to 0..1); channel is forwarded for the per-node channel filter.
+        return {
+          kind: 'cc',
+          controller: partial.controller,
+          value: partial.value,
+          ...(partial.channel !== undefined ? { channel: partial.channel } : {}),
+          timeMs,
+        };
     }
   }
 
@@ -446,6 +493,17 @@ export class VoiceEngineHost {
       return;
     }
 
+    if (d.kind === 'input-unrouted') {
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'Unrouted input',
+        detail: `input=${describeVoiceInput(d.input)}; matched no zone or graph`,
+      });
+      return;
+    }
+
     this.monitorSink?.({
       type: 'graph',
       direction: 'local',
@@ -474,6 +532,7 @@ function describeVoiceInput(input: voice.VoiceInputDescriptor): string {
   if (input.value !== undefined) parts.push(`value=${input.value}`);
   if (input.songId !== undefined) parts.push(`song=${input.songId}`);
   if (input.sectionId !== undefined) parts.push(`section=${input.sectionId}`);
+  if (input.graphKey !== undefined) parts.push(`graph=${input.graphKey}`);
   return parts.join('; ');
 }
 

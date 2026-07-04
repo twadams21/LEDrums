@@ -8,11 +8,15 @@
    tried to drop on it). Selection is also kept out of here: a selected node rings, but
    its wires do not light up. Only hover lights wires. */
 
-/** Minimal shape this helper needs from an xyflow edge. */
+/** Minimal shape this helper needs from an xyflow edge. `data.mod` marks a modifier-chain
+    wire and `data.modulation` a modulation (source→param) wire — each styled distinctly from
+    trigger-flow wires; both are intrinsic to the edge and must survive the transient
+    hover-highlight decoration. */
 interface FlowEdgeLike {
   source: string;
   target: string;
   class?: unknown;
+  data?: { mod?: boolean; modulation?: boolean };
 }
 
 export class GraphHover {
@@ -25,10 +29,21 @@ export class GraphHover {
     return !!h && (edge.source === h || edge.target === h);
   }
 
-  /** Return a new edges array with `edge-hot` on every wire connected to the hovered
-      node (and cleared elsewhere), preserving all other edge fields (incl. selection). */
+  /** Return a new edges array with `edge-hot` on every wire connected to the hovered node
+      (and cleared elsewhere) COMBINED with the intrinsic `edge-mod` class for modifier wires,
+      preserving all other edge fields (incl. selection). Order puts `edge-mod` first so the
+      hover accent (`edge-hot`, later in the CSS cascade) still wins its stroke on a mod wire. */
   decorate<E extends FlowEdgeLike>(edges: E[]): E[] {
-    return edges.map((e) => ({ ...e, class: this.isHot(e) ? 'edge-hot' : undefined }));
+    return edges.map((e) => {
+      const cls = [
+        e.data?.mod ? 'edge-mod' : null,
+        e.data?.modulation ? 'edge-modulation' : null,
+        this.isHot(e) ? 'edge-hot' : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      return { ...e, class: cls || undefined };
+    });
   }
 
   enter(id: string): void {

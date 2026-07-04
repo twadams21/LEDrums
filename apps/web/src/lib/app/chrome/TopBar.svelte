@@ -12,8 +12,10 @@
   import ShowBrowser from './ShowBrowser.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
   import AppSettingsDialog from './AppSettingsDialog.svelte';
+  import UpdateBadge from './UpdateBadge.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
+  import Logo from '../../ui/Logo.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
   import Settings from '@lucide/svelte/icons/settings';
 
@@ -35,7 +37,7 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="mark" aria-hidden="true"></span>
+    <Logo size={20} />
     <span class="word">LEDrums</span>
   </div>
 
@@ -80,6 +82,7 @@
       </div>
     {/if}
     <ShareInfo {store} />
+    <UpdateBadge onOpen={() => (settingsOpen = true)} />
     <IconButton icon={Settings} label="Settings" size={15} onclick={() => (settingsOpen = true)} />
     <StatusBar {store} />
     <OutputPill {store} />
@@ -104,21 +107,6 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    flex: none;
-  }
-  .mark {
-    width: 20px;
-    height: 20px;
-    border-radius: var(--radius-2);
-    background: conic-gradient(
-      from 210deg,
-      var(--role-input),
-      var(--role-content),
-      var(--role-effect),
-      var(--role-layer),
-      var(--role-output),
-      var(--role-input)
-    );
     flex: none;
   }
   .word {

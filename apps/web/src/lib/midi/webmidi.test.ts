@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { initMidi, parseMidiMessage } from './webmidi';
+import { enumerateDevices, initMidi, parseMidiMessage, type MidiDeviceInfo } from './webmidi';
 
 class FakeInput {
   onmidimessage: ((ev: { data: Uint8Array }) => void) | null = null;
+  state: 'connected' | 'disconnected' = 'connected';
+  manufacturer?: string;
   constructor(public name: string) {}
   emit(data: number[]): void {
     this.onmidimessage?.({ data: new Uint8Array(data) });
@@ -12,7 +14,7 @@ class FakeInput {
 function fakeAccess(inputs: FakeInput[]) {
   const map = new Map<string, FakeInput>();
   inputs.forEach((i, idx) => map.set(String(idx), i));
-  return { inputs: map, onstatechange: null as unknown };
+  return { inputs: map, onstatechange: null as ((ev: unknown) => void) | null };
 }
 
 describe('parseMidiMessage', () => {
@@ -91,5 +93,61 @@ describe('initMidi', () => {
     result.stop();
     input.emit([0x90, 36, 120]);
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('exposes enumerated devices and fires the device callback on init', async () => {
+    const a = new FakeInput('Pad A');
+    const b = new FakeInput('Pad B');
+    b.manufacturer = 'Acme';
+    const nav = { requestMIDIAccess: vi.fn().mockResolvedValue(fakeAccess([a, b])) };
+    const seen: MidiDeviceInfo[][] = [];
+
+    const result = await initMidi(vi.fn(), nav, (d) => seen.push(d));
+
+    expect(result.devices).toEqual([
+      { id: '0', name: 'Pad A', state: 'connected' },
+      { id: '1', name: 'Pad B', state: 'connected', manufacturer: 'Acme' },
+    ]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual(result.devices);
+  });
+
+  it('re-publishes the device list on hot-plug and unplug (statechange)', async () => {
+    const a = new FakeInput('Pad A');
+    const access = fakeAccess([a]);
+    const nav = { requestMIDIAccess: vi.fn().mockResolvedValue(access) };
+    const seen: MidiDeviceInfo[][] = [];
+    await initMidi(vi.fn(), nav, (d) => seen.push(d));
+
+    // plug in a second device, then fire the WebMIDI statechange
+    access.inputs.set('1', new FakeInput('Pad B'));
+    access.onstatechange?.({});
+    expect(seen[1]).toEqual([
+      { id: '0', name: 'Pad A', state: 'connected' },
+      { id: '1', name: 'Pad B', state: 'connected' },
+    ]);
+
+    // unplug the first — WebMIDI flips its state to 'disconnected' but keeps the port
+    a.state = 'disconnected';
+    access.onstatechange?.({});
+    expect(seen[2]).toEqual([
+      { id: '0', name: 'Pad A', state: 'disconnected' },
+      { id: '1', name: 'Pad B', state: 'connected' },
+    ]);
+  });
+
+  it('reports an empty device list when WebMIDI is unavailable', async () => {
+    const result = await initMidi(vi.fn(), {} as never);
+    expect(result.available).toBe(false);
+    expect(result.devices).toEqual([]);
+  });
+});
+
+describe('enumerateDevices', () => {
+  it('falls back to a placeholder name and the map key as id', () => {
+    const map = new Map<string, { onmidimessage: null }>([['port-7', { onmidimessage: null }]]);
+    expect(enumerateDevices({ inputs: map })).toEqual([
+      { id: 'port-7', name: 'MIDI Input', state: 'connected' },
+    ]);
   });
 });

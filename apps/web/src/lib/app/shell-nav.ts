@@ -1,15 +1,15 @@
-/* Shell navigation model — the unified app's view-router + dock + Inspector
-   selection, as a PURE reducer (no runes, no DOM) so the invariants are unit-
-   testable in the node test env. `shell-store.svelte.ts` is a thin rune wrapper
-   over this. Mirrors the show-builder split: pure core, reactive shell.
+/* Shell navigation model — the unified app's view-router + inspector selection,
+   as a PURE reducer (no runes, no DOM) so the invariants are unit-testable in
+   the node test env. `shell-store.svelte.ts` is a thin rune wrapper over this.
+   Mirrors the show-builder split: pure core, reactive shell.
 
    The app is mode-less: there is no Perform/Author mode — it is simply whichever
-   `view` is selected (Perform being one of them). The invariants live here once
-   (locality): switching views clears the Inspector selection, and selecting
-   anything surfaces the Inspector tab. */
+   `view` is selected (Perform being one of them). The invariant lives here once
+   (locality): switching views clears the selection. Selections open in place —
+   node/patch in the graph views' Node Editor drawer, bus in the Buses panel,
+   section in the Sections view — so there is no global dock tab to route. */
 
 export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'patch' | 'monitor';
-export type DockTab = 'inspector' | 'monitor';
 
 /** A node id in the Patch Graph (device routing). These are stage-prefixed strings
     minted by `patch-topology.ts` — `input` · `trigger:<drumId>` · `zone:<drumId>:<zone>`
@@ -17,8 +17,8 @@ export type DockTab = 'inspector' | 'monitor';
     — so the graph can name any node without a closed enum. */
 export type PatchNodeId = string;
 
-/** What is loaded into the right-dock Inspector: a node in the active trigger
-    graph, a Patch-graph device node, a layer/bus, or a setlist section (rename +
+/** What is loaded into an inspector surface: a node in the active trigger graph,
+    a Patch-graph device node, a layer/bus, or a setlist section (rename +
     read-only transport-recall info). `null` = nothing selected. */
 export type Selection =
   | { kind: 'node'; nodeId: string }
@@ -28,7 +28,6 @@ export type Selection =
 
 export interface ShellNav {
   view: View;
-  dock: DockTab;
   selection: Selection | null;
 }
 
@@ -37,7 +36,6 @@ export const VIEWS: readonly View[] = ['perform', 'objects', 'sections', 'trigge
 export function initialNav(init: Partial<Pick<ShellNav, 'view'>> = {}): ShellNav {
   return {
     view: init.view ?? 'trigger',
-    dock: 'inspector',
     selection: null,
   };
 }
@@ -49,14 +47,9 @@ export function setView(nav: ShellNav, view: View): ShellNav {
   return { ...nav, view, selection: null };
 }
 
-export function setDock(nav: ShellNav, dock: DockTab): ShellNav {
-  if (dock === nav.dock) return nav;
-  return { ...nav, dock };
-}
-
-/** Load something into the Inspector and surface it (forces the Inspector tab). */
+/** Load something into its inspector surface. */
 export function select(nav: ShellNav, selection: Selection): ShellNav {
-  return { ...nav, selection, dock: 'inspector' };
+  return { ...nav, selection };
 }
 
 export function clearSelection(nav: ShellNav): ShellNav {

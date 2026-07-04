@@ -22,15 +22,17 @@ export const pixelAccum: EffectGenerator<PixelAccumState> = {
   category: 'trigger',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'addPerHit', label: 'Pixels / Hit', type: 'number', default: 6, min: 1, max: 64, step: 1 },
     { key: 'decayMs', label: 'Decay', type: 'number', default: 1200, min: 50, max: 8000, unit: 'ms' },
   ],
-  createState(model: PixelModel): PixelAccumState {
-    return { intensity: new Float32Array(model.pixelCount), rng: mulberry32(SEED), lastSeq: 0 };
+  createState(model: PixelModel, seed?: number): PixelAccumState {
+    return { intensity: new Float32Array(model.pixelCount), rng: mulberry32(seed ?? SEED), lastSeq: 0 };
   },
   render(ctx, params, fb, state) {
     const hue = pnum(params, 'hue', 200);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const addPerHit = Math.max(1, Math.round(pnum(params, 'addPerHit', 6)));
     const decay = Math.max(1, pnum(params, 'decayMs', 1200));
@@ -53,7 +55,7 @@ export const pixelAccum: EffectGenerator<PixelAccumState> = {
     for (let i = 0; i < n; i++) {
       const v = state.intensity[i]!;
       if (v < 0.004) continue;
-      const rgb = hsvToRgb(hue, 1, bri * v);
+      const rgb = hsvToRgb(hue, sat, bri * v);
       fb.max(i, rgb.r, rgb.g, rgb.b, v);
     }
   },

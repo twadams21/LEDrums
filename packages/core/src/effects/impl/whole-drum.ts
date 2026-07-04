@@ -4,18 +4,25 @@ import { pnum, type EffectGenerator } from '../types';
 /**
  * Whole Drum: a hit lights every pixel of the struck drum, fading over decayMs
  * (design "all pixels of the DRUM display the same content").
+ *
+ * Voice timebase (S26): already intrinsically hit-relative — intensity is a pure function
+ * of `trig.ageMs`. The `timebase:'voice'` flag is a byte-parity declaration so the thumbnail
+ * renderer (S27) drives it with a looping age instead of a frozen age-0 frame.
  */
 export const wholeDrum: EffectGenerator = {
   id: 'whole-drum',
   name: 'Whole Drum',
   category: 'trigger',
+  timebase: 'voice',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'decayMs', label: 'Decay', type: 'number', default: 220, min: 10, max: 4000, unit: 'ms' },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 0);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const decay = Math.max(1, pnum(params, 'decayMs', 220));
 
@@ -24,7 +31,7 @@ export const wholeDrum: EffectGenerator = {
       if (intensity < 0.004) continue;
       const drum = ctx.model.drumById.get(trig.drumId);
       if (!drum) continue;
-      const rgb = hsvToRgb(hue, 1, bri * intensity);
+      const rgb = hsvToRgb(hue, sat, bri * intensity);
       for (let id = drum.pixelStart; id < drum.pixelStart + drum.pixelCount; id++) {
         fb.max(id, rgb.r, rgb.g, rgb.b, intensity);
       }

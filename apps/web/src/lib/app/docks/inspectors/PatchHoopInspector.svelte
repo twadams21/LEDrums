@@ -36,7 +36,7 @@
 </script>
 
 {#if drum}
-  <Field label="Pixels per hoop" hint="literal count · applies to every hoop on this drum">
+  <Field layout="row" label="Pixels per hoop" hint="literal count · applies to every hoop on this drum">
     <CommitInput
       type="number"
       min={1}

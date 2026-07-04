@@ -191,20 +191,26 @@ describe('hit resolution = active section graphs whose drum source matches the p
 });
 
 describe('keyboard graph firing', () => {
-  it('forwards MIDI-sourced section graphs to the server so connected preview frames update', () => {
+  it('connected: sends the fireGraph intent for a MIDI-sourced section graph — not a synthetic {t:midi} (S13)', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
     const key = store.createGraph('Midi graph');
     store.setTriggerSource(key, { kind: 'midi', note: 36 });
     store.addGraphToSection(store.activeSectionId!, key);
+    store.link = 'open';
 
     const index = store.activeSection!.graphs.indexOf(key);
     store.fireSectionGraph(index);
 
-    expect(sent).toContainEqual({ t: 'midi', note: 36, velocity: Math.round(store.velocity * 127), on: true });
+    // S13: the server fires the EXACT graph by key. We no longer forward a synthetic {t:'midi'}
+    // (which the server re-resolved AND echoed back → the old keyboard triple-fire); the sim
+    // stays silent locally.
+    expect(sent).toContainEqual({ t: 'fireGraph', graphKey: key, velocity: store.velocity });
+    expect(sent.some((m) => m.t === 'midi')).toBe(false);
+    expect(store.localPreviewActive).toBe(false);
   });
 
-  it('keeps the connected server preview authoritative after a keyboard graph fire', () => {
+  it('a connected keyboard graph fire stays server-authoritative and never previews the local sim (S12)', () => {
     const store = new TriggerLab(fakeClient);
     const key = store.createGraph('Midi graph');
     store.setTriggerSource(key, { kind: 'midi', note: 36 });
@@ -216,7 +222,9 @@ describe('keyboard graph firing', () => {
     expect(store.useServer).toBe(true);
     store.fireSectionGraph(store.activeSection!.graphs.indexOf(key));
 
-    expect(store.localPreviewActive).toBe(true);
+    // S12 authority principle: connected, the sim never fires — no local preview flash, and the
+    // visualiser keeps rendering the server's frames.
+    expect(store.localPreviewActive).toBe(false);
     expect(store.useServer).toBe(true);
     expect(store.previewFrame).toBe(store.serverFrame);
   });

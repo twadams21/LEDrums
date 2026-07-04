@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { ParamSpec } from '../../trigger-lab/sim';
 import {
   KIND_OPTS,
-  LINK_OPTS,
   MIDI_OPTS,
   MODE_OPTS,
   POLY_OPTS,
@@ -19,6 +18,7 @@ import {
 } from './node-options';
 import { NODE_KINDS, type BlockKind } from '../../trigger-lab/sim';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
+import { voice } from '@ledrums/core';
 
 /* The shared node form-options + formatters, tested as pure logic (no DOM) — the same
    way the rest of the suite tests pure helpers. The arrays must keep the exact options,
@@ -98,11 +98,7 @@ describe('static option arrays — values / order / labels', () => {
     expect(RGB_OPTS.every((o) => o.value === o.label)).toBe(true);
   });
 
-  it('LINK_OPTS / POLY_OPTS / MIDI_OPTS', () => {
-    expect(LINK_OPTS).toEqual([
-      { value: 'instance', label: 'Instance' },
-      { value: 'linked', label: 'Linked' },
-    ]);
+  it('POLY_OPTS / MIDI_OPTS', () => {
     expect(POLY_OPTS).toEqual([
       { value: 'mono', label: 'mono' },
       { value: 'poly', label: 'poly' },
@@ -144,15 +140,19 @@ describe('iconed option arrays', () => {
     expect(MODE_OPTS.every((o) => typeof o.icon !== 'undefined')).toBe(true);
   });
 
-  it('KIND_OPTS — one entry per BlockKind, in NODE_KINDS order, mirroring the meta maps', () => {
-    expect(KIND_OPTS.map((o) => o.value)).toEqual(NODE_KINDS);
+  it('KIND_OPTS — every conversion-target kind (excludes modulation sources), meta-mirrored', () => {
+    // Modulation sources (envelope/LFO/CC) are added from their own palette + edited in their
+    // own inspector, so they are NOT conversion targets in the kind selector (doc 10, S34).
+    const expected = NODE_KINDS.filter((k) => !voice.isModSourceKind(k));
+    expect(KIND_OPTS.map((o) => o.value)).toEqual(expected);
     for (const opt of KIND_OPTS) {
       const k = opt.value as BlockKind;
       expect(opt.label).toBe(kindLabel[k]);
       expect(opt.icon).toBe(kindIcon[k]);
       expect(opt.iconColor).toBe(tint[k]);
     }
-    // never includes the trigger root (it is not a selectable kind)
+    // never includes the trigger root nor a modulation source (not selectable kinds)
     expect(KIND_OPTS.some((o) => o.value === ('trigger' as BlockKind))).toBe(false);
+    expect(KIND_OPTS.some((o) => voice.isModSourceKind(o.value))).toBe(false);
   });
 });

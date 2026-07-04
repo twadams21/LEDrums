@@ -5,44 +5,56 @@
 
 import {
   Framebuffer,
+  applyModifierChain,
   defaultParams as genDefaultParams,
   tryGetEffect,
   type RenderContext,
+  type ResolvedModifier,
   type ResolvedParams,
   type Trigger,
 } from '@ledrums/core';
-import { sampleEnvelope, type ParamValues, type Pattern, type Sim, type Voice } from './sim';
+import {
+  applyModulations,
+  type ModSampleCtx,
+  type ParamValues,
+  type Pattern,
+  type Sim,
+  type Voice,
+} from './sim';
 import type { LabModel, PixelAttrs } from './kit';
 import { hueToRgb } from './kit';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
-const num = (v: number | boolean | undefined, d: number) => (typeof v === 'number' ? v : d);
+const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
 function hash(n: number): number {
   const s = Math.sin(n) * 43758.5453;
   return s - Math.floor(s);
 }
 
-/** Resolve a voice's params for this frame: apply envelopes + tempo sync. */
+/** Resolve a voice's params for this frame: apply modulation mappings + tempo sync. */
 function effectiveParams(v: Voice, sim: Sim): ParamValues {
   const out: ParamValues = { ...v.params };
   const eff = sim.effect(v.effectId);
-  const phase = sim.voicePhase(v);
-  for (const key of Object.keys(v.env)) {
-    const env = v.env[key];
-    if (!env || env.kind === 'none') continue;
-    const spec = eff?.params.find((s) => s.key === key);
-    if (!spec || spec.kind !== 'number') continue;
-    const lo = spec.min ?? 0;
-    const hi = spec.max ?? 1;
-    const base = num(v.params[key], lo);
-    const target = lo + sampleEnvelope(env, phase) * (hi - lo);
-    out[key] = base + (target - base) * env.amount; // amount = sweep depth
+  // Modulation mappings (doc 10) — mirror of the core compositor sweep: summed + clamped
+  // contributions over the spawn-snapshot base. Envelope sources sample the voice life phase
+  // (restart per hit). The legacy per-param env sweep folded into these mappings in S35.
+  const mods = v.modulations;
+  if (mods && mods.length && eff) {
+    const phase = sim.voicePhase(v);
+    applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (sim.bpm / 120);
   return out;
+}
+
+/** Per-frame modulation-sample context for a voice — mirror of the core compositor's
+    `modCtxFor`: life phase (envelope restart per hit) + absolute clock/tempo for continuous
+    sources (S36/S37). Shared by the play-param sweep and the modifier chain. */
+function modCtxFor(v: Voice, sim: Sim): ModSampleCtx {
+  return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable };
 }
 
 /** Returns [intensity 0..1, hueOffset deg] for a pixel given pattern + params. */
@@ -150,6 +162,16 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
     const hue = num(p.hue, 0);
     const amp = level * num(p.brightness, 1);
     if (amp <= 0.003) continue;
+
+    // Modified pattern voice: render into a float scratch (0..1, like core), apply the
+    // modifier chain in the same 0..1 space the core compositor uses, then blit to buf.
+    // Unmodified voices keep the direct 0..255 fast path below (mirrors core's gating).
+    const mods = v.modifiers;
+    if (mods && mods.length) {
+      renderModifiedPatternVoice(buf, v, p, hue, amp, sim, lab, start, end, attrs, mods);
+      continue;
+    }
+
     for (let i = start; i < end; i++) {
       const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
       const inten = si * amp;
@@ -160,6 +182,56 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
       buf[j + 1] = Math.min(255, buf[j + 1]! + g);
       buf[j + 2] = Math.min(255, buf[j + 2]! + b);
     }
+  }
+}
+
+// ---- modifier chain (media effects) — offline preview mirror ----------------
+// Mirrors the core compositor's modifier hook: a MODIFIED voice's rendered pixels are
+// transformed by its resolved chain (in 0..1 float space, shared core `applyModifierChain`)
+// between render and blend. The generator path applies it on `genScratch`; the pattern path
+// routes through this dedicated float scratch. Modifiers inherit the host voice's local
+// clock (age) — never re-derived here.
+
+let patScratch: Framebuffer | null = null;
+
+function renderModifiedPatternVoice(
+  buf: Uint8Array,
+  v: Voice,
+  p: ParamValues,
+  hue: number,
+  amp: number,
+  sim: Sim,
+  lab: LabModel,
+  start: number,
+  end: number,
+  attrs: PixelAttrs,
+  mods: readonly ResolvedModifier[],
+): void {
+  const pm = lab.pm;
+  const t = sim.timeMs / 1000;
+  if (!patScratch || patScratch.pixelCount !== pm.pixelCount) patScratch = new Framebuffer(pm.pixelCount);
+  patScratch.clear();
+  for (let i = start; i < end; i++) {
+    const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
+    const inten = si * amp;
+    if (inten <= 0.004) continue;
+    const [r, g, b] = hueToRgb(hue + hueOff, inten); // 0..255
+    patScratch.add(i, r / 255, g / 255, b / 255, inten);
+  }
+  if (!v.modState) v.modState = [];
+  const age = sim.timeMs - v.bornAtMs;
+  applyModifierChain(mods, v.modState, patScratch, { start, end }, pm, age > 0 ? age : 0, sim.lastDt, modCtxFor(v, sim));
+  const src = patScratch.rgba;
+  for (let i = start; i < end; i++) {
+    const j4 = i * 4;
+    const r = src[j4]!;
+    const g = src[j4 + 1]!;
+    const b = src[j4 + 2]!;
+    if (r <= 0 && g <= 0 && b <= 0) continue;
+    const j3 = i * 3;
+    buf[j3] = Math.min(255, buf[j3]! + Math.round(r * 255));
+    buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * 255));
+    buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * 255));
   }
 }
 
@@ -187,7 +259,8 @@ function renderGeneratorVoice(
   if (!gen) return;
   const pm = lab.pm;
   if (!genScratch || genScratch.pixelCount !== pm.pixelCount) genScratch = new Framebuffer(pm.pixelCount);
-  if (v.genState == null && gen.createState) v.genState = gen.createState(pm);
+  // per-voice state seeded from the trigger (item C) — mirrors the core generator bridge
+  if (v.genState == null && gen.createState) v.genState = gen.createState(pm, v.seed);
 
   // Resolved params: generator defaults (incl. enum/colour) overlaid with the voice's
   // live numeric/bool params (envelopes applied via effectiveParams).
@@ -213,16 +286,24 @@ function renderGeneratorVoice(
   const age = sim.timeMs - v.bornAtMs;
   genTrigger.ageMs = age > 0 ? age : 0;
 
-  const beatInBar = sim.beat - Math.floor(sim.beat / sim.beatsPerBar) * sim.beatsPerBar;
+  // Timebase parity with the core generator bridge (generator-bridge.ts): a 'voice'
+  // generator animates on a hit-relative clock (ctx.timeMs = age, transport.beat = age×bpm)
+  // so it restarts on each trigger; an 'absolute' generator (default) free-runs on the
+  // sim's wall-clock + transport. Keeping the formula identical to core keeps sim/engine
+  // output in step.
+  const voiceClock = (gen.timebase ?? 'absolute') === 'voice';
+  const clockMs = voiceClock ? genTrigger.ageMs : sim.timeMs;
+  const beat = voiceClock ? (genTrigger.ageMs / 60000) * sim.bpm : sim.beat;
+  const bar = Math.floor(beat / sim.beatsPerBar);
   const ctx: RenderContext = {
     model: pm,
-    timeMs: sim.timeMs,
+    timeMs: clockMs,
     dt: sim.lastDt,
     transport: {
-      timeMs: sim.timeMs,
-      beat: sim.beat,
-      bar: Math.floor(sim.beat / sim.beatsPerBar),
-      beatInBar,
+      timeMs: clockMs,
+      beat,
+      bar,
+      beatInBar: beat - bar * sim.beatsPerBar,
       bpm: sim.bpm,
       beatsPerBar: sim.beatsPerBar,
       playing: true,
@@ -232,6 +313,15 @@ function renderGeneratorVoice(
 
   genScratch.clear();
   gen.render(ctx, params, genScratch, v.genState);
+
+  // Modifier chain (media effects) — mirror of the core generator bridge: pure transforms
+  // over the voice's rendered pixels, between render and blend, on the host voice's local
+  // clock (age). Only modified voices pay this; unmodified voices blit straight through.
+  const mods = v.modifiers;
+  if (mods && mods.length) {
+    if (!v.modState) v.modState = [];
+    applyModifierChain(mods, v.modState, genScratch, { start, end }, pm, genTrigger.ageMs, sim.lastDt, modCtxFor(v, sim));
+  }
 
   // Blit scratch (float RGBA) → buf (0..255 RGB), scaled by the voice envelope.
   const src = genScratch.rgba;

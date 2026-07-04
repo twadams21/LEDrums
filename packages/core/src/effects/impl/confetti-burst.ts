@@ -38,16 +38,25 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
     { key: 'spread', label: 'Spread', type: 'number', default: 1.4, min: 0.05, max: 8, step: 0.05, unit: 'mm/ms' },
     { key: 'gravity', label: 'Gravity', type: 'number', default: 0.004, min: 0, max: 0.05, step: 0.001, unit: 'mm/ms²' },
     { key: 'life', label: 'Life', type: 'number', default: 1200, min: 100, max: 6000, unit: 'ms' },
+    { key: 'baseHue', label: 'Base Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
+    { key: 'hueSpan', label: 'Hue Span', type: 'number', default: 360, min: 0, max: 360, unit: '°' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
-  createState(_model: PixelModel): ConfettiBurstState {
-    return { particles: [], rng: mulberry32(SEED), lastSeq: 0 };
+  createState(_model: PixelModel, seed?: number): ConfettiBurstState {
+    // per-trigger seed (item C): each fire scatters differently, replays identically
+    return { particles: [], rng: mulberry32(seed ?? SEED), lastSeq: 0 };
   },
   render(ctx, params, fb, state) {
     const count = Math.max(1, Math.round(pnum(params, 'count', 24)));
     const spread = pnum(params, 'spread', 1.4);
     const gravity = pnum(params, 'gravity', 0.004);
     const life = Math.max(1, pnum(params, 'life', 1200));
+    // Multi-colour: particles pick a hue within [baseHue, baseHue + hueSpan]. Defaults
+    // (baseHue 0, hueSpan 360) reproduce the old full-spectrum `rng() * 360` exactly.
+    const baseHue = pnum(params, 'baseHue', 0);
+    const hueSpan = pnum(params, 'hueSpan', 360);
+    const sat = pnum(params, 'saturation', 1);
     const bri = pnum(params, 'brightness', 1);
     const rng = state.rng;
 
@@ -68,7 +77,7 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
         state.particles.push({
           pos: { ...origin },
           vel: { x: r * Math.cos(theta) * sp, y: r * Math.sin(theta) * sp, z: z * sp },
-          hue: rng() * 360,
+          hue: baseHue + rng() * hueSpan,
           life,
           maxLife: life,
         });
@@ -110,7 +119,7 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
       const prox = 1 - bestDist / reach;
       const v = clamp01(bri * fade * prox);
       if (v < 0.004) continue;
-      const rgb = hsvToRgb(pt.hue, 1, v);
+      const rgb = hsvToRgb(pt.hue, sat, v);
       fb.max(bestId, rgb.r, rgb.g, rgb.b, v);
     }
   },

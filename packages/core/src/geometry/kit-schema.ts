@@ -23,6 +23,10 @@ export const drumSchema = z.object({
   /** Rotates where pixel index 0 sits around the hoop. */
   localSpinDeg: z.number().default(0),
   startAngleDeg: z.number().default(0),
+  /** Physically flip the drum: a geometry-only reflection along its local Z (skins swap)
+   * with the angular sweep negated so chase/wind direction reads correctly. Pixel index
+   * order + DMX bytes are unchanged — flip never re-patches hardware (see buildPixelModel). */
+  flip: z.boolean().optional(),
   origin: vec3Schema,
   rotation: vec3Schema,
   /** Origin (local mm) used by radial/3D effects; defaults to drum centre. */
@@ -85,6 +89,11 @@ export const kitGlobalSchema = z.object({
   defaultHoopSpacingMm: z.number().positive().default(50),
   /** Max pixels a single physical output may carry (Advatek PixLite ≈ 304). */
   maxPixelsPerOutput: z.number().int().positive().default(304),
+  /** Kit-wide mirror: a geometry-only FINAL world-space reflection applied to every pixel
+   * (positions + tangents/normals) in buildPixelModel. 'x' negates world X, 'y' negates
+   * world Y, 'none' is identity. Drums keep their identities — only coordinates reflect.
+   * Pixel index order + DMX bytes are unchanged; a mirror never re-patches hardware. */
+  mirror: z.enum(['none', 'x', 'y']).default('none'),
 });
 
 export const kitSchema = z.object({
@@ -101,6 +110,7 @@ export type DrumConfig = z.infer<typeof drumSchema>;
 export type OutputConfig = z.infer<typeof outputSchema>;
 export type DataLineConfig = z.infer<typeof dataLineSchema>;
 export type OutputSegment = z.infer<typeof outputSegmentSchema>;
+export type KitGlobalConfig = z.infer<typeof kitGlobalSchema>;
 export type KitConfig = z.infer<typeof kitSchema>;
 
 /** Parse + validate raw kit JSON, applying defaults. Throws ZodError on invalid input. */

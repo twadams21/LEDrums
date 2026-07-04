@@ -10,17 +10,29 @@
   import type { Component } from 'svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { type ObjectTypeId, effectRows, graphRows, presetRows } from './objects-view';
+  import {
+    type ObjectTypeId,
+    effectRows,
+    graphRows,
+    librarySongRows,
+    presetRows,
+    showSongRows,
+  } from './objects-view';
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import ListItem from '../../ui/ListItem.svelte';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
+  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import SongRow from './SongRow.svelte';
+  import LibraryRefRow from './LibraryRefRow.svelte';
+  import LibrarySongRow from './LibrarySongRow.svelte';
   import EffectRow from './EffectRow.svelte';
   import GraphRow from './GraphRow.svelte';
   import PresetRow from './PresetRow.svelte';
   import Boxes from '@lucide/svelte/icons/boxes';
   import Bookmark from '@lucide/svelte/icons/bookmark';
   import ListMusic from '@lucide/svelte/icons/list-music';
+  import LibraryBig from '@lucide/svelte/icons/library-big';
   import Sparkles from '@lucide/svelte/icons/sparkles';
   import Workflow from '@lucide/svelte/icons/workflow';
 
@@ -31,25 +43,36 @@
 
   // derived row lists — recompute as the underlying store collections change (presetRows reads
   // presetUsageCount, which depends on `graphs`, so usage stays live).
-  const songs = $derived(store.songs);
+  // Songs split by SOURCE (S42): the show's setlist — local authored songs + resolved library
+  // references — vs the shared Song Library pool. `showSongRows` tags the references (the tail of
+  // the resolved list); local songs render as editable SongRows, references as LibraryRefRows.
+  const localSongs = $derived(store.songs);
+  const refSongs = $derived(
+    showSongRows(store.songs, store.resolvedSongs).filter((r) => r.origin === 'reference'),
+  );
+  const setlistCount = $derived(store.resolvedSongs.length);
+  const librarySongs = $derived(librarySongRows(store.songLibraryList, store.songRefs));
   const effects = $derived(effectRows(store.effects, store.presets));
   const graphs = $derived(graphRows(store.graphLibrary));
   const presets = $derived(presetRows(store.presets, store.effects, (id) => store.presetUsageCount(id)));
 
   const TYPES: Array<{ id: ObjectTypeId; label: string; icon: Component }> = [
     { id: 'songs', label: 'Songs', icon: ListMusic },
+    { id: 'library', label: 'Song Library', icon: LibraryBig },
     { id: 'effects', label: 'Effects', icon: Sparkles },
     { id: 'graphs', label: 'Graphs', icon: Workflow },
     { id: 'presets', label: 'Presets', icon: Bookmark },
   ];
   const countOf = (id: ObjectTypeId): number =>
     id === 'songs'
-      ? songs.length
-      : id === 'effects'
-        ? effects.length
-        : id === 'graphs'
-          ? graphs.length
-          : presets.length;
+      ? setlistCount
+      : id === 'library'
+        ? librarySongs.length
+        : id === 'effects'
+          ? effects.length
+          : id === 'graphs'
+            ? graphs.length
+            : presets.length;
   const activeType = $derived(TYPES.find((t) => t.id === type)!);
   const HeadIcon = $derived(activeType.icon);
 
@@ -67,8 +90,10 @@
 </script>
 
 <MasterDetail bind:selected={type} railLabel="Object types" railWidth="210px">
+  {#snippet railHeader()}
+    <PanelHeader icon={Boxes} title="Objects" />
+  {/snippet}
   {#snippet master({ selected, select })}
-    <Eyebrow icon={Boxes}>Objects</Eyebrow>
     {#each TYPES as t (t.id)}
       <ListItem
         icon={t.icon}
@@ -82,17 +107,41 @@
   {/snippet}
 
   {#snippet detail()}
-    <header class="detail-head">
-      <Eyebrow icon={HeadIcon}>{activeType.label}</Eyebrow>
+    <PanelHeader icon={HeadIcon} title={activeType.label}>
       <span class="detail-count">{countOf(type)}</span>
-    </header>
+      {#if type === 'songs' && store.canEdit}
+        <IconButton
+          icon={ClipboardPaste}
+          label="Paste song from clipboard"
+          size={14}
+          onclick={() => store.openSongPaste()}
+        />
+      {/if}
+      {#if type === 'graphs' && store.canEdit}
+        <IconButton
+          icon={ClipboardPaste}
+          label="Paste graph from clipboard"
+          size={14}
+          onclick={() => void store.pasteGraphFromClipboard()}
+        />
+      {/if}
+    </PanelHeader>
 
     <div class="objlist">
       {#if type === 'songs'}
-        {#each songs as song (song.id)}
+        {#each localSongs as song (song.id)}
           <SongRow {store} {song} />
         {/each}
-        {#if songs.length === 0}<p class="empty">No songs yet.</p>{/if}
+        {#each refSongs as row (row.id)}
+          <LibraryRefRow {store} {row} />
+        {/each}
+      {:else if type === 'library'}
+        {#each librarySongs as row (row.id)}
+          <LibrarySongRow {store} {row} />
+        {/each}
+        {#if librarySongs.length === 0}
+          <p class="empty">No saved songs yet. Save a song to the library to reuse it across shows.</p>
+        {/if}
       {:else if type === 'effects'}
         {#each effects as effect (effect.id)}
           <EffectRow {store} {effect} active={selectedId === effect.id} onSelect={() => (selectedId = effect.id)} />
@@ -114,10 +163,6 @@
 </MasterDetail>
 
 <style>
-  /* rail eyebrow spacing (mirrors the old .typerail header gap) */
-  :global(.md-rail) > :global(.eyebrow) {
-    margin-bottom: var(--space-1);
-  }
   .typecount {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
@@ -125,13 +170,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .detail-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: none;
-    padding: var(--space-3) var(--space-3) var(--space-2);
-  }
   .detail-count {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
@@ -145,7 +183,7 @@
     min-height: 0;
     flex: 1;
     overflow: auto;
-    padding: 0 var(--space-3) var(--space-3);
+    padding: var(--space-3);
   }
   .empty {
     margin: 0;

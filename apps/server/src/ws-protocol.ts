@@ -8,6 +8,10 @@ import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '
 // module owns the server-side runtime helpers (decode/encode/serialize) below.
 export type {
   ClientMessage,
+  ControllerStatus,
+  ControllerTestPattern,
+  ControllerUniverseRx,
+  DiscoveredController,
   EffectSpec,
   OutputStatus,
   MonitorEvent,
@@ -16,7 +20,9 @@ export type {
   SerializedModel,
   ServerMessage,
   ShowLibraryBlob,
+  SongLibraryBlob,
   TunnelInfo,
+  TunnelStatus,
   VoiceStats,
 } from '@ledrums/protocol';
 
@@ -26,11 +32,13 @@ export type {
 
 const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'midi', 'cc', 'programChange', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
-  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitOutputs', 'setOutput',
+  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitGlobal', 'setKitOutputs', 'setOutput',
   'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
-  'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap',
-  'setShow', 'setShowLibrary', 'key', 'recallSection', 'takeover',
+  'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap', 'setProject',
+  'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
   'loadProject', 'saveProject', 'listProjects',
+  'discoverControllers', 'adoptController', 'identifyController', 'watchController',
+  'controllerTestData', 'controllerBackToLive',
 ]);
 
 export function decodeClient(raw: string): ClientMessage {

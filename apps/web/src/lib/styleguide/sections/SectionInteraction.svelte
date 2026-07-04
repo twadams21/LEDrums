@@ -34,6 +34,7 @@
         <li>13px body (<code>--text-base</code>), 4px spacing grid, 30px icon-button square (<code>--control-icon-size</code>), 29–30px control heights.</li>
         <li>Numeric read-outs are mono + <code>tabular-nums</code>, right-aligned in rows (see ReadRow).</li>
         <li>Hit areas ≥ 40px where it matters (Splitter's grab zone straddles its 2px hairline).</li>
+        <li>Flush modules (no gutter — <code>--shell-gap</code>) rely on borders + surface steps for separation; resize rails announce themselves by thickening + tinting toward <code>--accent</code> on hover.</li>
       </ul>
     </div>
 

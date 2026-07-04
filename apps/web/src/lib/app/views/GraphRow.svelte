@@ -10,6 +10,7 @@
   import Workflow from '@lucide/svelte/icons/workflow';
   import Pencil from '@lucide/svelte/icons/pencil';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
+  import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import SquarePen from '@lucide/svelte/icons/square-pen';
 
@@ -30,6 +31,7 @@
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Open', icon: SquarePen, onSelect: () => onOpen(graph.key) },
     { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(graph.key) },
+    { label: 'Copy', icon: Copy, onSelect: () => void store.copyGraphToClipboard(graph.key) },
     { label: 'Delete', icon: Trash2, danger: true, onSelect: remove },
   ]);
 </script>
@@ -48,6 +50,7 @@
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename graph" size={13} onclick={() => (editing = true)} />
     <IconButton icon={CopyPlus} label="Duplicate graph" size={13} onclick={() => store.duplicateGraph(graph.key)} />
+    <IconButton icon={Copy} label="Copy graph to clipboard" size={13} onclick={() => void store.copyGraphToClipboard(graph.key)} />
     <IconButton icon={Trash2} label="Delete graph" size={13} onclick={remove} />
   {/snippet}
 </EditableRow>

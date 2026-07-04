@@ -45,13 +45,20 @@
     type OutputScalars,
   } from '../patch-graph';
   import PatchNode from './PatchNode.svelte';
+  import PatchClipboardToolbar from './PatchClipboardToolbar.svelte';
+import PatchMirrorControl from './PatchMirrorControl.svelte';
   import { PATCH_STORE_KEY } from './patch-context';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
-  import GraphPalette from './GraphPalette.svelte';
+  import type { FlowApi } from './FlowHandle.svelte';
+  import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
+  import AddPalette, { type AddGroup } from './AddPalette.svelte';
+  import Inspector from '../docks/Inspector.svelte';
   import { GraphHover } from './graph-hover.svelte';
+  import { findFreePosition } from './node-placement';
+  import { guardFlowCallback } from './flow-guard';
   import { nodeIdAtEvent } from './flow-dom';
-  import Eyebrow from '../../ui/Eyebrow.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
   import Cable from '@lucide/svelte/icons/cable';
   import Plug from '@lucide/svelte/icons/plug';
 
@@ -82,10 +89,18 @@
   function addDevice(stage: 'dataline' | 'output', cx: number, cy: number): void {
     const n = ++deviceSeq;
     const label = stage === 'dataline' ? `Data Line ${n}` : `Output ${n}`;
+    // spawn on a free spot near the viewport centre — repeated adds fan out (item 1.5)
+    const rects = nodes.map((nd) => ({
+      x: nd.position.x,
+      y: nd.position.y,
+      w: nd.measured?.width ?? NODE_W,
+      h: nd.measured?.height ?? NODE_H,
+    }));
+    const pos = findFreePosition(rects, cx - NODE_W / 2, cy - NODE_H / 2, NODE_W, NODE_H);
     const node: PatchFlowNode = {
       id: `${stage}:new-${n}`,
       type: 'patch',
-      position: { x: cx - NODE_W / 2, y: cy - NODE_H / 2 },
+      position: pos,
       initialWidth: NODE_W,
       initialHeight: NODE_H,
       data: { label, sub: 'new — wire it up', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
@@ -93,12 +108,32 @@
     nodes = [...nodes, node];
   }
 
-  // The two user-addable device kinds for the shared GraphPalette. `add` hands back the
-  // flow-space centre; addDevice centres the new node on it (local, not persisted).
-  const PALETTE_ITEMS = [
-    { key: 'dataline', label: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, title: 'Add Data Line — local, not saved' },
-    { key: 'output', label: 'Output', icon: Plug, tint: DEVICE_ROLE.output, title: 'Add Output — local, not saved' },
-  ] as const;
+  // ---- Node Editor drawer (wave-3 shell): device palette + Inspector --------
+  // The two user-addable device kinds; a new device is local until its first wire
+  // materializes it into the committed routing. Selecting a device flips the
+  // drawer to its Inspector tab.
+  let neTab = $state<NodeEditorTab>('add');
+  $effect(() => {
+    if (shell.selection?.kind === 'patch') neTab = 'inspector';
+  });
+  const ADD_GROUPS: AddGroup[] = [
+    {
+      key: 'devices',
+      label: 'Devices',
+      items: [
+        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'pixel run' },
+        { id: 'output', name: 'Output', icon: Plug, tint: DEVICE_ROLE.output, hint: 'controller port' },
+      ],
+    },
+  ];
+  let flowApi = $state<FlowApi | null>(null);
+  let canvasWrap = $state<HTMLElement | null>(null);
+  function handleAdd(id: string): void {
+    const r = canvasWrap?.getBoundingClientRect();
+    if (!flowApi) return;
+    const c = flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+    addDevice(id as 'dataline' | 'output', c.x, c.y);
+  }
 
   /** Reject self-loops and exact duplicate wires; otherwise accept (xyflow applies
       the default `wire` type so the new edge is reconnectable). */
@@ -106,6 +141,17 @@
     if (!c.source || !c.target || c.source === c.target) return false;
     if (edges.some((e) => e.source === c.source && e.target === c.target)) return false;
     return c;
+  }
+
+  /** Group-A flow-guard hardening extended to the Patch graph (phase-2 item 1c): a throw
+      inside an xyflow event callback becomes a reported fault (console + Monitor error
+      event) instead of propagating into xyflow's internals and freezing the canvas. */
+  function guard<A extends unknown[]>(where: string, fn: (...args: A) => void): (...args: A) => void {
+    return guardFlowCallback(where, fn, (w, err) => {
+      const detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
+      console.error(`[patch-graph] ${w} failed`, err);
+      store.reportError('patch-graph', w, detail);
+    });
   }
 
   /* Hover accents the node (border, via CSS) + every wire one level connected to it.
@@ -315,61 +361,88 @@
 </script>
 
 <div class="patch-view">
-  <header class="phead">
-    <Eyebrow icon={Cable}>Patch Graph · device routing</Eyebrow>
-    <span class="hint">input → trigger → zone → drum → hoop → data line → output → controller</span>
-  </header>
+  <div class="phead">
+    <PanelHeader icon={Cable} title="Patch Graph">
+      <div class="ptools">
+        <PatchMirrorControl {store} />
+        <PatchClipboardToolbar {store} />
+      </div>
+    </PanelHeader>
+  </div>
 
-  <GraphCanvas
-    bind:nodes
-    bind:edges
-    {nodeTypes}
-    {edgeTypes}
-    defaultEdgeOptions={{ type: 'wire' }}
-    fitPadding={0.15}
-    minimap
-    onBeforeConnect={onBeforeConnect}
-    onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
-    onPaneClick={() => shell.clearSelection()}
-    onNodeEnter={onEnter}
-    onNodeLeave={onLeave}
-    onConnect={() => commitRouting()}
-    onReconnect={onReconnect}
-    onDelete={() => commitRouting()}
-    onNodeDragStop={() => commitRouting()}
-    onConnectEnd={(event, conn) => {
-      if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
-      const toId = nodeIdAtEvent(event);
-      if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
-    }}
-  >
-    {#snippet palette()}
-      <GraphPalette items={PALETTE_ITEMS} add={addDevice} ariaLabel="Add device (local, not saved)" disabled={!store.canEdit} />
-    {/snippet}
-  </GraphCanvas>
+  <div class="prow">
+    <div class="gwrap" bind:this={canvasWrap}>
+      <GraphCanvas
+        bind:nodes
+        bind:edges
+        {nodeTypes}
+        {edgeTypes}
+        defaultEdgeOptions={{ type: 'wire' }}
+        fitPadding={0.15}
+        minimap
+        onFlow={(f) => (flowApi = f)}
+        onBeforeConnect={onBeforeConnect}
+        onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
+        onPaneClick={() => shell.clearSelection()}
+        onNodeEnter={onEnter}
+        onNodeLeave={onLeave}
+        onConnect={guard('connect', () => commitRouting())}
+        onReconnect={guard('reconnect', onReconnect)}
+        onDelete={guard('delete', () => commitRouting())}
+        onNodeDragStop={guard('drag', () => commitRouting())}
+        onConnectEnd={guard('connect-end', (event, conn) => {
+          if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+          const toId = nodeIdAtEvent(event);
+          if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, toId);
+        })}
+      />
+    </div>
+
+    <NodeEditor bind:tab={neTab}>
+      {#snippet add()}
+        <AddPalette groups={ADD_GROUPS} onAdd={handleAdd} disabled={!store.canEdit} />
+      {/snippet}
+      {#snippet inspector()}
+        <Inspector {store} {shell} />
+      {/snippet}
+    </NodeEditor>
+  </div>
 </div>
 
 <style>
   .patch-view {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--space-3);
+    gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
   }
+  .prow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: var(--shell-gap);
+    min-height: 0;
+  }
+  .gwrap {
+    min-width: 0;
+    min-height: 0;
+  }
   .phead {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
+    overflow: hidden;
   }
-  .hint {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
+  /* The header IS the whole card here — drop PanelHeader's border-bottom so the card
+     shows a single clean edge. */
+  .phead :global(.panel-hd) {
+    border-bottom: none;
+  }
+  /* Toolbar cluster in the header slot: mirror control + clipboard tools, right-aligned. */
+  .ptools {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
   }
 </style>

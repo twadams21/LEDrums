@@ -14,6 +14,7 @@
 
 import type { Bus, EffectDef, Preset, TriggerGraph } from './sim';
 import type { SetlistSection, Song } from '../app/setlist';
+import type { LibrarySong } from './store/song-library';
 
 /** localStorage key — carries the schema version so old payloads are namespaced
     (a future v2 writes to a different key, leaving v1 untouched). */
@@ -32,6 +33,10 @@ export interface AuthoredState {
       Kept beside `graphs` so a created graph keeps its name across reloads. */
   graphNames: Record<string, string>;
   songs: Song[];
+  /** Library-song references (S41): ids into the {@link SongLibrary} pool this show resolves into
+      its runtime view (canonical propagation — the closure lives in the library, not here). An
+      ordered set. Tolerated when absent (older blobs / a show that references nothing). */
+  songRefs?: string[];
   buses: Bus[];
   presets: Preset[];
   effects: EffectDef[];
@@ -104,6 +109,9 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   // migrateSongs flattens each section's `slots` into the flat `graphs` list (idempotent,
   // so a U4 blob is untouched). See migrateSongs / sectionGraphList.
   if (Array.isArray(data.songs)) out.songs = migrateSongs(data.songs);
+  // songRefs (S41): a string-id set; keep only string entries, de-duplicated — a partially-corrupt
+  // list degrades to the ids that survived. Absent → the field stays undefined (references nothing).
+  if (Array.isArray(data.songRefs)) out.songRefs = dedupeStrings(data.songRefs);
   if (Array.isArray(data.buses)) out.buses = data.buses as Bus[];
   if (Array.isArray(data.presets)) out.presets = data.presets as Preset[];
   if (Array.isArray(data.effects)) out.effects = data.effects as EffectDef[];
@@ -172,9 +180,32 @@ export function migrateSongs(songs: readonly unknown[]): Song[] {
     const sections: SetlistSection[] = [];
     for (const sec of rawSections) {
       if (!isObject(sec)) continue;
-      sections.push({ id: String(sec.id ?? ''), name: String(sec.name ?? ''), graphs: sectionGraphList(sec) });
+      // `looks` (S16) is coerced defensively + defaults to `{}`: a pre-S16 section has no
+      // looks field, so it loads with an empty map (== no looks == unchanged behaviour), and a
+      // section that already carries looks round-trips untouched — the migration is idempotent.
+      sections.push({
+        id: String(sec.id ?? ''),
+        name: String(sec.name ?? ''),
+        graphs: sectionGraphList(sec),
+        looks: coerceLooks(sec.looks),
+      });
     }
     out.push({ id: String(raw.id ?? ''), name: String(raw.name ?? ''), sections });
+  }
+  return out;
+}
+
+/**
+ * Coerce a persisted section's `looks` into a clean per-bus map (S16): a non-object → `{}`;
+ * otherwise keep only the entries whose value is a string (an effect id) or `null` (None),
+ * dropping anything else. Defensive + idempotent, matching {@link sectionGraphList}'s spirit —
+ * a partially-corrupt looks blob degrades to the entries that survived.
+ */
+function coerceLooks(value: unknown): Record<string, string | null> {
+  if (!isObject(value)) return {};
+  const out: Record<string, string | null> = {};
+  for (const [busId, effectId] of Object.entries(value)) {
+    if (typeof effectId === 'string' || effectId === null) out[busId] = effectId;
   }
   return out;
 }
@@ -290,4 +321,92 @@ export function loadShowLibrary(rawLibrary: unknown, rawSingle: unknown, newId: 
   // Empty authored — the store merges it over its seed, so a fresh show boots exactly like the
   // pre-show empty-storage case did. Cast mirrors coerceAuthored's partial-as-AuthoredState contract.
   return { shows: { [id]: { id, name: 'Untitled Show', authored: {} as AuthoredState } }, activeShowId: id };
+}
+
+// ---- song library: canonical songs above shows ------------------------------
+
+/* A SONG LIBRARY is a pool of canonical {@link LibrarySong}s (each a self-contained dependency
+   closure — see store/song-library.ts) that shows import and reference. It is a SIBLING of the
+   show library, one layer up, with its OWN storage key + versioned envelope + a second opaque
+   server blob (default.songs.local.json) — the server named-blob store generalizes the show-
+   library pattern trivially. This module owns the persisted shape + envelope + defensive load;
+   the store wires refs/resolve/detach (S41) and the UI (S42). S40 provides persistence + the
+   server seam only, so the library round-trips client + server without any of that live yet. */
+
+/** localStorage key for the song library. Namespaced by schema version like the others. */
+export const SONGS_STORAGE_KEY = 'ledrums:songs:v1';
+
+/** Song-library schema version (independent of {@link VERSION}/{@link SHOWS_VERSION}; same
+    bump-only-on-incompatible rule). Each song's closure is coerced field-by-field, so an additive
+    field on a LibrarySong never needs a bump. */
+export const SONGS_VERSION = 1;
+
+/** The persisted song library: canonical songs by id. Unlike {@link ShowLibrary} there is no
+    "active" pointer — a library is a pool the shows reference, not a thing you open. */
+export interface SongLibrary {
+  songs: Record<string, LibrarySong>;
+}
+
+/** Versioned envelope written to storage (mirrors {@link PersistedShowLibrary}). */
+export interface PersistedSongLibrary {
+  version: number;
+  data: SongLibrary;
+}
+
+/** Wrap a library in the versioned envelope (JSON-safe; the caller stringifies). */
+export function serializeSongLibrary(lib: SongLibrary): PersistedSongLibrary {
+  return { version: SONGS_VERSION, data: lib };
+}
+
+/**
+ * Field-by-field coercion of one persisted {@link LibrarySong}. Returns null when the entry is
+ * unusable (not an object, or no string id) so the caller drops it; otherwise each closure field
+ * is included only when the right container type, defaulting empty — so a partially-corrupt song
+ * degrades to what survived rather than wedging the whole library. Same defensive spirit as
+ * {@link coerceAuthored}. The container casts trust the closure shapes the extractor produced
+ * (validating every graph node / effect spec here would duplicate the sim's own schema).
+ */
+export function coerceLibrarySong(raw: unknown): LibrarySong | null {
+  if (!isObject(raw)) return null;
+  if (typeof raw.id !== 'string' || !raw.id) return null;
+  return {
+    id: raw.id,
+    name: typeof raw.name === 'string' && raw.name ? raw.name : 'Untitled Song',
+    sections: Array.isArray(raw.sections) ? (raw.sections as SetlistSection[]) : [],
+    graphs: isObject(raw.graphs) ? (raw.graphs as Record<string, TriggerGraph>) : {},
+    graphNames: isObject(raw.graphNames) ? (raw.graphNames as Record<string, string>) : {},
+    effects: Array.isArray(raw.effects) ? (raw.effects as EffectDef[]) : [],
+    presets: Array.isArray(raw.presets) ? (raw.presets as Preset[]) : [],
+  };
+}
+
+/**
+ * Validate a parsed song-library blob. Returns null when the envelope is unusable — not an
+ * object, a version other than {@link SONGS_VERSION}, or no `songs` record — so the caller falls
+ * back to a fresh empty library (never wedges boot). Defensive per song: malformed songs are
+ * dropped (an empty pool is legitimate — unlike a show library, a song library may legally hold
+ * zero songs, so we do NOT null out on "all dropped"). A song's stored map key is re-pointed to
+ * the coerced id so the two never drift.
+ */
+export function deserializeSongLibrary(raw: unknown): SongLibrary | null {
+  if (!isObject(raw)) return null;
+  if (raw.version !== SONGS_VERSION) return null;
+  const data = raw.data;
+  if (!isObject(data) || !isObject(data.songs)) return null;
+
+  const songs: Record<string, LibrarySong> = {};
+  for (const rawSong of Object.values(data.songs)) {
+    const song = coerceLibrarySong(rawSong);
+    if (song) songs[song.id] = song;
+  }
+  return { songs };
+}
+
+/**
+ * Build the boot song library from its storage blob. Pure, defensive, never throws: a valid
+ * library blob wins; otherwise a fresh EMPTY library (`{ songs: {} }`). There is no legacy
+ * single-blob migration — the song library is new in this initiative.
+ */
+export function loadSongLibrary(rawLibrary: unknown): SongLibrary {
+  return deserializeSongLibrary(rawLibrary) ?? { songs: {} };
 }

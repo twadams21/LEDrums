@@ -1,15 +1,15 @@
 <script lang="ts">
-  /* Right-dock Inspector — contextual settings for whatever is selected in the shell (a
-     trigger-graph node, a layer/bus, a Patch device, or a setlist section). There is no
-     separate Settings page; switching views resets the selection. This is the thin
-     dispatcher: it resolves the selection to a primary object and hands off to a focused
-     per-kind editor under `inspectors/`. The shared chrome it owns is the node header (kind
-     selector + remove) and the Patch header / offline banner. Effect Gallery, Envelope Editor
-     and Effect Creator stay as summoned overlays, opened from the editors via the engine store. */
+  /* Node Editor drawer Inspector — contextual settings for the selected graph node (a
+     trigger-graph node or a Patch device). Hosted in each graph view's Node Editor
+     drawer (wave-3 shell); bus settings live inline in the Buses panel and section
+     settings inline in the Sections view. This is the thin dispatcher: it resolves the
+     selection to a primary object and hands off to a focused per-kind editor under
+     `inspectors/`. The shared chrome it owns is the node header (kind selector + remove)
+     and the Patch header / offline banner. Effect Gallery, Envelope Editor and Effect
+     Creator stay as summoned overlays, opened from the editors via the engine store. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
-  import { sectionRecall } from '../recall';
   import { type GraphNode, type NodeKind } from '../../trigger-lab/sim';
   import { KIND_OPTS } from '../views/node-options';
   import { patchEditorFor, type PatchEditor } from './patch-inspector';
@@ -18,19 +18,24 @@
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Spline from '@lucide/svelte/icons/spline';
+  import Waves from '@lucide/svelte/icons/waves'; // S36
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
-  import BusInspector from './inspectors/BusInspector.svelte';
+  import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
+  import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
+  import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
+  import CcNodeInspector from './inspectors/CcNodeInspector.svelte'; // S37
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
   import PatchDataLineInspector from './inspectors/PatchDataLineInspector.svelte';
   import PatchOutputInspector from './inspectors/PatchOutputInspector.svelte';
   import PatchControllerInspector from './inspectors/PatchControllerInspector.svelte';
-  import SectionInspector from './inspectors/SectionInspector.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -40,23 +45,6 @@
   const node = $derived.by<GraphNode | null>(() => {
     if (sel?.kind !== 'node') return null;
     return store.selectedGraph?.nodes.find((n) => n.id === sel.nodeId) ?? null;
-  });
-
-  const bus = $derived(sel?.kind === 'bus' ? store.buses.find((b) => b.id === sel.busId) ?? null : null);
-
-  // --- Section selection (transport recall) --------------------------------------
-  // Resolve the section, its parent song, and their setlist indices — searching ALL songs
-  // (not just the active one) so the panel stays correct if the active song changes while a
-  // section is inspected. The recall indices match the server's convention (song index in
-  // the setlist · section index in the song); the strings come from the pure helper.
-  const sectionSel = $derived.by(() => {
-    if (sel?.kind !== 'section') return null;
-    const songIdx = store.songs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
-    if (songIdx < 0) return null;
-    const song = store.songs[songIdx]!;
-    const sectionIdx = song.sections.findIndex((sec) => sec.id === sel.sectionId);
-    const section = song.sections[sectionIdx]!;
-    return { song, songIdx, section, sectionIdx, recall: sectionRecall(songIdx, sectionIdx) };
   });
 
   // --- Patch graph per-node editors (S4) -----------------------------------------
@@ -75,6 +63,30 @@
 <fieldset class="inspector" disabled={!store.canEdit}>
   {#if node && node.kind === 'trigger'}
     <TriggerSourceInspector {store} {node} />
+  {:else if node && node.kind === 'envelope'}
+    <!-- modulation SOURCE node: no kind selector (not a conversion target) — its shape editor -->
+    <header class="nodehead">
+      <Eyebrow icon={Spline}>Envelope source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <EnvelopeNodeInspector {store} {node} />
+  {:else if node && node.kind === 'lfo'}
+    <!-- S36 — modulation SOURCE node: no kind selector (not a conversion target) — its settings -->
+    <header class="nodehead">
+      <Eyebrow icon={Waves}>LFO source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <LfoNodeInspector {store} {node} />
+  {:else if node && node.kind === 'cc'}
+    <!-- S37 — modulation SOURCE node: no kind selector (not a conversion target) — its CC settings -->
+    <header class="nodehead">
+      <Eyebrow icon={SlidersHorizontal}>CC source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <CcNodeInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">
@@ -87,11 +99,11 @@
       <PlayNodeInspector {store} {node} />
     {:else if node.kind === 'delay'}
       <DelayNodeInspector {store} {node} />
+    {:else if node.kind === 'modifier'}
+      <ModifierNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}
-  {:else if bus}
-    <BusInspector {store} {bus} />
   {:else if sel?.kind === 'patch' && ed}
     {@const editor = ed}
     {@const d = describePatchNode(sel.nodeId, store.drums)}
@@ -132,20 +144,10 @@
         {/if}
       </div>
     {/if}
-  {:else if sectionSel}
-    {@const ss = sectionSel}
-    <SectionInspector
-      {store}
-      sectionId={ss.section.id}
-      sectionName={ss.section.name}
-      songName={ss.song.name}
-      sectionIdx={ss.sectionIdx}
-      recall={ss.recall}
-    />
   {:else}
     <div class="empty">
       <MousePointerClick size={22} aria-hidden="true" />
-      <p>Select a node, a bus, a device, or a section to edit it here.</p>
+      <p>Select a node on the canvas to edit it here.</p>
     </div>
   {/if}
 </fieldset>
@@ -206,6 +208,10 @@
     display: inline-flex;
     flex: 1;
     min-width: 0;
+  }
+  /* source-node header (no kind selector): eyebrow, spacer, remove */
+  .nodehead .grow {
+    flex: 1;
   }
   .kindsel :global(.sel-trigger) {
     font-weight: 700;

@@ -41,7 +41,7 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    height: 32px;
+    height: 28px;
     padding: 0 8px 0 11px;
     background: var(--surface-inset);
     border: 1px solid var(--border);

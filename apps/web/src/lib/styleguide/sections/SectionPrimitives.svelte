@@ -6,10 +6,12 @@
   import SearchField from '../../ui/SearchField.svelte';
   import Select from '../../ui/Select.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
+  import EasePicker, { type EaseSpec } from '../../ui/EasePicker.svelte';
   import Tabs from '../../ui/Tabs.svelte';
   import Toggle from '../../ui/Toggle.svelte';
   import Switch from '../../ui/Switch.svelte';
   import Slider from '../../ui/Slider.svelte';
+  import ColorSwatch from '../../ui/ColorSwatch.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
@@ -17,11 +19,17 @@
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
+  import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import EditableRow from '../../ui/EditableRow.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import Dialog from '../../ui/Dialog.svelte';
+  import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
   import Drawer from '../../ui/Drawer.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
+  import Logo from '../../ui/Logo.svelte';
+  import ToastHost from '../../ui/ToastHost.svelte';
+  import { pushToast } from '../../ui/toast.svelte';
   import Splitter from '../../ui/Splitter.svelte';
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import DemoCard from '../DemoCard.svelte';
@@ -50,12 +58,18 @@
   let armed = $state(true);
   let broadcast = $state(false);
   let opacity = $state(48);
+  // Colour swatch demo — the swatch and the three sliders write through to the same hsv.
+  let swHue = $state(30);
+  let swSat = $state(1);
+  let swBri = $state(1);
   let layerName = $state('Kick layer');
   let rowEditing = $state(false);
   let dialogOpen = $state(false);
+  let confirmOpen = $state(false);
   let drawerOpen = $state(false);
   let railW = $state(160);
   let mdSelected = $state('songs');
+  let demoEase = $state<EaseSpec>({ fn: 'cubic', dir: 'inOut' });
 
   const protocolOptions = [
     { value: 'artnet', label: 'Art-Net', icon: Cable },
@@ -130,6 +144,24 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Field · row layout"
+      src="lib/ui/Field"
+      note="The inspector rhythm: label column left (--field-label-col), control right, one --control-h height across TextField / CommitInput / Select. Hint renders under the control. Use layout=&quot;row&quot; in every inspector/editor panel; the stacked default is for dialogs and wide forms."
+    >
+      <div class="comp-stack">
+        <Field layout="row" label="Name" hint="display label">
+          <TextField bind:value={textVal} placeholder="Untitled" ariaLabel="Row name" />
+        </Field>
+        <Field layout="row" label="Protocol">
+          <Select bind:value={protocol} options={protocolOptions} ariaLabel="Row protocol" />
+        </Field>
+        <Field layout="row" label="BPM" hint="Clamped number 20–300">
+          <CommitInput type="number" min={20} max={300} value={bpm} suffix="bpm" ariaLabel="Row BPM" autofocus={false} onCommit={(v) => (bpm = v)} />
+        </Field>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Commit input" src="lib/ui/CommitInput" note="Inline rename / numeric entry: commits on Enter or blur, reverts on Esc.">
       <div class="comp-stack">
         <Field label="Inline rename">
@@ -165,12 +197,43 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Ease picker"
+      src="lib/ui/EasePicker"
+      note="Compact per-segment easing selector — a family Select (the Resolume-familiar set, grouped) paired with an In/Out/In·Out direction control. Direction disables for Linear (identical in every direction). Composed from Select + SegmentedControl; reused by the envelope editor and the Envelope node inspector."
+    >
+      <div class="comp-stack">
+        <EasePicker value={demoEase} onChange={(e) => (demoEase = e)} ariaLabel="Demo easing" />
+        <p class="ease-readout">{demoEase.fn} · {demoEase.dir}</p>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Toggles · Slider" src={['lib/ui/Toggle', 'lib/ui/Switch', 'lib/ui/Slider']}>
       <div class="comp-row">
         <Toggle bind:pressed={armed} onLabel="armed" offLabel="safe" ariaLabel="Arm output" />
         <Switch bind:checked={broadcast} ariaLabel="Broadcast" />
       </div>
       <Slider bind:value={opacity} min={0} max={100} ariaLabel="Opacity" format={(v) => `${v}%`} />
+    </DemoCard>
+
+    <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">
+      <ColorSwatch
+        hue={swHue}
+        saturation={swSat}
+        brightness={swBri}
+        ariaLabel="Demo colour"
+        onChange={(hsv) => {
+          swHue = hsv.h;
+          swSat = hsv.s;
+          swBri = hsv.v;
+        }}
+      />
+      <div class="sw-sliders">
+        <Slider bind:value={swHue} min={0} max={360} step={1} ariaLabel="Hue" format={(v) => `${Math.round(v)}°`} />
+        <Slider bind:value={swSat} min={0} max={1} step={0.01} ariaLabel="Saturation" format={(v) => v.toFixed(2)} />
+        <Slider bind:value={swBri} min={0} max={1} step={0.01} ariaLabel="Brightness" format={(v) => v.toFixed(2)} />
+      </div>
+      <ColorSwatch hue={swHue} saturation={swSat} brightness={swBri} modulated ariaLabel="Demo colour (modulated)" />
     </DemoCard>
 
     <DemoCard title="Status" src={['lib/ui/StatusPill', 'lib/ui/StatusDot']}>
@@ -188,7 +251,19 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Splitter" src="lib/ui/Splitter" note="Drag the divider, or focus it and use arrow keys / Home / End. Controlled: the caller owns + persists the px size.">
+    <DemoCard
+      title="Input activity badge"
+      src="lib/ui/InputActivityBadge"
+      note="Last-heard confirmation beside a MIDI/OSC binding: identity · value · age. Fresh hit pulses (live); fades to muted as it ages out. Fed by a pure matcher; the store owns the age clock."
+    >
+      <div class="comp-row">
+        <InputActivityBadge label="C4" value="92" age="now" tone="live" fresh title="Last heard C4 · velocity 92 · now ago" />
+        <InputActivityBadge label="/kick" value="0.75" age="3s" tone="live" title="Last heard /kick · 0.75 · 3s ago" />
+        <InputActivityBadge label="D2" value="41" age="2m" tone="muted" title="Last heard D2 · velocity 41 · 2m ago" />
+      </div>
+    </DemoCard>
+
+    <DemoCard title="Splitter" src="lib/ui/Splitter" note="Drag the divider, or focus it and use arrow keys / Home / End. Hover thickens + tints it so it stays discoverable even where modules sit flush (no gutter). Controlled: the caller owns + persists the px size.">
       <div class="split-demo">
         <div class="split-pane" style="width: {railW}px">rail · {railW}px</div>
         <div class="split-pane grow">content</div>
@@ -248,13 +323,51 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Overlays" src={['lib/ui/ContextMenu', 'lib/ui/Dialog', 'lib/ui/Drawer']} wide>
+    <DemoCard
+      title="Panel header"
+      src="lib/ui/PanelHeader"
+      wide
+      note="THE panel-title treatment (accent icon + tracked uppercase label, trailing controls). Used on every docked panel, rail, and drawer — retired Eyebrow as a panel title (Eyebrow stays for small in-content labels)."
+    >
+      <div class="ph-demo">
+        <PanelHeader icon={Layers} title="Buses / Layers" />
+      </div>
+      <div class="ph-demo">
+        <PanelHeader icon={ListMusic} title="Setlist">
+          <IconButton icon={Plus} label="Add song" size={14} />
+        </PanelHeader>
+      </div>
+    </DemoCard>
+
+    <DemoCard title="Logo / mark" src="lib/ui/Logo" note="A hoop carrying three lit pixels (drum · hoop · pixel), phosphor-lime on a dark tile; reads at 16px. Ring = dimmed --accent, pixels = --accent.">
+      <div class="comp-row" style="align-items:center; gap:var(--space-4)">
+        <Logo size={16} />
+        <Logo size={20} />
+        <Logo size={32} />
+        <Logo size={48} />
+      </div>
+    </DemoCard>
+
+    <DemoCard title="Overlays" src={['lib/ui/ContextMenu', 'lib/ui/Dialog', 'lib/ui/ConfirmDialog', 'lib/ui/Drawer']} wide>
       <div class="comp-row">
         <ContextMenu actions={rowActions}>
           <button class="ghost">Right-click target</button>
         </ContextMenu>
         <button onclick={() => (dialogOpen = true)}>Open dialog…</button>
+        <button class="danger" onclick={() => (confirmOpen = true)}>Confirm…</button>
         <button onclick={() => (drawerOpen = true)}>Open drawer…</button>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Toast"
+      src="lib/ui/ToastHost"
+      note="Transient notifications: a singleton store (pushToast) + one ToastHost near the app root. Role colour always rides an icon + text; each is dismissible; enter rises + fades, exit is subtler; reduced motion collapses both. Used for clipboard paste feedback (S44)."
+    >
+      <div class="comp-row">
+        <button onclick={() => pushToast('Section copied.', { tone: 'success' })}>Success toast</button>
+        <button onclick={() => pushToast('Pasted 3 layers.')}>Info toast</button>
+        <button class="danger" onclick={() => pushToast('That clipboard content isn’t from LEDrums.', { tone: 'error' })}>Error toast</button>
       </div>
     </DemoCard>
   </div>
@@ -273,9 +386,21 @@
   </div>
 </Dialog>
 
+<ConfirmDialog
+  bind:open={confirmOpen}
+  title="Delete node?"
+  message="A confirmation modal for destructive verbs — Cancel + a danger confirm, on the shared Dialog."
+  confirmLabel="Delete"
+  danger
+  onConfirm={() => pushToast('Confirmed.', { tone: 'success' })}
+/>
+
 <Drawer open={drawerOpen} onClose={() => (drawerOpen = false)} title="Example drawer" side="right" width="320px">
   <p class="ov-text">A slide-in <code>Drawer</code> — same <code>--overlay</code> scrim, <code>--z-overlay</code> tier.</p>
 </Drawer>
+
+<!-- One host renders the shared toast store; the demo buttons above push into it. -->
+<ToastHost />
 
 <style>
   .comp-grid {
@@ -289,6 +414,16 @@
     align-items: center;
     gap: var(--space-3);
   }
+  /* PanelHeader sits atop a panel — show it in a bordered surface so its border-bottom reads. */
+  .ph-demo {
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .ph-demo + .ph-demo {
+    margin-top: var(--space-3);
+  }
   .comp-stack {
     display: flex;
     flex-direction: column;
@@ -299,6 +434,19 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  .ease-readout {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .sw-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
   }
   .dot-demo {
     display: inline-flex;

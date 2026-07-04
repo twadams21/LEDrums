@@ -4,16 +4,78 @@
    these). Each builder takes plain arrays (the store's reactive lists snapshot fine) and the
    store's `presetUsageCount` as a pure callback, and returns sorted row records. */
 import type { EffectDef, Preset } from '../../trigger-lab/sim';
+import type { Song } from '../setlist';
 
 /** The four object types the Objects view indexes, in rail order. (Icons live in the
     .svelte; this module is DOM-free.) */
-export type ObjectTypeId = 'songs' | 'effects' | 'graphs' | 'presets';
+export type ObjectTypeId = 'songs' | 'library' | 'effects' | 'graphs' | 'presets';
 
-export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'effects', 'graphs', 'presets'];
+export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'library', 'effects', 'graphs', 'presets'];
 
 /** Stable name-then-id comparator, so equal names keep a deterministic order across reloads. */
 function byNameThenId(a: { name: string; id: string }, b: { name: string; id: string }): number {
   return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+}
+
+// ---- songs: this-show setlist vs the shared Song Library (S42) ---------------
+// The Songs tab splits its detail by SOURCE: the songs in THIS show's setlist (local authored
+// songs + resolved library references) and the whole Song Library pool. `origin` marks a
+// setlist row as a local song (fully editable here) or a `reference` to a library song (edits
+// route to the library copy; "Detach copy" clones it local). Pool rows carry the used-by guard.
+
+/** One row in the "This show" setlist group: a local song or a resolved library reference.
+    `sectionCount` is the row's sub-line; `origin` drives the badge + which verbs apply. */
+export interface ShowSongRow {
+  id: string;
+  name: string;
+  sectionCount: number;
+  origin: 'local' | 'reference';
+}
+
+/** The active show's setlist rows in play order — local authored songs first (from `local`),
+    then resolved library references (the tail of `resolved` not present locally). Order follows
+    `resolved` (which is `[...local, ...referenced]`); `origin` is `reference` for any resolved
+    song whose id is not a local song id. Pure: both lists snapshot fine from the store's runes. */
+export function showSongRows(local: readonly Song[], resolved: readonly Song[]): ShowSongRow[] {
+  const localIds = new Set(local.map((s) => s.id));
+  return resolved.map((s) => ({
+    id: s.id,
+    name: s.name,
+    sectionCount: s.sections.length,
+    origin: localIds.has(s.id) ? 'local' : 'reference',
+  }));
+}
+
+/** One row in the "Song Library" pool group: a library song with its used-by guard state.
+    `usedByNames` names the shows that reference it (the delete-blocked reason + the count);
+    `inThisShow` mirrors the active show's refs (Import → Detach, and an "In this show" badge);
+    `deletable` is the store's delete guard — true only when no show references it. */
+export interface LibrarySongRow {
+  id: string;
+  name: string;
+  usedByCount: number;
+  usedByNames: string[];
+  inThisShow: boolean;
+  deletable: boolean;
+}
+
+/** Build the Song Library pool rows from the store's `songLibraryList` (`{id,name,usedBy[]}`)
+    and the active show's `songRefs`. Insertion order preserved (the pool is authored order).
+    Pure — mirrors the store's delete guard (`deletable` ⇔ empty used-by) so the UI disables
+    Delete in lockstep with what {@link import('../../trigger-lab/store.svelte').TriggerLab.deleteLibrarySong} accepts. */
+export function librarySongRows(
+  list: readonly { id: string; name: string; usedBy: readonly { id: string; name: string }[] }[],
+  activeRefs: readonly string[],
+): LibrarySongRow[] {
+  const refs = new Set(activeRefs);
+  return list.map((s) => ({
+    id: s.id,
+    name: s.name,
+    usedByCount: s.usedBy.length,
+    usedByNames: s.usedBy.map((u) => u.name),
+    inThisShow: refs.has(s.id),
+    deletable: s.usedBy.length === 0,
+  }));
 }
 
 /** An effect row: the effect plus how many presets target it (its "detail"). Foundational —

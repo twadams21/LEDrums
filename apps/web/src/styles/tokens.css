@@ -10,15 +10,17 @@
   color-scheme: dark;
 
   /* ---- Graphite canvas — cool near-black instrument body ------------------ */
-  --bg-perform: oklch(0.135 0.011 256); /* perform stage backdrop (deepest)   */
-  --bg: oklch(0.170 0.012 256); /* app canvas (authoring)                      */
-  --surface: oklch(0.208 0.013 256); /* panel base                            */
-  --surface-2: oklch(0.245 0.014 256); /* raised control / panel header        */
-  --surface-3: oklch(0.288 0.015 256); /* popover / menu / hover lift          */
-  --surface-inset: oklch(0.155 0.011 256); /* sunken wells (inputs, tracks)    */
+  /* Wave-3 item F: the whole neutral ramp sits one step deeper (Resend-dark) —
+     panels darken with it so the surface steps keep their relative separation. */
+  --bg-perform: oklch(0.100 0.010 256); /* perform stage backdrop (deepest)   */
+  --bg: oklch(0.124 0.011 256); /* app canvas (authoring)                      */
+  --surface: oklch(0.152 0.012 256); /* panel base                            */
+  --surface-2: oklch(0.184 0.013 256); /* raised control / panel header        */
+  --surface-3: oklch(0.224 0.014 256); /* popover / menu / hover lift          */
+  --surface-inset: oklch(0.108 0.010 256); /* sunken wells (inputs, tracks)    */
 
-  --border-faint: oklch(0.262 0.012 256);
-  --border: oklch(0.318 0.015 256);
+  --border-faint: oklch(0.240 0.012 256);
+  --border: oklch(0.300 0.015 256);
   --border-strong: oklch(0.430 0.022 256);
 
   /* ---- Ink ramp (cool neutral, AA-verified against --surface) ------------- */
@@ -55,7 +57,8 @@
   --role-effect: oklch(0.785 0.150 68); /* modifier                            */
   --role-layer: oklch(0.745 0.150 152); /* composite / blend                   */
   --role-output: oklch(0.720 0.120 205); /* to the wire (Art-Net/sACN)         */
-  --role-mod: oklch(0.760 0.130 330); /* modulation (control → param)          */
+  --role-mod: oklch(0.760 0.130 330); /* modifier chain (media effect → play)   */
+  --role-modulation: oklch(0.820 0.130 195); /* modulation (source → param)     */
 
   /* ---- Live-reactive tint (opt-in; runtime sets to dominant LED colour) ---- */
   --reactive-tint: transparent;
@@ -83,6 +86,7 @@
   /* ---- Spacing (4px base) ------------------------------------------------- */
   --space-0_5: 2px;
   --space-1: 4px;
+  --space-1_5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -90,6 +94,14 @@
   --space-6: 32px;
   --space-7: 48px;
   --space-8: 64px;
+
+  /* ---- Shell gutter ------------------------------------------------------- */
+  /* The single gap between top-level chrome modules (top bar · transport · rails ·
+     center · docks). Flush (0) by default so modules read as one instrument body,
+     separated by their surface steps + borders rather than whitespace. Its own
+     knob — independent of --space-3 (which these gaps used to hard-code) — so a
+     gutter can be reintroduced globally by bumping this one value. */
+  --shell-gap: 0px;
 
   /* ---- Radii -------------------------------------------------------------- */
   --radius-1: 3px;
@@ -107,6 +119,11 @@
   /* Canonical square for icon-buttons (close / swap / add / …). Reconciles the
      old 24/30/32px divergence — 30px is the IconButton primitive's size. */
   --control-icon-size: 30px;
+  /* Canonical height for text-entry / select field controls (TextField,
+     CommitInput, Select trigger). One rhythm across every inspector row. */
+  --control-h: 26px;
+  /* Label column width for row-layout Fields (inspector label → control). */
+  --field-label-col: 6.5rem;
 
   /* ---- Elevation ---------------------------------------------------------- */
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.40);

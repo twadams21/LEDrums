@@ -3,12 +3,15 @@ import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
   decodeServer,
   type ClientMessage,
+  type ControllerStatus,
+  type DiscoveredController,
   type EffectSpec,
   type MonitorEvent,
   type OutputStatus,
   type SerializedModel,
   type ServerMessage,
   type ShowLibraryBlob,
+  type SongLibraryBlob,
   type TunnelInfo,
   type VoiceStats,
 } from './protocol-types';
@@ -38,6 +41,7 @@ export interface WSCallbacks {
     projects: string[],
     output: OutputStatus,
     showLibrary: ShowLibraryBlob | null,
+    songLibrary: SongLibraryBlob | null,
     tunnel: TunnelInfo | null,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
@@ -51,6 +55,14 @@ export interface WSCallbacks {
   /** Live authored-library push (S1): the editor's library relayed by the server — a viewer adopts
       it without a full `state` rebuild. */
   onShowLibrary?: (library: ShowLibraryBlob) => void;
+  /** Live authored SONG-library push — the editor's `setSongLibrary` relayed by the server (sibling
+      of {@link onShowLibrary}); a viewer adopts it without a full `state` rebuild. */
+  onSongLibrary?: (library: SongLibraryBlob) => void;
+  /** Live status of the adopted PixLite controller (S47/S48) — null when nothing is adopted.
+      Emitted on adopt, every successful poll, and a failed poll (`reachable: false`). */
+  onControllerStatus?: (status: ControllerStatus | null) => void;
+  /** Ranked candidate list from a discovery sweep (best-first); replaces the panel's list. */
+  onControllerDiscovery?: (candidates: DiscoveredController[]) => void;
   onError?: (message: string) => void;
   onConnection?: (state: ConnectionState) => void;
   /** The server refused the connection for a wrong/absent room PIN (close 4401). The reconnect
@@ -221,7 +233,7 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.tunnel);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel);
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
@@ -240,6 +252,15 @@ export class WSClient {
         break;
       case 'showLibrary':
         this.cb.onShowLibrary?.(msg.library);
+        break;
+      case 'songLibrary':
+        this.cb.onSongLibrary?.(msg.library);
+        break;
+      case 'controllerDiscovery':
+        this.cb.onControllerDiscovery?.(msg.candidates);
+        break;
+      case 'controllerStatus':
+        this.cb.onControllerStatus?.(msg.status);
         break;
       case 'error':
         this.cb.onError?.(msg.message);

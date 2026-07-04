@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LEDrums</title>
+    <style>
+      :root {
+        /* Injected from apps/web/src/styles/tokens.css by prepare-bundle.mjs at build time.
+           Do NOT hand-edit these values — edit the design tokens instead; the substitution
+           keeps this bootstrap shell in lock-step with the app's design system. */
+        --bg: #0b0b0f;
+        --text: #e6e6ee;
+        --text-faint: #9a9ab0;
+        --accent: #7c6cff;
+        --live: #ff5c6c;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 32px;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; }
+      .mark { display: block; }
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      /* Accent ring spinner — quarter-lit ring rotating over a faint track. */
+      .spinner {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 2px solid color-mix(in oklab, var(--text-faint) 28%, transparent);
+        border-top-color: var(--accent);
+        animation: spin 720ms linear infinite;
+      }
+      .status {
+        font-size: 12px;
+        color: var(--text-faint);
+        letter-spacing: 0.2px;
+      }
+      .hint {
+        margin: 0;
+        max-width: 34ch;
+        font-size: 11px;
+        line-height: 1.5;
+        color: var(--text-faint);
+        text-align: center;
+      }
+      /* Fatal error: hide the spinner, colour the status line danger. */
+      body[data-state='error'] .spinner { display: none; }
+      body[data-state='error'] .status { color: var(--live); }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner { animation: none; }
+      }
+    </style>
+  </head>
+  <body data-state="starting">
+    <div class="brand">
+      <!-- LEDrums mark — mirrors lib/ui/Logo.svelte / public/favicon.svg geometry (hoop + 3 pixels). -->
+      <svg class="mark" width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <circle cx="16" cy="16" r="9" fill="none" stroke="var(--accent)" stroke-width="1.8" opacity="0.55" />
+        <circle cx="16" cy="7" r="2.5" fill="var(--accent)" />
+        <circle cx="23.79" cy="20.5" r="2.5" fill="var(--accent)" />
+        <circle cx="8.21" cy="20.5" r="2.5" fill="var(--accent)" />
+      </svg>
+      <h1>LEDrums</h1>
+    </div>
+
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="status" id="statusText" role="status" aria-live="polite">Starting…</div>
+    <p class="hint" id="hint">Bringing the lighting engine online…</p>
+
+    <!-- Bundled by prepare-bundle.mjs → main.bundle.js (imports the Tauri APIs as modules; no
+         withGlobalTauri, so the full-app window is never given Tauri APIs). -->
+    <script type="module" src="./main.bundle.js"></script>
+  </body>
+</html>

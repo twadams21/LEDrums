@@ -48,7 +48,6 @@ function makeShow(drumId: string, zone: string): voice.Show {
     busId: '',
     params: {},
     env: {},
-    linked: false,
     noRepeat: false,
     on: 'value',
     valueMode: 'gate',
@@ -164,6 +163,23 @@ describe('VoiceEngineHost', () => {
     expect(stats.engine.busLevels.main).toBeGreaterThan(0);
   });
 
+  it('streams per-voice detail so a connected dock can render server-truth voices (S17)', () => {
+    const { host } = makeHost();
+    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+
+    const { voices } = host.getStats().engine;
+    expect(voices.length).toBe(host.getStats().engine.voiceCount);
+    expect(voices.length).toBeGreaterThan(0);
+    const v = voices[0]!;
+    expect(v.id).toBeTruthy();
+    expect(typeof v.busId).toBe('string');
+    expect(typeof v.effectId).toBe('string');
+    expect(v.level).toBeGreaterThanOrEqual(0);
+    expect(typeof v.releasing).toBe('boolean');
+  });
+
   it('blacks out and closes the transport on stop', () => {
     const { host, fake } = makeHost(voice.createNullEngine());
     host.step(STEP);
@@ -209,7 +225,7 @@ describe('VoiceEngineHost', () => {
   const trigNode = (source?: voice.TriggerSource): voice.GraphNode =>
     ({
       id: 'trig', kind: 'trigger', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '',
-      presetId: '', busId: '', params: {}, env: {}, linked: false, noRepeat: false, on: 'value',
+      presetId: '', busId: '', params: {}, env: {}, noRepeat: false, on: 'value',
       valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
       delayMode: 'time', ms: 0, division: '1/8', source,
     }) as voice.GraphNode;
@@ -217,7 +233,7 @@ describe('VoiceEngineHost', () => {
   const playNode = (busId: string): voice.GraphNode =>
     ({
       id: 'play', kind: 'play', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
-      presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {}, linked: false,
+      presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {},
       noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
       delayMode: 'time', ms: 0, division: '1/8',
     }) as voice.GraphNode;
@@ -359,13 +375,35 @@ describe('VoiceEngineHost', () => {
     );
   });
 
-  it('emits a graph miss monitor event for unresolved input', () => {
+  it('emits an unrouted-input monitor event for a note bound to no zone or graph', () => {
     const { host } = makeHost();
     const events: unknown[] = [];
     host.setMonitor((event) => events.push(event));
     host.setShow(makeShow('kick', SLOT_LABELS[0]));
 
+    // note 7 is in no zone-map entry and no graph source → genuinely unrouted
     host.applyInput({ kind: 'noteOn', note: 7, velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        label: 'Unrouted input',
+        detail: expect.stringContaining('matched no zone or graph'),
+      }),
+    );
+  });
+
+  it('emits a graph-miss monitor event for a routed pad hit with no resolved graph', () => {
+    const { host } = makeHost();
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+    // A show whose only graph is for a DIFFERENT drum, so a snare pad hit routes but resolves nothing.
+    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+
+    host.applyInput({ kind: 'key', drumId: 'snare', zone: SLOT_LABELS[0], velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
 
     expect(events).toContainEqual(

@@ -107,13 +107,14 @@
     transform: translateY(-50%);
     border-radius: 50%;
     background: var(--ink);
-    border: 2px solid var(--accent);
+    border: 2px solid var(--ink);
     box-shadow: var(--shadow-1);
     cursor: grab;
     transition: box-shadow var(--dur-120) ease, border-color var(--dur-120) ease;
   }
   .slider :global(.thumb:hover) {
-    border-color: color-mix(in oklch, var(--accent) 70%, var(--ink));
+    border-color: var(--accent);
+    /* background: var(--accent); */
   }
   .slider :global(.thumb:focus-visible) {
     outline: none;
