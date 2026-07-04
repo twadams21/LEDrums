@@ -13,6 +13,8 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import { onDestroy } from 'svelte';
   import { Popover } from 'bits-ui';
+  import { desktopBridge } from '../desktop-bridge.svelte';
+  import { shareVisible } from './share-gating';
   import Share2 from '@lucide/svelte/icons/share-2';
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
@@ -25,7 +27,9 @@
   const pin = $derived(tunnel?.pin ?? null);
   /** Lifecycle phase; an older server without `status` implies live-if-url (legacy shape). */
   const status = $derived(tunnel?.status ?? (tunnel?.url ? 'live' : 'off'));
-  const show = $derived(!!tunnel);
+  // On desktop, additionally hide the whole surface until the server is running — a URL/PIN shown
+  // mid-start or mid-update is dead. In a plain browser this never gates (see share-gating.ts).
+  const show = $derived(shareVisible(!!tunnel, desktopBridge.isDesktop, desktopBridge.bootStatus.stage));
   /** Viewers can look but not start/stop — the server enforces this; we just disable. */
   const canControl = $derived(!store.isViewer);
 

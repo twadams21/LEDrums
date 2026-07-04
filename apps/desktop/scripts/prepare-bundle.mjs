@@ -12,9 +12,10 @@
 // the previously built binary in src-tauri/binaries is reused.
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { substituteShellTokens } from './shell-tokens.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
@@ -22,6 +23,9 @@ const repoRoot = resolve(desktopDir, '..', '..');
 const webDist = join(repoRoot, 'apps', 'web', 'dist');
 const stagedWeb = join(desktopDir, 'web-dist');
 const cloudflaredDir = join(desktopDir, 'src-tauri', 'cloudflared');
+const tokensCssPath = join(repoRoot, 'apps', 'web', 'src', 'styles', 'tokens.css');
+const shellTemplate = join(desktopDir, 'shell', 'index.template.html');
+const shellIndex = join(desktopDir, 'shell', 'index.html');
 
 function run(cmd, args, opts = {}) {
   console.log(`[prepare] $ ${cmd} ${args.join(' ')}`);
@@ -56,6 +60,13 @@ await esbuild.build({
   logLevel: 'info',
 });
 console.log('[prepare] shell script bundled → shell/main.bundle.js');
+
+// 2c. Generate the served shell page from its template, injecting the design-system token values so
+// the bootstrap shell can never drift from the app's palette (no second hand-kept colour set).
+const tokensCss = readFileSync(tokensCssPath, 'utf8');
+const shellHtml = substituteShellTokens(readFileSync(shellTemplate, 'utf8'), tokensCss);
+writeFileSync(shellIndex, shellHtml);
+console.log('[prepare] shell page generated → shell/index.html (tokens injected from tokens.css)');
 
 // 3. Build the sidecar binary (unless explicitly skipped).
 if (process.env.PREPARE_SKIP_SIDECAR === '1') {
