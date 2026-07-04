@@ -2,6 +2,7 @@
   /* Patch controller node — the Art-Net / sACN transport: protocol, host, port, interface,
      RGB order, FPS, broadcast/multicast, and sACN priority. Writes through store.setOutput.
      Offline-safe (controls disabled, rename still works). */
+  import { onMount } from 'svelte';
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { RgbOrder } from '@ledrums/core';
   import Field from '../../../ui/Field.svelte';
@@ -18,9 +19,27 @@
 
   const project = $derived(store.project);
   const out = $derived(project?.output ?? null);
+
+  // S48: subscribe to controller status while this panel is open — the ONLY thing that gates the
+  // server's poll loop (no idle traffic). Watch on mount, un-watch on teardown; a link drop clears
+  // it server-side. onMount's cleanup fires on unmount, so a closed panel stops the poll.
+  onMount(() => {
+    store.watchController(true);
+    return () => store.watchController(false);
+  });
 </script>
 
-<OutputStatusPanel output={store.output} packetsPerSec={store.outputPacketsPerSec} port={out?.port} />
+<OutputStatusPanel
+  output={store.output}
+  packetsPerSec={store.outputPacketsPerSec}
+  port={out?.port}
+  controller={store.controllerStatus}
+  candidates={store.controllerCandidates}
+  canEdit={store.canEdit}
+  onDiscover={() => store.discoverControllers()}
+  onAdopt={(host) => store.adoptController(host)}
+  onIdentify={() => store.identifyController()}
+/>
 <Separator />
 
 {#if out}
