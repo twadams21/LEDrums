@@ -70,6 +70,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 09:3x — ✅✅ SHIPPED TO MAIN (initiative complete)
+
+- **FINAL GATE PASSED (Trent chose 'merge to main now').** rock-solid → main merged: main HEAD **fb5e97b** (merge commit; parents old-main 14b206d + rock-solid 26ec36d), pushed to origin (origin/main == fb5e97b). main now contains all 49 slices + Phase-2 polish; only `.mex/ROUTER.md` differs (the pre-existing main docs commit).
+- **Trent's local main WIP preserved in `stash@{0}`** ("pre rock-solid->main merge: Trent local WIP…") — desktop configs + old (superseded) styling + untracked .dmg/guide/permissions. Recover: `git -C ~/Documents/dev/ledrums stash show -p stash@{0}` then `stash pop` (expect conflicts on the superseded styling — rock-solid's versions are newer).
+- **Deferred to Trent (post-ship follow-ups, NOT gating):** signed-build desktop OTA progress spot-check; real PixLite A4 hardware spot-check. Plus Phase-2 items A/B/C(done)/D-partial/E/G/H/I still open in docs/plans/2026-07-03-phase2-review/HANDOFF.md.
+- **Initiative COMPLETE.** Worktree pool + stash left intact for follow-up (not torn down). 5h ~67%, 7d 80%.
+
 ### 2026-07-04 09:28 — SEAM REVIEW = GO; awaiting Trent's final gate
 
 - **Cross-lane seam review (seam-review-7618fa, opus) = GO.** All 5 seams HOLD (evidence in code): routing↔looks↔modulation authority; modifier↔modulation (H residual CLOSED); library↔clipboard (one idSeq, reserveIds both paths); desktop↔pixlite↔OutputStatus (S48 extends S03, server-authoritative takeover); Phase-2 shell × lanes (all theme reads via shared readThemeTokens, self-ref-effect scan CLEAN). Gates: typecheck 0, 2009 tests/0 skips; `ui-shot --all --strict` 20/20 clean console. Killed reviewer.
