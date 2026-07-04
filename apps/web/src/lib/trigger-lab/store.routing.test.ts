@@ -81,6 +81,16 @@ describe('setDrumTransform', () => {
   });
 });
 
+describe('setKitMirror', () => {
+  it('sets the kit-global mirror live — writes kit.global.mirror locally and sends setKitGlobal', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setKitMirror('x');
+    expect(store.project!.kit.global.mirror).toBe('x');
+    expect(sent).toContainEqual({ t: 'setKitGlobal', mirror: 'x' });
+  });
+});
+
 describe('setInputMap / setOutput', () => {
   it('setInputMap writes locally and sends', () => {
     const sent: ClientMessage[] = [];
