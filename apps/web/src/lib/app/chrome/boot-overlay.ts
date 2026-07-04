@@ -19,6 +19,10 @@ export interface BootOverlayView {
   /** Download progress 0–100 while `updating`; `null` otherwise (and while updating with an unknown
    *  percentage — the bar then renders indeterminate). */
   progressPct: number | null;
+  /** Bytes downloaded / total content length while `updating`, when the updater reports a content
+   *  length; `null` otherwise. Drives the "123 / 144 MB" size readout under the bar. */
+  downloadedBytes: number | null;
+  totalBytes: number | null;
 }
 
 export function computeBootOverlay(active: boolean, status: BootStatus): BootOverlayView | null {
@@ -30,6 +34,8 @@ export function computeBootOverlay(active: boolean, status: BootStatus): BootOve
         title: 'Starting LEDrums',
         message: status.message ?? 'Bringing the lighting engine online…',
         progressPct: null,
+        downloadedBytes: null,
+        totalBytes: null,
       };
     case 'updating':
       return {
@@ -38,6 +44,8 @@ export function computeBootOverlay(active: boolean, status: BootStatus): BootOve
         message:
           status.message ?? 'Downloading the latest version. The app will restart automatically.',
         progressPct: clampPct(status.progressPct),
+        downloadedBytes: status.downloadedBytes,
+        totalBytes: status.totalBytes,
       };
     case 'error':
       return {
@@ -47,6 +55,8 @@ export function computeBootOverlay(active: boolean, status: BootStatus): BootOve
           status.message ??
           'The server failed to start. Quit and reopen the app; if it persists, check the logs.',
         progressPct: null,
+        downloadedBytes: null,
+        totalBytes: null,
       };
     // running / no-tunnel: the app itself is up and visible — no overlay.
     default:

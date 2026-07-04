@@ -41,6 +41,15 @@ describe('computeBootOverlay', () => {
     expect(computeBootOverlay(true, status({ stage: 'updating', progressPct: -5 }))?.progressPct).toBe(0);
   });
 
+  it('updating → carries the download byte counts for the size readout', () => {
+    const v = computeBootOverlay(
+      true,
+      status({ stage: 'updating', progressPct: 45, downloadedBytes: 65_000_000, totalBytes: 144_000_000 }),
+    );
+    expect(v?.downloadedBytes).toBe(65_000_000);
+    expect(v?.totalBytes).toBe(144_000_000);
+  });
+
   it('error → the error variant with the failure message', () => {
     const v = computeBootOverlay(true, status({ stage: 'error', message: 'sidecar died' }));
     expect(v?.variant).toBe('error');

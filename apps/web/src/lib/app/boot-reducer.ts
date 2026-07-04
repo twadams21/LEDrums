@@ -15,6 +15,10 @@ export interface BootStatus {
   message: string | null;
   /** Download progress 0–100 while `updating`; `null` at every other stage. */
   progressPct: number | null;
+  /** Bytes downloaded so far / total content length while `updating` (when the updater reports a
+   *  content length); `null` at every other stage. Drives the "123 / 144 MB" size readout. */
+  downloadedBytes: number | null;
+  totalBytes: number | null;
   localUrl: string | null;
   tunnelUrl: string | null;
   pin: string | null;
@@ -33,6 +37,8 @@ export interface TauriBootPayload {
   stage?: BootStage;
   message?: string | null;
   progressPct?: number | null;
+  downloadedBytes?: number | null;
+  totalBytes?: number | null;
   localUrl?: string | null;
   tunnelUrl?: string | null;
   pin?: string | null;
@@ -53,6 +59,8 @@ export const initialBootStatus: BootStatus = {
   stage: 'starting',
   message: null,
   progressPct: null,
+  downloadedBytes: null,
+  totalBytes: null,
   localUrl: null,
   tunnelUrl: null,
   pin: null,
@@ -85,10 +93,18 @@ export function reduceBoot(state: BootStatus, event: BridgeEvent): BootStatus {
         tunnelUrl: p.tunnelUrl ?? state.tunnelUrl,
         pin: p.pin ?? state.pin,
         progressPct: p.progressPct !== undefined ? p.progressPct : state.progressPct,
+        downloadedBytes:
+          p.downloadedBytes !== undefined ? p.downloadedBytes : state.downloadedBytes,
+        totalBytes: p.totalBytes !== undefined ? p.totalBytes : state.totalBytes,
         updateAvailable: p.updateAvailable !== undefined ? p.updateAvailable : state.updateAvailable,
         updateVersion: p.updateVersion !== undefined ? p.updateVersion : state.updateVersion,
       };
-      if (stage !== 'updating') next.progressPct = null;
+      // Progress + byte counts are only meaningful while updating; clear them at every other stage.
+      if (stage !== 'updating') {
+        next.progressPct = null;
+        next.downloadedBytes = null;
+        next.totalBytes = null;
+      }
       return next;
     }
     case 'update-available':

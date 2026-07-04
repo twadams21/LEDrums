@@ -62,6 +62,18 @@ describe('reduceBoot', () => {
     expect(reduceBoot(updating, { kind: 'status', payload: { stage: 'running' } }).progressPct).toBeNull();
   });
 
+  it('streams download byte counts while updating and clears them when it ends', () => {
+    let state: BootStatus = { ...initialBootStatus, stage: 'running' };
+    state = reduceBoot(state, {
+      kind: 'status',
+      payload: { stage: 'updating', progressPct: 45, downloadedBytes: 65_000_000, totalBytes: 144_000_000 },
+    });
+    expect(state).toMatchObject({ downloadedBytes: 65_000_000, totalBytes: 144_000_000 });
+    // Leaving updating clears the byte counts alongside progressPct.
+    const done = reduceBoot(state, { kind: 'status', payload: { stage: 'running' } });
+    expect(done).toMatchObject({ downloadedBytes: null, totalBytes: null, progressPct: null });
+  });
+
   it('carries the error message on the error stage', () => {
     const next = reduceBoot(initialBootStatus, {
       kind: 'status',

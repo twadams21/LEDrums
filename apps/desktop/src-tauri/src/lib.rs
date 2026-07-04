@@ -57,6 +57,13 @@ struct BootStatus {
     /// of parsing a percentage out of `message`.
     #[serde(rename = "progressPct")]
     progress_pct: Option<u8>,
+    /// Bytes downloaded so far / total content length while `stage == "updating"` (only when the
+    /// updater reports a content length). Drives the human "123 / 144 MB" size readout in the boot
+    /// overlay; skip-serialized when absent so an ordinary boot event never touches them.
+    #[serde(rename = "downloadedBytes", skip_serializing_if = "Option::is_none")]
+    downloaded_bytes: Option<u64>,
+    #[serde(rename = "totalBytes", skip_serializing_if = "Option::is_none")]
+    total_bytes: Option<u64>,
     /// Set by the startup OTA check when a newer build is available — this is how availability
     /// reaches the in-app badge now that the native dialog is gone (S07). Skip-serialized when
     /// `None` so an ordinary boot event never touches the web-side `updateAvailable` flag.
@@ -165,6 +172,8 @@ async fn install_update_now(app: AppHandle) -> Result<(), String> {
                         stage: "updating".into(),
                         message: Some(message),
                         progress_pct,
+                        downloaded_bytes: Some(total),
+                        total_bytes: content_len.filter(|&len| len > 0),
                         ..Default::default()
                     },
                 );

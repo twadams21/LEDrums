@@ -37,7 +37,7 @@
 
 <header class="topbar">
   <div class="brand">
-    <Logo size={20} />
+    <Logo size={28} />
     <span class="word">LEDrums</span>
   </div>
 

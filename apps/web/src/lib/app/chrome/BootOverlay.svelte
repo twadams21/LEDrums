@@ -16,6 +16,18 @@
   let { status, active }: { status: BootStatus; active: boolean } = $props();
 
   const view = $derived(computeBootOverlay(active, status));
+
+  /** Whole megabytes (decimal MB, matching how download sizes are quoted). */
+  function formatMb(bytes: number): string {
+    return `${Math.round(bytes / 1_000_000)}`;
+  }
+
+  // "123 / 144 MB" — shown only while updating with a known content length.
+  const sizeLabel = $derived(
+    view?.variant === 'updating' && view.downloadedBytes != null && view.totalBytes != null
+      ? `${formatMb(view.downloadedBytes)} / ${formatMb(view.totalBytes)} MB`
+      : null,
+  );
 </script>
 
 {#if view}
@@ -57,8 +69,8 @@
               <span class="fill" style="width:{view.progressPct}%"></span>
             {/if}
           </div>
-          {#if view.progressPct !== null}
-            <span class="pct">{Math.round(view.progressPct)}%</span>
+          {#if sizeLabel}
+            <span class="size">{sizeLabel}</span>
           {/if}
         </div>
       {/if}
@@ -160,15 +172,16 @@
 
   .progress {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2);
     width: 17rem;
     max-width: 100%;
     margin-top: var(--space-2);
   }
   .track {
     position: relative;
-    flex: 1;
+    width: 100%;
     height: 6px;
     border-radius: var(--radius-pill);
     background: var(--surface-inset);
@@ -190,13 +203,11 @@
     width: 40%;
     animation: boot-sweep 1.15s var(--ease-control) infinite;
   }
-  .pct {
-    flex: none;
-    min-width: 2.6ch;
-    text-align: right;
+  .size {
     font-size: var(--text-xs);
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
     color: var(--text-muted);
   }
 
