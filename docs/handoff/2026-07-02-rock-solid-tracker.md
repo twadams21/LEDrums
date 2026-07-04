@@ -68,7 +68,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
-### 2026-07-04 — Wave-3 IMPLEMENTED + REVIEWED on `wave-3/design` (wt-3) — merge PENDING TRENT
+### 2026-07-04 — Wave-3 MERGED → rock-solid (waves 1–3 COMPLETE)
+
+- **Wave-3 MERGED** as `0af9290` (--no-ff), pushed (local == origin/rock-solid). Trent chose stash-and-merge: his rail-swap experiment is preserved as `stash@{0}` on wt-master ("trent rail-swap experiment (pre-wave-3, superseded by Graphs dock)") — NOT popped, since wave-3 rewrote `TriggerGraphView.svelte`; recover with `git stash pop` (expect a conflict) only if he wants it back.
+- **Post-merge master sweep green in wt-master:** typecheck 0 (2343 web files); core 548 · io 13 · protocol 1 · server 204 · web 1058, 0 skips.
+- Details of what wave-3 contains + review notes: next entry below. **Remaining phase-2 work: the WAVE3-REPORT follow-ups (previews for remaining node kinds · GraphsDock styleguide demo · empty-bus-card whitespace w/ Trent) + Trent's own live pass on the new shell. 🛑 Lane 4 STILL ON HOLD.**
+
+### 2026-07-04 — Wave-3 IMPLEMENTED + REVIEWED on `wave-3/design` (wt-3) — merge was pending Trent (resolved: stash+merge)
 
 - **Wave-3 complete on `wave-3/design`** (wt-3, 13 commits): (F) darker neutral ramp (AA re-verified); the APPROVED shell re-layout — Node Editor drawer (Add/Inspector) in both graph views, full-height right column (Kit preview + vertical Buses/Layers w/ inline bus settings), bottom Graphs dock (section tabs · hotkey cards 1–9/0 · real graph mini-maps · fire flash · ←/→ sections), dock-tab concept removed (Monitor stays a view); (D) PanelHeader title unification everywhere + icon+tooltip invert control + microcopy de-build-speak; (E) params INSIDE the node card (head-anchored handles, no regression); (G) live-on-trigger previews — `graphFireAt` seam + pure `triggerClock`, play+envelope wired (LFO/CC continuous by design; other kinds = proposed follow-up); (I) Song Library = its own Objects rail row; real logo+favicon (hoop + 3 lit pixels); + Trent-requested trigger-node right-click menu (copy/paste/duplicate/delete+confirm, new `ui/ConfirmDialog`). Reports: `WAVE3-ASSIGNMENT.md` + `WAVE3-REPORT.md` (phase2-review dir, on the branch).
 - **Split execution:** master implemented F + the shell re-layout directly (bb75c63/e3a8a90/0afac14); remaining items via impl agent `wave3-design-pass-159f70` (twux, effort low — NB ran on the twux default model Opus 4.8, not fable). Master review: full diff read, ONE defect found+fixed (`--space-1_5` used but undefined → padding collapsed to 0; token added, 29fd5de), independent full gate re-run green (typecheck 0 / 2343 files; core 548 · io 13 · protocol 1 · server 204 · web 1058, 0 skips), shots re-viewed.
