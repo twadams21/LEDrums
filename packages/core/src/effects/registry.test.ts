@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { effectIds, getEffect, listEffects, tryGetEffect } from './registry';
+import { COLLECTIONS, collectionOf, isEffectTag } from './vocabulary';
 
 describe('effect registry', () => {
   it('has unique effect ids', () => {
@@ -42,5 +43,26 @@ describe('effect registry', () => {
 
   it('throws on an unknown effect id', () => {
     expect(() => getEffect('does-not-exist')).toThrow(/Unknown effect/);
+  });
+
+  it('every non-deprecated effect has a description and at least one valid tag (D1)', () => {
+    for (const e of listEffects()) {
+      if (e.deprecated) continue; // retired effects are exempt (hidden from the gallery)
+      expect(e.description, `${e.id} description`).toBeTruthy();
+      expect(e.description!.length, `${e.id} description length`).toBeGreaterThan(20);
+      expect(e.tags?.length ?? 0, `${e.id} tags`).toBeGreaterThanOrEqual(1);
+      for (const t of e.tags ?? []) {
+        expect(isEffectTag(t), `${e.id} tag "${t}" in vocabulary`).toBe(true);
+      }
+    }
+  });
+
+  it('every effect maps to exactly one known collection (total taxonomy)', () => {
+    const types = new Set(COLLECTIONS.map((c) => c.type));
+    for (const e of listEffects()) {
+      if (e.deprecated) continue;
+      const type = collectionOf(e.tags);
+      expect(types.has(type), `${e.id} → ${type}`).toBe(true);
+    }
   });
 });

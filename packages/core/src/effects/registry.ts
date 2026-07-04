@@ -1,4 +1,5 @@
 import type { EffectGenerator } from './types';
+import { EFFECT_METADATA } from './metadata';
 import { solidBase } from './impl/solid-base';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
@@ -100,7 +101,10 @@ const ALL: EffectGenerator<any>[] = [
 const registry = new Map<string, EffectGenerator<any>>();
 for (const e of ALL) {
   if (registry.has(e.id)) throw new Error(`Duplicate effect id: ${e.id}`);
-  registry.set(e.id, e);
+  // Merge central metadata (description/tags/deprecated) onto the generator so the seam
+  // carries it without editing 45 impl files (D1). Any fields already on the impl win.
+  const meta = EFFECT_METADATA[e.id];
+  registry.set(e.id, meta ? { ...meta, ...e } : e);
 }
 
 export function getEffect(id: string): EffectGenerator<any> {

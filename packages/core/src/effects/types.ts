@@ -1,6 +1,7 @@
 import type { PixelModel } from '../geometry/pixel-model';
 import type { Framebuffer } from '../engine/framebuffer';
 import type { RenderContext } from '../engine/render-context';
+import type { EffectTag } from './vocabulary';
 
 export type ParamType = 'number' | 'color' | 'enum' | 'bool';
 
@@ -44,6 +45,15 @@ export interface EffectGenerator<State = unknown> {
   id: string;
   name: string;
   category: EffectCategory;
+  /** 1–2 sentences for the gallery card + inspector — what it does and why it reads well on
+      THIS kit. Populated centrally from `metadata.ts` by the registry (additive, D1). */
+  description?: string;
+  /** Tags from the controlled vocabulary (`vocabulary.ts`). DATA the gallery filters and
+      derives collections from — nothing in the render path branches on them. */
+  tags?: readonly EffectTag[];
+  /** When set, this effect is retired: hidden from the gallery and aliased to `replacedBy`
+      (the alias map keeps existing shows working). Left unset until U3's retire/merge pass. */
+  deprecated?: { replacedBy: string; note?: string };
   paramSpec: ParamSpec[];
   /**
    * Clock this effect animates against (default `'absolute'`). The flag is interface, not

@@ -25,6 +25,9 @@ export * from './effects/types';
 export * from './effects/field';
 export * from './effects/emitter';
 export * from './effects/registry';
+export * from './effects/vocabulary';
+export * from './effects/metadata';
+export * from './effects/aliases';
 
 // Modifiers (media-effects layer — pure framebuffer transforms applied between a
 // voice's render and the compositor blend). The chain runner is the compositor's seam.
