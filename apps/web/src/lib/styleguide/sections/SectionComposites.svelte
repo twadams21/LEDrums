@@ -9,6 +9,8 @@
   import NodeCard from '../../app/views/NodeCard.svelte';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import BootOverlay from '../../app/chrome/BootOverlay.svelte';
+  import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
@@ -133,6 +135,9 @@
   const renameStub = new RenameStub() as unknown as TriggerLab;
 
   let inspectorGain = $state(0.7);
+
+  /* ---- BootOverlay — pure props (status + active) ------------------------------ */
+  const boot = (patch: Partial<BootStatus>): BootStatus => ({ ...initialBootStatus, ...patch });
 </script>
 
 <section class="block" id="composites">
@@ -274,6 +279,21 @@
         <Monitor store={monitorStub} variant="dock" />
       </div>
     </DemoCard>
+
+    <DemoCard
+      title="Boot overlay"
+      src={['lib/app/chrome/BootOverlay', 'lib/app/chrome/boot-overlay']}
+      note="Desktop-only full-screen takeover driven by the desktop bridge's bootStatus: a spinner while starting, a progress bar (streamed %, tabular numbers, indeterminate when unknown) while updating, a danger panel on error. Renders nothing in a plain browser or once running. Framed here; in the app it covers the whole viewport."
+      wide
+    >
+      <div class="boot-row">
+        <div class="boot-frame"><BootOverlay active status={boot({ stage: 'starting' })} /></div>
+        <div class="boot-frame"><BootOverlay active status={boot({ stage: 'updating', progressPct: 62 })} /></div>
+        <div class="boot-frame">
+          <BootOverlay active status={boot({ stage: 'error', message: 'The server failed to start. Quit and reopen the app.' })} />
+        </div>
+      </div>
+    </DemoCard>
   </div>
 </section>
 
@@ -328,5 +348,20 @@
   }
   .monitor-demo {
     height: 260px;
+  }
+  .boot-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-4);
+  }
+  .boot-frame {
+    position: relative;
+    height: 260px;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-3);
+    overflow: hidden;
+    /* Establish a containing block so the overlay's position:fixed scopes to this frame, not the
+       viewport — lets the REAL component render inside the styleguide (no markup copy). */
+    transform: translateZ(0);
   }
 </style>
