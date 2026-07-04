@@ -70,6 +70,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 09:08 — group L 3/4; S49 = LAST slice in flight
+
+- **group/L 3/4:** S46/S47/**S48 (controller panel UI)** merged. **S49-test-patterns — the FINAL slice (49/49) — in flight** (opus/med). Then L integrate+review (live-smoke-load) + handoff → LANE 4 DONE.
+- 5h 65% (nearing 70%; S49 already launched → L finishes regardless), 7d 80% (<85%). rock-solid 9723474.
+- **Next (imminent):** merge group/L → LANE 4 DONE (49/49 🎉) → cross-lane seam review → FINAL GATE w/ Trent (AskUserQuestion).
+
 ### 2026-07-04 08:37 — group L 2/4 (S48 UI in flight)
 
 - **group/L 2/4:** S46 + S47 (controller-monitor service/protocol/tests) merged. **S48-controller-panel (opus/high, the UI slice) in flight** — ensure live-smoke-load in its review. S49 (test patterns + takeover) last. 5h 57%, **7d 79% (FLAT — climb eased, escalation risk receding)**.
