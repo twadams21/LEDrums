@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import ControllerStatusPanel from './ControllerStatusPanel.svelte';
-import type { ControllerStatus, ControllerUniverseRx, DiscoveredController } from '../../../ws/protocol-types';
+import type { ControllerStatus, ControllerTestPattern, ControllerUniverseRx, DiscoveredController } from '../../../ws/protocol-types';
 
 const uni = (o: Partial<ControllerUniverseRx> = {}): ControllerUniverseRx => ({
   uniNum: 1,
@@ -201,7 +201,7 @@ describe('ControllerStatusPanel — test patterns + takeover (S49)', () => {
   });
 
   it('lights the active solid swatch matching the running pattern', () => {
-    const pattern = { op: 'setColor', color: [255, 0, 0, 0] } as const;
+    const pattern: ControllerTestPattern = { op: 'setColor', color: [255, 0, 0, 0] };
     const { container, getByLabelText } = render(ControllerStatusPanel, {
       props: { controller: ctrl(), candidates: [], nowMs: NOW, takeover: pattern },
     });

@@ -7,7 +7,7 @@ import {
   subnet24,
   type IntervalScheduler,
 } from './controller-monitor';
-import type { ControllerStatus, ServerMessage } from './ws-protocol';
+import type { ControllerStatus, ControllerTestPattern, ServerMessage } from './ws-protocol';
 
 const CONTROLLER_HOST = '192.168.9.77';
 const OUTPUT_HOST = '192.168.9.50'; // same /24 as the controller, so discovery sweeps toward it
@@ -274,7 +274,7 @@ describe('controller monitor', () => {
   it('setTestData drives modeTestData and reports the takeover on controllerStatus (S49)', async () => {
     const h = makeHarness();
     await h.monitor.adopt(CONTROLLER_HOST);
-    const pattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 } as const;
+    const pattern: ControllerTestPattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 };
     await h.monitor.setTestData(pattern);
     expect(h.fake.testDataCalls).toEqual([pattern]);
     // Server-authoritative takeover state is echoed on the next status.

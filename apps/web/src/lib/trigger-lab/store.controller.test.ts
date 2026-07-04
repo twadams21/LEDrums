@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import { defaultProject } from '@ledrums/core';
 import type { WSClient, WSCallbacks } from '../ws/client';
-import type { ClientMessage, ControllerStatus, DiscoveredController } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController } from '../ws/protocol-types';
 
 /* S48 — the PixLite controller monitor wiring in the store: the server's `controllerStatus` /
    `controllerDiscovery` broadcasts land in reactive state, and the panel-facing send helpers
@@ -172,7 +172,7 @@ describe('store — controller send helpers', () => {
 
 describe('store — controller test patterns + takeover (S49)', () => {
   it('setControllerTestData sends the pattern for an editor and no-ops for a viewer', () => {
-    const pattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 } as const;
+    const pattern: ControllerTestPattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 };
     const editor = wired();
     editor.store.setControllerTestData(pattern);
     expect(editor.h.sent).toContainEqual({ t: 'controllerTestData', pattern });
