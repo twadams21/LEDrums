@@ -25,7 +25,10 @@ export interface BootStatus {
 }
 
 /** Raw payload shape emitted by Rust `boot://status` / returned by `get_boot_status`.
- * Serde renames make these camelCase; every field is optional/nullable on the wire. */
+ * Serde renames make these camelCase; every field is optional/nullable on the wire.
+ * `updateAvailable`/`updateVersion` ride the boot event only when the Rust startup OTA check
+ * finds a newer build (skip-serialized otherwise) — that's how startup availability reaches the
+ * in-app badge without a native dialog (S07). */
 export interface TauriBootPayload {
   stage?: BootStage;
   message?: string | null;
@@ -33,6 +36,8 @@ export interface TauriBootPayload {
   localUrl?: string | null;
   tunnelUrl?: string | null;
   pin?: string | null;
+  updateAvailable?: boolean;
+  updateVersion?: string | null;
 }
 
 /** Events the reducer folds into `BootStatus`. `snapshot` and `status` share merge semantics — the
@@ -61,13 +66,17 @@ export const initialBootStatus: BootStatus = {
  * state; a null-but-present field is treated the same as absent for the "sticky" fields
  * (localUrl/tunnelUrl/pin) so an `updating` payload — which Rust rebuilds fresh with only
  * stage+message+progress — never wipes the URL/PIN learned during boot. `progressPct` is only
- * meaningful while `updating`, so it is cleared whenever the stage is anything else. */
+ * meaningful while `updating`, so it is cleared whenever the stage is anything else.
+ * `updateAvailable`/`updateVersion` are likewise sticky: only a payload that carries them (the
+ * startup availability publish) changes them, so an ordinary boot event never clears the badge. */
 export function reduceBoot(state: BootStatus, event: BridgeEvent): BootStatus {
   switch (event.kind) {
     case 'snapshot':
     case 'status': {
       const p = event.payload;
-      const stage = p.stage ?? state.stage;
+      // An empty stage (e.g. a bare availability publish before the sidecar set one) is treated as
+      // absent so it can never overwrite a real stage with an invalid value.
+      const stage = p.stage ? p.stage : state.stage;
       const next: BootStatus = {
         ...state,
         stage,
@@ -76,6 +85,8 @@ export function reduceBoot(state: BootStatus, event: BridgeEvent): BootStatus {
         tunnelUrl: p.tunnelUrl ?? state.tunnelUrl,
         pin: p.pin ?? state.pin,
         progressPct: p.progressPct !== undefined ? p.progressPct : state.progressPct,
+        updateAvailable: p.updateAvailable !== undefined ? p.updateAvailable : state.updateAvailable,
+        updateVersion: p.updateVersion !== undefined ? p.updateVersion : state.updateVersion,
       };
       if (stage !== 'updating') next.progressPct = null;
       return next;

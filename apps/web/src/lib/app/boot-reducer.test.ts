@@ -78,6 +78,24 @@ describe('reduceBoot', () => {
     expect(cleared).toMatchObject({ updateAvailable: false, updateVersion: null, pin: '123' });
   });
 
+  it('folds update availability arriving on a boot event (Rust startup check)', () => {
+    // S07: the native dialog is gone; the Rust startup OTA check publishes availability through the
+    // boot event, so the reducer must surface it into updateAvailable/updateVersion for the badge.
+    const running: BootStatus = { ...initialBootStatus, stage: 'running', pin: '481923' };
+    const next = reduceBoot(running, {
+      kind: 'status',
+      payload: { updateAvailable: true, updateVersion: '2.0.0' },
+    });
+    expect(next).toMatchObject({ stage: 'running', pin: '481923', updateAvailable: true, updateVersion: '2.0.0' });
+  });
+
+  it('keeps update availability sticky across ordinary boot events', () => {
+    const avail: BootStatus = { ...initialBootStatus, stage: 'running', updateAvailable: true, updateVersion: '2.0.0' };
+    // A later status that says nothing about updates must not clear the badge.
+    const next = reduceBoot(avail, { kind: 'status', payload: { stage: 'running', message: 'still here' } });
+    expect(next).toMatchObject({ updateAvailable: true, updateVersion: '2.0.0' });
+  });
+
   it('does not mutate its input', () => {
     const frozen = Object.freeze({ ...initialBootStatus });
     expect(() => reduceBoot(frozen, { kind: 'status', payload: { stage: 'running' } })).not.toThrow();

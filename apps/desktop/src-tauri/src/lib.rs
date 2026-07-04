@@ -18,7 +18,6 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -58,6 +57,13 @@ struct BootStatus {
     /// of parsing a percentage out of `message`.
     #[serde(rename = "progressPct")]
     progress_pct: Option<u8>,
+    /// Set by the startup OTA check when a newer build is available — this is how availability
+    /// reaches the in-app badge now that the native dialog is gone (S07). Skip-serialized when
+    /// `None` so an ordinary boot event never touches the web-side `updateAvailable` flag.
+    #[serde(rename = "updateAvailable", skip_serializing_if = "Option::is_none")]
+    update_available: Option<bool>,
+    #[serde(rename = "updateVersion", skip_serializing_if = "Option::is_none")]
+    update_version: Option<String>,
 }
 
 /// The latest boot status, shared between the sidecar reader task and the `get_boot_status` command.
@@ -73,6 +79,20 @@ fn publish(app: &AppHandle, status: &BootStatus) {
         }
     }
     let _ = app.emit("boot://status", status.clone());
+}
+
+/// Merge OTA availability (found by the startup check) into the stored boot status and emit it.
+/// Startup runs concurrently with the sidecar, so we fold into whatever stage/url/pin is already
+/// known instead of publishing a bare status that would clobber them — this is the sole channel
+/// by which startup availability reaches the in-app badge (the native dialog is gone, S07).
+fn publish_update_available(app: &AppHandle, version: String) {
+    if let Some(state) = app.try_state::<BootState>() {
+        if let Ok(mut g) = state.0.lock() {
+            g.update_available = Some(true);
+            g.update_version = Some(version);
+            let _ = app.emit("boot://status", g.clone());
+        }
+    }
 }
 
 /// The share page calls this once after registering its event listener, to recover any status that
@@ -104,16 +124,56 @@ async fn check_for_update_now(app: AppHandle) -> Result<UpdateCheckResult, Strin
     }
 }
 
+/// User-triggered, in-app update: download with real progress (published to `boot://status` so the
+/// settings dialog's progress bar tracks it), then restart. Install ONLY ever runs from here (a user
+/// action in the web UI) — the startup check never downloads (S07). `on_chunk` is an immutable `Fn`,
+/// so the running byte count is accumulated through an atomic.
 #[tauri::command]
 async fn install_update_now(app: AppHandle) -> Result<(), String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
         return Ok(());
     };
+
+    publish(
+        &app,
+        &BootStatus {
+            stage: "updating".into(),
+            message: Some("Starting download…".into()),
+            ..Default::default()
+        },
+    );
+
+    let progress_app = app.clone();
+    let downloaded = Arc::new(AtomicU64::new(0));
     update
-        .download_and_install(|_, _| {}, || {})
+        .download_and_install(
+            move |chunk_len, content_len| {
+                let total =
+                    downloaded.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
+                let (message, progress_pct) = match content_len {
+                    Some(len) if len > 0 => {
+                        let pct = (total as f64 / len as f64 * 100.0).round().clamp(0.0, 100.0);
+                        (format!("Downloading update… {pct}%"), Some(pct as u8))
+                    }
+                    // Unknown total length — no meaningful percentage, only a byte count.
+                    _ => (format!("Downloading update… {total} bytes"), None),
+                };
+                publish(
+                    &progress_app,
+                    &BootStatus {
+                        stage: "updating".into(),
+                        message: Some(message),
+                        progress_pct,
+                        ..Default::default()
+                    },
+                );
+            },
+            || {},
+        )
         .await
         .map_err(|e| e.to_string())?;
+    println!("[updater] update installed — restarting");
     app.restart();
 }
 
@@ -448,85 +508,10 @@ async fn check_for_update(app: AppHandle) {
 
     println!("[updater] update available: v{}", update.version);
 
-    // Ask through Tauri's native dialog surface. `blocking_show` dispatches to the main thread and
-    // blocks the caller until answered, so run it on the blocking pool to keep the async runtime
-    // free for the concurrently-booting sidecar.
-    let prompt_app = app.clone();
-    let version = update.version.clone();
-    let accepted = tauri::async_runtime::spawn_blocking(move || {
-        prompt_app
-            .dialog()
-            .message(format!(
-                "A new version of LEDrums (v{version}) is available.\n\nDownload and restart now? \
-                 The whole app updates and reconnects with a fresh share link."
-            ))
-            .title("Update available")
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Update & Restart".to_string(),
-                "Later".to_string(),
-            ))
-            .blocking_show()
-    })
-    .await
-    .unwrap_or(false);
-
-    if !accepted {
-        println!("[updater] user declined the update");
-        return;
-    }
-
-    // Best-effort download progress for the loading shell if it is still visible. Once the app has
-    // navigated to the web UI, the Settings modal owns manual update status. `on_chunk` is an
-    // immutable `Fn`, so accumulate the running byte count through an atomic.
-    publish(
-        &app,
-        &BootStatus {
-            stage: "updating".into(),
-            message: Some("Starting download…".into()),
-            ..Default::default()
-        },
-    );
-
-    let progress_app = app.clone();
-    let downloaded = Arc::new(AtomicU64::new(0));
-    let result = update
-        .download_and_install(
-            move |chunk_len, content_len| {
-                let total =
-                    downloaded.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
-                let (message, progress_pct) = match content_len {
-                    Some(len) if len > 0 => {
-                        let pct = (total as f64 / len as f64 * 100.0).round().clamp(0.0, 100.0);
-                        (format!("Downloading update… {pct}%"), Some(pct as u8))
-                    }
-                    // Unknown total length — no meaningful percentage, only a byte count.
-                    _ => (format!("Downloading update… {total} bytes"), None),
-                };
-                publish(
-                    &progress_app,
-                    &BootStatus {
-                        stage: "updating".into(),
-                        message: Some(message),
-                        progress_pct,
-                        ..Default::default()
-                    },
-                );
-            },
-            || {},
-        )
-        .await;
-
-    match result {
-        Ok(()) => {
-            println!("[updater] update installed — restarting");
-            app.restart();
-        }
-        Err(e) => {
-            // Let the current version keep running. Don't clobber the (likely already-running)
-            // server's share status with an error — just log it.
-            eprintln!("[updater] download/install failed ({e}); continuing with current version");
-        }
-    }
+    // Fully in-app now (LOCKED, doc 02): the native dialog is gone. Startup only *publishes*
+    // availability into the boot status — the web app renders the in-app badge and the user chooses
+    // to install (which routes through `install_update_now`). Startup never downloads or restarts.
+    publish_update_available(&app, update.version.clone());
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
