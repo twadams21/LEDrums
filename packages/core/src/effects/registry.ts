@@ -43,6 +43,11 @@ import { tempSweep } from './impl/temp-sweep';
 import { velocityFlames } from './impl/velocity-flames';
 import { hueRotateKit } from './impl/hue-rotate-kit';
 import { waveCollapse } from './impl/wave-collapse';
+// Emission-based 3D batch (2026-07-05): per-hit emissions that layer instead of stacking.
+import { chaseBands } from './impl/chase-bands';
+import { ripple3d } from './impl/ripple-3d';
+import { sparkArc } from './impl/spark-arc';
+import { rain3d } from './impl/rain-3d';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -86,6 +91,10 @@ const ALL: EffectGenerator<any>[] = [
   velocityFlames,
   hueRotateKit,
   waveCollapse,
+  chaseBands,
+  ripple3d,
+  sparkArc,
+  rain3d,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();

@@ -40,7 +40,7 @@ function litPixelIds(buf: Uint8Array, count: number): number[] {
 describe('generator bridge — registry coverage', () => {
   it('surfaces every core generator as a selectable, generator-backed effect', () => {
     const gens = listEffects();
-    expect(gens.length).toBe(41); // all original effects accounted for
+    expect(gens.length).toBe(45); // all core effects accounted for
     expect(GENERATOR_EFFECTS.length).toBe(gens.length);
 
     for (const gen of gens) {

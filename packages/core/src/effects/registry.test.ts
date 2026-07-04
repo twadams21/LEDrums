@@ -17,10 +17,12 @@ describe('effect registry', () => {
       'plasma', 'fire', 'ripple-pond', 'rainbow-flow', 'tunnel', 'checker-pulse', 'perlin-clouds', 'lava-lamp', 'interference', 'caustics', 'spiral', 'grid-glow',
       // particles / spatial / musical
       'starfield', 'comet-trails', 'lightning', 'confetti-burst', 'helix', 'orbit-rings', 'gravity-wells', 'breathing-kit', 'temp-sweep', 'velocity-flames', 'hue-rotate-kit', 'wave-collapse',
+      // emission-based 3D batch
+      'chase-bands', 'ripple-3d', 'spark-arc', 'rain-3d',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(41);
+    expect(listEffects().length).toBe(45);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {

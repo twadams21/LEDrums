@@ -93,6 +93,10 @@ export function renderGeneratorThumbFrame(
   const ageMs = ((tMs % THUMB_LOOP_MS) + THUMB_LOOP_MS) % THUMB_LOOP_MS;
   genTrigger.ageMs = ageMs;
   genTrigger.timeMs = tMs - ageMs; // notional birth so timeMs = born + age stays coherent
+  // Each loop iteration is a NEW hit: bump seq per loop so seq-gated effects
+  // (confetti, pixel-accum, swing, sidechain, velocity-flames, emission-based
+  // effects) re-fire every cycle instead of firing once and decaying to black.
+  genTrigger.seq = Math.floor((tMs - ageMs) / THUMB_LOOP_MS) + 1;
 
   // Timebase decides the clock the generator's ctx reads — same switch as the bridges.
   //   'voice'    → hit-relative age: animate from the onset, restart each loop.
