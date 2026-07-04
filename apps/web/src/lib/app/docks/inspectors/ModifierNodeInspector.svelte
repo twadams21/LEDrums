@@ -173,9 +173,8 @@
     gap: var(--space-2);
   }
   .k {
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
+    color: var(--text-muted);
+    font-weight: 500;
     font-size: var(--text-2xs);
     white-space: nowrap;
   }

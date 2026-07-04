@@ -70,14 +70,16 @@
     font-size: var(--text-xs);
     color: var(--text-muted);
   }
+  .lblrow > :global(.sel) {
+    flex: 1;
+  }
   .k {
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
+    color: var(--text-muted);
+    font-weight: 500;
     font-size: var(--text-2xs);
     white-space: nowrap;
     flex: none;
-    width: 56px;
+    width: var(--field-label-col, 6.5rem);
   }
   .input-wrap {
     flex: 1;

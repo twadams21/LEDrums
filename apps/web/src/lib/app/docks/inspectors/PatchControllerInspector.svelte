@@ -25,7 +25,7 @@
 
 {#if out}
   <p class="grouphint">Art-Net / sACN transport — where the pixel stream is sent.</p>
-  <Field label="Protocol">
+  <Field layout="row" label="Protocol">
     <Select
       value={out.protocol}
       options={PROTOCOL_OPTS}
@@ -34,7 +34,7 @@
       ariaLabel="Protocol"
     />
   </Field>
-  <Field label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
+  <Field layout="row" label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
     <CommitInput
       value={out.host}
       mono
@@ -46,7 +46,7 @@
     />
   </Field>
   <div class="tworow">
-    <Field label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
+    <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
       <CommitInput
         type="number"
         min={1}
@@ -58,7 +58,7 @@
         onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
       />
     </Field>
-    <Field label="Interface" hint="source NIC · blank = default">
+    <Field layout="row" label="Interface" hint="source NIC · blank = default">
       <CommitInput
         value={out.iface ?? ''}
         mono
@@ -72,7 +72,7 @@
     </Field>
   </div>
   <div class="tworow">
-    <Field label="RGB order">
+    <Field layout="row" label="RGB order">
       <Select
         value={out.rgbOrder}
         options={RGB_OPTS}
@@ -81,7 +81,7 @@
         ariaLabel="RGB order"
       />
     </Field>
-    <Field label="FPS" hint="≤ 120">
+    <Field layout="row" label="FPS" hint="≤ 120">
       <CommitInput
         type="number"
         min={1}
@@ -104,7 +104,7 @@
     <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
   </label>
   {#if out.protocol === 'sacn'}
-    <Field label="Priority" hint="1–200 · higher wins at a merge">
+    <Field layout="row" label="Priority" hint="1–200 · higher wins at a merge">
       <CommitInput
         type="number"
         min={1}

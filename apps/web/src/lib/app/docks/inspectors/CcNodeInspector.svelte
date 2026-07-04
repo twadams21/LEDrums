@@ -44,12 +44,12 @@
 
 {#if node.kind === 'cc'}
   <div class="kindbody">
-    <Field label="Source">
+    <Field layout="row" label="Source">
       <SegmentedControl value={source} options={SOURCE_OPTS} onChange={onSource} ariaLabel="Modulation input source" />
     </Field>
 
     {#if source === 'osc'}
-      <Field label="OSC address" hint="e.g. /fader/1">
+      <Field layout="row" label="OSC address" hint="e.g. /fader/1">
         <CommitInput
           type="text"
           value={oscAddress}
@@ -65,7 +65,7 @@
         Parameters section.
       </p>
     {:else}
-      <Field label="CC number" hint="1-127">
+      <Field layout="row" label="CC number" hint="1-127">
         <div class="cc-row">
           <CommitInput
             type="number"
@@ -90,7 +90,7 @@
           </button>
         </div>
       </Field>
-      <Field label="Channel">
+      <Field layout="row" label="Channel">
         <Select value={channel === null ? 'omni' : String(channel)} options={CHANNEL_OPTS} onChange={onChannel} ariaLabel="MIDI channel filter" />
       </Field>
       <p class="hint">

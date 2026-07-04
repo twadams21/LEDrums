@@ -102,7 +102,7 @@
 </header>
 <div class="trigbody">
   <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
-  <Field label="Trigger source">
+  <Field layout="row" label="Trigger source">
     <SegmentedControl
       value={kindNow}
       options={SOURCE_OPTS}
@@ -114,7 +114,7 @@
   {#if kindNow === 'drum'}
     {@const drumId = src?.kind === 'drum' ? src.drumId : store.drums[0]?.id ?? ''}
     {@const zone = src?.kind === 'drum' ? src.zone : '0'}
-    <Field label="Drum">
+    <Field layout="row" label="Drum">
       <Select
         value={drumId}
         options={DRUM_OPTS}
@@ -122,7 +122,7 @@
         ariaLabel="Drum"
       />
     </Field>
-    <Field label="Zone">
+    <Field layout="row" label="Zone">
       <Select
         value={zone}
         options={zoneOptsFor(drumId, zone)}
@@ -132,7 +132,7 @@
     </Field>
   {:else if src?.kind === 'midi'}
     {@const isCc = src.cc !== undefined}
-    <Field label="Type">
+    <Field layout="row" label="Type">
       <SegmentedControl
         value={isCc ? 'cc' : 'note'}
         options={MIDI_OPTS}
@@ -141,7 +141,7 @@
       />
     </Field>
     {#if isCc}
-      <Field label="CC number" hint="1-127">
+      <Field layout="row" label="CC number" hint="1-127">
         <CommitInput
           type="number"
           min={RESERVED_CC + 1}
@@ -154,7 +154,7 @@
       </Field>
       <p class="hint">CC 0 reserved for section recall.</p>
     {:else}
-      <Field label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
+      <Field layout="row" label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
         <div class="note-row">
           <CommitInput
             value={src.note === undefined ? '' : formatMidiNote(src.note)}
@@ -186,7 +186,7 @@
     {/if}
     <p class="hint">Channel filter is in Settings.</p>
   {:else if src?.kind === 'osc'}
-    <Field label="Address" hint="e.g. /kick">
+    <Field layout="row" label="Address" hint="e.g. /kick">
       <CommitInput
         value={src.address}
         mono
@@ -209,7 +209,7 @@
   {/if}
 
   {#if gkey && gkey in store.graphs}
-    <Field label="Name" hint="display label">
+    <Field layout="row" label="Name" hint="display label">
       <CommitInput
         value={store.graphLabel(gkey)}
         autofocus={false}

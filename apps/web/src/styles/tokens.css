@@ -119,6 +119,11 @@
   /* Canonical square for icon-buttons (close / swap / add / …). Reconciles the
      old 24/30/32px divergence — 30px is the IconButton primitive's size. */
   --control-icon-size: 30px;
+  /* Canonical height for text-entry / select field controls (TextField,
+     CommitInput, Select trigger). One rhythm across every inspector row. */
+  --control-h: 26px;
+  /* Label column width for row-layout Fields (inspector label → control). */
+  --field-label-col: 6.5rem;
 
   /* ---- Elevation ---------------------------------------------------------- */
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.40);

@@ -43,7 +43,7 @@
 {#if patchOutput}
   {@const cfg = patchOutput}
   <p class="grouphint">A physical controller port. The controller owns universe offsets — leave blank to pack dense, or snap the port to a universe.</p>
-  <Field label="Start universe" hint="blank = dense / auto">
+  <Field layout="row" label="Start universe" hint="blank = dense / auto">
     <CommitInput
       type="number"
       min={0}
@@ -55,7 +55,7 @@
         v === '' ? setOutputScalar(cfg.id, { startUniverse: undefined }) : onNum(v, (n) => setOutputScalar(cfg.id, { startUniverse: n }))}
     />
   </Field>
-  <Field label="Channels / pixel" hint="3 = RGB · 4 = RGBW">
+  <Field layout="row" label="Channels / pixel" hint="3 = RGB · 4 = RGBW">
     <CommitInput
       type="number"
       min={1}
