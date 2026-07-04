@@ -70,6 +70,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 07:36 — Lane 4 group D (S09 skipped via reconcile)
+
+- **group/D:** ✅ RECONCILE WORKED — **S09 (right-dock resize rail) SKIPPED as done-by-Phase-2** (acceptance already met by the lane-3.5 shell rework; not re-implemented → no duplication/conflict). **S10 (per-drum flip) merged** (core geometry + end-to-end plumb + golden flip suite). **S11 (kit mirror) in flight** (opus/med). Then D integrate+review+handoff → L (last group).
+- No hand-off yet (rock-solid d0a6e3c). 5h 39%, **7d 78%** (~1%/30min, <85% trigger).
+- **Final-gate note:** confirm S09's acceptance (right-dock resize) live at the gate since it was satisfied by prior work, not this lane.
+
 ### 2026-07-04 07:0x — GROUP C MERGED (desktop shell)
 
 - **group/C MERGED** (#48, S06–S08) → rock-solid **15ff1d0** (`--no-ff`; pre-integrated @ba391ca, NO conflicts). PASS after 1 group-review fix. **Live-smoke-load caught a real bug** (S06 desktop-detection false-positived in browsers → boot overlay covered the web app; vitest blind → fixed to gate on window.__TAURI_INTERNALS__ + regression test). Core pure.
