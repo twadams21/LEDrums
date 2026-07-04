@@ -53,6 +53,11 @@ struct BootStatus {
     pin: Option<String>,
     /// Human-readable failure detail when `stage == "error"`.
     message: Option<String>,
+    /// Structured download progress (0–100) while `stage == "updating"`; `None` otherwise.
+    /// Populated directly from the updater's byte callbacks — the web bridge reads this instead
+    /// of parsing a percentage out of `message`.
+    #[serde(rename = "progressPct")]
+    progress_pct: Option<u8>,
 }
 
 /// The latest boot status, shared between the sidecar reader task and the `get_boot_status` command.
@@ -489,18 +494,20 @@ async fn check_for_update(app: AppHandle) {
             move |chunk_len, content_len| {
                 let total =
                     downloaded.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
-                let message = match content_len {
+                let (message, progress_pct) = match content_len {
                     Some(len) if len > 0 => {
-                        let pct = (total as f64 / len as f64 * 100.0).round() as u64;
-                        format!("Downloading update… {pct}%")
+                        let pct = (total as f64 / len as f64 * 100.0).round().clamp(0.0, 100.0);
+                        (format!("Downloading update… {pct}%"), Some(pct as u8))
                     }
-                    _ => format!("Downloading update… {total} bytes"),
+                    // Unknown total length — no meaningful percentage, only a byte count.
+                    _ => (format!("Downloading update… {total} bytes"), None),
                 };
                 publish(
                     &progress_app,
                     &BootStatus {
                         stage: "updating".into(),
                         message: Some(message),
+                        progress_pct,
                         ..Default::default()
                     },
                 );
