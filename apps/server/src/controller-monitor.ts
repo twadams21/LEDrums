@@ -28,6 +28,7 @@ import type {
 } from '@ledrums/io';
 import type {
   ControllerStatus,
+  ControllerTestPattern,
   ControllerUniverseRx,
   DiscoveredController,
   ServerMessage,
@@ -179,6 +180,9 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
   let health: ControllerStatus['health'] = {};
   let lastSeen: number | null = null;
   let reachable = false;
+  // Active built-in test pattern (S49), or null in normal LIVE mode. Server-authoritative so every
+  // watcher's takeover banner + output pill agree. While non-null the box ignores the Art-Net stream.
+  let testPattern: ControllerTestPattern | null = null;
 
   // Interest tracking — the ONLY gate on the poll loop. Keyed by an opaque token (the ws socket).
   const watchers = new Set<object>();
@@ -187,7 +191,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
 
   function currentStatus(): ControllerStatus | null {
     if (!host) return null;
-    return { host, reachable, identity, universes, rates, health, lastSeen };
+    return { host, reachable, identity, universes, rates, health, lastSeen, testPattern };
   }
 
   function emitStatus(): void {
@@ -214,6 +218,36 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
   /** True while the poll loop is armed — tests assert this to prove "no idle traffic". */
   function isPolling(): boolean {
     return timer !== null;
+  }
+
+  /** Return the controller to LIVE mode and clear the takeover state. No-op unless a client is held
+   * AND a test pattern is active — so the auto-revert on the last watcher leaving is free when no
+   * pattern runs, and an explicit back-to-live is idempotent. `reason` tags the Monitor event so
+   * an auto-revert (nobody watching) reads differently from an operator's click. */
+  async function revertToLive(reason: 'client' | 'auto'): Promise<void> {
+    if (!client || !testPattern) return;
+    testPattern = null;
+    emitStatus();
+    try {
+      await client.modeLive();
+      deps.monitor?.({
+        type: 'output',
+        direction: 'out',
+        source: 'server/controller',
+        destination: host ?? 'controller',
+        label: reason === 'auto' ? 'Controller back to live (auto)' : 'Controller back to live',
+        detail: reason === 'auto' ? 'no watchers' : undefined,
+      });
+    } catch (err) {
+      deps.monitor?.({
+        type: 'error',
+        direction: 'out',
+        source: 'server/controller',
+        destination: host ?? 'controller',
+        label: 'Controller back-to-live failed',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async function pollOnce(): Promise<void> {
@@ -267,6 +301,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       health = {};
       lastSeen = null;
       reachable = false;
+      testPattern = null;
       startPolling();
     },
 
@@ -332,6 +367,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       health = {};
       lastSeen = now();
       reachable = true;
+      testPattern = null;
       client = deps.createClient({ host, auth });
       deps.persistController({ host, nickname, ...(auth ? { auth } : {}) });
       deps.monitor?.({
@@ -373,6 +409,43 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       }
     },
 
+    /** Drive the controller's built-in test-data mode (S49). Sends `modeTestData`, records the
+     * active pattern (server-authoritative takeover state), and re-emits status so every watcher's
+     * banner + pill light up. No-op when unadopted. On failure the takeover state is NOT set (the
+     * box never entered test mode), so the UI can't lie about a takeover that didn't happen. */
+    async setTestData(pattern: ControllerTestPattern): Promise<void> {
+      if (!client) return;
+      try {
+        await client.modeTestData(pattern);
+        testPattern = pattern;
+        emitStatus();
+        deps.monitor?.({
+          type: 'output',
+          direction: 'out',
+          source: 'server/controller',
+          destination: host ?? 'controller',
+          label: 'Controller test pattern',
+          detail: pattern.op,
+        });
+      } catch (err) {
+        deps.monitor?.({
+          type: 'error',
+          direction: 'out',
+          source: 'server/controller',
+          destination: host ?? 'controller',
+          label: 'Controller test pattern failed',
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+
+    /** Return the controller to LIVE mode — the "back to live data" exit. Sends `modeLive`, clears
+     * the takeover state, and re-emits status. No-op when unadopted or not in a test pattern (so a
+     * stray call never spams the device). Also invoked automatically on the last watcher leaving. */
+    backToLive(): Promise<void> {
+      return revertToLive('client');
+    },
+
     /** A client opened the Monitor/Patch controller panel — register interest (keyed by socket) and
      * start polling if a controller is adopted. Re-broadcasts the current status so the newly-
      * watching client gets last-known state immediately. Idempotent per key. */
@@ -383,10 +456,15 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
     },
 
     /** A client closed the panel (or disconnected) — drop its interest; stop polling when the last
-     * watcher leaves (no idle traffic). Idempotent / safe for an unknown key. */
+     * watcher leaves (no idle traffic). When the LAST watcher goes, auto-revert any running test
+     * pattern so a controller is never stranded in test mode with nobody watching (S49). Idempotent
+     * / safe for an unknown key. */
     dropWatcher(key: object): void {
       if (!watchers.delete(key)) return;
-      if (watchers.size === 0) stopPolling();
+      if (watchers.size === 0) {
+        stopPolling();
+        void revertToLive('auto');
+      }
     },
 
     /** Force a single poll now (used by tests + could back a manual refresh). */

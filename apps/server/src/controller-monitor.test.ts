@@ -270,4 +270,58 @@ describe('controller monitor', () => {
     await h.monitor.identify(5);
     expect(h.fake.identifyCalls).toEqual([5]);
   });
+
+  it('setTestData drives modeTestData and reports the takeover on controllerStatus (S49)', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    const pattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 } as const;
+    await h.monitor.setTestData(pattern);
+    expect(h.fake.testDataCalls).toEqual([pattern]);
+    // Server-authoritative takeover state is echoed on the next status.
+    expect(h.lastStatus()?.testPattern).toEqual(pattern);
+  });
+
+  it('backToLive drives modeLive and clears the takeover (S49)', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    await h.monitor.setTestData({ op: 'rgbwCycle' });
+    expect(h.lastStatus()?.testPattern).toEqual({ op: 'rgbwCycle' });
+    await h.monitor.backToLive();
+    expect(h.fake.modeLiveCalls).toBe(1);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('does NOT set the takeover state when modeTestData fails (never lies about a takeover)', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    h.fake.failNext = new Error('device busy');
+    await h.monitor.setTestData({ op: 'colorFade' });
+    expect(h.lastStatus()?.testPattern ?? null).toBeNull();
+  });
+
+  it('auto-reverts a running test pattern when the LAST watcher leaves (never strands the box)', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    const a = {};
+    const b = {};
+    h.monitor.watch(a);
+    h.monitor.watch(b);
+    await h.monitor.setTestData({ op: 'setColor', color: [0, 0, 255, 0] });
+    expect(h.lastStatus()?.testPattern).toBeTruthy();
+
+    h.monitor.dropWatcher(a);
+    expect(h.fake.modeLiveCalls).toBe(0); // b still watching — pattern stays
+
+    h.monitor.dropWatcher(b); // last watcher gone → auto-revert
+    await flush();
+    expect(h.fake.modeLiveCalls).toBe(1);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('back-to-live is a no-op when no pattern is running (no stray modeLive)', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    await h.monitor.backToLive();
+    expect(h.fake.modeLiveCalls).toBe(0);
+  });
 });

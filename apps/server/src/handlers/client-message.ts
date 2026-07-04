@@ -4,7 +4,7 @@ import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import { encodeServer, type ClientMessage, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
+import { encodeServer, type ClientMessage, type ControllerTestPattern, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -111,6 +111,8 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
     discover(): Promise<unknown>;
     adopt(host: string): Promise<{ ok: boolean; error?: string }>;
     identify(durationS: number): Promise<void>;
+    setTestData(pattern: ControllerTestPattern): Promise<void>;
+    backToLive(): Promise<void>;
     watch(key: object): void;
     dropWatcher(key: object): void;
   };
@@ -201,6 +203,14 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     }
     if (msg.t === 'identifyController') {
       void deps.controller?.identify(msg.durationS);
+      return;
+    }
+    if (msg.t === 'controllerTestData') {
+      void deps.controller?.setTestData(msg.pattern);
+      return;
+    }
+    if (msg.t === 'controllerBackToLive') {
+      void deps.controller?.backToLive();
       return;
     }
     if (msg.t === 'watchController') {
