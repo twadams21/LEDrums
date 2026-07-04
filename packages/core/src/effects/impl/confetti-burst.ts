@@ -1,6 +1,7 @@
 import { hsvToRgb } from '../../color/color';
 import { clamp01, distance, mulberry32, type Vec3 } from '../../math';
 import type { PixelModel } from '../../geometry/pixel-model';
+import { buildPixelGrid, nearestPixelIdWithin, type PixelGrid } from '../../geometry/pixel-grid';
 import { pnum, type EffectGenerator } from '../types';
 
 interface Particle {
@@ -18,6 +19,8 @@ export interface ConfettiBurstState {
   particles: Particle[];
   rng: () => number;
   lastSeq: number;
+  /** Spatial index over the model's pixels; rebuilt if the model instance changes. */
+  grid: PixelGrid;
 }
 
 const SEED = 0xc0ffe771;
@@ -43,9 +46,9 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
   ],
-  createState(_model: PixelModel, seed?: number): ConfettiBurstState {
+  createState(model: PixelModel, seed?: number): ConfettiBurstState {
     // per-trigger seed (item C): each fire scatters differently, replays identically
-    return { particles: [], rng: mulberry32(seed ?? SEED), lastSeq: 0 };
+    return { particles: [], rng: mulberry32(seed ?? SEED), lastSeq: 0, grid: buildPixelGrid(model) };
   },
   render(ctx, params, fb, state) {
     const count = Math.max(1, Math.round(pnum(params, 'count', 24)));
@@ -84,37 +87,32 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
       }
     }
 
-    // Advance particles by dt; apply gravity (pulls along world -Z).
+    // Advance particles by dt; apply gravity (pulls along world -Z). Positions mutate
+    // in place and expired particles compact in place — no per-frame allocation.
     const dt = ctx.dt;
-    const alive: Particle[] = [];
+    let w = 0;
     for (const pt of state.particles) {
       pt.life -= dt;
       if (pt.life <= 0) continue;
       pt.vel.z -= gravity * dt;
-      pt.pos = {
-        x: pt.pos.x + pt.vel.x * dt,
-        y: pt.pos.y + pt.vel.y * dt,
-        z: pt.pos.z + pt.vel.z * dt,
-      };
-      alive.push(pt);
+      pt.pos.x += pt.vel.x * dt;
+      pt.pos.y += pt.vel.y * dt;
+      pt.pos.z += pt.vel.z * dt;
+      state.particles[w++] = pt;
     }
-    state.particles = alive;
+    state.particles.length = w;
 
     // Light the nearest pixel to each particle, faded by remaining life.
     if (ctx.model.pixels.length === 0) return;
+    if (!state.grid || state.grid.model !== ctx.model) state.grid = buildPixelGrid(ctx.model);
     // Radius within which a particle illuminates: a fraction of the kit size.
     const reach = Math.max(40, ctx.model.bounds.size * 0.08);
     for (const pt of state.particles) {
-      let bestId = -1;
-      let bestDist = Infinity;
-      for (const px of ctx.model.pixels) {
-        const d = distance(px.world, pt.pos);
-        if (d < bestDist) {
-          bestDist = d;
-          bestId = px.id;
-        }
-      }
-      if (bestId < 0 || bestDist > reach) continue;
+      // Exact equivalent of the old whole-model nearest scan: a nearest pixel farther
+      // than `reach` was skipped anyway, so searching only within reach is identical.
+      const bestId = nearestPixelIdWithin(state.grid, pt.pos, reach);
+      if (bestId < 0) continue;
+      const bestDist = distance(ctx.model.pixels[bestId]!.world, pt.pos);
       const fade = clamp01(pt.life / pt.maxLife);
       const prox = 1 - bestDist / reach;
       const v = clamp01(bri * fade * prox);

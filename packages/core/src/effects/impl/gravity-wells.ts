@@ -20,6 +20,9 @@ export interface GravityWellsState {
   /** Kit bounds captured at create time so wells drift within kit space. */
   center: Vec3;
   half: Vec3;
+  /** Per-frame scratch (one slot per seeded well) so render allocates nothing. */
+  scratchPositions: Vec3[];
+  scratchHues: number[];
 }
 
 const SEED = 0x1234abcd;
@@ -73,7 +76,13 @@ export const gravityWells: EffectGenerator<GravityWellsState> = {
       y: Math.max((model.bounds.max.y - model.bounds.min.y) / 2, size * 0.25, 100),
       z: Math.max((model.bounds.max.z - model.bounds.min.z) / 2, size * 0.25, 100),
     };
-    return { wells, center: { ...center }, half };
+    return {
+      wells,
+      center: { ...center },
+      half,
+      scratchPositions: wells.map(() => ({ x: 0, y: 0, z: 0 })),
+      scratchHues: wells.map(() => 0),
+    };
   },
   render(ctx, params, fb, state) {
     const wellCount = Math.max(1, Math.min(state.wells.length, Math.round(pnum(params, 'wells', 3))));
@@ -88,17 +97,17 @@ export const gravityWells: EffectGenerator<GravityWellsState> = {
     const t = ctx.timeMs * 0.001 * speed;
 
     // Position each active well along its slow seeded Lissajous path within the kit,
-    // and resolve its absolute hue from the current base/span.
-    const positions: Vec3[] = [];
-    const hues: number[] = [];
+    // and resolve its absolute hue from the current base/span. Scratch buffers are
+    // pre-allocated in state and overwritten each frame — no per-frame allocation.
+    const positions = (state.scratchPositions ??= state.wells.map(() => ({ x: 0, y: 0, z: 0 })));
+    const hues = (state.scratchHues ??= state.wells.map(() => 0));
     for (let i = 0; i < wellCount; i++) {
       const w = state.wells[i]!;
-      positions.push({
-        x: state.center.x + state.half.x * 0.8 * Math.sin(t * w.freqX + w.phaseX),
-        y: state.center.y + state.half.y * 0.8 * Math.sin(t * w.freqY + w.phaseY),
-        z: state.center.z + state.half.z * 0.8 * Math.sin(t * w.freqZ + w.phaseZ),
-      });
-      hues.push(baseHue + w.hueRand * hueSpan);
+      const pos = positions[i]!;
+      pos.x = state.center.x + state.half.x * 0.8 * Math.sin(t * w.freqX + w.phaseX);
+      pos.y = state.center.y + state.half.y * 0.8 * Math.sin(t * w.freqY + w.phaseY);
+      pos.z = state.center.z + state.half.z * 0.8 * Math.sin(t * w.freqZ + w.phaseZ);
+      hues[i] = baseHue + w.hueRand * hueSpan;
     }
 
     for (const p of ctx.model.pixels) {

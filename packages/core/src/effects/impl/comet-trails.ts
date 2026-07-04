@@ -1,6 +1,6 @@
 import { hsvToRgb } from '../../color/color';
 import { clamp01, mulberry32, wrap } from '../../math';
-import type { PixelModel } from '../../geometry/pixel-model';
+import { getHoopPixelRange, type PixelModel } from '../../geometry/pixel-model';
 import { pnum, type EffectGenerator } from '../types';
 
 interface Comet {
@@ -104,9 +104,12 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
       const drum = ctx.model.drumById.get(comet.drumId);
       if (!drum) continue;
       const cometHue = hue + comet.hueOffset;
-      for (let p = drum.pixelStart; p < drum.pixelStart + drum.pixelCount; p++) {
+      // A hoop is a contiguous slice of the drum's range — iterate just that hoop
+      // instead of filtering every drum pixel.
+      const range = getHoopPixelRange(ctx.model, comet.drumId, comet.hoopIndex);
+      if (!range) continue;
+      for (let p = range.start; p < range.end; p++) {
         const pix = ctx.model.pixels[p]!;
-        if (pix.hoopIndex !== comet.hoopIndex) continue;
         // Behind-the-head distance: measured opposite the travel direction.
         let behind = comet.dir * angularDelta(comet.angle, pix.angleDeg);
         // `behind` < 0 means the pixel is behind the head (in the tail); negate so tail is positive.

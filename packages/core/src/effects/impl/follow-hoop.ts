@@ -32,8 +32,11 @@ export const followHoop: EffectGenerator = {
     for (const trig of ctx.triggers) {
       const drum = ctx.model.drumById.get(trig.drumId);
       if (!drum) continue;
-      for (const p of ctx.model.pixels) {
-        if (p.drumId !== trig.drumId) continue;
+      // Drum pixels are a contiguous [pixelStart, pixelStart+pixelCount) range — no
+      // need to scan (and filter) the whole kit.
+      const end = drum.pixelStart + drum.pixelCount;
+      for (let i = drum.pixelStart; i < end; i++) {
+        const p = ctx.model.pixels[i]!;
         const localAge = trig.ageMs - p.hoopIndex * delay;
         if (localAge < 0) continue;
         const intensity = trig.velocity * Math.exp(-localAge / decay);
