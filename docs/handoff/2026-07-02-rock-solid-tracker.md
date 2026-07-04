@@ -68,6 +68,13 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 06:34 — Lane 4 group C underway
+
+- **Lane 4 `lane-4-e6d958` alive + progressing.** group/C started; S06 (boot progress + desktop-bridge) landed; **S07-settings-progress (opus/med) + S08-boot-overlay (opus/high) in flight**. No hand-off yet (rock-solid ed2b19e).
+- Disk stable **12 GB** (no fresh tauri target blow-up — CARGO_TARGET_DIR reuse holding). 5h 21%.
+- **7d 76% (was 74%, +2%/30min) — WATCH:** at this rate ~85% in ~2h, ~90% ~3.5h. If it nears twux gates mid-Lane-4, escalate to Trent (pause till 7d reset 2026-07-09, or push through — his call).
+- **Next:** await group/C hand-off → merge; watch S09/S08 reconcile decisions (Phase-2 overlap). 30-min cadence.
+
 ### 2026-07-04 — LANE 4 LAUNCHING (all-Opus); waves 1–4 (lane 3.5) done
 
 - **Context re-sync:** since the Lane-4 hold, Phase-2 waves 1–4 ("lane 3.5") were executed+merged on rock-solid (UI/effects polish; incl. a review-caught self-write-effect fix 6b88cff). rock-solid HEAD **5738f59**, baseline sweep GREEN (typecheck 0; **1830 tests/0 skips**: io 13·core 548·proto 1·server 204·web 1064). Pool worktrees detached off wave branches; wave branches dropped.
