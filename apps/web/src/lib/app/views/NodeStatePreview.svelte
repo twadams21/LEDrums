@@ -48,15 +48,18 @@
     c = readThemeTokens(root, TOKENS, FALLBACK_COLOURS);
   });
 
-  // Display-only per-fire counters (sequence step / toggle flip). Reads `fireAt` only,
-  // writes only the counter — the self-referential $effect class stays unwritable.
+  // Display-only per-fire counters (sequence step / toggle flip). The effect reads
+  // `fireAt` only and ASSIGNS the rune from a plain shadow counter — `fires += 1` would
+  // read the rune it writes (the self-referential class, convergent here but banned) and
+  // cost a wasted re-run per fire.
   let fires = $state(0);
+  let fireCount = 0;
   let lastEpoch: number | null = null;
   $effect(() => {
     const epoch = fireAt;
     if (epoch != null && epoch !== lastEpoch) {
       lastEpoch = epoch;
-      fires += 1;
+      fires = ++fireCount;
     }
   });
 
