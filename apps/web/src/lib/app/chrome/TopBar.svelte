@@ -12,6 +12,7 @@
   import ShowBrowser from './ShowBrowser.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
   import AppSettingsDialog from './AppSettingsDialog.svelte';
+  import UpdateBadge from './UpdateBadge.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Logo from '../../ui/Logo.svelte';
@@ -81,6 +82,7 @@
       </div>
     {/if}
     <ShareInfo {store} />
+    <UpdateBadge onOpen={() => (settingsOpen = true)} />
     <IconButton icon={Settings} label="Settings" size={15} onclick={() => (settingsOpen = true)} />
     <StatusBar {store} />
     <OutputPill {store} />
