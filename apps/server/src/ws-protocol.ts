@@ -8,6 +8,9 @@ import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '
 // module owns the server-side runtime helpers (decode/encode/serialize) below.
 export type {
   ClientMessage,
+  ControllerStatus,
+  ControllerUniverseRx,
+  DiscoveredController,
   EffectSpec,
   OutputStatus,
   MonitorEvent,

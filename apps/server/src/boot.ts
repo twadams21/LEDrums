@@ -16,6 +16,8 @@ export interface BootDeps {
   host: EngineHost;
   voiceHost: VoiceEngineHost | null;
   oscInput: OscInput;
+  /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
+  controllerMonitor?: { stop(): void };
   port: number;
   oscPort: number;
   voiceMode: boolean;
@@ -81,6 +83,7 @@ export function boot(deps: BootDeps): void {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(deps.statsTimer);
+    deps.controllerMonitor?.stop();
     deps.tunnelControl.stop();
     if (deps.voiceHost) deps.voiceHost.stop();
     else deps.host.stop();
