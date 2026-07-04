@@ -1,6 +1,6 @@
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
-import type { DrumConfig } from '../geometry/kit-schema';
+import type { DrumConfig, KitGlobalConfig } from '../geometry/kit-schema';
 import type {
   Clip,
   InputMap,
@@ -299,6 +299,13 @@ export class Engine {
     const drum = this.project.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
+    this.rebuild();
+  }
+
+  /** Update a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry. Unlike
+   * setKitTransform (per-drum carrier), this targets kit.global — the whole model reflects. */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+    Object.assign(this.project.kit.global, partial);
     this.rebuild();
   }
 

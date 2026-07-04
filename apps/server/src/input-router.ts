@@ -182,6 +182,11 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
       });
       return { structural: true };
+    case 'setKitGlobal':
+      engine.setKitGlobal({
+        ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
+      });
+      return { structural: true };
     case 'setOutput':
       engine.setOutput({
         ...(msg.state !== undefined ? { state: msg.state } : {}),

@@ -46,6 +46,7 @@
   } from '../patch-graph';
   import PatchNode from './PatchNode.svelte';
   import PatchClipboardToolbar from './PatchClipboardToolbar.svelte';
+import PatchMirrorControl from './PatchMirrorControl.svelte';
   import { PATCH_STORE_KEY } from './patch-context';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
@@ -362,7 +363,10 @@
 <div class="patch-view">
   <div class="phead">
     <PanelHeader icon={Cable} title="Patch Graph">
-      <PatchClipboardToolbar {store} />
+      <div class="ptools">
+        <PatchMirrorControl {store} />
+        <PatchClipboardToolbar {store} />
+      </div>
     </PanelHeader>
   </div>
 
@@ -433,5 +437,12 @@
      shows a single clean edge. */
   .phead :global(.panel-hd) {
     border-bottom: none;
+  }
+  /* Toolbar cluster in the header slot: mirror control + clipboard tools, right-aligned. */
+  .ptools {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
   }
 </style>

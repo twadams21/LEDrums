@@ -8,6 +8,7 @@ import {
   type DrumConfig,
   type InputMap,
   type KitConfig,
+  type KitGlobalConfig,
   type OutputConfig,
   type OutputSettings,
   type Project,
@@ -166,6 +167,13 @@ export class VoiceEngineHost {
     const drum = this.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
+    this.reloadKit();
+  }
+
+  /** Edit a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry live. Kit-global,
+   * not per-drum — the whole model reflects. Rebuilds the model (not just dmxMap). */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+    Object.assign(this.kit.global, partial);
     this.reloadKit();
   }
 

@@ -51,6 +51,9 @@ export type ClientMessage =
   | { t: 'removeClip'; layerId: string; clipId: string }
   | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
   | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number; pixelsPerHoop?: number; hoopSpacingMm?: number; diameterIn?: number; flip?: boolean }
+  // Kit-global geometry (S11): mirror is not per-drum, so it rides its own message rather than
+  // setKitTransform's drum carrier. Both hosts rebuild the model (not just dmxMap) on apply.
+  | { t: 'setKitGlobal'; mirror?: 'none' | 'x' | 'y' }
   // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
   | { t: 'setKitOutputs'; outputs: OutputConfig[] }
   | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean; priority?: number; port?: number; iface?: string }
