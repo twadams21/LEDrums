@@ -4,6 +4,9 @@
 // runtime helper (`decodeServer`) that parses inbound server frames.
 export type {
   ClientMessage,
+  ControllerStatus,
+  ControllerUniverseRx,
+  DiscoveredController,
   EffectSpec,
   MonitorEvent,
   OutputStatus,
@@ -28,6 +31,8 @@ const SERVER_TYPES = new Set<ServerMessage['t']>([
   'presence',
   'showLibrary',
   'songLibrary',
+  'controllerDiscovery',
+  'controllerStatus',
   'error',
 ]);
 
