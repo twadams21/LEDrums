@@ -32,6 +32,7 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   burst: {
     description: 'A hit lights the whole drum; hit harder and it starts brighter AND lingers longer — the velocity you play is written straight into how long the light hangs.',
     tags: ['hit', 'per-drum'],
+    deprecated: { replacedBy: 'radial-wash', note: 'Merged into 3D Radial Wash — its per-hit pop is the "Pop" preset (short reach + fast decay).' },
   },
   'follow-hoop': {
     description: 'A hit lights the bottom hoop instantly and each hoop above follows on a delay, so the light visibly climbs the drum — a cascade that turns one strike into vertical motion.',
@@ -52,10 +53,12 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   'colour-melody': {
     description: 'Every note maps to its own hue across the kit and holds until the next note — play a melody and the rig walks through the colour wheel with you.',
     tags: ['hit', 'kit-wide'],
+    deprecated: { replacedBy: 'whole-drum', note: 'Folded into Whole Drum — enable its "Note Hue" toggle to colour each hit by the note played.' },
   },
   chase: {
     description: 'One hoop lights at a time, arpeggiating up the drum on a beat subdivision — a 16th-note runner that keeps stepping through the hoops in time.',
     tags: ['band', 'hit', 'hoop-aware', 'per-drum', 'beat-synced'],
+    deprecated: { replacedBy: 'chase-bands', note: 'Superseded by Chase Bands — emission-based bands that layer per hit instead of one global step.' },
   },
   'chase-bands': {
     description: 'Every hit launches a band of light that races around the struck drum, sized and paced musically. Hits layer — strike four beats running and four evenly-spaced bands chase each other around the hoop.',

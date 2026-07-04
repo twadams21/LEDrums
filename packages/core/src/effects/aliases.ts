@@ -12,10 +12,33 @@
  * Pure core module: no Node/DOM/IO.
  */
 
-/** `Record<oldId, newId>`. Chains are resolved transitively by {@link resolveEffectAlias}. */
+/**
+ * `Record<oldId, newId>`. Chains are resolved transitively by {@link resolveEffectAlias}.
+ *
+ * NOTE ON NAMESPACE: the consult points (web hydrate + `buildShow`) rewrite the `effectId`
+ * a graph node carries, and those ids are the LAB's `EffectDef` ids — generator-backed
+ * effects are `gen:<coreId>`, the retired hand-rolled pattern effects are their bare lab
+ * ids (`swirl`, `whole`, …). So every key/value below is a lab effect id, NOT a bare core
+ * generator id. (U3 retires the whole pattern path onto generators; the pattern effects'
+ * lab ids therefore alias to `gen:<target>`.)
+ */
 export const EFFECT_ALIASES: Readonly<Record<string, string>> = {
-  // Populated by U3 as effects are retired/merged, e.g.
-  //   'chase': 'chase-bands',
+  // --- Retired generators (kept in the registry but `deprecated`, hidden from the gallery) --
+  'gen:chase': 'gen:chase-bands', // old beat-indexed arpeggiator → emission-based bands
+  'gen:burst': 'gen:radial-wash', // merge: burst's per-hit pop = a short-life radial-wash preset
+  'gen:colour-melody': 'gen:whole-drum', // merge: note→hue folds into whole-drum's `noteHue`
+
+  // --- Retired hand-rolled pattern effects → their generator equivalents (D2) ------------
+  swirl: 'gen:helix',
+  aurora: 'gen:perlin-clouds',
+  drift: 'gen:temp-sweep',
+  chase: 'gen:chase-bands',
+  whole: 'gen:whole-drum', // pattern 'flash'
+  sparkle: 'gen:pixel-accum',
+  rip: 'gen:ripple-3d', // pattern 'ripple'
+  wash: 'gen:radial-wash', // pattern 'radial'
+  strobe: 'gen:strobe',
+  haze: 'gen:lava-lamp',
 };
 
 /**

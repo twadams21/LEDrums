@@ -391,7 +391,7 @@ decisions are LOCKED (see Decisions table) — do not re-ask.
 |---|---|---|---|
 | U1 metadata + gallery | done | 2093a77, 8dce68b, d998e54 | Seam+vocabulary+aliases (2093a77); web flow-through + alias consult points at hydrate/buildShow (8dce68b); gallery redesign (collection tabs, tag chips AND, has-param filter, desc/tag/param pills), new `Pill` primitive + styleguide + regen design-system.html, ui-shot captures (effect-gallery, -collection, -filtered). All 45 non-deprecated effects described+tagged. Pattern effects still listed (untagged) — U3 retires them. |
 | U2 isometric thumbs | planned | — | isometric locked |
-| U3 rehab + retirement | planned | — | pattern-path DELETE locked |
+| U3 rehab + retirement | in progress | — | Core rehab landed: aliases.ts populated (retired generators `gen:chase`/`gen:burst`/`gen:colour-melody` + 10 pattern ids → gen targets); chase/burst/colour-melody marked `deprecated`; colour-melody merged into whole-drum via `noteHue` bool; burst merged into radial-wash (Pop preset). D2 Lift-row audit: the 9 effects already iterate the trigger stream hit-relative (seq-gated / ageMs-driven) and layer via fb.max/per-drum state — none render one global beat-indexed thing (the chase pathology), so no emitter conversion warranted; reaches are absolute-mm world-space or hoop-index drum-relative (no kit-fraction bug). Pattern-path DELETE + web retirement next. |
 | U4 canvas engine | planned | — | Rock Solid merged; infra live on main |
 | U5 canvas UI | planned | — | presets+tweaking locked |
 | U6 library fill | planned | — | |
