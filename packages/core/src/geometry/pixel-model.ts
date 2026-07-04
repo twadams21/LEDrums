@@ -94,12 +94,20 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
     const pixelStart = id;
 
     for (let h = 0; h < hoopCount; h++) {
-      const localZ = h * spacing;
+      // Flip is a GEOMETRY-ONLY transform: it mirrors the hoop stack along local Z (skins
+      // swap) and negates the intrinsic angular sweep (chase/wind direction) BELOW, but
+      // leaves hoop indices and pixel INDEX order untouched — so the frame buffer and DMX
+      // map stay byte-identical with flip on/off; a flip never re-patches hardware.
+      const localZ = drum.flip ? -(h * spacing) : h * spacing;
       const normHoop = hoopCount > 1 ? h / (hoopCount - 1) : 0;
       const zone = classifyZone(normHoop);
       const segLen = (Math.PI * 2 * radiusMm) / perHoop;
       for (let i = 0; i < perHoop; i++) {
-        const angleDeg = drum.startAngleDeg + drum.localSpinDeg + (360 * i) / perHoop;
+        // Negate the angular sweep BEFORE the start/spin offsets so a physically-flipped
+        // drum winds the opposite way while pixel 0 stays put.
+        const sweepDeg = (360 * i) / perHoop;
+        const angleDeg =
+          drum.startAngleDeg + drum.localSpinDeg + (drum.flip ? -sweepDeg : sweepDeg);
         const a = angleDeg * DEG2RAD;
         const local: Vec3 = {
           x: radiusMm * Math.cos(a),

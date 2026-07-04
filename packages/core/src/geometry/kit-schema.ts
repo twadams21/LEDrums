@@ -23,6 +23,10 @@ export const drumSchema = z.object({
   /** Rotates where pixel index 0 sits around the hoop. */
   localSpinDeg: z.number().default(0),
   startAngleDeg: z.number().default(0),
+  /** Physically flip the drum: a geometry-only reflection along its local Z (skins swap)
+   * with the angular sweep negated so chase/wind direction reads correctly. Pixel index
+   * order + DMX bytes are unchanged — flip never re-patches hardware (see buildPixelModel). */
+  flip: z.boolean().optional(),
   origin: vec3Schema,
   rotation: vec3Schema,
   /** Origin (local mm) used by radial/3D effects; defaults to drum centre. */
