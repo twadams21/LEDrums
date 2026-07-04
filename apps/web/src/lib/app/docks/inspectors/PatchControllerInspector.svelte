@@ -35,10 +35,13 @@
   port={out?.port}
   controller={store.controllerStatus}
   candidates={store.controllerCandidates}
+  takeover={store.controllerTakeover}
   canEdit={store.canEdit}
   onDiscover={() => store.discoverControllers()}
   onAdopt={(host) => store.adoptController(host)}
   onIdentify={() => store.identifyController()}
+  onTestData={(pattern) => store.setControllerTestData(pattern)}
+  onBackToLive={() => store.backToLive()}
 />
 <Separator />
 

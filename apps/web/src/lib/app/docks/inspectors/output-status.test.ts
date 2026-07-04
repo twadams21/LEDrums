@@ -13,6 +13,8 @@ import {
   formatBankVolts,
   formatEthLinks,
   formatQuietFor,
+  testPatternLabel,
+  testPatternTarget,
   type PacketSample,
 } from './output-status';
 import type { ControllerStatus, ControllerUniverseRx } from '../../../ws/protocol-types';
@@ -175,5 +177,27 @@ describe('formatQuietFor', () => {
     ['hours', 0, 2 * 3_600_000, '2h ago'],
   ])('%s', (_name, lastSeen, now, expected) => {
     expect(formatQuietFor(lastSeen as number | null, now)).toBe(expected);
+  });
+});
+
+describe('testPatternLabel (S49)', () => {
+  it.each([
+    ['setColor', 'Solid colour'],
+    ['rgbwCycle', 'RGBW cycle'],
+    ['colorFade', 'Colour fade'],
+  ] as const)('%s → %s', (op, label) => {
+    expect(testPatternLabel({ op })).toBe(label);
+  });
+});
+
+describe('testPatternTarget (S49)', () => {
+  it('reads "all outputs" when port + pixel are unset or 0', () => {
+    expect(testPatternTarget({ op: 'rgbwCycle' })).toBe('all outputs');
+    expect(testPatternTarget({ op: 'setColor', pixPortNum: 0, pixNum: 0 })).toBe('all outputs');
+  });
+  it('names the specific port and/or pixel being exercised', () => {
+    expect(testPatternTarget({ op: 'setColor', pixPortNum: 3, pixNum: 0 })).toBe('port 3');
+    expect(testPatternTarget({ op: 'setColor', pixPortNum: 0, pixNum: 12 })).toBe('pixel 12');
+    expect(testPatternTarget({ op: 'setColor', pixPortNum: 2, pixNum: 7 })).toBe('port 2 · pixel 7');
   });
 });

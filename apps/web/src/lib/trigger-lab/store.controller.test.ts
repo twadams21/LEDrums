@@ -169,3 +169,48 @@ describe('store — controller send helpers', () => {
     expect(viewer.h.sent).toEqual([]);
   });
 });
+
+describe('store — controller test patterns + takeover (S49)', () => {
+  it('setControllerTestData sends the pattern for an editor and no-ops for a viewer', () => {
+    const pattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 } as const;
+    const editor = wired();
+    editor.store.setControllerTestData(pattern);
+    expect(editor.h.sent).toContainEqual({ t: 'controllerTestData', pattern });
+
+    const viewer = wired();
+    viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    viewer.store.setControllerTestData(pattern);
+    expect(viewer.h.sent).toEqual([]);
+  });
+
+  it('backToLive sends the exit for an editor and no-ops for a viewer', () => {
+    const editor = wired();
+    editor.store.backToLive();
+    expect(editor.h.sent).toContainEqual({ t: 'controllerBackToLive' });
+
+    const viewer = wired();
+    viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    viewer.store.backToLive();
+    expect(viewer.h.sent).toEqual([]);
+  });
+
+  it('controllerTakeover mirrors the server-reported testPattern on the status', () => {
+    const { store, h } = wired();
+    expect(store.controllerTakeover).toBeNull(); // no status yet
+    h.cb!.onControllerStatus!(status());
+    expect(store.controllerTakeover).toBeNull(); // adopted, live mode
+    const pattern = { op: 'rgbwCycle' } as const;
+    h.cb!.onControllerStatus!(status({ testPattern: pattern }));
+    expect(store.controllerTakeover).toEqual(pattern);
+    h.cb!.onControllerStatus!(status({ testPattern: null }));
+    expect(store.controllerTakeover).toBeNull(); // back to live
+  });
+
+  it('drops the takeover with the rest of the controller state on a link drop', () => {
+    const { store, h } = wired();
+    h.cb!.onControllerStatus!(status({ testPattern: { op: 'colorFade' } }));
+    expect(store.controllerTakeover).toEqual({ op: 'colorFade' });
+    h.cb!.onConnection!('closed');
+    expect(store.controllerTakeover).toBeNull();
+  });
+});

@@ -157,3 +157,85 @@ describe('ControllerStatusPanel — actions', () => {
     expect((getByText('Re-scan').closest('button') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe('ControllerStatusPanel — test patterns + takeover (S49)', () => {
+  it('sends a setColor pattern (all ports/pixels) when a solid swatch is clicked', async () => {
+    const onTestData = vi.fn();
+    const { getByLabelText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, onTestData },
+    });
+    await fireEvent.click(getByLabelText('Solid Red test'));
+    expect(onTestData).toHaveBeenCalledWith({
+      op: 'setColor',
+      color: [255, 0, 0, 0],
+      colorRes: '8Bit',
+      pixPortNum: 0,
+      pixNum: 0,
+    });
+  });
+
+  it('sends rgbwCycle / colorFade ops from the op buttons', async () => {
+    const onTestData = vi.fn();
+    const { getByText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, onTestData },
+    });
+    await fireEvent.click(getByText('RGBW cycle'));
+    await fireEvent.click(getByText('Colour fade'));
+    expect(onTestData).toHaveBeenNthCalledWith(1, { op: 'rgbwCycle', pixPortNum: 0, pixNum: 0 });
+    expect(onTestData).toHaveBeenNthCalledWith(2, { op: 'colorFade', pixPortNum: 0, pixNum: 0 });
+  });
+
+  it('shows the LOUD takeover banner (warn, not the live/error family) the entire time a pattern runs', () => {
+    const pattern = { op: 'rgbwCycle' } as const;
+    const { container } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, takeover: pattern },
+    });
+    const banner = container.querySelector('.takeover');
+    expect(banner).not.toBeNull();
+    expect(banner?.getAttribute('role')).toBe('status'); // deliberate state, not an error alert
+    expect(container.querySelector('.alert')).toBeNull(); // NOT the red fault family
+    expect(container.querySelector('.takeover-msg')?.textContent).toContain('RGBW cycle');
+    expect(container.querySelector('.takeover-msg')?.textContent).toContain('all outputs');
+    // the running op button is lit
+    expect(container.querySelector('.action.on')?.textContent).toContain('RGBW cycle');
+  });
+
+  it('lights the active solid swatch matching the running pattern', () => {
+    const pattern = { op: 'setColor', color: [255, 0, 0, 0] } as const;
+    const { container, getByLabelText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, takeover: pattern },
+    });
+    const red = getByLabelText('Solid Red test');
+    expect(red.classList.contains('on')).toBe(true);
+    expect(red.getAttribute('aria-pressed')).toBe('true');
+    // exactly one swatch is lit
+    expect(container.querySelectorAll('.swatch.on').length).toBe(1);
+  });
+
+  it('back-to-live is one click — from the banner AND the ops row', async () => {
+    const onBackToLive = vi.fn();
+    const { getByText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, takeover: { op: 'colorFade' }, onBackToLive },
+    });
+    await fireEvent.click(getByText('Back to live data'));
+    await fireEvent.click(getByText('Live'));
+    expect(onBackToLive).toHaveBeenCalledTimes(2);
+  });
+
+  it('no takeover banner in normal live mode; the ops "Live" button is disabled', () => {
+    const { container, getByText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, takeover: null },
+    });
+    expect(container.querySelector('.takeover')).toBeNull();
+    expect((getByText('Live').closest('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('disables the test controls for a viewer (canEdit=false)', () => {
+    const { getByText, getByLabelText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, canEdit: false, takeover: { op: 'rgbwCycle' } },
+    });
+    expect((getByLabelText('Solid White test') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByText('RGBW cycle').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByText('Back to live data').closest('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+});

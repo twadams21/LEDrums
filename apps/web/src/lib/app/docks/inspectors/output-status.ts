@@ -2,7 +2,7 @@
    data → display, so they unit-test in isolation and the panel stays a thin renderer.
    The panel reads OutputStatus (broadcast in every `stats`/`state` message) plus the
    packets/s rate the store derives from successive `packetsSent` counters. */
-import type { ControllerStatus, ControllerUniverseRx, OutputStatus } from '../../../ws/protocol-types';
+import type { ControllerStatus, ControllerTestPattern, ControllerUniverseRx, OutputStatus } from '../../../ws/protocol-types';
 import type { StatusTone } from '../../../ui/StatusDot.svelte';
 
 /** A cumulative packet counter sampled at a wall-clock instant. The store keeps the
@@ -134,6 +134,31 @@ export function formatBankVolts(bankVoltsMv: number[] | undefined): string {
 export function formatEthLinks(ethLinkUp: boolean[] | undefined): string {
   if (!ethLinkUp || ethLinkUp.length === 0) return '—';
   return `${ethLinkUp.filter(Boolean).length}/${ethLinkUp.length} up`;
+}
+
+/** Human label for an active controller test pattern (S49) — the takeover banner headline. Pure +
+ * total over the closed `op` union so it stays table-driven and unit-testable. */
+export function testPatternLabel(pattern: ControllerTestPattern): string {
+  switch (pattern.op) {
+    case 'setColor':
+      return 'Solid colour';
+    case 'rgbwCycle':
+      return 'RGBW cycle';
+    case 'colorFade':
+      return 'Colour fade';
+  }
+}
+
+/** Targeting detail for the takeover banner — "all outputs" for the whole rig (pixPortNum/pixNum
+ * unset or 0), else the specific port / pixel being exercised. Pure. */
+export function testPatternTarget(pattern: ControllerTestPattern): string {
+  const port = pattern.pixPortNum ?? 0;
+  const pix = pattern.pixNum ?? 0;
+  if (port === 0 && pix === 0) return 'all outputs';
+  const parts: string[] = [];
+  if (port !== 0) parts.push(`port ${port}`);
+  if (pix !== 0) parts.push(`pixel ${pix}`);
+  return parts.join(' · ');
 }
 
 /** How long the controller has been quiet, for the LOST state — `Date.now() - lastSeen` humanized

@@ -55,6 +55,12 @@
   const ctrlLost: ControllerStatus = {
     ...ctrlReceiving, reachable: false, rates: {}, health: {}, lastSeen: CTRL_NOW - 12_000,
   };
+  // S49 takeover: a running test pattern — the LOUD amber banner + lit control, the box IGNORING
+  // the live show. Distinct from the red LOST/not-receiving family (that's a fault; this is chosen).
+  const ctrlTakeover: ControllerStatus = {
+    ...ctrlReceiving,
+    testPattern: { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 },
+  };
   const ctrlCandidates: DiscoveredController[] = [
     { host: '192.168.1.50', prodName: 'PixLite A16-S Mk3', nickname: 'Roof Left 1', fwVer: '1.4.2', authReqd: false, score: 100 },
     { host: '192.168.1.51', prodName: 'PixLite T8-S Mk3', nickname: 'Stage Right', fwVer: '1.4.0', authReqd: true, score: 80 },
@@ -285,14 +291,15 @@
     <DemoCard
       title="Controller status panel (PixLite)"
       src={['lib/app/docks/inspectors/ControllerStatusPanel', 'lib/app/docks/inspectors/output-status']}
-      note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify. The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. Un-adopted shows the Discover affordance + ranked candidates."
+      note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify, plus the S49 built-in test patterns (solid-colour swatches / RGBW cycle / colour fade). The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. The TAKEOVER state (a test pattern running) is the amber warn family — a loud but deliberate 'the box is showing test data, not your live show', with one-click Back-to-live. Un-adopted shows the Discover affordance + ranked candidates."
       wide
     >
       <div class="panel-row">
-        <ControllerStatusPanel controller={ctrlReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} />
-        <ControllerStatusPanel controller={ctrlNotReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} />
-        <ControllerStatusPanel controller={ctrlLost} candidates={[]} outputHost="192.168.1.99" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} />
-        <ControllerStatusPanel controller={null} candidates={ctrlCandidates} nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} />
+        <ControllerStatusPanel controller={ctrlReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlTakeover} takeover={ctrlTakeover.testPattern} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlNotReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlLost} candidates={[]} outputHost="192.168.1.99" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={null} candidates={ctrlCandidates} nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
       </div>
     </DemoCard>
 
