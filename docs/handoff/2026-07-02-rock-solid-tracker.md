@@ -68,6 +68,14 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 — Wave-4 MERGED → rock-solid (design audit + polish; waves 1–4 COMPLETE)
+
+- **Wave-4 MERGED** as `24d996d` (--no-ff), pushed; post-merge sweep green in wt-master (typecheck 0; core 548 · io 13 · protocol 1 · server 204 · web 1064, 0 skips). Agent `wave4-polish-0149f3` — **verified genuinely fable/low this time** (`--model fable` passed explicitly; wave-3's agent had silently run on twux's opus default).
+- **Contents:** headless design audit at 1280×800 + 1920×1080 (findings + kept-with-reasons in `WAVE4-REPORT.md`); **inspector field redesign** (Trent's directive): `Field layout="row"`, one `--control-h` 26px, shared `--field-label-col` across all 15 inspector files + field primitives, read-only recall values → code chips (~40% denser rows); **node preview FULL coverage** (`NodeStatePreview`: chance/toggle/delay/sequence/all/random/switch-gate/modifier — static configured-state faces + trigger flash off `selectedGraphFireAt`; LFO/CC stay continuous per Trent); GraphsDock + state-preview styleguide demos; design-system regenerated; `song-library` ui-shot fixed (was silently duplicating `objects` since creation).
+- **Master review:** full diff read; 1 idiom fix (per-fire counter `$effect` read the rune it wrote — convergent but banned class; shadow counter now). Independent gate re-run green before merge. Trent's rail-swap experiment stash DROPPED on his instruction (2026-07-04).
+- **Process note (twux):** `/impeccable` skill is NOT installed in launched-agent environments — wave-4 ran its audit spirit manually. `pnpm dev` reads `PORT` for the server (NOT `LEDRUMS_WS_PORT`) — future agents: `PORT=4326 LEDRUMS_WEB_PORT=5178 pnpm dev`.
+- **Remaining:** Trent's live pass on the new shell (waves 1–4 all landed browser-verified by agents/master but not yet by Trent). **🛑 Lane 4 STILL ON HOLD.**
+
 ### 2026-07-04 — Wave-3 MERGED → rock-solid (waves 1–3 COMPLETE)
 
 - **Wave-3 MERGED** as `0af9290` (--no-ff), pushed (local == origin/rock-solid). Trent chose stash-and-merge: his rail-swap experiment is preserved as `stash@{0}` on wt-master ("trent rail-swap experiment (pre-wave-3, superseded by Graphs dock)") — NOT popped, since wave-3 rewrote `TriggerGraphView.svelte`; recover with `git stash pop` (expect a conflict) only if he wants it back.
