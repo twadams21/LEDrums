@@ -142,6 +142,12 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
         ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
+        ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
+      });
+      break;
+    case 'setKitGlobal':
+      voiceHost.setKitGlobal({
+        ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
       });
       break;
     case 'setKitOutputs':

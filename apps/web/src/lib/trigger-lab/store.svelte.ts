@@ -1867,6 +1867,14 @@ export class TriggerLab {
     this.client.send({ t: 'setKitTransform', drumId, ...partial });
   }
 
+  /** Set the kit-global mirror (S11): a geometry-only world reflection (none/x/y). Kit-wide,
+   * not per-drum — applies live to the whole model and persists with the project. */
+  setKitMirror(mirror: 'none' | 'x' | 'y'): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (this.project) this.project = routing.applyKitGlobal(this.project, { mirror });
+    this.client.send({ t: 'setKitGlobal', mirror });
+  }
+
   /** Replace the physical-output topology (a Patch graph rewire → PixLite patch order). */
   setRouting(outputs: OutputConfig[]): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op

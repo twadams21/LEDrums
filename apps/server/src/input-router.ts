@@ -174,8 +174,17 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.rotation !== undefined ? { rotation: msg.rotation } : {}),
         ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
+        // pixelsPerHoop was historically dropped on this legacy-engine path (the voice
+        // host already forwarded it) — forward it here too so literal LED counts apply.
+        ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
         ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
         ...(msg.diameterIn !== undefined ? { diameterIn: msg.diameterIn } : {}),
+        ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
+      });
+      return { structural: true };
+    case 'setKitGlobal':
+      engine.setKitGlobal({
+        ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
       });
       return { structural: true };
     case 'setOutput':

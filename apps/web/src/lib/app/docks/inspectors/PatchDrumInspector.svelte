@@ -5,6 +5,7 @@
   import type { KitConfig } from '@ledrums/core';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import Toggle from '../../../ui/Toggle.svelte';
   import RenameField from './RenameField.svelte';
   import { onNum } from './forms';
   import { pixelsPerHoopForDrum, type PatchEditor } from '../patch-inspector';
@@ -113,6 +114,16 @@
       suffix="in"
       ariaLabel="Diameter"
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { diameterIn: n }))}
+    />
+  </Field>
+  <Field layout="row" label="Flip drum" hint="mirror skins + reverse chase">
+    <Toggle
+      pressed={drum.flip ?? false}
+      disabled={!project}
+      ariaLabel="Flip drum"
+      onLabel="flipped"
+      offLabel="normal"
+      onChange={(v) => store.setDrumTransform(drum.id, { flip: v })}
     />
   </Field>
   <RenameField {store} {nodeId} fallback={title} />
