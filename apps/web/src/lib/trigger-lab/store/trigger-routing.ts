@@ -16,6 +16,8 @@ export interface DrumTransformPartial {
   pixelsPerHoop?: number;
   hoopSpacingMm?: number;
   diameterIn?: number;
+  /** Physically flip the drum (geometry-only reflection; DMX bytes unchanged). */
+  flip?: boolean;
 }
 
 /** Partial output-settings change (controller node: protocol/host/rgb/fps/transport fields). */
