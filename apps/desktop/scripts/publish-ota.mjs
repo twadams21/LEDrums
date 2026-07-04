@@ -126,6 +126,36 @@ function r2Put(key, filePath, contentType) {
   execFileSync('npx', args, { stdio: 'inherit' });
 }
 
+/** The 8-byte key id (hex) of a base64-encoded minisign public-key or signature file. Both files
+ *  are `untrusted comment:` line + a base64 payload of `alg[2] + keyId[8] + …`. */
+function minisignKeyId(base64File) {
+  const text = Buffer.from(base64File, 'base64').toString('utf8');
+  const payloadLine = text
+    .split(/\r?\n/)
+    .find((l) => l && !l.startsWith('untrusted comment') && !l.startsWith('trusted comment'));
+  if (!payloadLine) throw new Error('malformed minisign file: no base64 payload line');
+  return Buffer.from(payloadLine, 'base64').subarray(2, 10).toString('hex');
+}
+
+/** Abort unless the signature was made with the key whose PUBLIC half is baked into the app
+ *  (tauri.conf.json plugins.updater.pubkey). A mismatch means every client rejects the update, so
+ *  we must fail BEFORE uploading rather than ship an unverifiable release — the guard that catches a
+ *  wrong or rotated signing key (e.g. a build signed under the wrong Infisical environment). */
+function assertSignatureMatchesUpdaterKey(conf, signatureB64) {
+  const pubkey = conf?.plugins?.updater?.pubkey;
+  if (!pubkey) return; // no updater configured — nothing to verify
+  const pubId = minisignKeyId(pubkey);
+  const sigId = minisignKeyId(signatureB64);
+  if (pubId !== sigId) {
+    throw new Error(
+      `signature key id ${sigId} does not match the app's updater pubkey ${pubId}. The signing key ` +
+        `differs from the one baked into the app, so every client would REJECT this update. Aborting ` +
+        'before upload — check the build ran with the right signing key (e.g. `infisical run --env=prod`).',
+    );
+  }
+  console.log(`[ota] signature key id ${sigId} matches the app updater pubkey ✓`);
+}
+
 /** Fetch the current manifest so we can merge this platform into it (best-effort). */
 async function fetchExistingManifest(version) {
   try {
@@ -184,6 +214,9 @@ async function main() {
 
   const { file, artifactPath, sigPath } = findArtifact(os);
   const signature = readFileSync(sigPath, 'utf8').trim();
+
+  // Safety net: never upload a bundle the shipped app can't verify.
+  assertSignatureMatchesUpdaterKey(conf, signature);
 
   // Namespace the object by version + target so multi-arch artifacts (which often share a filename,
   // e.g. LEDrums.app.tar.gz) never overwrite each other.

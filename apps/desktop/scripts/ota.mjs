@@ -1,4 +1,26 @@
 #!/usr/bin/env node
+/**
+ * LEDrums OTA release driver.
+ *
+ * One command, changes → deployed:
+ *
+ *   infisical run --env=prod -- pnpm ota bump [--major|--minor|--patch]
+ *
+ * `bump` runs the WHOLE pipeline: bump the version → build a signed desktop bundle → publish the
+ * updater artifact + manifest to R2. `--patch` is the default; `--minor` / `--major` bump those
+ * fields (resetting the lower ones). It must run under `infisical run --env=prod` so the signing
+ * key (LEDRUMS_TAURI_SIGNING_PRIVATE_KEY) and R2 creds are present.
+ *
+ * Sub-commands:
+ *   bump [--level]     full pipeline (bump + build + sign + publish)   ← the everyday release command
+ *   version [--level]  bump the version files ONLY (no build/publish)
+ *   publish            publish an already-built signed bundle (e.g. to add another platform's arch)
+ *
+ * The build signs the updater artifact inline (via with-tauri-signing-env.mjs, which prefers the
+ * LEDRUMS_-namespaced key and strips any whitespace the secret store introduced). publish-ota.mjs
+ * then verifies the signature was made with the key baked into the app before uploading — so a
+ * wrong/rotated signing key aborts the release instead of shipping an unverifiable update.
+ */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -7,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
 const repoRoot = resolve(desktopDir, '..', '..');
+const tauriConf = join(desktopDir, 'src-tauri', 'tauri.conf.json');
 
 function loadEnvLocal() {
   const envPath = join(repoRoot, '.env.local');
@@ -25,49 +48,70 @@ function loadEnvLocal() {
   }
 }
 
-function bumpPatch(version) {
+/** Which semver field to bump, from `--major|--minor|--patch` (or bare `major|minor|patch`). */
+function parseLevel(args) {
+  const levels = ['major', 'minor', 'patch'];
+  const found = args.map((a) => a.replace(/^--/, '')).filter((a) => levels.includes(a));
+  if (found.length > 1) throw new Error(`pick one of --major/--minor/--patch, got: ${found.join(', ')}`);
+  return found[0] ?? 'patch';
+}
+
+function bumpVersion(version, level) {
   const parts = version.split('.');
   if (parts.length !== 3 || parts.some((p) => !/^\d+$/.test(p))) {
-    throw new Error(`expected semver patch version like 0.1.0, got ${version}`);
+    throw new Error(`expected semver version like 0.1.0, got ${version}`);
   }
-  parts[2] = String(Number(parts[2]) + 1);
-  return parts.join('.');
+  let [major, minor, patch] = parts.map(Number);
+  if (level === 'major') [major, minor, patch] = [major + 1, 0, 0];
+  else if (level === 'minor') [major, minor, patch] = [major, minor + 1, 0];
+  else [major, minor, patch] = [major, minor, patch + 1];
+  return `${major}.${minor}.${patch}`;
 }
 
 function updateJsonVersion(file, next) {
   const json = JSON.parse(readFileSync(file, 'utf8'));
-  const prev = json.version;
   json.version = next;
   writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
-  return prev;
 }
 
 function updateCargoVersion(file, next) {
   const text = readFileSync(file, 'utf8');
-  const prev = text.match(/^version = "([^"]+)"/m)?.[1];
-  if (!prev) throw new Error(`could not find package version in ${file}`);
+  if (!/^version = "[^"]+"/m.test(text)) throw new Error(`could not find package version in ${file}`);
   writeFileSync(file, text.replace(/^version = "[^"]+"/m, `version = "${next}"`));
-  return prev;
 }
 
-function bump() {
-  const tauriConf = join(desktopDir, 'src-tauri', 'tauri.conf.json');
+/** Bump the version across tauri.conf.json (source of truth), package.json and Cargo.toml. */
+function bumpFiles(level) {
   const current = JSON.parse(readFileSync(tauriConf, 'utf8')).version;
-  const next = bumpPatch(current);
-
+  const next = bumpVersion(current, level);
   updateJsonVersion(tauriConf, next);
   updateJsonVersion(join(desktopDir, 'package.json'), next);
   updateCargoVersion(join(desktopDir, 'src-tauri', 'Cargo.toml'), next);
-
-  console.log(`[ota] bumped desktop version ${current} -> ${next}`);
-  console.log('[ota] run pnpm tauri:build, then pnpm ota');
+  console.log(`[ota] bumped desktop version ${current} -> ${next} (${level})`);
+  return next;
 }
 
+/** Build a signed desktop bundle. Signing env is set up by with-tauri-signing-env.mjs. */
+function build() {
+  console.log('[ota] building signed desktop bundle (tauri build)…');
+  const child = spawnSync(
+    process.execPath,
+    [join(desktopDir, 'scripts', 'with-tauri-signing-env.mjs'), 'pnpm', '--filter', '@ledrums/desktop', 'build'],
+    { cwd: repoRoot, env: process.env, stdio: 'inherit' },
+  );
+  if (child.status !== 0) {
+    console.error('[ota] build failed — aborting release (version files are already bumped).');
+    process.exit(child.status ?? 1);
+  }
+}
+
+/** Publish the freshly-built signed artifact + manifest. publish-ota.mjs verifies the signature
+ *  key id against the app's baked-in updater pubkey before uploading anything. */
 function publish() {
   loadEnvLocal();
   const base = process.env.OTA_PUBLIC_BASE || process.env.BASE;
   if (!base) {
-    console.error('error: set BASE or OTA_PUBLIC_BASE in .env.local');
+    console.error('error: set BASE or OTA_PUBLIC_BASE in .env.local (the R2 public base URL)');
     process.exit(1);
   }
   const env = { ...process.env, OTA_PUBLIC_BASE: base };
@@ -79,13 +123,24 @@ function publish() {
   process.exit(child.status ?? 1);
 }
 
-const command = process.argv[2] ?? 'publish';
+/** The everyday release: bump → build (sign) → publish. */
+function release(level) {
+  bumpFiles(level);
+  build();
+  publish(); // exits with publish-ota's status
+}
+
+const [, , command = 'bump', ...rest] = process.argv;
 
 try {
-  if (command === 'bump') bump();
+  if (command === 'bump') release(parseLevel(rest));
+  else if (command === 'version') bumpFiles(parseLevel(rest));
   else if (command === 'publish') publish();
   else {
-    console.error('usage: pnpm ota [bump]');
+    console.error('usage: pnpm ota <bump|version|publish> [--major|--minor|--patch]');
+    console.error('  bump      bump + build + sign + publish (run under `infisical run --env=prod`)');
+    console.error('  version   bump the version files only');
+    console.error('  publish   publish an already-built signed bundle');
     process.exit(2);
   }
 } catch (err) {

@@ -10,12 +10,19 @@ if (!command) {
 
 const env = { ...process.env };
 
-if (env.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY) {
-  env.TAURI_SIGNING_PRIVATE_KEY = env.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY;
+// Prefer the LEDRUMS_-namespaced signing secret; fall back to a bare TAURI_ one. Strip any
+// whitespace the secret store may have introduced into the base64 — a single stray space breaks
+// the key's base64 decode ("Invalid symbol 32") and fails signing. Stripping is always safe: a
+// valid tauri/minisign key is one continuous base64 blob with no meaningful whitespace.
+const signingKey = env.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY || env.TAURI_SIGNING_PRIVATE_KEY;
+if (signingKey) {
+  env.TAURI_SIGNING_PRIVATE_KEY = signingKey.replace(/\s+/g, '');
 }
 
-if (env.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
-  env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = env.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
+const signingPassword =
+  env.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
+if (signingPassword !== undefined) {
+  env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = signingPassword;
 }
 
 const child = spawnSync(command, args, {
