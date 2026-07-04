@@ -38,9 +38,19 @@ export interface DesktopAdapter {
   listen(event: string, handler: (payload: unknown) => void): Promise<() => void>;
 }
 
-/** Build the real Tauri adapter, or `null` in a plain browser (no `@tauri-apps` present).
- * Dynamic-imported so the web bundle never hard-depends on Tauri. */
+/** True only inside a Tauri webview. `@tauri-apps/api` is an installed dependency, so importing it
+ * SUCCEEDS in a plain browser too — detection must key off the runtime globals Tauri injects into
+ * its webview (present on the remote server URL as well, via the capability's `remote.urls`), not
+ * off whether the import resolves. */
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/** Build the real Tauri adapter, or `null` in a plain browser. Guarded on {@link isTauriRuntime}
+ * so a plain browser never reports desktop (the import alone would otherwise resolve and mislabel
+ * every browser as the desktop shell — permanently covering the web app with the boot overlay). */
 export async function loadTauriAdapter(): Promise<DesktopAdapter | null> {
+  if (!isTauriRuntime()) return null;
   try {
     const core = await import('@tauri-apps/api/core');
     const event = await import('@tauri-apps/api/event');

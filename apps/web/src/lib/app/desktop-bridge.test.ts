@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { createDesktopBridge, type DesktopAdapter, type UpdateCheckResult } from './desktop-bridge.svelte';
+import {
+  createDesktopBridge,
+  loadTauriAdapter,
+  type DesktopAdapter,
+  type UpdateCheckResult,
+} from './desktop-bridge.svelte';
 import type { TauriBootPayload } from './boot-reducer';
 
 /* desktop-bridge driven through a fake invoke/event adapter — no Tauri, no real @tauri-apps import.
@@ -122,5 +127,18 @@ describe('DesktopBridge', () => {
     await Promise.all([bridge.start(load), bridge.start(load)]);
     await bridge.start(load);
     expect(loads).toBe(1);
+  });
+
+  // Regression (group-C review): `@tauri-apps/api` is an installed dep, so importing it resolves in a
+  // plain browser too — detecting desktop by import-success mislabelled every browser as the desktop
+  // shell and left the boot overlay permanently covering the web app. Detection must key off the
+  // Tauri runtime global, absent here in jsdom.
+  it('the real loader reports NOT-desktop in a plain browser (no __TAURI_INTERNALS__)', async () => {
+    expect('__TAURI_INTERNALS__' in globalThis).toBe(false);
+    expect(await loadTauriAdapter()).toBeNull();
+
+    const bridge = createDesktopBridge();
+    await bridge.start(); // real default loader, no fake
+    expect(bridge.isDesktop).toBe(false);
   });
 });
