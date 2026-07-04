@@ -70,6 +70,31 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 09:08 — group L 3/4; S49 = LAST slice in flight
+
+- **group/L 3/4:** S46/S47/**S48 (controller panel UI)** merged. **S49-test-patterns — the FINAL slice (49/49) — in flight** (opus/med). Then L integrate+review (live-smoke-load) + handoff → LANE 4 DONE.
+- 5h 65% (nearing 70%; S49 already launched → L finishes regardless), 7d 80% (<85%). rock-solid 9723474.
+- **Next (imminent):** merge group/L → LANE 4 DONE (49/49 🎉) → cross-lane seam review → FINAL GATE w/ Trent (AskUserQuestion).
+
+### 2026-07-04 08:37 — group L 2/4 (S48 UI in flight)
+
+- **group/L 2/4:** S46 + S47 (controller-monitor service/protocol/tests) merged. **S48-controller-panel (opus/high, the UI slice) in flight** — ensure live-smoke-load in its review. S49 (test patterns + takeover) last. 5h 57%, **7d 79% (FLAT — climb eased, escalation risk receding)**.
+- **Next:** S48+S49 → L review+integrate+handoff → LANE 4 DONE (49/49) → seam review → FINAL GATE.
+
+### 2026-07-04 08:07 — Lane 4 group L (PixLite) underway
+
+- **group/L (final group):** S46 (PixliteClient + HTTP/fake adapters, tested) merged; **S47-controller-monitor in flight** (opus/med). Remaining: S48 (controller panel UI — needs S47+S03; MANDATORY live-smoke-load per P0 lesson) → S49 (test patterns + takeover). Then L integrate+review+handoff → LANE 4 DONE (49/49).
+- rock-solid d51ef53, disk 13 GB, 5h 48%, **7d 79%** (~1%/30min; ~85% in ~3h — watch).
+- **Next:** merge group/L → Lane 4 DONE → cross-lane seam review → FINAL GATE w/ Trent.
+
+### 2026-07-04 07:3x — GROUP D MERGED (geometry); only L left
+
+- **group/D MERGED** (#49, S10–S11; S09 done-by-prior-work) → rock-solid **0d78389** (`--no-ff`, NO conflicts). PASS no fixes. Core purity verified; geometry golden tests (dmxMap byte-identical, mirror∘flip compose) + latent pixelsPerHoop cross-engine fix. Live smoke clean.
+- Master sweep GREEN: typecheck 0; **1893 tests/0 skips** (core 560·server 212·web 1107·io 13·proto 1).
+- **ONLY group L (PixLite, S46–S49) LEFT** — the final group of the final lane. Lane orch on it now.
+- 7d 78% (<85% trigger).
+- **Next:** merge group/L → **LANE 4 DONE (49/49)** → cross-lane seam review → FINAL GATE w/ Trent.
+
 ### 2026-07-04 07:36 — Lane 4 group D (S09 skipped via reconcile)
 
 - **group/D:** ✅ RECONCILE WORKED — **S09 (right-dock resize rail) SKIPPED as done-by-Phase-2** (acceptance already met by the lane-3.5 shell rework; not re-implemented → no duplication/conflict). **S10 (per-drum flip) merged** (core geometry + end-to-end plumb + golden flip suite). **S11 (kit mirror) in flight** (opus/med). Then D integrate+review+handoff → L (last group).
