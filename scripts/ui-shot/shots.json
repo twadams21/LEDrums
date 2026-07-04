@@ -104,5 +104,18 @@
       }
     ],
     "select": ".node-editor"
+  },
+  "patch-controller": {
+    "route": "?view=patch",
+    "actions": [
+      {
+        "click": ".svelte-flow__node[data-id='controller']"
+      },
+      {
+        "wait": 400
+      }
+    ],
+    "select": ".node-editor",
+    "settle": 1500
   }
 }

@@ -34,8 +34,18 @@ export interface OutputPillView {
 
 /** Derive the pill's tone/label/title/pulse from the link + latest OutputStatus.
     Pure: same inputs → same view, no clock, no globals. `output` is null before the
-    first `state`/`stats` arrives (offline / pre-handshake). */
-export function deriveOutputPill(link: LinkState, output: OutputStatus | null): OutputPillView {
+    first `state`/`stats` arrives (offline / pre-handshake).
+
+    `controllerTakeover` (S49): true while the adopted controller runs a built-in test
+    pattern — the box is IGNORING the live Art-Net stream. The pill can't honestly claim
+    LIVE then, so takeover forces a `warn` "TEST" tone over the armed/dry/disabled states.
+    It sits BELOW link-down and a genuine output error (both more fundamental) but ABOVE
+    the state switch, so a live-but-ignored show reads as the warning it is. */
+export function deriveOutputPill(
+  link: LinkState,
+  output: OutputStatus | null,
+  controllerTakeover = false,
+): OutputPillView {
   // Link down: the server owns arming, so an open link is a precondition for any
   // LIVE/armed claim. Never trust stale output while disconnected.
   if (link !== 'open') {
@@ -53,6 +63,18 @@ export function deriveOutputPill(link: LinkState, output: OutputStatus | null): 
   // message. This is what guarantees LIVE can't show while lastError is set.
   if (output.lastError) {
     return { tone: 'live', label: 'ERR', pulse: true, title: `Output error: ${output.lastError}` };
+  }
+
+  // Controller in test-data mode: whatever the server is transmitting, the box is showing
+  // synthetic data instead — so the pill must not read LIVE. Loud amber "TEST" for the whole
+  // takeover (S49), cleared the moment the controller returns to live mode.
+  if (controllerTakeover) {
+    return {
+      tone: 'warn',
+      label: 'TEST',
+      pulse: true,
+      title: 'Controller in test-data mode — ignoring the live output stream',
+    };
   }
 
   switch (output.state) {

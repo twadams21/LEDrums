@@ -3,6 +3,8 @@ import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
   decodeServer,
   type ClientMessage,
+  type ControllerStatus,
+  type DiscoveredController,
   type EffectSpec,
   type MonitorEvent,
   type OutputStatus,
@@ -56,6 +58,11 @@ export interface WSCallbacks {
   /** Live authored SONG-library push — the editor's `setSongLibrary` relayed by the server (sibling
       of {@link onShowLibrary}); a viewer adopts it without a full `state` rebuild. */
   onSongLibrary?: (library: SongLibraryBlob) => void;
+  /** Live status of the adopted PixLite controller (S47/S48) — null when nothing is adopted.
+      Emitted on adopt, every successful poll, and a failed poll (`reachable: false`). */
+  onControllerStatus?: (status: ControllerStatus | null) => void;
+  /** Ranked candidate list from a discovery sweep (best-first); replaces the panel's list. */
+  onControllerDiscovery?: (candidates: DiscoveredController[]) => void;
   onError?: (message: string) => void;
   onConnection?: (state: ConnectionState) => void;
   /** The server refused the connection for a wrong/absent room PIN (close 4401). The reconnect
@@ -248,6 +255,12 @@ export class WSClient {
         break;
       case 'songLibrary':
         this.cb.onSongLibrary?.(msg.library);
+        break;
+      case 'controllerDiscovery':
+        this.cb.onControllerDiscovery?.(msg.candidates);
+        break;
+      case 'controllerStatus':
+        this.cb.onControllerStatus?.(msg.status);
         break;
       case 'error':
         this.cb.onError?.(msg.message);

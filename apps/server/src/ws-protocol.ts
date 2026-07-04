@@ -8,6 +8,10 @@ import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '
 // module owns the server-side runtime helpers (decode/encode/serialize) below.
 export type {
   ClientMessage,
+  ControllerStatus,
+  ControllerTestPattern,
+  ControllerUniverseRx,
+  DiscoveredController,
   EffectSpec,
   OutputStatus,
   MonitorEvent,
@@ -33,6 +37,8 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap', 'setProject',
   'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
   'loadProject', 'saveProject', 'listProjects',
+  'discoverControllers', 'adoptController', 'identifyController', 'watchController',
+  'controllerTestData', 'controllerBackToLive',
 ]);
 
 export function decodeClient(raw: string): ClientMessage {

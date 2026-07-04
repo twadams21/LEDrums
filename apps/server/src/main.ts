@@ -6,7 +6,7 @@ import {
   WS_PORT,
   type Project,
 } from '@ledrums/core';
-import { OscInput, OSC_DEFAULT_PORT } from '@ledrums/io';
+import { HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe as probeController } from '@ledrums/io';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
@@ -32,6 +32,7 @@ import {
   resolvePin,
 } from './pin-gate';
 import { boot } from './boot';
+import { createControllerMonitor } from './controller-monitor';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
@@ -382,10 +383,12 @@ wss.on('connection', (ws, req) => {
   // slot may have moved per the registry's election rule).
   ws.on('close', () => {
     clients.remove(ws);
+    controllerMonitor.dropWatcher(ws);
     broadcastPresence();
   });
   ws.on('error', () => {
     clients.remove(ws);
+    controllerMonitor.dropWatcher(ws);
     broadcastPresence();
   });
 });
@@ -401,6 +404,26 @@ function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
     if (other !== sender && other.readyState === other.OPEN) other.send(data);
   }
 }
+
+/** PixLite controller monitor (S47, group L): discovery + adoption + the client-interest-gated poll
+ * loop. ONE HttpPixliteClient per controller (its internal queue enforces the sequential rule). The
+ * adopted controller is persisted as `project.controller` (data-only) and rehydrated at boot below.
+ * All emitted `controllerStatus`/`controllerDiscovery` messages ride the normal JSON broadcast. */
+const controllerMonitor = createControllerMonitor({
+  createClient: ({ host: controllerHost, auth }) => new HttpPixliteClient({ host: controllerHost, auth }),
+  probe: (controllerHost, timeoutMs) => probeController(controllerHost, timeoutMs),
+  getOutputSettings: () => host.engine.getProject().output,
+  getController: () => host.engine.getProject().controller,
+  persistController: (controller) => {
+    // Store on the live project in place (no engine rebuild — the controller isn't geometry), then
+    // autosave + re-broadcast state so every client sees the adopted controller.
+    host.engine.getProject().controller = controller ?? undefined;
+    autosaver.markDirty();
+    broadcastState();
+  },
+  broadcast: broadcastJson,
+  monitor,
+});
 
 const handleClientMessage = createClientMessageHandler<WebSocket>({
   clients,
@@ -425,6 +448,15 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   tunnelControl,
   isTunnelClient: (ws) => tunnelClients.has(ws),
   monitor,
+  controller: {
+    discover: () => controllerMonitor.discover(),
+    adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),
+    identify: (durationS) => controllerMonitor.identify(durationS),
+    setTestData: (pattern) => controllerMonitor.setTestData(pattern),
+    backToLive: () => controllerMonitor.backToLive(),
+    watch: (key) => controllerMonitor.watch(key),
+    dropWatcher: (key) => controllerMonitor.dropWatcher(key),
+  },
 });
 
 const NATIVE_MIDI_PATH = '/api/native-midi';
@@ -619,6 +651,10 @@ const statsTimer = setInterval(() => {
 
 // --- boot + shutdown --------------------------------------------------------
 
+// Rehydrate a controller already adopted on the loaded project (boot recovery) — sets up the
+// per-controller client so the first watcher's poll reports live status. No traffic until watched.
+controllerMonitor.hydrate();
+
 boot({
   server,
   wss,
@@ -626,6 +662,7 @@ boot({
   host,
   voiceHost,
   oscInput,
+  controllerMonitor,
   port,
   oscPort,
   voiceMode: VOICE_MODE,

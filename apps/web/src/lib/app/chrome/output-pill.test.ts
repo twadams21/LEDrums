@@ -82,4 +82,32 @@ describe('deriveOutputPill', () => {
       expect(v.label).not.toBe('LIVE');
     }
   });
+
+  // --- S49: controller test-data takeover forces a loud TEST warn over the live states.
+  it('shows TEST (warn) over an otherwise-LIVE output while the controller is in test mode', () => {
+    const live = status({ state: 'armed', packetsSent: 10_000, lastError: null });
+    expect(deriveOutputPill('open', live).label).toBe('LIVE'); // sanity: LIVE without takeover
+    const v = deriveOutputPill('open', live, true);
+    expect(v.tone).toBe('warn');
+    expect(v.label).toBe('TEST');
+    expect(v.pulse).toBe(true);
+    expect(v.title).toMatch(/test-data mode/i);
+  });
+
+  it('never shows LIVE while the controller takeover is active', () => {
+    for (const state of ['armed', 'dry-run', 'disabled'] as const) {
+      const v = deriveOutputPill('open', status({ state, packetsSent: 10_000 }), true);
+      expect(v.label).not.toBe('LIVE');
+    }
+  });
+
+  it('a genuine output error still wins over the takeover (the wire failing is worse)', () => {
+    const v = deriveOutputPill('open', status({ state: 'armed', packetsSent: 10_000, lastError: 'EACCES' }), true);
+    expect(v.label).toBe('ERR');
+  });
+
+  it('a down link still wins over the takeover (no live claim without a link)', () => {
+    const v = deriveOutputPill('offline', status({ state: 'armed', packetsSent: 10_000 }), true);
+    expect(v.label).toBe('LOCAL');
+  });
 });

@@ -12,6 +12,7 @@
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
+  import ControllerStatusPanel from '../../app/docks/inspectors/ControllerStatusPanel.svelte';
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
@@ -22,13 +23,49 @@
   import { PATTERN_EFFECTS, GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { MonitorEvent, OutputStatus } from '../../ws/protocol-types';
+  import type { ControllerStatus, DiscoveredController, MonitorEvent, OutputStatus } from '../../ws/protocol-types';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
 
   /* ---- OutputStatusPanel (pure props — no store) ------------------------------- */
   const outArmed: OutputStatus = { state: 'armed', protocol: 'artnet', host: '192.168.1.50', packetsSent: 0, lastError: null, universeCount: 8 };
   const outDryRun: OutputStatus = { state: 'dry-run', protocol: 'sacn', host: '239.255.0.1', packetsSent: 0, lastError: null, universeCount: 4 };
   const outErroring: OutputStatus = { state: 'armed', protocol: 'artnet', host: '192.168.1.50', packetsSent: 0, lastError: 'EHOSTUNREACH 192.168.1.50:6454', universeCount: 8 };
+
+  /* ---- ControllerStatusPanel (S48 — pure props + action callbacks) ------------- */
+  // A fixed `nowMs` keeps the LOST "last seen" age deterministic in the generated artifact.
+  const CTRL_NOW = 1_000_000;
+  const ctrlIdentity = { host: '192.168.1.50', prodName: 'PixLite A16-S Mk3', nickname: 'Roof Left 1', fwVer: '1.4.2', authReqd: false };
+  const ctrlHealth = { tempC: 41, bankVoltsMv: [12_100, 12_000], portStatus: ['ok', 'ok'], ethLinkUp: [true, true, false] };
+  const ctrlReceiving: ControllerStatus = {
+    host: '192.168.1.50', reachable: true, identity: ctrlIdentity,
+    universes: [
+      { uniNum: 1, protocol: 'sACN', receiving: true, inGood: 44_318, inBadSeq: 0, priority: 100, sourceName: 'LEDrums' },
+      { uniNum: 2, protocol: 'sACN', receiving: true, inGood: 44_301, inBadSeq: 2, priority: 100 },
+    ],
+    rates: { inFrmRate: 40, outFrmRate: 40 }, health: ctrlHealth, lastSeen: CTRL_NOW - 400,
+  };
+  const ctrlNotReceiving: ControllerStatus = {
+    ...ctrlReceiving,
+    universes: [
+      { uniNum: 1, protocol: 'sACN', receiving: true, inGood: 44_318, inBadSeq: 0, priority: 100 },
+      { uniNum: 2, protocol: 'sACN', receiving: false, inGood: 12_004, inBadSeq: 88 },
+    ],
+    rates: { inFrmRate: 40, outFrmRate: 40 }, lastSeen: CTRL_NOW - 900,
+  };
+  const ctrlLost: ControllerStatus = {
+    ...ctrlReceiving, reachable: false, rates: {}, health: {}, lastSeen: CTRL_NOW - 12_000,
+  };
+  // S49 takeover: a running test pattern — the LOUD amber banner + lit control, the box IGNORING
+  // the live show. Distinct from the red LOST/not-receiving family (that's a fault; this is chosen).
+  const ctrlTakeover: ControllerStatus = {
+    ...ctrlReceiving,
+    testPattern: { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 },
+  };
+  const ctrlCandidates: DiscoveredController[] = [
+    { host: '192.168.1.50', prodName: 'PixLite A16-S Mk3', nickname: 'Roof Left 1', fwVer: '1.4.2', authReqd: false, score: 100 },
+    { host: '192.168.1.51', prodName: 'PixLite T8-S Mk3', nickname: 'Stage Right', fwVer: '1.4.0', authReqd: true, score: 80 },
+  ];
+  const noop = () => {};
 
   /* ---- NodeCard faces ------------------------------------------------------- */
   const faceSubs: Record<NodeKind, string> = {
@@ -248,6 +285,21 @@
         <OutputStatusPanel output={outDryRun} packetsPerSec={null} />
         <OutputStatusPanel output={outErroring} packetsPerSec={0} port={6454} />
         <OutputStatusPanel output={null} packetsPerSec={null} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Controller status panel (PixLite)"
+      src={['lib/app/docks/inspectors/ControllerStatusPanel', 'lib/app/docks/inspectors/output-status']}
+      note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify, plus the S49 built-in test patterns (solid-colour swatches / RGBW cycle / colour fade). The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. The TAKEOVER state (a test pattern running) is the amber warn family — a loud but deliberate 'the box is showing test data, not your live show', with one-click Back-to-live. Un-adopted shows the Discover affordance + ranked candidates."
+      wide
+    >
+      <div class="panel-row">
+        <ControllerStatusPanel controller={ctrlReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlTakeover} takeover={ctrlTakeover.testPattern} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlNotReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlLost} candidates={[]} outputHost="192.168.1.99" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={null} candidates={ctrlCandidates} nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
       </div>
     </DemoCard>
 

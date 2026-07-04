@@ -4,7 +4,7 @@ import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import { encodeServer, type ClientMessage, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
+import { encodeServer, type ClientMessage, type ControllerTestPattern, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -39,10 +39,12 @@ function acceptsMidiChannel(msg: ClientMessage, channel: number | null): boolean
 }
 
 /**
- * Non-authoring messages any client may send: pure reads (`listProjects`) and the role-claim
- * (`takeover`). These mutate no shared authored state, so they bypass the editor gate.
+ * Non-authoring messages any client may send: pure reads (`listProjects`), the role-claim
+ * (`takeover`), and the controller-panel interest signal (`watchController`). These mutate no
+ * shared authored state, so they bypass the editor gate — a VIEWER watching the controller panel
+ * must keep live status flowing (discover/adopt/identify stay editor-gated by deny-by-default).
  */
-const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover']);
+const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover', 'watchController']);
 
 /**
  * Whether `t` is an AUTHORING mutation that only the editor may apply (S2 read-only policy).
@@ -101,6 +103,19 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   isTunnelClient?(ws: S): boolean;
   /** Append a diagnostic event to the shared Monitor stream. */
   monitor?(event: MonitorDraft): void;
+  /** PixLite controller monitor (S47), or absent when the wiring runs without one (the controller
+   * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
+   * that client's interest. `adopt` resolves to a result the handler turns into an `error` reply on
+   * failure; discover/adopt/identify broadcast their own `controllerDiscovery`/`controllerStatus`. */
+  controller?: {
+    discover(): Promise<unknown>;
+    adopt(host: string): Promise<{ ok: boolean; error?: string }>;
+    identify(durationS: number): Promise<void>;
+    setTestData(pattern: ControllerTestPattern): Promise<void>;
+    backToLive(): Promise<void>;
+    watch(key: object): void;
+    dropWatcher(key: object): void;
+  };
 }
 
 /**
@@ -169,6 +184,38 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       }
       if (msg.action === 'start') deps.tunnelControl?.start();
       else deps.tunnelControl?.stop();
+      return;
+    }
+
+    // PixLite controller monitor (S47, group L). discover/adopt/identify are editor-gated (they
+    // sweep the network, re-rig the device, or flash hardware); `watchController` is ungated above
+    // so a viewer's open panel keeps live status flowing. Each is fire-and-forget: the service
+    // broadcasts its own `controllerDiscovery`/`controllerStatus`; a failed adopt replies `error`.
+    if (msg.t === 'discoverControllers') {
+      void deps.controller?.discover();
+      return;
+    }
+    if (msg.t === 'adoptController') {
+      void deps.controller?.adopt(msg.host).then((r) => {
+        if (!r.ok && r.error) ws.send(encodeServer({ t: 'error', message: r.error }));
+      });
+      return;
+    }
+    if (msg.t === 'identifyController') {
+      void deps.controller?.identify(msg.durationS);
+      return;
+    }
+    if (msg.t === 'controllerTestData') {
+      void deps.controller?.setTestData(msg.pattern);
+      return;
+    }
+    if (msg.t === 'controllerBackToLive') {
+      void deps.controller?.backToLive();
+      return;
+    }
+    if (msg.t === 'watchController') {
+      if (msg.watching) deps.controller?.watch(ws);
+      else deps.controller?.dropWatcher(ws);
       return;
     }
 

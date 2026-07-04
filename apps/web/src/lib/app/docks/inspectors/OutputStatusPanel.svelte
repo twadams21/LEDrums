@@ -10,10 +10,16 @@
      .type-error), a filled callout distinct from the small outlined state pill. */
   import RadioTower from '@lucide/svelte/icons/radio-tower';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-  import type { OutputStatus } from '../../../ws/protocol-types';
+  import type {
+    ControllerStatus,
+    ControllerTestPattern,
+    DiscoveredController,
+    OutputStatus,
+  } from '../../../ws/protocol-types';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import StatusPill from '../../../ui/StatusPill.svelte';
   import ReadRow from './ReadRow.svelte';
+  import ControllerStatusPanel from './ControllerStatusPanel.svelte';
   import {
     defaultPort,
     formatPacketsPerSecond,
@@ -25,6 +31,15 @@
     output,
     packetsPerSec,
     port,
+    controller,
+    candidates = [],
+    takeover = null,
+    canEdit = true,
+    onDiscover,
+    onAdopt,
+    onIdentify,
+    onTestData,
+    onBackToLive,
   }: {
     /** Server transport truth from the stats/state stream; null when offline / pre-handshake. */
     output: OutputStatus | null;
@@ -32,6 +47,21 @@
     packetsPerSec: number | null;
     /** Configured transport port (not carried on OutputStatus) — falls back to the protocol default. */
     port?: number;
+    /** Adopted PixLite controller status (S48) — the confidence chain's last link, rendered below
+        the fault row. `undefined` hides the whole controller section (the pure S03 demos); `null`
+        shows it un-adopted (Discover affordance); an object shows its live rx truth. */
+    controller?: ControllerStatus | null;
+    /** Discovery candidates for the controller section (ignored when `controller` is undefined). */
+    candidates?: DiscoveredController[];
+    /** Active controller test pattern (S49) — forwarded to the controller panel's takeover banner. */
+    takeover?: ControllerTestPattern | null;
+    /** Editor gate forwarded to the controller actions. */
+    canEdit?: boolean;
+    onDiscover?: () => void;
+    onAdopt?: (host: string) => void;
+    onIdentify?: () => void;
+    onTestData?: (pattern: ControllerTestPattern) => void;
+    onBackToLive?: () => void;
   } = $props();
 
   const tone = $derived(output ? outputStateTone(output.state) : 'muted');
@@ -66,6 +96,24 @@
   {:else}
     <p class="offline">No engine link — output status appears once the server is connected.</p>
   {/if}
+
+  {#if controller !== undefined}
+    <!-- S48: the controller's own truth (received → outputting), extending the panel below the
+         transport fault row. Hidden entirely when `controller` is undefined (the pure S03 demos). -->
+    <div class="controller-divider" role="presentation"></div>
+    <ControllerStatusPanel
+      {controller}
+      {candidates}
+      {takeover}
+      outputHost={output?.host}
+      {canEdit}
+      {onDiscover}
+      {onAdopt}
+      {onIdentify}
+      {onTestData}
+      {onBackToLive}
+    />
+  {/if}
 </section>
 
 <style>
@@ -90,6 +138,13 @@
     color: var(--text-muted);
     line-height: var(--leading-normal);
     text-wrap: pretty;
+  }
+  /* Hairline between the transport truth and the controller's own truth — same faint rule as the
+     read-rows, giving the two confidence links one continuous rhythm. */
+  .controller-divider {
+    height: 1px;
+    margin: var(--space-1) 0;
+    background: var(--border-faint);
   }
 
   /* Prominent fault callout — filled red block, loud but not shouting. Enter is a

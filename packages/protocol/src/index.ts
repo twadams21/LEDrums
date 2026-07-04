@@ -103,7 +103,37 @@ export type ClientMessage =
   | { t: 'tunnel'; action: 'start' | 'stop' }
   | { t: 'loadProject'; name: string }
   | { t: 'saveProject'; name: string }
-  | { t: 'listProjects' };
+  | { t: 'listProjects' }
+  // --- PixLite controller monitor (S47, group L) -----------------------------
+  // Trigger a one-shot discovery sweep of the candidate subnet(s) derived from the configured
+  // output host/interface (falling back to local NIC subnets). The server replies with a single
+  // `controllerDiscovery` message carrying the ranked candidate list. Editor-gated (a viewer's
+  // panel can watch live status but not initiate network sweeps or re-rig the device).
+  | { t: 'discoverControllers' }
+  // Adopt `host` as THE controller for this project: the server probes it, persists
+  // `{ host, nickname }` on the Project (rehydrated across restarts), and begins reporting its
+  // live status via `controllerStatus`. Editor-gated. A host that doesn't answer as a PixLite is
+  // reported back as an `error` (no adoption).
+  | { t: 'adoptController'; host: string }
+  // Flash the adopted controller's status LED for `durationS` seconds (0 = off, 121 = continuous)
+  // — the "which box is this?" confirmation. Editor-gated. No-op when nothing is adopted.
+  | { t: 'identifyController'; durationS: number }
+  // Drive the controller's built-in test-data mode (S49): a solid colour / RGBW cycle / colour
+  // fade, per-port or per-pixel. While this runs the controller IGNORES the live Art-Net stream
+  // (a LOUD takeover state) — the server reports it back on `ControllerStatus.testPattern`.
+  // Editor-gated. No-op when nothing is adopted.
+  | { t: 'controllerTestData'; pattern: ControllerTestPattern }
+  // Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
+  // Editor-gated. No-op when nothing is adopted / not in test mode. The server also fires this
+  // automatically when the last panel watcher leaves (panel close / disconnect) so a controller is
+  // never stranded in test mode.
+  | { t: 'controllerBackToLive' }
+  // Client interest signal — the ONLY thing that gates the poll loop (no idle traffic). A client
+  // sends `watching: true` while it has the Monitor/Patch controller panel open and `false` when it
+  // closes it; a disconnect implicitly clears it. The server polls `statisticRead` at 1–2s only
+  // while ≥1 client is watching AND a controller is adopted. NOT editor-gated — a viewer watching
+  // the panel keeps live status flowing for everyone.
+  | { t: 'watchController'; watching: boolean };
 
 // ---------------------------------------------------------------------------
 // Server → Client (JSON, plus a separate binary frame channel)
@@ -198,6 +228,98 @@ export interface VoiceStats {
   voices: VoiceStat[];
 }
 
+// ---------------------------------------------------------------------------
+// PixLite controller monitor (S47, group L) — the confidence chain's last link:
+// controller received → controller outputting. The server owns a controller-monitor service
+// (discovery + adoption + polling); these are the wire shapes it emits. The S48 panel renders
+// them directly.
+// ---------------------------------------------------------------------------
+
+/** One universe's receive verification, flattened from the controller's parallel sACN/Art-Net
+ * arrays into a single list the panel renders row-by-row. `receiving` is the headline signal —
+ * it is the controller's `timedOut === false`, i.e. valid data is arriving on this universe RIGHT
+ * NOW. A `receiving: false` row is the "not receiving" state the panel must make unmissable. */
+export interface ControllerUniverseRx {
+  /** DMX universe number. */
+  uniNum: number;
+  /** Which protocol this universe was read from. */
+  protocol: 'sACN' | 'artNet';
+  /** true = valid data arriving on this universe now (controller's `!timedOut`). */
+  receiving: boolean;
+  /** Good packets received. */
+  inGood: number;
+  /** Out-of-sequence packets (dropped). */
+  inBadSeq: number;
+  /** Packets dropped for lower-than-active priority (sACN only). */
+  inLowPri?: number;
+  /** Currently active priority 0–200 (sACN only). */
+  priority?: number;
+  /** Source description, e.g. `"Your Lighting Software"` (sACN only). */
+  sourceName?: string;
+}
+
+/** A candidate found by a discovery sweep — identity only (no live stats until adopted). The panel
+ * lists these best-first (higher `score` = more likely the PixLite you want) and offers Adopt on each. */
+export interface DiscoveredController {
+  /** The responder's IP (what `adoptController` takes). */
+  host: string;
+  /** Product/model string, e.g. `"PixLite A16-S Mk3"`. */
+  prodName: string;
+  /** User-assigned label on the device, e.g. `"Roof Left 1"`. */
+  nickname: string;
+  /** Firmware version, e.g. `"1.2.3"`. */
+  fwVer: string;
+  /** True if the device requires an admin password for management calls. */
+  authReqd: boolean;
+  /** Discovery rank — higher sorts first (PixLite/Advatek-branded above generic responders). */
+  score: number;
+}
+
+/** A built-in controller test pattern (S49) — the wire mirror of the io `ModeTestDataParams`
+ * (§7.7.2). The web sends it in `controllerTestData`; the server maps it onto the PixLite client and
+ * echoes the active one back on {@link ControllerStatus.testPattern} so every watcher sees the loud
+ * takeover state. `op` picks the pattern; `color` (RGBW) only matters for `setColor`; `pixPortNum` /
+ * `pixNum` target a port / pixel (0 = all). */
+export interface ControllerTestPattern {
+  op: 'setColor' | 'rgbwCycle' | 'colorFade';
+  /** RGBW colour for `setColor`, each 0–255 at 8-bit resolution. */
+  color?: [number, number, number, number];
+  /** Colour-array resolution. Defaults to 8-bit on the device when omitted. */
+  colorRes?: '8Bit' | '16Bit';
+  /** Pixel port to test (1-based), or 0 for all ports. */
+  pixPortNum?: number;
+  /** Pixel to test (1-based), or 0 for all pixels. */
+  pixNum?: number;
+}
+
+/** Live status of the ADOPTED controller — the payload of the `controllerStatus` message and the
+ * single source the S48 panel renders. Emitted on adopt, on every successful poll, and on a failed
+ * poll (with `reachable: false` and a frozen `lastSeen`). Identity is null only in the brief window
+ * before the first probe resolves. */
+export interface ControllerStatus {
+  /** The adopted controller's host (IP) — stable identity the panel keys on. */
+  host: string;
+  /** Whether the most recent contact succeeded. false = a poll timed out/errored (controller lost);
+   * the panel shows the lost state and `lastSeen` stops advancing (ages). */
+  reachable: boolean;
+  /** Identity (name/model/firmware/IP) from the `/ver` probe. `nickname` is the display name,
+   * `prodName` the model, `fwVer` the firmware, `host` the IP. null until the first probe resolves. */
+  identity: { host: string; prodName: string; nickname: string; fwVer: string; authReqd: boolean } | null;
+  /** Per-universe rx verification (sACN + Art-Net flattened), empty until the first stats poll. */
+  universes: ControllerUniverseRx[];
+  /** Detected input frame rate (Hz) and pixel output frame rate (Hz). */
+  rates: { inFrmRate?: number; outFrmRate?: number };
+  /** Device health: temperature, per-bank input voltage, per-port power status, per-port eth link. */
+  health: { tempC?: number; bankVoltsMv?: number[]; portStatus?: string[]; ethLinkUp?: boolean[] };
+  /** Epoch ms of the last SUCCESSFUL contact, or null if never reached. Frozen while unreachable —
+   * `Date.now() - lastSeen` is how long the controller has been quiet. */
+  lastSeen: number | null;
+  /** Active built-in test pattern (S49), or null/absent when the controller is in normal LIVE mode.
+   * Non-null = the LOUD takeover state: the box is running synthetic data and IGNORING the live
+   * Art-Net stream. Server-authoritative so every watcher's banner + output pill agree. */
+  testPattern?: ControllerTestPattern | null;
+}
+
 export type MonitorEventType = 'input' | 'output' | 'effect' | 'graph' | 'system' | 'persistence' | 'error';
 
 export interface MonitorEvent {
@@ -255,4 +377,12 @@ export type ServerMessage =
   // Live SONG-library push: the editor's `setSongLibrary` relayed to the OTHER clients, mirroring
   // the `showLibrary` relay. Never echoed to the sender.
   | { t: 'songLibrary'; library: SongLibraryBlob }
+  // Result of a `discoverControllers` sweep: the ranked candidate list (best-first). Replaces the
+  // panel's candidate list wholesale each time — an empty array means "sweep finished, found none".
+  | { t: 'controllerDiscovery'; candidates: DiscoveredController[] }
+  // Live status of the adopted controller (S47). Emitted on adopt, on each successful poll, and on a
+  // failed poll (`reachable: false`, frozen `lastSeen`). The S48 panel renders {@link ControllerStatus}
+  // directly. `status` is null when no controller is adopted (e.g. right after a project with no
+  // controller loads) — the panel then shows the un-adopted "Discover" affordance.
+  | { t: 'controllerStatus'; status: ControllerStatus | null }
   | { t: 'error'; message: string };
