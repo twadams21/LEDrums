@@ -6,7 +6,7 @@
   import StatusPill from '../../ui/StatusPill.svelte';
   import { midiChannelOptions } from '../../midi/midi-note';
   import { deviceListEmptyState } from './midi-devices';
-  import { checkForDesktopUpdate, checkHostUpdateStatus, installDesktopUpdate } from '../desktop-bridge.svelte';
+  import UpdateControl from './UpdateControl.svelte';
 
   let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
 
@@ -15,42 +15,9 @@
     deviceListEmptyState(store.midiAvailable, store.midiUnavailableReason, store.midiDevices.length),
   );
   const CHANNEL_OPTS = midiChannelOptions();
-  let updateStatus = $state('');
-  let checkingUpdate = $state(false);
 
   function setChannel(v: string): void {
     store.setMidiChannel(v === 'all' ? null : Number(v));
-  }
-
-  async function checkUpdate(): Promise<void> {
-    checkingUpdate = true;
-    updateStatus = 'Checking...';
-    const hostStatus = await checkHostUpdateStatus();
-    const desktopStatus = await checkForDesktopUpdate();
-    checkingUpdate = false;
-
-    const result = desktopStatus ?? hostStatus;
-    if (!result) {
-      updateStatus = 'Could not check for updates.';
-      return;
-    }
-    if (!result.available) {
-      updateStatus = result.error ? `No update status: ${result.error}` : 'No update available.';
-      return;
-    }
-    const label = result.version ? `Version ${result.version} is available.` : 'An update is available.';
-    if (!desktopStatus?.canInstall) {
-      updateStatus = `${label} Install it from the desktop host.`;
-      return;
-    }
-    const ok = window.confirm(`${label}\n\nUpdate now? Choose Cancel to install later on next launch.`);
-    if (!ok) {
-      updateStatus = 'Update deferred until next launch.';
-      return;
-    }
-    updateStatus = 'Downloading update...';
-    const started = await installDesktopUpdate();
-    updateStatus = started ? 'Restarting to install update...' : 'Could not start update.';
   }
 </script>
 
@@ -87,12 +54,7 @@
       {/if}
     </section>
     <Field label="Updates" hint="desktop app">
-      <div class="update-row">
-        <button type="button" class="soft" disabled={checkingUpdate} onclick={checkUpdate}>
-          {checkingUpdate ? 'Checking' : 'Check for update'}
-        </button>
-        {#if updateStatus}<span>{updateStatus}</span>{/if}
-      </div>
+      <UpdateControl />
     </Field>
   </div>
 </Dialog>
@@ -119,25 +81,6 @@
   }
   .body :global(.sel) {
     width: 100%;
-  }
-  .update-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .soft {
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text);
-    font-size: var(--text-xs);
-    font-weight: 600;
-  }
-  .update-row span {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
   }
 
   /* MIDI devices — a labelled, non-interactive list (matches Field's label styling). */
