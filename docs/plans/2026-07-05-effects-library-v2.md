@@ -371,7 +371,7 @@ do not re-ask them.
 | B3 emission-lift 2 | planned | — | |
 | B4 retire + merge | planned | — | alias-forever (locked) |
 | B5 gap-fill natives | planned | — | |
-| C1 playType seam | planned | — | check Rock Solid lanes |
+| C1 playType seam | planned | — | Rock Solid merged; no coordination needed |
 | C2 canvas engine | planned | — | |
 | C3 samplers 2 + params | planned | — | |
 | C4 lens chain | planned | — | |
