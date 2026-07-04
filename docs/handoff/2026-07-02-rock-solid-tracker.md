@@ -70,6 +70,12 @@ All four `pnpm install`ed. Assignment discipline: `git -C <wt> status --porcelai
 
 ## State snapshot (per wake — newest on top)
 
+### 2026-07-04 08:07 — Lane 4 group L (PixLite) underway
+
+- **group/L (final group):** S46 (PixliteClient + HTTP/fake adapters, tested) merged; **S47-controller-monitor in flight** (opus/med). Remaining: S48 (controller panel UI — needs S47+S03; MANDATORY live-smoke-load per P0 lesson) → S49 (test patterns + takeover). Then L integrate+review+handoff → LANE 4 DONE (49/49).
+- rock-solid d51ef53, disk 13 GB, 5h 48%, **7d 79%** (~1%/30min; ~85% in ~3h — watch).
+- **Next:** merge group/L → Lane 4 DONE → cross-lane seam review → FINAL GATE w/ Trent.
+
 ### 2026-07-04 07:3x — GROUP D MERGED (geometry); only L left
 
 - **group/D MERGED** (#49, S10–S11; S09 done-by-prior-work) → rock-solid **0d78389** (`--no-ff`, NO conflicts). PASS no fixes. Core purity verified; geometry golden tests (dmxMap byte-identical, mirror∘flip compose) + latent pixelsPerHoop cross-engine fix. Live smoke clean.
