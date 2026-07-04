@@ -47,7 +47,7 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { ClientMessage, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, DiscoveredController, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -437,6 +437,15 @@ export class TriggerLab {
   /** Previous packet counter sample, kept to derive {@link outputPacketsPerSec}. Plain field —
       must NOT be reactive (it is bookkeeping for the derivation, not rendered). */
   private prevPacketSample: PacketSample | null = null;
+  /** Live status of the ADOPTED PixLite controller (S47/S48) — the last link in the confidence
+      chain (controller received → controller outputting). null when nothing is adopted, and
+      cleared on a link drop (a dropped socket can't confirm the box's rx truth). Populated by the
+      server's `controllerStatus` broadcast while a client watches the controller panel. */
+  controllerStatus = $state<ControllerStatus | null>(null);
+  /** Ranked discovery candidates (best-first) from the last `discoverControllers` sweep — replaced
+      wholesale by each `controllerDiscovery` reply, cleared on a link drop. Empty = none found / no
+      sweep run yet. The panel lists these with an Adopt-IP action. */
+  controllerCandidates = $state<DiscoveredController[]>([]);
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -1351,6 +1360,15 @@ export class TriggerLab {
           this.songSync.noteSynced(this.songSync.librarySig(this.currentSongLibrary()));
         }
       },
+      onControllerStatus: (status) => {
+        // Live truth of the adopted controller (S47/S48). null = nothing adopted (panel shows the
+        // Discover affordance). This is the confidence chain's last link — rendered directly.
+        this.controllerStatus = status;
+      },
+      onControllerDiscovery: (candidates) => {
+        // A discovery sweep finished — replace the candidate list wholesale (best-first).
+        this.controllerCandidates = candidates;
+      },
       onAuthError: () => {
         // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
         // loop is paused in the client until submitPin() supplies one.
@@ -1384,6 +1402,11 @@ export class TriggerLab {
           this.output = null;
           this.outputPacketsPerSec = null;
           this.prevPacketSample = null;
+          // Same for the adopted controller (S48): a dropped link can't confirm the box's rx truth,
+          // so the panel must not keep a frozen "receiving". The next `controllerStatus` after a
+          // reconnect (once the panel re-subscribes via watchController) repopulates it.
+          this.controllerStatus = null;
+          this.controllerCandidates = [];
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
@@ -1966,6 +1989,42 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) this.project = routing.applyOutput(this.project, partial);
     this.client.send({ t: 'setOutput', ...partial });
+  }
+
+  // --- PixLite controller monitor (S48, group L) ----------------------------
+  // The panel-facing send helpers. `watchController` is the ONLY one NOT editor-gated: a viewer
+  // watching the panel keeps live status flowing for everyone (server-side poll gating). The
+  // rest re-rig the device, so they no-op for a viewer.
+
+  /** Client-interest signal that gates the server's controller poll loop — send `true` when the
+      controller panel opens (mounts), `false` when it closes. NOT editor-gated (a viewer's watch
+      keeps status live for all); a disconnect implicitly clears it server-side. */
+  watchController(watching: boolean): void {
+    this.client.send({ t: 'watchController', watching });
+  }
+
+  /** Kick off a one-shot discovery sweep of the candidate subnet(s). Editor-gated. The ranked
+      results arrive asynchronously via `controllerDiscovery` → {@link controllerCandidates}. */
+  discoverControllers(): void {
+    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
+    this.client.send({ t: 'discoverControllers' });
+  }
+
+  /** Adopt-IP: make `host` THE controller for this project AND point the output transport at it in
+      one click — the confidence chain wants the box we're monitoring to be the box we're sending
+      to. The server probes + persists the controller ({@link controllerStatus} follows); `setOutput`
+      copies the IP into the output settings. Editor-gated. */
+  adoptController(host: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
+    this.client.send({ t: 'adoptController', host });
+    this.setOutput({ host });
+  }
+
+  /** Flash the adopted controller's status LED for `durationS` seconds — the "which box is this?"
+      confirmation. Editor-gated; a no-op server-side when nothing is adopted. */
+  identifyController(durationS = 5): void {
+    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
+    this.client.send({ t: 'identifyController', durationS });
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).
