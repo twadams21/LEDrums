@@ -34,8 +34,8 @@ function pre(id: string, name: string, effectId: string): Preset {
 }
 
 describe('OBJECT_TYPE_IDS', () => {
-  it('is the rail order — Songs · Effects · Graphs · Presets', () => {
-    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'effects', 'graphs', 'presets']);
+  it('is the rail order — Songs · Song Library · Effects · Graphs · Presets', () => {
+    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'library', 'effects', 'graphs', 'presets']);
   });
 });
 

@@ -24,7 +24,10 @@
   import EditableRow from '../../ui/EditableRow.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import Dialog from '../../ui/Dialog.svelte';
+  import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
   import Drawer from '../../ui/Drawer.svelte';
+  import PanelHeader from '../../ui/PanelHeader.svelte';
+  import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
   import { pushToast } from '../../ui/toast.svelte';
   import Splitter from '../../ui/Splitter.svelte';
@@ -62,6 +65,7 @@
   let layerName = $state('Kick layer');
   let rowEditing = $state(false);
   let dialogOpen = $state(false);
+  let confirmOpen = $state(false);
   let drawerOpen = $state(false);
   let railW = $state(160);
   let mdSelected = $state('songs');
@@ -301,12 +305,38 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Overlays" src={['lib/ui/ContextMenu', 'lib/ui/Dialog', 'lib/ui/Drawer']} wide>
+    <DemoCard
+      title="Panel header"
+      src="lib/ui/PanelHeader"
+      wide
+      note="THE panel-title treatment (accent icon + tracked uppercase label, trailing controls). Used on every docked panel, rail, and drawer — retired Eyebrow as a panel title (Eyebrow stays for small in-content labels)."
+    >
+      <div class="ph-demo">
+        <PanelHeader icon={Layers} title="Buses / Layers" />
+      </div>
+      <div class="ph-demo">
+        <PanelHeader icon={ListMusic} title="Setlist">
+          <IconButton icon={Plus} label="Add song" size={14} />
+        </PanelHeader>
+      </div>
+    </DemoCard>
+
+    <DemoCard title="Logo / mark" src="lib/ui/Logo" note="A hoop carrying three lit pixels (drum · hoop · pixel), phosphor-lime on a dark tile; reads at 16px. Ring = dimmed --accent, pixels = --accent.">
+      <div class="comp-row" style="align-items:center; gap:var(--space-4)">
+        <Logo size={16} />
+        <Logo size={20} />
+        <Logo size={32} />
+        <Logo size={48} />
+      </div>
+    </DemoCard>
+
+    <DemoCard title="Overlays" src={['lib/ui/ContextMenu', 'lib/ui/Dialog', 'lib/ui/ConfirmDialog', 'lib/ui/Drawer']} wide>
       <div class="comp-row">
         <ContextMenu actions={rowActions}>
           <button class="ghost">Right-click target</button>
         </ContextMenu>
         <button onclick={() => (dialogOpen = true)}>Open dialog…</button>
+        <button class="danger" onclick={() => (confirmOpen = true)}>Confirm…</button>
         <button onclick={() => (drawerOpen = true)}>Open drawer…</button>
       </div>
     </DemoCard>
@@ -338,6 +368,15 @@
   </div>
 </Dialog>
 
+<ConfirmDialog
+  bind:open={confirmOpen}
+  title="Delete node?"
+  message="A confirmation modal for destructive verbs — Cancel + a danger confirm, on the shared Dialog."
+  confirmLabel="Delete"
+  danger
+  onConfirm={() => pushToast('Confirmed.', { tone: 'success' })}
+/>
+
 <Drawer open={drawerOpen} onClose={() => (drawerOpen = false)} title="Example drawer" side="right" width="320px">
   <p class="ov-text">A slide-in <code>Drawer</code> — same <code>--overlay</code> scrim, <code>--z-overlay</code> tier.</p>
 </Drawer>
@@ -356,6 +395,16 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
+  }
+  /* PanelHeader sits atop a panel — show it in a bordered surface so its border-bottom reads. */
+  .ph-demo {
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .ph-demo + .ph-demo {
+    margin-top: var(--space-3);
   }
   .comp-stack {
     display: flex;
