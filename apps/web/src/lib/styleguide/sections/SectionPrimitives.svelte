@@ -339,12 +339,12 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Logo / mark" src="lib/ui/Logo" note="A hoop carrying three lit pixels (drum · hoop · pixel), phosphor-lime on a dark tile; reads at 16px. Ring = dimmed --accent, pixels = --accent.">
+    <DemoCard title="Logo / mark" src="lib/ui/Logo" note="Neon-rainbow drum kit (kick, snare, two rack toms, floor tom, hi-hat, ride) on a dark rounded tile — a vector trace of the desktop app icon, re-coloured with a fixed brand gradient + soft glow so the mark matches the dock icon in any theme. Detailed by design; richest from ~32px up.">
       <div class="comp-row" style="align-items:center; gap:var(--space-4)">
-        <Logo size={16} />
         <Logo size={20} />
         <Logo size={32} />
         <Logo size={48} />
+        <Logo size={96} />
       </div>
     </DemoCard>
 
