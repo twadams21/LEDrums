@@ -47,7 +47,7 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
-import type { ClientMessage, ControllerStatus, DiscoveredController, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -446,6 +446,13 @@ export class TriggerLab {
       wholesale by each `controllerDiscovery` reply, cleared on a link drop. Empty = none found / no
       sweep run yet. The panel lists these with an Adopt-IP action. */
   controllerCandidates = $state<DiscoveredController[]>([]);
+  /** The active controller test pattern (S49), or null in normal LIVE mode. Server-authoritative
+      (carried on `controllerStatus.testPattern`), so every client's takeover banner + output pill
+      agree. Non-null = the LOUD takeover state: the box is running synthetic data and IGNORING the
+      live Art-Net stream. Drives the panel banner AND {@link deriveOutputPill}'s third argument. */
+  get controllerTakeover(): ControllerTestPattern | null {
+    return this.controllerStatus?.testPattern ?? null;
+  }
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -2025,6 +2032,23 @@ export class TriggerLab {
   identifyController(durationS = 5): void {
     if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
     this.client.send({ t: 'identifyController', durationS });
+  }
+
+  /** Drive the controller's built-in test-data mode (S49): the box synthesizes a solid colour /
+      RGBW cycle / colour fade and IGNORES the live Art-Net stream — a LOUD takeover state. Editor-
+      gated. The server echoes the active pattern back on `controllerStatus.testPattern`
+      ({@link controllerTakeover}), which lights the panel banner + output pill for every watcher. */
+  setControllerTestData(pattern: ControllerTestPattern): void {
+    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
+    this.client.send({ t: 'controllerTestData', pattern });
+  }
+
+  /** Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
+      Editor-gated. The server clears the takeover state (and also auto-reverts when the last panel
+      watcher leaves, so a controller is never stranded in test mode). */
+  backToLive(): void {
+    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
+    this.client.send({ t: 'controllerBackToLive' });
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).
