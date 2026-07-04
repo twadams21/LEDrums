@@ -118,6 +118,16 @@ export type ClientMessage =
   // Flash the adopted controller's status LED for `durationS` seconds (0 = off, 121 = continuous)
   // — the "which box is this?" confirmation. Editor-gated. No-op when nothing is adopted.
   | { t: 'identifyController'; durationS: number }
+  // Drive the controller's built-in test-data mode (S49): a solid colour / RGBW cycle / colour
+  // fade, per-port or per-pixel. While this runs the controller IGNORES the live Art-Net stream
+  // (a LOUD takeover state) — the server reports it back on `ControllerStatus.testPattern`.
+  // Editor-gated. No-op when nothing is adopted.
+  | { t: 'controllerTestData'; pattern: ControllerTestPattern }
+  // Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
+  // Editor-gated. No-op when nothing is adopted / not in test mode. The server also fires this
+  // automatically when the last panel watcher leaves (panel close / disconnect) so a controller is
+  // never stranded in test mode.
+  | { t: 'controllerBackToLive' }
   // Client interest signal — the ONLY thing that gates the poll loop (no idle traffic). A client
   // sends `watching: true` while it has the Monitor/Patch controller panel open and `false` when it
   // closes it; a disconnect implicitly clears it. The server polls `statisticRead` at 1–2s only
@@ -265,6 +275,23 @@ export interface DiscoveredController {
   score: number;
 }
 
+/** A built-in controller test pattern (S49) — the wire mirror of the io `ModeTestDataParams`
+ * (§7.7.2). The web sends it in `controllerTestData`; the server maps it onto the PixLite client and
+ * echoes the active one back on {@link ControllerStatus.testPattern} so every watcher sees the loud
+ * takeover state. `op` picks the pattern; `color` (RGBW) only matters for `setColor`; `pixPortNum` /
+ * `pixNum` target a port / pixel (0 = all). */
+export interface ControllerTestPattern {
+  op: 'setColor' | 'rgbwCycle' | 'colorFade';
+  /** RGBW colour for `setColor`, each 0–255 at 8-bit resolution. */
+  color?: [number, number, number, number];
+  /** Colour-array resolution. Defaults to 8-bit on the device when omitted. */
+  colorRes?: '8Bit' | '16Bit';
+  /** Pixel port to test (1-based), or 0 for all ports. */
+  pixPortNum?: number;
+  /** Pixel to test (1-based), or 0 for all pixels. */
+  pixNum?: number;
+}
+
 /** Live status of the ADOPTED controller — the payload of the `controllerStatus` message and the
  * single source the S48 panel renders. Emitted on adopt, on every successful poll, and on a failed
  * poll (with `reachable: false` and a frozen `lastSeen`). Identity is null only in the brief window
@@ -287,6 +314,10 @@ export interface ControllerStatus {
   /** Epoch ms of the last SUCCESSFUL contact, or null if never reached. Frozen while unreachable —
    * `Date.now() - lastSeen` is how long the controller has been quiet. */
   lastSeen: number | null;
+  /** Active built-in test pattern (S49), or null/absent when the controller is in normal LIVE mode.
+   * Non-null = the LOUD takeover state: the box is running synthetic data and IGNORING the live
+   * Art-Net stream. Server-authoritative so every watcher's banner + output pill agree. */
+  testPattern?: ControllerTestPattern | null;
 }
 
 export type MonitorEventType = 'input' | 'output' | 'effect' | 'graph' | 'system' | 'persistence' | 'error';

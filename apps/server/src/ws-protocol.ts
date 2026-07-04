@@ -9,6 +9,7 @@ import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '
 export type {
   ClientMessage,
   ControllerStatus,
+  ControllerTestPattern,
   ControllerUniverseRx,
   DiscoveredController,
   EffectSpec,
@@ -37,6 +38,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
   'loadProject', 'saveProject', 'listProjects',
   'discoverControllers', 'adoptController', 'identifyController', 'watchController',
+  'controllerTestData', 'controllerBackToLive',
 ]);
 
 export function decodeClient(raw: string): ClientMessage {
