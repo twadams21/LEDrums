@@ -57,7 +57,7 @@
     "route": "?view=objects",
     "actions": [
       {
-        "scrollTo": "text=Song Library"
+        "click": "text=Song Library"
       }
     ],
     "select": "main.center"
