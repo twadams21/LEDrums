@@ -6,7 +6,7 @@
   import StatusPill from '../../ui/StatusPill.svelte';
   import { midiChannelOptions } from '../../midi/midi-note';
   import { deviceListEmptyState } from './midi-devices';
-  import { checkForDesktopUpdate, checkHostUpdateStatus, installDesktopUpdate } from '../desktop-updater';
+  import { checkForDesktopUpdate, checkHostUpdateStatus, installDesktopUpdate } from '../desktop-bridge.svelte';
 
   let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
 
