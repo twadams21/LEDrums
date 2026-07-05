@@ -1,18 +1,23 @@
 <script lang="ts">
-  /* Animated thumbnail of an effect, rendered with the SAME pattern sampler the
-     3D kit uses, mapped onto a small 2D grid (x ≈ hoop angle, y ≈ hoop height).
-     Driven by the effect's pattern + the instance/preset params.
+  /* Animated thumbnail of an effect, painted as a pseudo-3D drum: the 26×13 thumb
+     PixelModel projected with ONE fixed ¾-angle isometric camera (hoops as stacked
+     ellipses), each pixel a soft glowing dot. Same camera, same drum, same hit
+     cadence for every effect — thumbnail variance means EFFECT variance.
 
-     Generator effects render on a small synthetic PixelModel (26×13) so their
-     output maps 1:1 onto the grid — pixel index i ↔ grid cell i. Colours come
-     directly from the Framebuffer (no hue round-trip).
+     Generator effects render on the small synthetic PixelModel (26×13); colours
+     come directly from the Framebuffer (no hue round-trip). The projection table
+     is precomputed once per size (thumb-projection.ts) — per frame we only
+     recolour dots. Kit-wide-tagged effects get a second mini drum behind the main
+     one so cross-drum travel reads.
 
      Powered by a shared ticker (one rAF loop for all thumbnails), with
-     IntersectionObserver pause when offscreen and prefers-reduced-motion support. */
+     IntersectionObserver pause when offscreen and prefers-reduced-motion support
+     (static frame at the effect's representative age — 35% of its dominant life). */
   import type { ParamValues } from './sim';
   import type { LabModel } from './kit';
   import { buildThumbPixelModel } from './kit';
-  import { renderGeneratorThumbFrame } from './effect-thumb-render';
+  import { renderGeneratorThumbFrame, THUMB_LOOP_MS } from './effect-thumb-render';
+  import { getThumbProjection, representativeAgeMs, type DotTable } from './thumb-projection';
   import { tryGetEffect } from '@ledrums/core';
   import { ticker } from './effect-thumb-ticker';
   import { triggerClock } from './signal-preview';
@@ -36,8 +41,8 @@
 
   const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
-  const COLS = 26;
-  const ROWS = 13;
+  /** Glow radius as a multiple of the core dot radius. */
+  const GLOW_SCALE = 2.6;
 
   let canvas = $state<HTMLCanvasElement>();
   let genState = $state<unknown>(null);
@@ -125,27 +130,61 @@
     const ctx = cv.getContext('2d');
     if (!ctx) return;
 
-    cv.width = w;
-    cv.height = h;
-    const cw = w / COLS;
-    const ch = h / ROWS;
+    // Render at devicePixelRatio (capped) so the glowing dots stay crisp at the
+    // small inspector/clip sizes; CSS size is unchanged (style width/aspect-ratio).
+    const dpr = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, 2);
+    const dw = Math.round(w * dpr);
+    const dh = Math.round(h * dpr);
+    cv.width = dw;
+    cv.height = dh;
 
     // Snapshot reactive props for the draw closure.
     const p = params;
     const genId = generatorId;
     const bright = num(p.brightness, 1);
+    const gen = genId ? tryGetEffect(genId) : undefined;
+    // Kit-wide effects get the background mini drum so cross-drum travel reads.
+    const kitWide = gen?.tags?.includes('kit-wide') ?? false;
+    const proj = getThumbProjection(dw, dh, kitWide);
+
+    const paintDrum = (table: DotTable, pixels: [number, number, number][]): void => {
+      const { x, y, r: rad, shade } = table;
+      for (let i = 0; i < pixels.length; i++) {
+        const [rv, gv, bv] = pixels[i]!;
+        const s = shade[i]! * bright;
+        const R = Math.round(rv * s * 255);
+        const G = Math.round(gv * s * 255);
+        const B = Math.round(bv * s * 255);
+        if (R < 3 && G < 3 && B < 3) continue; // unlit — the baked base layer shows the drum form
+        const cx = x[i]!;
+        const cy = y[i]!;
+        const cr = rad[i]!;
+        // Soft glow halo + bright core, additive ('lighter') so overlapping dots bloom.
+        ctx.fillStyle = `rgba(${R},${G},${B},0.28)`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, cr * GLOW_SCALE, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(${R},${G},${B},0.95)`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
 
     const draw = (now: number): void => {
       const tMs = now;
 
+      ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = '#0a0d12';
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, 0, dw, dh);
+      if (proj.baseLayer) ctx.drawImage(proj.baseLayer as CanvasImageSource, 0, 0);
 
-      // Time base: reduced-motion → a static 400ms still; live-on-trigger → local time since the
-      // node's graph fired (static 400ms still until it does); else the continuous gallery loop.
+      // Time base: reduced-motion → a static frame at the effect's representative age
+      // (35% of its dominant life param); live-on-trigger → local time since the node's
+      // graph fired (static until it does); else the continuous gallery loop.
       let effectiveTms: number;
       if (prefersReduced) {
-        effectiveTms = 400;
+        effectiveTms = representativeAgeMs(gen?.paramSpec, p, THUMB_LOOP_MS);
       } else if (triggered) {
         effectiveTms = triggerClock(triggerAt, tMs).localMs;
       } else {
@@ -157,25 +196,19 @@
       if (!genId) return;
       const pixels = renderGeneratorThumbFrame(genId, p, effectiveTms, genState);
       if (!pixels) return;
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const i = r * COLS + c;
-          const [rv, gv, bv] = pixels[i]!;
-          const R = Math.round(rv * bright * 255);
-          const G = Math.round(gv * bright * 255);
-          const B = Math.round(bv * bright * 255);
-          if (R === 0 && G === 0 && B === 0) continue;
-          ctx.fillStyle = `rgb(${R},${G},${B})`;
-          ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
-        }
-      }
+
+      ctx.globalCompositeOperation = 'lighter';
+      // Mini drum first (behind), echoing the same frame dimmed — the second drum of
+      // the "kit" a kit-wide effect plays across.
+      if (proj.mini) paintDrum(proj.mini, pixels);
+      paintDrum(proj.main, pixels);
+      ctx.globalCompositeOperation = 'source-over';
     };
 
     // Subscribe to the shared ticker only if visible and not in reduced-motion mode.
     // For reduced-motion, render once and don't subscribe.
     if (prefersReduced) {
-      // Render a single static frame at t=400ms
-      draw(400);
+      draw(0); // effectiveTms is the representative age; the wall-clock arg is unused
     } else if (isVisible) {
       const unsub = ticker.subscribe(draw);
       return unsub;
