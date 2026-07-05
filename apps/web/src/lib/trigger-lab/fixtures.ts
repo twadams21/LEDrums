@@ -60,6 +60,11 @@ export const PARAM_LIBRARY: ParamSpec[] = [hueP(200), briP, speedP, syncP, bands
 // below now reference the generator effects directly.
 
 // ---- generator-backed effects ------------------------------------------------
+// Each legacy `EffectGenerator` in core's registry is surfaced as a selectable
+// EffectDef carrying `generatorId`; the compositor (server) and render.ts (offline)
+// delegate rendering to it. Param specs are mapped from the generator's own spec;
+// category drives the bus + envelope timing. See docs/prompts/port-all-effects.md.
+
 /** Legacy category → voice bus. Backdrops on base, washes/utility/meter on effect,
     one-shot/particle hits on trigger. */
 const CATEGORY_BUS: Record<EffectCategory, string> = {
@@ -84,7 +89,12 @@ const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number
   trigger: { attackMs: 10, sustainMs: 100, releaseMs: 300 },
 };
 
-/** Map a core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s. */
+/** Map a core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s so
+    no spec is ever silently dropped (S18). number/bool map 1:1 (numbers become
+    envelope-able); `enum` maps to a Select (string value, its `options` carried through);
+    `color` maps to a colour spec (a `'#rrggbb'` string) — its inspector control (the
+    write-through swatch) is S19's, and no effect declares a color param yet. enum/color are
+    not envelope-able. */
 export function mapParamSpec(spec: CoreParamSpec): ParamSpec {
   if (spec.type === 'number') {
     return {
@@ -109,7 +119,10 @@ export function mapParamSpec(spec: CoreParamSpec): ParamSpec {
   return { key: spec.key, label: spec.label, kind: 'color', default: typeof spec.default === 'string' ? spec.default : '#ffffff' };
 }
 
-/** All core generators as selectable, generator-backed EffectDefs. */
+/** All core generators as selectable, generator-backed EffectDefs. Scope is `kit`
+    for every one: generators own their spatial layout (drum-locality is intrinsic — e.g.
+    whole-drum lights only the struck drum from its trigger), so drum-masking a kit-wide
+    field (plasma, radial-wash) would wrongly clip it. */
 export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef => {
   const env = CATEGORY_ENV[gen.category];
   return {
@@ -199,10 +212,15 @@ export const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
 };
 
 // --- starter trees that exercise the block set ------------------------------
+
+// Seed trees reference the generator effects (the retired pattern ids were remapped to
+// their generator equivalents in U3 — see the alias map in core `aliases.ts`).
 const kickCenter: Block = play('gen:whole-drum', 'oneshot');
 const snareCenter: Block = { id: bid('rand'), kind: 'random', noRepeat: true, children: [play('gen:chase-bands'), play('gen:pixel-accum'), play('gen:ripple-3d')] };
 const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('gen:pixel-accum'), play('gen:strobe')] };
 const tomCenter: Block = { id: bid('seq'), kind: 'sequence', children: [play('gen:chase-bands'), play('gen:ripple-3d'), play('gen:whole-drum')] };
+// value+bands switch: 3 even bands (cutoffs 1/3, 2/3) == the old 3-child velocity split.
+// treeToGraph wires the children onto band-0 / band-1 / band-2 in y-order.
 const tomEdge: Block = {
   id: bid('switch'),
   kind: 'switch',
@@ -239,7 +257,9 @@ export const PADS: Pad[] = [
   pad('tom2', 'Tom 2', 2, tom2Rim),
 ];
 
-/** The drum roster, sourced from the canonical kit so ids/labels can't drift from the engine. */
+/** The drum roster, sourced from the canonical kit so ids/labels can't drift from
+    the engine. PADS below reference these ids; the integrity check + a guard test
+    fail loudly if a pad ever names a drum the canonical kit doesn't define. */
 export const DRUMS = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
 
 export const SECTIONS: Section[] = [

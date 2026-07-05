@@ -57,7 +57,9 @@ export function seedAuthored(): AuthoredState {
     buses: BUSES.map((b) => ({ ...b })),
     presets: structuredClone(PRESETS),
     effects: [...EFFECTS],
-    canvasScenes: structuredClone(BUILTIN_CANVAS_SCENES),
+    // structuredClone preserves the source's `readonly` array type, so re-spread into a
+    // mutable array — AuthoredState.canvasScenes is user-editable.
+    canvasScenes: BUILTIN_CANVAS_SCENES.map((s) => structuredClone(s)),
     selectedPadKey: padKey(PADS[2]!),
     activeSongId: 'set-1',
     activeSectionId: SECTIONS[0]?.id ?? null,

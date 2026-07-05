@@ -59,15 +59,19 @@ export const gravityDrops: EffectGenerator<GravityDropsState> = {
       const fall = t * fallSpeed + 0.5 * gravity * t * t;
       const head = 1 - fall;
       const fade = clamp01(1 - em.ageMs / lifeMs) * em.velocity * bri;
-      if (fade < 0.004 || head < -trail) continue;
+      // Widen the trail to at least one hoop gap so the bead never falls "between" hoops
+      // unlit (a 4-hoop drum has a normHoop gap of 1/3, larger than the default trail).
+      const gap = drum.hoopCount > 1 ? 1 / (drum.hoopCount - 1) : 1;
+      const reach = Math.max(trail, gap * 1.1);
+      if (fade < 0.004 || head < -reach) continue;
       const end = drum.pixelStart + drum.pixelCount;
       for (let i = drum.pixelStart; i < end; i++) {
         const p = ctx.model.pixels[i]!;
         const vertical = head - p.normHoop;
-        if (vertical < 0 || vertical > trail) continue;
+        if (vertical < 0 || vertical > reach) continue;
         const angle = Math.min(wrap(p.angleDeg - em.data.angleDeg, 360), wrap(em.data.angleDeg - p.angleDeg, 360));
         if (angle > spreadDeg) continue;
-        const tail = 1 - vertical / trail;
+        const tail = 1 - vertical / reach;
         const angular = 1 - angle / spreadDeg;
         const v = clamp01(fade * tail * tail * angular);
         if (v < 0.004) continue;
