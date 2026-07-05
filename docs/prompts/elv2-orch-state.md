@@ -39,8 +39,8 @@ unless Trent approves parallel spend at the gate.
 | U1 metadata + gallery | Opus | DONE (verified) | elv2-u1-c99a09 |
 | U2 isometric thumbs | Fable | DONE (verified) | elv2-u2-5f49b4 |
 | U3 rehab + retirement | Opus | DONE (verified) | elv2-u3-29924d |
-| U4 canvas engine | Fable | in-flight | (launching) |
-| U5 canvas UI | Opus | pending (after U4) | — |
+| U4 canvas engine | Fable | DONE (verified) | elv2-u4-e3855d |
+| U5 canvas UI | Opus | BLOCKED at 95% wall | — |
 | U6 library fill | Fable | pending (after U4/U5) | — |
 | U7 close-out | Opus | pending (last) | — |
 
@@ -88,7 +88,28 @@ EffectThumb is now GENERATOR-ONLY (no pattern branch). Public prop API: `generat
 must PRESERVE EffectThumb's prop API (so it never forces another edit to Trent's
 TriggerNode.svelte); if it must change the API, flag the orch — do NOT edit Trent's WIP.
 
-## Next action
+## U4 DONE — verified by orch (2026-07-05)
+Commits bf3b1fa, b498bf3, 6176708, 9665bce, 83c6a3e, 04958db. Gates green (typecheck clean;
+core 625 [+35 canvas tests] / web 1187 / server 227 / io 51). **NO-FORK PROVEN by git:**
+`git log bf3b1fa^..HEAD -- compositor.ts generator-bridge.ts` is EMPTY — scene engine is a
+pure EffectGenerator adapter, zero compositor/bridge edits. field.ts → canvas/sampler.ts (12
+texture callers re-anchored, locked dec 7). Full canvas module: types/scene/elements(6 pure
+renderers)/sampler(4 samplers)/lenses(8 incl hyper4d)/registry + 6 test files. Golden
+stripes+polar==rings real (exact toBeCloseTo math). Determinism: byte-identical replays for
+canvas + mixed canvas/hosted show. Perf: 0.536 ms/frame on real 548px kit (budget 5ms).
+Working tree clean (TriggerNode untouched). Deviation (accepted): the "confetti bench" my
+brief referenced doesn't exist as a committed file — U4 mirrored engine.test.ts perf
+structure instead (fine). Usage after U4: 7d **95%**, 5h 79%.
+
+## ⛔ HARD STOP — 95% WEEKLY WALL (awaiting Trent)
+twux REFUSES launches at ≥95% (--force overrides). U5 launch is now blocked. I will NOT
+--force past 95% without Trent's EXPLICIT yes (told him this). 7d resets 2026-07-09
+04:00+10:00 (~Thu). 5h resets 13:00 today but that does NOT lower the 7d wall.
+DECISION PENDING (AskUserQuestion sent): PAUSE until Thu reset (resume U5→U6→U7 with full
+budget) vs --force U5-U7 now (risks blowing past 100% weekly, throttling Trent's own usage
+for ~4 days). Orch recommends PAUSE. On PAUSE: arm `twux wake --at <Thu reset>`, GROW, done.
+
+## Next action (superseded — U4 done)
 U4 (Fable, canvas engine — THE BIG ONE) launching — brief `docs/prompts/elv2-u4.md`. It's a
 core build (scene engine as EffectGenerator adapter, NO compositor fork; field.ts → canvas
 module; 6 renderers, 4 samplers, scene params, 8 lenses, determinism + <5ms perf bench).
