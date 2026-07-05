@@ -15,13 +15,7 @@ import { gravityDrops } from './impl/gravity-drops';
 function model(drums = 2, hoopCount = 4): PixelModel {
   const drumDefs = [];
   for (let i = 0; i < drums; i++) {
-    drumDefs.push({
-      id: `d${i}`,
-      diameterIn: 8,
-      hoopSpacingMm: 50,
-      origin: { x: i * 600, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0 },
-    });
+    drumDefs.push({ id: `d${i}`, diameterIn: 8, hoopSpacingMm: 50, origin: { x: i * 600, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } });
   }
   return buildPixelModel(parseKit({ global: { ledDensityPxPerM: 40, hoopCount, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 }, drums: drumDefs }));
 }
@@ -113,14 +107,17 @@ describe('U6 gap-fill natives', () => {
   it('tracks one emission per new hit for all four effects', () => {
     const m = model(2);
     const triggers = [trig(1, 'd0', 36, 1, 0), trig(2, 'd1', 38, 1, 0)];
-    const cases = [orbitComet.createState!(m), scanPlane.createState!(m), drumSonar.createState!(m), gravityDrops.createState!(m)];
-    render(orbitComet, m, ctx(m, { dt: 0, triggers }), {}, cases[0]);
-    render(scanPlane, m, ctx(m, { dt: 0, triggers }), {}, cases[1]);
-    render(drumSonar, m, ctx(m, { dt: 0, triggers }), {}, cases[2]);
-    render(gravityDrops, m, ctx(m, { dt: 0, triggers }), {}, cases[3]);
-    expect(cases[0].em.emissions.length).toBe(2);
-    expect(cases[1].em.emissions.length).toBe(2);
-    expect(cases[2].em.emissions.length).toBe(2);
-    expect(cases[3].em.emissions.length).toBe(2);
+    const orbitState = orbitComet.createState!(m);
+    const scanState = scanPlane.createState!(m);
+    const sonarState = drumSonar.createState!(m);
+    const dropsState = gravityDrops.createState!(m);
+    render(orbitComet, m, ctx(m, { dt: 0, triggers }), {}, orbitState);
+    render(scanPlane, m, ctx(m, { dt: 0, triggers }), {}, scanState);
+    render(drumSonar, m, ctx(m, { dt: 0, triggers }), {}, sonarState);
+    render(gravityDrops, m, ctx(m, { dt: 0, triggers }), {}, dropsState);
+    expect(orbitState.em.emissions.length).toBe(2);
+    expect(scanState.em.emissions.length).toBe(2);
+    expect(sonarState.em.emissions.length).toBe(2);
+    expect(dropsState.em.emissions.length).toBe(2);
   });
 });
