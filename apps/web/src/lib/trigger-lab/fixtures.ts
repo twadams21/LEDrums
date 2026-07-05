@@ -3,12 +3,8 @@
 
 import {
   DEFAULT_KIT,
-  BUILTIN_CANVAS_SCENES,
-  CANVAS_PARAM_SPEC,
-  canvasEffectId,
   collectionOf,
   listEffects,
-  type CanvasScene,
   type EffectCategory,
   type ParamSpec as CoreParamSpec,
 } from '@ledrums/core';
@@ -143,30 +139,11 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
   };
 });
 
-function canvasEffect(scene: CanvasScene): EffectDef {
-  const id = canvasEffectId(scene.id);
-  return {
-    id,
-    name: scene.name,
-    generatorId: id,
-    category: 'texture',
-    description: scene.description,
-    tags: ['canvas', ...(scene.tags ?? []).filter((tag) => tag !== 'canvas')] as EffectDef['tags'],
-    playType: 'canvas',
-    busId: 'base',
-    scope: 'kit',
-    params: CANVAS_PARAM_SPEC.map(mapParamSpec),
-    attackMs: 800,
-    sustainMs: 0,
-    releaseMs: 900,
-  };
-}
-
-/** Built-in U6 canvas scenes surfaced as normal gallery cards. */
-export const CANVAS_EFFECTS: EffectDef[] = BUILTIN_CANVAS_SCENES.map(canvasEffect);
-
-/** The full selectable registry — generator-backed effects plus U6 built-in canvas scenes. */
-export const EFFECTS: EffectDef[] = [...GENERATOR_EFFECTS, ...CANVAS_EFFECTS];
+/** The full selectable registry of REAL effects. Canvas cards are NOT listed here: the
+    store derives virtual `canvas:<sceneId>` EffectDefs from the core built-in scene library
+    plus the show's authored scenes (`store.canvasEffects`), so there is exactly one source
+    of canvas cards and shows never persist duplicates of the built-ins (D4). */
+export const EFFECTS: EffectDef[] = [...GENERATOR_EFFECTS];
 
 const effectById = new Map(EFFECTS.map((e) => [e.id, e] as const));
 

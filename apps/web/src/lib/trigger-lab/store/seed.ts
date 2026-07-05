@@ -3,7 +3,6 @@
    the store's authored `$state` field initializers mirror {@link seedAuthored}; keep the two
    in sync. Extracted from store.svelte.ts unchanged. */
 
-import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
 import { type TriggerGraph, treeToGraph } from '../sim';
 import { BUSES, PADS, PRESETS, EFFECTS, SECTIONS, type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
@@ -57,9 +56,9 @@ export function seedAuthored(): AuthoredState {
     buses: BUSES.map((b) => ({ ...b })),
     presets: structuredClone(PRESETS),
     effects: [...EFFECTS],
-    // structuredClone preserves the source's `readonly` array type, so re-spread into a
-    // mutable array — AuthoredState.canvasScenes is user-editable.
-    canvasScenes: BUILTIN_CANVAS_SCENES.map((s) => structuredClone(s)),
+    // Only USER-AUTHORED scenes live in the show document (D4) — the built-in canvas
+    // library ships in core and is surfaced read-only via `store.allCanvasScenes`.
+    canvasScenes: [],
     selectedPadKey: padKey(PADS[2]!),
     activeSongId: 'set-1',
     activeSectionId: SECTIONS[0]?.id ?? null,

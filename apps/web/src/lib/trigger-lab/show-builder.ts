@@ -60,7 +60,10 @@ export function buildShow(source: ShowSource): voice.Show {
     presets: source.presets.map((p) => ({ ...p })),
     // User-authored canvas scenes travel in the show doc so the engine's setShow registers
     // them into the pure canvas registry — `canvas:<sceneId>` then resolves for real output.
-    canvasScenes: (source.canvasScenes ?? []).map((scene) => structuredClone(scene)),
+    // JSON round-trip (not structuredClone): `source` may be the live store, whose scenes are
+    // Svelte `$state` proxies — structuredClone throws DataCloneError on proxies, while
+    // JSON.stringify reads through them. Scenes are plain JSON data by definition (persisted).
+    canvasScenes: (source.canvasScenes ?? []).map((scene) => JSON.parse(JSON.stringify(scene)) as CanvasScene),
     songs: (source.songs ?? []).map((song) => ({
       id: song.id,
       name: song.name,

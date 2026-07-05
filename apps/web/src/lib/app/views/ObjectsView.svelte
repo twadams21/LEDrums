@@ -59,7 +59,12 @@
   const effects = $derived(effectRows(store.effects, store.presets));
   const graphs = $derived(graphRows(store.graphLibrary));
   const presets = $derived(presetRows(store.presets, store.effects, (id) => store.presetUsageCount(id)));
+  // Authored scenes (editable, live in the show doc) + the core built-in library
+  // (read-only templates — duplicate to customise; shadowed built-ins are filtered out).
   const canvasScenes = $derived(canvasSceneRows(store.canvasScenes));
+  const builtinScenes = $derived(
+    canvasSceneRows(store.allCanvasScenes.filter((s) => store.isBuiltinCanvasScene(s.id)), true),
+  );
 
   const TYPES: Array<{ id: ObjectTypeId; label: string; icon: Component }> = [
     { id: 'songs', label: 'Songs', icon: ListMusic },
@@ -79,7 +84,7 @@
           : id === 'graphs'
             ? graphs.length
             : id === 'canvas-scenes'
-              ? canvasScenes.length
+              ? canvasScenes.length + builtinScenes.length
               : presets.length;
   const activeType = $derived(TYPES.find((t) => t.id === type)!);
   const HeadIcon = $derived(activeType.icon);
@@ -173,7 +178,13 @@
           <CanvasSceneRow {store} {scene} active={selectedId === scene.id} onSelect={() => (selectedId = scene.id)} />
         {/each}
         {#if canvasScenes.length === 0}
-          <p class="empty">No canvas scenes yet. Create one to author canvas-backed play nodes.</p>
+          <p class="empty">No authored scenes yet. Create one, or duplicate a built-in below to customise it.</p>
+        {/if}
+        {#if builtinScenes.length}
+          <p class="grouplabel">Built-in library</p>
+          {#each builtinScenes as scene (scene.id)}
+            <CanvasSceneRow {store} {scene} active={selectedId === scene.id} onSelect={() => (selectedId = scene.id)} />
+          {/each}
         {/if}
       {:else}
         {#each presets as preset (preset.id)}
@@ -212,6 +223,15 @@
     margin: 0;
     padding: var(--space-3) var(--space-2);
     font-size: var(--text-2xs);
+    color: var(--text-faint);
+  }
+  .grouplabel {
+    margin: 0;
+    padding: var(--space-3) var(--space-2) var(--space-1);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--text-faint);
   }
 </style>

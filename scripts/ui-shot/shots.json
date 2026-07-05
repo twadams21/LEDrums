@@ -178,6 +178,78 @@
     "select": ".dlg-gallery",
     "settle": 1200
   },
+  "effect-gallery-canvas": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Take over')",
+        "force": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": "button[title='Add Canvas']"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": ".svelte-flow__node:has-text('Stripe Band')"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": "button[aria-label='Change effect']",
+        "force": true
+      },
+      {
+        "wait": 800
+      }
+    ],
+    "select": ".dlg-gallery",
+    "settle": 1200
+  },
+  "effect-gallery-lenses": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Take over')",
+        "force": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": "button[title='Add Canvas']"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": ".svelte-flow__node:has-text('Stripe Band')"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": "button[aria-label='Change effect']",
+        "force": true
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": ".dlg-gallery .tabs-trigger:has-text('Lenses')"
+      },
+      {
+        "wait": 600
+      }
+    ],
+    "select": ".dlg-gallery",
+    "settle": 1200
+  },
   "effect-gallery-filtered": {
     "route": "?view=trigger",
     "actions": [

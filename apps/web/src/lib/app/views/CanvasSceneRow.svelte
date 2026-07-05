@@ -51,11 +51,20 @@
     }
   }
 
-  const actions = $derived<ContextMenuAction[]>([
-    { label: 'Edit JSON', icon: Code, onSelect: openEditor },
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateCanvasScene(scene.id) },
-    { label: 'Delete', icon: Trash2, danger: true, onSelect: () => (confirmDelete = true) },
-  ]);
+  // Built-in library scenes (U6) are read-only: view JSON + duplicate only — duplicating
+  // makes an editable authored copy. Rename/edit/delete stay authored-scene verbs.
+  const actions = $derived<ContextMenuAction[]>(
+    scene.builtin
+      ? [
+          { label: 'View JSON', icon: Code, onSelect: openEditor },
+          { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateCanvasScene(scene.id) },
+        ]
+      : [
+          { label: 'Edit JSON', icon: Code, onSelect: openEditor },
+          { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateCanvasScene(scene.id) },
+          { label: 'Delete', icon: Trash2, danger: true, onSelect: () => (confirmDelete = true) },
+        ],
+  );
 </script>
 
 <div class="scene-row" class:active>
@@ -71,8 +80,10 @@
     renameLabel="Canvas scene name"
   >
     {#snippet quickActions()}
-      <IconButton icon={Code} label="Edit scene JSON" size={13} onclick={openEditor} />
-      <IconButton icon={Pencil} label="Rename scene" size={13} onclick={() => (editing = true)} />
+      <IconButton icon={Code} label={scene.builtin ? 'View scene JSON' : 'Edit scene JSON'} size={13} onclick={openEditor} />
+      {#if !scene.builtin}
+        <IconButton icon={Pencil} label="Rename scene" size={13} onclick={() => (editing = true)} />
+      {/if}
       <IconButton icon={CopyPlus} label="Duplicate scene" size={13} onclick={() => store.duplicateCanvasScene(scene.id)} />
     {/snippet}
   </EditableRow>
@@ -85,11 +96,14 @@
         spellcheck="false"
         aria-label={`${scene.name} scene JSON`}
         rows={14}
+        readonly={scene.builtin}
       ></textarea>
       {#if error}<p class="err">{error}</p>{/if}
       <div class="actions">
-        <button type="button" class="btn ghost" onclick={() => (expanded = false)}>Cancel</button>
-        <button type="button" class="btn accent" onclick={save} disabled={!store.canEdit}>Save</button>
+        <button type="button" class="btn ghost" onclick={() => (expanded = false)}>{scene.builtin ? 'Close' : 'Cancel'}</button>
+        {#if !scene.builtin}
+          <button type="button" class="btn accent" onclick={save} disabled={!store.canEdit}>Save</button>
+        {/if}
       </div>
     </div>
   {/if}

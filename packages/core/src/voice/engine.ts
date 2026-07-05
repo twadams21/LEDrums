@@ -31,6 +31,7 @@ import {
 } from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
+import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import type { CanvasScene } from '../canvas/types';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { ccKey, ccValue01, oscValue01 } from './modulation';
@@ -228,6 +229,10 @@ class VoiceBusEngine implements RenderEngine {
       if (!nextIds.has(id)) {
         unregisterCanvasScene(id);
         this.registeredCanvasSceneIds.delete(id);
+        // A show scene may have shadowed a core built-in (same id) — restore the
+        // built-in registration so `canvas:<id>` keeps resolving after the show drops it.
+        const builtin = BUILTIN_CANVAS_SCENES.find((scene) => scene.id === id);
+        if (builtin) registerCanvasScene(builtin);
       }
     }
     for (const scene of scenes ?? []) {
