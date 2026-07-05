@@ -10,4 +10,4 @@ pnpm ui-shot --route "?view=patch" --select "main.workspace" --name my-shot   # 
 pnpm ui-shot --all --strict         # exit 1 on any console error (clean-console gate)
 ```
 
-Add new surfaces to `shots.json`: `{ "route", "select"?, "actions"? [{click|scrollTo|wait}], "settle"? }`.
+Add new surfaces to `shots.json`: `{ "route", "select"?, "actions"? [{click|scrollTo|wait, optional?}], "settle"? }`.
