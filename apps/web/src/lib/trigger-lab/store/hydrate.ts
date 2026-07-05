@@ -20,7 +20,7 @@ import {
   makeNode,
   migrateAdsr,
 } from '../sim';
-import { voice, resolveEffectAlias } from '@ledrums/core';
+import { voice, resolveEffectAlias, playTypeForEffect } from '@ledrums/core';
 import { EFFECTS, PRESETS, type Pad } from '../fixtures';
 import { nid } from './ids';
 import { padKey, padLabel } from './seed';
@@ -327,6 +327,26 @@ export function resolveGraphAliases(
   return out;
 }
 
+/** Infer a missing `playType` on every play node from its (already alias-resolved) effect
+    id — the D3 hydrate migration. Total: `playTypeForEffect` maps every id to a type (a
+    `canvasScene`-bearing node is `'canvas'`). Pure + idempotent; graphs whose nodes all
+    carry a type keep their reference. */
+export function inferPlayTypes(
+  graphs: Record<string, TriggerGraph>,
+): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    let changed = false;
+    const nodes = graph.nodes.map((n) => {
+      if (n.kind !== 'play' || n.playType) return n;
+      changed = true;
+      return { ...n, playType: n.canvasScene ? ('canvas' as const) : playTypeForEffect(n.effectId) };
+    });
+    out[key] = changed ? { ...graph, nodes } : graph;
+  }
+  return out;
+}
+
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
     every pad-bound graph's trigger source explicit, materialize formerly-linked play nodes' params
     and drop the `linked` flag, fold legacy velocity switches into the canonical value+bands form,
@@ -345,6 +365,9 @@ export function normalizeGraphs(
   // retired effect id has its play nodes rewritten to the live target before anything
   // else resolves them. Empty map today (U3 populates it) → an identity pass for now.
   let next = resolveGraphAliases(graphs);
+  // AFTER alias resolution (a retired id must infer from its live replacement): give every
+  // persisted play node its D3 `playType` so typed-node UI (U5) always has one.
+  next = inferPlayTypes(next);
   next = unionTriggerSources(next, padKeys);
   // Materialize formerly-linked play nodes' params from their preset, then drop `linked` (S39) —
   // before the env/switch folds so every later pass sees node-local params.

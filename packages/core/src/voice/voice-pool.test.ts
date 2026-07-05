@@ -86,6 +86,25 @@ describe('VoicePool — modifier chain plumbing (S28)', () => {
     expect(v!.modState).toBeUndefined();
   });
 
+  it('carries playType and hosts a canvas node\'s scene as a canvas:<sceneId> generator id (D3/D4)', () => {
+    const pool = new VoicePool();
+    const canvasAction: PlayAction = { ...action, playType: 'canvas', canvasScene: 'stripe-band' };
+    const v = pool.spawn(canvasAction, null, 1, deps(0));
+    expect(v!.playType).toBe('canvas');
+    expect(v!.canvasScene).toBe('stripe-band');
+    // The scene resolves through the SAME generatorId seam a hosted effect uses — the
+    // compositor/bridge dispatch never forks on playType.
+    expect(v!.generatorId).toBe('canvas:stripe-band');
+
+    // A reused slot never inherits the previous voice's canvas identity.
+    v!.active = false;
+    const w = pool.spawn(action, null, 1, deps(50));
+    expect(w).toBe(v);
+    expect(w!.playType).toBeUndefined();
+    expect(w!.canvasScene).toBeUndefined();
+    expect(w!.generatorId).toBe('chase');
+  });
+
   it('reusing a pool slot clears the previous voice\'s modifier state', () => {
     const pool = new VoicePool();
     const a = pool.spawn(withMods, null, 1, deps(0));

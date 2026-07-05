@@ -12,6 +12,7 @@ import type {
   GraphNode,
   ParamValues,
   PlayMode,
+  PlayType,
   Preset,
   ResolvedModifier,
   Scope,
@@ -28,6 +29,12 @@ import { resolveNodeModulations } from './modulation-graph';
 export interface PlayAction {
   kind: 'play';
   effectId: string;
+  /** The play node's type (D3) — carried verbatim to the spawned voice. Taxonomy only;
+      nothing on the action/voice render path branches on it. */
+  playType?: PlayType;
+  /** Canvas-scene doc id (playType 'canvas') — the pool hosts it as a `canvas:<sceneId>`
+      generator id, so the compositor/bridge dispatch stays untouched. */
+  canvasScene?: string;
   mode: PlayMode;
   scope: Scope;
   /** Per-play-node scope target (see {@link GraphNode.targetId}). Carried verbatim
@@ -180,6 +187,8 @@ function evalNode(
         {
           kind: 'play',
           effectId: node.effectId,
+          playType: node.playType,
+          canvasScene: node.canvasScene,
           mode: node.mode,
           scope: node.scope,
           targetId: node.targetId,

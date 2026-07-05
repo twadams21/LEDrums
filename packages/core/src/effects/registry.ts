@@ -1,5 +1,7 @@
 import type { EffectGenerator } from './types';
 import { EFFECT_METADATA } from './metadata';
+import { collectionOf, type PlayType } from './vocabulary';
+import { isCanvasEffectId } from '../canvas/ids';
 import { solidBase } from './impl/solid-base';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
@@ -123,4 +125,16 @@ export function listEffects(): EffectGenerator<any>[] {
 
 export function effectIds(): string[] {
   return [...registry.keys()];
+}
+
+/**
+ * The {@link PlayType} an effect id belongs to — U1's first-tag-match collection
+ * derivation, made TOTAL over ids (D3 hydrate migration): a `canvas:<sceneId>` id is
+ * `'canvas'`; a registered generator derives from its tags; an unknown id falls back to
+ * `'ambient'` (same fallback `collectionOf` uses for an untagged effect), so persisted
+ * play nodes always infer a type.
+ */
+export function playTypeForEffect(effectId: string): PlayType {
+  if (isCanvasEffectId(effectId)) return 'canvas';
+  return collectionOf(registry.get(effectId)?.tags);
 }

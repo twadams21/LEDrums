@@ -7,6 +7,7 @@
  * Pure + deterministic: no IO, no wall-clock — `timeMs` is always supplied by the caller
  * (the engine, which owns transport), never read from a global clock.
  */
+import { canvasEffectId } from '../canvas/ids';
 import type { PlayAction } from './eval-graph';
 import { deriveSeed } from './prng';
 import type { Bus, EffectDef, ParamSpec, Voice } from './types';
@@ -98,6 +99,8 @@ export class VoicePool {
     slot.active = true;
     slot.id = `v${++this.voiceSeq}`;
     slot.effectId = a.effectId;
+    slot.playType = a.playType;
+    slot.canvasScene = a.canvasScene;
     slot.busId = bus.id;
     slot.mode = a.mode;
     slot.scope = a.scope;
@@ -110,7 +113,10 @@ export class VoicePool {
     // Generator-backed effects host a legacy EffectGenerator; the compositor reads
     // `generatorId` + `genState`. Reset state on (re)spawn so a reused pool slot never
     // inherits a previous voice's accumulation buffers / RNG cursor.
-    slot.generatorId = effect.generatorId ?? null;
+    // A canvas play node's scene doc is authoritative: it hosts the scene's adapter id
+    // (`canvas:<sceneId>`, resolved by the effects registry) through the SAME bridge path
+    // a hosted generator takes — no dispatch fork (locked dec 7).
+    slot.generatorId = a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
     // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
     // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
@@ -145,6 +151,8 @@ function makeVoiceSlot(): Voice {
     active: false,
     id: '',
     effectId: '',
+    playType: undefined,
+    canvasScene: undefined,
     busId: '',
     mode: 'oneshot',
     scope: 'kit',

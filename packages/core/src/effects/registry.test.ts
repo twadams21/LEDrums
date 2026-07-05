@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { effectIds, getEffect, listEffects, tryGetEffect } from './registry';
+import { effectIds, getEffect, listEffects, playTypeForEffect, tryGetEffect } from './registry';
 import { COLLECTIONS, collectionOf, isEffectTag } from './vocabulary';
 
 describe('effect registry', () => {
@@ -64,5 +64,19 @@ describe('effect registry', () => {
       const type = collectionOf(e.tags);
       expect(types.has(type), `${e.id} → ${type}`).toBe(true);
     }
+  });
+
+  it('playTypeForEffect is TOTAL over ids (D3 hydrate migration)', () => {
+    const types = new Set(COLLECTIONS.map((c) => c.type));
+    // every registered effect (deprecated included — persisted nodes may still name them)
+    for (const id of effectIds()) {
+      const t = playTypeForEffect(id);
+      expect(types.has(t), `${id} → ${t}`).toBe(true);
+      expect(t, id).toBe(collectionOf(tryGetEffect(id)?.tags)); // same derivation as the gallery
+    }
+    // canvas scene adapters resolve by id shape, without registry membership
+    expect(playTypeForEffect('canvas:stripe-band')).toBe('canvas');
+    // unknown ids still land somewhere (never undefined)
+    expect(playTypeForEffect('does-not-exist')).toBe('ambient');
   });
 });

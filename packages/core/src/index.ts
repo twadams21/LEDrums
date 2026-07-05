@@ -20,6 +20,10 @@ export * from './model/project-schema';
 export * from './model/integrity';
 export * from './model/defaults';
 
+// Canvas (D4) — scene documents sampled through kit geometry; hosted through the ONE
+// EffectGenerator seam via `canvas:<sceneId>` adapter ids (no compositor fork).
+export * from './canvas/ids';
+
 // Effects
 export * from './effects/types';
 export * from './effects/field';

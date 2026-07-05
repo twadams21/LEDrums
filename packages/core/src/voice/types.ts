@@ -5,8 +5,11 @@
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
 import type { ResolvedModifier } from '../modifiers/types';
+import type { PlayType } from '../effects/vocabulary';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
+
+export type { PlayType };
 
 export type { ResolvedModifier };
 
@@ -220,6 +223,22 @@ export interface GraphNode {
   mode: PlayMode;
   scope: Scope;
   effectId: string;
+  /**
+   * The play node's TYPE (D3) — the same seven-bucket taxonomy the gallery collections
+   * use (one vocabulary module, `effects/vocabulary.ts`), so gallery grouping and node
+   * types can never drift. Authoring-layer taxonomy only: the engine stays uniform
+   * underneath (everything renders through the one `EffectGenerator` seam). Optional for
+   * persisted back-compat — hydrate infers a missing value from `effectId` via
+   * `playTypeForEffect` (total mapping).
+   */
+  playType?: PlayType;
+  /**
+   * Authored canvas-scene document id — meaningful only when `playType === 'canvas'`.
+   * A canvas node resolves a SCENE where a hosted node resolves a generator id; the
+   * voice hosts it as `generatorId = canvasEffectId(canvasScene)` (see `canvas/ids.ts`),
+   * so the compositor/bridge dispatch is untouched.
+   */
+  canvasScene?: string;
   presetId: string;
   /** layer/bus override for this node ('' → the effect's default bus). */
   busId: string;
@@ -410,6 +429,11 @@ export interface Voice {
   /** Stable identity for latch/stop references (`v${seq}`). */
   id: string;
   effectId: string;
+  /** The spawning play node's type (D3) — carried for diagnostics/UI; the render path
+   *  never branches on it (the engine is uniform under the taxonomy). */
+  playType?: PlayType;
+  /** Canvas-scene doc id when this voice hosts a canvas effect (`playType 'canvas'`). */
+  canvasScene?: string;
   busId: string;
   mode: PlayMode;
   scope: Scope;
