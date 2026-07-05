@@ -169,7 +169,7 @@ function voiceEffect(id: string): voice.EffectDef {
   return {
     id,
     name: id,
-    pattern: 'flash',
+    generatorId: 'whole-drum',
     busId: 'main',
     scope: 'kit',
     params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],

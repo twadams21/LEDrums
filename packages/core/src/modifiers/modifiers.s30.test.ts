@@ -3,7 +3,7 @@ import { Framebuffer } from '../engine/framebuffer';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
-import { buildPixelAttrs, createDefaultCompositor, type CompositorFrame } from '../voice/compositor';
+import { createDefaultCompositor, type CompositorFrame } from '../voice/compositor';
 import { resolveModifierChain } from '../voice/modifier-graph';
 import type { GraphEdge, GraphNode, TriggerGraph, Voice } from '../voice/types';
 import { applyModifierChain } from './chain';
@@ -216,12 +216,13 @@ function gnode(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {
   } as GraphNode;
 }
 
-/** A static-source pattern voice carrying `mods`, mirroring makeVoiceSlot defaults. */
+/** A continuous kit-wide source voice (solid-base) carrying `mods`, mirroring makeVoiceSlot
+    defaults — a stable lit field for the modifier-chain assertions. */
 function mkVoice(mods: ResolvedModifier[] | undefined): Voice {
   return {
-    active: true, id: 'v1', effectId: 'fx', pattern: 'flash', busId: 'base', mode: 'oneshot',
+    active: true, id: 'v1', effectId: 'fx', busId: 'base', mode: 'oneshot',
     scope: 'kit', targetId: undefined, sourceDrumId: 'kick', velocity: 1,
-    seed: 0, generatorId: null,
+    seed: 0, generatorId: 'solid-base',
     genState: null, modifiers: mods, modState: undefined, params: {}, liveParams: { hue: 0, brightness: 0.6 },
     specs: [], env: {}, attackMs: 0, sustainMs: 5000, releaseMs: 100, phase: 'sustain', level: 1,
     bornAtMs: 0, releaseAtMs: null, releaseFromLevel: 1, via: '', deckGain: 1,
@@ -230,7 +231,6 @@ function mkVoice(mods: ResolvedModifier[] | undefined): Voice {
 
 describe('S30 modifiers — end-to-end from the graph', () => {
   const model = testModel();
-  const attrs = buildPixelAttrs(model);
   const transport = (now: number): TransportState => ({
     timeMs: now, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true,
   });
@@ -250,7 +250,7 @@ describe('S30 modifiers — end-to-end from the graph', () => {
     const v = mkVoice(chain.length ? chain : undefined);
     const c = createDefaultCompositor();
     const dst = new Framebuffer(model.pixelCount);
-    for (const [timeMs, dt] of frames) c.render([v], model, attrs, frame(timeMs!, dt!), dst);
+    for (const [timeMs, dt] of frames) c.render([v], model, frame(timeMs!, dt!), dst);
     let total = 0;
     for (let i = 0; i < dst.rgba.length; i++) total += dst.rgba[i]!;
     return { chain, total };
@@ -260,7 +260,7 @@ describe('S30 modifiers — end-to-end from the graph', () => {
     const v = mkVoice(undefined);
     const c = createDefaultCompositor();
     const dst = new Framebuffer(model.pixelCount);
-    for (const [timeMs, dt] of frames) c.render([v], model, attrs, frame(timeMs!, dt!), dst);
+    for (const [timeMs, dt] of frames) c.render([v], model, frame(timeMs!, dt!), dst);
     let total = 0;
     for (let i = 0; i < dst.rgba.length; i++) total += dst.rgba[i]!;
     return total;

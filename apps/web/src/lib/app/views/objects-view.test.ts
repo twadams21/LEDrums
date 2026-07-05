@@ -20,7 +20,6 @@ function eff(id: string, name: string): EffectDef {
   return {
     id,
     name,
-    pattern: 'flash',
     busId: '',
     scope: 'kit',
     params: [],

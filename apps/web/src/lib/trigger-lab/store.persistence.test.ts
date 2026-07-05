@@ -99,7 +99,6 @@ describe('TriggerLab effects hydration (union, never replace)', () => {
   const userFx = (id: string): EffectDef => ({
     id,
     name: id,
-    pattern: 'flash',
     busId: 'base',
     scope: 'kit',
     attackMs: 10,

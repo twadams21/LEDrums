@@ -13,7 +13,6 @@ const monoBus: Bus = { id: 'lead', name: 'Lead', polyphony: 'mono', crossfadeMs:
 const effect: EffectDef = {
   id: 'fx',
   name: 'fx',
-  pattern: 'flash',
   generatorId: 'chase',
   busId: 'lead',
   scope: 'kit',

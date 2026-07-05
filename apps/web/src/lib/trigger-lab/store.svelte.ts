@@ -343,7 +343,6 @@ export class TriggerLab {
   galleryBlock = $state<voice.GraphNode | null>(null); // effect swap
   settingsBlock = $state<voice.GraphNode | null>(null); // preset + params + envelopes
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
-  creatorOpen = $state(false); // effect creator
 
   // --- setlist (songs → sections → flat ordered graph lists) ---------------
   /** authored arrangement: songs, each with sections that hold a FLAT ordered list of
@@ -2933,25 +2932,6 @@ export class TriggerLab {
   }
   closeEnv(): void {
     this.envTarget = null;
-  }
-  openCreator(): void {
-    this.creatorOpen = true;
-  }
-  closeCreator(): void {
-    this.creatorOpen = false;
-  }
-
-  /** Author a new effect at runtime: register it + seed a Default preset. Returns its id. */
-  createEffect(input: objects.NewEffectInput): string {
-    if (this.isViewer) return ''; // read-only viewer (S2): authoring no-op
-    const id = objects.freshEffectId(this.effects, input.name);
-    const eff = objects.buildEffect(input, id);
-    this.effects.push(eff);
-    this.sim.registerEffect(eff);
-    const preset = objects.defaultPresetFor(eff);
-    this.presets.push(preset);
-    this.sim.registerPreset(preset);
-    return id;
   }
 
   // --- effect / preset object CRUD (the Objects view consumes these) --------

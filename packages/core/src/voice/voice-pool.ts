@@ -98,7 +98,6 @@ export class VoicePool {
     slot.active = true;
     slot.id = `v${++this.voiceSeq}`;
     slot.effectId = a.effectId;
-    slot.pattern = effect.pattern;
     slot.busId = bus.id;
     slot.mode = a.mode;
     slot.scope = a.scope;
@@ -146,7 +145,6 @@ function makeVoiceSlot(): Voice {
     active: false,
     id: '',
     effectId: '',
-    pattern: 'flash',
     busId: '',
     mode: 'oneshot',
     scope: 'kit',

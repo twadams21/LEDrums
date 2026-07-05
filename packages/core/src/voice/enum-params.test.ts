@@ -36,7 +36,7 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
     supplied on the play node's params, exercising the bridge overlay (not the voice spec). */
 function genEffect(generatorId: string): EffectDef {
   return {
-    id: 'fx', name: 'fx', pattern: 'flash', generatorId, busId: 'base', scope: 'kit',
+    id: 'fx', name: 'fx', generatorId, busId: 'base', scope: 'kit',
     params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
     attackMs: 10, sustainMs: 5000, releaseMs: 100,
   };

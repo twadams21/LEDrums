@@ -200,7 +200,7 @@
         {#if playFace}
           <NodeCard icon={kindIcon.play} title={playFace.name} sub="with EffectThumb" tint={tint.play}>
             {#snippet thumb()}
-              <EffectThumb pattern={playFace.pattern} params={defaults(playFace)} generatorId={playFace.generatorId} w={56} h={32} />
+              <EffectThumb params={defaults(playFace)} generatorId={playFace.generatorId} w={56} h={32} />
             {/snippet}
           </NodeCard>
         {/if}
@@ -245,13 +245,13 @@
       <div class="thumb-row">
         {#each patternThumbs as eff (eff.id)}
           <figure class="thumb-fig">
-            <EffectThumb pattern={eff.pattern} params={defaults(eff)} generatorId={eff.generatorId} w={96} h={54} />
+            <EffectThumb params={defaults(eff)} generatorId={eff.generatorId} w={96} h={54} />
             <figcaption>{eff.name}</figcaption>
           </figure>
         {/each}
         {#if genThumb}
           <figure class="thumb-fig">
-            <EffectThumb pattern={genThumb.pattern} params={defaults(genThumb)} generatorId={genThumb.generatorId} w={96} h={54} />
+            <EffectThumb params={defaults(genThumb)} generatorId={genThumb.generatorId} w={96} h={54} />
             <figcaption>{genThumb.name} · generator</figcaption>
           </figure>
         {/if}

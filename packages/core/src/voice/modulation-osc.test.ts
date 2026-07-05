@@ -73,7 +73,7 @@ function fx(): EffectDef {
   return {
     id: 'fx',
     name: 'fx',
-    pattern: 'flash',
+    generatorId: 'solid-base',
     busId: 'base',
     scope: 'kit',
     params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
@@ -119,8 +119,10 @@ const hit = (timeMs: number): InputEvent => ({ kind: 'noteOn', drumId: 'kick', z
 const osc = (address: string, value: number, timeMs: number): InputEvent => ({ kind: 'osc', address, value, timeMs });
 
 function frameSum(f: Readonly<Float32Array>): number {
+  // Sum only the RGB channels (skip alpha): a generator owns its own alpha independent of
+  // the modulated 'brightness' param, so visible light — what brightness scales — is the RGB.
   let s = 0;
-  for (let i = 0; i < f.length; i++) s += f[i]!;
+  for (let i = 0; i < f.length; i += 4) s += f[i]! + f[i + 1]! + f[i + 2]!;
   return s;
 }
 

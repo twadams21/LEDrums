@@ -23,7 +23,6 @@ import { makeSection, makeSong, type SetlistSection, type Song } from '../app/se
 const effect = (id: string, over: Partial<EffectDef> = {}): EffectDef => ({
   id,
   name: id,
-  pattern: 'flash',
   busId: 'base',
   scope: 'kit',
   params: [],

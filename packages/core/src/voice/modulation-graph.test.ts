@@ -185,7 +185,6 @@ describe('resolveNodeModulations', () => {
 const effect: EffectDef = {
   id: 'fx',
   name: 'fx',
-  pattern: 'flash',
   busId: 'main',
   scope: 'kit',
   params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 0.5 }],

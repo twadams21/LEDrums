@@ -43,13 +43,11 @@ export {
   MOD_SOURCE_KINDS,
 } from './modulation-graph';
 export {
-  buildPixelAttrs,
   createDefaultCompositor,
   applyEffectiveParams,
   voicePhase,
   type Compositor,
   type CompositorFrame,
-  type PixelAttrs,
 } from './compositor';
 export {
   createVoiceBusEngine,

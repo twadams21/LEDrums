@@ -23,32 +23,6 @@ export type ValueMode = 'gate' | 'bands';
 export type Scope = 'drum' | 'kit' | 'hoop';
 export type Polyphony = 'mono' | 'poly';
 
-/** The abstract procedural visual an effect demonstrates in the pixel renderer. */
-export type Pattern =
-  | 'flash'
-  | 'chase'
-  | 'sparkle'
-  | 'ripple'
-  | 'swirl'
-  | 'aurora'
-  | 'drift'
-  | 'radial'
-  | 'haze'
-  | 'strobe';
-
-export const PATTERNS: readonly Pattern[] = [
-  'flash',
-  'chase',
-  'sparkle',
-  'ripple',
-  'swirl',
-  'aurora',
-  'drift',
-  'radial',
-  'haze',
-  'strobe',
-];
-
 /** Named envelope shapes the editor seeds from (then reshapes into a curve). */
 export type EnvKind = 'none' | 'decay' | 'rise' | 'pluck' | 'pulse' | 'custom';
 
@@ -138,12 +112,12 @@ export interface ParamSpec {
 export interface EffectDef {
   id: string;
   name: string;
-  pattern: Pattern;
   /**
-   * When set, this effect is GENERATOR-BACKED: a voice hosting it delegates rendering
-   * to the legacy {@link EffectGenerator} registered under this id (see the compositor
-   * bridge) instead of sampling `pattern`. `pattern` is ignored for such effects.
-   * Undefined → the lightweight per-pixel pattern fast path.
+   * The effect is GENERATOR-BACKED: a voice hosting it delegates rendering to the
+   * {@link EffectGenerator} registered under this id (see the compositor bridge). Every
+   * selectable effect is generator-backed since the legacy per-pixel pattern path was
+   * retired (Effects Library v2, U3); the field stays optional only for structural
+   * compatibility with authored/persisted shapes.
    */
   generatorId?: string;
   busId: string;
@@ -426,8 +400,8 @@ export function padKey(drumId: string, zone: string): string {
 export type VoicePhase = 'attack' | 'sustain' | 'release';
 
 /**
- * A live light instance: a pattern + resolved params + envelope playing on a bus.
- * Object-pooled inside the engine; `active` marks pool occupancy. Identity for
+ * A live light instance: a hosted generator + resolved params + envelope playing on a
+ * bus. Object-pooled inside the engine; `active` marks pool occupancy. Identity for
  * cross-frame references (toggle latching, voice-stealing) is the string `id`.
  */
 export interface Voice {
@@ -436,7 +410,6 @@ export interface Voice {
   /** Stable identity for latch/stop references (`v${seq}`). */
   id: string;
   effectId: string;
-  pattern: Pattern;
   busId: string;
   mode: PlayMode;
   scope: Scope;
@@ -456,11 +429,10 @@ export interface Voice {
    */
   seed: number;
   /**
-   * Hosted legacy-effect generator id, or `null` for a pattern voice. When set, the
-   * compositor renders that {@link EffectGenerator} into a scratch framebuffer and
-   * composites it into the frame scaled by `level*deckGain`, masked to the drum range
-   * for `scope==='drum'`. The generator owns its own colour, so the voice `hue`/
-   * `brightness` pattern handling is bypassed (brightness lives inside the generator).
+   * Hosted effect generator id (`null` only for a never-resolved slot). The compositor
+   * renders that {@link EffectGenerator} into a scratch framebuffer and composites it into
+   * the frame scaled by `level*deckGain`, masked to the drum range for `scope==='drum'`.
+   * The generator owns its own colour and brightness.
    */
   generatorId: string | null;
   /**

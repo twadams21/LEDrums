@@ -4,7 +4,7 @@ import { render } from '@testing-library/svelte';
 import EffectThumb from './EffectThumb.svelte';
 import { renderGeneratorThumbFrame, THUMB_LOOP_MS } from './effect-thumb-render';
 import { ticker } from './effect-thumb-ticker';
-import type { ParamValues, Pattern } from './sim';
+import type { ParamValues } from './sim';
 
 /**
  * Mock IntersectionObserver for jsdom (not built-in).
@@ -35,7 +35,7 @@ describe('EffectThumb', () => {
   it('mounts a canvas element without throwing', () => {
     const { container } = render(EffectThumb, {
       props: {
-        pattern: 'flash' as Pattern,
+        generatorId: 'whole-drum',
         params: { hue: 0, brightness: 1 } as ParamValues,
         w: 64,
         h: 36,
@@ -50,7 +50,7 @@ describe('EffectThumb', () => {
   it('sets canvas inline style with w and h props', () => {
     const { container } = render(EffectThumb, {
       props: {
-        pattern: 'flash' as Pattern,
+        generatorId: 'whole-drum',
         params: { hue: 0, brightness: 1 } as ParamValues,
         w: 100,
         h: 50,
@@ -64,10 +64,10 @@ describe('EffectThumb', () => {
     expect(canvas.style.aspectRatio).toContain('50');
   });
 
-  it('renders a pattern-backed effect without throwing', () => {
+  it('renders a generator-backed effect without throwing', () => {
     const { container } = render(EffectThumb, {
       props: {
-        pattern: 'flash' as Pattern,
+        generatorId: 'whole-drum',
         params: { hue: 45, brightness: 0.8 } as ParamValues,
         w: 64,
         h: 36,
@@ -83,7 +83,6 @@ describe('EffectThumb', () => {
   it('renders a generator-backed effect without throwing (no labModel required)', () => {
     const { container } = render(EffectThumb, {
       props: {
-        pattern: 'flash' as Pattern,
         params: { hue: 0, brightness: 1 } as ParamValues,
         generatorId: 'plasma',
         w: 64,
@@ -98,7 +97,6 @@ describe('EffectThumb', () => {
   it('component handles missing generatorId gracefully', () => {
     const { container } = render(EffectThumb, {
       props: {
-        pattern: 'flash' as Pattern,
         params: { hue: 0, brightness: 1 } as ParamValues,
         w: 64,
         h: 36,
@@ -128,7 +126,7 @@ describe('EffectThumb', () => {
     try {
       const { container } = render(EffectThumb, {
         props: {
-          pattern: 'flash' as Pattern,
+          generatorId: 'whole-drum',
           params: { hue: 0, brightness: 1 } as ParamValues,
           w: 64,
           h: 36,

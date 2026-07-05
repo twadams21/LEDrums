@@ -141,7 +141,6 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
   return {
     id: `gen:${gen.id}`,
     name: gen.name,
-    pattern: 'flash', // ignored — generatorId drives rendering
     generatorId: gen.id,
     category: gen.category,
     description: gen.description,

@@ -6,49 +6,19 @@
 
 import {
   type EffectDef,
-  type ParamSpec,
-  type Pattern,
   type Preset,
-  type Scope,
   type TriggerGraph,
   defaultParams,
 } from '../sim';
 
-/** The createEffect input the Objects/Creator view passes in. */
-export interface NewEffectInput {
-  name: string;
-  pattern: Pattern;
-  scope: Scope;
-  busId: string;
-  attackMs: number;
-  sustainMs: number;
-  releaseMs: number;
-  params: ParamSpec[];
-}
-
-/** Mint a fresh, unused effect id from a name (slug + `-N` de-dup). Shared by create +
-    duplicate. Effect ids are name-derived (not the global counter) so they read nicely. */
+/** Mint a fresh, unused effect id from a name (slug + `-N` de-dup). Shared by duplicate.
+    Effect ids are name-derived (not the global counter) so they read nicely. */
 export function freshEffectId(effects: readonly EffectDef[], name: string): string {
   const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'effect';
   let id = base;
   let n = 2;
   while (effects.some((e) => e.id === id)) id = `${base}-${n++}`;
   return id;
-}
-
-/** Assemble an authored EffectDef from the Creator input under an already-minted id. */
-export function buildEffect(input: NewEffectInput, id: string): EffectDef {
-  return {
-    id,
-    name: input.name.trim() || 'Untitled',
-    pattern: input.pattern,
-    busId: input.busId,
-    scope: input.scope,
-    attackMs: input.attackMs,
-    sustainMs: input.sustainMs,
-    releaseMs: input.releaseMs,
-    params: input.params,
-  };
 }
 
 /** An effect's foundational `:default` preset (seeded at create + duplicate time). */

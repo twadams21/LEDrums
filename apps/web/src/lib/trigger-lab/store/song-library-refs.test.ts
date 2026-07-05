@@ -23,7 +23,6 @@ import type { SongLibrary } from '../persistence';
 const effect = (id: string): EffectDef => ({
   id,
   name: id,
-  pattern: 'flash',
   busId: 'base',
   scope: 'kit',
   params: [],

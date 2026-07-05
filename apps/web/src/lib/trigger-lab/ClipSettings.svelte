@@ -35,10 +35,10 @@
 <Dialog {open} onClose={() => store.closeSettings()} title={eff?.name ?? 'Clip'} class="dlg-settings">
   {#if block && block.kind === 'play' && eff}
     <header class="shead">
-      <div class="thumb"><EffectThumb pattern={eff.pattern} params={live} w={84} h={46} /></div>
+      <div class="thumb"><EffectThumb params={live} generatorId={eff.generatorId} w={84} h={46} /></div>
       <div class="titles">
         <h2>{eff.name}</h2>
-        <span class="sub">{eff.pattern} · {eff.busId} · {eff.scope}</span>
+        <span class="sub">{eff.busId} · {eff.scope}</span>
       </div>
       <button class="swap" onclick={() => store.openGallery(block)}>Change effect</button>
       <button class="close" onclick={() => store.closeSettings()} aria-label="Close"><X size={16} aria-hidden="true" /></button>

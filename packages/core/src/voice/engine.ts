@@ -16,11 +16,9 @@ import type { PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { Prng } from './prng';
 import {
-  buildPixelAttrs,
   createDefaultCompositor,
   applyEffectiveParams,
   type Compositor,
-  type PixelAttrs,
 } from './compositor';
 import {
   evalGraph,
@@ -140,7 +138,6 @@ class VoiceBusEngine implements RenderEngine {
   constructor(private readonly onDiagnostic?: VoiceDiagnosticSink) {}
 
   private model: PixelModel | null = null;
-  private attrs: PixelAttrs | null = null;
   private finalFb: Framebuffer | null = null;
   private readonly compositor: Compositor = createDefaultCompositor();
 
@@ -208,7 +205,6 @@ class VoiceBusEngine implements RenderEngine {
 
   setModel(model: PixelModel): void {
     this.model = model;
-    this.attrs = buildPixelAttrs(model);
     this.finalFb = new Fb(model.pixelCount);
   }
 
@@ -627,14 +623,13 @@ class VoiceBusEngine implements RenderEngine {
     reapDeadVoices(this.voices.pool, this.latched);
 
     // Refresh per-voice live params, then composite voices → pixels.
-    if (this.model && this.attrs && this.finalFb) {
+    if (this.model && this.finalFb) {
       for (const v of this.voices.pool) {
         if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable);
       }
       this.compositor.render(
         this.voices.pool,
         this.model,
-        this.attrs,
         { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable },
         this.finalFb,
       );

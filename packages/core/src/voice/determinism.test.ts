@@ -34,7 +34,7 @@ function effect(id: string, over: Partial<EffectDef> = {}): EffectDef {
   return {
     id,
     name: id,
-    pattern: 'flash',
+    generatorId: 'breathing-kit',
     busId: 'base',
     scope: 'kit',
     params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
@@ -195,7 +195,7 @@ describe('hoop scope — geometry-only difference', () => {
     for (let i = 0; i < a.length; i++) {
       const fa = a[i]!;
       const fb = b[i]!;
-      // hoop-1 render is hoop-0's, shifted by one hoop range ('flash' is geometry-uniform)
+      // hoop-1 render is hoop-0's, shifted by one hoop range (breathing-kit is geometry-uniform)
       for (let p = 0; p < per; p++) {
         for (let c = 0; c < 4; c++) {
           expect(fb[(h1 + p) * 4 + c]).toBe(fa[(h0 + p) * 4 + c]);

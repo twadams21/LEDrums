@@ -9,18 +9,15 @@
 
      Powered by a shared ticker (one rAF loop for all thumbnails), with
      IntersectionObserver pause when offscreen and prefers-reduced-motion support. */
-  import type { ParamValues, Pattern } from './sim';
-  import type { LabModel, PixelAttrs } from './kit';
+  import type { ParamValues } from './sim';
+  import type { LabModel } from './kit';
   import { buildThumbPixelModel } from './kit';
-  import { sampleWith } from './render';
-  import { hueToRgb } from './kit';
   import { renderGeneratorThumbFrame } from './effect-thumb-render';
   import { tryGetEffect } from '@ledrums/core';
   import { ticker } from './effect-thumb-ticker';
   import { triggerClock } from './signal-preview';
 
   interface Props {
-    pattern: Pattern;
     params: ParamValues;
     generatorId?: string;
     /** Accepted for caller compatibility but not used; generators render on the
@@ -35,33 +32,12 @@
     /** The graph's fire epoch (`performance.now()` ms) when `triggered`; null until it fires. */
     triggerAt?: number | null;
   }
-  let { pattern, params, generatorId, w = 64, h = 36, triggered = false, triggerAt = null }: Props = $props();
+  let { params, generatorId, w = 64, h = 36, triggered = false, triggerAt = null }: Props = $props();
 
   const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
   const COLS = 26;
   const ROWS = 13;
-  const N = COLS * ROWS;
-
-  const attrs: PixelAttrs = (() => {
-    const angle01 = new Float32Array(N);
-    const norm01 = new Float32Array(N);
-    const nx = new Float32Array(N);
-    const ny = new Float32Array(N);
-    const nz = new Float32Array(N);
-    const drumIndex = new Int16Array(N);
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const i = r * COLS + c;
-        angle01[i] = c / COLS;
-        norm01[i] = r / (ROWS - 1);
-        nx[i] = c / (COLS - 1);
-        ny[i] = r / (ROWS - 1);
-        nz[i] = 0.5;
-      }
-    }
-    return { drumIndex, angle01, norm01, nx, ny, nz };
-  })();
 
   let canvas = $state<HTMLCanvasElement>();
   let genState = $state<unknown>(null);
@@ -156,13 +132,10 @@
 
     // Snapshot reactive props for the draw closure.
     const p = params;
-    const pat = pattern;
     const genId = generatorId;
-    const hue = num(p.hue, 0);
     const bright = num(p.brightness, 1);
 
     const draw = (now: number): void => {
-      const t = (now - 0) / 1000;
       const tMs = now;
 
       ctx.fillStyle = '#0a0d12';
@@ -170,51 +143,30 @@
 
       // Time base: reduced-motion → a static 400ms still; live-on-trigger → local time since the
       // node's graph fired (static 400ms still until it does); else the continuous gallery loop.
-      let effectiveT: number;
       let effectiveTms: number;
       if (prefersReduced) {
-        effectiveT = 0.4;
         effectiveTms = 400;
       } else if (triggered) {
-        const localMs = triggerClock(triggerAt, tMs).localMs;
-        effectiveT = localMs / 1000;
-        effectiveTms = localMs;
+        effectiveTms = triggerClock(triggerAt, tMs).localMs;
       } else {
-        effectiveT = t;
         effectiveTms = tMs;
       }
 
-      // Branch: generator-backed vs pattern effect
-      if (genId) {
-        // Render the generator on the internal 26×13 thumb model.
-        // pixels[i] is [r,g,b] in 0..1, directly from the Framebuffer.
-        const pixels = renderGeneratorThumbFrame(genId, p, effectiveTms, genState);
-        if (pixels) {
-          for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < COLS; c++) {
-              const i = r * COLS + c;
-              const [rv, gv, bv] = pixels[i]!;
-              const R = Math.round(rv * bright * 255);
-              const G = Math.round(gv * bright * 255);
-              const B = Math.round(bv * bright * 255);
-              if (R === 0 && G === 0 && B === 0) continue;
-              ctx.fillStyle = `rgb(${R},${G},${B})`;
-              ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
-            }
-          }
-        }
-      } else {
-        // Pattern-backed effect (original fast path)
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            const i = r * COLS + c;
-            const [si, hoff] = sampleWith(pat, effectiveT, i, attrs, p);
-            const amp = si * bright;
-            if (amp <= 0.02) continue;
-            const [R, G, B] = hueToRgb(hue + hoff, amp);
-            ctx.fillStyle = `rgb(${R},${G},${B})`;
-            ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
-          }
+      // Every effect is generator-backed (U3): render the core generator on the internal
+      // 26×13 thumb model. pixels[i] is [r,g,b] in 0..1, directly from the Framebuffer.
+      if (!genId) return;
+      const pixels = renderGeneratorThumbFrame(genId, p, effectiveTms, genState);
+      if (!pixels) return;
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const i = r * COLS + c;
+          const [rv, gv, bv] = pixels[i]!;
+          const R = Math.round(rv * bright * 255);
+          const G = Math.round(gv * bright * 255);
+          const B = Math.round(bv * bright * 255);
+          if (R === 0 && G === 0 && B === 0) continue;
+          ctx.fillStyle = `rgb(${R},${G},${B})`;
+          ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
         }
       }
     };

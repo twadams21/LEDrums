@@ -30,7 +30,7 @@ const node = (id: string, kind: voice.NodeKind, extra: Partial<voice.GraphNode> 
     `main` bus. An unmapped note therefore resolves exactly one graph. */
 function directNoteShow(note: number): voice.Show {
   const flash: voice.EffectDef = {
-    id: 'fx-flash', name: 'Flash', pattern: 'flash', busId: 'main', scope: 'kit',
+    id: 'fx-flash', name: 'Flash', generatorId: 'whole-drum', busId: 'main', scope: 'kit',
     params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
     attackMs: 0, sustainMs: 200, releaseMs: 200,
   };

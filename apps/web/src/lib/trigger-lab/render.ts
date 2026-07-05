@@ -1,7 +1,8 @@
-/* Per-pixel pattern renderer for the lab's 3D kit preview. Each effect samples a
-   procedural pattern over time + pixel position, shaped by its PARAMETERS (hue,
-   speed, bands, angle, width, density, tempo-sync) and per-param ENVELOPES that
-   sweep a value over the voice's life. Throwaway — stand-in for packages/core. */
+/* Offline renderer for the lab's 3D kit preview: every voice hosts a core
+   `EffectGenerator` (the legacy per-pixel pattern path was retired in Effects Library
+   v2, U3), so `renderFrame` delegates to the SAME generators the server engine runs —
+   the preview can never silently diverge from real output. Throwaway stand-in for
+   packages/core's engine. */
 
 import {
   Framebuffer,
@@ -9,7 +10,6 @@ import {
   defaultParams as genDefaultParams,
   tryGetEffect,
   type RenderContext,
-  type ResolvedModifier,
   type ResolvedParams,
   type Trigger,
 } from '@ledrums/core';
@@ -17,22 +17,12 @@ import {
   applyModulations,
   type ModSampleCtx,
   type ParamValues,
-  type Pattern,
   type Sim,
   type Voice,
 } from './sim';
-import type { LabModel, PixelAttrs } from './kit';
-import { hueToRgb } from './kit';
+import type { LabModel } from './kit';
 
-const TAU = Math.PI * 2;
-const DEG = Math.PI / 180;
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
-
-function hash(n: number): number {
-  const s = Math.sin(n) * 43758.5453;
-  return s - Math.floor(s);
-}
 
 /** Resolve a voice's params for this frame: apply modulation mappings + tempo sync. */
 function effectiveParams(v: Voice, sim: Sim): ParamValues {
@@ -57,63 +47,10 @@ function modCtxFor(v: Voice, sim: Sim): ModSampleCtx {
   return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable };
 }
 
-/** Returns [intensity 0..1, hueOffset deg] for a pixel given pattern + params. */
-function sample(pattern: Pattern, t: number, i: number, a: PixelAttrs, p: ParamValues): [number, number] {
-  const tt = t * num(p.speed, 1);
-  const ang = a.angle01[i]!;
-  const n = a.norm01[i]!;
-  const x = a.nx[i]!;
-  const y = a.ny[i]!;
-  const z = a.nz[i]!;
-  switch (pattern) {
-    case 'flash':
-      return [1, 0];
-    case 'strobe':
-      return [(tt * 11) % 1 < 0.5 ? 1 : 0.04, 0];
-    case 'chase': {
-      const width = num(p.width, 0.13);
-      const phase = (tt * 0.9) % 1;
-      let d = Math.abs(ang - phase);
-      d = Math.min(d, 1 - d);
-      return [clamp01(1 - d / width), 0];
-    }
-    case 'sparkle': {
-      const density = num(p.density, 0.3);
-      const h = hash(i * 1.37 + Math.floor(tt * 9) * 53.7);
-      return [h > 1 - density ? 0.35 + 0.65 * h : 0.03, 0];
-    }
-    case 'ripple': {
-      const bands = num(p.bands, 4);
-      return [clamp01(0.15 + 0.85 * Math.max(0, Math.sin(n * bands * 3 - tt * 7.5))), 0];
-    }
-    case 'swirl': {
-      const bands = num(p.bands, 2);
-      const angle = num(p.angle, 0);
-      return [0.4 + 0.6 * (0.5 + 0.5 * Math.sin(ang * TAU * bands + tt * 1.6 + angle * DEG)), (ang * 70) % 360];
-    }
-    case 'aurora':
-      return [0.35 + 0.65 * (0.5 + 0.5 * Math.sin(y * 4 + tt * 0.8 + x * 1.6)), (y * 90) % 360];
-    case 'drift':
-      return [0.35 + 0.65 * (0.5 + 0.5 * Math.sin(x * 3 - tt * 0.7 + z)), 0];
-    case 'radial': {
-      const r = Math.sqrt((x - 0.5) ** 2 + (y - 0.5) ** 2 + (z - 0.5) ** 2);
-      return [0.2 + 0.8 * (0.5 + 0.5 * Math.sin(r * 9 - tt * 4.5)), 0];
-    }
-    case 'haze':
-      return [0.45 + 0.25 * Math.sin(tt * 1.2) + 0.18 * Math.sin(y * 3 + tt * 0.5), 0];
-  }
-}
-
-/** Sample a pattern with explicit params (for the static thumbnails). */
-export function sampleWith(pattern: Pattern, t: number, i: number, a: PixelAttrs, p: ParamValues): [number, number] {
-  return sample(pattern, t, i, a, p);
-}
-
 /** Composite every live voice into `buf` (RGB triples), additive over black. */
 export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   buf.fill(0);
-  const { model, attrs } = lab;
-  const t = sim.timeMs / 1000;
+  const { model } = lab;
 
   for (const v of sim.voices) {
     const level = sim.voiceLevel(v);
@@ -150,88 +87,9 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
     }
     // scope === 'kit': start=0, end=model.count (whole kit, targetId ignored)
 
-    // Generator-backed voice: delegate to the SAME core EffectGenerator the server
-    // renders, so the offline preview matches real output (no silent divergence).
-    if (v.generatorId) {
-      renderGeneratorVoice(buf, v, level, sim, lab, start, end);
-      continue;
-    }
-
-    // Pattern voice (per-pixel fast path).
-    const p = effectiveParams(v, sim);
-    const hue = num(p.hue, 0);
-    const amp = level * num(p.brightness, 1);
-    if (amp <= 0.003) continue;
-
-    // Modified pattern voice: render into a float scratch (0..1, like core), apply the
-    // modifier chain in the same 0..1 space the core compositor uses, then blit to buf.
-    // Unmodified voices keep the direct 0..255 fast path below (mirrors core's gating).
-    const mods = v.modifiers;
-    if (mods && mods.length) {
-      renderModifiedPatternVoice(buf, v, p, hue, amp, sim, lab, start, end, attrs, mods);
-      continue;
-    }
-
-    for (let i = start; i < end; i++) {
-      const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
-      const inten = si * amp;
-      if (inten <= 0.004) continue;
-      const [r, g, b] = hueToRgb(hue + hueOff, inten);
-      const j = i * 3;
-      buf[j] = Math.min(255, buf[j]! + r);
-      buf[j + 1] = Math.min(255, buf[j + 1]! + g);
-      buf[j + 2] = Math.min(255, buf[j + 2]! + b);
-    }
-  }
-}
-
-// ---- modifier chain (media effects) — offline preview mirror ----------------
-// Mirrors the core compositor's modifier hook: a MODIFIED voice's rendered pixels are
-// transformed by its resolved chain (in 0..1 float space, shared core `applyModifierChain`)
-// between render and blend. The generator path applies it on `genScratch`; the pattern path
-// routes through this dedicated float scratch. Modifiers inherit the host voice's local
-// clock (age) — never re-derived here.
-
-let patScratch: Framebuffer | null = null;
-
-function renderModifiedPatternVoice(
-  buf: Uint8Array,
-  v: Voice,
-  p: ParamValues,
-  hue: number,
-  amp: number,
-  sim: Sim,
-  lab: LabModel,
-  start: number,
-  end: number,
-  attrs: PixelAttrs,
-  mods: readonly ResolvedModifier[],
-): void {
-  const pm = lab.pm;
-  const t = sim.timeMs / 1000;
-  if (!patScratch || patScratch.pixelCount !== pm.pixelCount) patScratch = new Framebuffer(pm.pixelCount);
-  patScratch.clear();
-  for (let i = start; i < end; i++) {
-    const [si, hueOff] = sample(v.pattern, t, i, attrs, p);
-    const inten = si * amp;
-    if (inten <= 0.004) continue;
-    const [r, g, b] = hueToRgb(hue + hueOff, inten); // 0..255
-    patScratch.add(i, r / 255, g / 255, b / 255, inten);
-  }
-  if (!v.modState) v.modState = [];
-  const age = sim.timeMs - v.bornAtMs;
-  applyModifierChain(mods, v.modState, patScratch, { start, end }, pm, age > 0 ? age : 0, sim.lastDt, modCtxFor(v, sim));
-  const src = patScratch.rgba;
-  for (let i = start; i < end; i++) {
-    const j4 = i * 4;
-    const r = src[j4]!;
-    const g = src[j4 + 1]!;
-    const b = src[j4 + 2]!;
-    if (r <= 0 && g <= 0 && b <= 0) continue;
-    const j3 = i * 3;
-    buf[j3] = Math.min(255, buf[j3]! + Math.round(r * 255));
-    buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * 255));
-    buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * 255));
+    // Every voice is generator-backed (U3): delegate to the SAME core EffectGenerator the
+    // server renders, so the offline preview matches real output (no silent divergence).
+    if (v.generatorId) renderGeneratorVoice(buf, v, level, sim, lab, start, end);
   }
 }
 

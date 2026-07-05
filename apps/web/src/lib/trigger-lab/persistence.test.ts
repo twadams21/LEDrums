@@ -29,7 +29,7 @@ function authored(): AuthoredState {
     buses: [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 120 }],
     presets: [{ id: 'flash:default', name: 'Default', effectId: 'flash', params: { hue: 200 } }],
     effects: [
-      { id: 'flash', name: 'Flash', pattern: 'flash', busId: 'base', scope: 'drum', params: [], attackMs: 5, sustainMs: 10, releaseMs: 200 },
+      { id: 'flash', name: 'Flash', busId: 'base', scope: 'drum', params: [], attackMs: 5, sustainMs: 10, releaseMs: 200 },
     ],
     selectedPadKey: 'kick:1',
     activeSongId: 'set-1',

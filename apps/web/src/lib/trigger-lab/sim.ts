@@ -74,21 +74,6 @@ export type ValueMode = voice.ValueMode;
 export type Scope = 'drum' | 'kit' | 'hoop';
 export type BlockKind = Block['kind'];
 
-/** The abstract visual an effect demonstrates in the lab's pixel renderer. */
-export type Pattern =
-  | 'flash'
-  | 'chase'
-  | 'sparkle'
-  | 'ripple'
-  | 'swirl'
-  | 'aurora'
-  | 'drift'
-  | 'radial'
-  | 'haze'
-  | 'strobe';
-
-export const PATTERNS: Pattern[] = ['flash', 'chase', 'sparkle', 'ripple', 'swirl', 'aurora', 'drift', 'radial', 'haze', 'strobe'];
-
 interface BlockBase {
   id: string;
 }
@@ -159,12 +144,12 @@ export type Polyphony = 'mono' | 'poly';
 export interface EffectDef {
   id: string;
   name: string;
-  pattern: Pattern;
   /**
-   * When set, this effect is GENERATOR-BACKED: a voice hosting it delegates rendering
-   * to the legacy core {@link EffectGenerator} registered under this id. The server
-   * voice path renders it for real output; the offline preview (render.ts) delegates to
-   * the SAME core generator. `pattern` is ignored for these effects.
+   * The effect is GENERATOR-BACKED: a voice hosting it delegates rendering to the core
+   * {@link EffectGenerator} registered under this id. The server voice path renders it for
+   * real output; the offline preview (render.ts) delegates to the SAME core generator.
+   * Every selectable effect is generator-backed since the legacy per-pixel pattern path was
+   * retired (Effects Library v2, U3).
    */
   generatorId?: string;
   /** Legacy effect category (base/trigger/wash/meter/texture/particle/utility) —
@@ -209,7 +194,6 @@ export type VoicePhase = 'attack' | 'sustain' | 'release';
 export interface Voice {
   id: string;
   effectId: string;
-  pattern: Pattern;
   busId: string;
   mode: PlayMode;
   scope: Scope;
@@ -710,7 +694,6 @@ export class Sim {
     const voice: Voice = {
       id: `v${++this.voiceSeq}`,
       effectId: a.effectId,
-      pattern: effect.pattern,
       busId: bus.id,
       mode: a.mode,
       scope: a.scope,

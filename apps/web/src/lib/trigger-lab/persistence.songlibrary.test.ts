@@ -18,7 +18,6 @@ import type { EffectDef, Preset, TriggerGraph } from './sim';
 const effect = (id: string): EffectDef => ({
   id,
   name: id,
-  pattern: 'flash',
   busId: 'base',
   scope: 'kit',
   params: [],

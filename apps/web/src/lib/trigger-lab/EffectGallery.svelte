@@ -18,7 +18,6 @@
   import IconButton from '../ui/IconButton.svelte';
   import Eyebrow from '../ui/Eyebrow.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
   import { defaultParams, type EffectDef, type Scope } from './sim';
   import { COLLECTIONS, type PlayType } from '@ledrums/core';
@@ -105,11 +104,6 @@
     if (block) store.pickEffect(block, effectId);
     store.closeGallery();
   }
-
-  function newEffect(): void {
-    store.closeGallery();
-    store.openCreator();
-  }
 </script>
 
 <Dialog open={!!block} onClose={() => store.closeGallery()} title="Change effect" layer={2} class="dlg-gallery">
@@ -118,7 +112,6 @@
       <Eyebrow icon={LayoutGrid}>Change effect</Eyebrow>
       <SearchField bind:value={query} placeholder="Search name, description, tags…" ariaLabel="Search effects" class="ghead-search" />
       <span class="spacer"></span>
-      <IconButton icon={Plus} label="New effect" variant="soft" onclick={newEffect} />
       <IconButton icon={X} label="Close" onclick={() => store.closeGallery()} />
     </header>
 
@@ -151,7 +144,7 @@
             type="button"
             onclick={() => pick(eff.id)}
           >
-            <EffectThumb pattern={eff.pattern} params={previewParams(eff.id)} generatorId={eff.generatorId} labModel={store.labModel} w={170} h={92} />
+            <EffectThumb params={previewParams(eff.id)} generatorId={eff.generatorId} labModel={store.labModel} w={170} h={92} />
             <span class="name">{eff.name}</span>
             {#if eff.description}<span class="desc">{eff.description}</span>{/if}
             <span class="cfoot">

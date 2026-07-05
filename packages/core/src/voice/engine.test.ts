@@ -30,7 +30,7 @@ function effect(id: string, over: Partial<EffectDef> = {}): EffectDef {
   return {
     id,
     name: id,
-    pattern: 'flash',
+    generatorId: 'solid-base',
     busId: 'base',
     scope: 'kit',
     params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],

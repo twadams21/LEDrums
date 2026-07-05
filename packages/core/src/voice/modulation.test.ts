@@ -153,7 +153,6 @@ function mkVoice(over: Partial<Voice>): Voice {
     active: true,
     id: 'v1',
     effectId: 'fx',
-    pattern: 'flash',
     busId: 'base',
     mode: 'oneshot',
     scope: 'kit',

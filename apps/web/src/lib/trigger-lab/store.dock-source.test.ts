@@ -44,7 +44,6 @@ function simVoice(over: Partial<Voice> = {}): Voice {
   return {
     id: 'sv1',
     effectId: 'flash',
-    pattern: 'flash',
     busId: 'base',
     mode: 'loop',
     scope: 'kit',

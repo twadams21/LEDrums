@@ -25,7 +25,7 @@ function makeShow(drumId: string, zone: string): voice.Show {
   const effect: voice.EffectDef = {
     id: 'fx-flash',
     name: 'Flash',
-    pattern: 'flash',
+    generatorId: 'whole-drum',
     busId: 'main',
     scope: 'kit',
     params: [
@@ -250,7 +250,7 @@ describe('VoiceEngineHost', () => {
     sections: [],
     effects: [
       {
-        id: 'fx-flash', name: 'Flash', pattern: 'flash', busId: busIds[0] ?? 'main', scope: 'kit',
+        id: 'fx-flash', name: 'Flash', generatorId: 'whole-drum', busId: busIds[0] ?? 'main', scope: 'kit',
         params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
         attackMs: 0, sustainMs: 200, releaseMs: 200,
       },

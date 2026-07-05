@@ -87,7 +87,6 @@ describe('duplicateEffect', () => {
     expect(newId).not.toBe('gen:helix');
     const dup = store.effects.find((e) => e.id === newId)!;
     expect(dup.name).toBe('Helix copy');
-    expect(dup.pattern).toBe(src.pattern);
     expect(dup.params).toEqual(src.params); // same param specs
     expect(store.sim.effect(newId)).toBeDefined(); // registered with the sim
 

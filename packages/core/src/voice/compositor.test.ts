@@ -4,7 +4,7 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { Framebuffer } from '../engine/framebuffer';
 import { createVoiceBusEngine, type InputEvent } from './engine';
-import { buildPixelAttrs, createDefaultCompositor, type CompositorFrame } from './compositor';
+import { createDefaultCompositor, type CompositorFrame } from './compositor';
 import {
   padKey,
   type Bus,
@@ -40,7 +40,6 @@ function genEffect(id: string, generatorId: string, over: Partial<EffectDef> = {
   return {
     id,
     name: id,
-    pattern: 'flash', // ignored for generator-backed effects
     generatorId,
     busId: 'base',
     scope: 'kit',
@@ -87,7 +86,10 @@ function flatGraph(effectId: string, scope: 'drum' | 'kit' | 'hoop' = 'kit', tar
   };
 }
 
-/** render helper: hit drumId and tick to full level; return frame + model. */
+/** render helper: hit drumId and tick to full level; return frame + model. Uses breathing-kit
+    (a continuous kit-wide fill — every pixel lit, geometry-uniform), so it exercises the
+    compositor's scope/targetId MASK: the bridge blits only [start,end], so the lit set proves
+    the mask, not the effect. */
 function renderPatt(scope: 'drum' | 'kit' | 'hoop', drumId: string, targetId?: string): {
   frame: Readonly<Float32Array>;
   model: PixelModel;
@@ -97,7 +99,7 @@ function renderPatt(scope: 'drum' | 'kit' | 'hoop', drumId: string, targetId?: s
   const eff: EffectDef = {
     id: 'patt',
     name: 'patt',
-    pattern: 'flash',
+    generatorId: 'breathing-kit',
     busId: 'base',
     scope: 'kit',
     params: [{ key: 'brightness', label: 'B', kind: 'number', default: 1 }],
@@ -253,7 +255,7 @@ describe('Compositor — hosted legacy-generator bridge', () => {
     expect(run()).toEqual(run());
   });
 
-  it('pattern and generator voices coexist in one frame, output stays in [0,1]', () => {
+  it('two generator voices coexist in one frame, output stays in [0,1]', () => {
     const m = testModel();
     const e = createVoiceBusEngine();
     const g: TriggerGraph = {
@@ -269,19 +271,8 @@ describe('Compositor — hosted legacy-generator bridge', () => {
         { id: 'e2', from: 'all', to: 'pb' },
       ],
     };
-    const patt: EffectDef = {
-      id: 'patt',
-      name: 'patt',
-      pattern: 'flash',
-      busId: 'base',
-      scope: 'kit',
-      params: [{ key: 'brightness', label: 'B', kind: 'number', default: 1 }],
-      attackMs: 10,
-      sustainMs: 5000,
-      releaseMs: 100,
-    };
     e.setModel(m);
-    e.setShow(show(g, [patt, genEffect('gen', 'breathing-kit')]));
+    e.setShow(show(g, [genEffect('patt', 'whole-drum'), genEffect('gen', 'breathing-kit')]));
     e.applyInput(hit('kick', 0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40, 0.25));
@@ -697,7 +688,6 @@ function mkVoice(over: Partial<Voice>): Voice {
     active: true,
     id: 'v1',
     effectId: 'fx',
-    pattern: 'flash',
     busId: 'base',
     mode: 'oneshot',
     scope: 'kit',
@@ -705,7 +695,9 @@ function mkVoice(over: Partial<Voice>): Voice {
     sourceDrumId: 'kick',
     velocity: 1,
     seed: 0,
-    generatorId: null,
+    // Every voice is generator-backed (U3). solid-base is a continuous kit-wide wash — a
+    // stable, always-lit source for the modifier-chain seam tests below.
+    generatorId: 'solid-base',
     genState: null,
     modifiers: undefined,
     modState: undefined,
@@ -740,14 +732,13 @@ function total(f: Readonly<Float32Array>): number {
 
 describe('Compositor — modifier chain (S28)', () => {
   const model = chaseModel(); // single 8-hoop kick drum
-  const attrs = buildPixelAttrs(model);
   const frame = (timeMs: number, dt: number): CompositorFrame => ({ timeMs, dt, transport: transport(timeMs) });
 
   /** Render `voices` at one frame into a fresh dst; return a copy of the frame. */
   function renderOnce(voices: Voice[], timeMs: number, dt: number): Float32Array {
     const c = createDefaultCompositor();
     const dst = new Framebuffer(model.pixelCount);
-    c.render(voices, model, attrs, frame(timeMs, dt), dst);
+    c.render(voices, model, frame(timeMs, dt), dst);
     return Float32Array.from(dst.rgba);
   }
 
@@ -756,21 +747,21 @@ describe('Compositor — modifier chain (S28)', () => {
     const c = createDefaultCompositor();
     const v = mkVoice({ modifiers: mods });
     const dst = new Framebuffer(model.pixelCount);
-    c.render([v], model, attrs, frame(0, dt), dst);
+    c.render([v], model, frame(0, dt), dst);
     const f1 = Float32Array.from(dst.rgba);
-    c.render([v], model, attrs, frame(dt, dt), dst);
+    c.render([v], model, frame(dt, dt), dst);
     const f2 = Float32Array.from(dst.rgba);
     return [f1, f2];
   }
 
-  it('pattern voice: an add-Trail accumulates a tail across frames (per-voice temporal state)', () => {
-    // Static source (flash), so any growth between frames comes from the Trail accumulator.
+  it('generator voice: an add-Trail accumulates a tail across frames (per-voice temporal state)', () => {
     const [modF1, modF2] = renderTwo([trailMod({ decayMs: 1000, mode: 'add' })], 100);
-    const [baseF1, baseF2] = renderTwo(undefined, 100);
+    const [, baseF2] = renderTwo(undefined, 100);
+    const [baseF1] = renderTwo(undefined, 100);
     // First frame is identity (empty accumulator): modified == unmodified.
     expect(Array.from(modF1)).toEqual(Array.from(baseF1));
-    // Unmodified static source is unchanged frame-to-frame; the trailed one brightens.
-    expect(total(baseF2)).toBeCloseTo(total(baseF1), 5);
+    // An additive Trail can only add light: the trailed second frame is strictly brighter
+    // than the unmodified second frame (the accumulated tail).
     expect(total(modF2)).toBeGreaterThan(total(baseF2));
   });
 
@@ -784,8 +775,8 @@ describe('Compositor — modifier chain (S28)', () => {
     const dstBase = new Framebuffer(model.pixelCount);
     // Two frames so the trail has history to add on the second.
     for (const t of [0, 100]) {
-      c1.render([vMod], model, attrs, frame(t, 100), dstMod);
-      c2.render([vBase], model, attrs, frame(t, 100), dstBase);
+      c1.render([vMod], model, frame(t, 100), dstMod);
+      c2.render([vBase], model, frame(t, 100), dstBase);
     }
     // Additive trail can only add light → strictly more total, and a different frame.
     expect(Array.from(dstMod.rgba)).not.toEqual(Array.from(dstBase.rgba));
@@ -811,7 +802,7 @@ describe('Compositor — modifier chain (S28)', () => {
       const c = createDefaultCompositor();
       const v = mkVoice({ generatorId: 'plasma', liveParams: { brightness: 1 }, modifiers: mods });
       const dst = new Framebuffer(model.pixelCount);
-      for (let i = 0; i < 4; i++) c.render([v], model, attrs, frame(i * 60, 60), dst);
+      for (let i = 0; i < 4; i++) c.render([v], model, frame(i * 60, 60), dst);
       return Float32Array.from(dst.rgba);
     };
     expect(Array.from(renderChain([a, b]))).not.toEqual(Array.from(renderChain([b, a])));
