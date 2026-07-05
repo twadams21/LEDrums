@@ -24,6 +24,11 @@ export * from './model/defaults';
 // EffectGenerator seam via `canvas:<sceneId>` adapter ids (no compositor fork).
 export * from './canvas/ids';
 export * from './canvas/sampler';
+export * from './canvas/types';
+export * from './canvas/elements';
+export * from './canvas/lenses';
+export * from './canvas/scene';
+export * from './canvas/registry';
 
 // Effects
 export * from './effects/types';

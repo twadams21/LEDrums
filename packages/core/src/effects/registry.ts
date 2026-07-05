@@ -2,6 +2,7 @@ import type { EffectGenerator } from './types';
 import { EFFECT_METADATA } from './metadata';
 import { collectionOf, type PlayType } from './vocabulary';
 import { isCanvasEffectId } from '../canvas/ids';
+import { tryGetCanvasEffect } from '../canvas/registry';
 import { solidBase } from './impl/solid-base';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
@@ -110,13 +111,16 @@ for (const e of ALL) {
 }
 
 export function getEffect(id: string): EffectGenerator<any> {
-  const e = registry.get(id);
+  const e = tryGetEffect(id);
   if (!e) throw new Error(`Unknown effect: ${id}`);
   return e;
 }
 
 export function tryGetEffect(id: string): EffectGenerator<any> | undefined {
-  return registry.get(id);
+  // Canvas scenes resolve through the SAME lookup the bridge already uses for hosted
+  // generators (`canvas:<sceneId>` → memoized scene adapter) — one uniform seam, no
+  // compositor/bridge fork (locked decision 7).
+  return registry.get(id) ?? tryGetCanvasEffect(id);
 }
 
 export function listEffects(): EffectGenerator<any>[] {
