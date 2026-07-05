@@ -37,12 +37,25 @@ unless Trent approves parallel spend at the gate.
 | Unit | Model | Status | Session |
 |---|---|---|---|
 | U1 metadata + gallery | Opus | DONE (verified) | elv2-u1-c99a09 |
-| U2 isometric thumbs | Fable | in-flight | (launching) |
+| U2 isometric thumbs | Fable | DONE (verified) | elv2-u2-5f49b4 |
 | U3 rehab + retirement | Opus | DONE (verified) | elv2-u3-29924d |
-| U4 canvas engine | Fable | pending (after U1) | — |
+| U4 canvas engine | Fable | in-flight | (launching) |
 | U5 canvas UI | Opus | pending (after U4) | — |
 | U6 library fill | Fable | pending (after U4/U5) | — |
 | U7 close-out | Opus | pending (last) | — |
+
+## U2 DONE — verified by orch (2026-07-05)
+Commits 1d7398f, c81d68c, e649bd0. Gates green (typecheck clean; core 586 / web 1184 [+10
+projection tests] / server 227 / io 51 / protocol 1). Eyeballed u2-gallery.png: isometric
+¾-angle glowing-dot drums, kit-wide effects show the background mini-drum (Whole Kit / 3D
+Radial Wash / 3D Wipe), consistent camera. EffectThumb prop API UNCHANGED → TriggerNode.svelte
+NOT re-touched (still just U3's change). QA: 58 cards pixel-sampled × ~36 phases, 0 black/
+frozen/errors. Deviations (accepted): (a) ClipSettings 84×46 has NO live UI entry point on
+main (dead overlay — nothing calls store.openSettings); size covered by projection tests.
+(b) shots.json named shot 'effect-gallery' is broken independent of U2 (its 'Take over'
+click times out) — BOTH U3 and U2 hit it → worth a shots.json fix later (follow-up, not in
+scope). No new design-system primitive (painter internal to EffectThumb) → no regen needed.
+Usage after U2: 7d 93%, 5h 55%.
 
 ## Trent decisions (2026-07-05, at the 91% gate)
 - **EffectCreator → REMOVE** (option a): delete EffectCreator + createEffect/NewEffectInput;
@@ -76,5 +89,12 @@ must PRESERVE EffectThumb's prop API (so it never forces another edit to Trent's
 TriggerNode.svelte); if it must change the API, flag the orch — do NOT edit Trent's WIP.
 
 ## Next action
-U2 (Fable, isometric thumbnails) launching — brief `docs/prompts/elv2-u2.md`. After U2:
-U4 canvas engine (Fable) → U5 → U6 → U7. All serial, proceeding past 92% per Trent.
+U4 (Fable, canvas engine — THE BIG ONE) launching — brief `docs/prompts/elv2-u4.md`. It's a
+core build (scene engine as EffectGenerator adapter, NO compositor fork; field.ts → canvas
+module; 6 renderers, 4 samplers, scene params, 8 lenses, determinism + <5ms perf bench).
+⚠️ BUDGET WATCH: 7d at 93%, twux HARD-REFUSES launches at 95%. U4 is big; if weekly hits ~95%
+during/after U4, the next launch (U5) will be refused — pause + `twux wake --at <Thu reset>`
+or ask Trent to --force (I will NOT --force past 95% without his explicit yes). U4 may be the
+last unit before a natural pause. After U4 (verified): U5 (Opus canvas UI) → U6 (Fable fill)
+→ U7 (Opus close-out). Follow-ups noted: shots.json 'effect-gallery' broken; ClipSettings
+dead overlay.
