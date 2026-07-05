@@ -3,6 +3,7 @@ import { EFFECT_METADATA } from './metadata';
 import { collectionOf, type PlayType } from './vocabulary';
 import { isCanvasEffectId } from '../canvas/ids';
 import { tryGetCanvasEffect } from '../canvas/registry';
+import '../canvas/presets';
 import { solidBase } from './impl/solid-base';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
@@ -52,6 +53,11 @@ import { chaseBands } from './impl/chase-bands';
 import { ripple3d } from './impl/ripple-3d';
 import { sparkArc } from './impl/spark-arc';
 import { rain3d } from './impl/rain-3d';
+// U6 day-1 gap-fill natives.
+import { orbitComet } from './impl/orbit-comet';
+import { scanPlane } from './impl/scan-plane';
+import { drumSonar } from './impl/drum-sonar';
+import { gravityDrops } from './impl/gravity-drops';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -99,6 +105,10 @@ const ALL: EffectGenerator<any>[] = [
   ripple3d,
   sparkArc,
   rain3d,
+  orbitComet,
+  scanPlane,
+  drumSonar,
+  gravityDrops,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();
