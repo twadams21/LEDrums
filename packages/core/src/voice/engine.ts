@@ -30,6 +30,8 @@ import {
   type PendingDescriptor,
 } from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
+import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
+import type { CanvasScene } from '../canvas/types';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { ccKey, ccValue01, oscValue01 } from './modulation';
 import {
@@ -146,6 +148,13 @@ class VoiceBusEngine implements RenderEngine {
   private effectsById = new Map<string, EffectDef>();
   private presetsById = new Map<string, Preset>();
 
+  /**
+   * Scene ids this engine has registered into the pure canvas registry (from the
+   * current show's `canvasScenes`). Tracked so `setShow` can unregister scenes that a
+   * later show drops, keeping the global registry in sync with the active show.
+   */
+  private readonly registeredCanvasSceneIds = new Set<string>();
+
   // Object-pooled voices (fixed-size slab; `acquire`/`release`/`spawn` in voice-pool.ts).
   private readonly voices = new VoicePool();
 
@@ -208,7 +217,27 @@ class VoiceBusEngine implements RenderEngine {
     this.finalFb = new Fb(model.pixelCount);
   }
 
+  /**
+   * Register the show's canvas scenes into the pure canvas registry and unregister any
+   * scenes a prior show owned but this one drops — so `canvas:<sceneId>` resolves through
+   * the normal generator bridge for exactly the active show's scenes.
+   */
+  private syncCanvasScenes(scenes: readonly CanvasScene[] | undefined): void {
+    const nextIds = new Set((scenes ?? []).map((scene) => scene.id));
+    for (const id of [...this.registeredCanvasSceneIds]) {
+      if (!nextIds.has(id)) {
+        unregisterCanvasScene(id);
+        this.registeredCanvasSceneIds.delete(id);
+      }
+    }
+    for (const scene of scenes ?? []) {
+      registerCanvasScene(scene);
+      this.registeredCanvasSceneIds.add(scene.id);
+    }
+  }
+
   setShow(show: Show): void {
+    this.syncCanvasScenes(show.canvasScenes);
     this.show = show;
     this.busById = new Map(show.buses.map((b) => [b.id, b] as const));
     this.effectsById = new Map(show.effects.map((e) => [e.id, e] as const));

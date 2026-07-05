@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   OBJECT_TYPE_IDS,
+  canvasSceneRows,
   effectRows,
   graphRows,
   librarySongRows,
@@ -33,8 +34,35 @@ function pre(id: string, name: string, effectId: string): Preset {
 }
 
 describe('OBJECT_TYPE_IDS', () => {
-  it('is the rail order — Songs · Song Library · Effects · Graphs · Presets', () => {
-    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'library', 'effects', 'graphs', 'presets']);
+  it('is the rail order — Songs · Song Library · Effects · Graphs · Presets · Canvas Scenes', () => {
+    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'library', 'effects', 'graphs', 'presets', 'canvas-scenes']);
+  });
+});
+
+describe('canvasSceneRows', () => {
+  const scene = (id: string, name: string, elements = 1, lenses = 0) => ({
+    id,
+    name,
+    tags: ['canvas'],
+    sampler: { kind: 'cylinder' as const },
+    lenses: Array.from({ length: lenses }, () => ({ kind: 'polar' as const })),
+    elements: Array.from({ length: elements }, () => ({
+      kind: 'stripes' as const,
+      angleDeg: 0,
+      widthU: 0.2,
+      duty: 0.5,
+      speedUps: 0.2,
+      hue: 140,
+      sat: 1,
+      softness: 0.08,
+    })),
+  });
+
+  it('summarizes element/lens counts + sampler and sorts by name', () => {
+    const rows = canvasSceneRows([scene('s2', 'Beta', 3, 1), scene('s1', 'Alpha', 2, 0)]);
+    expect(rows.map((r) => r.name)).toEqual(['Alpha', 'Beta']);
+    expect(rows[0]).toMatchObject({ id: 's1', elementCount: 2, lensCount: 0, sampler: 'cylinder' });
+    expect(rows[1]).toMatchObject({ id: 's2', elementCount: 3, lensCount: 1 });
   });
 });
 

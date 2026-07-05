@@ -35,7 +35,7 @@
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
   import { nodeHasInput, nodeHasModInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { voice } from '@ledrums/core';
+  import { voice, collectionMeta } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
 
@@ -65,6 +65,13 @@
     if (node.kind === 'play') return eff?.name ?? 'effect';
     if (node.kind === 'modifier') return modifierName(node.modifierId);
     return kindLabel[node.kind];
+  });
+  // play-type sub-label (D3) — the node's collection name, shown as a NodeCard chip. Falls
+  // back to the effect's own play type for graphs authored before the node carried one.
+  const playTypeChip = $derived.by(() => {
+    if (!node || node.kind !== 'play') return undefined;
+    const type = node.playType ?? eff?.playType ?? 'ambient';
+    return collectionMeta(type).label;
   });
   const sub = $derived.by(() => {
     if (!node) return '';
@@ -257,6 +264,7 @@
         {title}
         {sub}
         tint={chipTint}
+        typeChip={playTypeChip}
         selected={!!selected}
         thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}

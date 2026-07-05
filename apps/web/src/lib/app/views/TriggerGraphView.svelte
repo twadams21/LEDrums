@@ -13,7 +13,7 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
   import type { ToPort } from '../../trigger-lab/store/graph-wiring';
-  import { listModifiersByCategory, voice } from '@ledrums/core';
+  import { listModifiersByCategory, voice, COLLECTIONS, type PlayType } from '@ledrums/core';
   import Blend from '@lucide/svelte/icons/blend';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
@@ -75,9 +75,22 @@
   const MODIFIER_GROUP_PREFIX = 'modifier:';
   const addGroups = $derived<AddGroup[]>([
     {
+      key: 'play',
+      label: 'Play',
+      items: COLLECTIONS.map((c) => ({
+        id: c.type,
+        name: c.label,
+        icon: kindIcon.play,
+        tint: tint.play,
+        hint: c.blurb,
+      })),
+    },
+    {
       key: 'kinds',
       label: 'Nodes',
-      items: NODE_KINDS.filter((kind) => kind !== 'modifier' && !voice.isModSourceKind(kind)).map((kind) => ({
+      items: NODE_KINDS.filter(
+        (kind) => kind !== 'play' && kind !== 'modifier' && !voice.isModSourceKind(kind),
+      ).map((kind) => ({
         id: kind,
         name: kindLabel[kind],
         icon: kindIcon[kind],
@@ -114,8 +127,14 @@
   }
   function handleAdd(id: string, groupKey: string): void {
     const c = canvasCentre();
-    if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, c.x, c.y);
+    if (groupKey === 'play') addPlayNodeAt(id as PlayType, c.x, c.y);
+    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, c.x, c.y);
     else addNodeAt(id as NodeKind, c.x, c.y);
+  }
+  /** Add a typed play node (D3) near the palette-supplied flow centre. */
+  function addPlayNodeAt(playType: PlayType, cx: number, cy: number): void {
+    const p = spawnAt(cx, cy);
+    store.addPlayNode(playType, p.x, p.y);
   }
   /** Estimated canvas footprint per existing node — the card plus room for mod rows /
       band fans. An estimate is fine: the probe only needs "roughly where nodes sit". */

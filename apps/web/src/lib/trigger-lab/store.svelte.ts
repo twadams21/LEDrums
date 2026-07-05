@@ -51,8 +51,9 @@ import type { ClientMessage, ControllerStatus, ControllerTestPattern, Discovered
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { InputMap, OutputConfig, Project } from '@ledrums/core';
-import { voice, listModifiers } from '@ledrums/core';
+import type { InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
+import { voice, listModifiers, canvasEffectId } from '@ledrums/core';
+import * as canvasScenesLib from './store/canvas-scenes';
 import { buildShow, type ShowSource } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
@@ -297,6 +298,7 @@ function* remapResultIds(res: RemapResult): Iterable<string> {
   if (res.graphKey) yield res.graphKey;
   for (const effect of res.effects) yield effect.id;
   for (const preset of res.presets) yield preset.id;
+  for (const scene of res.canvasScenes) yield scene.id;
   if (res.section) yield res.section.id;
   if (res.song) {
     yield res.song.id;
@@ -330,6 +332,9 @@ export class TriggerLab {
   graphNames = $state<Record<string, string>>({});
   /** mutable preset library — snapshots you Apply onto / Save from play nodes (S39). */
   presets = $state<Preset[]>(structuredClone(PRESETS));
+  /** User-authored canvas scene documents (U5). Each projects a virtual `canvas:<id>`
+      effect + default preset (see `canvasEffects`/`allPresets`), persisted in the show doc. */
+  canvasScenes = $state<CanvasScene[]>([]);
 
   bpm = $state(120);
   velocity = $state(0.85);
@@ -987,6 +992,7 @@ export class TriggerLab {
       buses: this.buses,
       presets: this.presets,
       effects: this.effects,
+      canvasScenes: this.canvasScenes,
       selectedPadKey: this.selectedPadKey,
       activeSongId: this.activeSongId,
       activeSectionId: this.activeSectionId,
@@ -1015,6 +1021,9 @@ export class TriggerLab {
     // Union, never replace: keep every current built-in (so new generator effects
     // always appear) and re-add only the user's own created effects.
     if (a.effects) this.effects = unionEffects(a.effects);
+    // Always assigned (even when absent) so switching from a scene-heavy show to a
+    // scene-less show clears prior scenes — no cross-show bleed.
+    this.canvasScenes = a.canvasScenes ?? [];
     if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
     if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
     if (a.activeSectionId !== undefined) this.activeSectionId = a.activeSectionId;
@@ -1527,8 +1536,11 @@ export class TriggerLab {
       buses: this.buses,
       graphs: rv.graphs,
       sections: this.sections,
-      effects: rv.effects,
-      presets: rv.presets,
+      // Send virtual canvas effects + their default presets alongside the real registry so
+      // the engine's VoicePool can host `canvas:<id>` voices; scene docs register the generators.
+      effects: [...rv.effects, ...this.canvasEffects],
+      presets: [...rv.presets, ...this.allPresets.filter((p) => p.effectId.startsWith('canvas:'))],
+      canvasScenes: this.canvasScenes,
       drums: this.drums,
       songs: this.resolvedSongs,
     };
@@ -2293,6 +2305,7 @@ export class TriggerLab {
       graphNames: $state.snapshot(this.resolvedView.graphNames),
       effects: $state.snapshot(this.resolvedView.effects) as EffectDef[],
       presets: $state.snapshot(this.resolvedView.presets) as Preset[],
+      canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
     };
   }
 
@@ -2352,6 +2365,7 @@ export class TriggerLab {
       graphs: $state.snapshot(this.graphs),
       effects: $state.snapshot(this.effects) as EffectDef[],
       presets: $state.snapshot(this.presets) as Preset[],
+      canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
       isBuiltInEffectId: (id) => EFFECTS.some((e) => e.id === id),
       mint,
     };
@@ -2368,6 +2382,7 @@ export class TriggerLab {
     if (Object.keys(res.graphNames).length > 0) this.graphNames = { ...this.graphNames, ...res.graphNames };
     if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
     if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
+    if (res.canvasScenes.length > 0) this.canvasScenes = [...this.canvasScenes, ...res.canvasScenes];
     if (res.kind === 'graph' && res.graphKey) {
       this.selectedPadKey = res.graphKey;
     } else if (res.kind === 'section' && res.section) {
@@ -2573,17 +2588,37 @@ export class TriggerLab {
 
   // --- registries / lookups ------------------------------------------------
 
+  /** Virtual `canvas:<id>` effects derived from the authored scenes — never persisted as
+      real effects (they'd duplicate); the scene doc is the source of truth (U5). */
+  get canvasEffects(): EffectDef[] {
+    return this.canvasScenes.map(canvasScenesLib.canvasEffectDef);
+  }
+
+  /** Real effects + virtual canvas effects — the set the gallery/inspector select from. */
+  get selectableEffects(): EffectDef[] {
+    return [...this.effects, ...this.canvasEffects];
+  }
+
+  /** Real presets + each scene's derived default preset (deduped by id). */
+  get allPresets(): Preset[] {
+    const existing = new Set(this.presets.map((p) => p.id));
+    const canvasDefaults = this.canvasScenes
+      .map(canvasScenesLib.canvasDefaultPreset)
+      .filter((p) => !existing.has(p.id));
+    return [...this.presets, ...canvasDefaults];
+  }
+
   effectsForScope(scope: Scope): EffectDef[] {
-    return this.effects.filter((e) => e.scope === scope);
+    return this.selectableEffects.filter((e) => e.scope === scope);
   }
   effectOf(node: GraphNode) {
-    return node.kind === 'play' ? this.effects.find((e) => e.id === node.effectId) : undefined;
+    return node.kind === 'play' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
   }
   presetsForEffect(effectId: string): Preset[] {
-    return this.presets.filter((p) => p.effectId === effectId);
+    return this.allPresets.filter((p) => p.effectId === effectId);
   }
   presetById(id: string): Preset | undefined {
-    return this.presets.find((p) => p.id === id);
+    return this.allPresets.find((p) => p.id === id);
   }
   /** Live params shown for a play node — always its own node-local copy (a preset is a
       snapshot, not a live binding — S39). */
@@ -3031,19 +3066,148 @@ export class TriggerLab {
     return true;
   }
 
-  /** Swap the effect: reset to that effect's Default preset (own instance). */
+  /** Swap the effect: reset to that effect's Default preset (own instance). The pick is
+      REJECTED when it would change the node's locked play type (the gallery is filtered +
+      locked to `node.playType`; this store guard is the authoritative backstop, U5). */
   pickEffect(node: GraphNode, effectId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'play') return;
-    const eff = this.effects.find((e) => e.id === effectId);
+    const eff = this.selectableEffects.find((e) => e.id === effectId);
     if (!eff) return;
+
+    const nodeType = node.playType ?? eff.playType ?? 'ambient';
+    if (eff.playType !== nodeType) return; // mismatched play type — reject (locked gallery backstop)
+
+    if (nodeType === 'canvas') {
+      this.setCanvasScene(node, effectId.slice('canvas:'.length));
+      return;
+    }
+
     const pr = this.presetById(`${effectId}:default`);
     node.effectId = effectId;
+    node.playType = nodeType;
+    node.canvasScene = undefined;
     node.scope = eff.scope;
     node.presetId = `${effectId}:default`;
     node.busId = ''; // follow the new effect's default layer
     node.params = { ...(pr?.params ?? defaultParams(eff)) };
     node.env = {};
+  }
+
+  // --- canvas scenes (U5) --------------------------------------------------
+
+  /** Create a new authored canvas scene, returning its id. */
+  createCanvasScene(name?: string): string {
+    if (this.isViewer) return '';
+    const id = freshId('scene', (candidate) => this.canvasScenes.some((scene) => scene.id === candidate));
+    const scene = canvasScenesLib.makeCanvasScene(id, name?.trim() || `Canvas scene ${this.canvasScenes.length + 1}`);
+    this.canvasScenes = [...this.canvasScenes, scene];
+    return id;
+  }
+
+  renameCanvasScene(id: string, name: string): void {
+    if (this.isViewer) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    this.canvasScenes = this.canvasScenes.map((scene) => (scene.id === id ? { ...scene, name: trimmed } : scene));
+  }
+
+  duplicateCanvasScene(id: string): string | null {
+    if (this.isViewer) return null;
+    const src = this.canvasScenes.find((scene) => scene.id === id);
+    if (!src) return null;
+    const nextId = freshId('scene', (candidate) => this.canvasScenes.some((scene) => scene.id === candidate));
+    const clone: CanvasScene = structuredClone({ ...$state.snapshot(src), id: nextId, name: `${src.name} copy` });
+    this.canvasScenes = [...this.canvasScenes, clone];
+    return nextId;
+  }
+
+  /** Delete a scene: retarget/clear referencing nodes onto a fallback scene (first remaining,
+      or none), and drop any saved presets for the deleted virtual effect. */
+  deleteCanvasScene(id: string): boolean {
+    if (this.isViewer) return false;
+    const exists = this.canvasScenes.some((scene) => scene.id === id);
+    if (!exists) return false;
+    const remaining = this.canvasScenes.filter((scene) => scene.id !== id);
+    const fallback = remaining[0] ?? null;
+    this.canvasScenes = remaining;
+    this.graphs = canvasScenesLib.retargetSceneRefs(this.graphs, id, fallback);
+    const deletedEffectId = canvasEffectId(id);
+    this.presets = this.presets.filter((preset) => preset.effectId !== deletedEffectId);
+    return true;
+  }
+
+  /** The scene's authored JSON (empty string when unknown) for the Objects-view editor. */
+  canvasSceneJson(id: string): string {
+    const scene = this.canvasScenes.find((s) => s.id === id);
+    return scene ? canvasScenesLib.formatCanvasScene($state.snapshot(scene)) : '';
+  }
+
+  /** Apply edited scene JSON. Returns a typed result so the editor can show inline errors. */
+  updateCanvasSceneJson(id: string, text: string): { ok: true } | { ok: false; message: string } {
+    if (this.isViewer) return { ok: false, message: 'This show is read-only.' };
+    const parsed = canvasScenesLib.parseCanvasSceneJson(id, text);
+    if (!parsed.ok) return { ok: false, message: parsed.message };
+    this.canvasScenes = this.canvasScenes.map((scene) => (scene.id === id ? parsed.scene : scene));
+    return { ok: true };
+  }
+
+  /** Point a canvas play node at a scene, seeding its default preset params. */
+  setCanvasScene(node: GraphNode, sceneId: string): void {
+    if (this.isViewer || node.kind !== 'play') return;
+    const scene = this.canvasScenes.find((s) => s.id === sceneId);
+    if (!scene) return;
+    const eff = canvasScenesLib.canvasEffectDef(scene);
+    const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
+    node.playType = 'canvas';
+    node.canvasScene = scene.id;
+    node.effectId = eff.id;
+    node.scope = eff.scope;
+    node.presetId = preset.id;
+    node.busId = '';
+    node.params = { ...preset.params };
+    node.env = {};
+  }
+
+  /** Add a typed play node (D3). Canvas seeds/selects a scene; other types seed a matching
+      effect. Returns the created node (or null for viewers / no graph). */
+  addPlayNode(playType: PlayType, x: number, y: number): GraphNode | null {
+    if (this.isViewer) return null;
+    const g = this.selectedGraph;
+    if (!g) return null;
+
+    let node: GraphNode;
+    if (playType === 'canvas') {
+      const sceneId = this.canvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
+      const scene = this.canvasScenes.find((s) => s.id === sceneId);
+      if (!scene) return null;
+      const eff = canvasScenesLib.canvasEffectDef(scene);
+      const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
+      node = makeNode('play', nid('n'), x, y, {
+        playType: 'canvas',
+        canvasScene: scene.id,
+        effectId: eff.id,
+        presetId: preset.id,
+        scope: eff.scope,
+        params: { ...preset.params },
+      });
+    } else {
+      const eff =
+        this.selectableEffects.find((e) => !e.deprecated && e.playType === playType) ??
+        this.selectableEffects.find((e) => !e.deprecated);
+      if (!eff) return null;
+      const preset = this.presetById(`${eff.id}:default`);
+      node = makeNode('play', nid('n'), x, y, {
+        playType,
+        effectId: eff.id,
+        presetId: `${eff.id}:default`,
+        scope: eff.scope,
+        params: { ...(preset?.params ?? defaultParams(eff)) },
+      });
+    }
+
+    g.nodes.push(node);
+    return node;
   }
 
   /** Route a play node to a layer/bus ('' → the effect's default). */

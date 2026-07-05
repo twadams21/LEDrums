@@ -9,7 +9,7 @@
    If a future divergence appears between the two type sets, this is the single
    place to map it explicitly (rather than casting at the call site). */
 
-import { assertShowIntegrity, resolveEffectAlias, type voice } from '@ledrums/core';
+import { assertShowIntegrity, resolveEffectAlias, type voice, type CanvasScene } from '@ledrums/core';
 import { referencedGraphs, type Song } from '../app/setlist';
 import { triggerSourceOf, type Bus, type EffectDef, type Preset, type Section, type TriggerGraph } from './sim';
 
@@ -20,6 +20,8 @@ export interface ShowSource {
   sections: Section[];
   effects: EffectDef[];
   presets: Preset[];
+  /** User-authored canvas scene docs — registered in the engine so `canvas:<id>` resolves. */
+  canvasScenes?: CanvasScene[];
   /** Canonical kit drums — every graph key's drum is validated against these. */
   drums: { id: string }[];
   /** Authored setlist songs — slot refs are validated against the graph keys. */
@@ -56,6 +58,9 @@ export function buildShow(source: ShowSource): voice.Show {
     sections: source.sections.map((s) => ({ ...s, looks: { ...s.looks } })),
     effects: source.effects.map((e) => ({ ...e })),
     presets: source.presets.map((p) => ({ ...p })),
+    // User-authored canvas scenes travel in the show doc so the engine's setShow registers
+    // them into the pure canvas registry — `canvas:<sceneId>` then resolves for real output.
+    canvasScenes: (source.canvasScenes ?? []).map((scene) => structuredClone(scene)),
     songs: (source.songs ?? []).map((song) => ({
       id: song.id,
       name: song.name,

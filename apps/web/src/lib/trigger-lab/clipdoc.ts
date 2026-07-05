@@ -25,9 +25,10 @@
    Scope (S43): the pure module + tests. Clipboard IO + context menus are S44; the patch
    `setProject` server apply is S45 — here the `patch` kind only round-trips (no remap). */
 
-import type { EffectDef, Preset, TriggerGraph } from './sim';
+import type { EffectDef, Preset, TriggerGraph, GraphNode } from './sim';
 import type { SetlistSection, Song } from '../app/setlist';
-import type { Project } from '@ledrums/core';
+import type { Project, CanvasScene } from '@ledrums/core';
+import { canvasEffectId, canvasSceneIdOf } from '@ledrums/core';
 import { extractSongClosure, songNamespace, type ClosureSources } from './store/song-library';
 import { freshEffectId } from './store/objects';
 import { freshId, nid } from './store/ids';
@@ -57,6 +58,32 @@ export interface ClipDocDeps {
   graphNames?: Record<string, string>;
   effects?: EffectDef[];
   presets?: Preset[];
+  /** Canvas scene docs referenced by any canvas play node in the payload/deps graphs (U5), so a
+      pasted graph/section/song renders on another show/server (its `canvas:<id>` resolves). */
+  canvasScenes?: CanvasScene[];
+}
+
+/** Scene ids referenced by a graph's canvas play nodes (`node.canvasScene`, or the scene id
+    inside a `canvas:<id>` effect id for older nodes). */
+function graphSceneRefs(graph: TriggerGraph): Set<string> {
+  const out = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.kind !== 'play') continue;
+    const sceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
+    if (sceneId) out.add(sceneId);
+  }
+  return out;
+}
+
+/** The scene docs referenced across a set of graphs (deep-copied for the envelope). */
+function scenesForGraphs(
+  graphs: Record<string, TriggerGraph>,
+  scenes: readonly CanvasScene[] | undefined,
+): CanvasScene[] {
+  const wanted = new Set<string>();
+  for (const graph of Object.values(graphs)) for (const id of graphSceneRefs(graph)) wanted.add(id);
+  if (wanted.size === 0) return [];
+  return (scenes ?? []).filter((scene) => wanted.has(scene.id)).map((scene) => structuredClone(scene));
 }
 
 /** The Project slices a patch ClipDoc carries (doc 11): kit geometry incl. outputs, the input
@@ -173,7 +200,14 @@ export function buildGraphClipDoc(key: string, sources: ClosureSources, over?: P
   const graph = raw.graphs[key] ?? { nodes: [], edges: [] };
   const payload: GraphClipDoc['payload'] = { key, graph };
   if (raw.graphNames[key] !== undefined) payload.name = raw.graphNames[key];
-  return { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'graph', payload, deps: { effects: raw.effects, presets: raw.presets }, meta: meta(over) };
+  return {
+    app: CLIPDOC_APP,
+    v: CLIPDOC_VERSION,
+    kind: 'graph',
+    payload,
+    deps: { effects: raw.effects, presets: raw.presets, canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes) },
+    meta: meta(over),
+  };
 }
 
 /** Build a section ClipDoc: the section is the payload, its graphs' closure are the deps. */
@@ -185,7 +219,13 @@ export function buildSectionClipDoc(section: SetlistSection, sources: ClosureSou
     v: CLIPDOC_VERSION,
     kind: 'section',
     payload: { section: raw.sections[0] ?? { id: section.id, name: section.name, graphs: [], looks: {} } },
-    deps: { graphs: raw.graphs, graphNames: raw.graphNames, effects: raw.effects, presets: raw.presets },
+    deps: {
+      graphs: raw.graphs,
+      graphNames: raw.graphNames,
+      effects: raw.effects,
+      presets: raw.presets,
+      canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes),
+    },
     meta: meta(over),
   };
 }
@@ -198,7 +238,13 @@ export function buildSongClipDoc(song: Song, sources: ClosureSources, over?: Par
     v: CLIPDOC_VERSION,
     kind: 'song',
     payload: { song: { id: song.id, name: song.name, sections: raw.sections } },
-    deps: { graphs: raw.graphs, graphNames: raw.graphNames, effects: raw.effects, presets: raw.presets },
+    deps: {
+      graphs: raw.graphs,
+      graphNames: raw.graphNames,
+      effects: raw.effects,
+      presets: raw.presets,
+      canvasScenes: scenesForGraphs(raw.graphs, sources.canvasScenes),
+    },
     meta: meta(over),
   };
 }
@@ -282,6 +328,7 @@ function coerceDeps(raw: unknown): ClipDocDeps {
   if (isObject(raw.graphNames)) out.graphNames = raw.graphNames as Record<string, string>;
   if (Array.isArray(raw.effects)) out.effects = raw.effects as EffectDef[];
   if (Array.isArray(raw.presets)) out.presets = raw.presets as Preset[];
+  if (Array.isArray(raw.canvasScenes)) out.canvasScenes = raw.canvasScenes as CanvasScene[];
   return out;
 }
 
@@ -345,6 +392,9 @@ export interface RemapContext {
   graphs: Record<string, TriggerGraph>;
   effects: readonly EffectDef[];
   presets: readonly Preset[];
+  /** Local canvas scenes — for content-reuse: a pasted scene identical to a local one reuses its
+      id (so A→B→A round-trips and double-pastes create no duplicate scene). */
+  canvasScenes?: readonly CanvasScene[];
   /** True for a registry-backed effect id (pattern + generator fixtures) — shared vocabulary
       present in every show, so its id is kept verbatim even if the incoming content differs. */
   isBuiltInEffectId: (id: string) => boolean;
@@ -359,6 +409,7 @@ export interface RemapMint {
   preset(): string;
   section(): string;
   song(): string;
+  scene(): string;
 }
 
 /** The reservation-safe default minter — graph/preset ids survive reload via {@link freshId}
@@ -366,8 +417,9 @@ export interface RemapMint {
     come off the shared monotonic counter. Effect minting also dedups against ids minted EARLIER
     in the same pass (`freshEffectId` is name-derived, not counter-backed, so without this two
     same-name effects in one closure would mint the same id — the other minters are immune). */
-export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets'>): RemapMint {
+export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes'>): RemapMint {
   const mintedEffectIds = new Set<string>();
+  const mintedSceneIds = new Set<string>();
   return {
     graph: () => freshId('graph', (k) => k in ctx.graphs),
     effect: (name) => {
@@ -378,6 +430,11 @@ export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | '
     preset: () => freshId('preset', (k) => ctx.presets.some((p) => p.id === k)),
     section: () => nid('section'),
     song: () => nid('song'),
+    scene: () => {
+      const id = freshId('scene', (k) => (ctx.canvasScenes ?? []).some((s) => s.id === k) || mintedSceneIds.has(k));
+      mintedSceneIds.add(id);
+      return id;
+    },
   };
 }
 
@@ -393,6 +450,8 @@ export interface RemapResult {
   effects: EffectDef[];
   /** fresh/derived presets to add. */
   presets: Preset[];
+  /** fresh (non-reused) canvas scenes to add. */
+  canvasScenes: CanvasScene[];
   /** kind 'graph': the final graph key (reused or fresh) to reference. */
   graphKey?: string;
   /** kind 'section': the fresh section with graph refs + looks remapped. */
@@ -414,7 +473,22 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
   if (doc.kind === 'patch') return err('unknown-kind', 'Patch ClipDocs are applied wholesale, not remapped.');
   const mint = ctx.mint ?? makeDefaultMint(ctx);
 
-  const out: RemapResult = { kind: doc.kind, graphs: {}, graphNames: {}, effects: [], presets: [] };
+  const out: RemapResult = { kind: doc.kind, graphs: {}, graphNames: {}, effects: [], presets: [], canvasScenes: [] };
+
+  // (0) Canvas scenes: reuse a content-identical local scene, else mint a fresh id. Canvas play
+  //     nodes are then rewritten (canvasScene + `canvas:<id>` effect/preset ids) through this map.
+  const sceneMap = new Map<string, string>();
+  for (const scene of doc.deps.canvasScenes ?? []) {
+    const reuse = (ctx.canvasScenes ?? []).find((l) => contentEqual(withId(l, ''), withId(scene, '')));
+    if (reuse) {
+      sceneMap.set(scene.id, reuse.id);
+      continue;
+    }
+    const newId = mint.scene();
+    sceneMap.set(scene.id, newId);
+    out.canvasScenes.push({ ...structuredClone(scene), id: newId });
+  }
+  const remapSceneRef = (id: string): string => sceneMap.get(id) ?? id;
 
   // (1) Effects: built-in -> keep id; content-equal local -> reuse id; else fresh.
   const effMap = new Map<string, string>();
@@ -467,7 +541,7 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
   // (3) Graphs (deps): remap internal refs, then reuse-or-mint by content.
   const graphMap = new Map<string, string>();
   for (const [oldKey, g] of Object.entries(doc.deps.graphs ?? {})) {
-    const remapped = remapGraph(g, remapEffectRef, remapPresetRef);
+    const remapped = remapGraph(g, remapEffectRef, remapPresetRef, remapSceneRef);
     const reuseKey = findLocalGraphKey(ctx.graphs, remapped);
     if (reuseKey) {
       graphMap.set(oldKey, reuseKey);
@@ -485,7 +559,7 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
   if (doc.kind === 'graph') {
     // The graph IS the payload — treat it as a dep leaf (reuse-or-mint by content) so pasting an
     // identical graph twice creates exactly one.
-    const remapped = remapGraph(doc.payload.graph, remapEffectRef, remapPresetRef);
+    const remapped = remapGraph(doc.payload.graph, remapEffectRef, remapPresetRef, remapSceneRef);
     const reuseKey = findLocalGraphKey(ctx.graphs, remapped) ?? findLocalGraphKey(out.graphs, remapped);
     if (reuseKey) {
       out.graphKey = reuseKey;
@@ -512,14 +586,38 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
     Node/edge ids, `fromPort`/`toPort` (band handles, `mod`, `param:<key>`), `modInputs`,
     `modifierId`/`generatorId`, `busId`, and `source` are graph-internal or global and copied
     verbatim — so modifier wiring and modulation edges survive the re-key. */
-function remapGraph(g: TriggerGraph, remapEffectRef: (id: string) => string, remapPresetRef: (id: string) => string): TriggerGraph {
+function remapGraph(
+  g: TriggerGraph,
+  remapEffectRef: (id: string) => string,
+  remapPresetRef: (id: string) => string,
+  remapSceneRef: (id: string) => string,
+): TriggerGraph {
   return {
-    nodes: g.nodes.map((n) => ({
+    nodes: g.nodes.map((n) => remapCanvasNode(n, remapSceneRef) ?? {
       ...n,
       effectId: n.effectId ? remapEffectRef(n.effectId) : n.effectId,
       presetId: n.presetId ? remapPresetRef(n.presetId) : n.presetId,
-    })),
+    }),
     edges: g.edges.map((e) => ({ ...e })),
+  };
+}
+
+/** Rewrite a canvas play node's scene binding through the scene remap. Canvas effect/preset ids
+    are derived from the scene id (`canvas:<id>` / `canvas:<id>:default`) — NOT registry effects —
+    so they're rewritten here rather than through the effect/preset maps. Returns null for a
+    non-canvas node (so the caller applies the generic effect/preset remap instead). */
+function remapCanvasNode(node: GraphNode, remapSceneRef: (id: string) => string): GraphNode | null {
+  if (node.kind !== 'play') return null;
+  const oldSceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
+  if (!oldSceneId) return null;
+  const nextSceneId = remapSceneRef(oldSceneId);
+  const oldDefault = `${canvasEffectId(oldSceneId)}:default`;
+  return {
+    ...node,
+    playType: 'canvas',
+    canvasScene: nextSceneId,
+    effectId: canvasEffectId(nextSceneId),
+    presetId: node.presetId === oldDefault ? `${canvasEffectId(nextSceneId)}:default` : node.presetId,
   };
 }
 

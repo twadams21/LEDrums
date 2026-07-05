@@ -12,6 +12,7 @@
   import type { ShellStore } from '../shell-store.svelte';
   import {
     type ObjectTypeId,
+    canvasSceneRows,
     effectRows,
     graphRows,
     librarySongRows,
@@ -29,7 +30,10 @@
   import EffectRow from './EffectRow.svelte';
   import GraphRow from './GraphRow.svelte';
   import PresetRow from './PresetRow.svelte';
+  import CanvasSceneRow from './CanvasSceneRow.svelte';
   import Boxes from '@lucide/svelte/icons/boxes';
+  import Shapes from '@lucide/svelte/icons/shapes';
+  import Plus from '@lucide/svelte/icons/plus';
   import Bookmark from '@lucide/svelte/icons/bookmark';
   import ListMusic from '@lucide/svelte/icons/list-music';
   import LibraryBig from '@lucide/svelte/icons/library-big';
@@ -55,6 +59,7 @@
   const effects = $derived(effectRows(store.effects, store.presets));
   const graphs = $derived(graphRows(store.graphLibrary));
   const presets = $derived(presetRows(store.presets, store.effects, (id) => store.presetUsageCount(id)));
+  const canvasScenes = $derived(canvasSceneRows(store.canvasScenes));
 
   const TYPES: Array<{ id: ObjectTypeId; label: string; icon: Component }> = [
     { id: 'songs', label: 'Songs', icon: ListMusic },
@@ -62,6 +67,7 @@
     { id: 'effects', label: 'Effects', icon: Sparkles },
     { id: 'graphs', label: 'Graphs', icon: Workflow },
     { id: 'presets', label: 'Presets', icon: Bookmark },
+    { id: 'canvas-scenes', label: 'Canvas Scenes', icon: Shapes },
   ];
   const countOf = (id: ObjectTypeId): number =>
     id === 'songs'
@@ -72,7 +78,9 @@
           ? effects.length
           : id === 'graphs'
             ? graphs.length
-            : presets.length;
+            : id === 'canvas-scenes'
+              ? canvasScenes.length
+              : presets.length;
   const activeType = $derived(TYPES.find((t) => t.id === type)!);
   const HeadIcon = $derived(activeType.icon);
 
@@ -125,6 +133,14 @@
           onclick={() => void store.pasteGraphFromClipboard()}
         />
       {/if}
+      {#if type === 'canvas-scenes' && store.canEdit}
+        <IconButton
+          icon={Plus}
+          label="New canvas scene"
+          size={14}
+          onclick={() => (selectedId = store.createCanvasScene())}
+        />
+      {/if}
     </PanelHeader>
 
     <div class="objlist">
@@ -152,6 +168,13 @@
           <GraphRow {store} {graph} active={store.selectedPadKey === graph.key} onOpen={openGraph} />
         {/each}
         {#if graphs.length === 0}<p class="empty">No graphs yet.</p>{/if}
+      {:else if type === 'canvas-scenes'}
+        {#each canvasScenes as scene (scene.id)}
+          <CanvasSceneRow {store} {scene} active={selectedId === scene.id} onSelect={() => (selectedId = scene.id)} />
+        {/each}
+        {#if canvasScenes.length === 0}
+          <p class="empty">No canvas scenes yet. Create one to author canvas-backed play nodes.</p>
+        {/if}
       {:else}
         {#each presets as preset (preset.id)}
           <PresetRow {store} {preset} active={selectedId === preset.id} onSelect={() => (selectedId = preset.id)} />
