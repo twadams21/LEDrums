@@ -225,5 +225,9 @@
     height: auto;
     border-radius: var(--radius-1);
     background: #0a0d12;
+    /* Subtle image outline so the thumb reads as a viewport on any card surface
+       (outline, not inset box-shadow — replaced elements paint over inset shadows). */
+    outline: 1px solid rgba(255, 255, 255, 0.06);
+    outline-offset: -1px;
   }
 </style>
