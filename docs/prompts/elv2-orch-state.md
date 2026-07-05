@@ -101,7 +101,19 @@ Working tree clean (TriggerNode untouched). Deviation (accepted): the "confetti 
 brief referenced doesn't exist as a committed file — U4 mirrored engine.test.ts perf
 structure instead (fine). Usage after U4: 7d **95%**, 5h 79%.
 
-## ⛔ HARD STOP — 95% WEEKLY WALL (awaiting Trent)
+## ✅ ORCHESTRATION CLOSED (2026-07-05) — U1–U4 shipped, U5–U7 issued
+Trent's call at the 95% wall: **do NOT --force**; instead **issue U5–U7 as GitHub issues**
+for external (GPT-5.5) implementation to stay light on weekly usage.
+- U1–U4 DONE + verified on `main` (see rows below). The whole engine + gallery + library is built.
+- U5 = **GH #58**, U6 = **GH #59** (dep #58), U7 = **GH #60** (dep #58/#59). Labels:
+  enhancement + ready-for-agent. Each issue is short (<50 lines), references the plan doc +
+  `docs/reports/2026-07-05-elv2-u1-u4-state.md` (state after U4) + the handoff-report chain.
+  U5 writes `elv2-u5-report.md` for U6/U7; U6 writes `elv2-u6-report.md` for U7.
+- Plan tracker + top status line updated to reflect this. U7 flips `.mex/ROUTER.md` + marks
+  the tracker COMPLETE when the external work lands.
+- No live twux agents needed for U5–U7. This orch session's job is DONE.
+
+## (historical) HARD STOP — 95% WEEKLY WALL
 twux REFUSES launches at ≥95% (--force overrides). U5 launch is now blocked. I will NOT
 --force past 95% without Trent's EXPLICIT yes (told him this). 7d resets 2026-07-09
 04:00+10:00 (~Thu). 5h resets 13:00 today but that does NOT lower the 7d wall.
