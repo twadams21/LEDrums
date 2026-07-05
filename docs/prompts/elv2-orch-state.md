@@ -44,6 +44,20 @@ unless Trent approves parallel spend at the gate.
 | U6 library fill | Fable | pending (after U4/U5) | — |
 | U7 close-out | Opus | pending (last) | — |
 
+## Trent decisions (2026-07-05, at the 91% gate)
+- **EffectCreator → REMOVE** (option a): delete EffectCreator + createEffect/NewEffectInput;
+  custom authoring moves to the Canvas engine in U5. (Pattern path deletion, locked dec 2,
+  obsoletes it — plan grep-list had missed this dependency.)
+- **Budget → PROCEED PAST 92%** (explicit yes; standing order #4 satisfied). Keep driving
+  units serially. Still report progress; no hard stop at 92% now — but stay sane near the
+  95% twux refusal and near the 5h window.
+
+## Serial constraint (not just budget)
+U3's physical deletion edits `EffectThumb` (removing pattern branches); U2 rewrites
+`EffectThumb` (isometric painter). They COLLIDE → U2 must not start until U3 fully lands.
+
 ## Next action
-Wait for `elv2-u1-c99a09` to report (inbox 📬). On report: verify diff + gates myself,
-then check `twux usage`. If ≥92%: STOP, AskUserQuestion Trent (proceed vs pause to reset).
+Direct idle `elv2-u3-29924d` to finish the physical deletion (remove EffectCreator; delete
+pattern-renderer.ts + Pattern plumbing + EffectThumb/render.ts branches; rework ~1100 lines
+of core determinism tests → generator voices, DON'T weaken assertions; UI rules for the
+EffectCreator removal; tracker → done). Verify, then launch U2 (Fable, thumbnails).
