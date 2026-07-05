@@ -11,6 +11,7 @@
    S40 owns extraction + persistence + the server blob seam ONLY. Resolving a LibrarySong back
    into a show's runtime view (the reverse direction), detach, and library CRUD are S41. */
 
+import type { CanvasScene } from '@ledrums/core';
 import type { EffectDef, Preset, TriggerGraph } from '../sim';
 import type { Song, SetlistSection } from '../../app/setlist';
 import { referencedGraphs } from '../../app/setlist';
@@ -24,6 +25,9 @@ export interface ClosureSources {
   graphNames: Record<string, string>;
   effects: readonly EffectDef[];
   presets: readonly Preset[];
+  /** User-authored canvas scenes (U5). Not part of the namespaced closure — carried alongside
+      by the ClipDoc builders so a copied graph/section/song's canvas nodes stay resolvable. */
+  canvasScenes?: readonly CanvasScene[];
 }
 
 /** A song lifted out of a show into a self-contained, namespaced dependency closure. Every

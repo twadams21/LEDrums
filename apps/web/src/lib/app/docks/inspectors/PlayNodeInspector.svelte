@@ -45,6 +45,11 @@
     store.setParam(node, 'saturation', hsv.s);
     store.setParam(node, 'brightness', hsv.v);
   }
+  // Canvas play nodes (D3/D4) get a scene picker; their params render through the SAME generic
+  // param loop below (CANVAS_PARAM_SPEC), so there's no special-casing past the picker.
+  const isCanvas = $derived((node.playType ?? eff?.playType) === 'canvas');
+  const sceneOptions = $derived(store.canvasScenes.map((scene) => ({ value: scene.id, label: scene.name })));
+
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
@@ -76,6 +81,27 @@
     </div>
     <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
   </header>
+
+  {#if isCanvas}
+    <div class="sceneRow">
+      <span class="k">Scene</span>
+      <Select
+        value={node.canvasScene ?? ''}
+        options={sceneOptions}
+        onChange={(v) => store.setCanvasScene(node, v)}
+        placeholder="Choose scene"
+        ariaLabel="Canvas scene"
+        class="sceneSelect"
+      />
+      <IconButton
+        icon={BookmarkPlus}
+        label="New canvas scene"
+        variant="soft"
+        size={14}
+        onclick={() => store.setCanvasScene(node, store.createCanvasScene())}
+      />
+    </div>
+  {/if}
 
   <div class="bar">
     <label class="lblrow">
@@ -253,6 +279,18 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border-faint);
+  }
+  .sceneRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .sceneRow :global(.sceneSelect),
+  .sceneRow :global(.select-trigger) {
+    flex: 1;
+    min-width: 0;
   }
   .targetrow {
     display: flex;

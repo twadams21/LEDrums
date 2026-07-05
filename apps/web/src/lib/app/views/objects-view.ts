@@ -3,14 +3,15 @@
    the preset delete-gating are unit-testable in isolation (the .svelte file is thin UI over
    these). Each builder takes plain arrays (the store's reactive lists snapshot fine) and the
    store's `presetUsageCount` as a pure callback, and returns sorted row records. */
+import type { CanvasScene } from '@ledrums/core';
 import type { EffectDef, Preset } from '../../trigger-lab/sim';
 import type { Song } from '../setlist';
 
-/** The four object types the Objects view indexes, in rail order. (Icons live in the
+/** The object types the Objects view indexes, in rail order. (Icons live in the
     .svelte; this module is DOM-free.) */
-export type ObjectTypeId = 'songs' | 'library' | 'effects' | 'graphs' | 'presets';
+export type ObjectTypeId = 'songs' | 'library' | 'effects' | 'graphs' | 'presets' | 'canvas-scenes';
 
-export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'library', 'effects', 'graphs', 'presets'];
+export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'library', 'effects', 'graphs', 'presets', 'canvas-scenes'];
 
 /** Stable name-then-id comparator, so equal names keep a deterministic order across reloads. */
 function byNameThenId(a: { name: string; id: string }, b: { name: string; id: string }): number {
@@ -148,4 +149,26 @@ export interface GraphRow {
 
 export function graphRows(library: readonly { key: string; label: string }[]): GraphRow[] {
   return [...library].sort((a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+}
+
+/** A canvas-scene row: the scene id/name plus a summary of its authored content (element +
+    lens counts and sampler kind) for the sub-line. Sorted by name then id. */
+export interface CanvasSceneRow {
+  id: string;
+  name: string;
+  elementCount: number;
+  lensCount: number;
+  sampler: string;
+}
+
+export function canvasSceneRows(scenes: readonly CanvasScene[]): CanvasSceneRow[] {
+  return scenes
+    .map((scene) => ({
+      id: scene.id,
+      name: scene.name,
+      elementCount: scene.elements.length,
+      lensCount: scene.lenses?.length ?? 0,
+      sampler: scene.sampler.kind,
+    }))
+    .sort(byNameThenId);
 }

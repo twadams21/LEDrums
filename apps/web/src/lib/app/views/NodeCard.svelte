@@ -13,6 +13,9 @@
     sub: string;
     /** CSS colour for the role/kind-tinted icon chip. */
     tint: string;
+    /** Optional play-type sub-label (D3) — a small tinted chip under the title naming the
+        node's collection (Hits / Waves / … / Canvas). Optional so Patch nodes are unaffected. */
+    typeChip?: string;
     selected?: boolean;
     dropTarget?: boolean;
     /** Degraded placeholder: the node's live model could not be resolved (a "stale node").
@@ -39,6 +42,7 @@
     title,
     sub,
     tint,
+    typeChip,
     selected = false,
     dropTarget = false,
     stale = false,
@@ -62,6 +66,7 @@
     {#if leadHandles}{@render leadHandles()}{/if}
     <span class="icon"><Icon size={16} aria-hidden="true" /></span>
     <span class="title">{title}</span>
+    {#if typeChip}<span class="typechip">{typeChip}</span>{/if}
     <span class="sub">{sub}</span>
     {#if thumb}<span class="thumb">{@render thumb()}</span>{/if}
   </div>
@@ -87,6 +92,7 @@
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       'icon title'
+      'icon chip'
       'icon sub';
     align-items: center;
     column-gap: var(--space-2);
@@ -102,6 +108,7 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       'icon title thumb'
+      'icon chip thumb'
       'icon sub thumb';
   }
   /* exposed-param footer lives INSIDE the card: one border, one surface, an internal
@@ -154,6 +161,27 @@
     font-size: var(--text-sm);
     font-weight: 700;
     color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* play-type sub-label (D3) — a compact tinted pill naming the node's collection. Sits
+     between title and sub; its row collapses to 0 height when absent (no typeChip). */
+  .typechip {
+    grid-area: chip;
+    justify-self: start;
+    max-width: 100%;
+    margin: 1px 0;
+    padding: 1px 6px;
+    border: 1px solid color-mix(in oklch, var(--tint) 45%, transparent);
+    border-radius: var(--radius-pill);
+    background: color-mix(in oklch, var(--tint) 12%, transparent);
+    color: var(--tint);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

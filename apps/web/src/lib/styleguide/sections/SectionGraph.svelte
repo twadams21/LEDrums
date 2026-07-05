@@ -88,9 +88,9 @@
   let nodes = $state<Node[]>([
     { id: 't', type: 'demo', position: { x: 0, y: 90 }, data: face('trigger', 'kick · center') },
     { id: 'r', type: 'demo', position: { x: 250, y: 90 }, data: face('random', 'no-repeat') },
-    { id: 'p1', type: 'demo', position: { x: 500, y: 20 }, data: { ...face('play', 'Soft strike'), title: 'Chase' } },
+    { id: 'p1', type: 'demo', position: { x: 500, y: 20 }, data: { ...face('play', 'Soft strike'), title: 'Chase', typeChip: 'Waves & Ripples' } },
     { id: 'd', type: 'demo', position: { x: 500, y: 160 }, data: face('delay', '1/8 dotted') },
-    { id: 'p2', type: 'demo', position: { x: 750, y: 160 }, data: { ...face('play', 'Shimmer'), title: 'Sparkle' } },
+    { id: 'p2', type: 'demo', position: { x: 750, y: 160 }, data: { ...face('play', 'Shimmer'), title: 'Sparkle', typeChip: 'Canvas' } },
     // a modifier node wired into a play node's mod input — the dashed mod wire reads distinctly
     { id: 'm', type: 'demo', position: { x: 250, y: 260 }, data: { ...face('modifier', 'add · smear'), title: 'Trail' } },
     // a modulation SOURCE (envelope) wired into a play node's exposed param — the dotted mod wire

@@ -50,12 +50,14 @@ function testMint(): RemapMint {
   let p = 0;
   let s = 0;
   let so = 0;
+  let sc = 0;
   return {
     graph: () => `tg-${++g}`,
     effect: () => `te-${++e}`,
     preset: () => `tp-${++p}`,
     section: () => `ts-${++s}`,
     song: () => `tso-${++so}`,
+    scene: () => `tsc-${++sc}`,
   };
 }
 

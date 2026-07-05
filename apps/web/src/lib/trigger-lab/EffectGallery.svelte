@@ -20,7 +20,7 @@
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import X from '@lucide/svelte/icons/x';
   import { defaultParams, type EffectDef, type Scope } from './sim';
-  import { COLLECTIONS, type PlayType } from '@ledrums/core';
+  import { COLLECTIONS, collectionMeta, type PlayType } from '@ledrums/core';
   import type { TriggerLab } from './store.svelte';
 
   let { store }: { store: TriggerLab } = $props();
@@ -34,12 +34,18 @@
   const block = $derived(store.galleryBlock);
   const currentEffectId = $derived(block?.kind === 'play' ? block.effectId : null);
 
+  // The gallery opens LOCKED to the node's play type (D3): a Particle node swaps only among
+  // particle effects. The store's pickEffect guard is the authoritative backstop; this is the
+  // visible half — collection tabs collapse to the locked one and a "Locked" pill shows.
+  const lockedPlayType = $derived<PlayType | null>(block?.kind === 'play' ? block.playType ?? null : null);
+  const lockedMeta = $derived(lockedPlayType ? collectionMeta(lockedPlayType) : null);
+
   // Snap the scope chip to the block being edited whenever the gallery opens, and reset filters.
   $effect(() => {
     if (block?.kind === 'play') {
       // A hoop-scoped node draws from the drum-scoped pool (a hoop is a sub-region of a drum).
       scope = block.scope === 'hoop' ? 'drum' : block.scope;
-      collection = 'all';
+      collection = block.playType ?? 'all';
       activeTags = [];
       paramFilter = '';
       query = '';
@@ -49,16 +55,27 @@
   const playTypeOf = (e: EffectDef): PlayType => e.playType ?? 'ambient';
 
   // The pool for the active scope, minus retired effects — everything the filters draw from.
-  const pool = $derived(store.effects.filter((e) => !e.deprecated && e.scope === scope));
+  // Canvas + typed nodes draw from selectableEffects (real + virtual canvas effects); when the
+  // node is locked to a play type, the pool is pre-filtered to it so nothing else can surface.
+  const pool = $derived(
+    store.selectableEffects.filter(
+      (e) => !e.deprecated && e.scope === scope && (!lockedPlayType || playTypeOf(e) === lockedPlayType),
+    ),
+  );
 
   // Collection tabs: only those with at least one effect in the current scope (+ an "All" tab).
-  const collectionTabs = $derived([
-    { value: 'all', label: 'All' },
-    ...COLLECTIONS.filter((c) => pool.some((e) => playTypeOf(e) === c.type)).map((c) => ({
-      value: c.type,
-      label: c.label,
-    })),
-  ]);
+  // A locked node collapses the rail to its single collection (no cross-type browsing).
+  const collectionTabs = $derived(
+    lockedMeta
+      ? [{ value: lockedPlayType as string, label: lockedMeta.label }]
+      : [
+          { value: 'all', label: 'All' },
+          ...COLLECTIONS.filter((c) => pool.some((e) => playTypeOf(e) === c.type)).map((c) => ({
+            value: c.type,
+            label: c.label,
+          })),
+        ],
+  );
 
   // Tag universe + param universe for the chip row / dropdown — scoped to what's available.
   const tagUniverse = $derived(
@@ -96,7 +113,7 @@
   }
 
   function previewParams(effectId: string) {
-    const eff = store.effects.find((e) => e.id === effectId)!;
+    const eff = store.selectableEffects.find((e) => e.id === effectId)!;
     return store.presetById(`${effectId}:default`)?.params ?? defaultParams(eff);
   }
 
@@ -110,6 +127,9 @@
   {#if block}
     <header class="ghead">
       <Eyebrow icon={LayoutGrid}>Change effect</Eyebrow>
+      {#if lockedMeta}
+        <Pill tone="accent" label={`Locked · ${lockedMeta.label}`} />
+      {/if}
       <SearchField bind:value={query} placeholder="Search name, description, tags…" ariaLabel="Search effects" class="ghead-search" />
       <span class="spacer"></span>
       <IconButton icon={X} label="Close" onclick={() => store.closeGallery()} />

@@ -12,6 +12,7 @@
    (older blob) and unknown fields (newer blob) are both tolerated without a
    version bump — bump VERSION only when an existing field changes incompatibly. */
 
+import type { CanvasScene } from '@ledrums/core';
 import type { Bus, EffectDef, Preset, TriggerGraph } from './sim';
 import type { SetlistSection, Song } from '../app/setlist';
 import type { LibrarySong } from './store/song-library';
@@ -56,6 +57,9 @@ export interface AuthoredState {
       a UI-only rename (the device topology ids aren't server state), so it lives here
       beside the other authored prefs. Tolerated when absent (older blobs). */
   patchLabels?: Record<string, string>;
+  /** User-authored canvas scene documents (U5). Additive + tolerated when absent so older
+      blobs still load; travels in the show doc so `canvas:<sceneId>` resolves everywhere. */
+  canvasScenes?: CanvasScene[];
 }
 
 /** Versioned envelope written to storage. */
@@ -117,6 +121,7 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   if (Array.isArray(data.effects)) out.effects = data.effects as EffectDef[];
   if (isObject(data.paneSizes)) out.paneSizes = data.paneSizes as Record<string, number>;
   if (isObject(data.patchLabels)) out.patchLabels = data.patchLabels as Record<string, string>;
+  if (Array.isArray(data.canvasScenes)) out.canvasScenes = data.canvasScenes as CanvasScene[];
 
   // scalars — typeof-gated; the nullable ids also accept an explicit null
   if (typeof data.selectedPadKey === 'string' || data.selectedPadKey === null) {

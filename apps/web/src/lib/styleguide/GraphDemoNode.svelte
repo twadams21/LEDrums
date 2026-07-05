@@ -11,6 +11,8 @@
     title: string;
     sub: string;
     tint: string;
+    /** Optional play-type sub-label chip (D3) — play nodes name their collection. */
+    typeChip?: string;
     hasInput: boolean;
     hasOutput: boolean;
     /** Renders the distinct `mod` input handle (play + modifier nodes take a modifier chain). */
@@ -33,7 +35,7 @@
     style={d.hasInput ? 'top: 74%' : 'top: 50%'}
   />
 {/if}
-<NodeCard icon={d.icon} title={d.title} sub={d.sub} tint={d.tint} selected={!!selected} />
+<NodeCard icon={d.icon} title={d.title} sub={d.sub} tint={d.tint} typeChip={d.typeChip} selected={!!selected} />
 {#if d.hasOutput}
   <Handle type="source" position={Position.Right} />
 {/if}

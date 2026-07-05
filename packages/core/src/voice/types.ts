@@ -6,6 +6,7 @@
  */
 import type { ResolvedModifier } from '../modifiers/types';
 import type { PlayType } from '../effects/vocabulary';
+import type { CanvasScene } from '../canvas/types';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
 
@@ -403,6 +404,12 @@ export interface Show {
    * zone)]` fallback — so each zone fires its own graphs.
    */
   songs?: ShowSong[];
+  /**
+   * User-authored canvas scene documents. The engine registers these into the pure
+   * canvas registry on `setShow()` so `canvas:<sceneId>` resolves through the normal
+   * `EffectGenerator` lookup (no compositor fork, locked decision 7).
+   */
+  canvasScenes?: CanvasScene[];
 }
 
 export function emptyShow(): Show {
