@@ -29,6 +29,7 @@ export * from './canvas/elements';
 export * from './canvas/lenses';
 export * from './canvas/scene';
 export * from './canvas/registry';
+export * from './canvas/presets';
 
 // Effects
 export * from './effects/types';
