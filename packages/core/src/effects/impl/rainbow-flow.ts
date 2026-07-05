@@ -1,7 +1,7 @@
 import { wrap } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 
 /**
  * A scrolling diagonal rainbow wrapped around each drum: hue is a function of

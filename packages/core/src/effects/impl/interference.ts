@@ -1,5 +1,5 @@
 import { hsvToRgb } from '../../color/color';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 import { pnum, type EffectGenerator } from '../types';
 
 /**

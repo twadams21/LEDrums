@@ -1,3 +1,13 @@
+/**
+ * Canvas samplers — how the kit's 3D pixel geometry lands on a 2D canvas (D4). This is
+ * `effects/field.ts` grown up (locked decision 7): the legacy {@link UvMode} projections
+ * (cylindrical / planar-*) live here as the seed sampler set, and {@link renderUvField}
+ * remains the base every Gen-2 UV texture renders through. The scene engine's four
+ * placement samplers (`hoop` / `strip` / `cylinder` / `footprint`) build on the same
+ * pixel fields — no new geometry.
+ *
+ * Pure core module: no Node/DOM/IO; samplers are pure functions of (pixel, model, config).
+ */
 import { clamp01 } from '../math';
 import type { PixelModel } from '../geometry/pixel-model';
 import type { Framebuffer } from '../engine/framebuffer';

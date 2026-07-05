@@ -1,6 +1,6 @@
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 
 /**
  * Concentric ripples spreading from a slowly drifting centre, projected across

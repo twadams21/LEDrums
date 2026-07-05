@@ -1,7 +1,7 @@
 import { clamp01 } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 
 /** Deterministic hash → [0,1) from two integer coords. Pure, no RNG state. */
 function hash2(ix: number, iy: number): number {

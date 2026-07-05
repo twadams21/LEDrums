@@ -1,6 +1,6 @@
 import { clamp01 } from '../../math';
 import { hsvToRgb } from '../../color/color';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 import { pnum, type EffectGenerator } from '../types';
 
 /** Deterministic 2D hash → [0,1] using a closed-form sin scramble (no RNG state). */

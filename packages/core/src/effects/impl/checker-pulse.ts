@@ -1,7 +1,7 @@
 import { wrap } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 
 /**
  * A checkerboard wrapped around each drum that slowly rotates (cells scroll in

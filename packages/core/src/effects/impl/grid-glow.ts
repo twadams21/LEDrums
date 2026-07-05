@@ -1,6 +1,6 @@
 import { clamp01 } from '../../math';
 import { hsvToRgb } from '../../color/color';
-import { renderUvField } from '../field';
+import { renderUvField } from '../../canvas/sampler';
 import { pnum, type EffectGenerator } from '../types';
 
 /** Smooth glowing pulse centered on a grid line: 1 at the line, falling off either side. */
