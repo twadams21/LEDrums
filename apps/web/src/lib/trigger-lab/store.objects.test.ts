@@ -58,35 +58,35 @@ function withRaf(body: () => void): void {
 
 /** A standalone graph holding one play node bound to `presetId` (for usage / delete gating). */
 function playGraph(nodeId: string, presetId: string): TriggerGraph {
-  return { nodes: [makeNode('play', nodeId, 0, 0, { effectId: 'swirl', presetId })], edges: [] };
+  return { nodes: [makeNode('play', nodeId, 0, 0, { effectId: 'gen:helix', presetId })], edges: [] };
 }
 
 describe('renameEffect', () => {
   it('updates the name in the registry AND the sim (shared by reference)', () => {
     const store = new TriggerLab(fakeClient);
-    store.renameEffect('swirl', 'Whirl');
-    expect(store.effects.find((e) => e.id === 'swirl')!.name).toBe('Whirl');
-    expect(store.sim.effectName('swirl')).toBe('Whirl'); // live preview reflects it
+    store.renameEffect('gen:helix', 'Whirl');
+    expect(store.effects.find((e) => e.id === 'gen:helix')!.name).toBe('Whirl');
+    expect(store.sim.effectName('gen:helix')).toBe('Whirl'); // live preview reflects it
   });
 
   it('ignores a blank rename (keeps the old name) and an unknown id (no throw)', () => {
     const store = new TriggerLab(fakeClient);
-    store.renameEffect('swirl', 'Whirl');
-    store.renameEffect('swirl', '   '); // blank → no-op
+    store.renameEffect('gen:helix', 'Whirl');
+    store.renameEffect('gen:helix', '   '); // blank → no-op
     store.renameEffect('nope', 'X'); // unknown → no-op
-    expect(store.effects.find((e) => e.id === 'swirl')!.name).toBe('Whirl');
+    expect(store.effects.find((e) => e.id === 'gen:helix')!.name).toBe('Whirl');
   });
 });
 
 describe('duplicateEffect', () => {
   it('clones under a fresh id named "<name> copy", registers it, and seeds its Default preset', () => {
     const store = new TriggerLab(fakeClient);
-    const src = store.effects.find((e) => e.id === 'swirl')!;
-    const newId = store.duplicateEffect('swirl')!;
+    const src = store.effects.find((e) => e.id === 'gen:helix')!;
+    const newId = store.duplicateEffect('gen:helix')!;
 
-    expect(newId).not.toBe('swirl');
+    expect(newId).not.toBe('gen:helix');
     const dup = store.effects.find((e) => e.id === newId)!;
-    expect(dup.name).toBe('Swirl copy');
+    expect(dup.name).toBe('Helix copy');
     expect(dup.pattern).toBe(src.pattern);
     expect(dup.params).toEqual(src.params); // same param specs
     expect(store.sim.effect(newId)).toBeDefined(); // registered with the sim
@@ -106,9 +106,9 @@ describe('duplicateEffect', () => {
 
   it('is independent — renaming the source does not touch the copy', () => {
     const store = new TriggerLab(fakeClient);
-    const newId = store.duplicateEffect('swirl')!;
-    store.renameEffect('swirl', 'Renamed Source');
-    expect(store.effects.find((e) => e.id === newId)!.name).toBe('Swirl copy');
+    const newId = store.duplicateEffect('gen:helix')!;
+    store.renameEffect('gen:helix', 'Renamed Source');
+    expect(store.effects.find((e) => e.id === newId)!.name).toBe('Helix copy');
   });
 
   it('returns null for an unknown id (no new effect)', () => {
@@ -122,30 +122,30 @@ describe('duplicateEffect', () => {
 describe('renamePreset', () => {
   it('updates the name in the registry AND the sim', () => {
     const store = new TriggerLab(fakeClient);
-    expect(store.presetById('swirl:wide')).toBeDefined(); // fixture sanity
-    store.renamePreset('swirl:wide', 'Broad');
-    expect(store.presetById('swirl:wide')!.name).toBe('Broad');
-    expect(store.sim.preset('swirl:wide')!.name).toBe('Broad');
+    expect(store.presetById('gen:radial-wash:pop')).toBeDefined(); // fixture sanity
+    store.renamePreset('gen:radial-wash:pop', 'Broad');
+    expect(store.presetById('gen:radial-wash:pop')!.name).toBe('Broad');
+    expect(store.sim.preset('gen:radial-wash:pop')!.name).toBe('Broad');
   });
 
   it('ignores a blank rename and an unknown id', () => {
     const store = new TriggerLab(fakeClient);
-    store.renamePreset('swirl:wide', 'Broad');
-    store.renamePreset('swirl:wide', '  '); // blank → no-op
+    store.renamePreset('gen:radial-wash:pop', 'Broad');
+    store.renamePreset('gen:radial-wash:pop', '  '); // blank → no-op
     store.renamePreset('nope', 'X'); // unknown → no-op
-    expect(store.presetById('swirl:wide')!.name).toBe('Broad');
+    expect(store.presetById('gen:radial-wash:pop')!.name).toBe('Broad');
   });
 });
 
 describe('duplicatePreset', () => {
   it('clones under a fresh id named "<name> copy", same effect + independent params, registered', () => {
     const store = new TriggerLab(fakeClient);
-    const src = store.presetById('swirl:wide')!;
-    const newId = store.duplicatePreset('swirl:wide')!;
+    const src = store.presetById('gen:radial-wash:pop')!;
+    const newId = store.duplicatePreset('gen:radial-wash:pop')!;
 
-    expect(newId).not.toBe('swirl:wide');
+    expect(newId).not.toBe('gen:radial-wash:pop');
     const dup = store.presetById(newId)!;
-    expect(dup.name).toBe('Wide copy');
+    expect(dup.name).toBe('Pop copy');
     expect(dup.effectId).toBe(src.effectId);
     expect(dup.params).toEqual(src.params);
     expect(dup.params).not.toBe(src.params); // independent copy, not the same object
@@ -163,7 +163,7 @@ describe('duplicatePreset', () => {
 describe('presetUsageCount', () => {
   it('counts play nodes referencing a preset across every graph (0 when unused)', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.duplicatePreset('swirl:wide')!; // fresh preset → nothing references it
+    const id = store.duplicatePreset('gen:radial-wash:pop')!; // fresh preset → nothing references it
     expect(store.presetUsageCount(id)).toBe(0);
 
     // two play nodes in two separate graphs both carry it as provenance (count = both).
@@ -182,7 +182,7 @@ describe('presetUsageCount', () => {
 describe('deletePreset', () => {
   it('removes an unused, non-default preset from the registry AND the sim, returns true', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.duplicatePreset('swirl:wide')!; // unused, not a `:default`
+    const id = store.duplicatePreset('gen:radial-wash:pop')!; // unused, not a `:default`
     expect(store.presetUsageCount(id)).toBe(0);
 
     expect(store.deletePreset(id)).toBe(true);
@@ -192,7 +192,7 @@ describe('deletePreset', () => {
 
   it('refuses (returns false, no-op) when the preset is in use', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.duplicatePreset('swirl:wide')!;
+    const id = store.duplicatePreset('gen:radial-wash:pop')!;
     store.graphs = { ...store.graphs, 'graph-use': playGraph('p', id) };
     expect(store.presetUsageCount(id)).toBe(1);
 
@@ -202,7 +202,7 @@ describe('deletePreset', () => {
 
   it("refuses a live effect's foundational `:default` even when unused", () => {
     const store = new TriggerLab(fakeClient);
-    const fxId = store.duplicateEffect('swirl')!; // seeds `${fxId}:default`, referenced by nothing
+    const fxId = store.duplicateEffect('gen:helix')!; // seeds `${fxId}:default`, referenced by nothing
     const def = `${fxId}:default`;
     expect(store.presetUsageCount(def)).toBe(0); // isolates the `:default` guard from the usage guard
 
@@ -222,21 +222,21 @@ describe('persistence (autosave → hydrate)', () => {
       const store = new TriggerLab(fakeClient);
       store.start();
 
-      const fxId = store.duplicateEffect('swirl')!; // user effect
+      const fxId = store.duplicateEffect('gen:helix')!; // user effect
       store.renameEffect(fxId, 'My FX'); // rename a user effect → persists
-      store.renameEffect('swirl', 'Whirl'); // rename a BUILT-IN effect → persists via unionEffects merge
+      store.renameEffect('gen:helix', 'Whirl'); // rename a BUILT-IN effect → persists via unionEffects merge
 
-      const pid = store.duplicatePreset('swirl:wide')!; // user preset
+      const pid = store.duplicatePreset('gen:radial-wash:pop')!; // user preset
       store.renamePreset(pid, 'My Preset');
 
-      const doomed = store.duplicatePreset('swirl:fast')!; // user preset, then deleted
+      const doomed = store.duplicatePreset('gen:radial-wash:pop')!; // user preset, then deleted
       expect(store.deletePreset(doomed)).toBe(true);
 
       store.stop(); // flush authored slice → localStorage
 
       const reloaded = new TriggerLab(fakeClient); // a "reload" hydrates from storage
       expect(reloaded.effects.find((e) => e.id === fxId)?.name).toBe('My FX'); // user effect + rename
-      expect(reloaded.effects.find((e) => e.id === 'swirl')?.name).toBe('Whirl'); // built-in rename survives
+      expect(reloaded.effects.find((e) => e.id === 'gen:helix')?.name).toBe('Whirl'); // built-in rename survives
       expect(reloaded.presetById(`${fxId}:default`)).toBeDefined(); // duplicated effect's seeded Default
       expect(reloaded.presetById(pid)?.name).toBe('My Preset'); // user preset + rename
       expect(reloaded.presetById(doomed)).toBeUndefined(); // deleted user preset stays gone

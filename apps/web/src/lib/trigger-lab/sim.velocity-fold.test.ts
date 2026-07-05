@@ -19,7 +19,7 @@ import {
    order, with routing parity, the N≤1 / N=0 edge cases, idempotency, and that
    section/beat (and already-folded) graphs are left untouched. */
 
-const EFFECT_IDS = ['chase', 'sparkle', 'whole', 'rip', 'strobe'];
+const EFFECT_IDS = ['gen:chase-bands', 'gen:pixel-accum', 'gen:whole-drum', 'gen:ripple-3d', 'gen:strobe'];
 
 /** trigger → switch(on:'velocity') → N play children (child i at y=i*40, ascending, each on
     a distinct effect so a fired child is identifiable). `edgeOrder` inserts the child edges
@@ -100,7 +100,7 @@ describe('foldVelocitySwitch — edge cases', () => {
     for (const v of [0.1, 0.9]) {
       const sim = mk();
       sim.triggerGraph('pad', g, ctxV(v));
-      expect(sim.voices.map((x) => x.effectId)).toEqual(['chase']); // c0
+      expect(sim.voices.map((x) => x.effectId)).toEqual(['gen:chase-bands']); // c0
     }
   });
 
@@ -126,7 +126,7 @@ describe('foldVelocitySwitch — idempotency + untouched graphs', () => {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
         makeNode('switch', 'sw', 200, 0, { on: 'section' }),
-        makeNode('play', 'c0', 400, 0, { effectId: 'chase' }),
+        makeNode('play', 'c0', 400, 0, { effectId: 'gen:chase-bands' }),
       ],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },

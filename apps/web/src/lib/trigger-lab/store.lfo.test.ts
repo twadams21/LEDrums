@@ -33,7 +33,7 @@ afterEach(() => {
 function withLfo(): { store: TriggerLab; play: GraphNode; lfo: GraphNode } {
   const store = new TriggerLab(fakeClient);
   store.createGraph('test');
-  const play = store.addNode('play', 200, 0)!; // seeds effect 'chase' (hue/brightness/…)
+  const play = store.addNode('play', 200, 0)!; // seeds effect 'gen:chase-bands' (hue/brightness/…)
   const lfo = store.addNode('lfo', 0, 100)!;
   return { store, play, lfo };
 }
@@ -81,12 +81,12 @@ function ctx(): TriggerCtx {
 }
 const trigger = (): GraphNode => makeNode('trigger', 'trigger', 0, 0);
 const playNode = (): GraphNode =>
-  makeNode('play', 'p', 200, 0, { effectId: 'chase', presetId: 'chase:default', mode: 'loop', scope: 'kit' });
+  makeNode('play', 'p', 200, 0, { effectId: 'gen:solid-base', presetId: 'gen:solid-base:default', mode: 'loop', scope: 'kit' });
 const lfoNode = (over: Partial<voice.LfoSettings> = {}): GraphNode =>
   makeNode('lfo', 'l', 0, 0, { lfo: { ...voice.defaultLfoSettings(), ...over } });
 const edge = (id: string, from: string, to: string, over: Partial<GraphEdge> = {}): GraphEdge => ({ id, from, to, ...over });
 
-/** trigger → play('chase') loop, with an LFO wired to the play node's `brightness` row. */
+/** trigger → play('gen:chase-bands') loop, with an LFO wired to the play node's `brightness` row. */
 function lfoToBrightness(over: Partial<voice.LfoSettings> = {}): TriggerGraph {
   return {
     nodes: [trigger(), playNode(), lfoNode(over)],

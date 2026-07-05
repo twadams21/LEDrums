@@ -60,11 +60,11 @@ function numKey(store: TriggerLab, effectId: string): string {
 
 /** Inject a graph with two play nodes both forked from `swirl:wide` (a shared provenance preset). */
 function twoNodeGraph(store: TriggerLab): { A: GraphNode; B: GraphNode } {
-  const wide = store.presetById('swirl:wide')!;
+  const wide = store.presetById('gen:helix:default')!;
   const graph: TriggerGraph = {
     nodes: [
-      makeNode('play', 'A', 0, 0, { effectId: 'swirl', presetId: 'swirl:wide', params: { ...wide.params } }),
-      makeNode('play', 'B', 0, 0, { effectId: 'swirl', presetId: 'swirl:wide', params: { ...wide.params } }),
+      makeNode('play', 'A', 0, 0, { effectId: 'gen:helix', presetId: 'gen:helix:default', params: { ...wide.params } }),
+      makeNode('play', 'B', 0, 0, { effectId: 'gen:helix', presetId: 'gen:helix:default', params: { ...wide.params } }),
     ],
     edges: [],
   };
@@ -76,16 +76,16 @@ function twoNodeGraph(store: TriggerLab): { A: GraphNode; B: GraphNode } {
 describe('setParam — always node-local (S39)', () => {
   it('editing node A never changes node B or the shared preset', () => {
     const store = new TriggerLab(fakeClient);
-    const key = numKey(store, 'swirl');
+    const key = numKey(store, 'gen:helix');
     const { A, B } = twoNodeGraph(store);
     const bBefore = B.params[key];
-    const presetBefore = store.presetById('swirl:wide')!.params[key];
+    const presetBefore = store.presetById('gen:helix:default')!.params[key];
 
     store.setParam(A, key, 0.123);
 
     expect(A.params[key]).toBe(0.123);
     expect(B.params[key]).toBe(bBefore); // no cross-node bleed
-    expect(store.presetById('swirl:wide')!.params[key]).toBe(presetBefore); // preset never written through
+    expect(store.presetById('gen:helix:default')!.params[key]).toBe(presetBefore); // preset never written through
   });
 });
 
@@ -93,16 +93,16 @@ describe('preset Apply / Save (S39)', () => {
   it('selectPreset forks a private copy of the preset params onto the node', () => {
     const store = new TriggerLab(fakeClient);
     const { A } = twoNodeGraph(store);
-    store.selectPreset(A, 'swirl:fast');
-    const fast = store.presetById('swirl:fast')!;
-    expect(A.presetId).toBe('swirl:fast');
+    store.selectPreset(A, 'gen:helix:default');
+    const fast = store.presetById('gen:helix:default')!;
+    expect(A.presetId).toBe('gen:helix:default');
     expect(A.params).toEqual(fast.params);
     expect(A.params).not.toBe(fast.params); // a copy, not the shared object
   });
 
   it('applyPreset resets node params to its current preset, discarding local edits', () => {
     const store = new TriggerLab(fakeClient);
-    const key = numKey(store, 'swirl');
+    const key = numKey(store, 'gen:helix');
     const { A } = twoNodeGraph(store);
     store.setParam(A, key, 0.99); // diverge from the preset
     store.applyPreset(A);
@@ -111,20 +111,20 @@ describe('preset Apply / Save (S39)', () => {
 
   it('saveNodeAsPreset snapshots the node params into a new preset for its effect', () => {
     const store = new TriggerLab(fakeClient);
-    const key = numKey(store, 'swirl');
+    const key = numKey(store, 'gen:helix');
     const { A } = twoNodeGraph(store);
     store.setParam(A, key, 0.42);
-    const before = store.presetsForEffect('swirl').length;
+    const before = store.presetsForEffect('gen:helix').length;
 
     const id = store.saveNodeAsPreset(A, 'My Snapshot')!;
 
     const saved = store.presetById(id)!;
-    expect(saved.effectId).toBe('swirl');
+    expect(saved.effectId).toBe('gen:helix');
     expect(saved.name).toBe('My Snapshot');
     expect(saved.params[key]).toBe(0.42); // captured the node's edited params
     expect(saved.params).not.toBe(A.params); // an independent copy
     expect(A.presetId).toBe(id); // node points at its new provenance preset
-    expect(store.presetsForEffect('swirl').length).toBe(before + 1);
+    expect(store.presetsForEffect('gen:helix').length).toBe(before + 1);
     // A later node edit must not mutate the saved preset (snapshot, not binding).
     store.setParam(A, key, 0.1);
     expect(store.presetById(id)!.params[key]).toBe(0.42);
@@ -136,7 +136,7 @@ describe('persistence round-trips without the linked flag (S39)', () => {
     withRaf(() => {
       const store = new TriggerLab(fakeClient);
       store.start();
-      const key = numKey(store, 'swirl');
+      const key = numKey(store, 'gen:helix');
       const { A } = twoNodeGraph(store);
       store.setParam(A, key, 0.37);
       store.stop(); // flush authored slice → localStorage

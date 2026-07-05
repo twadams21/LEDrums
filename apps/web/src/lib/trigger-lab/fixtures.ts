@@ -49,21 +49,11 @@ const densityP: ParamSpec = { key: 'density', label: 'Density', kind: 'number', 
 /** Common parameters the effect creator offers to include on a new effect. */
 export const PARAM_LIBRARY: ParamSpec[] = [hueP(200), briP, speedP, syncP, bandsP(3), angleP, widthP, densityP];
 
-/** The original 10 hand-rolled per-pixel pattern effects (the lightweight fast path). */
-export const PATTERN_EFFECTS: EffectDef[] = [
-  { id: 'swirl', name: 'Swirl', pattern: 'swirl', busId: 'base', scope: 'kit', attackMs: 700, sustainMs: 0, releaseMs: 900, params: [hueP(245), briP, speedP, syncP, bandsP(2), angleP] },
-  { id: 'aurora', name: 'Aurora', pattern: 'aurora', busId: 'base', scope: 'kit', attackMs: 900, sustainMs: 0, releaseMs: 900, params: [hueP(300), briP, speedP, syncP] },
-  { id: 'drift', name: 'Drift', pattern: 'drift', busId: 'base', scope: 'kit', attackMs: 1100, sustainMs: 0, releaseMs: 1100, params: [hueP(205), briP, speedP, syncP] },
-
-  { id: 'chase', name: 'Chase', pattern: 'chase', busId: 'trigger', scope: 'drum', attackMs: 20, sustainMs: 140, releaseMs: 260, params: [hueP(70), briP, speedP, syncP, widthP] },
-  { id: 'whole', name: 'Whole Drum', pattern: 'flash', busId: 'trigger', scope: 'drum', attackMs: 10, sustainMs: 60, releaseMs: 300, params: [hueP(25), briP] },
-  { id: 'sparkle', name: 'Sparkle', pattern: 'sparkle', busId: 'trigger', scope: 'drum', attackMs: 8, sustainMs: 40, releaseMs: 220, params: [hueP(128), briP, speedP, densityP] },
-  { id: 'rip', name: 'Ripple', pattern: 'ripple', busId: 'trigger', scope: 'drum', attackMs: 30, sustainMs: 200, releaseMs: 400, params: [hueP(152), briP, speedP, bandsP(4)] },
-
-  { id: 'wash', name: 'Radial Wash', pattern: 'radial', busId: 'effect', scope: 'kit', attackMs: 400, sustainMs: 0, releaseMs: 700, params: [hueP(330), briP, speedP, syncP] },
-  { id: 'strobe', name: 'Strobe', pattern: 'strobe', busId: 'effect', scope: 'kit', attackMs: 4, sustainMs: 30, releaseMs: 120, params: [hueP(95), briP, speedP] },
-  { id: 'haze', name: 'Haze', pattern: 'haze', busId: 'effect', scope: 'kit', attackMs: 800, sustainMs: 0, releaseMs: 1000, params: [hueP(230), briP, speedP] },
-];
+// The 10 hand-rolled per-pixel pattern effects were RETIRED in U3 (Effects Library v2):
+// each was aliased onto its generator equivalent (core `aliases.ts`) and the whole legacy
+// pattern render path was deleted. Old shows referencing the retired ids (`swirl`, `whole`,
+// `chase`, …) resolve through the alias map at hydrate / buildShow. The seed PADS/SECTIONS
+// below now reference the generator effects directly.
 
 // ---- generator-backed effects (the 41 original engine effects) --------------
 // Each legacy `EffectGenerator` in core's registry is surfaced as a selectable
@@ -167,8 +157,9 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
   };
 });
 
-/** The full selectable registry: the 10 pattern effects + the 41 generator effects. */
-export const EFFECTS: EffectDef[] = [...PATTERN_EFFECTS, ...GENERATOR_EFFECTS];
+/** The full selectable registry — the generator-backed effects (the retired pattern
+    effects are gone; see the note above). */
+export const EFFECTS: EffectDef[] = [...GENERATOR_EFFECTS];
 
 const effectById = new Map(EFFECTS.map((e) => [e.id, e] as const));
 
@@ -185,25 +176,10 @@ function preset(effectId: string, name: string, overrides: Record<string, number
 }
 
 export const PRESETS: Preset[] = [
-  preset('swirl', 'Default'),
-  preset('swirl', 'Wide', { bands: 4, hue: 200 }),
-  preset('swirl', 'Fast', { speed: 2.3, hue: 300 }),
-  preset('swirl', 'Sync', { tempoSync: true, bands: 3 }),
-  preset('aurora', 'Default'),
-  preset('aurora', 'Warm', { hue: 40 }),
-  preset('drift', 'Default'),
-  preset('chase', 'Default'),
-  preset('chase', 'Tight', { width: 0.07, speed: 1.6 }),
-  preset('chase', 'Sync', { tempoSync: true }),
-  preset('whole', 'Default'),
-  preset('sparkle', 'Default'),
-  preset('sparkle', 'Dense', { density: 0.6 }),
-  preset('rip', 'Default'),
-  preset('wash', 'Default'),
-  preset('strobe', 'Default'),
-  preset('haze', 'Default'),
   // A Default preset for every generator effect so play nodes resolve `${id}:default`.
   ...GENERATOR_EFFECTS.map((e) => preset(e.id, 'Default')),
+  // Burst merge (U3): its per-hit pop = a short-reach, fast-decay radial wash.
+  preset('gen:radial-wash', 'Pop', { reach: 320, decayMs: 200, speed: 2.2, width: 300 }),
 ];
 
 const presetById = new Map(PRESETS.map((p) => [p.id, p] as const));
@@ -230,10 +206,12 @@ export const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
 
 // --- starter trees that exercise the block set ------------------------------
 
-const kickCenter: Block = play('whole', 'oneshot');
-const snareCenter: Block = { id: bid('rand'), kind: 'random', noRepeat: true, children: [play('chase'), play('sparkle'), play('rip')] };
-const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('sparkle'), play('strobe')] };
-const tomCenter: Block = { id: bid('seq'), kind: 'sequence', children: [play('chase'), play('rip'), play('whole')] };
+// Seed trees reference the generator effects (the retired pattern ids were remapped to
+// their generator equivalents in U3 — see the alias map in core `aliases.ts`).
+const kickCenter: Block = play('gen:whole-drum', 'oneshot');
+const snareCenter: Block = { id: bid('rand'), kind: 'random', noRepeat: true, children: [play('gen:chase-bands'), play('gen:pixel-accum'), play('gen:ripple-3d')] };
+const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('gen:pixel-accum'), play('gen:strobe')] };
+const tomCenter: Block = { id: bid('seq'), kind: 'sequence', children: [play('gen:chase-bands'), play('gen:ripple-3d'), play('gen:whole-drum')] };
 // value+bands switch: 3 even bands (cutoffs 1/3, 2/3) == the old 3-child velocity split.
 // treeToGraph wires the children onto band-0 / band-1 / band-2 in y-order.
 const tomEdge: Block = {
@@ -242,18 +220,18 @@ const tomEdge: Block = {
   on: 'value',
   valueMode: 'bands',
   bands: [1 / 3, 2 / 3],
-  children: [play('sparkle'), play('chase'), play('whole')],
+  children: [play('gen:pixel-accum'), play('gen:chase-bands'), play('gen:whole-drum')],
 };
-const kickShell: Block = { id: bid('toggle'), kind: 'toggle', child: play('haze', 'loop') };
-const snareShell: Block = { id: bid('chance'), kind: 'chance', p: 0.5, child: play('strobe') };
+const kickShell: Block = { id: bid('toggle'), kind: 'toggle', child: play('gen:lava-lamp', 'loop') };
+const snareShell: Block = { id: bid('chance'), kind: 'chance', p: 0.5, child: play('gen:strobe') };
 const tomRim: Block = {
   id: bid('rand2'),
   kind: 'random',
   noRepeat: false,
-  children: [play('wash', 'loop'), { id: bid('all2'), kind: 'all', children: [play('chase'), play('sparkle')] }],
+  children: [play('gen:radial-wash', 'loop'), { id: bid('all2'), kind: 'all', children: [play('gen:chase-bands'), play('gen:pixel-accum')] }],
 };
-const tom2Center: Block = { id: bid('seq2'), kind: 'sequence', children: [play('rip'), play('sparkle')] };
-const tom2Rim: Block = { id: bid('chance2'), kind: 'chance', p: 0.7, child: play('whole') };
+const tom2Center: Block = { id: bid('seq2'), kind: 'sequence', children: [play('gen:ripple-3d'), play('gen:pixel-accum')] };
+const tom2Rim: Block = { id: bid('chance2'), kind: 'chance', p: 0.7, child: play('gen:whole-drum') };
 
 function pad(drumId: string, drumLabel: string, zone: number, tree: Block): Pad {
   return { drumId, drumLabel, zone, zoneLabel: ZONE_LABELS[zone]!, tree };
@@ -278,7 +256,7 @@ export const PADS: Pad[] = [
 export const DRUMS = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
 
 export const SECTIONS: Section[] = [
-  { id: 'intro', name: 'Intro', looks: { base: 'drift', trigger: null, effect: 'haze' } },
-  { id: 'verse', name: 'Verse', looks: { base: 'swirl', trigger: null, effect: null } },
-  { id: 'chorus', name: 'Chorus', looks: { base: 'aurora', trigger: null, effect: 'wash' } },
+  { id: 'intro', name: 'Intro', looks: { base: 'gen:solid-base', trigger: null, effect: 'gen:radial-wash' } },
+  { id: 'verse', name: 'Verse', looks: { base: 'gen:perlin-clouds', trigger: null, effect: null } },
+  { id: 'chorus', name: 'Chorus', looks: { base: 'gen:plasma', trigger: null, effect: 'gen:radial-wash' } },
 ];

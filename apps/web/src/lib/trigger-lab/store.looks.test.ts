@@ -78,10 +78,10 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     const store = new TriggerLab(capturing([]));
     const sectionId = store.activeSong!.sections[0]!.id;
 
-    store.setLook(sectionId, 'base', 'aurora');
+    store.setLook(sectionId, 'base', 'gen:perlin-clouds');
 
-    expect(store.activeSong!.sections[0]!.looks.base).toBe('aurora'); // authored SetlistSection
-    expect(store.sections.find((s) => s.id === sectionId)!.looks.base).toBe('aurora'); // derived look-list agrees
+    expect(store.activeSong!.sections[0]!.looks.base).toBe('gen:perlin-clouds'); // authored SetlistSection
+    expect(store.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds'); // derived look-list agrees
   });
 
   it('offline: picking a look on the ACTIVE section morphs the local sim immediately', () => {
@@ -89,7 +89,7 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     const sectionId = store.activeSong!.sections[0]!.id;
     store.setActiveSection(sectionId); // make it active (offline recall)
 
-    store.setLook(sectionId, 'base', 'aurora');
+    store.setLook(sectionId, 'base', 'gen:perlin-clouds');
 
     // The sim re-morphed to the new look — a base-bus voice is live in the preview.
     expect(store.voices.some((v) => v.busId === 'base')).toBe(true);
@@ -103,7 +103,7 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     const sectionId = store.activeSectionId!;
     expect(store.activeSong!.sections.find((s) => s.id === sectionId)!.looks).toEqual({}); // starts silent
 
-    store.setLook(sectionId, 'base', 'aurora');
+    store.setLook(sectionId, 'base', 'gen:perlin-clouds');
 
     expect(litBusesAfterRecall(store, sectionId)).toContain('base'); // authored → bridge → engine
   });
@@ -112,7 +112,7 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     const store = new TriggerLab(capturing([]));
     store.addSongSection('My Section');
     const sectionId = store.activeSectionId!;
-    store.setLook(sectionId, 'base', 'aurora');
+    store.setLook(sectionId, 'base', 'gen:perlin-clouds');
     expect(litBusesAfterRecall(store, sectionId)).toContain('base');
 
     store.setLook(sectionId, 'base', null); // pick "None"

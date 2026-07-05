@@ -52,11 +52,11 @@ describe('bandIndex resolver', () => {
 });
 
 describe('value switch — gate', () => {
-  const playChase = makeNode('play', 'p', 400, 0, { effectId: 'chase', presetId: 'chase:default' });
+  const playChase = makeNode('play', 'p', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' });
   const wire: GraphEdge[] = [{ id: 'e1', from: 'sw', to: 'p' }];
 
   it('passes the child when value ≤ threshold (default direction)', () => {
-    expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: false }, [playChase], wire, 0.3)).toEqual(['chase']);
+    expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: false }, [playChase], wire, 0.3)).toEqual(['gen:chase-bands']);
   });
 
   it('blocks (does nothing) when value > threshold', () => {
@@ -64,11 +64,11 @@ describe('value switch — gate', () => {
   });
 
   it('passes at exactly the threshold (≤ is inclusive)', () => {
-    expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: false }, [playChase], wire, 0.5)).toEqual(['chase']);
+    expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: false }, [playChase], wire, 0.5)).toEqual(['gen:chase-bands']);
   });
 
   it('inverts: passes when value > threshold, blocks below', () => {
-    expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: true }, [playChase], wire, 0.7)).toEqual(['chase']);
+    expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: true }, [playChase], wire, 0.7)).toEqual(['gen:chase-bands']);
     expect(fireValueSwitch({ valueMode: 'gate', threshold: 0.5, invert: true }, [playChase], wire, 0.3)).toEqual([]);
   });
 });
@@ -76,8 +76,8 @@ describe('value switch — gate', () => {
 describe('value switch — bands', () => {
   // two bands (cutoff 0.5): band-0 → chase, band-1 → sparkle
   const twoBandKids = [
-    makeNode('play', 'a', 400, -40, { effectId: 'chase', presetId: 'chase:default' }),
-    makeNode('play', 'b', 400, 40, { effectId: 'sparkle', presetId: 'sparkle:default' }),
+    makeNode('play', 'a', 400, -40, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+    makeNode('play', 'b', 400, 40, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
   ];
   const twoBandWires: GraphEdge[] = [
     { id: 'e0', from: 'sw', to: 'a', fromPort: 'band-0' },
@@ -85,43 +85,43 @@ describe('value switch — bands', () => {
   ];
 
   it('fires the child wired from the band the value lands in', () => {
-    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.3)).toEqual(['chase']);
-    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.7)).toEqual(['sparkle']);
+    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.3)).toEqual(['gen:chase-bands']);
+    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.7)).toEqual(['gen:pixel-accum']);
   });
 
   it('routes a value exactly at a cutoff to the lower band', () => {
-    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.5)).toEqual(['chase']);
+    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.5)).toEqual(['gen:chase-bands']);
   });
 
   it('routes a value above the last cutoff to the final band', () => {
-    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 1.0)).toEqual(['sparkle']);
+    expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 1.0)).toEqual(['gen:pixel-accum']);
   });
 
   it('only the matching band fires — other bands stay silent', () => {
     // value 0.7 lands in band-1; band-0's child (chase) must NOT fire
     const ids = fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, twoBandKids, twoBandWires, 0.7);
-    expect(ids).not.toContain('chase');
+    expect(ids).not.toContain('gen:chase-bands');
   });
 
   it('a band with no wired child does nothing (empty middle band)', () => {
     // three bands (cutoffs 0.3, 0.7); wire only band-0 and band-2, leave band-1 empty
     const kids = [
-      makeNode('play', 'a', 400, -60, { effectId: 'chase', presetId: 'chase:default' }),
-      makeNode('play', 'c', 400, 60, { effectId: 'sparkle', presetId: 'sparkle:default' }),
+      makeNode('play', 'a', 400, -60, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+      makeNode('play', 'c', 400, 60, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
     ];
     const wires: GraphEdge[] = [
       { id: 'e0', from: 'sw', to: 'a', fromPort: 'band-0' },
       { id: 'e2', from: 'sw', to: 'c', fromPort: 'band-2' },
     ];
     const sw = { valueMode: 'bands' as const, bands: [0.3, 0.7] };
-    expect(fireValueSwitch(sw, kids, wires, 0.2)).toEqual(['chase']); // band-0
+    expect(fireValueSwitch(sw, kids, wires, 0.2)).toEqual(['gen:chase-bands']); // band-0
     expect(fireValueSwitch(sw, kids, wires, 0.5)).toEqual([]); // band-1 empty → nothing
-    expect(fireValueSwitch(sw, kids, wires, 0.9)).toEqual(['sparkle']); // band-2
+    expect(fireValueSwitch(sw, kids, wires, 0.9)).toEqual(['gen:pixel-accum']); // band-2
   });
 
   it('ignores edges on the default output when in bands mode (port-less wires fire nothing)', () => {
     // an edge with no fromPort must not be treated as any band
-    const kids = [makeNode('play', 'a', 400, 0, { effectId: 'chase', presetId: 'chase:default' })];
+    const kids = [makeNode('play', 'a', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' })];
     const wires: GraphEdge[] = [{ id: 'e0', from: 'sw', to: 'a' }];
     expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, kids, wires, 0.2)).toEqual([]);
   });
@@ -139,14 +139,14 @@ describe('value switch — back-compat defaults', () => {
     delete (sw as Partial<GraphNode>).invert;
     delete (sw as Partial<GraphNode>).bands;
     const graph: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0), sw, makeNode('play', 'p', 400, 0, { effectId: 'chase', presetId: 'chase:default' })],
+      nodes: [makeNode('trigger', 'trigger', 0, 0), sw, makeNode('play', 'p', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' })],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },
         { id: 'e1', from: 'sw', to: 'p' },
       ],
     };
     sim.triggerGraph('pad', graph, ctxV(0.3));
-    expect(sim.voices.map((v) => v.effectId)).toEqual(['chase']); // ≤0.5 → passes
+    expect(sim.voices.map((v) => v.effectId)).toEqual(['gen:chase-bands']); // ≤0.5 → passes
   });
 });
 
@@ -157,8 +157,8 @@ describe('non-value switch modes unchanged', () => {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
         makeNode('switch', 'sw', 200, 0, { on: 'section' }),
-        makeNode('play', 'a', 400, -40, { effectId: 'chase', presetId: 'chase:default' }),
-        makeNode('play', 'b', 400, 40, { effectId: 'sparkle', presetId: 'sparkle:default' }),
+        makeNode('play', 'a', 400, -40, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+        makeNode('play', 'b', 400, 40, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
       ],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },
@@ -167,6 +167,6 @@ describe('non-value switch modes unchanged', () => {
       ],
     };
     sim.triggerGraph('pad', graph, ctxV(0.2)); // ctx sectionIndex 0 → first child
-    expect(sim.voices.map((v) => v.effectId)).toEqual(['chase']);
+    expect(sim.voices.map((v) => v.effectId)).toEqual(['gen:chase-bands']);
   });
 });

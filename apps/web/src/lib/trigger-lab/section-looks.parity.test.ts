@@ -60,7 +60,10 @@ describe('section looks — sim/engine parity', () => {
     engine.setShow(buildShow(src));
     engine.applyInput({ kind: 'recallSection', sectionId: section!.id, timeMs: 0 });
     engine.tick(5, 5, transport(5)); // drain recall → spawn looks (born at 5)
-    engine.tick(1300, 1295, transport(1300)); // age past the slowest look attack so levels register
+    // Age past the slowest look attack (800ms) so every look's level registers, while still
+    // inside the shortest look's release window (an effect-bus wash look derives a 400/700
+    // envelope from its category, fully released by ~1100ms) — observe both looks while lit.
+    engine.tick(900, 895, transport(900));
 
     // Same count, same buses occupied → the same voice set at the observable seam.
     expect(sim.voices.length).toBeGreaterThan(1); // non-vacuous

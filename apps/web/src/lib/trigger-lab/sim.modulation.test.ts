@@ -29,10 +29,10 @@ const envNode = (id: string, shape = defaultEnvelope('rise')): GraphNode =>
   makeNode('envelope', id, 0, 0, { env: { [voice.ENVELOPE_NODE_KEY]: shape } });
 const edge = (id: string, from: string, to: string, over: Partial<GraphEdge> = {}): GraphEdge => ({ id, from, to, ...over });
 
-/** trigger → play('chase'), with an envelope wired to the play node's `brightness` row. */
+/** trigger → play('gen:chase-bands'), with an envelope wired to the play node's `brightness` row. */
 function envToBrightness(): TriggerGraph {
   return {
-    nodes: [trigger(), playNode('chase'), envNode('e')],
+    nodes: [trigger(), playNode('gen:chase-bands'), envNode('e')],
     edges: [edge('flow', 'trigger', 'p'), edge('mod', 'e', 'p', { toPort: 'param:brightness' })],
   };
 }
@@ -69,7 +69,7 @@ describe('sim — modulation graph resolution', () => {
 
   it('an unwired envelope leaves the voice with no modulations (hot path)', () => {
     const graph: TriggerGraph = {
-      nodes: [trigger(), playNode('chase'), envNode('e')],
+      nodes: [trigger(), playNode('gen:chase-bands'), envNode('e')],
       edges: [edge('flow', 'trigger', 'p')],
     };
     const sim = freshSim();
@@ -85,7 +85,7 @@ describe('sim — modulation graph resolution', () => {
 
   it('an envelope node does not fire as a trigger-flow child (inert source)', () => {
     const graph: TriggerGraph = {
-      nodes: [trigger(), envNode('e'), playNode('chase')],
+      nodes: [trigger(), envNode('e'), playNode('gen:chase-bands')],
       edges: [edge('e0', 'trigger', 'e'), edge('e1', 'e', 'p')],
     };
     const sim = freshSim();

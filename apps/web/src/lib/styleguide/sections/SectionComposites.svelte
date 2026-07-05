@@ -20,7 +20,7 @@
   import Slider from '../../ui/Slider.svelte';
   import DemoCard from '../DemoCard.svelte';
   import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
-  import { PATTERN_EFFECTS, GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
+  import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ControllerStatus, DiscoveredController, MonitorEvent, OutputStatus } from '../../ws/protocol-types';
@@ -88,9 +88,9 @@
   /* ---- EffectThumb ------------------------------------------------------------ */
   const defaults = (eff: EffectDef): ParamValues =>
     Object.fromEntries(eff.params.map((p) => [p.key, p.default]));
-  const thumbIds = ['swirl', 'chase', 'sparkle', 'rip', 'wash'];
+  const thumbIds = ['gen:chase-bands', 'gen:helix', 'gen:pixel-accum', 'gen:ripple-3d', 'gen:radial-wash'];
   const patternThumbs = thumbIds
-    .map((id) => PATTERN_EFFECTS.find((e) => e.id === id))
+    .map((id) => GENERATOR_EFFECTS.find((e) => e.id === id))
     .filter((e): e is EffectDef => !!e);
   const genThumb = GENERATOR_EFFECTS[0];
   const playFace = patternThumbs[1] ?? patternThumbs[0];
@@ -200,7 +200,7 @@
         {#if playFace}
           <NodeCard icon={kindIcon.play} title={playFace.name} sub="with EffectThumb" tint={tint.play}>
             {#snippet thumb()}
-              <EffectThumb pattern={playFace.pattern} params={defaults(playFace)} w={56} h={32} />
+              <EffectThumb pattern={playFace.pattern} params={defaults(playFace)} generatorId={playFace.generatorId} w={56} h={32} />
             {/snippet}
           </NodeCard>
         {/if}
@@ -245,7 +245,7 @@
       <div class="thumb-row">
         {#each patternThumbs as eff (eff.id)}
           <figure class="thumb-fig">
-            <EffectThumb pattern={eff.pattern} params={defaults(eff)} w={96} h={54} />
+            <EffectThumb pattern={eff.pattern} params={defaults(eff)} generatorId={eff.generatorId} w={96} h={54} />
             <figcaption>{eff.name}</figcaption>
           </figure>
         {/each}

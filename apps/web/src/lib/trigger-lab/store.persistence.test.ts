@@ -111,7 +111,7 @@ describe('TriggerLab effects hydration (union, never replace)', () => {
   it('surfaces new built-in effects even when the persisted blob predates them', () => {
     // A returning user's blob holds only a stale subset (no generator effects). The
     // union re-adds every CURRENT built-in, so the 41 generator effects still appear.
-    seed({ effects: [userFx('swirl')] }); // 'swirl' is a built-in; the blob lacks gen:*
+    seed({ effects: [userFx('gen:helix')] }); // 'gen:helix' is a built-in; the blob lacks gen:*
     const store = new TriggerLab(fakeClient);
     expect(store.effects).toHaveLength(EFFECTS.length);
     expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true);
@@ -132,7 +132,7 @@ describe('TriggerLab presets hydration (union, never replace)', () => {
     // `<id>:default`s. The union re-adds every missing built-in, so swapping a play
     // node to a generator effect still resolves its Default preset (no blank sub /
     // frozen preview). Regression for the generator-effect swap bug.
-    seed({ presets: [{ id: 'mine:default', name: 'mine', effectId: 'swirl', params: {} } as Preset] });
+    seed({ presets: [{ id: 'mine:default', name: 'mine', effectId: 'gen:helix', params: {} } as Preset] });
     const store = new TriggerLab(fakeClient);
     const genDefaults = store.presets.filter((p) => p.id.startsWith('gen:') && p.id.endsWith(':default'));
     expect(genDefaults.length).toBeGreaterThan(0); // generator Defaults restored
