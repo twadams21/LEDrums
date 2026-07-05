@@ -123,13 +123,34 @@
     "actions": [
       {
         "click": "button:has-text('Take over')",
-        "force": true
+        "force": true,
+        "optional": true
       },
       {
         "wait": 500
       },
       {
-        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+        "click": "button[title='Open Snare']",
+        "force": true
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Ambient & Base']"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
       },
       {
         "wait": 600
@@ -150,13 +171,34 @@
     "actions": [
       {
         "click": "button:has-text('Take over')",
-        "force": true
+        "force": true,
+        "optional": true
       },
       {
         "wait": 500
       },
       {
-        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+        "click": "button[title='Open Snare']",
+        "force": true
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Particles & Air']"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": ".svelte-flow__node:has-text('Sacred HOGs'), .svelte-flow__node:has-text('Starfield'), .svelte-flow__node:has-text('Orbit Comet'), .svelte-flow__node:has-text('Confetti Burst')"
       },
       {
         "wait": 600
@@ -164,12 +206,6 @@
       {
         "click": "button[aria-label='Change effect']",
         "force": true
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": ".dlg-gallery .tabs-trigger:has-text('Particles')"
       },
       {
         "wait": 600
@@ -183,10 +219,25 @@
     "actions": [
       {
         "click": "button:has-text('Take over')",
-        "force": true
+        "force": true,
+        "optional": true
       },
       {
         "wait": 500
+      },
+      {
+        "click": "button[title='Open Snare']",
+        "force": true
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
       },
       {
         "click": "button[title='Add Canvas']"
@@ -216,10 +267,25 @@
     "actions": [
       {
         "click": "button:has-text('Take over')",
-        "force": true
+        "force": true,
+        "optional": true
       },
       {
         "wait": 500
+      },
+      {
+        "click": "button[title='Open Snare']",
+        "force": true
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
       },
       {
         "click": "button[title='Add Canvas']"
@@ -255,13 +321,34 @@
     "actions": [
       {
         "click": "button:has-text('Take over')",
-        "force": true
+        "force": true,
+        "optional": true
       },
       {
         "wait": 500
       },
       {
-        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+        "click": "button[title='Open Snare']",
+        "force": true
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Textures']"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "click": ".svelte-flow__node:has-text('Aurora'), .svelte-flow__node:has-text('Plasma'), .svelte-flow__node:has-text('Perlin Clouds')"
       },
       {
         "wait": 600
@@ -269,12 +356,6 @@
       {
         "click": "button[aria-label='Change effect']",
         "force": true
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": ".dlg-gallery .seg-btn:has-text('Kit')"
       },
       {
         "wait": 600

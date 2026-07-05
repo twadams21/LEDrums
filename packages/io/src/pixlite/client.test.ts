@@ -95,6 +95,7 @@ describe('HttpPixliteClient (injected transport)', () => {
 });
 
 describe('HttpPixliteClient / probe over the real node:http transport', () => {
+  const REAL_TRANSPORT_TEST_TIMEOUT_MS = 15_000;
   const servers: Server[] = [];
   const start = (handler: RequestListener): Promise<number> => {
     const server = createServer(handler);
@@ -120,13 +121,13 @@ describe('HttpPixliteClient / probe over the real node:http transport', () => {
         res.end(STAT_BODY);
       }
     });
-    const c = new HttpPixliteClient({ host: '127.0.0.1', port });
+    const c = new HttpPixliteClient({ host: '127.0.0.1', port, timeoutMs: 10_000 });
     const id = await c.probe();
     expect(id?.prodName).toBe('PixLite A4-S Mk3');
     expect(id?.host).toBe('127.0.0.1');
     const stats = await c.statisticRead(['']);
     expect(stats.rates.inFrmRate).toBe(44);
-  });
+  }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
 
   it('returns null on probe timeout (server never responds)', async () => {
     const port = await start(() => {
@@ -134,11 +135,11 @@ describe('HttpPixliteClient / probe over the real node:http transport', () => {
     });
     const id = await probe('127.0.0.1', 60, { port });
     expect(id).toBeNull();
-  });
+  }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
 
   it('returns null when the host refuses the connection', async () => {
     // Nothing listening on this port → ECONNREFUSED → treated as "no controller".
     const id = await probe('127.0.0.1', 200, { port: 1 });
     expect(id).toBeNull();
-  });
+  }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
 });

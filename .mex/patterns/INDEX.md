@@ -5,3 +5,4 @@ Lookup table for all pattern files in this directory. Check here before starting
 | Pattern | Use when |
 |---------|----------|
 | [add-an-effect.md](add-an-effect.md) | Adding a new lighting effect to the registry (3D, 2D-UV texture, particle, or trigger) |
+| [ui-shot-sweep.md](ui-shot-sweep.md) | Running or repairing the ui-shot screenshot sweep for gallery, shell, or visual close-out tasks |
