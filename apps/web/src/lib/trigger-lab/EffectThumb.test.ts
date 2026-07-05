@@ -155,7 +155,7 @@ describe('renderGeneratorThumbFrame', () => {
     // 'solid-base' is always registered and renders a simple uniform colour.
     const result = renderGeneratorThumbFrame('solid-base', {}, 400);
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(26 * 13);
+    expect(result!.length).toBe(26 * 4);
   });
 
   it('each returned tuple contains three numbers in 0..1', () => {

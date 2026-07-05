@@ -7,7 +7,7 @@ import { listEffects } from '@ledrums/core';
 const N = THUMB_COLS * THUMB_ROWS;
 
 describe('getThumbProjection', () => {
-  it('projects all 338 thumb pixels inside the canvas at every thumb size', () => {
+  it('projects all 104 thumb pixels inside the canvas at every thumb size', () => {
     // gallery / inspector / clip-settings at dpr 1 and 2
     for (const [w, h] of [
       [170, 92],
@@ -56,6 +56,11 @@ describe('getThumbProjection', () => {
     const bottom = main.y[0]!;
     const top = main.y[(THUMB_ROWS - 1) * THUMB_COLS]!;
     expect(top).toBeLessThan(bottom);
+  });
+
+  it('uses four physical hoop rows for the thumbnail model', () => {
+    expect(THUMB_ROWS).toBe(4);
+    expect(N).toBe(104);
   });
 
   it('depth-shades the far side of the drum dimmer than the front', () => {

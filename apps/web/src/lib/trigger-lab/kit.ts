@@ -66,11 +66,11 @@ export function buildLabModel(): LabModel {
 // ---- Thumbnail PixelModel (26×13 synthetic drum) ----------------------------
 
 const THUMB_COLS = 26;
-const THUMB_ROWS = 13;
+const THUMB_ROWS = 4;
 /** Radius of the synthetic thumbnail drum, mm. */
 const THUMB_RADIUS_MM = 100;
 /** Spacing between hoops, mm. */
-const THUMB_SPACING_MM = 12;
+const THUMB_SPACING_MM = 40;
 
 let _thumbPm: PixelModel | null = null;
 

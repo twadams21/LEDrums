@@ -148,7 +148,7 @@
     const proj = getThumbProjection(dw, dh, kitWide);
 
     const paintDrum = (table: DotTable, pixels: [number, number, number][]): void => {
-      const { x, y, r: rad, shade } = table;
+      const { shade } = table;
       for (let i = 0; i < pixels.length; i++) {
         const [rv, gv, bv] = pixels[i]!;
         const s = shade[i]! * bright;
@@ -156,18 +156,19 @@
         const G = Math.round(gv * s * 255);
         const B = Math.round(bv * s * 255);
         if (R < 3 && G < 3 && B < 3) continue; // unlit — the baked base layer shows the drum form
-        const cx = x[i]!;
-        const cy = y[i]!;
-        const cr = rad[i]!;
-        // Soft glow halo + bright core, additive ('lighter') so overlapping dots bloom.
-        ctx.fillStyle = `rgba(${R},${G},${B},0.28)`;
+        // Soft glow halo + bright core, additive ('lighter') so neighbouring hoop
+        // wedge sections bloom like the 3D visualiser's physical LED arcs.
+        ctx.lineCap = 'butt';
+        ctx.strokeStyle = `rgba(${R},${G},${B},0.28)`;
+        ctx.lineWidth = table.lw[i]! * GLOW_SCALE;
         ctx.beginPath();
-        ctx.arc(cx, cy, cr * GLOW_SCALE, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = `rgba(${R},${G},${B},0.95)`;
+        ctx.ellipse(table.hx[i]!, table.hy[i]!, table.rx[i]!, table.ry[i]!, 0, table.a0[i]!, table.a1[i]!);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(${R},${G},${B},0.95)`;
+        ctx.lineWidth = table.lw[i]!;
         ctx.beginPath();
-        ctx.arc(cx, cy, cr, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.ellipse(table.hx[i]!, table.hy[i]!, table.rx[i]!, table.ry[i]!, 0, table.a0[i]!, table.a1[i]!);
+        ctx.stroke();
       }
     };
 

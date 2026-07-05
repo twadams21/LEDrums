@@ -108,11 +108,14 @@
     color: var(--text-faint);
   }
   .pitem {
-    display: flex;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
     align-items: center;
+    align-content: center;
     gap: var(--space-2);
     width: 100%;
-    padding: 6px var(--space-2);
+    min-height: 40px;
+    padding: 7px var(--space-2);
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-2);
@@ -136,13 +139,14 @@
     place-items: center;
     width: 22px;
     height: 22px;
+    grid-row: 1 / span 2;
     flex: none;
     border-radius: var(--radius-1);
     background: color-mix(in oklch, var(--tint) 16%, transparent);
     color: var(--tint);
   }
   .pn {
-    flex: 1;
+    grid-column: 2;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -152,8 +156,13 @@
     color: var(--text);
   }
   .pd {
-    flex: none;
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: var(--text-2xs);
+    line-height: 1.2;
     color: var(--text-faint);
   }
   .none {

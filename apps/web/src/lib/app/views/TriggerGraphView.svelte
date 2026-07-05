@@ -65,7 +65,7 @@
   // edit here). Selecting a node flips the drawer to its Inspector tab.
   let neTab = $state<NodeEditorTab>('add');
   $effect(() => {
-    if (shell.selection?.kind === 'node') neTab = 'inspector';
+    neTab = shell.selection?.kind === 'node' ? 'inspector' : 'add';
   });
 
   const MOD_HINT: Partial<Record<NodeKind, string>> = {

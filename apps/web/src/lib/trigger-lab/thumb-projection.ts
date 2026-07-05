@@ -14,13 +14,13 @@
 import { buildThumbPixelModel } from './kit';
 
 export const THUMB_COLS = 26;
-export const THUMB_ROWS = 13;
+export const THUMB_ROWS = 4;
 const N = THUMB_COLS * THUMB_ROWS;
 
 /** How squashed the hoop ellipses are (1 = circle, 0 = flat line). */
 const SQUASH = 0.32;
 /** Drum height as a fraction of its diameter (144mm tall / 200mm wide ≈ 0.72). */
-const HEIGHT_RATIO = 1.44;
+const HEIGHT_RATIO = 1.18;
 /** Slight vertical perspective: top hoops (nearer the ¾ camera) render a touch wider. */
 const PERSP = 0.1;
 /** Depth shading floor for pixels on the far side of the drum. */
@@ -38,6 +38,13 @@ export interface DotTable {
   r: Float32Array;
   /** Depth shade 0..1 — far-side dots render dimmer/smaller so the cylinder reads. */
   shade: Float32Array;
+  hx: Float32Array;
+  hy: Float32Array;
+  rx: Float32Array;
+  ry: Float32Array;
+  a0: Float32Array;
+  a1: Float32Array;
+  lw: Float32Array;
 }
 
 export interface ThumbProjection {
@@ -61,12 +68,19 @@ function projectDrum(a: number, cx: number, cy: number, dim: number): DotTable {
   const y = new Float32Array(N);
   const r = new Float32Array(N);
   const shade = new Float32Array(N);
+  const hx = new Float32Array(N);
+  const hy = new Float32Array(N);
+  const rx = new Float32Array(N);
+  const ry = new Float32Array(N);
+  const a0 = new Float32Array(N);
+  const a1 = new Float32Array(N);
+  const lw = new Float32Array(N);
 
   const hoopSpan = a * HEIGHT_RATIO; // vertical distance bottom hoop → top hoop
   const topY = cy - hoopSpan / 2;
   const rows1 = THUMB_ROWS - 1;
-  // Core dot radius scales with the drum so all three thumb sizes read the same.
-  const dotR = Math.max(1.1, a * 0.055);
+  const lineW = Math.max(1.25, a * 0.075);
+  const step = (Math.PI * 2) / THUMB_COLS;
 
   for (const p of pm.pixels) {
     const i = p.id;
@@ -75,13 +89,21 @@ function projectDrum(a: number, cx: number, cy: number, dim: number): DotTable {
     const aRad = (p.angleDeg * Math.PI) / 180;
     const cos = Math.cos(aRad);
     const sin = Math.sin(aRad); // +sin = toward the camera (front of the drum)
+    const ringY = topY + (1 - t) * hoopSpan;
     x[i] = cx + cos * rad;
-    y[i] = topY + (1 - t) * hoopSpan + sin * rad * SQUASH;
+    y[i] = ringY + sin * rad * SQUASH;
     const front = sin * 0.5 + 0.5; // 0 far side … 1 front
     shade[i] = (BACK_SHADE + (1 - BACK_SHADE) * front) * dim;
-    r[i] = dotR * (0.72 + 0.38 * front);
+    r[i] = (lineW / 2) * (0.86 + 0.24 * front);
+    hx[i] = cx;
+    hy[i] = ringY;
+    rx[i] = rad;
+    ry[i] = rad * SQUASH;
+    a0[i] = aRad - step * 0.46;
+    a1[i] = aRad + step * 0.46;
+    lw[i] = lineW * (0.86 + 0.24 * front);
   }
-  return { x, y, r, shade };
+  return { x, y, r, shade, hx, hy, rx, ry, a0, a1, lw };
 }
 
 function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas | null {
@@ -95,17 +117,23 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas |
   return null;
 }
 
-/** Bake the faint unlit-drum dots so the drum's form reads even when an effect is dark. */
+function strokeSegment(ctx: CanvasRenderingContext2D, t: DotTable, i: number, scale: number): void {
+  ctx.lineWidth = t.lw[i]! * scale;
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  ctx.ellipse(t.hx[i]!, t.hy[i]!, t.rx[i]!, t.ry[i]!, 0, t.a0[i]!, t.a1[i]!);
+  ctx.stroke();
+}
+
+/** Bake the faint unlit-drum segments so the drum's form reads even when an effect is dark. */
 function bakeBaseLayer(w: number, h: number, tables: DotTable[]): HTMLCanvasElement | OffscreenCanvas | null {
   const cv = makeCanvas(w, h);
   const ctx = cv?.getContext('2d') as CanvasRenderingContext2D | null;
   if (!cv || !ctx) return null;
   for (const t of tables) {
     for (let i = 0; i < N; i++) {
-      ctx.fillStyle = `rgba(148, 168, 200, ${(0.1 * t.shade[i]!).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.arc(t.x[i]!, t.y[i]!, t.r[i]!, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.strokeStyle = `rgba(148, 168, 200, ${(0.11 * t.shade[i]!).toFixed(3)})`;
+      strokeSegment(ctx, t, i, 1);
     }
   }
   return cv;
