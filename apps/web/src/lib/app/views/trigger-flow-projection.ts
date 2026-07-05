@@ -1,4 +1,4 @@
-import type { GraphNode, TriggerGraph } from '../../trigger-lab/sim';
+import type { GraphEdge, GraphNode, TriggerGraph } from '../../trigger-lab/sim';
 import { graphToFlowNodes, type TriggerFlowNode } from './graph-to-flow';
 
 export type TriggerProjectionCache = {
@@ -7,9 +7,26 @@ export type TriggerProjectionCache = {
 };
 
 export function triggerNodeSignature(n: GraphNode): string {
-  return n.kind === 'switch'
-    ? `${n.id}:switch:${n.on}:${n.valueMode}:${n.bands?.length ?? 0}`
-    : `${n.id}:${n.kind}`;
+  const modInputs = (n.modInputs ?? []).map((m) => m.param).join(',');
+  const base = `${n.id}:${n.kind}:pos=${n.x},${n.y}:mod=${modInputs}`;
+  switch (n.kind) {
+    case 'switch':
+      return `${base}:on=${n.on}:valueMode=${n.valueMode}:bands=${(n.bands ?? []).join(',')}`;
+    case 'play':
+      return `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
+    case 'modifier':
+      return `${base}:modifier=${n.modifierId ?? ''}`;
+    case 'cc':
+      return `${base}:cc=${n.ccSource ?? 'midi'}:${n.ccController ?? ''}:${n.ccChannel ?? ''}:${n.oscAddress ?? ''}`;
+    case 'lfo':
+      return `${base}:lfo=${n.lfo?.waveform ?? ''}:${n.lfo?.rateMode ?? ''}:${n.lfo?.rateHz ?? ''}:${n.lfo?.division ?? ''}:${n.lfo?.phase ?? ''}`;
+    default:
+      return base;
+  }
+}
+
+export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort'>): string {
+  return `${e.id}:${e.from}:${e.fromPort ?? ''}>${e.to}:${e.toPort ?? ''}`;
 }
 
 export function emptyTriggerProjectionCache(): TriggerProjectionCache {

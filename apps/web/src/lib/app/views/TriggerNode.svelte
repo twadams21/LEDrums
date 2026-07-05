@@ -348,6 +348,7 @@
   }
   /* the scoped modulation input handle rides the row's left edge */
   .modrow :global(.param-handle) {
+    left: -12px;
     background: var(--role-modulation);
     border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
   }

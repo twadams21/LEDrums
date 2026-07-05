@@ -351,6 +351,57 @@ export function inferPlayTypes(
   return out;
 }
 
+/** Repair graph records at the hydrate boundary so a stale/partial sync packet cannot leave
+    dangling wires or duplicate ids in the live editor/sim state. Existing valid references keep
+    their object identity; invalid records are dropped rather than guessed. */
+export function sanitizeGraphIntegrity(graph: TriggerGraph): TriggerGraph {
+  let changed = false;
+  const seenNodes = new Set<string>();
+  const nodes: GraphNode[] = [];
+  for (const node of graph.nodes) {
+    if (!node.id || seenNodes.has(node.id)) {
+      changed = true;
+      continue;
+    }
+    seenNodes.add(node.id);
+    nodes.push(node);
+  }
+
+  const seenEdges = new Set<string>();
+  const seenConnections = new Set<string>();
+  const edges: GraphEdge[] = [];
+  for (const edge of graph.edges) {
+    const connectionKey = `${edge.from}:${edge.fromPort ?? ''}>${edge.to}:${edge.toPort ?? ''}`;
+    if (
+      !edge.id ||
+      seenEdges.has(edge.id) ||
+      seenConnections.has(connectionKey) ||
+      edge.from === edge.to ||
+      !seenNodes.has(edge.from) ||
+      !seenNodes.has(edge.to)
+    ) {
+      changed = true;
+      continue;
+    }
+    seenEdges.add(edge.id);
+    seenConnections.add(connectionKey);
+    edges.push(edge);
+  }
+
+  return changed ? { nodes, edges } : graph;
+}
+
+export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  let changed = false;
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    const clean = sanitizeGraphIntegrity(graph);
+    if (clean !== graph) changed = true;
+    out[key] = clean;
+  }
+  return changed ? out : graphs;
+}
+
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
     every pad-bound graph's trigger source explicit, materialize formerly-linked play nodes' params
     and drop the `linked` flag, fold legacy velocity switches into the canonical value+bands form,
@@ -369,6 +420,7 @@ export function normalizeGraphs(
   // retired effect id has its play nodes rewritten to the live target before anything
   // else resolves them. Empty map today (U3 populates it) → an identity pass for now.
   let next = resolveGraphAliases(graphs);
+  next = sanitizeGraphsIntegrity(next);
   // AFTER alias resolution (a retired id must infer from its live replacement): give every
   // persisted play node its D3 `playType` so typed-node UI (U5) always has one.
   next = inferPlayTypes(next);

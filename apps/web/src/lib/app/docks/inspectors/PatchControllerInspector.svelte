@@ -35,6 +35,7 @@
   port={out?.port}
   controller={store.controllerStatus}
   candidates={store.controllerCandidates}
+  scanning={store.controllerScanning}
   takeover={store.controllerTakeover}
   canEdit={store.canEdit}
   onDiscover={() => store.discoverControllers()}

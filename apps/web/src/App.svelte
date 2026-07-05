@@ -35,6 +35,22 @@
   function onKey(e: KeyboardEvent): void {
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      if (store.undo()) e.preventDefault();
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const selection = shell.selection;
+      if (selection?.kind === 'node') {
+        const node = store.selectedGraph?.nodes.find((n) => n.id === selection.nodeId);
+        if (node && node.kind !== 'trigger') {
+          store.removeNode(node);
+          shell.clearSelection();
+          e.preventDefault();
+        }
+      }
+      return;
+    }
     if (/^[0-9]$/.test(e.key)) {
       const index = e.key === '0' ? 9 : Number(e.key) - 1;
       store.fireSectionGraph(index);

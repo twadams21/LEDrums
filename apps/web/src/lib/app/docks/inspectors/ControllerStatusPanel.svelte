@@ -44,6 +44,7 @@
   let {
     controller,
     candidates,
+    scanning = false,
     outputHost,
     takeover = null,
     canEdit = true,
@@ -58,6 +59,8 @@
     controller: ControllerStatus | null;
     /** Ranked discovery candidates (best-first); each offers Adopt-IP. Empty when none / no sweep. */
     candidates: DiscoveredController[];
+    /** True while the server is sweeping candidate subnets for PixLite devices. */
+    scanning?: boolean;
     /** The output transport's current host — drives the "point output here" resync affordance when
         the adopted controller's IP has drifted from where packets are being sent. */
     outputHost?: string;
@@ -266,8 +269,8 @@
       </div>
     </div>
   {:else}
-    <button type="button" class="action wide discover" disabled={!canEdit} onclick={() => onDiscover?.()}>
-      <Radar size={13} aria-hidden="true" /> Discover controllers
+    <button type="button" class="action wide discover" class:scanning disabled={!canEdit || scanning} onclick={() => onDiscover?.()}>
+      <Radar size={13} aria-hidden="true" /> {scanning ? 'Discovering...' : 'Discover controllers'}
     </button>
   {/if}
 
@@ -285,6 +288,8 @@
         </li>
       {/each}
     </ul>
+  {:else if scanning}
+    <p class="hint scanning-row"><Radar size={13} aria-hidden="true" /> Scanning output subnet for PixLite controllers...</p>
   {:else if !controller}
     <p class="hint">No controller adopted. Discover sweeps the output subnet for PixLite devices.</p>
   {/if}
@@ -565,6 +570,20 @@
   }
   .action.discover:hover:not(:disabled) {
     border-color: color-mix(in oklch, var(--accent) 60%, transparent);
+  }
+  .action.scanning :global(svg),
+  .scanning-row :global(svg) {
+    animation: scan-spin 1s linear infinite;
+  }
+  .scanning-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  @keyframes scan-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   /* An action currently driving the takeover (cycle / fade) reads as "on" in the warn family, so the
      running pattern is obvious among its siblings. */

@@ -180,6 +180,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
   let health: ControllerStatus['health'] = {};
   let lastSeen: number | null = null;
   let reachable = false;
+  let statsEverSucceeded = false;
   // Active built-in test pattern (S49), or null in normal LIVE mode. Server-authoritative so every
   // watcher's takeover banner + output pill agree. While non-null the box ignores the Art-Net stream.
   let testPattern: ControllerTestPattern | null = null;
@@ -266,18 +267,19 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       health = { ...stats.health };
       lastSeen = now();
       reachable = true;
+      statsEverSucceeded = true;
       emitStatus();
     } catch (err) {
       // Any error/timeout ⇒ the controller is unreachable/lost. Freeze `lastSeen` (it ages) and
       // report the lost state so the panel can make it unmissable.
-      reachable = false;
+      reachable = !statsEverSucceeded && identity !== null && lastSeen !== null;
       emitStatus();
       deps.monitor?.({
-        type: 'error',
+        type: reachable ? 'system' : 'error',
         direction: 'in',
         source: 'server/controller',
         destination: host ?? 'controller',
-        label: 'Controller poll failed (unreachable)',
+        label: reachable ? 'Controller stats unavailable' : 'Controller poll failed (unreachable)',
         detail: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -301,6 +303,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       health = {};
       lastSeen = null;
       reachable = false;
+      statsEverSucceeded = false;
       testPattern = null;
       startPolling();
     },
@@ -367,6 +370,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       health = {};
       lastSeen = now();
       reachable = true;
+      statsEverSucceeded = false;
       testPattern = null;
       client = deps.createClient({ host, auth });
       deps.persistController({ host, nickname, ...(auth ? { auth } : {}) });

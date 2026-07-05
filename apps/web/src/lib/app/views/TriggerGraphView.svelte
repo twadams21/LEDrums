@@ -26,6 +26,7 @@
     projectionDesyncIds,
     projectTriggerFlowNodes,
     resetProjectionCache,
+    triggerEdgeSignature,
     triggerNodeSignature,
     type TriggerProjectionCache,
   } from './trigger-flow-projection';
@@ -173,16 +174,16 @@
   let nodes = $state.raw<TriggerFlowNode[]>([]);
   let edges = $state.raw<TriggerFlowEdge[]>([]);
 
-  /** Structure signatures — drive reactive rebuilds. Node positions are deliberately
-      NOT in the node signature (a drag must not retrigger a rebuild mid-move); edge
-      endpoints ARE, so a reconnect re-derives. */
+  /** Authoritative graph signatures — drive reactive rebuilds. Positions are included so
+      remote same-graph moves repaint, while selection-only changes still preserve xyflow's
+      live measured node object through the projection cache. */
   /** Per-node identity signature: kind plus a value+bands switch's handle-affecting shape
       (mode + band count). Drives reactive rebuilds AND decides which flow-node objects can be
       reused on re-projection — reuse keeps xyflow's measured handleBounds + live position, so a
       structure change to one node never makes every node drop its wires or snap position. */
   const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map(triggerNodeSignature).join('|'));
   const edgeSig = $derived(
-    (store.selectedGraph?.edges ?? []).map((e) => `${e.id}:${e.from}>${e.to}`).join('|'),
+    (store.selectedGraph?.edges ?? []).map(triggerEdgeSignature).join('|'),
   );
   const selectedNodeId = $derived(shell.selection?.kind === 'node' ? shell.selection.nodeId : null);
 
@@ -248,6 +249,34 @@
           cache: projectionCache,
         });
         projectionCache = projected.cache; // write-through ONLY on success (exception-safe)
+        const missing = projectionDesyncIds(
+          projected.nodes.map((n) => n.id),
+          g.nodes.map((n) => n.id),
+        );
+        if (missing.length) {
+          const detail = {
+            missing,
+            cacheGraphKey: projectionCache.graphKey,
+            currentGraphKey: graphKey,
+            flowNodeIds: projected.nodes.map((n) => n.id),
+            graphNodeIds: g.nodes.map((n) => n.id),
+          };
+          console.error(
+            '[trigger-graph] projection desync - rendered flow-node ids missing from the store graph',
+            detail,
+          );
+          store.reportError('trigger-graph', 'projection-desync', JSON.stringify(detail));
+          projectionCache = resetProjectionCache();
+          const clean = projectTriggerFlowNodes({
+            graph: g,
+            graphKey,
+            selectedNodeId: selId,
+            previousNodes: [],
+            cache: projectionCache,
+          });
+          projectionCache = clean.cache;
+          return clean.nodes;
+        }
         if (import.meta.env.DEV) {
           const missing = projectionDesyncIds(
             projected.nodes.map((n) => n.id),

@@ -5,9 +5,66 @@ import {
   projectionDesyncIds,
   projectTriggerFlowNodes,
   resetProjectionCache,
+  triggerEdgeSignature,
 } from './trigger-flow-projection';
 
 describe('projectTriggerFlowNodes', () => {
+  it('rebuilds a same-id node when the authoritative graph position changes under the same key', () => {
+    const graph: TriggerGraph = { nodes: [makeNode('trigger', 'trigger', 10, 20)], edges: [] };
+    const first = projectTriggerFlowNodes({
+      graph,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: [],
+      cache: emptyTriggerProjectionCache(),
+    });
+    const moved: TriggerGraph = { nodes: [makeNode('trigger', 'trigger', 700, 800)], edges: [] };
+
+    const second = projectTriggerFlowNodes({
+      graph: moved,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: first.nodes,
+      cache: first.cache,
+    });
+
+    expect(second.nodes[0]).not.toBe(first.nodes[0]);
+    expect(second.nodes[0]!.position).toEqual({ x: 700, y: 800 });
+  });
+
+  it('rebuilds a same-id node when modulation parameter rows change its handles', () => {
+    const graph: TriggerGraph = {
+      nodes: [makeNode('play', 'p1', 10, 20, { effectId: 'gen:radial-wash' })],
+      edges: [],
+    };
+    const first = projectTriggerFlowNodes({
+      graph,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: [],
+      cache: emptyTriggerProjectionCache(),
+    });
+    const modulated: TriggerGraph = {
+      nodes: [
+        makeNode('play', 'p1', 10, 20, {
+          effectId: 'gen:radial-wash',
+          modInputs: [{ param: 'brightness' }],
+        }),
+      ],
+      edges: [],
+    };
+
+    const second = projectTriggerFlowNodes({
+      graph: modulated,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: first.nodes,
+      cache: first.cache,
+    });
+
+    expect(second.nodes[0]).not.toBe(first.nodes[0]);
+  });
+
   it('does not reuse flow-node positions across graph keys when node ids match', () => {
     const graphA: TriggerGraph = { nodes: [makeNode('trigger', 'trigger', 10, 20)], edges: [] };
     const graphB: TriggerGraph = { nodes: [makeNode('trigger', 'trigger', 700, 800)], edges: [] };
@@ -166,5 +223,16 @@ describe('projectionDesyncIds', () => {
     expect(projectionDesyncIds(['a', 'ghost', 'c'], ['a', 'c'])).toEqual(['ghost']);
     expect(projectionDesyncIds(['g1', 'g2'], [])).toEqual(['g1', 'g2']);
     expect(projectionDesyncIds([], ['a'])).toEqual([]);
+  });
+});
+
+describe('triggerEdgeSignature', () => {
+  it('includes source and target ports so handle-only wire changes rebuild edges', () => {
+    expect(triggerEdgeSignature({ id: 'e1', from: 'sw', fromPort: 'band-0', to: 'p', toPort: 'in' })).not.toBe(
+      triggerEdgeSignature({ id: 'e1', from: 'sw', fromPort: 'band-1', to: 'p', toPort: 'in' }),
+    );
+    expect(triggerEdgeSignature({ id: 'e2', from: 'env', to: 'p', toPort: 'param:brightness' })).not.toBe(
+      triggerEdgeSignature({ id: 'e2', from: 'env', to: 'p', toPort: 'param:hue' }),
+    );
   });
 });

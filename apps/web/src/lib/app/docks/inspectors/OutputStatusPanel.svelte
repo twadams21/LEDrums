@@ -33,6 +33,7 @@
     port,
     controller,
     candidates = [],
+    scanning = false,
     takeover = null,
     canEdit = true,
     onDiscover,
@@ -53,6 +54,8 @@
     controller?: ControllerStatus | null;
     /** Discovery candidates for the controller section (ignored when `controller` is undefined). */
     candidates?: DiscoveredController[];
+    /** True while discovery is running. */
+    scanning?: boolean;
     /** Active controller test pattern (S49) — forwarded to the controller panel's takeover banner. */
     takeover?: ControllerTestPattern | null;
     /** Editor gate forwarded to the controller actions. */
@@ -104,6 +107,7 @@
     <ControllerStatusPanel
       {controller}
       {candidates}
+      {scanning}
       {takeover}
       outputHost={output?.host}
       {canEdit}
