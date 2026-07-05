@@ -55,7 +55,7 @@ export const PARAM_LIBRARY: ParamSpec[] = [hueP(200), briP, speedP, syncP, bands
 // `chase`, …) resolve through the alias map at hydrate / buildShow. The seed PADS/SECTIONS
 // below now reference the generator effects directly.
 
-// ---- generator-backed effects (the 41 original engine effects) --------------
+// ---- generator-backed effects ------------------------------------------------
 // Each legacy `EffectGenerator` in core's registry is surfaced as a selectable
 // EffectDef carrying `generatorId`; the compositor (server) and render.ts (offline)
 // delegate rendering to it. Param specs are mapped from the generator's own spec;
@@ -85,7 +85,7 @@ const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number
   trigger: { attackMs: 10, sustainMs: 100, releaseMs: 300 },
 };
 
-/** Map a legacy core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s so
+/** Map a core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s so
     no spec is ever silently dropped (S18). number/bool map 1:1 (numbers become
     envelope-able); `enum` maps to a Select (string value, its `options` carried through);
     `color` maps to a colour spec (a `'#rrggbb'` string) — its inspector control (the
@@ -106,33 +106,16 @@ export function mapParamSpec(spec: CoreParamSpec): ParamSpec {
     };
   }
   if (spec.type === 'bool') {
-    return {
-      key: spec.key,
-      label: spec.label,
-      kind: 'bool',
-      default: typeof spec.default === 'boolean' ? spec.default : false,
-    };
+    return { key: spec.key, label: spec.label, kind: 'bool', default: typeof spec.default === 'boolean' ? spec.default : false };
   }
   if (spec.type === 'enum') {
     const options = spec.options ?? [];
-    return {
-      key: spec.key,
-      label: spec.label,
-      kind: 'enum',
-      options,
-      default: typeof spec.default === 'string' ? spec.default : options[0] ?? '',
-    };
+    return { key: spec.key, label: spec.label, kind: 'enum', options, default: typeof spec.default === 'string' ? spec.default : options[0] ?? '' };
   }
-  // color — a static-colour param carried as a '#rrggbb' string.
-  return {
-    key: spec.key,
-    label: spec.label,
-    kind: 'color',
-    default: typeof spec.default === 'string' ? spec.default : '#ffffff',
-  };
+  return { key: spec.key, label: spec.label, kind: 'color', default: typeof spec.default === 'string' ? spec.default : '#ffffff' };
 }
 
-/** All 41 legacy generators as selectable, generator-backed EffectDefs. Scope is `kit`
+/** All core generators as selectable, generator-backed EffectDefs. Scope is `kit`
     for every one: generators own their spatial layout (drum-locality is intrinsic — e.g.
     whole-drum lights only the struck drum from its trigger), so drum-masking a kit-wide
     field (plasma, radial-wash) would wrongly clip it. */
@@ -156,8 +139,10 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
   };
 });
 
-/** The full selectable registry — the generator-backed effects (the retired pattern
-    effects are gone; see the note above). */
+/** The full selectable registry of REAL effects. Canvas cards are NOT listed here: the
+    store derives virtual `canvas:<sceneId>` EffectDefs from the core built-in scene library
+    plus the show's authored scenes (`store.canvasEffects`), so there is exactly one source
+    of canvas cards and shows never persist duplicates of the built-ins (D4). */
 export const EFFECTS: EffectDef[] = [...GENERATOR_EFFECTS];
 
 const effectById = new Map(EFFECTS.map((e) => [e.id, e] as const));
@@ -169,14 +154,14 @@ export function effectScope(effectId: string): Scope {
 // ---- presets ----------------------------------------------------------------
 const slug = (s: string) => s.toLowerCase().replace(/\s+/g, '-');
 
-function preset(effectId: string, name: string, overrides: Record<string, number | boolean> = {}): Preset {
+function preset(effectId: string, name: string, overrides: Record<string, number | boolean | string> = {}): Preset {
   const eff = effectById.get(effectId)!;
   return { id: `${effectId}:${slug(name)}`, name, effectId, params: { ...defaultParams(eff), ...overrides } };
 }
 
 export const PRESETS: Preset[] = [
-  // A Default preset for every generator effect so play nodes resolve `${id}:default`.
-  ...GENERATOR_EFFECTS.map((e) => preset(e.id, 'Default')),
+  // A Default preset for every selectable effect so play nodes resolve `${id}:default`.
+  ...EFFECTS.map((e) => preset(e.id, 'Default')),
   // Burst merge (U3): its per-hit pop = a short-reach, fast-decay radial wash.
   preset('gen:radial-wash', 'Pop', { reach: 320, decayMs: 200, speed: 2.2, width: 300 }),
 ];

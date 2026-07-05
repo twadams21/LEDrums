@@ -48,7 +48,7 @@
   // Canvas play nodes (D3/D4) get a scene picker; their params render through the SAME generic
   // param loop below (CANVAS_PARAM_SPEC), so there's no special-casing past the picker.
   const isCanvas = $derived((node.playType ?? eff?.playType) === 'canvas');
-  const sceneOptions = $derived(store.canvasScenes.map((scene) => ({ value: scene.id, label: scene.name })));
+  const sceneOptions = $derived(store.allCanvasScenes.map((scene) => ({ value: scene.id, label: scene.name })));
 
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.

@@ -20,10 +20,12 @@ describe('effect registry', () => {
       'starfield', 'comet-trails', 'lightning', 'confetti-burst', 'helix', 'orbit-rings', 'gravity-wells', 'breathing-kit', 'temp-sweep', 'velocity-flames', 'hue-rotate-kit', 'wave-collapse',
       // emission-based 3D batch
       'chase-bands', 'ripple-3d', 'spark-arc', 'rain-3d',
+      // U6 gap-fill natives
+      'orbit-comet', 'scan-plane', 'drum-sonar', 'gravity-drops',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(45);
+    expect(listEffects().length).toBe(49);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {

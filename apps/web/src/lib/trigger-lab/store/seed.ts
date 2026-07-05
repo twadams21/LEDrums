@@ -56,6 +56,9 @@ export function seedAuthored(): AuthoredState {
     buses: BUSES.map((b) => ({ ...b })),
     presets: structuredClone(PRESETS),
     effects: [...EFFECTS],
+    // Only USER-AUTHORED scenes live in the show document (D4) — the built-in canvas
+    // library ships in core and is surfaced read-only via `store.allCanvasScenes`.
+    canvasScenes: [],
     selectedPadKey: padKey(PADS[2]!),
     activeSongId: 'set-1',
     activeSectionId: SECTIONS[0]?.id ?? null,

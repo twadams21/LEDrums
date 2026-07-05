@@ -152,16 +152,19 @@ export function graphRows(library: readonly { key: string; label: string }[]): G
 }
 
 /** A canvas-scene row: the scene id/name plus a summary of its authored content (element +
-    lens counts and sampler kind) for the sub-line. Sorted by name then id. */
+    lens counts and sampler kind) for the sub-line. Sorted by name then id. `builtin` rows
+    come from the core seed library (U6): read-only — view JSON + duplicate only, never
+    rename/edit/delete (duplicate makes an authored copy to customise). */
 export interface CanvasSceneRow {
   id: string;
   name: string;
   elementCount: number;
   lensCount: number;
   sampler: string;
+  builtin: boolean;
 }
 
-export function canvasSceneRows(scenes: readonly CanvasScene[]): CanvasSceneRow[] {
+export function canvasSceneRows(scenes: readonly CanvasScene[], builtin = false): CanvasSceneRow[] {
   return scenes
     .map((scene) => ({
       id: scene.id,
@@ -169,6 +172,7 @@ export function canvasSceneRows(scenes: readonly CanvasScene[]): CanvasSceneRow[
       elementCount: scene.elements.length,
       lensCount: scene.lenses?.length ?? 0,
       sampler: scene.sampler.kind,
+      builtin,
     }))
     .sort(byNameThenId);
 }

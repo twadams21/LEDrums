@@ -43,7 +43,11 @@ export function unionEffects(persisted: readonly EffectDef[]): EffectDef[] {
     const o = overrideById.get(e.id);
     return o && o.name !== e.name ? { ...e, name: o.name } : e;
   });
-  return [...builtins, ...persisted.filter((e) => !builtinIds.has(e.id))];
+  // Virtual `canvas:<sceneId>` effects are DERIVED (from the core built-in scene library +
+  // the show's authored scenes) and must never persist as real effects — a U6-era doc briefly
+  // saved them, and re-adding them here would duplicate every derived canvas card. Strip them
+  // on the way in (migration).
+  return [...builtins, ...persisted.filter((e) => !builtinIds.has(e.id) && !e.id.startsWith('canvas:'))];
 }
 
 /** Union persisted presets with the built-ins (mirrors {@link unionEffects}). Keeps

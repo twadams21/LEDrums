@@ -63,17 +63,28 @@
     ),
   );
 
+  // Lens presets get their own collection tab (D6) — a filtered VIEW of the canvas pool
+  // (`lens`-tagged scenes), not a play type: a lens preset node is still a canvas node,
+  // so the PlayType==Collection identity (D3) is untouched.
+  const hasLensPresets = $derived(pool.some((e) => playTypeOf(e) === 'canvas' && (e.tags ?? []).includes('lens')));
+  const lensTab = { value: 'lens', label: 'Lenses' };
+
   // Collection tabs: only those with at least one effect in the current scope (+ an "All" tab).
-  // A locked node collapses the rail to its single collection (no cross-type browsing).
+  // A locked node collapses the rail to its single collection (no cross-type browsing) —
+  // except canvas, whose Lenses sub-collection stays browsable (same play type).
   const collectionTabs = $derived(
     lockedMeta
-      ? [{ value: lockedPlayType as string, label: lockedMeta.label }]
+      ? [
+          { value: lockedPlayType as string, label: lockedMeta.label },
+          ...(lockedPlayType === 'canvas' && hasLensPresets ? [lensTab] : []),
+        ]
       : [
           { value: 'all', label: 'All' },
-          ...COLLECTIONS.filter((c) => pool.some((e) => playTypeOf(e) === c.type)).map((c) => ({
-            value: c.type,
-            label: c.label,
-          })),
+          ...COLLECTIONS.flatMap((c) =>
+            pool.some((e) => playTypeOf(e) === c.type)
+              ? [{ value: c.type as string, label: c.label }, ...(c.type === 'canvas' && hasLensPresets ? [lensTab] : [])]
+              : [],
+          ),
         ],
   );
 
@@ -92,7 +103,9 @@
   const shown = $derived.by(() => {
     const q = query.trim().toLowerCase();
     return pool.filter((e) => {
-      if (collection !== 'all' && playTypeOf(e) !== collection) return false;
+      if (collection === 'lens') {
+        if (playTypeOf(e) !== 'canvas' || !(e.tags ?? []).includes('lens')) return false;
+      } else if (collection !== 'all' && playTypeOf(e) !== collection) return false;
       if (activeTags.length && !activeTags.every((t) => (e.tags ?? []).includes(t as never))) return false;
       if (paramFilter && !e.params.some((p) => p.key === paramFilter)) return false;
       if (q) {

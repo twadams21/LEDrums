@@ -52,6 +52,7 @@ import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
+import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
 import { voice, listModifiers, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { buildShow, type ShowSource } from './show-builder';
@@ -2588,10 +2589,23 @@ export class TriggerLab {
 
   // --- registries / lookups ------------------------------------------------
 
-  /** Virtual `canvas:<id>` effects derived from the authored scenes — never persisted as
-      real effects (they'd duplicate); the scene doc is the source of truth (U5). */
+  /** Every resolvable canvas scene: the core built-in library (read-only, D4/U6) plus this
+      show's authored scenes. An authored scene with a built-in's id shadows it. */
+  get allCanvasScenes(): CanvasScene[] {
+    const authoredIds = new Set(this.canvasScenes.map((scene) => scene.id));
+    return [...BUILTIN_CANVAS_SCENES.filter((scene) => !authoredIds.has(scene.id)), ...this.canvasScenes];
+  }
+
+  /** True for scenes from the core built-in library (not shadowed by an authored scene) —
+      read-only in the Objects view: duplicate to customise. */
+  isBuiltinCanvasScene(id: string): boolean {
+    return BUILTIN_CANVAS_SCENES.some((scene) => scene.id === id) && !this.canvasScenes.some((scene) => scene.id === id);
+  }
+
+  /** Virtual `canvas:<id>` effects derived from the built-in + authored scenes — never
+      persisted as real effects (they'd duplicate); the scene doc is the source of truth (U5). */
   get canvasEffects(): EffectDef[] {
-    return this.canvasScenes.map(canvasScenesLib.canvasEffectDef);
+    return this.allCanvasScenes.map(canvasScenesLib.canvasEffectDef);
   }
 
   /** Real effects + virtual canvas effects — the set the gallery/inspector select from. */
@@ -2602,7 +2616,7 @@ export class TriggerLab {
   /** Real presets + each scene's derived default preset (deduped by id). */
   get allPresets(): Preset[] {
     const existing = new Set(this.presets.map((p) => p.id));
-    const canvasDefaults = this.canvasScenes
+    const canvasDefaults = this.allCanvasScenes
       .map(canvasScenesLib.canvasDefaultPreset)
       .filter((p) => !existing.has(p.id));
     return [...this.presets, ...canvasDefaults];
@@ -3112,12 +3126,15 @@ export class TriggerLab {
     this.canvasScenes = this.canvasScenes.map((scene) => (scene.id === id ? { ...scene, name: trimmed } : scene));
   }
 
+  /** Duplicate an authored OR built-in scene into a fresh authored scene — duplicating a
+      built-in is how users customise the read-only core library. */
   duplicateCanvasScene(id: string): string | null {
     if (this.isViewer) return null;
-    const src = this.canvasScenes.find((scene) => scene.id === id);
+    const src = this.allCanvasScenes.find((scene) => scene.id === id);
     if (!src) return null;
-    const nextId = freshId('scene', (candidate) => this.canvasScenes.some((scene) => scene.id === candidate));
-    const clone: CanvasScene = structuredClone({ ...$state.snapshot(src), id: nextId, name: `${src.name} copy` });
+    const nextId = freshId('scene', (candidate) => this.allCanvasScenes.some((scene) => scene.id === candidate));
+    const snapshot = this.canvasScenes.some((scene) => scene.id === id) ? $state.snapshot(src) : src;
+    const clone: CanvasScene = structuredClone({ ...snapshot, id: nextId, name: `${src.name} copy` });
     this.canvasScenes = [...this.canvasScenes, clone];
     return nextId;
   }
@@ -3129,7 +3146,9 @@ export class TriggerLab {
     const exists = this.canvasScenes.some((scene) => scene.id === id);
     if (!exists) return false;
     const remaining = this.canvasScenes.filter((scene) => scene.id !== id);
-    const fallback = remaining[0] ?? null;
+    // Prefer the first remaining authored scene, else fall back to the built-in library
+    // (which always exists), so referencing nodes never go sceneless.
+    const fallback = remaining[0] ?? BUILTIN_CANVAS_SCENES.find((scene) => scene.id !== id) ?? null;
     this.canvasScenes = remaining;
     this.graphs = canvasScenesLib.retargetSceneRefs(this.graphs, id, fallback);
     const deletedEffectId = canvasEffectId(id);
@@ -3137,10 +3156,13 @@ export class TriggerLab {
     return true;
   }
 
-  /** The scene's authored JSON (empty string when unknown) for the Objects-view editor. */
+  /** The scene's JSON (empty string when unknown) for the Objects-view editor — built-ins
+      are viewable (read-only) too. */
   canvasSceneJson(id: string): string {
-    const scene = this.canvasScenes.find((s) => s.id === id);
-    return scene ? canvasScenesLib.formatCanvasScene($state.snapshot(scene)) : '';
+    const authored = this.canvasScenes.find((s) => s.id === id);
+    if (authored) return canvasScenesLib.formatCanvasScene($state.snapshot(authored));
+    const builtin = BUILTIN_CANVAS_SCENES.find((s) => s.id === id);
+    return builtin ? canvasScenesLib.formatCanvasScene(builtin) : '';
   }
 
   /** Apply edited scene JSON. Returns a typed result so the editor can show inline errors. */
@@ -3155,7 +3177,7 @@ export class TriggerLab {
   /** Point a canvas play node at a scene, seeding its default preset params. */
   setCanvasScene(node: GraphNode, sceneId: string): void {
     if (this.isViewer || node.kind !== 'play') return;
-    const scene = this.canvasScenes.find((s) => s.id === sceneId);
+    const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
     if (!scene) return;
     const eff = canvasScenesLib.canvasEffectDef(scene);
     const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
@@ -3178,8 +3200,9 @@ export class TriggerLab {
 
     let node: GraphNode;
     if (playType === 'canvas') {
-      const sceneId = this.canvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
-      const scene = this.canvasScenes.find((s) => s.id === sceneId);
+      // Built-ins always exist, so a new canvas node starts on the first library scene.
+      const sceneId = this.allCanvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
+      const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
       if (!scene) return null;
       const eff = canvasScenesLib.canvasEffectDef(scene);
       const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
