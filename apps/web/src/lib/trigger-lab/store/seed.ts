@@ -3,7 +3,8 @@
    the store's authored `$state` field initializers mirror {@link seedAuthored}; keep the two
    in sync. Extracted from store.svelte.ts unchanged. */
 
-import { BUILTIN_CANVAS_SCENES, type TriggerGraph, treeToGraph } from '@ledrums/core';
+import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
+import { type TriggerGraph, treeToGraph } from '../sim';
 import { BUSES, PADS, PRESETS, EFFECTS, SECTIONS, type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
 import type { Song } from '../../app/setlist';
