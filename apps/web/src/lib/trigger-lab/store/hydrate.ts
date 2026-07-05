@@ -29,7 +29,7 @@ import { padKey, padLabel } from './seed';
     drop new built-ins: a user's blob saved before the 41 generator effects existed
     would otherwise overwrite the fresh registry and hide them forever. So start from
     the fixture EFFECTS (every built-in, always current) and append only persisted
-    effects whose id isn't a built-in — the user's own createEffect() additions.
+    effects whose id isn't a built-in — the user's own duplicated-effect additions.
     Built-ins are immutable from the UI, so re-taking the fresh def loses nothing. */
 export function unionEffects(persisted: readonly EffectDef[]): EffectDef[] {
   const overrideById = new Map(persisted.map((e) => [e.id, e] as const));

@@ -2959,7 +2959,8 @@ export class TriggerLab {
   }
 
   /** Duplicate an effect: clone its definition under a fresh id named "<name> copy", register
-      it with the sim, and seed its `${newId}:default` preset (mirrors {@link createEffect}).
+      it with the sim, and seed its `${newId}:default` preset. This is the ONLY effect-authoring
+      path now (the pattern-authoring EffectCreator was retired with the pattern engine in U3).
       Returns the new id, or null for an unknown id. The clone is independent (its own id +
       Default preset); a generator-backed effect keeps its `generatorId` so it renders
       identically. Persists via the authored autosave. */
