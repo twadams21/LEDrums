@@ -3,7 +3,7 @@
    the store's authored `$state` field initializers mirror {@link seedAuthored}; keep the two
    in sync. Extracted from store.svelte.ts unchanged. */
 
-import { type TriggerGraph, treeToGraph } from '../sim';
+import { BUILTIN_CANVAS_SCENES, type TriggerGraph, treeToGraph } from '@ledrums/core';
 import { BUSES, PADS, PRESETS, EFFECTS, SECTIONS, type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
 import type { Song } from '../../app/setlist';
@@ -56,6 +56,7 @@ export function seedAuthored(): AuthoredState {
     buses: BUSES.map((b) => ({ ...b })),
     presets: structuredClone(PRESETS),
     effects: [...EFFECTS],
+    canvasScenes: structuredClone(BUILTIN_CANVAS_SCENES),
     selectedPadKey: padKey(PADS[2]!),
     activeSongId: 'set-1',
     activeSectionId: SECTIONS[0]?.id ?? null,
