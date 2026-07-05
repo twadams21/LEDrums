@@ -146,12 +146,11 @@
 {#snippet playThumb()}
   {#if node && node.kind === 'play' && eff}
     <EffectThumb
-      pattern={eff.pattern}
       params={store.liveParams(node)}
+      generatorId={eff.generatorId}
+      labModel={store.labModel}
       w={56}
       h={32}
-      triggered
-      triggerAt={store.selectedGraphFireAt}
     />
   {/if}
 {/snippet}
