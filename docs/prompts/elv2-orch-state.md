@@ -37,8 +37,8 @@ unless Trent approves parallel spend at the gate.
 | Unit | Model | Status | Session |
 |---|---|---|---|
 | U1 metadata + gallery | Opus | DONE (verified) | elv2-u1-c99a09 |
-| U2 isometric thumbs | Fable | pending (after U1) | — |
-| U3 rehab + retirement | Opus | in-flight | (launching) |
+| U2 isometric thumbs | Fable | in-flight | (launching) |
+| U3 rehab + retirement | Opus | DONE (verified) | elv2-u3-29924d |
 | U4 canvas engine | Fable | pending (after U1) | — |
 | U5 canvas UI | Opus | pending (after U4) | — |
 | U6 library fill | Fable | pending (after U4/U5) | — |
@@ -56,8 +56,25 @@ unless Trent approves parallel spend at the gate.
 U3's physical deletion edits `EffectThumb` (removing pattern branches); U2 rewrites
 `EffectThumb` (isometric painter). They COLLIDE → U2 must not start until U3 fully lands.
 
+## U3 DONE — verified by orch (2026-07-05)
+Commits 11ef0b1, 6d2e589, 2465b90, a5341f3. Gates green (typecheck clean; core 586 / web
+1174 / server 227 / io 51). Determinism rework spot-checked = genuine (source swapped
+pattern→geometry-uniform generator, assertions intact; core count 584→586, not gutted).
+`pattern-renderer.ts` + `EffectCreator.svelte` deleted; grep zero pattern refs. The
+compositor now has ONE render path (generator-only). Usage after U3: 7d 92%, 5h 41%.
+
+⚠️ **TRENT'S WIP TOUCHED:** U3 edited `apps/web/src/lib/app/views/TriggerNode.svelte` —
+the pattern deletion changed EffectThumb's prop API, so U3 updated its `playThumb`
+EffectThumb call (dropped `pattern`/`triggered`/`triggerAt`, added `generatorId`/
+`labModel`). Left UNSTAGED. Reported to me as "one line" but it's a 4-prop rewrite; can't
+verify Trent's original WIP survived from git. FLAGGED to Trent — his to confirm.
+
+## Post-U3 API note for downstream units
+EffectThumb is now GENERATOR-ONLY (no pattern branch). Public prop API: `generatorId`,
+`labModel`, `params`, `w`, `h`. kit.ts SoA `attrs` + `hueToRgb` were removed by U3. U2
+must PRESERVE EffectThumb's prop API (so it never forces another edit to Trent's
+TriggerNode.svelte); if it must change the API, flag the orch — do NOT edit Trent's WIP.
+
 ## Next action
-Direct idle `elv2-u3-29924d` to finish the physical deletion (remove EffectCreator; delete
-pattern-renderer.ts + Pattern plumbing + EffectThumb/render.ts branches; rework ~1100 lines
-of core determinism tests → generator voices, DON'T weaken assertions; UI rules for the
-EffectCreator removal; tracker → done). Verify, then launch U2 (Fable, thumbnails).
+U2 (Fable, isometric thumbnails) launching — brief `docs/prompts/elv2-u2.md`. After U2:
+U4 canvas engine (Fable) → U5 → U6 → U7. All serial, proceeding past 92% per Trent.
