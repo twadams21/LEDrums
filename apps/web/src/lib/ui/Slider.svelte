@@ -34,7 +34,81 @@
     class: klass,
   }: Props = $props();
 
-  const display = $derived(format ? format(value) : String(value));
+  let draft = $state('');
+  let editing = $state(false);
+
+  const precision = $derived(decimalPlaces(step));
+  const normalizedValue = $derived(normalizeNumber(value, min, max, step));
+  const inputValue = $derived(formatNumber(normalizedValue, precision));
+  const display = $derived(format ? format(normalizedValue) : inputValue);
+  const unit = $derived(inferUnit(display, inputValue));
+
+  function decimalPlaces(n: number): number {
+    const text = String(n);
+    if (text.includes('e-')) return Number(text.split('e-')[1] ?? 0);
+    return text.includes('.') ? text.split('.')[1]?.length ?? 0 : 0;
+  }
+
+  function formatNumber(n: number, places: number): string {
+    if (places <= 0) return String(Math.round(n));
+    return n.toFixed(places).replace(/\.?0+$/, '');
+  }
+
+  function normalizeNumber(n: number, lo: number, hi: number, inc: number): number {
+    const finite = Number.isFinite(n) ? n : lo;
+    const clamped = Math.min(hi, Math.max(lo, finite));
+    if (!(inc > 0)) return clamped;
+    const stepped = lo + Math.round((clamped - lo) / inc) * inc;
+    return Math.min(hi, Math.max(lo, Number(stepped.toFixed(decimalPlaces(inc) + 2))));
+  }
+
+  function inferUnit(formatted: string, numeric: string): string {
+    if (formatted === numeric) return '';
+    if (Number.isFinite(Number(formatted.trim()))) return '';
+    if (formatted.startsWith(numeric)) return formatted.slice(numeric.length).trim();
+    if (formatted.endsWith(numeric)) return formatted.slice(0, -numeric.length).trim();
+    return formatted;
+  }
+
+  function emit(next: number) {
+    const normalized = normalizeNumber(next, min, max, step);
+    value = normalized;
+    onChange?.(normalized);
+  }
+
+  function currentDraft(): string {
+    return editing ? draft : inputValue;
+  }
+
+  function commit() {
+    const raw = currentDraft().trim();
+    if (raw === '') {
+      draft = inputValue;
+      editing = false;
+      return;
+    }
+
+    const next = Number(raw);
+    if (!Number.isFinite(next)) {
+      draft = inputValue;
+      editing = false;
+      return;
+    }
+
+    emit(next);
+    draft = formatNumber(normalizeNumber(next, min, max, step), precision);
+    editing = false;
+  }
+
+  function cancel() {
+    draft = inputValue;
+    editing = false;
+  }
+
+  function handleValueChange(next: number) {
+    emit(next);
+    if (!editing) draft = formatNumber(normalizeNumber(next, min, max, step), precision);
+  }
 </script>
 
 <div class={['slider', klass]} class:disabled>
@@ -45,7 +119,7 @@
     {max}
     {step}
     {disabled}
-    onValueChange={onChange}
+    onValueChange={handleValueChange}
     aria-label={ariaLabel}
     class="track"
   >
@@ -54,7 +128,39 @@
     <Slider.Thumb index={0} class="thumb" />
   </Slider.Root>
   {#if showValue}
-    <span class="value">{display}</span>
+    <label class="value" title={display}>
+      <input
+        type="text"
+        inputmode="decimal"
+        aria-label={ariaLabel ? `${ariaLabel} value` : 'Slider value'}
+        value={currentDraft()}
+        {disabled}
+        onfocus={() => {
+          draft = inputValue;
+          editing = true;
+        }}
+        oninput={(event) => {
+          draft = event.currentTarget.value;
+          editing = true;
+        }}
+        onblur={commit}
+        onkeydown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            cancel();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {#if unit}
+        <span class="unit">{unit}</span>
+      {/if}
+    </label>
   {/if}
 </div>
 
@@ -125,11 +231,41 @@
   }
 
   .value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    min-width: 54px;
+    height: var(--control-h-sm, 24px);
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     color: var(--text-muted);
-    min-width: 46px;
-    text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  .value input {
+    width: 46px;
+    min-width: 0;
+    height: 100%;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-1);
+    background: var(--surface-inset);
+    box-shadow: inset 0 0 0 1px var(--border-faint);
+    color: var(--text);
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    outline: none;
+    transition: box-shadow var(--dur-120) ease, background var(--dur-120) ease;
+  }
+  .value input:hover {
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .value input:focus-visible {
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft);
+  }
+  .unit {
+    color: var(--text-faint);
   }
 </style>
