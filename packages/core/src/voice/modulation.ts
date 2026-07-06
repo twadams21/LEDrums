@@ -29,7 +29,8 @@ export type ModSource =
   | { kind: 'envelope'; env: Envelope }
   | { kind: 'lfo'; lfo: LfoSettings } // S36
   | { kind: 'cc'; controller: number; channel: number | null } // S37
-  | { kind: 'osc'; address: string }; // OSC modulation — a live 0..1 value at an OSC address
+  | { kind: 'osc'; address: string } // OSC modulation — a live 0..1 value at an OSC address
+  | { kind: 'random'; value: number }; // per-voice frozen random value, resolved at trigger time
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
 export type ModSourceKind = ModSource['kind'];
@@ -164,6 +165,8 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
       return sampleCc(ctx.cc, src.controller, src.channel);
     case 'osc': // live 0..1 at an OSC address
       return sampleOsc(ctx.osc, src.address);
+    case 'random':
+      return src.value;
   }
 }
 

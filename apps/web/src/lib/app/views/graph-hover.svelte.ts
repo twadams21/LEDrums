@@ -16,7 +16,7 @@ interface FlowEdgeLike {
   source: string;
   target: string;
   class?: unknown;
-  data?: { mod?: boolean; modulation?: boolean };
+  data?: { mod?: boolean; modulation?: boolean; effect?: boolean };
 }
 
 export class GraphHover {
@@ -38,6 +38,7 @@ export class GraphHover {
       const cls = [
         e.data?.mod ? 'edge-mod' : null,
         e.data?.modulation ? 'edge-modulation' : null,
+        e.data?.effect ? 'edge-effect' : null,
         this.isHot(e) ? 'edge-hot' : null,
       ]
         .filter(Boolean)

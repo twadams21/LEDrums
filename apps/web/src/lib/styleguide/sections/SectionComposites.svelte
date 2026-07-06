@@ -79,9 +79,11 @@
     toggle: 'on · off',
     delay: '1/8 dotted',
     modifier: 'Trail',
+    output: 'Hoop',
     envelope: 'modulation source',
     lfo: 'sine · 1Hz',
     cc: 'CC 74 · ch 1',
+    randomMod: 'per trigger',
   };
   const faceKinds = Object.keys(faceSubs) as NodeKind[];
 

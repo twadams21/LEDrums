@@ -20,6 +20,8 @@ import Blend from '@lucide/svelte/icons/blend';
 import Spline from '@lucide/svelte/icons/spline';
 import Waves from '@lucide/svelte/icons/waves'; // S36
 import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
+import CircleDot from '@lucide/svelte/icons/circle-dot';
+import Dice5 from '@lucide/svelte/icons/dice-5';
 import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
@@ -35,9 +37,11 @@ export const kindIcon: Record<NodeKind, Component> = {
   toggle: Power,
   delay: Timer,
   modifier: Blend,
+  output: CircleDot,
   envelope: Spline,
   lfo: Waves, // S36
   cc: SlidersHorizontal, // S37
+  randomMod: Dice5,
 };
 
 /** Icon per layer/bus (base / trigger / effect). */
@@ -59,9 +63,11 @@ export const tint: Record<NodeKind, string> = {
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
   modifier: 'var(--role-mod)',
+  output: 'var(--role-output)',
   envelope: 'var(--role-modulation)',
   lfo: 'var(--role-modulation)', // S36
   cc: 'var(--role-modulation)', // S37
+  randomMod: 'var(--role-modulation)',
 };
 
 /** Human label per node kind (node card title for containers/modifiers, selector). */
@@ -76,9 +82,11 @@ export const kindLabel: Record<NodeKind, string> = {
   toggle: 'Toggle',
   delay: 'Delay',
   modifier: 'Modifier',
+  output: 'Output',
   envelope: 'Envelope',
   lfo: 'LFO', // S36
   cc: 'CC', // S37
+  randomMod: 'Random',
 };
 
 /** Human name for a modifier id (the registry's display name), falling back to the id. */

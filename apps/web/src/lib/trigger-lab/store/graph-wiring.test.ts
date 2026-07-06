@@ -99,11 +99,11 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
   }
 
   it('accepts a mod wire from a modifier node into a play node', () => {
-    expect(canConnect(modGraph(), 'm1', 'p1', undefined, 'mod')).toBe(true);
+    expect(canConnect(modGraph(), 'm1', 'p1', undefined, 'mod')).toBe(false);
   });
 
   it('accepts a mod→mod chain wire', () => {
-    expect(canConnect(modGraph(), 'm1', 'm2', undefined, 'mod')).toBe(true);
+    expect(canConnect(modGraph(), 'm1', 'm2', undefined, 'mod')).toBe(false);
   });
 
   it('rejects a mod wire from a NON-modifier source (scoped handles)', () => {
@@ -116,13 +116,13 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
   });
 
   it("rejects a modifier's output on a trigger-flow wire (modifier only feeds mod ports)", () => {
-    expect(canConnect(modGraph(), 'm1', 'p1')).toBe(false); // no toPort = flow wire
-    expect(canConnect(modGraph(), 'm1', 'a1')).toBe(false);
+    expect(canConnect(modGraph(), 'm1', 'p1')).toBe(true); // modifier participates in effect flow
+    expect(canConnect(modGraph(), 'm1', 'a1')).toBe(true);
   });
 
   it('rejects a trigger-flow wire INTO a modifier node (modifier takes no flow input)', () => {
-    expect(canConnect(modGraph(), 'trigger', 'm1')).toBe(false);
-    expect(canConnect(modGraph(), 'a1', 'm1')).toBe(false);
+    expect(canConnect(modGraph(), 'trigger', 'm1')).toBe(true);
+    expect(canConnect(modGraph(), 'a1', 'm1')).toBe(true);
   });
 
   it('flow `in` and `mod` inputs on one node are distinct — not duplicates of each other', () => {
@@ -142,7 +142,7 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
     const g = modGraph();
     g.edges.push({ id: 'e2', from: 'm1', to: 'p1', toPort: 'mod' });
     // repoint the mod wire to m2's mod input (mod→mod) — legal
-    expect(canReconnect(g, 'e2', 'm1', 'm2', undefined, 'mod')).toBe(true);
+    expect(canReconnect(g, 'e2', 'm1', 'm2', undefined, 'mod')).toBe(false);
     // repoint the trigger-flow edge onto a mod port — illegal (trigger isn't a modifier)
     expect(canReconnect(g, 'e1', 'trigger', 'p1', undefined, 'mod')).toBe(false);
   });

@@ -21,7 +21,7 @@ import type {
 } from './types';
 import type { Mapping } from './modulation';
 import { computeDelayMs } from './delay';
-import { resolveModifierChain } from './modifier-graph';
+import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
@@ -91,6 +91,7 @@ export interface PendingDescriptor {
   /** Cycle guard: the seen-set at enqueue time — includes the delay node's own id so a
       self-referencing delay cannot loop forever. */
   seen: Set<string>;
+  draft?: PlayDraft | null;
 }
 
 export interface PendingAction {
@@ -99,6 +100,7 @@ export interface PendingAction {
 }
 
 export type Action = PlayAction | StopAction | PendingAction;
+type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'>;
 
 export interface TriggerCtx {
   velocity: number;
@@ -166,6 +168,30 @@ function evalNode(
   viaPrefix: string,
   seen: Set<string>,
 ): Action[] {
+  return evalNodeWithDraft(state, graph, pad, node, ctx, viaPrefix, seen, null);
+}
+
+function freezeRandomMappings(mappings: Mapping[] | undefined, prng: Prng): Mapping[] | undefined {
+  if (!mappings?.length) return mappings;
+  let changed = false;
+  const out = mappings.map((m) => {
+    if (m.source.kind !== 'random') return m;
+    changed = true;
+    return { ...m, source: { kind: 'random' as const, value: prng.next() } };
+  });
+  return changed ? out : mappings;
+}
+
+function evalNodeWithDraft(
+  state: EvalState,
+  graph: TriggerGraph,
+  pad: string,
+  node: GraphNode,
+  ctx: TriggerCtx,
+  viaPrefix: string,
+  seen: Set<string>,
+  draft: PlayDraft | null,
+): Action[] {
   if (seen.has(node.id)) return []; // cycle guard
   const seen2 = new Set(seen).add(node.id);
   const label = (s: string): string => (viaPrefix ? `${viaPrefix} → ${s}` : s);
@@ -173,7 +199,7 @@ function evalNode(
   const sk = nodeStateKey(pad, node.id);
   switch (node.kind) {
     case 'trigger':
-      return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, viaPrefix, seen2));
+      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, viaPrefix, seen2, draft));
     case 'play': {
       if (!node.effectId) return [];
       // Resolve this play node's `mod` input into a flat modifier chain (S29). Empty →
@@ -183,25 +209,35 @@ function evalNode(
       // aren't available here, so ranges come from the edge (the store bakes spec min/max at
       // wire time); the render sweep filters non-number params against the live voice specs.
       const modulations = resolveNodeModulations(graph, node);
-      return [
-        {
-          kind: 'play',
-          effectId: node.effectId,
-          playType: node.playType,
-          canvasScene: node.canvasScene,
-          mode: node.mode,
-          scope: node.scope,
-          targetId: node.targetId,
-          busId: node.busId,
-          params: node.params,
-          modifiers: mods.length ? mods : undefined,
-          modulations: modulations.length ? modulations : undefined,
-          via: label(modeWord(node.mode)),
-          latchKey: null,
-        },
-      ];
+      const next: PlayDraft = {
+        effectId: node.effectId,
+        playType: node.playType,
+        canvasScene: node.canvasScene,
+        mode: node.mode,
+        scope: node.scope,
+        targetId: node.targetId,
+        busId: node.busId,
+        params: node.params,
+        modifiers: mods.length ? mods : undefined,
+        modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+      };
+      if (kids.length > 0) {
+        return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label(modeWord(node.mode)), seen2, next));
+      }
+      return [{ kind: 'play', ...next, via: label(modeWord(node.mode)), latchKey: null }];
     }
-    case 'modifier':
+    case 'modifier': {
+      if (!draft) return [];
+      const next: PlayDraft = {
+        ...draft,
+        modifiers: [...(draft.modifiers ?? []), resolveModifierNode(graph, node)],
+      };
+      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Modifier'), seen2, next));
+    }
+    case 'output':
+      if (!draft) return [];
+      return [{ kind: 'play', ...draft, scope: node.scope, targetId: node.targetId, via: label('Output'), latchKey: null }];
+    case 'randomMod':
     case 'envelope':
     case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
     case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
@@ -210,7 +246,7 @@ function evalNode(
       // via a target's resolved `param:<key>` modulations — never through the fire flow here.
       return [];
     case 'all':
-      return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, label('All'), seen2));
+      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('All'), seen2, draft));
     case 'random': {
       if (kids.length === 0) return [];
       let i = state.prng.nextInt(kids.length);
@@ -219,13 +255,13 @@ function evalNode(
         while (i === prev) i = state.prng.nextInt(kids.length);
       }
       state.lastPick.set(sk, i);
-      return evalNode(state, graph, pad, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2);
+      return evalNodeWithDraft(state, graph, pad, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2, draft);
     }
     case 'sequence': {
       if (kids.length === 0) return [];
       const i = (state.seqIndex.get(sk) ?? 0) % kids.length;
       state.seqIndex.set(sk, i + 1);
-      return evalNode(state, graph, pad, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
+      return evalNodeWithDraft(state, graph, pad, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2, draft);
     }
     case 'switch': {
       // `value` (gate/bands) is canonical. `velocity` was folded into `value` and dropped
@@ -233,16 +269,16 @@ function evalNode(
       // or mis-route on a stray legacy `velocity` (un-migrated in-flight data), so anything
       // that isn't an explicit count-based mode (`section`/`beat`) routes through value eval.
       if (node.on !== 'section' && node.on !== 'beat') {
-        return evalValueSwitch(state, graph, pad, node, ctx, label, seen2);
+        return evalValueSwitch(state, graph, pad, node, ctx, label, seen2, draft);
       }
       if (kids.length === 0) return [];
       const i = switchIndexN(kids.length, node.on, ctx);
-      return evalNode(state, graph, pad, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
+      return evalNodeWithDraft(state, graph, pad, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2, draft);
     }
     case 'chance': {
       if (state.prng.next() > node.p) return [];
       return kids.flatMap((c) =>
-        evalNode(state, graph, pad, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2),
+        evalNodeWithDraft(state, graph, pad, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2, draft),
       );
     }
     case 'toggle': {
@@ -252,7 +288,7 @@ function evalNode(
         state.latched.set(sk, null);
         return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
       }
-      const actions = kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, label('Toggle on'), seen2));
+      const actions = kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Toggle on'), seen2, draft));
       const firstPlay = actions.find((a): a is PlayAction => a.kind === 'play');
       if (firstPlay) firstPlay.latchKey = sk;
       return actions;
@@ -269,7 +305,7 @@ function evalNode(
       const delayLabel = label(`Delay ${Math.round(delayMs)}ms`);
       if (delayMs <= 0) {
         // Zero / negative → fire children immediately, no enqueue.
-        return kids.flatMap((c) => evalNode(state, graph, pad, c, ctx, delayLabel, seen2));
+        return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, delayLabel, seen2, draft));
       }
       // Deferred: emit a PendingDescriptor; the engine enqueues it and drains at the right
       // tick. `seen2` (which already includes this delay node's id) becomes the cycle guard
@@ -282,6 +318,7 @@ function evalNode(
         childIds: kids.map((c) => c.id),
         viaPrefix: delayLabel,
         seen: seen2,
+        draft,
       };
       return [{ kind: 'pending', descriptor }];
     }
@@ -305,6 +342,7 @@ function evalValueSwitch(
   ctx: TriggerCtx,
   label: (s: string) => string,
   seen: Set<string>,
+  draft: PlayDraft | null = null,
 ): Action[] {
   const value = ctx.velocity;
   const mode = node.valueMode ?? 'gate';
@@ -314,13 +352,13 @@ function evalValueSwitch(
     const pass = invert ? value > threshold : value <= threshold;
     if (!pass) return [];
     const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
-    return childrenOf(graph, node).flatMap((c) => evalNode(state, graph, pad, c, ctx, label(gateVia), seen));
+    return childrenOf(graph, node).flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label(gateVia), seen, draft));
   }
   const cutoffs = node.bands ?? [0.5];
   const b = bandIndex(value, cutoffs);
   const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
   return childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
-    evalNode(state, graph, pad, c, ctx, label(bandVia), seen),
+    evalNodeWithDraft(state, graph, pad, c, ctx, label(bandVia), seen, draft),
   );
 }
 
@@ -353,10 +391,11 @@ export function evalChildren(
   ctx: TriggerCtx,
   viaPrefix: string,
   seen: Set<string>,
+  draft: PlayDraft | null = null,
 ): Action[] {
   return childIds.flatMap((id) => {
     const child = graph.nodes.find((n) => n.id === id);
-    return child ? evalNode(state, graph, pad, child, ctx, viaPrefix, seen) : [];
+    return child ? evalNodeWithDraft(state, graph, pad, child, ctx, viaPrefix, seen, draft) : [];
   });
 }
 

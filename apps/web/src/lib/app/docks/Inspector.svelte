@@ -27,6 +27,7 @@
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
+  import OutputNodeInspector from './inspectors/OutputNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
   import CcNodeInspector from './inspectors/CcNodeInspector.svelte'; // S37
@@ -101,6 +102,8 @@
       <DelayNodeInspector {store} {node} />
     {:else if node.kind === 'modifier'}
       <ModifierNodeInspector {store} {node} />
+    {:else if node.kind === 'output'}
+      <OutputNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}
