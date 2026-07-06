@@ -20,13 +20,27 @@
     shell,
     song,
     section,
+    draggingKind,
     onAddGraph,
+    onSectionDragStart,
+    onGraphDragStart,
+    onDragEnd,
+    onDragOver,
+    onSectionDrop,
+    onGraphDrop,
   }: {
     store: TriggerLab;
     shell: ShellStore;
     song: Song;
     section: SetlistSection;
+    draggingKind: 'section' | 'graph' | null;
     onAddGraph: (sectionId: string) => void;
+    onSectionDragStart: (event: DragEvent) => void;
+    onGraphDragStart: (graphKey: string, event: DragEvent) => void;
+    onDragEnd: () => void;
+    onDragOver: (event: DragEvent) => void;
+    onSectionDrop: (event: DragEvent) => void;
+    onGraphDrop: (graphIndex: number, event: DragEvent) => void;
   } = $props();
 
   let editing = $state(false);
@@ -45,26 +59,45 @@
   ]);
 </script>
 
-<section class="col" class:active>
-  <EditableRow
-    label={section.name}
-    {active}
-    bind:editing
-    onclick={selectSection}
-    onCommit={(name) => store.renameSection(section.id, name)}
-    {actions}
-    renameLabel="Section name"
+<section class="col" class:active role="listitem" ondragover={onDragOver} ondrop={onSectionDrop}>
+  <div
+    class="section-drag"
+    role="group"
+    draggable={store.canEdit && !editing}
+    aria-label={`Drag ${section.name}`}
+    ondragstart={onSectionDragStart}
+    ondragend={onDragEnd}
   >
-    {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
-    {#snippet quickActions()}
-      <IconButton icon={Copy} label="Copy section to clipboard" size={13} onclick={() => void store.copySectionToClipboard(section.id)} />
-      <IconButton icon={ClipboardPaste} label="Paste section" size={13} onclick={() => void store.pasteSectionFromClipboard()} />
-    {/snippet}
-  </EditableRow>
+    <EditableRow
+      label={section.name}
+      {active}
+      bind:editing
+      onclick={selectSection}
+      onCommit={(name) => store.renameSection(section.id, name)}
+      {actions}
+      renameLabel="Section name"
+    >
+      {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
+      {#snippet quickActions()}
+        <IconButton icon={Copy} label="Copy section to clipboard" size={13} onclick={() => void store.copySectionToClipboard(section.id)} />
+        <IconButton icon={ClipboardPaste} label="Paste section" size={13} onclick={() => void store.pasteSectionFromClipboard()} />
+      {/snippet}
+    </EditableRow>
+  </div>
 
-  <div class="graphlist">
-    {#each section.graphs as key (key)}
-      <SectionGraphRow {store} {shell} {song} {section} graphKey={key} />
+  <div class="graphlist" class:drop-active={draggingKind === 'graph'} role="list" ondragover={onDragOver} ondrop={onSectionDrop}>
+    {#each section.graphs as key, i (key)}
+      <SectionGraphRow
+        {store}
+        {shell}
+        {song}
+        {section}
+        graphKey={key}
+        onDragStart={(event) => onGraphDragStart(key, event)}
+        {onDragEnd}
+        onDragOver={onDragOver}
+        onDrop={(event) => onGraphDrop(i, event)}
+      />
     {/each}
 
     {#if section.graphs.length === 0}
@@ -92,6 +125,12 @@
   .col.active {
     border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
   }
+  .section-drag {
+    cursor: grab;
+  }
+  .section-drag:active {
+    cursor: grabbing;
+  }
   .colcount {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
@@ -101,6 +140,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-height: 42px;
+    border-radius: calc(var(--radius-2) - 2px);
+    transition:
+      background-color var(--dur-120) ease,
+      box-shadow var(--dur-120) ease;
+  }
+  .graphlist.drop-active {
+    background: color-mix(in oklch, var(--accent) 6%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 25%, transparent);
   }
   .empty {
     margin: 0;
@@ -133,7 +181,8 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .col,
-    .addgraph {
+    .addgraph,
+    .graphlist {
       transition: none;
     }
   }

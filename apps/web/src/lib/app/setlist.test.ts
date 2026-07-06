@@ -7,6 +7,8 @@ import {
   isReused,
   makeSection,
   makeSong,
+  moveGraphPlacement,
+  moveSection,
   referencedGraphs,
   removeGraph,
   removeSection,
@@ -135,6 +137,57 @@ describe('section ops', () => {
     expect(s.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']);
     s = renameSection(s, 'chorus', 'Big Chorus');
     expect(s.sections.find((x) => x.id === 'chorus')!.name).toBe('Big Chorus');
+  });
+});
+
+describe('moveSection (drag reorder)', () => {
+  it('moves a section to a new position without mutating the input', () => {
+    const a = addSection(song(), makeSection('chorus', 'Chorus'));
+    const b = moveSection(a, 'intro', 2);
+    expect(b.sections.map((x) => x.id)).toEqual(['verse', 'chorus', 'intro']);
+    expect(a.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']);
+  });
+
+  it('clamps drop positions and no-ops for unknown sections', () => {
+    const a = addSection(song(), makeSection('chorus', 'Chorus'));
+    expect(moveSection(a, 'chorus', -10).sections.map((x) => x.id)).toEqual(['chorus', 'intro', 'verse']);
+    expect(moveSection(a, 'missing', 0)).toBe(a);
+  });
+});
+
+describe('moveGraphPlacement (drag reorder / move)', () => {
+  const arranged = (): Song => ({
+    id: 'song1',
+    name: 'Set 1',
+    sections: [makeSection('intro', 'Intro', ['gA', 'gB', 'gC']), makeSection('verse', 'Verse', ['gD'])],
+  });
+
+  it('reorders a graph within one section', () => {
+    const s = moveGraphPlacement(arranged(), 'intro', 'gA', 'intro', 2);
+    expect(s.sections[0]!.graphs).toEqual(['gB', 'gC', 'gA']);
+  });
+
+  it('moves a graph between sections at the requested index', () => {
+    const s = moveGraphPlacement(arranged(), 'intro', 'gB', 'verse', 0);
+    expect(s.sections[0]!.graphs).toEqual(['gA', 'gC']);
+    expect(s.sections[1]!.graphs).toEqual(['gB', 'gD']);
+  });
+
+  it('dedupes the target section when it already contains that graph key', () => {
+    const s = moveGraphPlacement(
+      { id: 'song1', name: 'Set 1', sections: [makeSection('a', 'A', ['g1']), makeSection('b', 'B', ['g2', 'g1'])] },
+      'a',
+      'g1',
+      'b',
+      1,
+    );
+    expect(s.sections[0]!.graphs).toEqual([]);
+    expect(s.sections[1]!.graphs).toEqual(['g2', 'g1']);
+  });
+
+  it('no-ops when the source placement is missing', () => {
+    const s = arranged();
+    expect(moveGraphPlacement(s, 'intro', 'missing', 'verse', 0)).toBe(s);
   });
 });
 

@@ -103,6 +103,20 @@ export function addSection(song: Song, section: SetlistSection): Song {
   return { ...song, sections: [...song.sections, section] };
 }
 
+/** Reorder a section by id, inserting it before the section at `toIndex` after removal.
+    Dragging a section onto itself is a no-op. Out-of-range targets clamp to the song ends. */
+export function moveSection(song: Song, sectionId: string, toIndex: number): Song {
+  const fromIndex = song.sections.findIndex((s) => s.id === sectionId);
+  if (fromIndex < 0) return song;
+  const sections = [...song.sections];
+  const [section] = sections.splice(fromIndex, 1);
+  if (!section) return song;
+  const insertAt = clampIndex(toIndex, sections.length);
+  if (insertAt === fromIndex) return song;
+  sections.splice(insertAt, 0, section);
+  return { ...song, sections };
+}
+
 /** Drop a section from the song (mirror of {@link addSection}). Immutable; the remaining
     sections keep their order. No-op — returns the SAME Song ref — when the id is absent. */
 export function removeSection(song: Song, sectionId: string): Song {
@@ -121,6 +135,46 @@ export function cloneSection(section: SetlistSection, newId: string, newName?: s
 
 export function renameSection(song: Song, sectionId: string, name: string): Song {
   return mapSection(song, sectionId, (s) => ({ ...s, name }));
+}
+
+/** Move one graph placement within or between sections. The graph key itself is reused; the
+    source placement is removed and the target section receives the key at the requested index.
+    If the target already contains that key from another placement, it is first removed so the
+    per-section de-dupe invariant holds while still allowing cross-section moves. */
+export function moveGraphPlacement(
+  song: Song,
+  fromSectionId: string,
+  graphKey: string,
+  toSectionId: string,
+  toIndex: number,
+): Song {
+  const fromSection = song.sections.find((s) => s.id === fromSectionId);
+  const toSection = song.sections.find((s) => s.id === toSectionId);
+  if (!fromSection || !toSection) return song;
+  const fromIndex = fromSection.graphs.indexOf(graphKey);
+  if (fromIndex < 0) return song;
+
+  if (fromSectionId === toSectionId) {
+    const graphs = [...fromSection.graphs];
+    graphs.splice(fromIndex, 1);
+    const insertAt = clampIndex(toIndex, graphs.length);
+    if (insertAt === fromIndex) return song;
+    graphs.splice(insertAt, 0, graphKey);
+    return setGraphs(song, fromSectionId, graphs);
+  }
+
+  const sections = song.sections.map((section) => {
+    if (section.id === fromSectionId) {
+      return { ...section, graphs: section.graphs.filter((key) => key !== graphKey) };
+    }
+    if (section.id === toSectionId) {
+      const graphs = section.graphs.filter((key) => key !== graphKey);
+      graphs.splice(clampIndex(toIndex, graphs.length), 0, graphKey);
+      return { ...section, graphs };
+    }
+    return section;
+  });
+  return { ...song, sections };
 }
 
 // ---- reuse / usage queries -------------------------------------------------
@@ -156,4 +210,9 @@ function dedupe(keys: readonly string[]): string[] {
     }
   }
   return out;
+}
+
+function clampIndex(index: number, max: number): number {
+  if (!Number.isFinite(index)) return max;
+  return Math.max(0, Math.min(Math.trunc(index), max));
 }

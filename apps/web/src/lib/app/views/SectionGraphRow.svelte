@@ -22,12 +22,20 @@
     song,
     section,
     graphKey,
+    onDragStart,
+    onDragEnd,
+    onDragOver,
+    onDrop,
   }: {
     store: TriggerLab;
     shell: ShellStore;
     song: Song;
     section: SetlistSection;
     graphKey: string;
+    onDragStart: (event: DragEvent) => void;
+    onDragEnd: () => void;
+    onDragOver: (event: DragEvent) => void;
+    onDrop: (event: DragEvent) => void;
   } = $props();
 
   let editing = $state(false);
@@ -50,21 +58,43 @@
   ]);
 </script>
 
-<EditableRow
-  icon={Workflow}
-  label={store.graphLabel(graphKey)}
-  secondary={sub}
-  active={current}
-  bind:editing
-  onclick={open}
-  onCommit={(name) => store.renameGraph(graphKey, name)}
-  {actions}
-  renameLabel="Graph name"
+<div
+  class="graph-drag"
+  role="listitem"
+  draggable={store.canEdit && !editing}
+  aria-label={`Drag ${store.graphLabel(graphKey)}`}
+  ondragstart={onDragStart}
+  ondragend={onDragEnd}
+  ondragover={onDragOver}
+  ondrop={onDrop}
 >
-  {#snippet trailing()}
-    {#if reused}<StatusDot tone="accent" />{/if}
-  {/snippet}
-  {#snippet quickActions()}
-    <IconButton icon={X} label="Remove from section" size={12} onclick={removeFromSection} />
-  {/snippet}
-</EditableRow>
+  <EditableRow
+    icon={Workflow}
+    label={store.graphLabel(graphKey)}
+    secondary={sub}
+    active={current}
+    bind:editing
+    onclick={open}
+    onCommit={(name) => store.renameGraph(graphKey, name)}
+    {actions}
+    renameLabel="Graph name"
+  >
+    {#snippet trailing()}
+      {#if reused}<StatusDot tone="accent" />{/if}
+    {/snippet}
+    {#snippet quickActions()}
+      <IconButton icon={X} label="Remove from section" size={12} onclick={removeFromSection} />
+    {/snippet}
+  </EditableRow>
+</div>
+
+<style>
+  .graph-drag {
+    min-height: 40px;
+    border-radius: var(--radius-2);
+    cursor: grab;
+  }
+  .graph-drag:active {
+    cursor: grabbing;
+  }
+</style>

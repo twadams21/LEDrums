@@ -9,6 +9,7 @@
   import { type TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { sectionRecall } from '../recall';
+  import { hasPrimaryModifier, platformShortcutModifier, type ShortcutPlatform } from '../primary-shortcut';
   import SectionColumn from './SectionColumn.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
@@ -23,6 +24,12 @@
 
   const song = $derived(store.activeSong);
   const sections = $derived(song?.sections ?? []);
+  const shortcutPlatform: ShortcutPlatform = platformShortcutModifier(globalThis.navigator?.platform ?? '');
+
+  type SectionDrag = { kind: 'section'; sectionId: string };
+  type GraphDrag = { kind: 'graph'; sectionId: string; graphKey: string };
+  type DragItem = SectionDrag | GraphDrag;
+  let dragging = $state<DragItem | null>(null);
 
   // --- selected section detail (rename + transport recall), inline in this view -----
   // Resolves over the RESOLVED song list (S42) so a referenced section resolves, and the
@@ -61,7 +68,69 @@
     pendingSectionId = null;
     shell.setView('trigger'); // land on the canvas to edit the new graph
   }
+
+  function onKey(e: KeyboardEvent): void {
+    if (!store.canEdit || e.defaultPrevented) return;
+    if (e.key.toLowerCase() !== 'd' || !hasPrimaryModifier(e, shortcutPlatform)) return;
+    const sel = shell.selection;
+    if (sel?.kind !== 'section') return;
+    if (!sections.some((sec) => sec.id === sel.sectionId)) return;
+    e.preventDefault();
+    store.duplicateSection(sel.sectionId);
+  }
+
+  function startSectionDrag(sectionId: string, event: DragEvent): void {
+    if (!store.canEdit) return;
+    dragging = { kind: 'section', sectionId };
+    event.dataTransfer?.setData('application/x-ledrums-section', sectionId);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function startGraphDrag(sectionId: string, graphKey: string, event: DragEvent): void {
+    if (!store.canEdit) return;
+    dragging = { kind: 'graph', sectionId, graphKey };
+    event.dataTransfer?.setData('application/x-ledrums-graph', JSON.stringify({ sectionId, graphKey }));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function clearDrag(): void {
+    dragging = null;
+  }
+
+  function allowDrop(event: DragEvent): void {
+    if (!store.canEdit || !dragging) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }
+
+  function dropOnSection(sectionId: string, sectionIndex: number, event: DragEvent): void {
+    if (!store.canEdit || !dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (dragging.kind === 'section') {
+      store.moveSection(dragging.sectionId, sectionIndex);
+      store.setActiveSection(dragging.sectionId);
+      shell.select({ kind: 'section', sectionId: dragging.sectionId });
+    } else {
+      const target = sections.find((sec) => sec.id === sectionId);
+      store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, target?.graphs.length ?? 0);
+      store.selectGraphInSection(sectionId, dragging.graphKey);
+    }
+    clearDrag();
+  }
+
+  function dropOnGraph(sectionId: string, graphIndex: number, event: DragEvent): void {
+    if (!store.canEdit || !dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (dragging.kind !== 'graph') return;
+    store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, graphIndex);
+    store.selectGraphInSection(sectionId, dragging.graphKey);
+    clearDrag();
+  }
 </script>
+
+<svelte:window onkeydowncapture={onKey} />
 
 <div class="sections-view">
   <header class="head">
@@ -78,9 +147,22 @@
 
   {#if song}
     <div class="body" class:with-detail={!!sectionSel}>
-      <div class="cols">
-        {#each sections as sec (sec.id)}
-          <SectionColumn {store} {shell} {song} section={sec} onAddGraph={(id) => (pendingSectionId = id)} />
+      <div class="cols" role="list" aria-label="Sections">
+        {#each sections as sec, i (sec.id)}
+          <SectionColumn
+            {store}
+            {shell}
+            {song}
+            section={sec}
+            draggingKind={dragging?.kind ?? null}
+            onAddGraph={(id) => (pendingSectionId = id)}
+            onSectionDragStart={(event) => startSectionDrag(sec.id, event)}
+            onGraphDragStart={(graphKey, event) => startGraphDrag(sec.id, graphKey, event)}
+            onDragEnd={clearDrag}
+            onDragOver={allowDrop}
+            onSectionDrop={(event) => dropOnSection(sec.id, i, event)}
+            onGraphDrop={(graphIndex, event) => dropOnGraph(sec.id, graphIndex, event)}
+          />
         {/each}
       </div>
 

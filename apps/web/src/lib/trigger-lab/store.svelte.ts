@@ -2245,6 +2245,16 @@ export class TriggerLab {
     this.updateActiveSong((song) => setlist.setGraphs(song, sectionId, graphs));
   }
 
+  /** Reorder a section in the active song by drag/drop. */
+  moveSection(sectionId: string, toIndex: number): void {
+    this.updateActiveSong((song) => setlist.moveSection(song, sectionId, toIndex));
+  }
+
+  /** Move one graph placement within a section or across sections by drag/drop. */
+  moveGraphPlacement(fromSectionId: string, graphKey: string, toSectionId: string, toIndex: number): void {
+    this.updateActiveSong((song) => setlist.moveGraphPlacement(song, fromSectionId, graphKey, toSectionId, toIndex));
+  }
+
   /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). `effectId` `null`
       = None. Rides the standard authored-edit path: the mutation to `songs` persists via
       autosave and live-resyncs the Show to the engine (the debounced `syncShowToServer`
