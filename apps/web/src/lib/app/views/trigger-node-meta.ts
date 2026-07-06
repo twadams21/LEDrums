@@ -29,6 +29,7 @@ import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 export const kindIcon: Record<NodeKind, Component> = {
   trigger: Zap,
   play: Sparkles,
+  effect: Sparkles,
   all: Layers,
   random: Shuffle,
   sequence: ListOrdered,
@@ -37,6 +38,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   toggle: Power,
   delay: Timer,
   modifier: Blend,
+  scope: CircleDot,
   output: CircleDot,
   envelope: Spline,
   lfo: Waves, // S36
@@ -55,6 +57,7 @@ export const busIcon: Record<string, Component> = {
 export const tint: Record<NodeKind, string> = {
   trigger: 'var(--accent)',
   play: 'var(--role-content)',
+  effect: 'var(--role-content)',
   all: 'var(--role-layer)',
   random: 'var(--role-effect)',
   sequence: 'var(--role-output)',
@@ -63,6 +66,7 @@ export const tint: Record<NodeKind, string> = {
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
   modifier: 'var(--role-mod)',
+  scope: 'var(--role-output)',
   output: 'var(--role-output)',
   envelope: 'var(--role-modulation)',
   lfo: 'var(--role-modulation)', // S36
@@ -74,6 +78,7 @@ export const tint: Record<NodeKind, string> = {
 export const kindLabel: Record<NodeKind, string> = {
   trigger: 'Trigger',
   play: 'Play',
+  effect: 'Effect',
   all: 'All',
   random: 'Random',
   sequence: 'Sequence',
@@ -82,6 +87,7 @@ export const kindLabel: Record<NodeKind, string> = {
   toggle: 'Toggle',
   delay: 'Delay',
   modifier: 'Modifier',
+  scope: 'Scope',
   output: 'Output',
   envelope: 'Envelope',
   lfo: 'LFO', // S36
@@ -115,6 +121,8 @@ export function kindSummary(node: GraphNode): string {
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
     case 'modifier':
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
+    case 'scope':
+      return node.scope === 'kit' ? 'whole kit' : node.targetId || node.scope;
     case 'envelope':
       return 'modulation source';
     case 'lfo': // S36

@@ -140,7 +140,7 @@ export function materializeLinkedNodes(graph: TriggerGraph, presetParamsFor: Pre
     if (!('linked' in (n as MaybeLinked))) return n; // already migrated — keep the ref
     const wasLinked = (n as MaybeLinked).linked === true;
     const { linked: _drop, ...rest } = n as GraphNode & MaybeLinked;
-    if (wasLinked && n.kind === 'play') {
+    if (wasLinked && (n.kind === 'play' || n.kind === 'effect')) {
       const shared = presetParamsFor(n.presetId);
       if (shared) return { ...rest, params: { ...(shared as Record<string, unknown>) } } as GraphNode;
     }
@@ -188,7 +188,7 @@ function adsrEqual(a: AdsrShape, b: AdsrShape): boolean {
 export function migrateGraphEnvelopes(graph: TriggerGraph): TriggerGraph {
   let graphChanged = false;
   const nodes = graph.nodes.map((n) => {
-    if (n.kind !== 'play') return n;
+    if (n.kind !== 'play' && n.kind !== 'effect') return n;
     let envChanged = false;
     const env: EnvMap = {};
     for (const [key, e] of Object.entries(n.env)) {
@@ -254,13 +254,13 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
   // Any play node still carrying an `env` map is un-migrated (post-migration play env is `{}`), so
   // its mere presence is the trigger — including a map with only inert (`none` / non-number)
   // entries, which must still be cleared or the pass would never reach its fixed point.
-  const hasLegacyEnv = graph.nodes.some((n) => n.kind === 'play' && Object.keys(n.env).length > 0);
+  const hasLegacyEnv = graph.nodes.some((n) => (n.kind === 'play' || n.kind === 'effect') && Object.keys(n.env).length > 0);
   if (!hasLegacyEnv) return graph; // nothing to migrate → same reference (idempotent)
 
   const nodes: GraphNode[] = [];
   const addedEdges: GraphEdge[] = [];
   for (const n of graph.nodes) {
-    if (n.kind !== 'play' || Object.keys(n.env).length === 0) {
+    if ((n.kind !== 'play' && n.kind !== 'effect') || Object.keys(n.env).length === 0) {
       nodes.push(n); // non-play, or an already-migrated play node — untouched (alias-stable)
       continue;
     }
@@ -318,7 +318,7 @@ export function resolveGraphAliases(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if (n.kind !== 'play' || !n.effectId) return n;
+      if ((n.kind !== 'play' && n.kind !== 'effect') || !n.effectId) return n;
       const resolved = resolveEffectAlias(n.effectId);
       if (resolved === n.effectId) return n;
       changed = true;
@@ -342,13 +342,112 @@ export function inferPlayTypes(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if (n.kind !== 'play' || n.playType) return n;
+      if ((n.kind !== 'play' && n.kind !== 'effect') || n.playType) return n;
       changed = true;
       return { ...n, playType: n.canvasScene ? ('canvas' as const) : playTypeForEffect(n.effectId) };
     });
     out[key] = changed ? { ...graph, nodes } : graph;
   }
   return out;
+}
+
+const OUTPUT_ANCHOR_ID = 'output';
+const isLegacyGraph = (graph: TriggerGraph): boolean => graph.version !== 3;
+const isRenderKind = (node: GraphNode): boolean => node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier' || node.kind === 'scope';
+
+function edgeIdFor(existing: Set<string>, base: string): string {
+  if (!existing.has(base)) return base;
+  let i = 2;
+  while (existing.has(`${base}-${i}`)) i += 1;
+  return `${base}-${i}`;
+}
+
+function anchorNode(kind: 'trigger' | 'output', x: number, y: number): GraphNode {
+  return makeNode(kind, kind, x, y, { scope: 'kit', targetId: undefined });
+}
+
+/** Gen3 trigger-graph migration:
+    - `play` is accepted as a legacy serialized alias and rewritten to canonical `effect`.
+    - Gen2 scoped `output` nodes are rewritten to `scope` route filters.
+    - Every graph gets exactly one visible terminal Output anchor.
+    - Render leaves are wired to Output so legacy authored light paths keep emitting.
+
+    The pass is pure, idempotent, and defensive. It does not guess at invalid duplicate ids:
+    sanitizeGraphIntegrity runs before this, then this pass owns Gen3 anchor invariants. */
+export function migrateGen3Graph(graph: TriggerGraph): TriggerGraph {
+  const legacy = isLegacyGraph(graph);
+  const trigger = graph.nodes.find((n) => n.kind === 'trigger') ?? anchorNode('trigger', 0, 0);
+  const oldOutputs = legacy ? graph.nodes.filter((n) => n.kind === 'output') : [];
+  const firstOutput = legacy ? null : graph.nodes.find((n) => n.kind === 'output') ?? null;
+  const remap = new Map<string, string>();
+
+  const nodes: GraphNode[] = [];
+  const seen = new Set<string>();
+  const addNode = (node: GraphNode): void => {
+    if (seen.has(node.id)) return;
+    seen.add(node.id);
+    nodes.push(node);
+  };
+
+  addNode(trigger);
+  for (const node of graph.nodes) {
+    if (node.kind === 'trigger') continue;
+    if (legacy && node.kind === 'output') {
+      const id = node.id === OUTPUT_ANCHOR_ID ? `scope:${OUTPUT_ANCHOR_ID}` : node.id;
+      if (id !== node.id) remap.set(node.id, id);
+      addNode({ ...node, id, kind: 'scope' });
+      continue;
+    }
+    if (!legacy && node.kind === 'output') continue;
+    addNode(node.kind === 'play' ? { ...node, kind: 'effect' } : node);
+  }
+
+  const anchorSource = firstOutput ?? oldOutputs[0];
+  const maxX = nodes.reduce((m, n) => Math.max(m, n.x), trigger.x);
+  const output = { ...anchorNode('output', Math.max(maxX + NODE_W + 90, 420), anchorSource?.y ?? trigger.y), id: OUTPUT_ANCHOR_ID };
+  addNode(output);
+
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const edgeIds = new Set<string>();
+  const connectionKeys = new Set<string>();
+  const edges: GraphEdge[] = [];
+  const addEdge = (edge: GraphEdge): void => {
+    if (!edge.id || !nodeIds.has(edge.from) || !nodeIds.has(edge.to) || edge.from === edge.to) return;
+    const key = `${edge.from}:${edge.fromPort ?? ''}>${edge.to}:${edge.toPort ?? ''}`;
+    if (edgeIds.has(edge.id) || connectionKeys.has(key)) return;
+    edgeIds.add(edge.id);
+    connectionKeys.add(key);
+    edges.push(edge);
+  };
+
+  for (const edge of graph.edges) {
+    const from = remap.get(edge.from) ?? edge.from;
+    const to = remap.get(edge.to) ?? edge.to;
+    if (!legacy && to === firstOutput?.id && firstOutput.id !== OUTPUT_ANCHOR_ID) {
+      addEdge({ ...edge, from, to: OUTPUT_ANCHOR_ID });
+    } else {
+      addEdge({ ...edge, from, to });
+    }
+  }
+
+  const hasOutgoing = new Set(edges.map((e) => e.from));
+  const leaves = nodes.filter((n) => n.id !== OUTPUT_ANCHOR_ID && isRenderKind(n) && !hasOutgoing.has(n.id));
+  for (const leaf of leaves) {
+    addEdge({ id: edgeIdFor(edgeIds, `e-${leaf.id}-output`), from: leaf.id, to: OUTPUT_ANCHOR_ID });
+  }
+
+  return { ...graph, version: 3, nodes, edges };
+}
+
+export function migrateGen3Graphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  let changed = false;
+  for (const [key, graph] of Object.entries(graphs)) {
+    const migrated = migrateGen3Graph(graph);
+    out[key] = migrated;
+    if (migrated !== graph) changed = true;
+  }
+  return changed ? out : graphs;
 }
 
 /** Repair graph records at the hydrate boundary so a stale/partial sync packet cannot leave
@@ -388,7 +487,7 @@ export function sanitizeGraphIntegrity(graph: TriggerGraph): TriggerGraph {
     edges.push(edge);
   }
 
-  return changed ? { nodes, edges } : graph;
+  return changed ? { ...graph, nodes, edges } : graph;
 }
 
 export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
@@ -433,6 +532,8 @@ export function normalizeGraphs(
   // AFTER the ADSR-v2 normalize (so envelope nodes carry v2 shapes): fold legacy play-node
   // env maps into envelope nodes + `param:<key>` mappings, then drop the legacy field (S35).
   next = migrateGraphsEnvMaps(next, specsFor);
+  next = migrateGen3Graphs(next);
+  next = sanitizeGraphsIntegrity(next);
   const names = hydratePadNames(next, graphNames, pads);
   return { graphs: next, graphNames: names };
 }

@@ -164,6 +164,8 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 **Editable slider primitive (done - 2026-07-06, branch `codex/gen3-graph-authoring`):** shared `lib/ui/Slider` now replaces the read-only value label with an editable numeric input that commits on Enter/blur, clamps to min/max, rounds to step, reverts invalid/empty drafts, preserves formatted unit readouts, and stays synchronized with external value/drag updates. Styleguide coverage rides the existing primitive demos; `docs/design-system.html` regenerated; focused Slider component tests cover commit/clamp/invalid/disabled/sync behavior.
 
+**Gen3 trigger graph migration + anchors (done - 2026-07-06, issue #67):** trigger graphs now hydrate to `version: 3` with canonical `effect` nodes instead of legacy `play` nodes, legacy scoped `output` nodes migrated into `scope` nodes, and exactly one visible terminal `output` anchor per graph. Render leaves are automatically wired to the terminal output, while Trigger/Output anchors remain visible and movable but cannot be added, duplicated, copied, pasted, deleted, or kind-changed. Core eval treats unconnected Gen3 effect leaves as inert and emits only through terminal Output, preserving scope from scope nodes. Verified with migration/hydration/schema tests, focused core eval tests, typecheck, regenerated `docs/design-system.html`, and captured `corepack pnpm ui-shot trigger-graph`.
+
 **Not yet built (redesign):**
 - `packages/core` model refactor: Content vs Effect split + per-instance Clip presets.
 - Unified-shell view internals: Patch freeform node canvas. (Setlist/show persistence ✅ done via the show document model, 2026-06-27; Kit geometry editing lives in the Patch Inspector — the standalone Kit view was removed.)

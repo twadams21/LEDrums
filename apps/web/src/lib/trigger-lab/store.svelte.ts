@@ -143,7 +143,15 @@ export type MidiLearnTarget =
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */
 function nodeHasParams(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'modifier';
+  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier';
+}
+
+function isAnchorNode(node: GraphNode): boolean {
+  return node.kind === 'trigger' || node.kind === 'output';
+}
+
+function isEffectNode(node: GraphNode): boolean {
+  return node.kind === 'play' || node.kind === 'effect';
 }
 
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
@@ -2670,7 +2678,7 @@ export class TriggerLab {
     return this.selectableEffects.filter((e) => e.scope === scope);
   }
   effectOf(node: GraphNode) {
-    return node.kind === 'play' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
+    return node.kind === 'play' || node.kind === 'effect' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
   }
   presetsForEffect(effectId: string): Preset[] {
     return this.allPresets.filter((p) => p.effectId === effectId);
@@ -2681,7 +2689,7 @@ export class TriggerLab {
   /** Live params shown for a play node — always its own node-local copy (a preset is a
       snapshot, not a live binding — S39). */
   liveParams(node: GraphNode): voice.ParamValues {
-    if (node.kind !== 'play') return {};
+    if (node.kind !== 'play' && node.kind !== 'effect') return {};
     return node.params;
   }
 
@@ -2697,7 +2705,7 @@ export class TriggerLab {
   private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
     if (this.isViewer) return null;
     const g = this.selectedGraph;
-    if (!g || src.kind === 'trigger') return null;
+    if (!g || isAnchorNode(src)) return null;
     const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
     const pos = findFreePosition(occupied, x, y, 184, 76);
     const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: nid('n'), x: pos.x, y: pos.y };
@@ -2707,7 +2715,7 @@ export class TriggerLab {
 
   /** Copy a node onto the node clipboard (deep, non-reactive). No-op for the trigger node. */
   copyNode(node: GraphNode): void {
-    if (node.kind === 'trigger') return;
+    if (isAnchorNode(node)) return;
     this.nodeClipboard = structuredClone($state.snapshot(node));
   }
 
@@ -2727,11 +2735,11 @@ export class TriggerLab {
   addNode(kind: NodeKind, x: number, y: number): GraphNode | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || kind === 'trigger') return null;
+    if (!g || kind === 'trigger' || kind === 'output') return null;
     this.pushUndoSnapshot();
     let node: GraphNode;
-    if (kind === 'play') {
-      node = makeNode('play', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
+    if (kind === 'play' || kind === 'effect') {
+      node = makeNode('effect', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
       node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
     } else if (kind === 'envelope') {
@@ -2781,7 +2789,7 @@ export class TriggerLab {
   removeNode(node: GraphNode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || node.kind === 'trigger') return;
+    if (!g || isAnchorNode(node)) return;
     this.pushUndoSnapshot();
     g.nodes = g.nodes.filter((n) => n.id !== node.id);
     g.edges = g.edges.filter((e) => e.from !== node.id && e.to !== node.id);
@@ -2848,10 +2856,10 @@ export class TriggerLab {
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */
   changeKind(node: GraphNode, kind: NodeKind): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind === 'trigger' || kind === 'trigger') return;
+    if (isAnchorNode(node) || kind === 'trigger' || kind === 'output') return;
     this.pushUndoSnapshot();
     node.kind = kind;
-    if (kind === 'play') {
+    if (kind === 'play' || kind === 'effect') {
       if (!node.effectId) {
         const init = graphsLib.playNodeInit(this.effects, (id) => this.presetById(id));
         node.effectId = init.effectId;
@@ -2881,7 +2889,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' || node.mode === mode) return;
+    if ((node.kind !== 'play' && node.kind !== 'effect') || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }
@@ -2890,7 +2898,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -2900,7 +2908,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }
@@ -3036,13 +3044,13 @@ export class TriggerLab {
   // --- effect / preset / params / envelopes --------------------------------
 
   openGallery(node: GraphNode): void {
-    if (node.kind === 'play') this.galleryBlock = node;
+    if (isEffectNode(node)) this.galleryBlock = node;
   }
   closeGallery(): void {
     this.galleryBlock = null;
   }
   openSettings(node: GraphNode): void {
-    if (node.kind === 'play') this.settingsBlock = node;
+    if (isEffectNode(node)) this.settingsBlock = node;
   }
   closeSettings(): void {
     this.settingsBlock = null;
@@ -3156,7 +3164,7 @@ export class TriggerLab {
       locked to `node.playType`; this store guard is the authoritative backstop, U5). */
   pickEffect(node: GraphNode, effectId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!isEffectNode(node)) return;
     const eff = this.selectableEffects.find((e) => e.id === effectId);
     if (!eff) return;
 
@@ -3248,7 +3256,7 @@ export class TriggerLab {
 
   /** Point a canvas play node at a scene, seeding its default preset params. */
   setCanvasScene(node: GraphNode, sceneId: string): void {
-    if (this.isViewer || node.kind !== 'play') return;
+    if (this.isViewer || !isEffectNode(node)) return;
     const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
     if (!scene) return;
     const eff = canvasScenesLib.canvasEffectDef(scene);
@@ -3280,7 +3288,7 @@ export class TriggerLab {
       if (!scene) return null;
       const eff = canvasScenesLib.canvasEffectDef(scene);
       const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
-      node = makeNode('play', nid('n'), x, y, {
+      node = makeNode('effect', nid('n'), x, y, {
         playType: 'canvas',
         canvasScene: scene.id,
         effectId: eff.id,
@@ -3294,7 +3302,7 @@ export class TriggerLab {
         this.selectableEffects.find((e) => !e.deprecated);
       if (!eff) return null;
       const preset = this.presetById(`${eff.id}:default`);
-      node = makeNode('play', nid('n'), x, y, {
+      node = makeNode('effect', nid('n'), x, y, {
         playType,
         effectId: eff.id,
         presetId: `${eff.id}:default`,
@@ -3310,13 +3318,13 @@ export class TriggerLab {
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' || node.busId === busId) return;
+    if (!isEffectNode(node) || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
   }
   /** The effective layer for a play node (its override, or the effect's default). */
   busOf(node: GraphNode): string {
-    if (node.kind !== 'play') return '';
+    if (!isEffectNode(node)) return '';
     return node.busId || this.effectOf(node)?.busId || '';
   }
 
@@ -3326,7 +3334,7 @@ export class TriggerLab {
       node or for an unknown preset. */
   selectPreset(node: GraphNode, presetId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!isEffectNode(node)) return;
     const pr = this.presetById(presetId);
     if (!pr) return;
     this.pushUndoSnapshot();
@@ -3339,7 +3347,7 @@ export class TriggerLab {
       No-op when the node's `presetId` resolves to nothing. */
   applyPreset(node: GraphNode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!isEffectNode(node)) return;
     const pr = this.presetById(node.presetId);
     if (!pr) return;
     node.params = { ...pr.params };
@@ -3351,7 +3359,7 @@ export class TriggerLab {
       authored autosave. */
   saveNodeAsPreset(node: GraphNode, name?: string): string | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return null;
+    if (!isEffectNode(node)) return null;
     const eff = this.effectOf(node);
     if (!eff) return null;
     const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
@@ -3447,7 +3455,7 @@ export class TriggerLab {
       `{ key, label, min, max }` — effect params for play nodes, modifier params for modifier
       nodes (which use the core `type` spec field). Non-number params are excluded. */
   modTargetSpecs(node: GraphNode): { key: string; label: string; min?: number; max?: number }[] {
-    if (node.kind === 'play') {
+    if (isEffectNode(node)) {
       const eff = this.effectOf(node);
       return (eff?.params ?? [])
         .filter((s) => s.kind === 'number')
@@ -3478,7 +3486,7 @@ export class TriggerLab {
   /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
   addModInput(node: GraphNode, param: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'modifier') return;
+    if (!isEffectNode(node) && node.kind !== 'modifier') return;
     if (!node.modInputs) node.modInputs = [];
     if (node.modInputs.some((m) => m.param === param)) return;
     this.pushUndoSnapshot();

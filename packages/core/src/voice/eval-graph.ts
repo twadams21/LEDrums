@@ -200,7 +200,8 @@ function evalNodeWithDraft(
   switch (node.kind) {
     case 'trigger':
       return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, viaPrefix, seen2, draft));
-    case 'play': {
+    case 'play':
+    case 'effect': {
       if (!node.effectId) return [];
       // Resolve this play node's `mod` input into a flat modifier chain (S29). Empty →
       // undefined so the spawned voice keeps the zero-alloc, unmodified hot path.
@@ -224,6 +225,7 @@ function evalNodeWithDraft(
       if (kids.length > 0) {
         return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label(modeWord(node.mode)), seen2, next));
       }
+      if (graph.version === 3) return [];
       return [{ kind: 'play', ...next, via: label(modeWord(node.mode)), latchKey: null }];
     }
     case 'modifier': {
@@ -234,9 +236,22 @@ function evalNodeWithDraft(
       };
       return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Modifier'), seen2, next));
     }
+    case 'scope': {
+      if (!draft) return [];
+      const next: PlayDraft = { ...draft, scope: node.scope, targetId: node.targetId };
+      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Scope'), seen2, next));
+    }
     case 'output':
       if (!draft) return [];
-      return [{ kind: 'play', ...draft, scope: node.scope, targetId: node.targetId, via: label('Output'), latchKey: null }];
+      return [
+        {
+          kind: 'play',
+          ...draft,
+          ...(node.scope === 'kit' && !node.targetId ? {} : { scope: node.scope, targetId: node.targetId }),
+          via: label('Output'),
+          latchKey: null,
+        },
+      ];
     case 'randomMod':
     case 'envelope':
     case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)

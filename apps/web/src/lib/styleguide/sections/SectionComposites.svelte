@@ -71,6 +71,7 @@
   const faceSubs: Record<NodeKind, string> = {
     trigger: 'kick · center',
     play: 'Soft strike',
+    effect: 'Soft strike',
     all: 'all at once',
     random: 'no-repeat',
     sequence: 'in order',
@@ -79,6 +80,7 @@
     toggle: 'on · off',
     delay: '1/8 dotted',
     modifier: 'Trail',
+    scope: 'Snare',
     output: 'Hoop',
     envelope: 'modulation source',
     lfo: 'sine · 1Hz',

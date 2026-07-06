@@ -45,7 +45,7 @@ export function presetUsageCount(graphs: Record<string, TriggerGraph>, id: strin
   let count = 0;
   for (const graph of Object.values(graphs)) {
     for (const node of graph.nodes) {
-      if (node.kind === 'play' && node.presetId === id) count++;
+      if ((node.kind === 'play' || node.kind === 'effect') && node.presetId === id) count++;
     }
   }
   return count;

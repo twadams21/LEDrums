@@ -88,7 +88,7 @@ function aliasResolvedGraphs(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if (n.kind !== 'play' || !n.effectId) return n;
+      if ((n.kind !== 'play' && n.kind !== 'effect') || !n.effectId) return n;
       const resolved = resolveEffectAlias(n.effectId);
       if (resolved === n.effectId) return n;
       changed = true;

@@ -96,7 +96,7 @@
       </span>
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
-    {#if node.kind === 'play'}
+    {#if node.kind === 'play' || node.kind === 'effect'}
       <PlayNodeInspector {store} {node} />
     {:else if node.kind === 'delay'}
       <DelayNodeInspector {store} {node} />

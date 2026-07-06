@@ -90,7 +90,7 @@
       key: 'kinds',
       label: 'Nodes',
       items: NODE_KINDS.filter(
-        (kind) => kind !== 'play' && kind !== 'modifier' && !voice.isModSourceKind(kind),
+        (kind) => kind !== 'play' && kind !== 'output' && kind !== 'modifier' && !voice.isModSourceKind(kind),
       ).map((kind) => ({
         id: kind,
         name: kindLabel[kind],

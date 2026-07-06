@@ -466,7 +466,8 @@ export class Sim {
     switch (node.kind) {
       case 'trigger':
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2));
-      case 'play': {
+      case 'play':
+      case 'effect': {
         if (!node.effectId) return [];
         // Resolve this play node's `mod` input into a flat modifier chain (S29) — the SAME
         // pure core resolver the engine uses, so the offline preview and real output agree.
@@ -491,6 +492,7 @@ export class Sim {
         ];
       }
       case 'modifier':
+      case 'scope':
       case 'output':
       case 'randomMod':
       case 'envelope':

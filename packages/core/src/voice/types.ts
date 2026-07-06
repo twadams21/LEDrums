@@ -195,7 +195,7 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
 
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
-export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
+export type BlockKind = 'play' | 'effect' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
 /**
  * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
  * fires children). It is a media-effects node wired to a play node's `mod` input handle;
@@ -209,7 +209,7 @@ export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'cha
  * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
  * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'output' | 'envelope' | 'lfo' | 'cc' | 'randomMod'; // S36 'lfo' + S37 'cc'
+export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'scope' | 'output' | 'envelope' | 'lfo' | 'cc' | 'randomMod'; // S36 'lfo' + S37 'cc'
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -342,6 +342,8 @@ export interface GraphEdge {
 }
 
 export interface TriggerGraph {
+  /** Trigger graph schema generation. Missing/2 = legacy Gen2; 3 = terminal Output anchor. */
+  version?: 3;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }

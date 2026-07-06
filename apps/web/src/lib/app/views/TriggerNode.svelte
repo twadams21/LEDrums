@@ -45,7 +45,8 @@
   const kind = $derived((data as { kind: NodeKind }).kind);
   // the live store node (reactive — Inspector edits flow straight through)
   const node = $derived(store.selectedGraph?.nodes.find((n) => n.id === id) ?? null);
-  const eff = $derived(node && node.kind === 'play' ? store.effectOf(node) : undefined);
+  const isEffectNode = $derived(node?.kind === 'play' || node?.kind === 'effect');
+  const eff = $derived(node && isEffectNode ? store.effectOf(node) : undefined);
 
   // a value+bands switch fans out one source handle per band (the rest render a single
   // default output handle). The cutoffs default defensively (older persisted graphs).
@@ -62,14 +63,14 @@
   const title = $derived.by(() => {
     if (!node) return '';
     if (node.kind === 'trigger') return 'Trigger';
-    if (node.kind === 'play') return eff?.name ?? 'effect';
+    if (node.kind === 'play' || node.kind === 'effect') return eff?.name ?? 'effect';
     if (node.kind === 'modifier') return modifierName(node.modifierId);
     return kindLabel[node.kind];
   });
   // play-type sub-label (D3) — the node's collection name, shown as a NodeCard chip. Falls
   // back to the effect's own play type for graphs authored before the node carried one.
   const playTypeChip = $derived.by(() => {
-    if (!node || node.kind !== 'play') return undefined;
+    if (!node || (node.kind !== 'play' && node.kind !== 'effect')) return undefined;
     const type = node.playType ?? eff?.playType ?? 'ambient';
     return collectionMeta(type).label;
   });
@@ -77,7 +78,7 @@
     if (!node) return '';
     // the resolved input source — drum · zone / MIDI note·CC / OSC address, or "unbound"
     if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
-    if (node.kind === 'play') return store.presetById(node.presetId)?.name ?? '';
+    if (node.kind === 'play' || node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
     if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
     return kindSummary(node);
   });
@@ -85,7 +86,7 @@
   // A play node's resolved modifier-chain length (mod→mod flattened) — drives the small
   // count chip riding the mod input handle, so the chain reads at a glance on the canvas.
   const modCount = $derived(
-    node && node.kind === 'play' && store.selectedGraph
+    node && isEffectNode && store.selectedGraph
       ? voice.resolveModifierChain(store.selectedGraph, node).length
       : 0,
   );
@@ -93,7 +94,7 @@
   // Exposed modulation-target rows (doc 10, S34): each renders its own labelled node-face row
   // with a `param:<key>` input handle scoped to modulation sources. Play + modifier nodes only.
   const modRows = $derived.by(() => {
-    if (!node || (node.kind !== 'play' && node.kind !== 'modifier')) return [];
+    if (!node || (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'modifier')) return [];
     const rows = node.modInputs ?? [];
     if (rows.length === 0) return [];
     const specs = store.modTargetSpecs(node);
@@ -137,7 +138,7 @@
   const actions = $derived.by<ContextMenuAction[]>(() => {
     if (!node) return [];
     const canPaste = store.nodeClipboard !== null;
-    if (node.kind === 'trigger') {
+    if (node.kind === 'trigger' || node.kind === 'output') {
       return [{ label: 'Paste', icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() }];
     }
     const n = node;
@@ -151,7 +152,7 @@
 </script>
 
 {#snippet playThumb()}
-  {#if node && node.kind === 'play' && eff}
+  {#if node && isEffectNode && eff}
     <EffectThumb
       params={store.liveParams(node)}
       generatorId={eff.generatorId}
@@ -205,7 +206,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' ? 'trigger-handle' : 'effect-handle'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
   {/if}
   {#if nodeHasModInput(kind)}
     <Handle
@@ -266,7 +267,7 @@
         tint={chipTint}
         typeChip={playTypeChip}
         selected={!!selected}
-        thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
+        thumb={(kind === 'play' || kind === 'effect') && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
         leadHandles={cardHandles}
         footer={modRows.length > 0 ? paramFooter : undefined}
@@ -274,7 +275,7 @@
     </div>
   {/if}
   </ContextMenu>
-  {#if node.kind !== 'trigger'}
+  {#if node.kind !== 'trigger' && node.kind !== 'output'}
     <ConfirmDialog
       bind:open={confirmDelete}
       title="Delete node?"

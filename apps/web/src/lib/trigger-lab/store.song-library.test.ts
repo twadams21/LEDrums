@@ -152,16 +152,16 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
 
     // a referenced graph carrying a play node (keys are namespaced `lib:<libId>/…`)
     const libGraphs = store.songLibrary.songs[libId]!.graphs;
-    const refKey = Object.keys(libGraphs).find((k) => libGraphs[k]!.nodes.some((n) => n.kind === 'play'))!;
+    const refKey = Object.keys(libGraphs).find((k) => libGraphs[k]!.nodes.some((n) => n.kind === 'effect'))!;
     expect(refKey).toBeTruthy();
 
     // edit via the EXACT path the Trigger editor uses: select the graph, mutate a play node's param
     store.selectedPadKey = refKey;
-    const play = store.selectedGraph!.nodes.find((n) => n.kind === 'play')!;
+    const play = store.selectedGraph!.nodes.find((n) => n.kind === 'effect')!;
     play.params = { ...play.params, __s42probe: 0.4242 };
 
     // the canonical LIBRARY copy changed (S41 aliasing — resolved holds the library rune's proxies)
-    const libPlay = store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((n) => n.kind === 'play')!;
+    const libPlay = store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((n) => n.kind === 'effect')!;
     expect((libPlay.params as Record<string, number>).__s42probe).toBe(0.4242);
 
     // …and the show did NOT absorb a copy: authored graphs stay local-only; the show still holds a REF

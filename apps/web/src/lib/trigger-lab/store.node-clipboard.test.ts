@@ -40,7 +40,7 @@ describe('node clipboard', () => {
     const { store, play } = freshGraph();
     store.copyNode(play);
     expect(store.nodeClipboard).not.toBeNull();
-    expect(store.nodeClipboard!.kind).toBe('play');
+    expect(store.nodeClipboard!.kind).toBe('effect');
     // mutating the source must not leak into the clipboard copy
     play.x = 999;
     expect(store.nodeClipboard!.x).toBe(200);
@@ -53,7 +53,7 @@ describe('node clipboard', () => {
     const pasted = store.pasteNode()!;
     expect(nodesOf(store).length).toBe(before + 1);
     expect(pasted.id).not.toBe(play.id);
-    expect(pasted.kind).toBe('play');
+    expect(pasted.kind).toBe('effect');
     // offset from the original, so it does not stack on it
     expect(pasted.x === play.x && pasted.y === play.y).toBe(false);
   });
@@ -71,7 +71,7 @@ describe('node clipboard', () => {
     const dup = store.duplicateNode(play)!;
     expect(nodesOf(store).length).toBe(before + 1);
     expect(dup.id).not.toBe(play.id);
-    expect(dup.kind).toBe('play');
+    expect(dup.kind).toBe('effect');
   });
 
   it('refuses to copy or duplicate the trigger node', () => {

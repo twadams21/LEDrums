@@ -19,7 +19,7 @@ export type ToPort = 'in' | 'mod' | `param:${string}` | undefined;
        source is a flow source. */
 function directionOk(fromKind: NodeKind, toKind: NodeKind, toPort: ToPort): boolean {
   if (voice.paramKeyOf(toPort) !== null) return nodeIsModSource(fromKind) && nodeHasParams(toKind);
-  if (toPort === 'mod') return false;
+  if (toPort === 'mod') return fromKind === 'modifier' && nodeHasModInput(toKind);
   return nodeHasOutput(fromKind) && nodeHasInput(toKind) && !nodeIsModSource(fromKind);
 }
 

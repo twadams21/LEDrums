@@ -43,6 +43,41 @@ const state = (): EvalState => ({
   isVoiceAlive: () => false,
 });
 
+describe('evalGraph Gen3 terminal output', () => {
+  it('effect nodes emit only when their route reaches Output', () => {
+    const loose: TriggerGraph = {
+      version: 3,
+      nodes: [node('trigger', 't'), node('effect', 'fx', { effectId: 'plasma' }), node('output', 'output')],
+      edges: [edge('e1', 't', 'fx')],
+    };
+    expect(play(loose)).toBeUndefined();
+
+    const wired: TriggerGraph = {
+      version: 3,
+      nodes: loose.nodes,
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'output')],
+    };
+    expect(play(wired)?.effectId).toBe('plasma');
+  });
+
+  it('scope nodes carry legacy scoped-output targeting forward to the terminal Output', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'kit' }),
+        node('scope', 'old-output', { scope: 'drum', targetId: 'snare' }),
+        node('output', 'output'),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'old-output'), edge('e3', 'old-output', 'output')],
+    };
+
+    const a = play(graph)!;
+    expect(a.scope).toBe('drum');
+    expect(a.targetId).toBe('snare');
+  });
+});
+
 const ctx: TriggerCtx = {
   velocity: 1,
   sectionIndex: 0,

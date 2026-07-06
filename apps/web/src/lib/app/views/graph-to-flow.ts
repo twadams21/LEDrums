@@ -47,7 +47,7 @@ export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
       ? { data: { mod: true } }
       : voice.paramKeyOf(e.toPort) !== null
         ? { data: { modulation: true } }
-        : kindById.get(e.from) === 'play' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
+        : kindById.get(e.from) === 'play' || kindById.get(e.from) === 'effect' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
           ? { data: { effect: true } }
         : {}),
   }));
@@ -69,10 +69,10 @@ export function applyFlowPositions(
 ): TriggerGraph {
   const pos = new Map(flowNodes.map((n) => [n.id, n.position]));
   return {
+    ...graph,
     nodes: graph.nodes.map((n): GraphNode => {
       const p = pos.get(n.id);
       return p ? { ...n, x: p.x, y: p.y } : n;
     }),
-    edges: graph.edges,
   };
 }

@@ -51,22 +51,22 @@ export type TriggerGraph = voice.TriggerGraph;
     `modifier` + `envelope` are `NodeKind`s but not block types in the Block union, so the
     element type is widened to `Exclude<NodeKind, 'trigger'>`. `envelope` is a modulation
     source (doc 10) — palette-grouped separately, but addable like the rest. */
-export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'output', 'envelope', 'lfo', 'cc', 'randomMod']; // S36 'lfo' + S37 'cc'
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['effect', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'scope', 'output', 'envelope', 'lfo', 'cc', 'randomMod']; // S36 'lfo' + S37 'cc'
 
 /** Whether a kind emits a trigger-flow / mod / modulation OUTPUT handle. 'play' is a sink (no
     children); 'trigger' is a source. A 'modifier' emits its `mod` output; a modulation source
     ('envelope', doc 10) emits its modulation output — both wire from the right, so both count. */
-export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && !voice.isModSourceKind(kind);
+export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && kind !== 'modifier' && !voice.isModSourceKind(kind);
 /** Whether a kind takes a trigger-FLOW input (the default `in` handle). 'trigger' is the
     root; 'modifier' + modulation sources ('envelope') take NO flow input — their inputs are
     the `mod` handle / none, so they are excluded here. */
-export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && !voice.isModSourceKind(kind);
+export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && kind !== 'modifier' && !voice.isModSourceKind(kind);
 /** Whether a kind exposes a `mod` INPUT handle (a modifier chain lands here). Play nodes
     take modifiers; modifier nodes take upstream modifiers (mod→mod chains). */
-export const nodeHasModInput = (_kind: NodeKind): boolean => false;
+export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
 /** Whether a kind carries exposable modulation-target params (play + modifier nodes). A
     `param:<key>` modulation wire may land only on these. */
-export const nodeHasParams = (kind: NodeKind): boolean => kind === 'play' || kind === 'modifier';
+export const nodeHasParams = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
 /** Whether a kind is a modulation SOURCE (wires from its output into a `param:<key>` input).
     Re-exported from core so the wiring layer and the resolver share one list. */
 export const nodeIsModSource = (kind: NodeKind): boolean => voice.isModSourceKind(kind);
