@@ -105,6 +105,17 @@ export interface EngineStats {
   busLevels: Record<string, number>;
   /** Per-voice detail for a connected client's dock (S17). Empty when no voices are active. */
   voices: VoiceStat[];
+  perf: EnginePerfStats;
+}
+
+export interface EnginePerfStats {
+  tickMs: number;
+  queueMs: number;
+  pendingMs: number;
+  envelopeMs: number;
+  paramsMs: number;
+  compositeMs: number;
+  voiceCount: number;
 }
 
 export interface RenderEngine {
@@ -188,6 +199,7 @@ class VoiceBusEngine implements RenderEngine {
   private beat = 0;
   private bpm = 120;
   private sectionIndex = 0;
+  private perf: EnginePerfStats = emptyPerfStats();
 
   /**
    * Pending-fire queue for delay nodes. Each entry holds an absolute `fireAtMs`
@@ -635,8 +647,8 @@ class VoiceBusEngine implements RenderEngine {
     this.pendingFires = this.pendingFires.filter((f) => f.fireAtMs > this.timeMs);
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
-      const { graph, pad, ctx, childIds, viaPrefix, seen } = f.descriptor;
-      const actions = evalChildren(this.evalState(), graph, pad, childIds, ctx, viaPrefix, seen);
+      const { graph, pad, ctx, childIds, viaPrefix, seen, draft } = f.descriptor;
+      const actions = evalChildren(this.evalState(), graph, pad, childIds, ctx, viaPrefix, seen, draft ?? null);
       this.applyActions(actions, ctx);
     }
   }
@@ -644,6 +656,7 @@ class VoiceBusEngine implements RenderEngine {
   // --- tick --------------------------------------------------------------
 
   tick(now: number, dt: number, transport: TransportState): void {
+    const tickStart = perfNow();
     this.timeMs = now;
     this.beat = transport.beat;
     this.bpm = transport.bpm;
@@ -668,6 +681,11 @@ class VoiceBusEngine implements RenderEngine {
         this.finalFb,
       );
     }
+    this.perf = {
+      ...emptyPerfStats(),
+      tickMs: perfNow() - tickStart,
+      voiceCount: this.voices.pool.reduce((count, v) => count + (v.active ? 1 : 0), 0),
+    };
   }
 
   // --- outputs -----------------------------------------------------------
@@ -696,7 +714,7 @@ class VoiceBusEngine implements RenderEngine {
         via: v.via,
       });
     }
-    return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels, voices };
+    return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels, voices, perf: this.perf };
   }
 
   private busLevel(bus: Bus): number {
@@ -746,11 +764,19 @@ class NullEngine implements RenderEngine {
     return this.fb;
   }
   stats(): EngineStats {
-    return { timeMs: this.timeMs, beat: this.beat, voiceCount: 0, busLevels: {}, voices: [] };
+    return { timeMs: this.timeMs, beat: this.beat, voiceCount: 0, busLevels: {}, voices: [], perf: emptyPerfStats() };
   }
 }
 
 const EMPTY_FRAME = new Float32Array(0);
+
+function emptyPerfStats(): EnginePerfStats {
+  return { tickMs: 0, queueMs: 0, pendingMs: 0, envelopeMs: 0, paramsMs: 0, compositeMs: 0, voiceCount: 0 };
+}
+
+function perfNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : 0;
+}
 
 export function createVoiceBusEngine(opts: RenderEngineOptions = {}): RenderEngine {
   return new VoiceBusEngine(opts.onDiagnostic);

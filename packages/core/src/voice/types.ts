@@ -209,7 +209,7 @@ export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'cha
  * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
  * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'envelope' | 'lfo' | 'cc'; // S36 'lfo' + S37 'cc'
+export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'output' | 'envelope' | 'lfo' | 'cc' | 'randomMod'; // S36 'lfo' + S37 'cc'
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones

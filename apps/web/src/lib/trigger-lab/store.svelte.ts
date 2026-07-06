@@ -2880,7 +2880,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (node.kind !== 'play' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -2890,7 +2890,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (node.kind !== 'play' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }

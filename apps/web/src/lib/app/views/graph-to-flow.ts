@@ -35,6 +35,7 @@ export function graphToFlowNodes(graph: TriggerGraph): TriggerFlowNode[] {
     modifier wire and `data.modulation` a modulation wire so each gets its own visual role
     (graph-hover combines it with the hover-highlight class). */
 export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
+  const kindById = new Map(graph.nodes.map((n) => [n.id, n.kind] as const));
   return graph.edges.map((e) => ({
     id: e.id,
     source: e.from,
@@ -46,6 +47,8 @@ export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
       ? { data: { mod: true } }
       : voice.paramKeyOf(e.toPort) !== null
         ? { data: { modulation: true } }
+        : kindById.get(e.from) === 'play' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
+          ? { data: { effect: true } }
         : {}),
   }));
 }

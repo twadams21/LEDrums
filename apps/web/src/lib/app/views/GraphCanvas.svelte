@@ -197,6 +197,9 @@
     stroke: var(--role-modulation);
     stroke-dasharray: 2 3;
   }
+  .gcanvas :global(.svelte-flow__edge.edge-effect .svelte-flow__edge-path) {
+    stroke: var(--role-mod);
+  }
   /* a wire one level connected to the hovered node lights up (see graph-hover) */
   .gcanvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
     stroke: var(--accent);
@@ -214,6 +217,18 @@
   .gcanvas :global(.svelte-flow__handle.mod-handle.connectingto) {
     background: var(--role-mod);
     border-color: var(--role-mod);
+  }
+  .gcanvas :global(.svelte-flow__handle.trigger-handle) {
+    background: color-mix(in oklch, var(--accent) 28%, var(--surface-2));
+    border-color: var(--accent);
+  }
+  .gcanvas :global(.svelte-flow__handle.effect-handle) {
+    background: color-mix(in oklch, var(--role-mod) 28%, var(--surface-2));
+    border-color: var(--role-mod);
+  }
+  .gcanvas :global(.svelte-flow__handle.param-handle) {
+    background: color-mix(in oklch, var(--role-modulation) 30%, var(--surface-2));
+    border-color: var(--role-modulation);
   }
   /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
   .gcanvas :global(.svelte-flow__handle) {

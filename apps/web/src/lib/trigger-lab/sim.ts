@@ -491,6 +491,8 @@ export class Sim {
         ];
       }
       case 'modifier':
+      case 'output':
+      case 'randomMod':
       case 'envelope':
       case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
       case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)

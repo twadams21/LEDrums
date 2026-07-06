@@ -51,7 +51,7 @@ function resolveModifierModulations(graph: TriggerGraph, node: GraphNode): Mappi
 /** Map a modifier node to its resolved link (params/bypass passed verbatim; unknown
     `modifierId` is left as-is — the chain runner skips it, never throwing on the hot path).
     `modulations` (S34) are resolved from the node's authored env + incoming param edges. */
-function toResolvedModifier(graph: TriggerGraph, node: GraphNode): ResolvedModifier {
+export function resolveModifierNode(graph: TriggerGraph, node: GraphNode): ResolvedModifier {
   const link: ResolvedModifier = { modifierId: node.modifierId ?? '', params: node.params };
   if (node.bypass) link.bypass = true;
   const modulations = resolveModifierModulations(graph, node);
@@ -85,7 +85,7 @@ export function resolveModifierChain(
   const chain: ResolvedModifier[] = [];
   for (const m of sources) {
     chain.push(...resolveModifierChain(graph, m, seen2)); // upstream (mod→mod) applies first
-    chain.push(toResolvedModifier(graph, m));
+    chain.push(resolveModifierNode(graph, m));
   }
   return chain;
 }

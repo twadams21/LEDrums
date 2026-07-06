@@ -107,7 +107,7 @@
 
   // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
   // mirroring how a play node shows its EffectThumb (S38). Sampled through core, ticker-driven.
-  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc');
+  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'randomMod');
   // Gating / routing kinds get a STATE face (wave-4 decision 1): static configured state +
   // a trigger-driven flash. (Bands switches keep their dedicated BandSwitchNode face.)
   const isStateKind = $derived(
@@ -205,7 +205,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+    <Handle type="target" position={Position.Left} class={kind === 'play' ? 'trigger-handle' : 'effect-handle'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
   {/if}
   {#if nodeHasModInput(kind)}
     <Handle
@@ -217,7 +217,7 @@
     />
   {/if}
   {#if nodeHasOutput(kind)}
-    <Handle type="source" position={Position.Right} />
+    <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} />
   {/if}
   {#if modCount > 0}
     <span class="modcount" title={`${modCount} modifier${modCount === 1 ? '' : 's'} in chain`}>
