@@ -14,6 +14,7 @@ export * from './diagnostics';
 export * from './easing';
 export * from './envelope';
 export * from './modulation';
+export * from './scope';
 export {
   MODULATION_PARITY_CASES,
   PARITY_PHASES,
@@ -33,7 +34,7 @@ export {
   type LfoRateMode,
   type LfoSettings,
 } from './lfo';
-export { resolveModifierChain } from './modifier-graph';
+export { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 export {
   resolveNodeModulations,
   nodeModSource,

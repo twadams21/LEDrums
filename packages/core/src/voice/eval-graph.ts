@@ -23,6 +23,7 @@ import type { Mapping } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
+import { intersectScopeTargets } from './scope';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -238,16 +239,22 @@ function evalNodeWithDraft(
     }
     case 'scope': {
       if (!draft) return [];
-      const next: PlayDraft = { ...draft, scope: node.scope, targetId: node.targetId };
+      const scoped = intersectScopeTargets(draft, node, ctx.sourceDrumId);
+      if (!scoped) return [];
+      const next: PlayDraft = { ...draft, ...scoped };
       return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Scope'), seen2, next));
     }
     case 'output':
       if (!draft) return [];
+      if (node.scope !== 'kit' || node.targetId) {
+        const scoped = intersectScopeTargets(draft, node, ctx.sourceDrumId);
+        if (!scoped) return [];
+        return [{ kind: 'play', ...draft, ...scoped, via: label('Output'), latchKey: null }];
+      }
       return [
         {
           kind: 'play',
           ...draft,
-          ...(node.scope === 'kit' && !node.targetId ? {} : { scope: node.scope, targetId: node.targetId }),
           via: label('Output'),
           latchKey: null,
         },

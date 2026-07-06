@@ -275,6 +275,7 @@ type PlayAction = {
 };
 type StopAction = { kind: 'stop'; voiceId: string; via: string };
 type Action = PlayAction | StopAction;
+type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'>;
 
 export interface TriggerCtx {
   velocity: number;
@@ -336,6 +337,7 @@ export class Sim {
     ctx: TriggerCtx;
     viaPrefix: string;
     seen: Set<string>;
+    draft?: PlayDraft | null;
   }> = [];
   private pendingFireCounter = 0;
 
@@ -436,7 +438,7 @@ export class Sim {
   private evalGraph(graph: TriggerGraph, ctx: TriggerCtx): Action[] {
     const trig = graph.nodes.find((n) => n.kind === 'trigger');
     if (!trig) return [];
-    return this.evalNode(graph, trig, ctx, '', new Set());
+    return this.evalNode(graph, trig, ctx, '', new Set(), null);
   }
 
   /** A node's wired children, ordered top→bottom (visual y) for determinism. */
@@ -458,14 +460,21 @@ export class Sim {
       .sort((a, b) => a.y - b.y);
   }
 
-  private evalNode(graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx, viaPrefix: string, seen: Set<string>): Action[] {
+  private evalNode(
+    graph: TriggerGraph,
+    node: GraphNode,
+    ctx: TriggerCtx,
+    viaPrefix: string,
+    seen: Set<string>,
+    draft: PlayDraft | null,
+  ): Action[] {
     if (seen.has(node.id)) return []; // cycle guard
     const seen2 = new Set(seen).add(node.id);
     const label = (s: string): string => (viaPrefix ? `${viaPrefix} → ${s}` : s);
     const kids = this.childrenOf(graph, node);
     switch (node.kind) {
       case 'trigger':
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2));
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2, draft));
       case 'play':
       case 'effect': {
         if (!node.effectId) return [];
@@ -475,25 +484,45 @@ export class Sim {
         // Resolve incoming `param:<key>` modulation edges into mappings (S34) — the SAME pure
         // core resolver the engine uses, so offline preview and real output agree.
         const modulations = voice.resolveNodeModulations(graph, node);
-        return [
-          {
-            kind: 'play',
-            effectId: node.effectId,
-            mode: node.mode,
-            scope: node.scope,
-            targetId: node.targetId,
-            busId: node.busId,
-            params: this.resolveNodeParams(node),
-            modifiers: mods.length ? mods : undefined,
-            modulations: modulations.length ? modulations : undefined,
-            via: label(this.modeWord(node.mode)),
-            latchKey: null,
-          },
-        ];
+        const next: PlayDraft = {
+          effectId: node.effectId,
+          mode: node.mode,
+          scope: node.scope,
+          targetId: node.targetId,
+          busId: node.busId,
+          params: this.resolveNodeParams(node),
+          modifiers: mods.length ? mods : undefined,
+          modulations: modulations.length ? modulations : undefined,
+        };
+        if (kids.length > 0) {
+          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(this.modeWord(node.mode)), seen2, next));
+        }
+        if (graph.version === 3) return [];
+        return [{ kind: 'play', ...next, via: label(this.modeWord(node.mode)), latchKey: null }];
       }
-      case 'modifier':
-      case 'scope':
+      case 'modifier': {
+        if (!draft) return [];
+        const next: PlayDraft = {
+          ...draft,
+          modifiers: [...(draft.modifiers ?? []), voice.resolveModifierNode(graph, node)],
+        };
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Modifier'), seen2, next));
+      }
+      case 'scope': {
+        if (!draft) return [];
+        const scoped = voice.intersectScopeTargets(draft, node, ctx.sourceDrumId);
+        if (!scoped) return [];
+        const next: PlayDraft = { ...draft, ...scoped };
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Scope'), seen2, next));
+      }
       case 'output':
+        if (!draft) return [];
+        if (node.scope !== 'kit' || node.targetId) {
+          const scoped = voice.intersectScopeTargets(draft, node, ctx.sourceDrumId);
+          if (!scoped) return [];
+          return [{ kind: 'play', ...draft, ...scoped, via: label('Output'), latchKey: null }];
+        }
+        return [{ kind: 'play', ...draft, via: label('Output'), latchKey: null }];
       case 'randomMod':
       case 'envelope':
       case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
@@ -503,7 +532,7 @@ export class Sim {
         // envelope via a target's resolved `param:<key>` modulations — not here.
         return [];
       case 'all':
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2));
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2, draft));
       case 'random': {
         if (kids.length === 0) return [];
         let i = this.prng.nextInt(kids.length);
@@ -512,27 +541,27 @@ export class Sim {
           while (i === prev) i = this.prng.nextInt(kids.length);
         }
         this.lastPick.set(node.id, i);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2);
+        return this.evalNode(graph, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2, draft);
       }
       case 'sequence': {
         if (kids.length === 0) return [];
         const i = (this.seqIndex.get(node.id) ?? 0) % kids.length;
         this.seqIndex.set(node.id, i + 1);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
+        return this.evalNode(graph, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2, draft);
       }
       case 'switch': {
         // `value` (gate/bands) is canonical. `velocity` was folded into it and dropped from
         // SwitchOn — graphs are migrated on hydrate (foldVelocitySwitch), but route anything
         // that isn't a count-based mode (`section`/`beat`) through value eval so a stray
         // legacy `velocity` never throws or mis-routes (mirrors core engine).
-        if (node.on !== 'section' && node.on !== 'beat') return this.evalValueSwitch(graph, node, ctx, label, seen2);
+        if (node.on !== 'section' && node.on !== 'beat') return this.evalValueSwitch(graph, node, ctx, label, seen2, draft);
         if (kids.length === 0) return [];
         const i = this.switchIndexN(kids.length, node.on, ctx);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
+        return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2, draft);
       }
       case 'chance': {
         if (this.prng.next() > node.p) return [];
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2));
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2, draft));
       }
       case 'toggle': {
         const current = this.latched.get(node.id);
@@ -541,7 +570,7 @@ export class Sim {
           this.latched.set(node.id, null);
           return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
         }
-        const actions = kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Toggle on'), seen2));
+        const actions = kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Toggle on'), seen2, draft));
         const firstPlay = actions.find((a) => a.kind === 'play') as PlayAction | undefined;
         if (firstPlay) firstPlay.latchKey = node.id;
         return actions;
@@ -550,7 +579,7 @@ export class Sim {
         const delayMs = voice.computeDelayMs(node.delayMode, node.ms, node.division, ctx.bpm);
         if (delayMs <= 0) {
           // Degenerate: zero/negative delay fires children immediately (mirrors core).
-          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay 0ms'), seen2));
+          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay 0ms'), seen2, draft));
         }
         const delayLabel = node.delayMode === 'time' ? `Delay ${node.ms}ms` : `Delay ${node.division}`;
         this.pendingFires.push({
@@ -561,6 +590,7 @@ export class Sim {
           ctx,
           viaPrefix: label(delayLabel),
           seen: seen2,
+          draft,
         });
         return [];
       }
@@ -587,6 +617,7 @@ export class Sim {
     ctx: TriggerCtx,
     label: (s: string) => string,
     seen: Set<string>,
+    draft: PlayDraft | null,
   ): Action[] {
     const value = ctx.velocity;
     const mode = node.valueMode ?? 'gate';
@@ -596,13 +627,13 @@ export class Sim {
       const pass = invert ? value > threshold : value <= threshold;
       if (!pass) return [];
       const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
-      return this.childrenOf(graph, node).flatMap((c) => this.evalNode(graph, c, ctx, label(gateVia), seen));
+      return this.childrenOf(graph, node).flatMap((c) => this.evalNode(graph, c, ctx, label(gateVia), seen, draft));
     }
     const cutoffs = node.bands ?? [0.5];
     const b = bandIndex(value, cutoffs);
     const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
     return this.childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
-      this.evalNode(graph, c, ctx, label(bandVia), seen),
+      this.evalNode(graph, c, ctx, label(bandVia), seen, draft),
     );
   }
 
@@ -777,13 +808,13 @@ export class Sim {
     this.pendingFires = this.pendingFires.filter((f) => f.fireAtMs > this.timeMs);
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
-      const { graph, childIds, ctx, viaPrefix, seen } = f;
+      const { graph, childIds, ctx, viaPrefix, seen, draft } = f;
       // Re-lookup child nodes by id so y-sort still applies (children may have moved).
       const childNodes = childIds
         .map((id) => graph.nodes.find((n) => n.id === id))
         .filter((n): n is GraphNode => !!n)
         .sort((a, b) => a.y - b.y);
-      const actions = childNodes.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen));
+      const actions = childNodes.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen, draft ?? null));
       for (const a of actions) {
         if (a.kind === 'stop') {
           const v = this.voices.find((x) => x.id === a.voiceId);

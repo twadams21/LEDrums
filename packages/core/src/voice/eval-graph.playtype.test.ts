@@ -76,6 +76,47 @@ describe('evalGraph Gen3 terminal output', () => {
     expect(a.scope).toBe('drum');
     expect(a.targetId).toBe('snare');
   });
+
+  it('intersects cascading scopes strictly and renders nothing for an empty intersection', () => {
+    const scoped: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'kit' }),
+        node('scope', 'snare', { scope: 'drum', targetId: 'snare' }),
+        node('scope', 'snare-hoop', { scope: 'hoop', targetId: 'snare#1' }),
+        node('output', 'output'),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'snare'), edge('e3', 'snare', 'snare-hoop'), edge('e4', 'snare-hoop', 'output')],
+    };
+
+    const a = play(scoped)!;
+    expect(a.scope).toBe('hoop');
+    expect(a.targetId).toBe('snare#1');
+
+    const empty: TriggerGraph = {
+      ...scoped,
+      nodes: scoped.nodes.map((n) => (n.id === 'snare-hoop' ? { ...n, targetId: 'kick#1' } : n)),
+    };
+    expect(play(empty)).toBeUndefined();
+  });
+
+  it('whole-kit Scope is a no-op and does not broaden a narrowed upstream scope', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'drum', targetId: 'snare' }),
+        node('scope', 'kit-scope', { scope: 'kit' }),
+        node('output', 'output'),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'kit-scope'), edge('e3', 'kit-scope', 'output')],
+    };
+
+    const a = play(graph)!;
+    expect(a.scope).toBe('drum');
+    expect(a.targetId).toBe('snare');
+  });
 });
 
 const ctx: TriggerCtx = {
