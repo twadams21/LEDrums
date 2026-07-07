@@ -14,7 +14,7 @@
   import { GraphHover } from '../../app/views/graph-hover.svelte';
   import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { listModifiersByCategory } from '@ledrums/core';
+  import { COLLECTIONS, listModifiersByCategory } from '@ledrums/core';
   import Blend from '@lucide/svelte/icons/blend';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
@@ -110,29 +110,35 @@
     edges = hover.decorate(edges);
   }
 
-  // Node Editor drawer Add groups — node kinds, modulation sources, then the modifier
-  // registry grouped by category (same shape the real Trigger graph builds).
-  const paletteKinds: NodeKind[] = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
+  // Node Editor drawer Add groups: the Stage 1 chooser is exactly 2x2
+  // (Effect / Route / Modulate / Modify), same shape the real Trigger graph builds.
+  const routeKinds: NodeKind[] = ['all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
   const modSourceKinds: NodeKind[] = ['envelope', 'lfo', 'cc'];
   const MODIFIER_GROUP_PREFIX = 'modifier:';
   const addGroups = $derived<AddGroup[]>([
     {
-      key: 'kinds',
-      label: 'Nodes',
-      items: paletteKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
+      key: 'play',
+      label: 'Effect',
+      items: COLLECTIONS.map((c) => ({ id: c.type, name: c.label, icon: kindIcon.play, tint: tint.play, hint: c.blurb })),
+    },
+    {
+      key: 'route',
+      label: 'Route',
+      items: routeKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
     },
     {
       key: 'modulation',
-      label: 'Modulation',
+      label: 'Modulate',
       items: modSourceKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
     },
-    ...listModifiersByCategory().map((g) => ({
-      key: `${MODIFIER_GROUP_PREFIX}${g.category}`,
-      label: `Modifiers · ${g.label}`,
-      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)' })),
-    })),
+    {
+      key: `${MODIFIER_GROUP_PREFIX}all`,
+      label: 'Modify',
+      items: listModifiersByCategory().flatMap((g) =>
+        g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)', hint: g.label })),
+      ),
+    },
   ]);
-
   // Placement: the drawer adds at the visible canvas centre via the flow instance
   // (FlowHandle) — the same mechanism the real views use.
   let flowApi = $state<FlowApi | null>(null);
@@ -326,7 +332,7 @@
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> — ONE searchable, grouped palette of node kinds, modulation sources, and the modifier registry by category (<code>listModifiersByCategory()</code> — dynamic over the registry, never a hardcoded id list); <strong>Inspector</strong> — the selected node's editor. Selecting a node flips the drawer to Inspector; clicking an Add item spawns at a free spot near the visible canvas centre. Nothing floats over the canvas.</li>
+      <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> - a sticky 2x2 Stage 1 chooser (Effect / Route / Modulate / Modify) above a scrollable Stage 2 of real node-card previews; <strong>Inspector</strong> - the selected node's editor. Stage 2 starts empty, Add selection resets when Add is left, click adds near the visible canvas centre, and drag places at the drop point. Nothing floats over the canvas.</li>
       <li><strong>Delete / Backspace</strong> removes the selection.</li>
     </ul>
   </div>

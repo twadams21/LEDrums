@@ -1,11 +1,10 @@
 <script lang="ts">
-  /* Node Editor drawer — the Add tab. A searchable, grouped list of everything the
-     open graph can gain (node kinds, modifiers, modulation sources, devices…).
-     Clicking an item adds it at a free spot near the visible canvas centre (the
-     view owns placement). Replaces the floating canvas palette + the two add
-     modals: one browsable surface, one interaction. */
+  /* Node Editor drawer Add tab. Stage 1 is a compact category chooser; Stage 2
+     stays empty until a category is selected, then shows the same NodeCard visual
+     language that will appear on the canvas. */
   import type { Component } from 'svelte';
-  import SearchField from '../../ui/SearchField.svelte';
+  import NodeCard from './NodeCard.svelte';
+  import { addCategories, ADD_NODE_DRAG_TYPE, encodeAddDragPayload, selectedAddItems } from './add-pane';
 
   export type AddItem = {
     id: string;
@@ -13,7 +12,7 @@
     icon: Component;
     /** CSS colour for the icon chip (role/kind tint). */
     tint?: string;
-    /** One-line qualifier shown right-aligned (e.g. "per-hit shape"). */
+    /** Tight qualifier shown as the preview sub line. */
     hint?: string;
   };
   export type AddGroup = {
@@ -33,43 +32,68 @@
     disabled?: boolean;
   } = $props();
 
-  let query = $state('');
-  const q = $derived(query.trim().toLowerCase());
-  const shown = $derived(
-    q === ''
-      ? groups
-      : groups
-          .map((g) => ({ ...g, items: g.items.filter((it) => it.name.toLowerCase().includes(q)) }))
-          .filter((g) => g.items.length > 0),
-  );
+  let selectedKey = $state<string | null>(null);
+  const categories = $derived(addCategories(groups));
+  const selectedItems = $derived(selectedAddItems(groups, selectedKey));
+  const selectedLabel = $derived(categories.find((c) => c.key === selectedKey)?.label ?? '');
+
+  function dragstart(e: DragEvent, id: string, groupKey: string): void {
+    if (disabled) return;
+    e.dataTransfer?.setData(ADD_NODE_DRAG_TYPE, encodeAddDragPayload(id, groupKey));
+    e.dataTransfer?.setData('text/plain', id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
+  }
+  function addSelected(id: string): void {
+    if (selectedKey === null) return;
+    onAdd(id, selectedKey);
+  }
+  function dragSelected(e: DragEvent, id: string): void {
+    if (selectedKey === null) return;
+    dragstart(e, id, selectedKey);
+  }
 </script>
 
 <div class="addpal">
-  <div class="searchrow">
-    <SearchField bind:value={query} placeholder="Search node types…" ariaLabel="Search node types" class="addpal-search" />
+  <div class="stage1" aria-label="Node categories">
+    {#each categories as category (category.key)}
+      <button
+        type="button"
+        class="cat"
+        class:active={selectedKey === category.key}
+        aria-pressed={selectedKey === category.key}
+        onclick={() => (selectedKey = category.key)}
+      >
+        <span class="cat-name">{category.label}</span>
+        <span class="cat-count">{category.count}</span>
+      </button>
+    {/each}
   </div>
-  <div class="groups">
-    {#each shown as g (g.key)}
-      <section class="grp">
-        <h5 class="glbl">{g.label}</h5>
-        {#each g.items as it (it.id)}
+
+  <div class="stage2" aria-live="polite">
+    {#if selectedKey === null}
+      <div class="empty">
+        <p>Select a node category.</p>
+      </div>
+    {:else}
+      <section class="previews" aria-label="{selectedLabel} nodes">
+        <h5 class="glbl">{selectedLabel}</h5>
+        {#each selectedItems as it (it.id)}
           <button
             type="button"
-            class="pitem"
-            onclick={() => onAdd(it.id, g.key)}
+            class="preview"
+            onclick={() => addSelected(it.id)}
+            draggable={!disabled}
+            ondragstart={(e) => dragSelected(e, it.id)}
             {disabled}
             title="Add {it.name}"
-            style="--tint:{it.tint ?? 'var(--accent)'}"
           >
-            {#if it.icon}{@const I = it.icon}<span class="pi"><I size={13} aria-hidden="true" /></span>{/if}
-            <span class="pn">{it.name}</span>
-            {#if it.hint}<span class="pd">{it.hint}</span>{/if}
+            <NodeCard icon={it.icon} title={it.name} sub={it.hint ?? 'add node'} tint={it.tint ?? 'var(--accent)'} />
           </button>
         {/each}
+        {#if selectedItems.length === 0}
+          <p class="none">No node previews in this category.</p>
+        {/if}
       </section>
-    {/each}
-    {#if shown.length === 0}
-      <p class="none">Nothing matches “{query}”.</p>
     {/if}
   </div>
 </div>
@@ -81,89 +105,117 @@
     min-height: 0;
     height: 100%;
   }
-  .searchrow {
+  .stage1 {
     flex: none;
-    padding: var(--space-2) var(--space-3);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    padding: var(--space-2);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-faint);
   }
-  .searchrow :global(.addpal-search) {
-    width: 100%;
+  .cat {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 var(--space-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    color: var(--text-muted);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--dur-120) ease, border-color var(--dur-120) ease, scale var(--dur-120) var(--ease-control);
   }
-  .groups {
+  .cat:hover {
+    border-color: var(--border);
+    background: var(--surface-3);
+  }
+  .cat:active {
+    scale: 0.96;
+  }
+  .cat.active {
+    border-color: var(--accent);
+    color: var(--ink);
+    background: color-mix(in oklch, var(--accent) 10%, var(--surface-2));
+  }
+  .cat-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+  .cat-count {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .stage2 {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 0 var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-2) var(--space-3);
   }
-  .grp {
+  .previews {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-2);
   }
   .glbl {
-    margin: var(--space-3) var(--space-1) var(--space-1);
+    margin: var(--space-1) var(--space-1) 0;
     font-size: var(--text-2xs);
     font-weight: 600;
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--text-faint);
   }
-  .pitem {
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr);
-    align-items: center;
-    align-content: center;
-    gap: var(--space-2);
+  .preview {
+    display: block;
     width: 100%;
     min-height: 40px;
-    padding: 7px var(--space-2);
+    padding: var(--space-1);
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-2);
-    text-align: left;
     cursor: pointer;
-    /* hover feedback on graph chrome is instant (locked graph prefs) */
+    text-align: left;
   }
-  .pitem:hover:not(:disabled) {
+  .preview:hover:not(:disabled) {
     background: var(--surface-2);
     border-color: var(--border-faint);
   }
-  .pitem:active:not(:disabled) {
-    scale: 0.98;
+  .preview:active:not(:disabled) {
+    scale: 0.96;
   }
-  .pitem:disabled {
+  .preview:disabled {
     opacity: 0.45;
     cursor: default;
   }
-  .pi {
+  .preview :global(.card) {
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+    pointer-events: none;
+  }
+  .empty {
+    min-height: 160px;
     display: grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
-    grid-row: 1 / span 2;
-    flex: none;
-    border-radius: var(--radius-1);
-    background: color-mix(in oklch, var(--tint) 16%, transparent);
-    color: var(--tint);
+    border: 1px dashed var(--border-faint);
+    border-radius: var(--radius-3);
+    background: color-mix(in oklch, var(--surface-2) 56%, transparent);
   }
-  .pn {
-    grid-column: 2;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--text);
-  }
-  .pd {
-    grid-column: 2;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--text-2xs);
-    line-height: 1.2;
+  .empty p {
+    margin: 0;
     color: var(--text-faint);
+    font-size: var(--text-xs);
   }
   .none {
     margin: var(--space-4) var(--space-2);
@@ -171,7 +223,8 @@
     color: var(--text-faint);
   }
   @media (prefers-reduced-motion: reduce) {
-    .pitem:active:not(:disabled) {
+    .cat,
+    .preview:active:not(:disabled) {
       scale: 1;
     }
   }

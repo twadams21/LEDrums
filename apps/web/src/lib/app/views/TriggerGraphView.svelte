@@ -41,8 +41,10 @@
   import type { FlowApi } from './FlowHandle.svelte';
   import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
   import AddPalette, { type AddGroup } from './AddPalette.svelte';
+  import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
   import GraphsDock from './GraphsDock.svelte';
   import Inspector from '../docks/Inspector.svelte';
+  import Splitter from '../../ui/Splitter.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -67,6 +69,11 @@
   $effect(() => {
     neTab = shell.selection?.kind === 'node' ? 'inspector' : 'add';
   });
+  const EDITOR_W = { key: 'triggerNodeEditorW', min: 280, max: 520, def: 340 };
+  const editorW = $derived(store.paneSizes[EDITOR_W.key] ?? EDITOR_W.def);
+  const setEditorW = (v: number): void => {
+    store.paneSizes = { ...store.paneSizes, [EDITOR_W.key]: v };
+  };
 
   const MOD_HINT: Partial<Record<NodeKind, string>> = {
     envelope: 'per-hit shape',
@@ -77,7 +84,7 @@
   const addGroups = $derived<AddGroup[]>([
     {
       key: 'play',
-      label: 'Play',
+      label: 'Effect',
       items: COLLECTIONS.map((c) => ({
         id: c.type,
         name: c.label,
@@ -87,8 +94,8 @@
       })),
     },
     {
-      key: 'kinds',
-      label: 'Nodes',
+      key: 'route',
+      label: 'Route',
       items: NODE_KINDS.filter(
         (kind) => kind !== 'play' && kind !== 'output' && kind !== 'modifier' && !voice.isModSourceKind(kind),
       ).map((kind) => ({
@@ -100,7 +107,7 @@
     },
     {
       key: 'modulation',
-      label: 'Modulation',
+      label: 'Modulate',
       items: NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
         id: kind,
         name: kindLabel[kind],
@@ -109,11 +116,13 @@
         hint: MOD_HINT[kind],
       })),
     },
-    ...listModifiersByCategory().map((g) => ({
-      key: `${MODIFIER_GROUP_PREFIX}${g.category}`,
-      label: `Modifiers · ${g.label}`,
-      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)' })),
-    })),
+    {
+      key: `${MODIFIER_GROUP_PREFIX}all`,
+      label: 'Modify',
+      items: listModifiersByCategory().flatMap((g) =>
+        g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)', hint: g.label })),
+      ),
+    },
   ]);
 
   // Placement: new nodes land at a free spot near the visible canvas centre. The
@@ -128,9 +137,12 @@
   }
   function handleAdd(id: string, groupKey: string): void {
     const c = canvasCentre();
-    if (groupKey === 'play') addPlayNodeAt(id as PlayType, c.x, c.y);
-    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, c.x, c.y);
-    else addNodeAt(id as NodeKind, c.x, c.y);
+    handleAddAt(id, groupKey, c.x, c.y);
+  }
+  function handleAddAt(id: string, groupKey: string, x: number, y: number): void {
+    if (groupKey === 'play') addPlayNodeAt(id as PlayType, x, y);
+    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, x, y);
+    else addNodeAt(id as NodeKind, x, y);
   }
   /** Add a typed play node (D3) near the palette-supplied flow centre. */
   function addPlayNodeAt(playType: PlayType, cx: number, cy: number): void {
@@ -168,6 +180,19 @@
   function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
     const p = spawnAt(cx, cy);
     store.addModifierNode(modifierId, p.x, p.y);
+  }
+  function onPaletteDragOver(e: DragEvent): void {
+    const dt = e.dataTransfer;
+    if (!dt || !Array.from(dt.types).includes(ADD_NODE_DRAG_TYPE)) return;
+    e.preventDefault();
+    dt.dropEffect = 'copy';
+  }
+  function onPaletteDrop(e: DragEvent): void {
+    const payload = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
+    if (!payload || !flowApi) return;
+    e.preventDefault();
+    const p = flowApi.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    handleAddAt(payload.id, payload.groupKey, p.x, p.y);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -413,8 +438,15 @@
 </script>
 
 <div class="trigger-view">
-  <div class="graphrow">
-  <div class="gwrap" bind:this={canvasWrap}>
+  <div class="graphrow" style:--editor-w={`${editorW}px`}>
+  <div
+    class="gwrap"
+    bind:this={canvasWrap}
+    role="region"
+    aria-label="Trigger graph canvas"
+    ondragover={onPaletteDragOver}
+    ondrop={onPaletteDrop}
+  >
     <GraphCanvas
       bind:nodes
       bind:edges
@@ -442,14 +474,26 @@
     </GraphCanvas>
   </div>
 
-  <NodeEditor bind:tab={neTab}>
-    {#snippet add()}
-      <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
-    {/snippet}
-    {#snippet inspector()}
-      <Inspector {store} {shell} />
-    {/snippet}
-  </NodeEditor>
+  <div class="editor-wrap">
+    <Splitter
+      orientation="vertical"
+      size={editorW}
+      min={EDITOR_W.min}
+      max={EDITOR_W.max}
+      invert
+      label="Resize node editor"
+      onResize={setEditorW}
+      style="left: calc(var(--shell-gap) * -0.5); top: 0; bottom: 0;"
+    />
+    <NodeEditor bind:tab={neTab}>
+      {#snippet add()}
+        <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
+      {/snippet}
+      {#snippet inspector()}
+        <Inspector {store} {shell} />
+      {/snippet}
+    </NodeEditor>
+  </div>
   </div>
 
   <GraphsDock {store} {shell} />
@@ -465,11 +509,17 @@
   }
   .graphrow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) var(--editor-w);
     gap: var(--shell-gap);
     min-height: 0;
+    position: relative;
   }
   .gwrap {
+    min-width: 0;
+    min-height: 0;
+  }
+  .editor-wrap {
+    position: relative;
     min-width: 0;
     min-height: 0;
   }
