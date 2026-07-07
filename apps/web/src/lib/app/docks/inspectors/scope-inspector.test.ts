@@ -67,4 +67,44 @@ describe('scope inspector helpers', () => {
       empty: true,
     });
   });
+
+  it('reads all incoming flow branches instead of whichever edge appears first', () => {
+    const kickFx = makeNode('effect', 'kick-fx', 100, -40, { scope: 'drum', targetId: 'kick' });
+    const snareFx = makeNode('effect', 'snare-fx', 100, 40, { scope: 'drum', targetId: 'snare' });
+    const scope = makeNode('scope', 'scope', 200, 0, { scope: 'kit' });
+
+    expect(
+      effectiveScopeForNode(
+        {
+          nodes: [kickFx, snareFx, scope],
+          edges: [
+            { from: 'kick-fx', to: 'scope' },
+            { from: 'snare-fx', to: 'scope' },
+          ],
+        },
+        scope,
+        drums,
+      ),
+    ).toMatchObject({ label: 'Mixed routes', empty: false });
+  });
+
+  it('ignores modulation/param wires when computing upstream flow scope', () => {
+    const kickFx = makeNode('effect', 'kick-fx', 100, 0, { scope: 'drum', targetId: 'kick' });
+    const snareMod = makeNode('effect', 'snare-mod', 100, 80, { scope: 'drum', targetId: 'snare' });
+    const scope = makeNode('scope', 'scope', 200, 0, { scope: 'kit' });
+
+    expect(
+      effectiveScopeForNode(
+        {
+          nodes: [kickFx, snareMod, scope],
+          edges: [
+            { from: 'kick-fx', to: 'scope' },
+            { from: 'snare-mod', to: 'scope', toPort: 'param:intensity' },
+          ],
+        },
+        scope,
+        drums,
+      ),
+    ).toMatchObject({ label: 'Kick', detail: 'Whole drum · whole-kit Scope is no-op' });
+  });
 });
