@@ -141,11 +141,16 @@ describe('section ops', () => {
 });
 
 describe('moveSection (drag reorder)', () => {
-  it('moves a section to a new position without mutating the input', () => {
+  it('moves a section before the live-list drop target without mutating the input', () => {
     const a = addSection(song(), makeSection('chorus', 'Chorus'));
     const b = moveSection(a, 'intro', 2);
-    expect(b.sections.map((x) => x.id)).toEqual(['verse', 'chorus', 'intro']);
+    expect(b.sections.map((x) => x.id)).toEqual(['verse', 'intro', 'chorus']);
     expect(a.sections.map((x) => x.id)).toEqual(['intro', 'verse', 'chorus']);
+  });
+
+  it('treats dropping onto the next row as a no-op instead of swapping downward', () => {
+    const a = addSection(song(), makeSection('chorus', 'Chorus'));
+    expect(moveSection(a, 'intro', 1)).toBe(a);
   });
 
   it('clamps drop positions and no-ops for unknown sections', () => {
@@ -162,9 +167,14 @@ describe('moveGraphPlacement (drag reorder / move)', () => {
     sections: [makeSection('intro', 'Intro', ['gA', 'gB', 'gC']), makeSection('verse', 'Verse', ['gD'])],
   });
 
-  it('reorders a graph within one section', () => {
+  it('reorders a graph before the live-list drop target within one section', () => {
     const s = moveGraphPlacement(arranged(), 'intro', 'gA', 'intro', 2);
-    expect(s.sections[0]!.graphs).toEqual(['gB', 'gC', 'gA']);
+    expect(s.sections[0]!.graphs).toEqual(['gB', 'gA', 'gC']);
+  });
+
+  it('treats dropping a graph onto the next row as a no-op instead of swapping downward', () => {
+    const s = arranged();
+    expect(moveGraphPlacement(s, 'intro', 'gA', 'intro', 1)).toBe(s);
   });
 
   it('moves a graph between sections at the requested index', () => {
