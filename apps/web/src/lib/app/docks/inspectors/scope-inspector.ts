@@ -15,6 +15,8 @@ export type ScopeReadout = {
   noOp: boolean;
 };
 
+type FlowEdge = { from: string; to: string; toPort?: string | null };
+
 export function hoopLabel(index: number): string {
   return `Hoop ${index + 1}`;
 }
@@ -85,33 +87,86 @@ export function describeSelection(selection: ScopeSelection, drums: readonly Dru
   };
 }
 
+function isFlowEdgeTo(edge: FlowEdge, nodeId: string): boolean {
+  return edge.to === nodeId && (edge.toPort == null || edge.toPort === 'in');
+}
+
+function isScopeCarrier(node: GraphNode): boolean {
+  return node.kind === 'effect' || node.kind === 'play' || node.kind === 'scope' || node.kind === 'output';
+}
+
+function targetKey(target: voice.ScopeTarget): string {
+  return `${target.scope}:${target.targetId ?? ''}`;
+}
+
+function uniqueTargets(targets: readonly voice.ScopeTarget[]): voice.ScopeTarget[] {
+  const seen = new Set<string>();
+  const out: voice.ScopeTarget[] = [];
+  for (const target of targets) {
+    const key = targetKey(target);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(target);
+  }
+  return out;
+}
+
+function upstreamScopesFor(
+  nodeId: string,
+  byId: ReadonlyMap<string, GraphNode>,
+  edges: readonly FlowEdge[],
+  sourceDrumId: string,
+  seen: ReadonlySet<string> = new Set(),
+): voice.ScopeTarget[] {
+  if (seen.has(nodeId)) return [];
+  const incoming = edges.filter((edge) => isFlowEdgeTo(edge, nodeId));
+  if (!incoming.length) return [{ scope: 'kit' }];
+  const nextSeen = new Set(seen);
+  nextSeen.add(nodeId);
+
+  const out: voice.ScopeTarget[] = [];
+  for (const edge of incoming) {
+    const upstream = byId.get(edge.from);
+    for (const base of upstreamScopesFor(edge.from, byId, edges, sourceDrumId, nextSeen)) {
+      if (!upstream || !isScopeCarrier(upstream)) {
+        out.push(base);
+        continue;
+      }
+      const scoped = voice.intersectScopeTargets(base, upstream, sourceDrumId);
+      if (scoped) out.push(scoped);
+    }
+  }
+  return uniqueTargets(out);
+}
+
 export function effectiveScopeForNode(
-  graph: { nodes: GraphNode[]; edges: { from: string; to: string }[] } | null | undefined,
+  graph: { nodes: GraphNode[]; edges: FlowEdge[] } | null | undefined,
   node: GraphNode,
   drums: readonly DrumInfo[],
   sourceDrumId = drums[0]?.id ?? 'kick',
 ): ScopeReadout {
-  let current: voice.ScopeTarget = { scope: 'kit' };
-  if (graph) {
-    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-    const seen = new Set<string>();
-    let cursor = graph.edges.find((e) => e.to === node.id)?.from;
-    while (cursor && !seen.has(cursor)) {
-      seen.add(cursor);
-      const upstream = byId.get(cursor);
-      if (upstream && (upstream.kind === 'effect' || upstream.kind === 'play' || upstream.kind === 'scope' || upstream.kind === 'output')) {
-        const next = voice.intersectScopeTargets(current, upstream, sourceDrumId);
-        if (!next) return { label: 'Empty', detail: 'No LEDs after upstream filters', empty: true, noOp: false };
-        current = next;
-      }
-      cursor = graph.edges.find((e) => e.to === cursor)?.from;
-    }
+  const upstream = graph ? upstreamScopesFor(node.id, new Map(graph.nodes.map((n) => [n.id, n])), graph.edges, sourceDrumId) : [{ scope: 'kit' }];
+  if (!upstream.length) return { label: 'Empty', detail: 'No LEDs after upstream filters', empty: true, noOp: false };
+
+  const afterLocal = uniqueTargets(
+    upstream
+      .map((target) => voice.intersectScopeTargets(target, node, sourceDrumId))
+      .filter((target): target is voice.ScopeTarget => !!target),
+  );
+  if (!afterLocal.length) return { label: 'Empty', detail: 'No LEDs after this Scope', empty: true, noOp: false };
+  if (afterLocal.length > 1) {
+    return {
+      label: 'Mixed routes',
+      detail: 'Upstream branches resolve to different LED scopes',
+      empty: false,
+      noOp: false,
+    };
   }
-  const local = voice.intersectScopeTargets(current, node, sourceDrumId);
-  if (!local) return { label: 'Empty', detail: 'No LEDs after this Scope', empty: true, noOp: false };
+
+  const local = afterLocal[0]!;
   const selection = selectionFromNode(local as Pick<GraphNode, 'scope' | 'targetId'>, drums, sourceDrumId);
   const readout = describeSelection(selection, drums);
-  if (node.scope === 'kit' && current.scope !== 'kit') {
+  if (node.scope === 'kit' && upstream.some((target) => target.scope !== 'kit')) {
     return { ...readout, detail: `${readout.detail} · whole-kit Scope is no-op`, noOp: true };
   }
   return readout;
