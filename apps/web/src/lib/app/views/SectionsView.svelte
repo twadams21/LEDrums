@@ -9,7 +9,7 @@
   import { type TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { sectionRecall } from '../recall';
-  import { hasPrimaryModifier, platformShortcutModifier, type ShortcutPlatform } from '../primary-shortcut';
+  import { hasPrimaryModifier, isEditableShortcutTarget, platformShortcutModifier, type ShortcutPlatform } from '../primary-shortcut';
   import SectionColumn from './SectionColumn.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
@@ -70,7 +70,7 @@
   }
 
   function onKey(e: KeyboardEvent): void {
-    if (!store.canEdit || e.defaultPrevented) return;
+    if (!store.canEdit || e.defaultPrevented || isEditableShortcutTarget(e.target)) return;
     if (e.key.toLowerCase() !== 'd' || !hasPrimaryModifier(e, shortcutPlatform)) return;
     const sel = shell.selection;
     if (sel?.kind !== 'section') return;
@@ -219,57 +219,68 @@
   .title {
     display: flex;
     align-items: center;
-    gap: 7px;
-  }
-  .title :global(.title-icon) {
-    color: var(--accent);
-    flex: none;
+    gap: var(--space-2);
+    min-width: 0;
   }
   .title h2 {
     margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
+    color: var(--text-strong);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    letter-spacing: var(--tracking-label);
+  }
+  .title-icon {
+    color: var(--accent);
+    filter: drop-shadow(0 0 8px color-mix(in oklab, var(--accent), transparent 58%));
   }
   .addsection {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--text-xs);
+    gap: var(--space-1);
+    height: 28px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-control-sm);
+    background: color-mix(in oklab, var(--accent), transparent 90%);
+    color: var(--text-strong);
+    font-size: var(--text-2xs);
+    font-weight: var(--font-semibold);
+    letter-spacing: var(--tracking-label);
+    cursor: pointer;
+  }
+  .addsection:hover {
+    border-color: color-mix(in oklab, var(--accent), var(--border) 45%);
+    background: color-mix(in oklab, var(--accent), transparent 84%);
   }
   .body {
+    min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--shell-gap);
-    min-height: 0;
   }
   .body.with-detail {
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   }
   .cols {
+    min-height: 0;
+    overflow: auto;
     display: flex;
-    gap: var(--space-2);
-    align-items: start;
+    gap: var(--space-3);
+    align-items: flex-start;
+    padding-bottom: var(--space-2);
+  }
+  .detail {
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+    background: color-mix(in oklab, var(--surface), black 8%);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .detail-body {
     min-height: 0;
     overflow: auto;
     padding: var(--space-3);
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-  }
-  .detail {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    background: var(--surface);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-card);
-    overflow: hidden;
-  }
-  .detail-body {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
   }
 </style>
