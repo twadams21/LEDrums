@@ -11,9 +11,22 @@ import * as setlist from '../../app/setlist';
 import type { Song } from '../../app/setlist';
 import { padKey, padLabel } from './seed';
 
-/** A brand-new, empty authored graph — just the implicit trigger input. */
+/** The canonical Gen3 terminal anchor id. Kept literal here (not imported from hydrate)
+    so the graph CRUD slice stays small and dependency-free. */
+export const OUTPUT_ANCHOR_ID = 'output';
+
+/** A brand-new authored graph is Gen3 from birth: one explicit trigger source anchor and one
+    visible Output terminal. Without this, createGraph() briefly produced an unversioned Gen2
+    graph where leaf effects fired without reaching Output until the next hydrate pass. */
 export function buildEmptyGraph(): TriggerGraph {
-  return { nodes: [makeNode('trigger', 'trigger')], edges: [] };
+  return {
+    version: 3,
+    nodes: [
+      makeNode('trigger', 'trigger', 0, 0),
+      makeNode('output', OUTPUT_ANCHOR_ID, 420, 0, { scope: 'kit', targetId: undefined }),
+    ],
+    edges: [],
+  };
 }
 
 /** Deep, detached clone of a graph (caller passes a `$state.snapshot`/plain graph). */
