@@ -25,6 +25,17 @@ import type { ParamValues, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
+function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): { drumId: string | null; hoopIndices: number[] } {
+  if (!targetId || !targetId.includes('#')) return { drumId: sourceDrumId, hoopIndices: [0] };
+  const sep = targetId.indexOf('#');
+  const hoopIndices = targetId
+    .slice(sep + 1)
+    .split(',')
+    .map((v) => Number(v))
+    .filter((v) => Number.isInteger(v) && v >= 0);
+  return { drumId: targetId.slice(0, sep) || sourceDrumId, hoopIndices: hoopIndices.length ? [...new Set(hoopIndices)] : [0] };
+}
+
 /**
  * 0..1 progress through a voice's life — drives param envelopes. Ported from
  * `Sim.voicePhase`: one-shots run across their full A+S+R; sustained voices loop a
@@ -135,22 +146,15 @@ export function createDefaultCompositor(): Compositor {
           start = d.pixelStart;
           end = d.pixelStart + d.pixelCount;
         } else if (v.scope === 'hoop') {
-          // Parse targetId as "<drumId>#<hoopIndex>"; absent or no '#' → source drum hoop 0.
-          let drumId: string | null = null;
-          let hoopIndex = 0;
-          if (v.targetId && v.targetId.includes('#')) {
-            const sep = v.targetId.indexOf('#');
-            drumId = v.targetId.slice(0, sep);
-            hoopIndex = parseInt(v.targetId.slice(sep + 1), 10);
-            if (!Number.isFinite(hoopIndex) || hoopIndex < 0) hoopIndex = 0;
-          } else {
-            drumId = v.sourceDrumId;
-          }
+          // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]"; absent → source drum hoop 0.
+          const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
           if (drumId == null) continue;
-          const range = getHoopPixelRange(model, drumId, hoopIndex);
-          if (!range) continue; // dangling → render nothing
-          start = range.start;
-          end = range.end;
+          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc, frame.notes);
+          for (const hoopIndex of hoopIndices) {
+            const range = getHoopPixelRange(model, drumId, hoopIndex);
+            if (range) generators.renderVoice(v, model, timeMs, level, range.start, range.end, dst, modCtx);
+          }
+          continue;
         }
         // scope === 'kit': start=0, end=model.pixelCount (whole kit, targetId ignored)
 

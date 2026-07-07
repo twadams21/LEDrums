@@ -117,6 +117,24 @@ describe('evalGraph Gen3 terminal output', () => {
     expect(a.scope).toBe('drum');
     expect(a.targetId).toBe('snare');
   });
+
+  it('intersects multi-hoop Scope targets without broadening them', () => {
+    const scoped: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'kit' }),
+        node('scope', 'outer-hoops', { scope: 'hoop', targetId: 'snare#0,2,3' }),
+        node('scope', 'inner-hoops', { scope: 'hoop', targetId: 'snare#2,3' }),
+        node('output', 'output', { scope: 'kit' }),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'outer-hoops'), edge('e3', 'outer-hoops', 'inner-hoops'), edge('e4', 'inner-hoops', 'output')],
+    };
+
+    const a = play(scoped)!;
+    expect(a.scope).toBe('hoop');
+    expect(a.targetId).toBe('snare#2,3');
+  });
 });
 
 const ctx: TriggerCtx = {
