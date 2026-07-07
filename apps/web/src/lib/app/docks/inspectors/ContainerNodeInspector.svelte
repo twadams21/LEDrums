@@ -10,10 +10,17 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import { SWITCH_OPTS, VALUEMODE_OPTS, pct } from '../../views/node-options';
+  import { mixLayerRowsFor } from '../../views/mix-layer-rows';
+  import { BLEND_MODES, type BlendMode } from '@ledrums/core';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Plus from '@lucide/svelte/icons/plus';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
+  const BLEND_OPTS = BLEND_MODES.map((mode) => ({ value: mode, label: mode }));
+  const mixRows = $derived.by(() => {
+    if (node.kind !== 'mix' || !store.selectedGraph) return [];
+    return mixLayerRowsFor(store.selectedGraph, node.id, (nodeId) => store.liveNodeY(nodeId));
+  });
 
   /** One-line description for the container/modifier kinds that take no extra control. */
   function kindBlurb(kind: NodeKind): string {
@@ -98,6 +105,40 @@
     </label>
     <p class="hint">Plays its wired child {Math.round(node.p * 100)}% of the time.</p>
   </div>
+{:else if node.kind === 'mix'}
+  <div class="kindbody">
+    <label class="lblrow">
+      <span class="k">Blend</span>
+      <Select
+        value={node.mixBlendMode ?? 'normal'}
+        options={BLEND_OPTS}
+        onChange={(v) => store.setMixBlendMode(node, v as BlendMode)}
+        ariaLabel="Mix blend mode"
+      />
+    </label>
+    {#if mixRows.length}
+      <div class="mixlist">
+        {#each mixRows as row (row.edgeId)}
+          <label class="mixctl">
+            <span class="mname">{row.label}</span>
+            <span class="sld">
+              <Slider
+                min={0}
+                max={1}
+                step={0.01}
+                value={row.opacity}
+                onChange={(v) => store.setMixEdgeOpacity(row.edgeId, v)}
+                format={pct}
+                ariaLabel={`${row.label} opacity`}
+              />
+            </span>
+          </label>
+        {/each}
+      </div>
+    {:else}
+      <p class="hint">Wire Effect or Modifier branches into Mix to build layer rows.</p>
+    {/if}
+  </div>
 {:else}
   <div class="kindbody">
     <p class="hint">{kindBlurb(node.kind)}</p>
@@ -137,6 +178,27 @@
   .sld {
     display: flex;
     flex: 1;
+  }
+  .mixlist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .mixctl {
+    display: grid;
+    grid-template-columns: minmax(4rem, 0.8fr) minmax(0, 1.6fr);
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .mname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
   }
   .bandlist {
     display: flex;

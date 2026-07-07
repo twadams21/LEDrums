@@ -51,7 +51,7 @@ import type { ClientMessage, ControllerStatus, ControllerTestPattern, Discovered
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
+import type { BlendMode, InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
 import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
 import { voice, listModifiers, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
@@ -384,6 +384,7 @@ export class TriggerLab {
   // popups (targets are play nodes from the active graph)
   galleryBlock = $state<voice.GraphNode | null>(null); // effect swap
   settingsBlock = $state<voice.GraphNode | null>(null); // preset + params + envelopes
+  liveNodePositions = $state.raw<Record<string, { x: number; y: number }>>({});
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
 
   // --- setlist (songs → sections → flat ordered graph lists) ---------------
@@ -2821,6 +2822,15 @@ export class TriggerLab {
     this.pushUndoSnapshot();
     node.x = x;
     node.y = y;
+    this.setLiveNodePosition(node.id, x, y);
+  }
+
+  setLiveNodePosition(nodeId: string, x: number, y: number): void {
+    this.liveNodePositions = { ...this.liveNodePositions, [nodeId]: { x, y } };
+  }
+
+  liveNodeY(nodeId: string): number | undefined {
+    return this.liveNodePositions[nodeId]?.y;
   }
 
   removeNode(node: GraphNode): void {
@@ -2888,6 +2898,16 @@ export class TriggerLab {
     edge.to = toId;
     edge.fromPort = normalizeFromPort(fromPort);
     edge.toPort = normalizeToPort(toPort);
+  }
+
+  setMixEdgeOpacity(edgeId: string, opacity: number): void {
+    this.editEdge(edgeId, (e) => (e.opacity = Math.max(0, Math.min(1, opacity))));
+  }
+
+  setMixBlendMode(node: GraphNode, mode: BlendMode): void {
+    if (this.isViewer || node.kind !== 'mix') return;
+    this.pushUndoSnapshot();
+    node.mixBlendMode = mode;
   }
 
   /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */

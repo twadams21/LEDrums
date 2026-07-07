@@ -12,6 +12,7 @@
 import type { Edge, Node } from '@xyflow/svelte';
 import type { GraphNode, NodeKind, TriggerGraph } from '../../trigger-lab/sim';
 import { voice } from '@ledrums/core';
+import { mixRowHandleId } from './mix-layer-rows';
 
 export type TriggerNodeData = { kind: NodeKind };
 export type TriggerFlowNode = Node<TriggerNodeData>;
@@ -41,7 +42,7 @@ export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
     source: e.from,
     target: e.to,
     sourceHandle: e.fromPort,
-    targetHandle: e.toPort,
+    targetHandle: kindById.get(e.to) === 'mix' && (e.toPort == null || e.toPort === 'in') ? mixRowHandleId(e.id) : e.toPort,
     type: 'wire',
     ...(e.toPort === 'mod'
       ? { data: { mod: true } }

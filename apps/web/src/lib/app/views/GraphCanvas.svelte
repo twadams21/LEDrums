@@ -32,6 +32,7 @@
   import FlowHandle, { type FlowApi } from './FlowHandle.svelte';
 
   type DragStop = { nodes: NodeType[] };
+  type Drag = { targetNode: NodeType | null; nodes: NodeType[] };
   type DeleteDetail = { nodes: NodeType[]; edges: EdgeType[] };
 
   let {
@@ -55,6 +56,7 @@
     onReconnect,
     onDelete,
     onNodeDragStop,
+    onNodeDrag,
     onConnectEnd,
     onFlow,
     empty,
@@ -84,6 +86,7 @@
     onReconnect?: (oldEdge: Edge, conn: Connection) => void;
     onDelete?: (detail: DeleteDetail) => void;
     onNodeDragStop?: (detail: DragStop) => void;
+    onNodeDrag?: (detail: Drag) => void;
     onConnectEnd?: OnConnectEnd;
     /** Receives the flow instance once mounted — for view-side placement math. */
     onFlow?: (flow: FlowApi) => void;
@@ -114,6 +117,7 @@
       onconnect={onConnect}
       onreconnect={onReconnect}
       ondelete={(detail) => onDelete?.(detail as DeleteDetail)}
+      onnodedrag={(detail) => onNodeDrag?.(detail as Drag)}
       onnodedragstop={(detail) => onNodeDragStop?.(detail as DragStop)}
       onconnectend={onConnectEnd}
     >

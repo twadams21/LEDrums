@@ -349,6 +349,10 @@
   function onDragStop(detail: { nodes: TriggerFlowNode[] }): void {
     for (const n of detail.nodes) syncPos(n);
   }
+  function onDrag(detail: { targetNode: TriggerFlowNode | null; nodes: TriggerFlowNode[] }): void {
+    const moving = detail.targetNode ? [detail.targetNode] : detail.nodes;
+    for (const n of moving) store.setLiveNodePosition(n.id, n.position.x, n.position.y);
+  }
   const onConnectEnd: OnConnectEnd = (event, conn) => {
     if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
     const toId = nodeIdAtEvent(event);
@@ -424,6 +428,7 @@
       onPaneClick={() => shell.clearSelection()}
       onNodeEnter={(id) => hover.enter(id)}
       onNodeLeave={() => hover.leave()}
+      onNodeDrag={guard('drag-live', onDrag)}
       onNodeDragStop={guard('drag', onDragStop)}
       onConnect={guard('connect', onConnect)}
       onConnectEnd={guard('connect-end', onConnectEnd)}

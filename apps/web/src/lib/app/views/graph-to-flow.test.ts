@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode, type TriggerGraph } from '../../trigger-lab/sim';
 import { applyFlowPositions, graphToFlow, graphToFlowEdges, graphToFlowNodes } from './graph-to-flow';
+import { mixRowHandleId } from './mix-layer-rows';
 
 /** A small graph: trigger → all → (play, play), exercising both node + edge mapping. */
 function fixture(): TriggerGraph {
@@ -77,6 +78,16 @@ describe('graphToFlowEdges', () => {
       edges: [{ id: 'e0', from: 'm', to: 'p', toPort: 'mod' }],
     };
     expect(graphToFlowEdges(g)[0]!.data).toEqual({ mod: true });
+  });
+
+  it('lands incoming Mix flow edges on edge-backed row handles', () => {
+    const g: TriggerGraph = {
+      nodes: [makeNode('effect', 'p', 0, 0), makeNode('mix', 'mix', 300, 0)],
+      edges: [{ id: 'e-mix', from: 'p', to: 'mix', opacity: 0.5 }],
+    };
+    const [edge] = graphToFlowEdges(g);
+    expect(edge!.targetHandle).toBe(mixRowHandleId('e-mix'));
+    expect(edge!.data).toEqual({ effect: true });
   });
 });
 

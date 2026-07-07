@@ -38,6 +38,7 @@
   import { voice, collectionMeta } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
+  import { mixLayerRowsFor } from './mix-layer-rows';
 
   let { id, data, selected }: NodeProps = $props();
 
@@ -104,6 +105,10 @@
       // resolved wired sources drive both the "wired" state and the S38 live value tick
       sources: store.modSourcesFor(node, r.param),
     }));
+  });
+  const mixRows = $derived.by(() => {
+    if (!node || node.kind !== 'mix' || !store.selectedGraph) return [];
+    return mixLayerRowsFor(store.selectedGraph, node.id, (nodeId) => store.liveNodeY(nodeId));
   });
 
   // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
@@ -237,7 +242,7 @@
      border, one surface, concentric radii (item E). Each row is its own drop target (a
      `param:<key>` handle scoped to modulation sources). -->
 {#snippet paramFooter()}
-  <ul class="modrows">
+  <ul class="noderows">
     {#each modRows as row (row.param)}
       <li class="modrow" class:wired={row.sources.length > 0}>
         <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
@@ -246,6 +251,19 @@
         <ParamRowTick
           sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
         />
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
+{#snippet mixFooter()}
+  <ul class="noderows">
+    {#each mixRows as row (row.edgeId)}
+      <li class="mixrow">
+        <Handle type="target" position={Position.Left} id={row.handleId} class="mix-handle effect-handle" />
+        <span class="ldot" aria-hidden="true"></span>
+        <span class="plabel">{row.label}</span>
+        <span class="opacity">{Math.round(row.opacity * 100)}%</span>
       </li>
     {/each}
   </ul>
@@ -276,7 +294,7 @@
         thumb={(kind === 'play' || kind === 'effect') && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
         leadHandles={cardHandles}
-        footer={modRows.length > 0 ? paramFooter : undefined}
+        footer={mixRows.length > 0 ? mixFooter : modRows.length > 0 ? paramFooter : undefined}
       />
     </div>
   {/if}
@@ -313,7 +331,7 @@
   }
   /* exposed modulation-target rows — now INSIDE the node card (NodeCard footer), so no
      border / surface / shadow of their own: the card supplies the single border + surface. */
-  .modrows {
+  .noderows {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -321,7 +339,8 @@
     flex-direction: column;
     gap: 3px;
   }
-  .modrow {
+  .modrow,
+  .mixrow {
     position: relative; /* offset parent for the per-row param handle (sits at the row's left) */
     display: flex;
     align-items: center;
@@ -332,6 +351,9 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-1);
   }
+  .mixrow {
+    background: color-mix(in oklch, var(--role-mod) 10%, var(--surface-inset));
+  }
   .pdot {
     width: 6px;
     height: 6px;
@@ -339,6 +361,14 @@
     border-radius: 50%;
     border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
     background: transparent;
+  }
+  .ldot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--role-mod);
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--role-mod) 65%, transparent);
   }
   .modrow.wired .pdot {
     background: var(--role-modulation);
@@ -353,11 +383,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .opacity {
+    flex: none;
+    min-width: 3ch;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    text-align: right;
+  }
   /* the scoped modulation input handle rides the row's left edge */
   .modrow :global(.param-handle) {
     left: -12px;
     background: var(--role-modulation);
     border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+  }
+  .mixrow :global(.mix-handle) {
+    left: -12px;
   }
   /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
   .modcount {
