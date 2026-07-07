@@ -71,51 +71,8 @@
 <fieldset class="inspector" disabled={!store.canEdit}>
   {#if node && node.kind === 'trigger'}
     <TriggerSourceInspector {store} {node} />
-  {:else if node && node.kind === 'envelope'}
-    <!-- modulation SOURCE node: no kind selector (not a conversion target) — its shape editor -->
-    <header class="nodehead">
-      <Eyebrow icon={Spline}>Envelope source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
-    <EnvelopeNodeInspector {store} {node} />
-  {:else if node && node.kind === 'lfo'}
-    <!-- S36 — modulation SOURCE node: no kind selector (not a conversion target) — its settings -->
-    <header class="nodehead">
-      <Eyebrow icon={Waves}>LFO source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
-    <LfoNodeInspector {store} {node} />
-  {:else if node && node.kind === 'cc'}
-    <!-- S37 — modulation SOURCE node: no kind selector (not a conversion target) — its CC settings -->
-    <header class="nodehead">
-      <Eyebrow icon={SlidersHorizontal}>CC source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
-    <CcNodeInspector {store} {node} />
-  {:else if node && node.kind === 'note'}
-    <header class="nodehead">
-      <Eyebrow icon={Music2}>Note source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
-    <NoteNodeInspector {store} {node} />
-  {:else if node && node.kind === 'osc'}
-    <header class="nodehead">
-      <Eyebrow icon={RadioTower}>OSC source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
-    <OscNodeInspector {store} {node} />
-  {:else if node && node.kind === 'randomMod'}
-    <header class="nodehead">
-      <Eyebrow icon={Dice5}>Random source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
-    <RandomModNodeInspector {store} {node} />
+  
+
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">
@@ -124,7 +81,7 @@
       </span>
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
-    {#if node.kind === 'play' || node.kind === 'effect'}
+        {#if node.kind === 'play' || node.kind === 'effect'}
       <PlayNodeInspector {store} {node} />
     {:else if node.kind === 'delay'}
       <DelayNodeInspector {store} {node} />
@@ -134,6 +91,18 @@
       <ScopeNodeInspector {store} {node} />
     {:else if node.kind === 'output'}
       <OutputNodeInspector {store} {node} />
+    {:else if node.kind === 'envelope'}
+      <EnvelopeNodeInspector {store} {node} />
+    {:else if node.kind === 'lfo'}
+      <LfoNodeInspector {store} {node} />
+    {:else if node.kind === 'cc'}
+      <CcNodeInspector {store} {node} />
+    {:else if node.kind === 'note'}
+      <NoteNodeInspector {store} {node} />
+    {:else if node.kind === 'osc'}
+      <OscNodeInspector {store} {node} />
+    {:else if node.kind === 'randomMod'}
+      <RandomModNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}

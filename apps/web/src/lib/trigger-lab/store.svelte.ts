@@ -182,6 +182,32 @@ function lfoPresetWaveform(waveform: string | undefined): voice.LfoWaveform {
   return voice.LFO_WAVEFORMS.includes(waveform as voice.LfoWaveform) ? (waveform as voice.LfoWaveform) : 'sine';
 }
 
+function envelopeNodeDefaults(preset: string | undefined = 'pluck'): Pick<GraphNode, 'env'> {
+  const adsr = envelopePresetAdsr(preset);
+  return {
+    env: {
+      [voice.ENVELOPE_NODE_KEY]: {
+        kind: 'custom',
+        amount: 1,
+        points: adsrToPoints(adsr),
+        adsr,
+      },
+    },
+  };
+}
+
+function pruneEdgesForModSource(graph: TriggerGraph, nodeId: string): void {
+  graph.edges = graph.edges.filter((edge) => {
+    // Modulate/source nodes take no incoming wires.
+    if (edge.to === nodeId) return false;
+
+    // They may only output to parameter-input rows.
+    if (edge.from === nodeId) return voice.paramKeyOf(edge.toPort) !== null;
+
+    return true;
+  });
+}
+
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
     malformed JSON — any failure yields null (boot keeps the seed). */
 function readStoredKey(key: string): unknown {
@@ -2772,13 +2798,10 @@ export class TriggerLab {
       node = makeNode('effect', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
       node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
-    } else if (kind === 'envelope') {
+        } else if (kind === 'envelope') {
       // Seed a modulation-source envelope with a default shape in the well-known slot so it
       // animates the moment it is wired (the inspector edits this shape via the S24 editor).
-      const adsr = envelopePresetAdsr(options.envelopePreset);
-      node = makeNode('envelope', nid('n'), x, y, {
-        env: { [voice.ENVELOPE_NODE_KEY]: { kind: 'custom', amount: 1, points: adsrToPoints(adsr), adsr } },
-      });
+      node = makeNode('envelope', nid('n'), x, y, envelopeNodeDefaults(options.envelopePreset));
     } else if (kind === 'lfo') {
       // S36 — seed default LFO settings so it animates the moment it is wired.
       node = makeNode('lfo', nid('n'), x, y, {
@@ -2910,12 +2933,17 @@ export class TriggerLab {
     node.mixBlendMode = mode;
   }
 
-  /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */
+    /** Change a node's kind, seeding kind-specific defaults and pruning invalid wires. */
   changeKind(node: GraphNode, kind: NodeKind): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (isAnchorNode(node) || kind === 'trigger' || kind === 'output') return;
+    if (node.kind === kind) return;
+
     this.pushUndoSnapshot();
+
+    const g = this.selectedGraph;
     node.kind = kind;
+
     if (kind === 'play' || kind === 'effect') {
       if (!node.effectId) {
         const init = graphsLib.playNodeInit(this.effects, (id) => this.presetById(id));
@@ -2924,7 +2952,6 @@ export class TriggerLab {
         node.presetId = init.presetId;
         node.params = init.params;
       }
-      const g = this.selectedGraph;
       if (g) g.edges = g.edges.filter((e) => e.from !== node.id);
     } else if (kind === 'modifier') {
       // Seed a modifier id if the node has none yet. A modifier takes no trigger-flow input,
@@ -2934,8 +2961,31 @@ export class TriggerLab {
         node.modifierId = init.modifierId;
         node.params = init.params;
       }
-      const g = this.selectedGraph;
       if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort !== 'mod'));
+    } else if (kind === 'envelope') {
+      Object.assign(node, envelopeNodeDefaults('pluck'));
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'lfo') {
+      node.lfo = voice.defaultLfoSettings();
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'cc') {
+      node.ccController = 1;
+      node.ccChannel = null;
+      node.ccSource = 'midi';
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'note') {
+      node.noteNumber = 60;
+      node.noteChannel = null;
+      node.noteMode = 'gate';
+      node.noteReleaseMs = 0;
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'osc') {
+      node.oscAddress = '';
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'randomMod') {
+      node.randomDistribution = 'linear';
+      node.randomSteps = 4;
+      if (g) pruneEdgesForModSource(g, node.id);
     }
   }
 

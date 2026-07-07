@@ -2,13 +2,18 @@
   /* Node Editor drawer Add tab. Stage 1 is a compact category chooser; Stage 2
      stays empty until a category is selected, then shows the same NodeCard visual
      language that will appear on the canvas. */
-  import type { Component } from 'svelte';
-  import NodeCard from './NodeCard.svelte';
-  import NodeSignalPreview from './NodeSignalPreview.svelte';
-  import NodeStatePreview from './NodeStatePreview.svelte';
-  import { addCategories, ADD_NODE_DRAG_TYPE, encodeAddDragPayload, selectedAddItems } from './add-pane';
-  import { makeNode, type NodeKind } from '../../trigger-lab/sim';
-  import { voice } from '@ledrums/core';
+  import type { Component } from "svelte";
+  import NodeCard from "./NodeCard.svelte";
+  import NodeSignalPreview from "./NodeSignalPreview.svelte";
+  import NodeStatePreview from "./NodeStatePreview.svelte";
+  import {
+    addCategories,
+    ADD_NODE_DRAG_TYPE,
+    encodeAddDragPayload,
+    selectedAddItems,
+  } from "./add-pane";
+  import { makeNode, type NodeKind } from "../../trigger-lab/sim";
+  import { voice } from "@ledrums/core";
 
   export type AddItem = {
     id: string;
@@ -21,7 +26,7 @@
     /** Disabled entries are visible taxonomy seams for node types whose runtime has not landed. */
     disabled?: boolean;
     disabledReason?: string;
-    preview?: 'route' | 'modulate' | 'modifier';
+    preview?: "route" | "modulate" | "modifier";
     previewKind?: NodeKind;
   };
   export type AddGroup = {
@@ -44,13 +49,18 @@
   let selectedKey = $state<string | null>(null);
   const categories = $derived(addCategories(groups));
   const selectedItems = $derived(selectedAddItems(groups, selectedKey));
-  const selectedLabel = $derived(categories.find((c) => c.key === selectedKey)?.label ?? '');
+  const selectedLabel = $derived(
+    categories.find((c) => c.key === selectedKey)?.label ?? "",
+  );
 
   function dragstart(e: DragEvent, id: string, groupKey: string): void {
     if (disabled) return;
-    e.dataTransfer?.setData(ADD_NODE_DRAG_TYPE, encodeAddDragPayload(id, groupKey));
-    e.dataTransfer?.setData('text/plain', id);
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer?.setData(
+      ADD_NODE_DRAG_TYPE,
+      encodeAddDragPayload(id, groupKey),
+    );
+    e.dataTransfer?.setData("text/plain", id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
   }
   function addSelected(id: string): void {
     if (selectedKey === null) return;
@@ -68,38 +78,69 @@
   function previewNode(it: AddItem) {
     const kind = it.previewKind;
     if (!kind) return null;
-    if (kind === 'randomMod') return null;
-    if (kind === 'envelope') {
-      return makeNode('envelope', 'preview', 0, 0, { env: { [voice.ENVELOPE_NODE_KEY]: voice.defaultEnvelope('pluck') } });
+    if (kind === "randomMod") return null;
+    if (kind === "envelope") {
+      return makeNode("envelope", "preview", 0, 0, {
+        env: { [voice.ENVELOPE_NODE_KEY]: voice.defaultEnvelope("pluck") },
+      });
     }
-    if (kind === 'lfo') return makeNode('lfo', 'preview', 0, 0, { lfo: voice.defaultLfoSettings() });
-    if (kind === 'cc') return makeNode('cc', 'preview', 0, 0, { ccController: 1, ccChannel: null });
-    if (kind === 'note') return makeNode('note', 'preview', 0, 0, { noteNumber: 60, noteMode: 'velocity' });
-    if (kind === 'osc') return makeNode('osc', 'preview', 0, 0, { oscAddress: '/ledrums/mod' });
-    return makeNode(kind, 'preview', 0, 0);
+    if (kind === "lfo")
+      return makeNode("lfo", "preview", 0, 0, {
+        lfo: voice.defaultLfoSettings(),
+      });
+    if (kind === "cc")
+      return makeNode("cc", "preview", 0, 0, {
+        ccController: 1,
+        ccChannel: null,
+      });
+    if (kind === "note")
+      return makeNode("note", "preview", 0, 0, {
+        noteNumber: 60,
+        noteMode: "velocity",
+      });
+    if (kind === "osc")
+      return makeNode("osc", "preview", 0, 0, { oscAddress: "/ledrums/mod" });
+    return makeNode(kind, "preview", 0, 0);
   }
 </script>
 
 {#snippet paletteThumb(it: AddItem)}
   {@const node = previewNode(it)}
-  {#if it.preview === 'modulate'}
-    {#if it.previewKind === 'envelope' && node}
-      <NodeSignalPreview kind="envelope" env={node.env?.[voice.ENVELOPE_NODE_KEY]} w={56} h={32} />
-    {:else if it.previewKind === 'lfo' && node}
+  {#if it.preview === "modulate"}
+    {#if it.previewKind === "envelope" && node}
+      <NodeSignalPreview
+        kind="envelope"
+        env={node.env?.[voice.ENVELOPE_NODE_KEY]}
+        w={56}
+        h={32}
+      />
+    {:else if it.previewKind === "lfo" && node}
       <NodeSignalPreview kind="lfo" lfo={node.lfo} w={56} h={32} />
-    {:else if it.previewKind === 'cc'}
+    {:else if it.previewKind === "cc"}
       <NodeSignalPreview kind="cc" ccValue={() => 0.62} w={56} h={32} />
-    {:else if it.previewKind === 'note'}
+    {:else if it.previewKind === "note"}
       <NodeSignalPreview kind="note" ccValue={() => 0.82} w={56} h={32} />
-    {:else if it.previewKind === 'osc'}
+    {:else if it.previewKind === "osc"}
       <NodeSignalPreview kind="osc" ccValue={() => 0.48} w={56} h={32} />
-    {:else if it.previewKind === 'randomMod'}
+    {:else if it.previewKind === "randomMod"}
       <NodeSignalPreview kind="random" w={56} h={32} />
     {/if}
-  {:else if it.preview === 'route' && node}
-    <NodeStatePreview node={node} childCount={3} tintToken="--role-effect" w={56} h={32} />
-  {:else if it.preview === 'modifier' && node}
-    <NodeStatePreview node={node} childCount={1} tintToken="--role-mod" w={56} h={32} />
+  {:else if it.preview === "route" && node}
+    <NodeStatePreview
+      {node}
+      childCount={3}
+      tintToken="--role-effect"
+      w={56}
+      h={32}
+    />
+  {:else if it.preview === "modifier" && node}
+    <NodeStatePreview
+      {node}
+      childCount={1}
+      tintToken="--role-mod"
+      w={56}
+      h={32}
+    />
   {/if}
 {/snippet}
 
@@ -136,14 +177,20 @@
             draggable={!disabled && !it.disabled}
             ondragstart={(e) => dragSelected(e, it.id)}
             disabled={disabled || it.disabled}
-            title={it.disabled ? (it.disabledReason ?? `${it.name} is not available yet`) : `Add ${it.name}`}
+            title={it.disabled
+              ? (it.disabledReason ?? `${it.name} is not available yet`)
+              : `Add ${it.name}`}
           >
+            {#snippet cardThumb()}
+              {@render paletteThumb(it)}
+            {/snippet}
+
             <NodeCard
               icon={it.icon}
               title={it.name}
-              sub={it.hint ?? (it.disabled ? 'not available yet' : 'add node')}
-              tint={it.tint ?? 'var(--accent)'}
-              thumb={it.preview ? () => paletteThumb(it) : undefined}
+              sub={it.hint ?? (it.disabled ? "not available yet" : "add node")}
+              tint={it.tint ?? "var(--accent)"}
+              thumb={it.preview ? cardThumb : undefined}
             />
           </button>
         {/each}
@@ -186,7 +233,10 @@
     color: var(--text-muted);
     text-align: left;
     cursor: pointer;
-    transition: background-color var(--dur-120) ease, border-color var(--dur-120) ease, scale var(--dur-120) var(--ease-control);
+    transition:
+      background-color var(--dur-120) ease,
+      border-color var(--dur-120) ease,
+      scale var(--dur-120) var(--ease-control);
   }
   .cat:hover {
     border-color: var(--border);

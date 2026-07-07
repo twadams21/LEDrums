@@ -34,7 +34,13 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
-  import { nodeHasInput, nodeHasModInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
+  import {
+  nodeHasInput,
+  nodeHasModInput,
+  nodeHasOutput,
+  nodeIsModSource,
+  type NodeKind,
+} from '../../trigger-lab/sim';
   import { voice, collectionMeta } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
@@ -231,6 +237,14 @@
   {#if nodeHasOutput(kind)}
     <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} />
   {/if}
+  {#if nodeIsModSource(kind)}
+    <Handle
+      type="source"
+      position={Position.Right}
+      class="mod-source-handle"
+      title="Modulation output"
+    />
+  {/if}
   {#if modCount > 0}
     <span class="modcount" title={`${modCount} modifier${modCount === 1 ? '' : 's'} in chain`}>
       <Blend size={9} aria-hidden="true" />{modCount}
@@ -393,14 +407,21 @@
     text-align: right;
   }
   /* the scoped modulation input handle rides the row's left edge */
-  .modrow :global(.param-handle) {
-    left: -12px;
-    background: var(--role-modulation);
-    border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
-  }
-  .mixrow :global(.mix-handle) {
-    left: -12px;
-  }
+.modrow :global(.param-handle) {
+  left: -12px;
+  background: var(--role-modulation);
+  border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+}
+
+.tnode :global(.mod-source-handle) {
+  right: -12px;
+  background: var(--role-modulation);
+  border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+}
+
+.mixrow :global(.mix-handle) {
+  left: -12px;
+}
   /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
   .modcount {
     position: absolute;

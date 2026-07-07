@@ -53,11 +53,17 @@ export const POLY_OPTS = [
 ];
 
 // --- Node-kind selector + switch / value routing options -------------------------
-// kind selector (every node but the trigger root) — the iconed variant built from the
-// shared `trigger-node-meta` maps.
-// Modulation sources (envelope/LFO/CC) are not conversion targets — they're added from the
-// modulation palette and edited in their own inspector, so they're excluded from the kind selector.
-export const KIND_OPTS = NODE_KINDS.filter((k) => !voice.isModSourceKind(k)).map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
+// kind selector conversion targets. Include modulation-source nodes; only graph anchors
+// are not normal conversion targets.
+export const KIND_OPTS = NODE_KINDS
+  .filter((k) => k !== 'output')
+  .map((k) => ({
+    value: k,
+    label: kindLabel[k],
+    icon: kindIcon[k],
+    iconColor: tint[k],
+  }));
+
 export const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
   { value: 'value', label: 'value' },
   { value: 'section', label: 'section' },
