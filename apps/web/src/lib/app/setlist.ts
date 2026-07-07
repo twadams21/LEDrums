@@ -103,6 +103,13 @@ export function addSection(song: Song, section: SetlistSection): Song {
   return { ...song, sections: [...song.sections, section] };
 }
 
+/** A drop index is expressed in the pre-removal list. When moving an item downward inside the
+    same list, removal shifts every later index left by one, so insert before `toIndex - 1`.
+    Without this, dragging B onto C in [A,B,C] incorrectly became [A,C,B]. */
+function sameListInsertIndex(fromIndex: number, toIndex: number, maxAfterRemoval: number): number {
+  return clampIndex(toIndex > fromIndex ? toIndex - 1 : toIndex, maxAfterRemoval);
+}
+
 /** Reorder a section by id, inserting it before the section at `toIndex` after removal.
     Dragging a section onto itself is a no-op. Out-of-range targets clamp to the song ends. */
 export function moveSection(song: Song, sectionId: string, toIndex: number): Song {
@@ -111,7 +118,7 @@ export function moveSection(song: Song, sectionId: string, toIndex: number): Son
   const sections = [...song.sections];
   const [section] = sections.splice(fromIndex, 1);
   if (!section) return song;
-  const insertAt = clampIndex(toIndex, sections.length);
+  const insertAt = sameListInsertIndex(fromIndex, toIndex, sections.length);
   if (insertAt === fromIndex) return song;
   sections.splice(insertAt, 0, section);
   return { ...song, sections };
@@ -157,7 +164,7 @@ export function moveGraphPlacement(
   if (fromSectionId === toSectionId) {
     const graphs = [...fromSection.graphs];
     graphs.splice(fromIndex, 1);
-    const insertAt = clampIndex(toIndex, graphs.length);
+    const insertAt = sameListInsertIndex(fromIndex, toIndex, graphs.length);
     if (insertAt === fromIndex) return song;
     graphs.splice(insertAt, 0, graphKey);
     return setGraphs(song, fromSectionId, graphs);
