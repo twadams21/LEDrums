@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAddGroups, EFFECT_GROUP_KEY, MODULATE_GROUP_KEY, ROUTE_GROUP_KEY } from './add-node-taxonomy';
+import { buildAddGroups, EFFECT_GROUP_KEY, MODULATE_GROUP_KEY, MODIFIER_GROUP_PREFIX, ROUTE_GROUP_KEY } from './add-node-taxonomy';
 
 const ids = (key: string): string[] => buildAddGroups().find((g) => g.key === key)?.items.map((i) => i.id) ?? [];
 
@@ -35,5 +35,9 @@ describe('buildAddGroups', () => {
 
   it('keeps Effect backed by selectable collections', () => {
     expect(ids(EFFECT_GROUP_KEY).length).toBeGreaterThan(0);
+  });
+
+  it('surfaces registered modifiers in the Modify add flow', () => {
+    expect(ids(`${MODIFIER_GROUP_PREFIX}all`)).toContain('slice');
   });
 });

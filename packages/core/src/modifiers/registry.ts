@@ -26,6 +26,7 @@ import { kaleidoscope } from './impl/kaleidoscope';
 import { freeze } from './impl/freeze';
 import { flicker } from './impl/flicker';
 import { chromatic } from './impl/chromatic';
+import { slice } from './impl/slice';
 
 const ALL: ModifierDef<any>[] = [
   trail,
@@ -49,6 +50,7 @@ const ALL: ModifierDef<any>[] = [
   freeze,
   flicker,
   chromatic,
+  slice,
 ];
 
 const registry = new Map<string, ModifierDef<any>>();

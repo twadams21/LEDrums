@@ -21,3 +21,4 @@
 {"timestamp":"2026-07-07T05:16:59.005Z","kind":"decision","message":"Implemented issue #71 Add Node pane v2 foundation: two-stage Add drawer, resizable Node Editor, and click/drag node placement plumbing.","files":[],"cwd":"."}
 {"timestamp":"2026-07-07T10:01:52.769Z","kind":"decision","message":"Gen3 S04 Add Node taxonomy centralizes palette groups, keeps Mix disabled until runtime lands, and seeds Envelope/LFO presets as ordinary source nodes.","files":[],"cwd":"."}
 {"timestamp":"2026-07-07T10:17:57.746Z","kind":"note","message":"Implemented Gen3 S06 Scope inspector/preview with multi-hoop target encoding and effective-scope readouts.","files":[],"cwd":"."}
+{"timestamp":"2026-07-07T10:26:10.836Z","kind":"decision","message":"Gen3 S07 adds Slice as a core spatial modifier with deterministic per-voice band remap state and registry-driven Modify palette discovery.","files":[],"cwd":"."}
