@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasPrimaryModifier, platformShortcutModifier } from './primary-shortcut';
+import { hasPrimaryModifier, isEditableShortcutTarget, platformShortcutModifier } from './primary-shortcut';
 
 describe('platformShortcutModifier', () => {
   it('maps macOS-like platforms to Cmd', () => {
@@ -22,5 +22,23 @@ describe('hasPrimaryModifier', () => {
   it('accepts Ctrl on Windows/Linux and rejects Cmd-only', () => {
     expect(hasPrimaryModifier({ metaKey: false, ctrlKey: true }, 'other')).toBe(true);
     expect(hasPrimaryModifier({ metaKey: true, ctrlKey: false }, 'other')).toBe(false);
+  });
+});
+
+describe('isEditableShortcutTarget', () => {
+  it('detects direct form fields and contenteditable nodes', () => {
+    expect(isEditableShortcutTarget({ tagName: 'INPUT' } as EventTarget)).toBe(true);
+    expect(isEditableShortcutTarget({ tagName: 'textarea' } as EventTarget)).toBe(true);
+    expect(isEditableShortcutTarget({ isContentEditable: true } as EventTarget)).toBe(true);
+  });
+
+  it('detects descendants of editable controls', () => {
+    const child = { closest: (selector: string) => (selector.includes('textarea') ? {} : null) } as EventTarget;
+    expect(isEditableShortcutTarget(child)).toBe(true);
+  });
+
+  it('allows non-editable shortcut targets', () => {
+    expect(isEditableShortcutTarget(null)).toBe(false);
+    expect(isEditableShortcutTarget({ tagName: 'BUTTON', closest: () => null } as EventTarget)).toBe(false);
   });
 });
