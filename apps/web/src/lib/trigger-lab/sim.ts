@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
+import { voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
 import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
 
@@ -222,6 +222,8 @@ export interface Voice {
       core Voice field; applied by the offline renderer's param sweep. Populated from graph
       topology at spawn (S34). */
   modulations?: Mapping[];
+  mixBlendMode?: BlendMode;
+  mixInputs?: voice.MixInput[];
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   attackMs: number;
@@ -270,12 +272,15 @@ type PlayAction = {
   /** Resolved modulation mappings for this play node's exposed params (S34 populates from
       graph topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modulations`. */
   modulations?: Mapping[];
+  mixBlendMode?: BlendMode;
+  mixInputs?: MixInputDraft[];
   via: string;
   latchKey: string | null;
 };
 type StopAction = { kind: 'stop'; voiceId: string; via: string };
 type Action = PlayAction | StopAction;
-type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'>;
+type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
+type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
 
 export interface TriggerCtx {
   velocity: number;
@@ -461,6 +466,64 @@ export class Sim {
       .sort((a, b) => a.y - b.y);
   }
 
+  private incomingFlowEdges(graph: TriggerGraph, node: GraphNode) {
+    return graph.edges
+      .filter((e) => e.to === node.id && (e.toPort == null || e.toPort === 'in'))
+      .sort((a, b) => {
+        const ay = graph.nodes.find((n) => n.id === a.from)?.y ?? 0;
+        const by = graph.nodes.find((n) => n.id === b.from)?.y ?? 0;
+        return ay - by || a.id.localeCompare(b.id);
+      });
+  }
+
+  private edgeOpacity(value: number | undefined): number {
+    return value == null ? 1 : value < 0 ? 0 : value > 1 ? 1 : value;
+  }
+
+  private draftFromUpstream(graph: TriggerGraph, source: GraphNode, sourceDrumId: string, seen = new Set<string>()): PlayDraft | null {
+    if (seen.has(source.id)) return null;
+    const seen2 = new Set(seen).add(source.id);
+    if (source.kind === 'play' || source.kind === 'effect') {
+      const mods = voice.resolveModifierChain(graph, source);
+      const modulations = this.freezeRandomMappings(voice.resolveNodeModulations(graph, source));
+      return {
+        effectId: source.effectId,
+        mode: source.mode,
+        scope: source.scope,
+        targetId: source.targetId,
+        busId: source.busId,
+        params: this.resolveNodeParams(source),
+        modifiers: mods.length ? mods : undefined,
+        modulations: modulations.length ? modulations : undefined,
+        originNodeId: source.id,
+      };
+    }
+    const upstream = this.incomingFlowEdges(graph, source)
+      .map((e) => graph.nodes.find((n) => n.id === e.from))
+      .filter((n): n is GraphNode => !!n);
+    if (upstream.length !== 1) return null;
+    const draft = this.draftFromUpstream(graph, upstream[0]!, sourceDrumId, seen2);
+    if (!draft) return null;
+    if (source.kind === 'modifier') {
+      return { ...draft, modifiers: [...(draft.modifiers ?? []), voice.resolveModifierNode(graph, source)] };
+    }
+    if (source.kind === 'scope') {
+      const scoped = voice.intersectScopeTargets(draft, source, sourceDrumId);
+      return scoped ? { ...draft, ...scoped } : null;
+    }
+    return null;
+  }
+
+  private mixInputsFor(graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): MixInputDraft[] {
+    return this.incomingFlowEdges(graph, node)
+      .map((edge): MixInputDraft | null => {
+        const source = graph.nodes.find((n) => n.id === edge.from);
+        const draft = source ? this.draftFromUpstream(graph, source, ctx.sourceDrumId) : null;
+        return draft?.originNodeId ? { ...draft, opacity: this.edgeOpacity(edge.opacity), originNodeId: draft.originNodeId } : null;
+      })
+      .filter((d): d is MixInputDraft => !!d);
+  }
+
   private evalNode(
     graph: TriggerGraph,
     node: GraphNode,
@@ -494,6 +557,7 @@ export class Sim {
           params: this.resolveNodeParams(node),
           modifiers: mods.length ? mods : undefined,
           modulations: modulations.length ? modulations : undefined,
+          originNodeId: node.id,
         };
         if (kids.length > 0) {
           return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(this.modeWord(node.mode)), seen2, next));
@@ -508,6 +572,14 @@ export class Sim {
           modifiers: [...(draft.modifiers ?? []), voice.resolveModifierNode(graph, node)],
         };
         return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Modifier'), seen2, next));
+      }
+      case 'mix': {
+        const mixInputs = this.mixInputsFor(graph, node, ctx);
+        if (mixInputs.length === 0) return [];
+        const first = mixInputs[0]!;
+        if (draft && draft.originNodeId !== first.originNodeId) return [];
+        const next: PlayDraft = { ...first, mixBlendMode: node.mixBlendMode ?? 'normal', mixInputs };
+        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Mix'), seen2, next));
       }
       case 'scope': {
         if (!draft) return [];
@@ -741,9 +813,30 @@ export class Sim {
       seed,
       generatorId: effect.generatorId ?? null,
       genState: null,
+      mixInputs: a.mixInputs?.map((input, index): voice.MixInput | null => {
+        const inputEffect = this.effect(input.effectId);
+        if (!inputEffect?.generatorId) return null;
+        return {
+          generatorId: inputEffect.generatorId,
+          scope: input.scope,
+          targetId: input.targetId,
+          sourceDrumId,
+          velocity,
+          seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
+          params: { ...input.params },
+          liveParams: {},
+          specs: inputEffect.params,
+          modulations: input.modulations,
+          genState: null,
+          modifiers: input.modifiers,
+          modState: undefined,
+          opacity: input.opacity,
+        };
+      }).filter((input): input is voice.MixInput => input !== null),
       modifiers: a.modifiers,
       modState: undefined,
       modulations: a.modulations,
+      mixBlendMode: a.mixBlendMode,
       params: { ...a.params },
       attackMs: effect.attackMs,
       sustainMs: effect.sustainMs,

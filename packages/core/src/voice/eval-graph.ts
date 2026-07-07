@@ -25,6 +25,7 @@ import { computeDelayMs } from './delay';
 import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
 import { intersectScopeTargets } from './scope';
+import type { BlendMode } from '../color/blend';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -58,6 +59,8 @@ export interface PlayAction {
    * injects them at the compositor seam.
    */
   modulations?: Mapping[];
+  mixBlendMode?: BlendMode;
+  mixInputs?: MixInputDraft[];
   via: string;
   latchKey: string | null;
 }
@@ -102,7 +105,8 @@ export interface PendingAction {
 }
 
 export type Action = PlayAction | StopAction | PendingAction;
-type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'>;
+type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
+type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
 
 export interface TriggerCtx {
   velocity: number;
@@ -186,6 +190,78 @@ function freezeRandomMappings(mappings: Mapping[] | undefined, prng: Prng): Mapp
   return changed ? out : mappings;
 }
 
+function incomingFlowEdges(graph: TriggerGraph, node: GraphNode) {
+  return graph.edges
+    .filter((e) => e.to === node.id && (e.toPort == null || e.toPort === 'in'))
+    .sort((a, b) => {
+      const ay = graph.nodes.find((n) => n.id === a.from)?.y ?? 0;
+      const by = graph.nodes.find((n) => n.id === b.from)?.y ?? 0;
+      return ay - by || a.id.localeCompare(b.id);
+    });
+}
+
+function edgeOpacity(value: number | undefined): number {
+  return value == null ? 1 : value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+function draftFromUpstream(
+  graph: TriggerGraph,
+  source: GraphNode,
+  sourceDrumId: string,
+  prng: Prng,
+  seen = new Set<string>(),
+): PlayDraft | null {
+  if (seen.has(source.id)) return null;
+  const seen2 = new Set(seen).add(source.id);
+  let draft: PlayDraft | null = null;
+  if (source.kind === 'play' || source.kind === 'effect') {
+    if (!source.effectId) return null;
+    const mods = resolveModifierChain(graph, source);
+    const modulations = resolveNodeModulations(graph, source);
+    draft = {
+      effectId: source.effectId,
+      playType: source.playType,
+      canvasScene: source.canvasScene,
+      mode: source.mode,
+      scope: source.scope,
+      targetId: source.targetId,
+      busId: source.busId,
+      params: source.params,
+      modifiers: mods.length ? mods : undefined,
+      modulations: freezeRandomMappings(modulations.length ? modulations : undefined, prng),
+      originNodeId: source.id,
+    };
+  } else {
+    const upstream = incomingFlowEdges(graph, source)
+      .map((e) => graph.nodes.find((n) => n.id === e.from))
+      .filter((n): n is GraphNode => !!n);
+    if (upstream.length !== 1) return null;
+    draft = draftFromUpstream(graph, upstream[0]!, sourceDrumId, prng, seen2);
+    if (!draft) return null;
+    if (source.kind === 'modifier') {
+      draft = { ...draft, modifiers: [...(draft.modifiers ?? []), resolveModifierNode(graph, source)] };
+    } else if (source.kind === 'scope') {
+      const scoped = intersectScopeTargets(draft, source, sourceDrumId);
+      if (!scoped) return null;
+      draft = { ...draft, ...scoped };
+    } else {
+      return null;
+    }
+  }
+  return draft;
+}
+
+function mixInputsFor(state: EvalState, graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): MixInputDraft[] {
+  return incomingFlowEdges(graph, node)
+    .map((edge): MixInputDraft | null => {
+      const source = graph.nodes.find((n) => n.id === edge.from);
+      if (!source) return null;
+      const draft = draftFromUpstream(graph, source, ctx.sourceDrumId, state.prng);
+      return draft?.originNodeId ? { ...draft, opacity: edgeOpacity(edge.opacity), originNodeId: draft.originNodeId } : null;
+    })
+    .filter((d): d is MixInputDraft => !!d);
+}
+
 function evalNodeWithDraft(
   state: EvalState,
   graph: TriggerGraph,
@@ -225,6 +301,7 @@ function evalNodeWithDraft(
         params: node.params,
         modifiers: mods.length ? mods : undefined,
         modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+        originNodeId: node.id,
       };
       if (kids.length > 0) {
         return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label(modeWord(node.mode)), seen2, next));
@@ -239,6 +316,19 @@ function evalNodeWithDraft(
         modifiers: [...(draft.modifiers ?? []), resolveModifierNode(graph, node)],
       };
       return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Modifier'), seen2, next));
+    }
+    case 'mix': {
+      const mixInputs = mixInputsFor(state, graph, node, ctx);
+      if (mixInputs.length === 0) return [];
+      const first = mixInputs[0]!;
+      if (draft && draft.originNodeId !== first.originNodeId) return [];
+      const next: PlayDraft = {
+        ...first,
+        effectId: first.effectId,
+        mixBlendMode: node.mixBlendMode ?? 'normal',
+        mixInputs,
+      };
+      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Mix'), seen2, next));
     }
     case 'scope': {
       if (!draft) return [];

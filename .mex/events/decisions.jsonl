@@ -22,3 +22,4 @@
 {"timestamp":"2026-07-07T10:01:52.769Z","kind":"decision","message":"Gen3 S04 Add Node taxonomy centralizes palette groups, keeps Mix disabled until runtime lands, and seeds Envelope/LFO presets as ordinary source nodes.","files":[],"cwd":"."}
 {"timestamp":"2026-07-07T10:17:57.746Z","kind":"note","message":"Implemented Gen3 S06 Scope inspector/preview with multi-hoop target encoding and effective-scope readouts.","files":[],"cwd":"."}
 {"timestamp":"2026-07-07T10:26:10.836Z","kind":"decision","message":"Gen3 S07 adds Slice as a core spatial modifier with deterministic per-voice band remap state and registry-driven Modify palette discovery.","files":[],"cwd":"."}
+{"timestamp":"2026-07-07T10:44:01.317Z","kind":"decision","message":"Gen3 S08 Mix is buffer-level route composition: incoming effect-flow branches render to intermediate buffers, compose by source y with node blend mode and edge opacity, then continue through Scope/Modifier/Output.","files":[],"cwd":"."}

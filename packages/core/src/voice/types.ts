@@ -7,6 +7,7 @@
 import type { ResolvedModifier } from '../modifiers/types';
 import type { PlayType } from '../effects/vocabulary';
 import type { CanvasScene } from '../canvas/types';
+import type { BlendMode } from '../color/blend';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
 
@@ -217,6 +218,7 @@ export type NodeKind =
   | BlockKind
   | 'effect'
   | 'modifier'
+  | 'mix'
   | 'scope'
   | 'output'
   | 'envelope'
@@ -276,6 +278,8 @@ export interface GraphNode {
   /** Modifier bypass: when true the resolved link is identity (kept in the chain so its
       per-voice state slot survives toggling). Optional; defaults to not-bypassed. */
   bypass?: boolean;
+  /** Buffer-level route composition mode for `kind === 'mix'`. */
+  mixBlendMode?: BlendMode;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes
   /** Ordered list of params this node has EXPOSED as modulation targets (doc 10). Empty /
       absent by default; the target Inspector's "Add parameter" appends one. Each entry
@@ -366,6 +370,8 @@ export interface GraphEdge {
   rangeMin?: number;
   /** high bound the source maps into (default = target param spec max). */
   rangeMax?: number;
+  /** Per-input Mix opacity. Meaningful only for flow edges landing on a `mix` node. */
+  opacity?: number;
 }
 
 export interface TriggerGraph {
@@ -502,6 +508,9 @@ export interface Voice {
    * is reused. Opaque to everything but the hosted generator.
    */
   genState: unknown;
+  /** Buffer-level Mix branches rendered into intermediate buffers, then blended before
+      this voice's downstream modifiers/output mask continue. Undefined for ordinary voices. */
+  mixInputs?: MixInput[];
   /**
    * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
    * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from
@@ -526,6 +535,8 @@ export interface Voice {
   modulations?: Mapping[];
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
+  /** Blend mode used when this voice represents a Mix node. */
+  mixBlendMode?: BlendMode;
   /**
    * Per-frame effective params (envelopes + tempo-sync applied). A reused scratch
    * object owned by the pool slot — the engine refills it each tick before the
@@ -544,4 +555,21 @@ export interface Voice {
   releaseFromLevel: number;
   via: string;
   deckGain: number;
+}
+
+export interface MixInput {
+  generatorId: string;
+  scope: Scope;
+  targetId?: string;
+  sourceDrumId: string | null;
+  velocity: number;
+  seed: number;
+  params: ParamValues;
+  liveParams: ParamValues;
+  specs: ParamSpec[];
+  modulations?: Mapping[];
+  genState: unknown;
+  modifiers?: ResolvedModifier[];
+  modState?: unknown[];
+  opacity: number;
 }

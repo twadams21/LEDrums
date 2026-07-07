@@ -113,7 +113,7 @@
   // a trigger-driven flash. (Bands switches keep their dedicated BandSwitchNode face.)
   const isStateKind = $derived(
     kind === 'chance' || kind === 'toggle' || kind === 'delay' || kind === 'sequence' ||
-    kind === 'all' || kind === 'random' || kind === 'switch' || kind === 'modifier',
+    kind === 'all' || kind === 'random' || kind === 'switch' || kind === 'modifier' || kind === 'mix',
   );
   // Wired default-port children — sizes the fan / sequence-step faces.
   const wiredChildren = $derived(

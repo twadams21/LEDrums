@@ -115,14 +115,14 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
     expect(canConnect(modGraph(), 'm1', 'a1', undefined, 'mod')).toBe(false);
   });
 
-  it("rejects a modifier's output on a trigger-flow wire (modifier only feeds mod ports)", () => {
-    expect(canConnect(modGraph(), 'm1', 'p1')).toBe(false);
-    expect(canConnect(modGraph(), 'm1', 'a1')).toBe(false);
+  it("accepts a modifier's output on an effect-flow wire", () => {
+    expect(canConnect(modGraph(), 'm1', 'p1')).toBe(true);
+    expect(canConnect(modGraph(), 'm1', 'a1')).toBe(true);
   });
 
-  it('rejects a trigger-flow wire INTO a modifier node (modifier takes no flow input)', () => {
-    expect(canConnect(modGraph(), 'trigger', 'm1')).toBe(false);
-    expect(canConnect(modGraph(), 'a1', 'm1')).toBe(false);
+  it('accepts a trigger-flow wire into a modifier node', () => {
+    expect(canConnect(modGraph(), 'trigger', 'm1')).toBe(true);
+    expect(canConnect(modGraph(), 'a1', 'm1')).toBe(true);
   });
 
   it('flow `in` and `mod` inputs on one node are distinct — not duplicates of each other', () => {
@@ -130,8 +130,8 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
     g.edges.push({ id: 'e2', from: 'm1', to: 'p1', toPort: 'mod' });
     // an identical mod wire is a dup...
     expect(canConnect(g, 'm1', 'p1', undefined, 'mod')).toBe(false);
-    // ...but the flow input is a different port entirely (still rejected here only because a
-    // modifier can't feed a flow wire — the point is the dup guard keys on toPort).
+    // ...but the flow input is a different port entirely; flow duplicate detection still
+    // keys on the canonical in-port aliases.
     const g2 = modGraph();
     g2.edges.push({ id: 'e3', from: 'trigger', to: 'p1', toPort: 'in' });
     // trigger→p1 already exists on flow 'in' (e1 has undefined toPort ≡ 'in') → dup

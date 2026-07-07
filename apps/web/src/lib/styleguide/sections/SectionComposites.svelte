@@ -80,6 +80,7 @@
     toggle: 'on · off',
     delay: '1/8 dotted',
     modifier: 'Trail',
+    mix: 'normal',
     scope: 'Snare',
     output: 'Hoop',
     envelope: 'modulation source',

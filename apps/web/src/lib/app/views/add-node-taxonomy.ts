@@ -1,7 +1,6 @@
 import type { AddGroup } from './AddPalette.svelte';
 import { COLLECTIONS, listModifiersByCategory } from '@ledrums/core';
 import Blend from '@lucide/svelte/icons/blend';
-import GitMerge from '@lucide/svelte/icons/git-merge';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
 import type { NodeKind } from '../../trigger-lab/sim';
 
@@ -26,7 +25,7 @@ export const LFO_PRESETS = [
   { id: 'sample-hold', name: 'Sample & Hold', hint: 'stepped random' },
 ] as const;
 
-const ROUTE_KINDS = ['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope'] as const satisfies readonly NodeKind[];
+const ROUTE_KINDS = ['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'mix'] as const satisfies readonly NodeKind[];
 
 export function buildAddGroups(): AddGroup[] {
   return [
@@ -54,17 +53,6 @@ export function buildAddGroups(): AddGroup[] {
           preview: 'route' as const,
           previewKind: kind,
         })),
-        {
-          id: 'mix',
-          name: 'Mix',
-          icon: GitMerge,
-          tint: 'var(--role-effect)',
-          hint: 'blend routes',
-          preview: 'route' as const,
-          previewKind: 'mix' as const,
-          disabled: true,
-          disabledReason: 'Mix authoring lands with issue #76.',
-        },
       ],
     },
     {

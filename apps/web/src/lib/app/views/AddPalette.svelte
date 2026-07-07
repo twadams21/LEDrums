@@ -22,7 +22,7 @@
     disabled?: boolean;
     disabledReason?: string;
     preview?: 'route' | 'modulate' | 'modifier';
-    previewKind?: NodeKind | 'mix';
+    previewKind?: NodeKind;
   };
   export type AddGroup = {
     key: string;
@@ -66,7 +66,7 @@
   }
 
   function previewNode(it: AddItem) {
-    const kind = it.previewKind === 'mix' ? 'random' : it.previewKind;
+    const kind = it.previewKind;
     if (!kind) return null;
     if (kind === 'randomMod') return null;
     if (kind === 'envelope') {

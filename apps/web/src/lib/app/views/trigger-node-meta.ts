@@ -17,6 +17,7 @@ import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
 import Blend from '@lucide/svelte/icons/blend';
+import GitMerge from '@lucide/svelte/icons/git-merge';
 import Spline from '@lucide/svelte/icons/spline';
 import Waves from '@lucide/svelte/icons/waves'; // S36
 import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
@@ -40,6 +41,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   toggle: Power,
   delay: Timer,
   modifier: Blend,
+  mix: GitMerge,
   scope: CircleDot,
   output: CircleDot,
   envelope: Spline,
@@ -70,6 +72,7 @@ export const tint: Record<NodeKind, string> = {
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
   modifier: 'var(--role-mod)',
+  mix: 'var(--role-effect)',
   scope: 'var(--role-output)',
   output: 'var(--role-output)',
   envelope: 'var(--role-modulation)',
@@ -93,6 +96,7 @@ export const kindLabel: Record<NodeKind, string> = {
   toggle: 'Toggle',
   delay: 'Delay',
   modifier: 'Modifier',
+  mix: 'Mix',
   scope: 'Scope',
   output: 'Output',
   envelope: 'Envelope',
@@ -129,6 +133,8 @@ export function kindSummary(node: GraphNode): string {
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
     case 'modifier':
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
+    case 'mix':
+      return node.mixBlendMode ?? 'normal';
     case 'scope':
       return node.scope === 'kit' ? 'whole kit' : node.targetId || node.scope;
     case 'envelope':

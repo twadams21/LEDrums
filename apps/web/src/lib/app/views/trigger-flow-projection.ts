@@ -16,6 +16,8 @@ export function triggerNodeSignature(n: GraphNode): string {
       return `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
     case 'modifier':
       return `${base}:modifier=${n.modifierId ?? ''}`;
+    case 'mix':
+      return `${base}:mix=${n.mixBlendMode ?? 'normal'}`;
     case 'cc':
       return `${base}:cc=${n.ccController ?? ''}:${n.ccChannel ?? ''}`;
     case 'note':
@@ -31,8 +33,8 @@ export function triggerNodeSignature(n: GraphNode): string {
   }
 }
 
-export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort'>): string {
-  return `${e.id}:${e.from}:${e.fromPort ?? ''}>${e.to}:${e.toPort ?? ''}`;
+export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort' | 'opacity'>): string {
+  return `${e.id}:${e.from}:${e.fromPort ?? ''}>${e.to}:${e.toPort ?? ''}:opacity=${e.opacity ?? ''}`;
 }
 
 export function emptyTriggerProjectionCache(): TriggerProjectionCache {

@@ -51,16 +51,12 @@ export type TriggerGraph = voice.TriggerGraph;
     `modifier` + `envelope` are `NodeKind`s but not block types in the Block union, so the
     element type is widened to `Exclude<NodeKind, 'trigger'>`. `envelope` is a modulation
     source (doc 10) — palette-grouped separately, but addable like the rest. */
-export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['effect', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'scope', 'output', 'envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod']; // S36 'lfo' + S37 'cc'
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['effect', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'mix', 'scope', 'output', 'envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod']; // S36 'lfo' + S37 'cc'
 
-/** Whether a kind emits a trigger-flow / mod / modulation OUTPUT handle. 'play' is a sink (no
-    children); 'trigger' is a source. A 'modifier' emits its `mod` output; a modulation source
-    ('envelope', doc 10) emits its modulation output — both wire from the right, so both count. */
-export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && kind !== 'modifier' && !voice.isModSourceKind(kind);
-/** Whether a kind takes a trigger-FLOW input (the default `in` handle). 'trigger' is the
-    root; 'modifier' + modulation sources ('envelope') take NO flow input — their inputs are
-    the `mod` handle / none, so they are excluded here. */
-export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && kind !== 'modifier' && !voice.isModSourceKind(kind);
+/** Whether a kind emits a trigger/effect-flow or modulation OUTPUT handle. */
+export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && !voice.isModSourceKind(kind);
+/** Whether a kind takes a trigger/effect-FLOW input (the default `in` handle). */
+export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && !voice.isModSourceKind(kind);
 /** Whether a kind exposes a `mod` INPUT handle (a modifier chain lands here). Play nodes
     take modifiers; modifier nodes take upstream modifiers (mod→mod chains). */
 export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
@@ -98,6 +94,7 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     invert: false,
     bands: [0.5],
     p: 0.5,
+    mixBlendMode: 'normal',
     // delay (only meaningful when kind === 'delay'; defaults mirror the core engine defaults)
     delayMode: 'time',
     ms: 250,

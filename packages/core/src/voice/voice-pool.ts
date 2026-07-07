@@ -10,7 +10,7 @@
 import { canvasEffectId } from '../canvas/ids';
 import type { PlayAction } from './eval-graph';
 import { deriveSeed } from './prng';
-import type { Bus, EffectDef, ParamSpec, Voice } from './types';
+import type { Bus, EffectDef, MixInput, ParamSpec, Voice } from './types';
 
 const VOICE_CAP = 256;
 /** Base mixed with the monotonic voice counter into each voice's per-trigger seed. */
@@ -116,8 +116,32 @@ export class VoicePool {
     // A canvas play node's scene doc is authoritative: it hosts the scene's adapter id
     // (`canvas:<sceneId>`, resolved by the effects registry) through the SAME bridge path
     // a hosted generator takes — no dispatch fork (locked dec 7).
-    slot.generatorId = a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
+    slot.generatorId = a.mixInputs?.length
+      ? (effect.generatorId ?? null)
+      : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
+    slot.mixInputs = a.mixInputs?.map((input, index): MixInput | null => {
+      const inputEffect = deps.effectsById.get(input.effectId);
+      if (!inputEffect) return null;
+      const generatorId = input.canvasScene ? canvasEffectId(input.canvasScene) : inputEffect.generatorId;
+      if (!generatorId) return null;
+      return {
+        generatorId,
+        scope: input.scope,
+        targetId: input.targetId,
+        sourceDrumId,
+        velocity,
+        seed: deriveSeed(slot.seed, index + 1),
+        params: { ...input.params },
+        liveParams: {},
+        specs: inputEffect.params,
+        modulations: input.modulations,
+        genState: null,
+        modifiers: input.modifiers,
+        modState: undefined,
+        opacity: input.opacity,
+      };
+    }).filter((input): input is MixInput => input !== null);
     // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
     // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
@@ -128,6 +152,7 @@ export class VoicePool {
     // takes the new list (or undefined) with nothing to reset.
     slot.modulations = a.modulations;
     slot.params = { ...a.params };
+    slot.mixBlendMode = a.mixBlendMode;
     slot.specs = effect.params;
     slot.attackMs = effect.attackMs;
     slot.sustainMs = effect.sustainMs;
@@ -166,6 +191,7 @@ function makeVoiceSlot(): Voice {
     modState: undefined,
     modulations: undefined,
     params: {},
+    mixBlendMode: undefined,
     liveParams: {},
     specs: EMPTY_SPECS,
     attackMs: 0,
@@ -178,6 +204,7 @@ function makeVoiceSlot(): Voice {
     releaseFromLevel: 1,
     via: '',
     deckGain: 1,
+    mixInputs: undefined,
   };
 }
 

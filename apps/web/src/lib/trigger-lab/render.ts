@@ -7,8 +7,10 @@
 import {
   Framebuffer,
   applyModifierChain,
+  compositeInto,
   defaultParams as genDefaultParams,
   tryGetEffect,
+  voice,
   type RenderContext,
   type ResolvedParams,
   type Trigger,
@@ -58,6 +60,54 @@ function modCtxFor(v: Voice, sim: Sim): ModSampleCtx {
   return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable, notes: sim.noteTable };
 }
 
+function pixelRangesFor(v: Voice, lab: LabModel): Array<{ start: number; end: number }> {
+  const { model } = lab;
+  if (v.scope === 'drum') {
+    const drumId = v.targetId ?? v.sourceDrumId;
+    const d = drumId ? lab.pm.drumById.get(drumId) : undefined;
+    return d ? [{ start: d.pixelStart, end: d.pixelStart + d.pixelCount }] : [];
+  }
+  if (v.scope === 'hoop') {
+    const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
+    const d = drumId ? lab.pm.drumById.get(drumId) : undefined;
+    if (!d) return [];
+    return hoopIndices
+      .filter((hoopIndex) => hoopIndex >= 0 && hoopIndex < d.hoopCount)
+      .map((hoopIndex) => {
+        const start = d.pixelStart + hoopIndex * d.pixelsPerHoop;
+        return { start, end: start + d.pixelsPerHoop };
+      });
+  }
+  return [{ start: 0, end: model.count }];
+}
+
+function mixInputVoice(input: voice.MixInput, host: Voice): Voice {
+  return {
+    ...host,
+    id: `${host.id}m${input.seed}`,
+    scope: input.scope,
+    targetId: input.targetId,
+    sourceDrumId: input.sourceDrumId,
+    velocity: input.velocity,
+    seed: input.seed,
+    generatorId: input.generatorId,
+    genState: input.genState,
+    mixInputs: undefined,
+    modifiers: input.modifiers,
+    modState: input.modState,
+    modulations: input.modulations,
+    params: input.params,
+  };
+}
+
+function syncMixInputState(input: voice.MixInput, rendered: Voice): void {
+  input.genState = rendered.genState;
+  input.modState = rendered.modState;
+}
+
+let mixScratch: Framebuffer | null = null;
+let mixInputBytes: Uint8Array | null = null;
+
 /** Composite every live voice into `buf` (RGB triples), additive over black. */
 export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   buf.fill(0);
@@ -66,6 +116,40 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   for (const v of sim.voices) {
     const level = sim.voiceLevel(v);
     if (level <= 0.003) continue;
+
+    if (v.mixInputs?.length) {
+      if (!mixScratch || mixScratch.pixelCount !== lab.pm.pixelCount) mixScratch = new Framebuffer(lab.pm.pixelCount);
+      if (!mixInputBytes || mixInputBytes.length !== model.count * 3) mixInputBytes = new Uint8Array(model.count * 3);
+      mixScratch.clear();
+      for (const input of v.mixInputs) {
+        mixInputBytes.fill(0);
+        const branchVoice = mixInputVoice(input, v);
+        for (const range of pixelRangesFor(branchVoice, lab)) renderGeneratorVoice(mixInputBytes, branchVoice, 1, sim, lab, range.start, range.end);
+        syncMixInputState(input, branchVoice);
+        for (let pixel = 0; pixel < model.count; pixel++) {
+          const j3 = pixel * 3;
+          const r = mixInputBytes[j3]! / 255;
+          const g = mixInputBytes[j3 + 1]! / 255;
+          const b = mixInputBytes[j3 + 2]! / 255;
+          if (r <= 0 && g <= 0 && b <= 0) continue;
+          compositeInto(mixScratch.rgba, pixel * 4, r, g, b, 1, v.mixBlendMode ?? 'normal', input.opacity);
+        }
+      }
+      for (const range of pixelRangesFor(v, lab)) {
+        for (let i = range.start; i < range.end; i++) {
+          const j4 = i * 4;
+          const r = mixScratch.rgba[j4]!;
+          const g = mixScratch.rgba[j4 + 1]!;
+          const b = mixScratch.rgba[j4 + 2]!;
+          if (r <= 0 && g <= 0 && b <= 0) continue;
+          const j3 = i * 3;
+          buf[j3] = Math.min(255, buf[j3]! + Math.round(r * level * 255));
+          buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * level * 255));
+          buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * level * 255));
+        }
+      }
+      continue;
+    }
 
     // Pixel range: scoped voices touch only their drum's / hoop's range.
     let start = 0;

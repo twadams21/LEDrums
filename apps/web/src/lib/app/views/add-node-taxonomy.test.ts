@@ -8,10 +8,10 @@ describe('buildAddGroups', () => {
     expect(buildAddGroups().map((g) => g.label)).toEqual(['Effect', 'Route', 'Modulate', 'Modify']);
   });
 
-  it('maps the approved Route taxonomy, with Mix visible but unavailable until runtime lands', () => {
+  it('maps the approved Route taxonomy, with Mix available as a runtime node', () => {
     expect(ids(ROUTE_GROUP_KEY)).toEqual(['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'mix']);
     const mix = buildAddGroups().find((g) => g.key === ROUTE_GROUP_KEY)!.items.find((i) => i.id === 'mix')!;
-    expect(mix.disabled).toBe(true);
+    expect(mix.disabled).toBeUndefined();
   });
 
   it('maps Modulate presets and explicit live-source nodes', () => {

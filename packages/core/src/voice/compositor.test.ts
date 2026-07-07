@@ -824,3 +824,137 @@ describe('Compositor — modifier chain (S28)', () => {
     expect(Array.from(withBad)).toEqual(Array.from(baseline));
   });
 });
+
+// ---- Gen3 S08: Mix route buffer composition --------------------------------
+
+function mixEffect(id: string, hue: number): EffectDef {
+  return genEffect(id, 'whole-kit', {
+    attackMs: 0,
+    params: [
+      { key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: hue },
+      { key: 'saturation', label: 'Saturation', kind: 'number', min: 0, max: 1, default: 1 },
+      { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
+      { key: 'decayMs', label: 'Decay', kind: 'number', min: 1, max: 5000, default: 5000 },
+    ],
+  });
+}
+
+function mixPlay(id: string, effectId: string, y: number): GraphNode {
+  return node('effect', id, {
+    y,
+    effectId,
+    params: { hue: effectId === 'red' ? 0 : effectId === 'green' ? 120 : 240, saturation: 1, brightness: 1, decayMs: 5000 },
+  });
+}
+
+function mixGraph(inputs: Array<{ id: string; effectId: string; y: number; opacity?: number }>, over: Partial<GraphNode> = {}, after: GraphNode[] = []): TriggerGraph {
+  const mix = node('mix', 'mix', { y: 50, mixBlendMode: 'add', ...over } as Partial<GraphNode>);
+  const output = node('output', 'output', { y: 50 });
+  return {
+    version: 3,
+    nodes: [
+      node('trigger', 'trigger', { y: 50 }),
+      node('all', 'all', { y: 50 }),
+      ...inputs.map((i) => mixPlay(i.id, i.effectId, i.y)),
+      mix,
+      ...after,
+      output,
+    ],
+    edges: [
+      { id: 'e-trigger', from: 'trigger', to: 'all' },
+      ...inputs.map((i) => ({ id: `e-all-${i.id}`, from: 'all', to: i.id })),
+      ...inputs.map((i) => ({ id: `e-${i.id}-mix`, from: i.id, to: 'mix', opacity: i.opacity })),
+      after.length ? { id: 'e-mix-after', from: 'mix', to: after[0]!.id } : { id: 'e-mix-output', from: 'mix', to: 'output' },
+      ...after.map((n, index) => ({ id: `e-after-${index}`, from: n.id, to: after[index + 1]?.id ?? 'output' })),
+    ],
+  };
+}
+
+function renderMix(graph: TriggerGraph, drumId = 'kick'): { frame: Readonly<Float32Array>; model: PixelModel; voices: number } {
+  const e = createVoiceBusEngine();
+  e.setModel(testModel());
+  e.setShow(show(graph, [mixEffect('red', 0), mixEffect('green', 120), mixEffect('blue', 240)], drumId));
+  e.applyInput(hit(drumId, 0));
+  e.tick(0, 0, transport(0));
+  return { frame: e.frame(), model: testModel(), voices: e.stats().voiceCount };
+}
+
+function rgbAt(f: Readonly<Float32Array>, pixel = 0): [number, number, number] {
+  const i = pixel * 4;
+  return [f[i]!, f[i + 1]!, f[i + 2]!];
+}
+
+describe('Gen3 Mix node — buffer composition', () => {
+  it('composes multiple upstream effect routes into one output voice', () => {
+    const { frame, voices } = renderMix(mixGraph([
+      { id: 'a', effectId: 'red', y: 0 },
+      { id: 'b', effectId: 'green', y: 100 },
+    ]));
+    const [r, g, b] = rgbAt(frame);
+    expect(voices).toBe(1);
+    expect(r).toBeGreaterThan(0.9);
+    expect(g).toBeGreaterThan(0.9);
+    expect(b).toBeLessThan(0.01);
+  });
+
+  it('uses the Mix node blend mode and each incoming edge opacity', () => {
+    const normal = renderMix(mixGraph(
+      [
+        { id: 'a', effectId: 'red', y: 0, opacity: 1 },
+        { id: 'b', effectId: 'green', y: 100, opacity: 0.5 },
+      ],
+      { mixBlendMode: 'normal' },
+    )).frame;
+    const [r, g, b] = rgbAt(normal);
+    expect(r).toBeGreaterThan(0.45);
+    expect(r).toBeLessThan(0.55);
+    expect(g).toBeGreaterThan(0.45);
+    expect(g).toBeLessThan(0.55);
+    expect(b).toBeLessThan(0.01);
+  });
+
+  it('continues downstream through Scope after mixing', () => {
+    const scope = node('scope', 'scope', { scope: 'drum', targetId: 'snare', y: 50 });
+    const { frame, model } = renderMix(mixGraph(
+      [
+        { id: 'a', effectId: 'red', y: 0 },
+        { id: 'b', effectId: 'green', y: 100 },
+      ],
+      { mixBlendMode: 'add' },
+      [scope],
+    ));
+    const snare = model.drumById.get('snare')!;
+    expect(litPixels(frame, model.pixelCount).every((id) => id >= snare.pixelStart && id < snare.pixelStart + snare.pixelCount)).toBe(true);
+  });
+
+  it('continues downstream through a Modifier node after mixing', () => {
+    const modifier = node('modifier', 'mod', { y: 50, modifierId: 'slice', params: { widthPx: 8, jitter: 0, seed: 1 } });
+    const { frame, model, voices } = renderMix(mixGraph(
+      [
+        { id: 'a', effectId: 'red', y: 0 },
+        { id: 'b', effectId: 'green', y: 100 },
+      ],
+      { mixBlendMode: 'add' },
+      [modifier],
+    ));
+    expect(voices).toBe(1);
+    expect(litPixels(frame, model.pixelCount).length).toBeGreaterThan(0);
+  });
+
+  it('does not cap input count artificially', () => {
+    const inputs = Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, effectId: i % 3 === 0 ? 'red' : i % 3 === 1 ? 'green' : 'blue', y: i * 20 }));
+    const { frame, voices } = renderMix(mixGraph(inputs, { mixBlendMode: 'add' }));
+    const [r, g, b] = rgbAt(frame);
+    expect(voices).toBe(1);
+    expect(r + g + b).toBeGreaterThan(2.5);
+  });
+
+  it('orders inputs deterministically by upstream node y, independent of edge array order', () => {
+    const g1 = mixGraph([
+      { id: 'a', effectId: 'red', y: 0, opacity: 1 },
+      { id: 'b', effectId: 'green', y: 100, opacity: 0.5 },
+    ], { mixBlendMode: 'normal' });
+    const g2: TriggerGraph = { ...g1, edges: [...g1.edges].reverse() };
+    expect(Array.from(renderMix(g1).frame)).toEqual(Array.from(renderMix(g2).frame));
+  });
+});
