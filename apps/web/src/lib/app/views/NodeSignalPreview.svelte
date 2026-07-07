@@ -14,7 +14,7 @@
   import { readThemeTokens } from '../../ui/theme-tokens';
 
   interface Props {
-    kind: 'envelope' | 'lfo' | 'cc';
+    kind: 'envelope' | 'lfo' | 'cc' | 'note' | 'osc' | 'random';
     env?: voice.Envelope;
     lfo?: voice.LfoSettings;
     bpm?: number;
@@ -93,10 +93,14 @@
   }
 
   const draw = (g: CanvasRenderingContext2D, tMs: number): void => {
-    if (kind === 'cc') {
+    if (kind === 'cc' || kind === 'note' || kind === 'osc') {
       const v = ccValue ? ccValue() : 0;
       drawBar(g, v);
       ccReadout = formatCcReadout(v);
+      return;
+    }
+    if (kind === 'random') {
+      drawTrace(g, { shape: Array.from({ length: 16 }, (_, i) => ({ x: i / 15, y: voice.sampleRandomDistribution(i % 2 ? 'triangular' : 'linear', { next: () => ((i * 9301 + 49297) % 233280) / 233280 }) })), cursor: 0.5, value: 0.5 });
       return;
     }
     // Envelope is a per-hit shape → trigger-driven: sample at the local time since the fire
@@ -113,13 +117,19 @@
       ? 'Envelope signal preview'
       : kind === 'lfo'
         ? 'LFO signal preview'
-        : 'CC live value',
+        : kind === 'note'
+          ? 'Note live value'
+          : kind === 'osc'
+            ? 'OSC live value'
+            : kind === 'random'
+              ? 'Random distribution preview'
+              : 'CC live value',
   );
 </script>
 
-<div class="preview" bind:this={root} class:cc={kind === 'cc'}>
+<div class="preview" bind:this={root} class:cc={kind === 'cc' || kind === 'note' || kind === 'osc'}>
   <SignalFace {draw} {w} {h} ariaLabel={label} />
-  {#if kind === 'cc'}
+  {#if kind === 'cc' || kind === 'note' || kind === 'osc'}
     <span class="readout" aria-hidden="true">{ccReadout}</span>
   {/if}
 </div>

@@ -34,7 +34,7 @@ import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import type { CanvasScene } from '../canvas/types';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
-import { ccKey, ccValue01, oscValue01 } from './modulation';
+import { ccKey, ccValue01, noteKey, noteValue01, oscValue01, type NoteState } from './modulation';
 import {
   emptyShow,
   normalizeTriggerValue,
@@ -193,6 +193,7 @@ class VoiceBusEngine implements RenderEngine {
    * so the same address can drive a trigger and modulate params.
    */
   private oscTable = new Map<string, number>();
+  private noteTable = new Map<string, NoteState>();
 
   private queue: InputEvent[] = [];
   private timeMs = 0;
@@ -270,6 +271,7 @@ class VoiceBusEngine implements RenderEngine {
     this.pendingFireCounter = 0;
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
+    this.noteTable.clear();
     // Seed active section from the first song/section (a recallSection event can
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
@@ -319,6 +321,20 @@ class VoiceBusEngine implements RenderEngine {
       this.ccTable.set(ccKey(controller, e.channel ?? null), value01);
       this.ccTable.set(ccKey(controller, null), value01);
       return;
+    }
+    if (e.kind === 'noteOn' && e.note !== undefined) {
+      const velocity = noteValue01(e.velocity ?? 0);
+      this.noteTable.set(noteKey(e.note, e.channel ?? null), { gate: 1, velocity, releasedAtMs: null });
+      this.noteTable.set(noteKey(e.note, null), { gate: 1, velocity, releasedAtMs: null });
+    }
+    if (e.kind === 'noteOff' && e.note !== undefined) {
+      const write = (channel: number | null): void => {
+        const key = noteKey(e.note!, channel);
+        const prev = this.noteTable.get(key);
+        this.noteTable.set(key, { gate: prev?.gate ?? 0, velocity: prev?.velocity ?? 0, releasedAtMs: this.timeMs });
+      };
+      write(e.channel ?? null);
+      write(null);
     }
     // An OSC event ALSO feeds the OSC value table (an `osc` modulation source reads its address
     // here) in addition to firing trigger graphs below — deterministic: state only changes here.
@@ -672,12 +688,12 @@ class VoiceBusEngine implements RenderEngine {
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {
       for (const v of this.voices.pool) {
-        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable);
+        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
       }
       this.compositor.render(
         this.voices.pool,
         this.model,
-        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable },
+        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable, notes: this.noteTable },
         this.finalFb,
       );
     }

@@ -28,8 +28,8 @@ import type { MonitorDraft } from './monitor';
  * and are resolved to a (drum, zone) pad via the project's inputMap.
  */
 export type VoicePartialInput =
-  | { kind: 'noteOn'; note: number; velocity: number }
-  | { kind: 'noteOff'; note: number }
+  | { kind: 'noteOn'; note: number; velocity: number; channel?: number }
+  | { kind: 'noteOff'; note: number; channel?: number }
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number }
@@ -275,12 +275,13 @@ export class VoiceEngineHost {
           ...(pad ? { drumId: pad.drumId, zone: pad.zone } : {}),
           note: partial.note,
           velocity: partial.velocity,
+          channel: partial.channel,
           timeMs,
         };
       }
       case 'noteOff':
         // No engine effect today; forward the raw note so the seam stays honest.
-        return { kind: 'noteOff', note: partial.note, timeMs };
+        return { kind: 'noteOff', note: partial.note, channel: partial.channel, timeMs };
       case 'osc': {
         // Always forward; attach a pad when the zone-map claims it, else direct binding.
         const pad = zoneForOsc(this.project.inputMap, partial.address);

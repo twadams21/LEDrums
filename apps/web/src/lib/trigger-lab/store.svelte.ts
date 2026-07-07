@@ -901,6 +901,7 @@ export class TriggerLab {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
+        this.sim.setNote(ev.note, ev.velocity, ev.channel, ev.on && ev.velocity > 0);
         if (ev.on && ev.velocity > 0) {
           // Local WebMIDI never round-trips back as a server `input` echo, so record the
           // badge activity here (channel-filtered inside recordInputActivity).
@@ -2756,6 +2757,12 @@ export class TriggerLab {
       // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
       // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
       node = makeNode('cc', nid('n'), x, y, { ccController: 1, ccChannel: null });
+    } else if (kind === 'note') {
+      node = makeNode('note', nid('n'), x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
+    } else if (kind === 'osc') {
+      node = makeNode('osc', nid('n'), x, y, { oscAddress: '' });
+    } else if (kind === 'randomMod') {
+      node = makeNode('randomMod', nid('n'), x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
@@ -3532,8 +3539,17 @@ export class TriggerLab {
       + readout (S38); the branch keeps the preview honest for both live inputs. */
   ccNodeLiveValue(node: GraphNode): number {
     if (node?.kind !== 'cc') return 0;
-    if (node.ccSource === 'osc') return voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '');
     return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
+  }
+
+  oscNodeLiveValue(node: GraphNode): number {
+    return node?.kind === 'osc' ? voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '') : 0;
+  }
+
+  noteNodeLiveValue(node: GraphNode): number {
+    return node?.kind === 'note'
+      ? voice.sampleNote(this.sim.noteTable, node.noteNumber ?? 60, node.noteChannel ?? null, node.noteMode ?? 'gate', node.noteReleaseMs ?? 0, this.sim.timeMs)
+      : 0;
   }
 
   /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
@@ -3662,12 +3678,57 @@ export class TriggerLab {
   }
   /** The cc node's OSC address (read when in OSC mode); '' until one is set. */
   oscNodeAddress(node: GraphNode): string {
-    return node?.kind === 'cc' ? node.oscAddress ?? '' : '';
+    return node?.kind === 'osc' ? node.oscAddress ?? '' : '';
   }
   /** Set the cc node's OSC address (trimmed). Empty is allowed (⇒ neutral until set). */
   setOscNodeAddress(node: GraphNode, address: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'cc') return;
+    if (node.kind !== 'osc') return;
     node.oscAddress = address.trim();
+  }
+
+  noteNodeNumber(node: GraphNode): number {
+    return node?.kind === 'note' ? node.noteNumber ?? 60 : 60;
+  }
+  noteNodeChannel(node: GraphNode): number | null {
+    return node?.kind === 'note' ? node.noteChannel ?? null : null;
+  }
+  noteNodeMode(node: GraphNode): voice.NoteModMode {
+    return node?.kind === 'note' ? node.noteMode ?? 'gate' : 'gate';
+  }
+  noteNodeReleaseMs(node: GraphNode): number {
+    return node?.kind === 'note' ? node.noteReleaseMs ?? 0 : 0;
+  }
+  setNoteNodeNumber(node: GraphNode, note: number): void {
+    if (this.isViewer || node.kind !== 'note' || !Number.isFinite(note)) return;
+    node.noteNumber = Math.max(0, Math.min(127, Math.round(note)));
+  }
+  setNoteNodeChannel(node: GraphNode, channel: number | null): void {
+    if (this.isViewer || node.kind !== 'note') return;
+    if (channel === null) node.noteChannel = null;
+    else if (Number.isFinite(channel) && channel >= 1 && channel <= 16) node.noteChannel = Math.round(channel);
+  }
+  setNoteNodeMode(node: GraphNode, mode: voice.NoteModMode): void {
+    if (this.isViewer || node.kind !== 'note') return;
+    node.noteMode = mode;
+  }
+  setNoteNodeReleaseMs(node: GraphNode, releaseMs: number): void {
+    if (this.isViewer || node.kind !== 'note' || !Number.isFinite(releaseMs)) return;
+    node.noteReleaseMs = Math.max(0, Math.round(releaseMs));
+  }
+
+  randomDistribution(node: GraphNode): voice.RandomDistribution {
+    return node?.kind === 'randomMod' ? node.randomDistribution ?? 'linear' : 'linear';
+  }
+  setRandomDistribution(node: GraphNode, distribution: voice.RandomDistribution): void {
+    if (this.isViewer || node.kind !== 'randomMod') return;
+    node.randomDistribution = distribution;
+  }
+  randomSteps(node: GraphNode): number {
+    return node?.kind === 'randomMod' ? node.randomSteps ?? 4 : 4;
+  }
+  setRandomSteps(node: GraphNode, steps: number): void {
+    if (this.isViewer || node.kind !== 'randomMod' || !Number.isFinite(steps)) return;
+    node.randomSteps = Math.max(2, Math.min(64, Math.round(steps)));
   }
 }

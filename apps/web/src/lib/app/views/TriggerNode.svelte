@@ -108,7 +108,7 @@
 
   // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
   // mirroring how a play node shows its EffectThumb (S38). Sampled through core, ticker-driven.
-  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'randomMod');
+  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'note' || kind === 'osc' || kind === 'randomMod');
   // Gating / routing kinds get a STATE face (wave-4 decision 1): static configured state +
   // a trigger-driven flash. (Bands switches keep their dedicated BandSwitchNode face.)
   const isStateKind = $derived(
@@ -176,6 +176,12 @@
     <NodeSignalPreview kind="lfo" lfo={store.lfoSettings(node)} bpm={store.bpm} w={56} h={32} />
   {:else if node && node.kind === 'cc'}
     <NodeSignalPreview kind="cc" ccValue={() => store.ccNodeLiveValue(node)} w={56} h={32} />
+  {:else if node && node.kind === 'note'}
+    <NodeSignalPreview kind="note" ccValue={() => store.noteNodeLiveValue(node)} w={56} h={32} />
+  {:else if node && node.kind === 'osc'}
+    <NodeSignalPreview kind="osc" ccValue={() => store.oscNodeLiveValue(node)} w={56} h={32} />
+  {:else if node && node.kind === 'randomMod'}
+    <NodeSignalPreview kind="random" w={56} h={32} />
   {/if}
 {/snippet}
 

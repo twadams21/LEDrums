@@ -20,6 +20,7 @@ import type {
   TriggerGraph,
 } from './types';
 import type { Mapping } from './modulation';
+import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
@@ -178,7 +179,9 @@ function freezeRandomMappings(mappings: Mapping[] | undefined, prng: Prng): Mapp
   const out = mappings.map((m) => {
     if (m.source.kind !== 'random') return m;
     changed = true;
-    return { ...m, source: { kind: 'random' as const, value: prng.next() } };
+    const raw = sampleRandomDistribution(m.source.distribution, prng);
+    const value = m.source.distribution === 'stepped' ? quantizeSteppedRandom(raw, m.source.steps) : raw;
+    return { ...m, source: { ...m.source, value } };
   });
   return changed ? out : mappings;
 }
@@ -263,6 +266,8 @@ function evalNodeWithDraft(
     case 'envelope':
     case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
     case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
+    case 'note':
+    case 'osc':
       // Inert in trigger-flow eval: neither a modifier node nor a modulation-source node fires
       // children. A modifier reaches a voice via a play node's resolved `mod` chain; an envelope
       // via a target's resolved `param:<key>` modulations — never through the fire flow here.

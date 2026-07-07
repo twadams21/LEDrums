@@ -356,6 +356,7 @@ export class Sim {
       address → 0..1. Fed by {@link setOsc} from the store's OSC input path so an OSC-bound
       modulation source previews live; the render sweep reads it per frame via `render.ts`. */
   oscTable = new Map<string, number>();
+  noteTable = new Map<string, voice.NoteState>();
 
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
@@ -483,7 +484,7 @@ export class Sim {
         const mods = voice.resolveModifierChain(graph, node);
         // Resolve incoming `param:<key>` modulation edges into mappings (S34) — the SAME pure
         // core resolver the engine uses, so offline preview and real output agree.
-        const modulations = voice.resolveNodeModulations(graph, node);
+        const modulations = this.freezeRandomMappings(voice.resolveNodeModulations(graph, node));
         const next: PlayDraft = {
           effectId: node.effectId,
           mode: node.mode,
@@ -527,6 +528,8 @@ export class Sim {
       case 'envelope':
       case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
       case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
+      case 'note':
+      case 'osc':
         // Inert in trigger-flow eval: neither a modifier nor a modulation-source node fires
         // children. A modifier reaches a voice via the play node's resolved `mod` chain; an
         // envelope via a target's resolved `param:<key>` modulations — not here.
@@ -794,6 +797,29 @@ export class Sim {
       core engine's `processEvent` OSC-table write so an `osc` modulation source previews live. */
   setOsc(address: string, value: number): void {
     this.oscTable.set(address, voice.oscValue01(value));
+  }
+
+  private freezeRandomMappings(mappings: Mapping[]): Mapping[] {
+    let changed = false;
+    const out = mappings.map((m) => {
+      if (m.source.kind !== 'random') return m;
+      changed = true;
+      const raw = voice.sampleRandomDistribution(m.source.distribution, this.prng);
+      const value = m.source.distribution === 'stepped' ? voice.quantizeSteppedRandom(raw, m.source.steps) : raw;
+      return { ...m, source: { ...m.source, value } };
+    });
+    return changed ? out : mappings;
+  }
+
+  setNote(note: number, velocity: number, channel: number | null, on: boolean): void {
+    const v = voice.noteValue01(velocity / 127);
+    const write = (ch: number | null): void => {
+      const key = voice.noteKey(note, ch);
+      const prev = this.noteTable.get(key);
+      this.noteTable.set(key, on ? { gate: 1, velocity: v, releasedAtMs: null } : { gate: prev?.gate ?? 0, velocity: prev?.velocity ?? 0, releasedAtMs: this.timeMs });
+    };
+    write(channel);
+    write(null);
   }
 
   // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------

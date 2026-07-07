@@ -8,8 +8,8 @@ import { nodeModSource } from './modulation-graph';
 import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
 
 // OSC modulation source: the OSC analogue of the S37 CC source. The engine holds an OSC value
-// table (address → 0..1) fed from queued OSC input events (determinism preserved), and a `cc`
-// node in OSC mode reads it per frame so live voices track the address continuously.
+// table (address → 0..1) fed from queued OSC input events (determinism preserved), and an `osc`
+// modulation source node reads it per frame so live voices track the address continuously.
 
 // ---- pure helpers (oscValue01 / sampleOsc) ----------------------------------
 
@@ -30,22 +30,22 @@ describe('OSC table helpers', () => {
   });
 });
 
-// ---- nodeModSource: a cc node in OSC mode resolves to an `osc` ModSource -----
+// ---- nodeModSource: an osc node resolves to an `osc` ModSource ----------------
 
 describe('nodeModSource — OSC mode', () => {
-  const cc = (over: Partial<GraphNode>): GraphNode => node('cc', 'cc1', over);
+  const osc = (over: Partial<GraphNode>): GraphNode => node('osc', 'osc1', over);
 
-  it('OSC-mode cc node → { kind: "osc", address }', () => {
-    expect(nodeModSource(cc({ ccSource: 'osc', oscAddress: '/fader/1' }))).toEqual({
+  it('osc node → { kind: "osc", address }', () => {
+    expect(nodeModSource(osc({ oscAddress: '/fader/1' }))).toEqual({
       kind: 'osc',
       address: '/fader/1',
     });
   });
-  it('OSC mode without an address falls back to "" (neutral until set)', () => {
-    expect(nodeModSource(cc({ ccSource: 'osc' }))).toEqual({ kind: 'osc', address: '' });
+  it('osc node without an address falls back to "" (neutral until set)', () => {
+    expect(nodeModSource(osc({}))).toEqual({ kind: 'osc', address: '' });
   });
   it('default (MIDI) mode still resolves to a cc ModSource', () => {
-    expect(nodeModSource(cc({ ccController: 20, ccChannel: 5 }))).toEqual({
+    expect(nodeModSource(node('cc', 'cc1', { ccController: 20, ccChannel: 5 }))).toEqual({
       kind: 'cc',
       controller: 20,
       channel: 5,
@@ -91,18 +91,18 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
   };
 }
 
-/** trigger → play (loop, brightness base 0, exposes `brightness`) ← cc(OSC address).
+/** trigger → play (loop, brightness base 0, exposes `brightness`) ← osc(address).
     The `param:brightness` edge maps the OSC value over [0,1] at full depth, so brightness == it. */
 function oscGraph(address: string): TriggerGraph {
   return {
     nodes: [
       node('trigger', 'trigger'),
       node('play', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
-      node('cc', 'cc1', { ccSource: 'osc', oscAddress: address }),
+      node('osc', 'osc1', { oscAddress: address }),
     ],
     edges: [
       { id: 'e0', from: 'trigger', to: 'pa' },
-      { id: 'e1', from: 'cc1', to: 'pa', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
+      { id: 'e1', from: 'osc1', to: 'pa', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
     ],
   };
 }

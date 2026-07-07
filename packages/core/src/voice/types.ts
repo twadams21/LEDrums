@@ -209,7 +209,22 @@ export type BlockKind = 'play' | 'effect' | 'all' | 'random' | 'sequence' | 'swi
  * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
  * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'scope' | 'output' | 'envelope' | 'lfo' | 'cc' | 'randomMod'; // S36 'lfo' + S37 'cc'
+export type RandomDistribution = 'linear' | 'gaussian' | 'exponential' | 'logarithmic' | 'triangular' | 'beta' | 'stepped';
+export type NoteModMode = 'gate' | 'velocity';
+
+export type NodeKind =
+  | 'trigger'
+  | BlockKind
+  | 'effect'
+  | 'modifier'
+  | 'scope'
+  | 'output'
+  | 'envelope'
+  | 'lfo'
+  | 'cc'
+  | 'note'
+  | 'osc'
+  | 'randomMod'; // S36 'lfo' + S37 'cc'
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -284,6 +299,18 @@ export interface GraphNode {
   /** OSC address this source reads a 0..1 value from when {@link ccSource} is 'osc'. Absent → ''
       (⇒ `sampleOsc` neutral until an address is set). */
   oscAddress?: string;
+  /** MIDI note this note modulation source reads (0..127). Absent → 60. */
+  noteNumber?: number;
+  /** MIDI channel filter (1..16), or `null` for omni. Absent → omni. */
+  noteChannel?: number | null;
+  /** Whether a note source outputs held gate level or the last note-on velocity. */
+  noteMode?: NoteModMode;
+  /** Release time in milliseconds for gate mode after note-off. */
+  noteReleaseMs?: number;
+  /** Distribution used by a random modulation source. Absent → linear back-compat. */
+  randomDistribution?: RandomDistribution;
+  /** Number of quantization steps when randomDistribution === 'stepped'. */
+  randomSteps?: number;
   // random
   noRepeat: boolean;
   // switch

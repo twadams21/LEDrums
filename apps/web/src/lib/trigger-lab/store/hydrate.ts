@@ -351,6 +351,32 @@ export function inferPlayTypes(
   return out;
 }
 
+/** Split the old dual-mode CC modulation node into explicit CC and OSC source kinds.
+    Existing MIDI CC nodes stay `cc`; existing `ccSource:'osc'` nodes become `osc` and keep
+    their id, position and OSC address so wires survive unchanged. */
+export function splitModulationSourceNodes(graph: TriggerGraph): TriggerGraph {
+  let changed = false;
+  const nodes = graph.nodes.map((n) => {
+    if (n.kind !== 'cc' || n.ccSource !== 'osc') return n;
+    changed = true;
+    return { ...n, kind: 'osc' as const, ccSource: undefined, ccController: undefined, ccChannel: undefined };
+  });
+  return changed ? { ...graph, nodes } : graph;
+}
+
+export function splitModulationSources(
+  graphs: Record<string, TriggerGraph>,
+): Record<string, TriggerGraph> {
+  let changed = false;
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    const migrated = splitModulationSourceNodes(graph);
+    out[key] = migrated;
+    if (migrated !== graph) changed = true;
+  }
+  return changed ? out : graphs;
+}
+
 const OUTPUT_ANCHOR_ID = 'output';
 const isLegacyGraph = (graph: TriggerGraph): boolean => graph.version !== 3;
 const isRenderKind = (node: GraphNode): boolean => node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier' || node.kind === 'scope';
@@ -533,6 +559,7 @@ export function normalizeGraphs(
   // env maps into envelope nodes + `param:<key>` mappings, then drop the legacy field (S35).
   next = migrateGraphsEnvMaps(next, specsFor);
   next = migrateGen3Graphs(next);
+  next = splitModulationSources(next);
   next = sanitizeGraphsIntegrity(next);
   const names = hydratePadNames(next, graphNames, pads);
   return { graphs: next, graphNames: names };

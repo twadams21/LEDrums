@@ -17,7 +17,13 @@ export function triggerNodeSignature(n: GraphNode): string {
     case 'modifier':
       return `${base}:modifier=${n.modifierId ?? ''}`;
     case 'cc':
-      return `${base}:cc=${n.ccSource ?? 'midi'}:${n.ccController ?? ''}:${n.ccChannel ?? ''}:${n.oscAddress ?? ''}`;
+      return `${base}:cc=${n.ccController ?? ''}:${n.ccChannel ?? ''}`;
+    case 'note':
+      return `${base}:note=${n.noteNumber ?? ''}:${n.noteChannel ?? ''}:${n.noteMode ?? ''}:${n.noteReleaseMs ?? ''}`;
+    case 'osc':
+      return `${base}:osc=${n.oscAddress ?? ''}`;
+    case 'randomMod':
+      return `${base}:random=${n.randomDistribution ?? ''}:${n.randomSteps ?? ''}`;
     case 'lfo':
       return `${base}:lfo=${n.lfo?.waveform ?? ''}:${n.lfo?.rateMode ?? ''}:${n.lfo?.rateHz ?? ''}:${n.lfo?.division ?? ''}:${n.lfo?.phase ?? ''}`;
     default:

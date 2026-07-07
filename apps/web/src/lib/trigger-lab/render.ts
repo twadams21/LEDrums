@@ -34,7 +34,7 @@ function effectiveParams(v: Voice, sim: Sim): ParamValues {
   const mods = v.modulations;
   if (mods && mods.length && eff) {
     const phase = sim.voicePhase(v);
-    applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable });
+    applyModulations(v.params, out, mods, eff.params, { phase, timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable, notes: sim.noteTable });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (sim.bpm / 120);
   return out;
@@ -44,7 +44,7 @@ function effectiveParams(v: Voice, sim: Sim): ParamValues {
     `modCtxFor`: life phase (envelope restart per hit) + absolute clock/tempo for continuous
     sources (S36/S37). Shared by the play-param sweep and the modifier chain. */
 function modCtxFor(v: Voice, sim: Sim): ModSampleCtx {
-  return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable };
+  return { phase: sim.voicePhase(v), timeMs: sim.timeMs, bpm: sim.bpm, cc: sim.ccTable, osc: sim.oscTable, notes: sim.noteTable };
 }
 
 /** Composite every live voice into `buf` (RGB triples), additive over black. */

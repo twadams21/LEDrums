@@ -19,7 +19,7 @@
 import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { Framebuffer } from '../engine/framebuffer';
 import type { TransportState } from '../engine/render-context';
-import { applyModulations, type CcTable, type ModSampleCtx, type OscTable } from './modulation';
+import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
 import { createGeneratorBridge } from './generator-bridge';
 import type { ParamValues, Voice } from './types';
 
@@ -47,7 +47,7 @@ export function voicePhase(v: Voice, timeMs: number): number {
  * `bpm` is supplied by the engine (which owns transport); the compositor reads the
  * already-resolved `liveParams`, keeping its `render` signature narrow.
  */
-export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable): ParamValues {
+export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ParamValues {
   const out = v.liveParams;
   // Refill the scratch from the spawn snapshot.
   for (const k of Object.keys(out)) delete out[k];
@@ -57,7 +57,7 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
   // absolute clock + tempo (LFO) or a live table (CC / OSC). The legacy env sweep folded in S35.
   const mods = v.modulations;
   if (mods && mods.length) {
-    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc });
+    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
@@ -66,8 +66,8 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
 /** Build the per-frame modulation-sample context for a voice — its life phase (envelope
     sources restart per hit) plus the absolute clock + tempo continuous sources (S36/S37)
     read. Shared by the play-param sweep and the modifier chain so both restart together. */
-function modCtxFor(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable): ModSampleCtx {
-  return { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc };
+function modCtxFor(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ModSampleCtx {
+  return { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes };
 }
 
 /**
@@ -85,6 +85,7 @@ export interface CompositorFrame {
   /** Live OSC value table — threaded alongside {@link cc} so `osc` modulation sources read the
       engine's current per-address values this frame. Absent → no OSC contribution. */
   osc?: OscTable;
+  notes?: NoteTable;
 }
 
 /** Voices → pixels. The inner seam. */
@@ -154,7 +155,7 @@ export function createDefaultCompositor(): Compositor {
         // scope === 'kit': start=0, end=model.pixelCount (whole kit, targetId ignored)
 
         // Hosted generator voice — the bridge applies the modifier chain internally.
-        const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc);
+        const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc, frame.notes);
         generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
       }
     },

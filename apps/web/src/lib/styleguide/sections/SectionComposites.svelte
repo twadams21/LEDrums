@@ -85,6 +85,8 @@
     envelope: 'modulation source',
     lfo: 'sine · 1Hz',
     cc: 'CC 74 · ch 1',
+    note: 'Note 60 · gate',
+    osc: 'OSC /fader/1',
     randomMod: 'per trigger',
   };
   const faceKinds = Object.keys(faceSubs) as NodeKind[];
