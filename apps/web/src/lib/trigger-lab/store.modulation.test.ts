@@ -61,6 +61,18 @@ describe('addNode(envelope)', () => {
     expect(shape!.points.length).toBeGreaterThan(0);
   });
 
+  it('seeds approved envelope creation presets as editable ADSR shapes', () => {
+    const store = new TriggerLab(fakeClient);
+    store.createGraph('test');
+    const pluck = store.addNode('envelope', 0, 0, { envelopePreset: 'pluck' })!;
+    const swell = store.addNode('envelope', 0, 100, { envelopePreset: 'swell' })!;
+    const gate = store.addNode('envelope', 0, 200, { envelopePreset: 'gate' })!;
+
+    expect(store.envelopeNodeAdsr(pluck)).toMatchObject({ attack: 0.03, sustain: 0 });
+    expect(store.envelopeNodeAdsr(swell)).toMatchObject({ attack: 0.62, sustain: 0.92 });
+    expect(store.envelopeNodeAdsr(gate)).toMatchObject({ attack: 0.01, sustain: 1 });
+  });
+
   it('editing the node shape regenerates its render curve (single source)', () => {
     const { store, env } = withEnvelope();
     store.setEnvelopeNodeAdsr(env, { ...store.envelopeNodeAdsr(env), attack: 0.5 });

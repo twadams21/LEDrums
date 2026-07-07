@@ -14,8 +14,7 @@
   import { GraphHover } from '../../app/views/graph-hover.svelte';
   import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { COLLECTIONS, listModifiersByCategory } from '@ledrums/core';
-  import Blend from '@lucide/svelte/icons/blend';
+  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from '../../app/views/add-node-taxonomy';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
@@ -112,33 +111,7 @@
 
   // Node Editor drawer Add groups: the Stage 1 chooser is exactly 2x2
   // (Effect / Route / Modulate / Modify), same shape the real Trigger graph builds.
-  const routeKinds: NodeKind[] = ['all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay'];
-  const modSourceKinds: NodeKind[] = ['envelope', 'lfo', 'cc'];
-  const MODIFIER_GROUP_PREFIX = 'modifier:';
-  const addGroups = $derived<AddGroup[]>([
-    {
-      key: 'play',
-      label: 'Effect',
-      items: COLLECTIONS.map((c) => ({ id: c.type, name: c.label, icon: kindIcon.play, tint: tint.play, hint: c.blurb })),
-    },
-    {
-      key: 'route',
-      label: 'Route',
-      items: routeKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
-    },
-    {
-      key: 'modulation',
-      label: 'Modulate',
-      items: modSourceKinds.map((k) => ({ id: k, name: kindLabel[k], icon: kindIcon[k], tint: tint[k] })),
-    },
-    {
-      key: `${MODIFIER_GROUP_PREFIX}all`,
-      label: 'Modify',
-      items: listModifiersByCategory().flatMap((g) =>
-        g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)', hint: g.label })),
-      ),
-    },
-  ]);
+  const addGroups = $derived<AddGroup[]>(buildAddGroups());
   // Placement: the drawer adds at the visible canvas centre via the flow instance
   // (FlowHandle) — the same mechanism the real views use.
   let flowApi = $state<FlowApi | null>(null);
@@ -151,6 +124,9 @@
   function handleAdd(id: string, groupKey: string): void {
     const c = demoCentre();
     if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addMod(id, c.x, c.y);
+    else if (groupKey === EFFECT_GROUP_KEY) add('effect', c.x, c.y);
+    else if (id.startsWith('envelope:')) add('envelope', c.x, c.y);
+    else if (id.startsWith('lfo:')) add('lfo', c.x, c.y);
     else add(id as NodeKind, c.x, c.y);
   }
 

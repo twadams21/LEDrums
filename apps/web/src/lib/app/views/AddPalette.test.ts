@@ -10,6 +10,7 @@ const groups: AddGroup[] = [
   { key: 'route', label: 'Route', items: [{ id: 'switch', name: 'Switch', icon: Circle, hint: 'branch logic' }] },
   { key: 'modulate', label: 'Modulate', items: [{ id: 'lfo', name: 'LFO', icon: Circle, hint: 'continuous wave' }] },
   { key: 'modify', label: 'Modify', items: [{ id: 'slice', name: 'Slice', icon: Circle, hint: 'pixel bands' }] },
+  { key: 'future', label: 'Future', items: [{ id: 'mix', name: 'Mix', icon: Circle, disabled: true, disabledReason: 'later' }] },
 ];
 
 function mount() {
@@ -60,5 +61,14 @@ describe('AddPalette', () => {
       id: 'slice',
       groupKey: 'modify',
     });
+  });
+
+  it('keeps unavailable previews visible but inert', async () => {
+    const { onAdd } = mount();
+    await fireEvent.click(screen.getByRole('button', { name: /Future/ }));
+    const preview = screen.getByTitle('later');
+    await fireEvent.click(preview);
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(preview.hasAttribute('disabled')).toBe(true);
   });
 });

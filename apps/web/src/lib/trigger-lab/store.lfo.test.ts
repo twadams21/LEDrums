@@ -45,6 +45,15 @@ describe('addNode(lfo)', () => {
     expect(store.lfoSettings(lfo)).toEqual(voice.defaultLfoSettings());
     expect(voice.isModSourceKind('lfo')).toBe(true);
   });
+
+  it('seeds approved waveform presets', () => {
+    const store = new TriggerLab(fakeClient);
+    store.createGraph('test');
+    const square = store.addNode('lfo', 0, 0, { lfoWaveform: 'square' })!;
+    const sampleHold = store.addNode('lfo', 0, 100, { lfoWaveform: 'sample-hold' })!;
+    expect(store.lfoSettings(square).waveform).toBe('square');
+    expect(store.lfoSettings(sampleHold).waveform).toBe('sample-hold');
+  });
 });
 
 describe('setLfo', () => {

@@ -11,10 +11,9 @@
   import type { Connection, EdgeTypes, NodeTypes, OnConnectEnd } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
+  import { NODE_W, type NodeKind } from '../../trigger-lab/sim';
   import type { ToPort } from '../../trigger-lab/store/graph-wiring';
-  import { listModifiersByCategory, voice, COLLECTIONS, type PlayType } from '@ledrums/core';
-  import Blend from '@lucide/svelte/icons/blend';
+  import { voice, type PlayType } from '@ledrums/core';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
@@ -42,6 +41,7 @@
   import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
   import AddPalette, { type AddGroup } from './AddPalette.svelte';
   import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
+  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from './add-node-taxonomy';
   import GraphsDock from './GraphsDock.svelte';
   import Inspector from '../docks/Inspector.svelte';
   import Splitter from '../../ui/Splitter.svelte';
@@ -75,55 +75,7 @@
     store.paneSizes = { ...store.paneSizes, [EDITOR_W.key]: v };
   };
 
-  const MOD_HINT: Partial<Record<NodeKind, string>> = {
-    envelope: 'per-hit shape',
-    lfo: 'continuous wave',
-    cc: 'MIDI CC or OSC',
-  };
-  const MODIFIER_GROUP_PREFIX = 'modifier:';
-  const addGroups = $derived<AddGroup[]>([
-    {
-      key: 'play',
-      label: 'Effect',
-      items: COLLECTIONS.map((c) => ({
-        id: c.type,
-        name: c.label,
-        icon: kindIcon.play,
-        tint: tint.play,
-        hint: c.blurb,
-      })),
-    },
-    {
-      key: 'route',
-      label: 'Route',
-      items: NODE_KINDS.filter(
-        (kind) => kind !== 'play' && kind !== 'output' && kind !== 'modifier' && !voice.isModSourceKind(kind),
-      ).map((kind) => ({
-        id: kind,
-        name: kindLabel[kind],
-        icon: kindIcon[kind],
-        tint: tint[kind],
-      })),
-    },
-    {
-      key: 'modulation',
-      label: 'Modulate',
-      items: NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
-        id: kind,
-        name: kindLabel[kind],
-        icon: kindIcon[kind],
-        tint: tint[kind],
-        hint: MOD_HINT[kind],
-      })),
-    },
-    {
-      key: `${MODIFIER_GROUP_PREFIX}all`,
-      label: 'Modify',
-      items: listModifiersByCategory().flatMap((g) =>
-        g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)', hint: g.label })),
-      ),
-    },
-  ]);
+  const addGroups = $derived<AddGroup[]>(buildAddGroups());
 
   // Placement: new nodes land at a free spot near the visible canvas centre. The
   // flow instance arrives via GraphCanvas's FlowHandle; the wrapper element gives
@@ -140,8 +92,10 @@
     handleAddAt(id, groupKey, c.x, c.y);
   }
   function handleAddAt(id: string, groupKey: string, x: number, y: number): void {
-    if (groupKey === 'play') addPlayNodeAt(id as PlayType, x, y);
+    if (groupKey === EFFECT_GROUP_KEY) addPlayNodeAt(id as PlayType, x, y);
     else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, x, y);
+    else if (id.startsWith('envelope:')) addEnvelopeNodeAt(id.slice('envelope:'.length), x, y);
+    else if (id.startsWith('lfo:')) addLfoNodeAt(id.slice('lfo:'.length), x, y);
     else addNodeAt(id as NodeKind, x, y);
   }
   /** Add a typed play node (D3) near the palette-supplied flow centre. */
@@ -175,6 +129,14 @@
   function addNodeAt(kind: NodeKind, cx: number, cy: number): void {
     const p = spawnAt(cx, cy);
     store.addNode(kind, p.x, p.y);
+  }
+  function addEnvelopeNodeAt(preset: string, cx: number, cy: number): void {
+    const p = spawnAt(cx, cy);
+    store.addNode('envelope', p.x, p.y, { envelopePreset: preset });
+  }
+  function addLfoNodeAt(waveform: string, cx: number, cy: number): void {
+    const p = spawnAt(cx, cy);
+    store.addNode('lfo', p.x, p.y, { lfoWaveform: waveform });
   }
   /** Add a specific modifier node (category palette) near the palette-supplied flow centre. */
   function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {

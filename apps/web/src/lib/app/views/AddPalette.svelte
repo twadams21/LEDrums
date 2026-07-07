@@ -4,7 +4,11 @@
      language that will appear on the canvas. */
   import type { Component } from 'svelte';
   import NodeCard from './NodeCard.svelte';
+  import NodeSignalPreview from './NodeSignalPreview.svelte';
+  import NodeStatePreview from './NodeStatePreview.svelte';
   import { addCategories, ADD_NODE_DRAG_TYPE, encodeAddDragPayload, selectedAddItems } from './add-pane';
+  import { makeNode, type NodeKind } from '../../trigger-lab/sim';
+  import { voice } from '@ledrums/core';
 
   export type AddItem = {
     id: string;
@@ -14,6 +18,11 @@
     tint?: string;
     /** Tight qualifier shown as the preview sub line. */
     hint?: string;
+    /** Disabled entries are visible taxonomy seams for node types whose runtime has not landed. */
+    disabled?: boolean;
+    disabledReason?: string;
+    preview?: 'route' | 'modulate' | 'modifier';
+    previewKind?: NodeKind | 'mix';
   };
   export type AddGroup = {
     key: string;
@@ -45,13 +54,54 @@
   }
   function addSelected(id: string): void {
     if (selectedKey === null) return;
+    const item = selectedItems.find((it) => it.id === id);
+    if (item?.disabled) return;
     onAdd(id, selectedKey);
   }
   function dragSelected(e: DragEvent, id: string): void {
     if (selectedKey === null) return;
+    const item = selectedItems.find((it) => it.id === id);
+    if (item?.disabled) return;
     dragstart(e, id, selectedKey);
   }
+
+  function previewNode(it: AddItem) {
+    const kind = it.previewKind === 'mix' ? 'random' : it.previewKind;
+    if (!kind) return null;
+    if (kind === 'randomMod') return null;
+    if (kind === 'envelope') {
+      return makeNode('envelope', 'preview', 0, 0, { env: { [voice.ENVELOPE_NODE_KEY]: voice.defaultEnvelope('pluck') } });
+    }
+    if (kind === 'lfo') return makeNode('lfo', 'preview', 0, 0, { lfo: voice.defaultLfoSettings() });
+    if (kind === 'cc') return makeNode('cc', 'preview', 0, 0, { ccController: 1, ccChannel: null });
+    if (kind === 'note') return makeNode('note', 'preview', 0, 0, { noteNumber: 60, noteMode: 'velocity' });
+    if (kind === 'osc') return makeNode('osc', 'preview', 0, 0, { oscAddress: '/ledrums/mod' });
+    return makeNode(kind, 'preview', 0, 0);
+  }
 </script>
+
+{#snippet paletteThumb(it: AddItem)}
+  {@const node = previewNode(it)}
+  {#if it.preview === 'modulate'}
+    {#if it.previewKind === 'envelope' && node}
+      <NodeSignalPreview kind="envelope" env={node.env?.[voice.ENVELOPE_NODE_KEY]} w={56} h={32} />
+    {:else if it.previewKind === 'lfo' && node}
+      <NodeSignalPreview kind="lfo" lfo={node.lfo} w={56} h={32} />
+    {:else if it.previewKind === 'cc'}
+      <NodeSignalPreview kind="cc" ccValue={() => 0.62} w={56} h={32} />
+    {:else if it.previewKind === 'note'}
+      <NodeSignalPreview kind="note" ccValue={() => 0.82} w={56} h={32} />
+    {:else if it.previewKind === 'osc'}
+      <NodeSignalPreview kind="osc" ccValue={() => 0.48} w={56} h={32} />
+    {:else if it.previewKind === 'randomMod'}
+      <NodeSignalPreview kind="random" w={56} h={32} />
+    {/if}
+  {:else if it.preview === 'route' && node}
+    <NodeStatePreview node={node} childCount={3} tintToken="--role-effect" w={56} h={32} />
+  {:else if it.preview === 'modifier' && node}
+    <NodeStatePreview node={node} childCount={1} tintToken="--role-mod" w={56} h={32} />
+  {/if}
+{/snippet}
 
 <div class="addpal">
   <div class="stage1" aria-label="Node categories">
@@ -81,13 +131,20 @@
           <button
             type="button"
             class="preview"
+            class:unavailable={it.disabled}
             onclick={() => addSelected(it.id)}
-            draggable={!disabled}
+            draggable={!disabled && !it.disabled}
             ondragstart={(e) => dragSelected(e, it.id)}
-            {disabled}
-            title="Add {it.name}"
+            disabled={disabled || it.disabled}
+            title={it.disabled ? (it.disabledReason ?? `${it.name} is not available yet`) : `Add ${it.name}`}
           >
-            <NodeCard icon={it.icon} title={it.name} sub={it.hint ?? 'add node'} tint={it.tint ?? 'var(--accent)'} />
+            <NodeCard
+              icon={it.icon}
+              title={it.name}
+              sub={it.hint ?? (it.disabled ? 'not available yet' : 'add node')}
+              tint={it.tint ?? 'var(--accent)'}
+              thumb={it.preview ? () => paletteThumb(it) : undefined}
+            />
           </button>
         {/each}
         {#if selectedItems.length === 0}
@@ -195,8 +252,10 @@
     scale: 0.96;
   }
   .preview:disabled {
-    opacity: 0.45;
     cursor: default;
+  }
+  .preview.unavailable {
+    opacity: 0.54;
   }
   .preview :global(.card) {
     width: 100%;

@@ -135,6 +135,13 @@ const SAVE_DEBOUNCE_MS = 300;
     so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
 const RESERVED_CC_CONTROLLER = 0;
 
+export type EnvelopeCreationPreset = 'pluck' | 'stab' | 'swell' | 'gate' | 'custom';
+export type LfoCreationPreset = voice.LfoWaveform;
+export type AddNodeOptions = {
+  envelopePreset?: string;
+  lfoWaveform?: string;
+};
+
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   | { kind: 'trigger'; graphKey: string }
@@ -152,6 +159,27 @@ function isAnchorNode(node: GraphNode): boolean {
 
 function isEffectNode(node: GraphNode): boolean {
   return node.kind === 'play' || node.kind === 'effect';
+}
+
+function envelopePresetAdsr(preset: string | undefined): AdsrShape {
+  const base = defaultAdsr();
+  switch (preset) {
+    case 'pluck':
+      return { ...base, attack: 0.03, decay: 0.16, sustain: 0, release: 0.18 };
+    case 'stab':
+      return { ...base, attack: 0.02, decay: 0.08, sustain: 0.78, release: 0.22 };
+    case 'swell':
+      return { ...base, attack: 0.62, decay: 0.08, sustain: 0.92, release: 0.3 };
+    case 'gate':
+      return { ...base, attack: 0.01, decay: 0.02, sustain: 1, release: 0.04 };
+    case 'custom':
+    default:
+      return base;
+  }
+}
+
+function lfoPresetWaveform(waveform: string | undefined): voice.LfoWaveform {
+  return voice.LFO_WAVEFORMS.includes(waveform as voice.LfoWaveform) ? (waveform as voice.LfoWaveform) : 'sine';
 }
 
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
@@ -2733,7 +2761,7 @@ export class TriggerLab {
   }
 
   /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
-  addNode(kind: NodeKind, x: number, y: number): GraphNode | null {
+  addNode(kind: NodeKind, x: number, y: number, options: AddNodeOptions = {}): GraphNode | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g || kind === 'trigger' || kind === 'output') return null;
@@ -2746,13 +2774,15 @@ export class TriggerLab {
     } else if (kind === 'envelope') {
       // Seed a modulation-source envelope with a default shape in the well-known slot so it
       // animates the moment it is wired (the inspector edits this shape via the S24 editor).
-      const adsr = defaultAdsr();
+      const adsr = envelopePresetAdsr(options.envelopePreset);
       node = makeNode('envelope', nid('n'), x, y, {
         env: { [voice.ENVELOPE_NODE_KEY]: { kind: 'custom', amount: 1, points: adsrToPoints(adsr), adsr } },
       });
     } else if (kind === 'lfo') {
       // S36 — seed default LFO settings so it animates the moment it is wired.
-      node = makeNode('lfo', nid('n'), x, y, { lfo: voice.defaultLfoSettings() });
+      node = makeNode('lfo', nid('n'), x, y, {
+        lfo: { ...voice.defaultLfoSettings(), waveform: lfoPresetWaveform(options.lfoWaveform) },
+      });
     } else if (kind === 'cc') {
       // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
       // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
