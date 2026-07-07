@@ -22,17 +22,25 @@ describe('sanitizeGraphIntegrity', () => {
   it('drops duplicate node ids, dangling edges, duplicate edge ids, self-edges, and duplicate connections', () => {
     const clean = sanitizeGraphIntegrity(graph());
 
-    expect(clean.nodes.map((n) => n.id)).toEqual(['trigger', 'p1']);
-    expect(clean.edges).toEqual([{ id: 'e1', from: 'trigger', to: 'p1' }]);
+    expect(clean.version).toBe(3);
+    expect(clean.nodes.map((n) => n.id)).toEqual(['trigger', 'p1', 'output']);
+    expect(clean.nodes.find((n) => n.id === 'p1')?.kind).toBe('effect');
+    expect(clean.edges).toEqual([
+      { id: 'e1', from: 'trigger', to: 'p1' },
+      expect.objectContaining({ from: 'p1', to: 'output' }),
+    ]);
   });
 
-  it('keeps a valid graph by reference', () => {
+  it('delegates valid legacy graphs through core Gen3 normalization', () => {
     const valid: TriggerGraph = {
       nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 100, 0, { effectId: 'gen:radial-wash' })],
       edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
     };
 
-    expect(sanitizeGraphIntegrity(valid)).toBe(valid);
+    const clean = sanitizeGraphIntegrity(valid);
+    expect(clean.version).toBe(3);
+    expect(clean.nodes.find((n) => n.id === 'p1')?.kind).toBe('effect');
+    expect(clean.edges).toContainEqual(expect.objectContaining({ from: 'p1', to: 'output' }));
   });
 
   it('runs inside the full normalizeGraphs load/adopt path', () => {

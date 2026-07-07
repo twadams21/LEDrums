@@ -22,6 +22,66 @@
     "route": "?view=trigger",
     "select": ".node-editor"
   },
+  "gen3-add-pane-route": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Route')"
+      },
+      {
+        "wait": 300
+      }
+    ],
+    "select": ".node-editor"
+  },
+  "gen3-scope-inspector": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Route')"
+      },
+      {
+        "wait": 200
+      },
+      {
+        "click": "button[title='Add Scope']"
+      },
+      {
+        "wait": 500
+      }
+    ],
+    "select": ".node-editor"
+  },
+  "gen3-mix-node": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": "button:has-text('Route')"
+      },
+      {
+        "wait": 200
+      },
+      {
+        "click": "button[title='Add Mix']"
+      },
+      {
+        "wait": 500
+      }
+    ],
+    "select": "main.center"
+  },
+  "gen3-slider-input": {
+    "route": "?view=trigger",
+    "actions": [
+      {
+        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
+      },
+      {
+        "wait": 400
+      }
+    ],
+    "select": ".node-editor"
+  },
   "trigger-node-selected": {
     "route": "?view=trigger",
     "actions": [
@@ -67,6 +127,18 @@
     "select": "main.center"
   },
   "section-detail": {
+    "route": "?view=sections",
+    "actions": [
+      {
+        "click": "section.col .li"
+      },
+      {
+        "wait": 300
+      }
+    ],
+    "select": "main.center"
+  },
+  "gen3-sections-arrangement": {
     "route": "?view=sections",
     "actions": [
       {

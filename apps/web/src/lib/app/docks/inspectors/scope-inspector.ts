@@ -145,7 +145,9 @@ export function effectiveScopeForNode(
   drums: readonly DrumInfo[],
   sourceDrumId = drums[0]?.id ?? 'kick',
 ): ScopeReadout {
-  const upstream = graph ? upstreamScopesFor(node.id, new Map(graph.nodes.map((n) => [n.id, n])), graph.edges, sourceDrumId) : [{ scope: 'kit' }];
+  const upstream: voice.ScopeTarget[] = graph
+    ? upstreamScopesFor(node.id, new Map(graph.nodes.map((n) => [n.id, n])), graph.edges, sourceDrumId)
+    : [{ scope: 'kit' }];
   if (!upstream.length) return { label: 'Empty', detail: 'No LEDs after upstream filters', empty: true, noOp: false };
 
   const afterLocal = uniqueTargets(

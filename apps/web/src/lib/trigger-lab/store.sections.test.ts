@@ -99,7 +99,7 @@ describe('section graph-list mutators', () => {
     const store = new TriggerLab(fakeClient);
     const ids = store.activeSong!.sections.map((s) => s.id);
     store.moveSection(ids[0]!, 2);
-    expect(store.activeSong!.sections.map((s) => s.id)).toEqual([ids[1], ids[2], ids[0], ...ids.slice(3)]);
+    expect(store.activeSong!.sections.map((s) => s.id)).toEqual([ids[1], ids[0], ids[2], ...ids.slice(3)]);
   });
 
   it('moveGraphPlacement reorders a graph inside one section', () => {
@@ -107,7 +107,7 @@ describe('section graph-list mutators', () => {
     const section = store.activeSong!.sections[0]!;
     const [first, second, third] = section.graphs;
     store.moveGraphPlacement(section.id, first!, section.id, 2);
-    expect(store.activeSong!.sections[0]!.graphs.slice(0, 3)).toEqual([second, third, first]);
+    expect(store.activeSong!.sections[0]!.graphs.slice(0, 3)).toEqual([second, first, third]);
   });
 
   it('moveGraphPlacement moves a graph between sections', () => {

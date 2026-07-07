@@ -24,7 +24,7 @@ function ctx(velocity = 1): TriggerCtx {
 /** trigger → chance(0.5) → random → [play, play] — every ambient-randomness code path. */
 function randomGraph(): TriggerGraph {
   const g = treeToGraph(play('gen:confetti-burst', 'oneshot'));
-  const playNode = g.nodes.find((n) => n.kind === 'play')!;
+  const playNode = g.nodes.find((n) => n.kind === 'effect')!;
   const trig = g.nodes.find((n) => n.kind === 'trigger')!;
   const chance = { ...playNode, id: 'chance-1', kind: 'chance' as const, p: 0.5 };
   const rand = { ...playNode, id: 'random-1', kind: 'random' as const, noRepeat: false };
@@ -35,6 +35,8 @@ function randomGraph(): TriggerGraph {
     { id: 'e1', from: 'chance-1', to: 'random-1' },
     { id: 'e2', from: 'random-1', to: playNode.id },
     { id: 'e3', from: 'random-1', to: 'play-2' },
+    { id: 'e4', from: playNode.id, to: 'output' },
+    { id: 'e5', from: 'play-2', to: 'output' },
   ];
   return g;
 }

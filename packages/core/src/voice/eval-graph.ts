@@ -10,6 +10,7 @@
 import type { Prng } from './prng';
 import type {
   GraphNode,
+  GraphEdge,
   ParamValues,
   PlayMode,
   PlayType,
@@ -137,6 +138,7 @@ export interface EvalState {
 
 /** Entry point: eval a graph from its trigger node into a flat action list. */
 export function evalGraph(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
+  if (graph.version === 3) return evalGraphGen3(state, graph, pad, ctx);
   const trig = graph.nodes.find((n) => n.kind === 'trigger');
   if (!trig) return [];
   return evalNode(state, graph, pad, trig, ctx, '', new Set());
@@ -202,6 +204,264 @@ function incomingFlowEdges(graph: TriggerGraph, node: GraphNode) {
 
 function edgeOpacity(value: number | undefined): number {
   return value == null ? 1 : value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+function isFlowEdge(e: { toPort?: string }): boolean {
+  return e.toPort == null || e.toPort === 'in';
+}
+
+function flowChildren(graph: TriggerGraph, node: GraphNode): Array<{ edge: (typeof graph.edges)[number]; node: GraphNode }> {
+  return graph.edges
+    .filter((e) => e.from === node.id && isFlowEdge(e))
+    .map((edge) => ({ edge, node: graph.nodes.find((n) => n.id === edge.to) }))
+    .filter((x): x is { edge: (typeof graph.edges)[number]; node: GraphNode } => !!x.node)
+    .sort((a, b) => a.node.y - b.node.y || a.node.id.localeCompare(b.node.id));
+}
+
+type RouteDraft = { kind: 'empty' } | { kind: 'play'; play: PlayDraft };
+interface BucketEntry {
+  draft: RouteDraft;
+  edge?: GraphEdge;
+  latchKey?: string | null;
+}
+
+const EMPTY_ROUTE: RouteDraft = { kind: 'empty' };
+
+function routePlay(draft: RouteDraft): PlayDraft | null {
+  return draft.kind === 'play' ? draft.play : null;
+}
+
+function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): PlayDraft | null {
+  if (!node.effectId) return null;
+  const mods = resolveModifierChain(graph, node);
+  const modulations = resolveNodeModulations(graph, node);
+  return {
+    effectId: node.effectId,
+    playType: node.playType,
+    canvasScene: node.canvasScene,
+    mode: node.mode,
+    scope: node.scope,
+    targetId: node.targetId,
+    busId: node.busId,
+    params: node.params,
+    modifiers: mods.length ? mods : undefined,
+    modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+    originNodeId: node.id,
+  };
+}
+
+function appendLabel(prefix: string, part: string): string {
+  return prefix ? `${prefix} → ${part}` : part;
+}
+
+function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
+  const trigger = graph.nodes.find((n) => n.kind === 'trigger');
+  if (!trigger) return [];
+  const byId = new Map(graph.nodes.map((n) => [n.id, n] as const));
+  const order = [...graph.nodes].sort((a, b) => a.x - b.x || a.y - b.y || a.id.localeCompare(b.id));
+  const rank = new Map(order.map((n, i) => [n.id, i] as const));
+  const buckets = new Map<string, BucketEntry[]>();
+  const via = new Map<string, string>();
+  const actions: Action[] = [];
+  const enqueued = new Set<string>([trigger.id]);
+  const processed = new Set<string>();
+  const queue = [trigger.id];
+  buckets.set(trigger.id, [{ draft: EMPTY_ROUTE }]);
+
+  const enqueue = (id: string): void => {
+    if (!byId.has(id) || enqueued.has(id)) return;
+    enqueued.add(id);
+    queue.push(id);
+    queue.sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0) || a.localeCompare(b));
+  };
+  const push = (from: GraphNode, edge: GraphEdge, draft: RouteDraft, latchKey: string | null = null): void => {
+    const node = byId.get(edge.to);
+    if (!node) return;
+    const list = buckets.get(node.id) ?? [];
+    list.push({ draft, edge, latchKey });
+    buckets.set(node.id, list);
+    enqueue(node.id);
+  };
+  const pushKids = (node: GraphNode, draft: RouteDraft, latchKey: string | null = null): void => {
+    for (const { edge } of flowChildren(graph, node)) push(node, edge, draft, latchKey);
+  };
+  const labelFor = (node: GraphNode, part: string): string => {
+    const next = appendLabel(via.get(node.id) ?? '', part);
+    return next;
+  };
+
+  while (queue.length) {
+    const id = queue.shift()!;
+    const node = byId.get(id);
+    if (!node) continue;
+    if (node.kind === 'mix') {
+      const waiting = graph.edges.some((e) => e.to === node.id && isFlowEdge(e) && enqueued.has(e.from) && !processed.has(e.from));
+      if (waiting) {
+        queue.push(id);
+        continue;
+      }
+    }
+    const entries = buckets.get(id) ?? [];
+    const sk = nodeStateKey(pad, node.id);
+    switch (node.kind) {
+      case 'trigger':
+        pushKids(node, EMPTY_ROUTE);
+        break;
+      case 'effect':
+      case 'play': {
+        const draft = makePlayDraft(state, graph, node);
+        if (!draft) break;
+        via.set(node.id, labelFor(node, modeWord(node.mode)));
+        const sourceEntries = entries.length ? entries : [{ draft: EMPTY_ROUTE, latchKey: null }];
+        for (const entry of sourceEntries) pushKids(node, { kind: 'play', play: draft }, entry.latchKey ?? null);
+        break;
+      }
+      case 'modifier':
+        for (const entry of entries) {
+          const play = routePlay(entry.draft);
+          if (!play) continue;
+          via.set(node.id, labelFor(node, 'Modifier'));
+          pushKids(node, { kind: 'play', play: { ...play, modifiers: [...(play.modifiers ?? []), resolveModifierNode(graph, node)] } }, entry.latchKey ?? null);
+        }
+        break;
+      case 'scope':
+        for (const entry of entries) {
+          const play = routePlay(entry.draft);
+          if (!play) continue;
+          const scoped = intersectScopeTargets(play, node, ctx.sourceDrumId);
+          if (!scoped) continue;
+          via.set(node.id, labelFor(node, 'Scope'));
+          pushKids(node, { kind: 'play', play: { ...play, ...scoped } }, entry.latchKey ?? null);
+        }
+        break;
+      case 'mix': {
+        const inputs = entries
+          .map((entry): MixInputDraft | null => {
+            const play = routePlay(entry.draft);
+            return play?.originNodeId ? { ...play, opacity: edgeOpacity(entry.edge?.opacity), originNodeId: play.originNodeId } : null;
+          })
+          .filter((input): input is MixInputDraft => !!input)
+          .sort((a, b) => {
+            const ay = byId.get(a.originNodeId)?.y ?? 0;
+            const by = byId.get(b.originNodeId)?.y ?? 0;
+            return ay - by || a.originNodeId.localeCompare(b.originNodeId);
+          });
+        if (!inputs.length) break;
+        const host = inputs[0]!;
+        const mixed: PlayDraft = {
+          ...host,
+          scope: 'kit',
+          targetId: undefined,
+          params: {},
+          modifiers: undefined,
+          modulations: undefined,
+          mixBlendMode: node.mixBlendMode ?? 'normal',
+          mixInputs: inputs,
+          originNodeId: node.id,
+        };
+        via.set(node.id, labelFor(node, 'Mix'));
+        pushKids(node, { kind: 'play', play: mixed }, entries.find((entry) => entry.latchKey)?.latchKey ?? null);
+        break;
+      }
+      case 'output':
+        for (const entry of entries) {
+          const play = routePlay(entry.draft);
+          if (!play) continue;
+          const out =
+            node.scope !== 'kit' || node.targetId ? intersectScopeTargets(play, node, ctx.sourceDrumId) : { scope: play.scope, targetId: play.targetId };
+          if (!out) continue;
+          actions.push({ kind: 'play', ...play, ...out, via: labelFor(node, 'Output'), latchKey: entry.latchKey ?? null });
+        }
+        break;
+      case 'all':
+        for (const entry of entries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        break;
+      case 'random': {
+        const kids = flowChildren(graph, node);
+        if (!kids.length) break;
+        let i = state.prng.nextInt(kids.length);
+        if (node.noRepeat && kids.length > 1) {
+          const prev = state.lastPick.get(sk);
+          while (i === prev) i = state.prng.nextInt(kids.length);
+        }
+        state.lastPick.set(sk, i);
+        for (const entry of entries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
+        break;
+      }
+      case 'sequence': {
+        const kids = flowChildren(graph, node);
+        if (!kids.length) break;
+        const i = (state.seqIndex.get(sk) ?? 0) % kids.length;
+        state.seqIndex.set(sk, i + 1);
+        for (const entry of entries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
+        break;
+      }
+      case 'switch': {
+        let kids: ReturnType<typeof flowChildren>;
+        if (node.on !== 'section' && node.on !== 'beat') {
+          if ((node.valueMode ?? 'gate') === 'gate') {
+            const threshold = node.threshold ?? 0.5;
+            const invert = node.invert ?? false;
+            kids = (invert ? ctx.velocity > threshold : ctx.velocity <= threshold) ? flowChildren(graph, node) : [];
+          } else {
+            kids = flowChildren(graph, node).filter((x) => x.edge.fromPort === `band-${bandIndex(ctx.velocity, node.bands ?? [0.5])}`);
+          }
+        } else {
+          kids = flowChildren(graph, node).filter((_, i, arr) => i === switchIndexN(arr.length, node.on, ctx));
+        }
+        for (const entry of entries) for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
+        break;
+      }
+      case 'chance':
+        if (state.prng.next() <= node.p) for (const entry of entries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        break;
+      case 'toggle': {
+        const current = state.latched.get(sk);
+        const alive = current ? state.isVoiceAlive(current) : false;
+        if (alive && current) {
+          state.latched.set(sk, null);
+          actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, 'Toggle off') });
+        } else {
+          for (const entry of entries) pushKids(node, entry.draft, sk);
+        }
+        break;
+      }
+      case 'delay': {
+        const delayMs = computeDelayMs(node.delayMode ?? 'time', node.ms ?? 0, node.division ?? '1/8', ctx.bpm);
+        const kids = flowChildren(graph, node);
+        for (const entry of entries) {
+          const draft = routePlay(entry.draft);
+          if (delayMs <= 0) {
+            for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
+          } else {
+            actions.push({
+              kind: 'pending',
+              descriptor: {
+                relativeDelayMs: delayMs,
+                graph,
+                pad,
+                ctx,
+                childIds: kids.map((kid) => kid.node.id),
+                viaPrefix: labelFor(node, `Delay ${Math.round(delayMs)}ms`),
+                seen: new Set([node.id]),
+                draft,
+              },
+            });
+          }
+        }
+        break;
+      }
+      case 'randomMod':
+      case 'envelope':
+      case 'lfo':
+      case 'cc':
+      case 'note':
+      case 'osc':
+        break;
+    }
+    processed.add(id);
+  }
+  return actions;
 }
 
 function draftFromUpstream(

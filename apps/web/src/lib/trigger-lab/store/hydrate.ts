@@ -377,21 +377,6 @@ export function splitModulationSources(
   return changed ? out : graphs;
 }
 
-const OUTPUT_ANCHOR_ID = 'output';
-const isLegacyGraph = (graph: TriggerGraph): boolean => graph.version !== 3;
-const isRenderKind = (node: GraphNode): boolean => node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier' || node.kind === 'scope';
-
-function edgeIdFor(existing: Set<string>, base: string): string {
-  if (!existing.has(base)) return base;
-  let i = 2;
-  while (existing.has(`${base}-${i}`)) i += 1;
-  return `${base}-${i}`;
-}
-
-function anchorNode(kind: 'trigger' | 'output', x: number, y: number): GraphNode {
-  return makeNode(kind, kind, x, y, { scope: 'kit', targetId: undefined });
-}
-
 /** Gen3 trigger-graph migration:
     - `play` is accepted as a legacy serialized alias and rewritten to canonical `effect`.
     - Gen2 scoped `output` nodes are rewritten to `scope` route filters.
@@ -401,68 +386,7 @@ function anchorNode(kind: 'trigger' | 'output', x: number, y: number): GraphNode
     The pass is pure, idempotent, and defensive. It does not guess at invalid duplicate ids:
     sanitizeGraphIntegrity runs before this, then this pass owns Gen3 anchor invariants. */
 export function migrateGen3Graph(graph: TriggerGraph): TriggerGraph {
-  const legacy = isLegacyGraph(graph);
-  const trigger = graph.nodes.find((n) => n.kind === 'trigger') ?? anchorNode('trigger', 0, 0);
-  const oldOutputs = legacy ? graph.nodes.filter((n) => n.kind === 'output') : [];
-  const firstOutput = legacy ? null : graph.nodes.find((n) => n.kind === 'output') ?? null;
-  const remap = new Map<string, string>();
-
-  const nodes: GraphNode[] = [];
-  const seen = new Set<string>();
-  const addNode = (node: GraphNode): void => {
-    if (seen.has(node.id)) return;
-    seen.add(node.id);
-    nodes.push(node);
-  };
-
-  addNode(trigger);
-  for (const node of graph.nodes) {
-    if (node.kind === 'trigger') continue;
-    if (legacy && node.kind === 'output') {
-      const id = node.id === OUTPUT_ANCHOR_ID ? `scope:${OUTPUT_ANCHOR_ID}` : node.id;
-      if (id !== node.id) remap.set(node.id, id);
-      addNode({ ...node, id, kind: 'scope' });
-      continue;
-    }
-    if (!legacy && node.kind === 'output') continue;
-    addNode(node.kind === 'play' ? { ...node, kind: 'effect' } : node);
-  }
-
-  const anchorSource = firstOutput ?? oldOutputs[0];
-  const maxX = nodes.reduce((m, n) => Math.max(m, n.x), trigger.x);
-  const output = { ...anchorNode('output', Math.max(maxX + NODE_W + 90, 420), anchorSource?.y ?? trigger.y), id: OUTPUT_ANCHOR_ID };
-  addNode(output);
-
-  const nodeIds = new Set(nodes.map((n) => n.id));
-  const edgeIds = new Set<string>();
-  const connectionKeys = new Set<string>();
-  const edges: GraphEdge[] = [];
-  const addEdge = (edge: GraphEdge): void => {
-    if (!edge.id || !nodeIds.has(edge.from) || !nodeIds.has(edge.to) || edge.from === edge.to) return;
-    const key = `${edge.from}:${edge.fromPort ?? ''}>${edge.to}:${edge.toPort ?? ''}`;
-    if (edgeIds.has(edge.id) || connectionKeys.has(key)) return;
-    edgeIds.add(edge.id);
-    connectionKeys.add(key);
-    edges.push(edge);
-  };
-
-  for (const edge of graph.edges) {
-    const from = remap.get(edge.from) ?? edge.from;
-    const to = remap.get(edge.to) ?? edge.to;
-    if (!legacy && to === firstOutput?.id && firstOutput.id !== OUTPUT_ANCHOR_ID) {
-      addEdge({ ...edge, from, to: OUTPUT_ANCHOR_ID });
-    } else {
-      addEdge({ ...edge, from, to });
-    }
-  }
-
-  const hasOutgoing = new Set(edges.map((e) => e.from));
-  const leaves = nodes.filter((n) => n.id !== OUTPUT_ANCHOR_ID && isRenderKind(n) && !hasOutgoing.has(n.id));
-  for (const leaf of leaves) {
-    addEdge({ id: edgeIdFor(edgeIds, `e-${leaf.id}-output`), from: leaf.id, to: OUTPUT_ANCHOR_ID });
-  }
-
-  return { ...graph, version: 3, nodes, edges };
+  return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
 }
 
 export function migrateGen3Graphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
@@ -480,40 +404,7 @@ export function migrateGen3Graphs(graphs: Record<string, TriggerGraph>): Record<
     dangling wires or duplicate ids in the live editor/sim state. Existing valid references keep
     their object identity; invalid records are dropped rather than guessed. */
 export function sanitizeGraphIntegrity(graph: TriggerGraph): TriggerGraph {
-  let changed = false;
-  const seenNodes = new Set<string>();
-  const nodes: GraphNode[] = [];
-  for (const node of graph.nodes) {
-    if (!node.id || seenNodes.has(node.id)) {
-      changed = true;
-      continue;
-    }
-    seenNodes.add(node.id);
-    nodes.push(node);
-  }
-
-  const seenEdges = new Set<string>();
-  const seenConnections = new Set<string>();
-  const edges: GraphEdge[] = [];
-  for (const edge of graph.edges) {
-    const connectionKey = `${edge.from}:${edge.fromPort ?? ''}>${edge.to}:${edge.toPort ?? ''}`;
-    if (
-      !edge.id ||
-      seenEdges.has(edge.id) ||
-      seenConnections.has(connectionKey) ||
-      edge.from === edge.to ||
-      !seenNodes.has(edge.from) ||
-      !seenNodes.has(edge.to)
-    ) {
-      changed = true;
-      continue;
-    }
-    seenEdges.add(edge.id);
-    seenConnections.add(connectionKey);
-    edges.push(edge);
-  }
-
-  return changed ? { ...graph, nodes, edges } : graph;
+  return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
 }
 
 export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {

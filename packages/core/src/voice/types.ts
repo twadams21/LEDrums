@@ -196,7 +196,29 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
 
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
-export type BlockKind = 'play' | 'effect' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
+export type LegacyGraphNodeKind = 'play';
+export type CanonicalGraphNodeKind =
+  | 'trigger'
+  | 'effect'
+  | 'all'
+  | 'random'
+  | 'sequence'
+  | 'switch'
+  | 'chance'
+  | 'toggle'
+  | 'delay'
+  | 'modifier'
+  | 'mix'
+  | 'scope'
+  | 'output'
+  | 'envelope'
+  | 'lfo'
+  | 'cc'
+  | 'note'
+  | 'osc'
+  | 'randomMod';
+
+export type BlockKind = LegacyGraphNodeKind | 'effect' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
 /**
  * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
  * fires children). It is a media-effects node wired to a play node's `mod` input handle;
@@ -213,20 +235,9 @@ export type BlockKind = 'play' | 'effect' | 'all' | 'random' | 'sequence' | 'swi
 export type RandomDistribution = 'linear' | 'gaussian' | 'exponential' | 'logarithmic' | 'triangular' | 'beta' | 'stepped';
 export type NoteModMode = 'gate' | 'velocity';
 
-export type NodeKind =
-  | 'trigger'
-  | BlockKind
-  | 'effect'
-  | 'modifier'
-  | 'mix'
-  | 'scope'
-  | 'output'
-  | 'envelope'
-  | 'lfo'
-  | 'cc'
-  | 'note'
-  | 'osc'
-  | 'randomMod'; // S36 'lfo' + S37 'cc'
+/** `play` is accepted only as a legacy persisted graph alias. Gen3 authoring and
+    normalisation must emit canonical `effect` nodes instead. */
+export type NodeKind = CanonicalGraphNodeKind | LegacyGraphNodeKind;
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -390,7 +401,7 @@ export interface Section {
   looks: Record<string, string | null>;
 }
 
-// ---- Setlist (song → section → per-drum graph slots) -----------------------
+// ---- Runtime setlist (song → section → per-pad graph slots) ----------------
 
 /**
  * padKey "drumId:zone" → ordered list of graph keys (null = empty slot). Keyed per
@@ -400,7 +411,9 @@ export interface Section {
  */
 export type SlotRefs = Record<string, (string | null)[]>;
 
-/** One section in a song's arrangement: per-pad ordered graph-key slots. */
+/** One runtime section in a song arrangement: per-pad ordered graph-key slots.
+    The web authoring model stores each section as a flat ordered graph list; the
+    show-builder bridge groups those graph keys into this runtime slot shape. */
 export interface SongSection {
   id: string;
   name: string;
@@ -408,8 +421,9 @@ export interface SongSection {
 }
 
 /**
- * An authored song: a named sequence of arrangement sections. Structural
- * mirror of the web's `setlist.Song` so `show-builder` assembles by pass-through.
+ * Runtime song: a named sequence of slot-grid sections consumed by the engine.
+ * Do not confuse this with the web-authored setlist `Song`, whose sections contain
+ * flat graph lists for direct arrangement editing.
  */
 export interface ShowSong {
   id: string;
@@ -420,9 +434,9 @@ export interface ShowSong {
 // ---- Show aggregate (the authored content) ----------------------------------
 
 /**
- * The authored content the engine runs: buses, per-pad trigger graphs (keyed by
- * padKey `"drumId:zone"`), section snapshots, the effect/preset registries, and
- * the optional setlist arrangement (songs → sections → per-drum graph slots).
+ * The runtime content the engine runs: buses, trigger graphs, section look snapshots,
+ * effect/preset registries, and optional runtime setlist arrangement. Web authoring
+ * may use friendlier shapes, but must cross `show-builder` before reaching this seam.
  */
 export interface Show {
   buses: Bus[];
@@ -432,7 +446,7 @@ export interface Show {
   effects: EffectDef[];
   presets: Preset[];
   /**
-   * Authored arrangement: songs with per-section slot grids keyed per pad by
+   * Runtime arrangement: songs with per-section slot grids keyed per pad by
    * padKey "drumId:zone". Each slot holds a graph key into `Show.graphs` (null =
    * empty). When an active section is set, a hit fires the non-null slot graphs for
    * THAT pad (layered, in slot order) instead of the flat `graphs[padKey(drumId,

@@ -48,6 +48,7 @@ import {
   type TriggerGraph,
   type TriggerSource,
 } from './types';
+import { normalizeTriggerGraphToGen3 } from './graph-integrity';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -256,10 +257,13 @@ class VoiceBusEngine implements RenderEngine {
 
   setShow(show: Show): void {
     this.syncCanvasScenes(show.canvasScenes);
-    this.show = show;
-    this.busById = new Map(show.buses.map((b) => [b.id, b] as const));
-    this.effectsById = new Map(show.effects.map((e) => [e.id, e] as const));
-    this.presetsById = new Map(show.presets.map((p) => [p.id, p] as const));
+    this.show = {
+      ...show,
+      graphs: Object.fromEntries(Object.entries(show.graphs).map(([key, graph]) => [key, normalizeTriggerGraphToGen3(graph).graph])),
+    };
+    this.busById = new Map(this.show.buses.map((b) => [b.id, b] as const));
+    this.effectsById = new Map(this.show.effects.map((e) => [e.id, e] as const));
+    this.presetsById = new Map(this.show.presets.map((p) => [p.id, p] as const));
     // Authored content changed: clear live state so eval starts clean & deterministic.
     this.voices.reset();
     this.seqIndex.clear();

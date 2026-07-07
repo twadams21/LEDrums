@@ -27,18 +27,18 @@ describe('hasPrimaryModifier', () => {
 
 describe('isEditableShortcutTarget', () => {
   it('detects direct form fields and contenteditable nodes', () => {
-    expect(isEditableShortcutTarget({ tagName: 'INPUT' } as EventTarget)).toBe(true);
-    expect(isEditableShortcutTarget({ tagName: 'textarea' } as EventTarget)).toBe(true);
-    expect(isEditableShortcutTarget({ isContentEditable: true } as EventTarget)).toBe(true);
+    expect(isEditableShortcutTarget({ tagName: 'INPUT' } as unknown as EventTarget)).toBe(true);
+    expect(isEditableShortcutTarget({ tagName: 'textarea' } as unknown as EventTarget)).toBe(true);
+    expect(isEditableShortcutTarget({ isContentEditable: true } as unknown as EventTarget)).toBe(true);
   });
 
   it('detects descendants of editable controls', () => {
-    const child = { closest: (selector: string) => (selector.includes('textarea') ? {} : null) } as EventTarget;
+    const child = { closest: (selector: string) => (selector.includes('textarea') ? {} : null) } as unknown as EventTarget;
     expect(isEditableShortcutTarget(child)).toBe(true);
   });
 
   it('allows non-editable shortcut targets', () => {
     expect(isEditableShortcutTarget(null)).toBe(false);
-    expect(isEditableShortcutTarget({ tagName: 'BUTTON', closest: () => null } as EventTarget)).toBe(false);
+    expect(isEditableShortcutTarget({ tagName: 'BUTTON', closest: () => null } as unknown as EventTarget)).toBe(false);
   });
 });
