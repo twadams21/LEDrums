@@ -274,15 +274,17 @@ function evalGraphGen3From(
   const buckets = new Map<string, BucketEntry[]>();
   const via = new Map<string, string>();
   const actions: Action[] = [];
-  const enqueued = new Set<string>();
-  const processed = new Set<string>();
+  const queued = new Set<string>();
+  const processedCount = new Map<string, number>();
   const pendingMixes = new Set<string>();
   const pendingOutputs = new Set<string>();
   const queue: string[] = [];
 
   const enqueue = (id: string): void => {
-    if (!byId.has(id) || enqueued.has(id) || seen.has(id)) return;
-    enqueued.add(id);
+    if (!byId.has(id) || queued.has(id) || seen.has(id)) return;
+    const entries = buckets.get(id) ?? [];
+    if (entries.length <= (processedCount.get(id) ?? 0)) return;
+    queued.add(id);
     queue.push(id);
   };
   for (const id of startIds) {
@@ -310,11 +312,14 @@ function evalGraphGen3From(
 
   while (queue.length || pendingMixes.size || pendingOutputs.size) {
     const pendingIds = pendingMixes.size ? pendingMixes : pendingOutputs;
-    const id = queue.length ? queue.shift()! : [...pendingIds].sort((a, b) => {
-      const ay = byId.get(a)?.y ?? 0;
-      const by = byId.get(b)?.y ?? 0;
-      return ay - by || a.localeCompare(b);
-    })[0]!;
+    const id = queue.length
+      ? queue.shift()!
+      : [...pendingIds].sort((a, b) => {
+          const ay = byId.get(a)?.y ?? 0;
+          const by = byId.get(b)?.y ?? 0;
+          return ay - by || a.localeCompare(b);
+        })[0]!;
+    queued.delete(id);
     pendingMixes.delete(id);
     pendingOutputs.delete(id);
     const node = byId.get(id);
@@ -331,6 +336,10 @@ function evalGraphGen3From(
       }
     }
     const entries = buckets.get(id) ?? [];
+    const cursor = processedCount.get(id) ?? 0;
+    const newEntries = entries.slice(cursor);
+    if (!newEntries.length) continue;
+    processedCount.set(id, entries.length);
     const sk = nodeStateKey(pad, node.id);
     switch (node.kind) {
       case 'trigger':
@@ -341,12 +350,12 @@ function evalGraphGen3From(
         const draft = makePlayDraft(state, graph, node);
         if (!draft) break;
         via.set(node.id, labelFor(node, modeWord(node.mode)));
-        const sourceEntries = entries.length ? entries : [{ draft: EMPTY_ROUTE, latchKey: null }];
+        const sourceEntries = newEntries.length ? newEntries : [{ draft: EMPTY_ROUTE, latchKey: null }];
         for (const entry of sourceEntries) pushKids(node, { kind: 'play', play: draft }, entry.latchKey ?? null);
         break;
       }
       case 'modifier':
-        for (const entry of entries) {
+        for (const entry of newEntries) {
           const play = routePlay(entry.draft);
           if (!play) continue;
           via.set(node.id, labelFor(node, 'Modifier'));
@@ -354,7 +363,7 @@ function evalGraphGen3From(
         }
         break;
       case 'scope':
-        for (const entry of entries) {
+        for (const entry of newEntries) {
           const play = routePlay(entry.draft);
           if (!play) continue;
           const scoped = intersectScopeTargets(play, node, ctx.sourceDrumId);
@@ -393,7 +402,7 @@ function evalGraphGen3From(
         break;
       }
       case 'output':
-        for (const entry of entries) {
+        for (const entry of newEntries) {
           const play = routePlay(entry.draft);
           if (!play) continue;
           const out =
@@ -403,7 +412,7 @@ function evalGraphGen3From(
         }
         break;
       case 'all':
-        for (const entry of entries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        for (const entry of newEntries) pushKids(node, entry.draft, entry.latchKey ?? null);
         break;
       case 'random': {
         const kids = flowChildren(graph, node);
@@ -414,7 +423,7 @@ function evalGraphGen3From(
           while (i === prev) i = state.prng.nextInt(kids.length);
         }
         state.lastPick.set(sk, i);
-        for (const entry of entries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
+        for (const entry of newEntries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
         break;
       }
       case 'sequence': {
@@ -422,7 +431,7 @@ function evalGraphGen3From(
         if (!kids.length) break;
         const i = (state.seqIndex.get(sk) ?? 0) % kids.length;
         state.seqIndex.set(sk, i + 1);
-        for (const entry of entries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
+        for (const entry of newEntries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
         break;
       }
       case 'switch': {
@@ -438,11 +447,11 @@ function evalGraphGen3From(
         } else {
           kids = flowChildren(graph, node).filter((_, i, arr) => i === switchIndexN(arr.length, node.on, ctx));
         }
-        for (const entry of entries) for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
+        for (const entry of newEntries) for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
         break;
       }
       case 'chance':
-        if (state.prng.next() <= node.p) for (const entry of entries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        if (state.prng.next() <= node.p) for (const entry of newEntries) pushKids(node, entry.draft, entry.latchKey ?? null);
         break;
       case 'toggle': {
         const current = state.latched.get(sk);
@@ -451,14 +460,14 @@ function evalGraphGen3From(
           state.latched.set(sk, null);
           actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, 'Toggle off') });
         } else {
-          for (const entry of entries) pushKids(node, entry.draft, sk);
+          for (const entry of newEntries) pushKids(node, entry.draft, sk);
         }
         break;
       }
       case 'delay': {
         const delayMs = computeDelayMs(node.delayMode ?? 'time', node.ms ?? 0, node.division ?? '1/8', ctx.bpm);
         const kids = flowChildren(graph, node);
-        for (const entry of entries) {
+        for (const entry of newEntries) {
           const draft = routePlay(entry.draft);
           if (delayMs <= 0) {
             for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
@@ -488,7 +497,6 @@ function evalGraphGen3From(
       case 'osc':
         break;
     }
-    processed.add(id);
   }
   return actions;
 }

@@ -104,6 +104,113 @@ describe('evalGraph Gen3 Mix active branches', () => {
     ]);
   });
 
+  it('propagates all active branches that converge at Scope through uneven route lengths', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'a', { effectId: 'a', x: 100, y: 0 }),
+        node('effect', 'b', { effectId: 'b', x: 100, y: 100 }),
+        node('modifier', 'mod-b', { x: 300, y: 100, modifierId: 'slice' }),
+        node('scope', 'scope', { x: 200, y: 0, scope: 'drum', targetId: 'snare' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-a', 'all', 'a'),
+        edge('a-scope', 'a', 'scope'),
+        edge('scope-output', 'scope', 'output'),
+        edge('all-b', 'all', 'b'),
+        edge('b-mod', 'b', 'mod-b'),
+        edge('mod-scope', 'mod-b', 'scope'),
+      ],
+    );
+
+    const actions = plays(g).sort((a, b) => a.effectId.localeCompare(b.effectId));
+    expect(actions).toHaveLength(2);
+    expect(actions.map((a) => [a.effectId, a.scope, a.targetId, a.modifiers?.map((m) => m.modifierId) ?? []])).toEqual([
+      ['a', 'drum', 'snare', []],
+      ['b', 'drum', 'snare', ['slice']],
+    ]);
+  });
+
+  it('propagates Scope convergence when edge and visual order are reversed', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('scope', 'scope', { x: 100, y: 100, scope: 'drum', targetId: 'snare' }),
+        node('effect', 'b', { effectId: 'b', x: 50, y: 0 }),
+        node('modifier', 'mod-b', { x: 75, y: 0, modifierId: 'slice' }),
+        node('effect', 'a', { effectId: 'a', x: 900, y: 200 }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-b', 'all', 'b'),
+        edge('b-mod', 'b', 'mod-b'),
+        edge('mod-scope', 'mod-b', 'scope'),
+        edge('scope-output', 'scope', 'output'),
+        edge('all-a', 'all', 'a'),
+        edge('a-scope', 'a', 'scope'),
+      ],
+    );
+
+    const actions = plays(g).sort((a, b) => a.effectId.localeCompare(b.effectId));
+    expect(actions).toHaveLength(2);
+    expect(actions.map((a) => [a.effectId, a.scope, a.targetId, a.modifiers?.map((m) => m.modifierId) ?? []])).toEqual([
+      ['a', 'drum', 'snare', []],
+      ['b', 'drum', 'snare', ['slice']],
+    ]);
+  });
+
+  it('propagates all active branches that converge at Modifier through uneven route lengths', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'a', { effectId: 'a', x: 100, y: 0 }),
+        node('effect', 'b', { effectId: 'b', x: 100, y: 100 }),
+        node('scope', 'scope-b', { x: 300, y: 100, scope: 'drum', targetId: 'snare' }),
+        node('modifier', 'mod', { x: 200, y: 0, modifierId: 'slice' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-a', 'all', 'a'),
+        edge('a-mod', 'a', 'mod'),
+        edge('all-b', 'all', 'b'),
+        edge('b-scope', 'b', 'scope-b'),
+        edge('scope-mod', 'scope-b', 'mod'),
+        edge('mod-output', 'mod', 'output'),
+      ],
+    );
+
+    const actions = plays(g).sort((a, b) => a.effectId.localeCompare(b.effectId));
+    expect(actions).toHaveLength(2);
+    expect(actions.map((a) => [a.effectId, a.scope, a.targetId, a.modifiers?.map((m) => m.modifierId) ?? []])).toEqual([
+      ['a', 'kit', undefined, ['slice']],
+      ['b', 'drum', 'snare', ['slice']],
+    ]);
+  });
+
+  it('keeps inactive branches silent when they converge at Scope', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'live', { effectId: 'live' }),
+        node('chance', 'chance', { p: 0 }),
+        node('effect', 'ghost', { effectId: 'ghost' }),
+        node('scope', 'scope', { scope: 'drum', targetId: 'snare' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-live', 'all', 'live'),
+        edge('live-scope', 'live', 'scope'),
+        edge('all-chance', 'all', 'chance'),
+        edge('chance-ghost', 'chance', 'ghost'),
+        edge('ghost-scope', 'ghost', 'scope'),
+        edge('scope-output', 'scope', 'output'),
+      ],
+    );
+
+    expect(plays(g).map((a) => a.effectId)).toEqual(['live']);
+  });
+
   it('does not emit inactive branches that can statically reach Output', () => {
     const g = graph(
       [
@@ -274,5 +381,47 @@ describe('evalGraph Gen3 Mix active branches', () => {
     const resumed = evalChildren(state(), delayed.descriptor.graph, delayed.descriptor.pad, delayed.descriptor.childIds, delayed.descriptor.ctx, delayed.descriptor.viaPrefix, delayed.descriptor.seen, delayed.descriptor.draft)
       .find((a): a is PlayAction => a.kind === 'play');
     expect(resumed?.mixInputs?.map((i) => i.effectId)).toEqual(['low']);
+  });
+
+  it('resumes delayed Gen3 branches through intermediate Scope convergence', () => {
+    const g = graph(
+      [
+        node('delay', 'delay', { ms: 100 }),
+        node('all', 'all'),
+        node('effect', 'a', { effectId: 'a', x: 100, y: 0 }),
+        node('effect', 'b', { effectId: 'b', x: 100, y: 100 }),
+        node('modifier', 'mod-b', { x: 300, y: 100, modifierId: 'slice' }),
+        node('scope', 'scope', { x: 200, y: 0, scope: 'drum', targetId: 'snare' }),
+      ],
+      [
+        edge('t-delay', 'trigger', 'delay'),
+        edge('delay-all', 'delay', 'all'),
+        edge('all-a', 'all', 'a'),
+        edge('a-scope', 'a', 'scope'),
+        edge('scope-output', 'scope', 'output'),
+        edge('all-b', 'all', 'b'),
+        edge('b-mod', 'b', 'mod-b'),
+        edge('mod-scope', 'mod-b', 'scope'),
+      ],
+    );
+    const delayed = pending(g)!;
+    const resumed = evalChildren(
+      state(),
+      delayed.descriptor.graph,
+      delayed.descriptor.pad,
+      delayed.descriptor.childIds,
+      delayed.descriptor.ctx,
+      delayed.descriptor.viaPrefix,
+      delayed.descriptor.seen,
+      delayed.descriptor.draft,
+    )
+      .filter((a): a is PlayAction => a.kind === 'play')
+      .sort((a, b) => a.effectId.localeCompare(b.effectId));
+
+    expect(resumed).toHaveLength(2);
+    expect(resumed.map((a) => [a.effectId, a.scope, a.targetId, a.modifiers?.map((m) => m.modifierId) ?? []])).toEqual([
+      ['a', 'drum', 'snare', []],
+      ['b', 'drum', 'snare', ['slice']],
+    ]);
   });
 });

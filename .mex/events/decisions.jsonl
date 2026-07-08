@@ -28,3 +28,4 @@
 {"timestamp":"2026-07-08T05:04:32.167Z","kind":"decision","message":"OTA bump now synchronizes root, web, and desktop app versions, updates Tauri/Cargo metadata, and auto-commits version bump: v<old> -> v<new> before build/publish.","files":[],"cwd":"."}
 {"timestamp":"2026-07-08T05:17:24.504Z","kind":"decision","message":"OTA bump now requires a completely clean git working tree before editing version files, ensuring its auto-commit contains only script-produced version changes.","files":[],"cwd":"."}
 {"timestamp":"2026-07-08T05:24:20.736Z","kind":"decision","message":"Gen3 Output now waits for active route propagation to settle before emitting converged branches","files":[],"cwd":"."}
+{"timestamp":"2026-07-08T06:45:03.621Z","kind":"decision","message":"Gen3 active route propagation now reprocesses newly arrived buckets via per-node cursors so converged Scope/Modifier routes do not drop late active branches.","files":[],"cwd":"."}
