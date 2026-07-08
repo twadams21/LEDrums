@@ -18,6 +18,7 @@ import {
 } from './node-options';
 import { NODE_KINDS, type BlockKind } from '../../trigger-lab/sim';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
+import { voice } from '@ledrums/core';
 
 /* The shared node form-options + formatters, tested as pure logic (no DOM) — the same
    way the rest of the suite tests pure helpers. The arrays must keep the exact options,
@@ -139,8 +140,8 @@ describe('iconed option arrays', () => {
     expect(MODE_OPTS.every((o) => typeof o.icon !== 'undefined')).toBe(true);
   });
 
-  it('KIND_OPTS — every conversion-target kind except protected anchors, meta-mirrored', () => {
-    const expected = NODE_KINDS.filter((k) => k !== 'output');
+  it('KIND_OPTS — every conversion-target kind except protected anchors + mod sources, meta-mirrored', () => {
+    const expected = NODE_KINDS.filter((k) => k !== 'output' && !voice.isModSourceKind(k));
     expect(KIND_OPTS.map((o) => o.value)).toEqual(expected);
     for (const opt of KIND_OPTS) {
       const k = opt.value as BlockKind;
@@ -151,5 +152,9 @@ describe('iconed option arrays', () => {
     // never includes protected graph anchors.
     expect(KIND_OPTS.some((o) => o.value === ('trigger' as BlockKind))).toBe(false);
     expect(KIND_OPTS.some((o) => o.value === ('output' as BlockKind))).toBe(false);
+    // modulation sources are value-emitting sources, not conversion targets.
+    for (const src of ['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod'] as BlockKind[]) {
+      expect(KIND_OPTS.some((o) => o.value === src)).toBe(false);
+    }
   });
 });
