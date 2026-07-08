@@ -107,10 +107,13 @@ function runGit(args, errorMessage) {
   }
 }
 
-function ensureNoStagedChanges() {
-  const child = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: repoRoot, stdio: 'inherit' });
+function ensureCleanWorkingTree() {
+  const child = spawnSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
   if (child.status !== 0) {
-    throw new Error('cannot auto-commit OTA version bump while other changes are already staged');
+    throw new Error('could not inspect git working tree before OTA bump');
+  }
+  if (child.stdout.trim()) {
+    throw new Error('cannot run OTA bump with a dirty working tree; commit, stash, or discard local changes first');
   }
 }
 
@@ -183,15 +186,16 @@ function release(level, dryRun) {
   const next = bumpVersion(current, level);
   if (dryRun) {
     console.log(`[ota] DRY RUN — would release ${current} -> ${next} (${level}):`);
-    console.log('  1. bump app versions in root package.json, apps/web/package.json, desktop package.json, tauri.conf.json, Cargo.toml, Cargo.lock');
-    console.log(`  2. commit: version bump: v${current} -> v${next}`);
-    console.log('  3. build a signed desktop bundle (tauri build)');
-    console.log("  4. verify the signature key matches the app's updater pubkey");
-    console.log('  5. publish the artifact + manifest to R2');
+    console.log('  1. require a clean git working tree');
+    console.log('  2. bump app versions in root package.json, apps/web/package.json, desktop package.json, tauri.conf.json, Cargo.toml, Cargo.lock');
+    console.log(`  3. commit: version bump: v${current} -> v${next}`);
+    console.log('  4. build a signed desktop bundle (tauri build)');
+    console.log("  5. verify the signature key matches the app's updater pubkey");
+    console.log('  6. publish the artifact + manifest to R2');
     console.log('[ota] dry run — nothing was changed, built, or published.');
     return;
   }
-  ensureNoStagedChanges();
+  ensureCleanWorkingTree();
   bumpFiles(level);
   commitVersionBump(current, next);
   build();
