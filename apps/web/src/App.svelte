@@ -22,6 +22,11 @@
     // S08: connect the desktop boot/update bridge once, here at the app root — the boot overlay and
     // ShareInfo gating both read its reactive bootStatus. Idempotent + a no-op in a plain browser.
     void desktopBridge.start();
+    // Dev-only screenshot control seam (window.__LEDRUMS_SHOT__) for `pnpm ui-shot --state`.
+    // Dynamic + DEV-gated so it is dead-code-eliminated from production bundles.
+    if (import.meta.env.DEV) {
+      void import('./lib/app/shot-seam').then((m) => m.installShotSeam(store, shell));
+    }
     return () => {
       store.stop();
       desktopBridge.stop();
