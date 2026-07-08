@@ -129,6 +129,21 @@ describe('HttpPixliteClient / probe over the real node:http transport', () => {
     expect(stats.rates.inFrmRate).toBe(44);
   }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
 
+  it('sends Connection: close so the controller is never asked to keep-alive a socket it closes (§4.4)', async () => {
+    const connHeaders: (string | undefined)[] = [];
+    const port = await start((req, res) => {
+      connHeaders.push(req.headers.connection);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(req.url === '/ver' ? VER_BODY : STAT_BODY);
+    });
+    const c = new HttpPixliteClient({ host: '127.0.0.1', port, timeoutMs: 10_000 });
+    await c.probe();
+    await c.statisticRead(['']);
+    // both the GET probe and the POST statisticRead must announce a per-request connection
+    expect(connHeaders.length).toBe(2);
+    expect(connHeaders.every((h) => h?.toLowerCase() === 'close')).toBe(true);
+  }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
+
   it('returns null on probe timeout (server never responds)', async () => {
     const port = await start(() => {
       /* hang: never respond */
