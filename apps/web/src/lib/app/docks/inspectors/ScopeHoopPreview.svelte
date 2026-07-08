@@ -185,7 +185,7 @@
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
-    background: color-mix(in oklch, var(--surface-1) 86%, transparent);
+    background: color-mix(in oklch, var(--surface) 86%, transparent);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-pill);
   }

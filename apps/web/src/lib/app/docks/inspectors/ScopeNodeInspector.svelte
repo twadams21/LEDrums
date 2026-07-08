@@ -170,7 +170,7 @@
   }
   .readout.empty strong,
   .readout.empty span:last-child {
-    color: var(--danger);
+    color: var(--live);
   }
   .readout.noop span:last-child {
     color: var(--text-muted);
