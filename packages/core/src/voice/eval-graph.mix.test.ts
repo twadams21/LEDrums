@@ -358,6 +358,37 @@ describe('evalGraph Gen3 Mix active branches', () => {
     expect(play(g)).toMatchObject({ scope: 'drum', targetId: 'snare' });
   });
 
+  it('supports Mix-to-Mix as deterministic nested collectors', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'a', { effectId: 'a', y: 0 }),
+        node('effect', 'b', { effectId: 'b', y: 100 }),
+        node('mix', 'mix-1', { y: 0, mixBlendMode: 'add' }),
+        node('effect', 'c', { effectId: 'c', y: 200 }),
+        node('mix', 'mix-2', { y: 100, mixBlendMode: 'normal' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-a', 'all', 'a'),
+        edge('all-b', 'all', 'b'),
+        edge('all-c', 'all', 'c'),
+        edge('a-mix-1', 'a', 'mix-1'),
+        edge('b-mix-1', 'b', 'mix-1'),
+        edge('mix-1-mix-2', 'mix-1', 'mix-2'),
+        edge('c-mix-2', 'c', 'mix-2'),
+        edge('mix-2-output', 'mix-2', 'output'),
+      ],
+    );
+
+    const action = play(g)!;
+
+    expect(action.mixBlendMode).toBe('normal');
+    expect(action.mixInputs?.map((input) => input.originNodeId)).toEqual(['mix-1', 'c']);
+    expect(action.mixInputs?.[0]?.mixBlendMode).toBe('add');
+    expect(action.mixInputs?.[0]?.mixInputs?.map((input) => input.effectId)).toEqual(['a', 'b']);
+  });
+
   it('resumes delayed Gen3 branches through active Mix semantics', () => {
     const g = graph(
       [

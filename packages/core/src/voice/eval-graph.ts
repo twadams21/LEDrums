@@ -25,6 +25,7 @@ import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
+import { compileRenderPlan, type RenderPlan, type RenderPlanChild } from './render-plan';
 import { intersectScopeTargets } from './scope';
 import type { BlendMode } from '../color/blend';
 
@@ -206,16 +207,8 @@ function edgeOpacity(value: number | undefined): number {
   return value == null ? 1 : value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
-function isFlowEdge(e: { toPort?: string }): boolean {
-  return e.toPort == null || e.toPort === 'in';
-}
-
-function flowChildren(graph: TriggerGraph, node: GraphNode): Array<{ edge: (typeof graph.edges)[number]; node: GraphNode }> {
-  return graph.edges
-    .filter((e) => e.from === node.id && isFlowEdge(e))
-    .map((edge) => ({ edge, node: graph.nodes.find((n) => n.id === edge.to) }))
-    .filter((x): x is { edge: (typeof graph.edges)[number]; node: GraphNode } => !!x.node)
-    .sort((a, b) => a.node.y - b.node.y || a.node.id.localeCompare(b.node.id));
+function planFlowChildren(plan: RenderPlan, node: GraphNode): RenderPlanChild[] {
+  return plan.flowChildrenById.get(node.id) ?? [];
 }
 
 type RouteDraft = { kind: 'empty' } | { kind: 'play'; play: PlayDraft };
@@ -255,9 +248,9 @@ function appendLabel(prefix: string, part: string): string {
 }
 
 function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
-  const trigger = graph.nodes.find((n) => n.kind === 'trigger');
-  if (!trigger) return [];
-  return evalGraphGen3From(state, graph, pad, [trigger.id], ctx, '', new Set(), null);
+  const plan = compileRenderPlan(graph);
+  if (plan.fatal || !plan.triggerId) return [];
+  return evalGraphGen3FromPlan(state, plan, pad, [plan.triggerId], ctx, '', new Set(), null);
 }
 
 function evalGraphGen3From(
@@ -270,7 +263,23 @@ function evalGraphGen3From(
   seen: Set<string>,
   initialDraft: PlayDraft | null,
 ): Action[] {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n] as const));
+  const plan = compileRenderPlan(graph);
+  if (plan.fatal) return [];
+  return evalGraphGen3FromPlan(state, plan, pad, startIds, ctx, viaPrefix, seen, initialDraft);
+}
+
+function evalGraphGen3FromPlan(
+  state: EvalState,
+  plan: RenderPlan,
+  pad: string,
+  startIds: readonly string[],
+  ctx: TriggerCtx,
+  viaPrefix: string,
+  seen: Set<string>,
+  initialDraft: PlayDraft | null,
+): Action[] {
+  const graph = plan.graph;
+  const byId = plan.nodesById;
   const buckets = new Map<string, BucketEntry[]>();
   const via = new Map<string, string>();
   const actions: Action[] = [];
@@ -279,6 +288,7 @@ function evalGraphGen3From(
   const pendingMixes = new Set<string>();
   const pendingOutputs = new Set<string>();
   const queue: string[] = [];
+  const reachability = new Map<string, boolean>();
 
   const enqueue = (id: string): void => {
     if (!byId.has(id) || queued.has(id) || seen.has(id)) return;
@@ -303,12 +313,35 @@ function evalGraphGen3From(
     enqueue(node.id);
   };
   const pushKids = (node: GraphNode, draft: RouteDraft, latchKey: string | null = null): void => {
-    for (const { edge } of flowChildren(graph, node)) push(node, edge, draft, latchKey);
+    for (const { edge } of planFlowChildren(plan, node)) push(node, edge, draft, latchKey);
   };
   const labelFor = (node: GraphNode, part: string): string => {
     const next = appendLabel(via.get(node.id) ?? '', part);
     return next;
   };
+  const canReach = (fromId: string, toId: string, seenIds = new Set<string>()): boolean => {
+    const key = `${fromId}->${toId}`;
+    const cached = reachability.get(key);
+    if (cached != null) return cached;
+    if (fromId === toId) {
+      reachability.set(key, true);
+      return true;
+    }
+    if (seenIds.has(fromId)) {
+      reachability.set(key, false);
+      return false;
+    }
+    const from = byId.get(fromId);
+    if (!from) {
+      reachability.set(key, false);
+      return false;
+    }
+    const seenNext = new Set(seenIds).add(fromId);
+    const result = planFlowChildren(plan, from).some((child) => canReach(child.node.id, toId, seenNext));
+    reachability.set(key, result);
+    return result;
+  };
+  const hasPendingUpstreamMix = (nodeId: string): boolean => [...pendingMixes].some((mixId) => canReach(mixId, nodeId));
 
   while (queue.length || pendingMixes.size || pendingOutputs.size) {
     const pendingIds = pendingMixes.size ? pendingMixes : pendingOutputs;
@@ -325,7 +358,7 @@ function evalGraphGen3From(
     const node = byId.get(id);
     if (!node) continue;
     if (node.kind === 'mix') {
-      if (queue.length) {
+      if (queue.length || hasPendingUpstreamMix(id)) {
         pendingMixes.add(id);
         continue;
       }
@@ -415,7 +448,7 @@ function evalGraphGen3From(
         for (const entry of newEntries) pushKids(node, entry.draft, entry.latchKey ?? null);
         break;
       case 'random': {
-        const kids = flowChildren(graph, node);
+        const kids = planFlowChildren(plan, node);
         if (!kids.length) break;
         let i = state.prng.nextInt(kids.length);
         if (node.noRepeat && kids.length > 1) {
@@ -427,7 +460,7 @@ function evalGraphGen3From(
         break;
       }
       case 'sequence': {
-        const kids = flowChildren(graph, node);
+        const kids = planFlowChildren(plan, node);
         if (!kids.length) break;
         const i = (state.seqIndex.get(sk) ?? 0) % kids.length;
         state.seqIndex.set(sk, i + 1);
@@ -435,17 +468,17 @@ function evalGraphGen3From(
         break;
       }
       case 'switch': {
-        let kids: ReturnType<typeof flowChildren>;
+        let kids: RenderPlanChild[];
         if (node.on !== 'section' && node.on !== 'beat') {
           if ((node.valueMode ?? 'gate') === 'gate') {
             const threshold = node.threshold ?? 0.5;
             const invert = node.invert ?? false;
-            kids = (invert ? ctx.velocity > threshold : ctx.velocity <= threshold) ? flowChildren(graph, node) : [];
+            kids = (invert ? ctx.velocity > threshold : ctx.velocity <= threshold) ? planFlowChildren(plan, node) : [];
           } else {
-            kids = flowChildren(graph, node).filter((x) => x.edge.fromPort === `band-${bandIndex(ctx.velocity, node.bands ?? [0.5])}`);
+            kids = planFlowChildren(plan, node).filter((x) => x.edge.fromPort === `band-${bandIndex(ctx.velocity, node.bands ?? [0.5])}`);
           }
         } else {
-          kids = flowChildren(graph, node).filter((_, i, arr) => i === switchIndexN(arr.length, node.on, ctx));
+          kids = planFlowChildren(plan, node).filter((_, i, arr) => i === switchIndexN(arr.length, node.on, ctx));
         }
         for (const entry of newEntries) for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
         break;
@@ -466,7 +499,7 @@ function evalGraphGen3From(
       }
       case 'delay': {
         const delayMs = computeDelayMs(node.delayMode ?? 'time', node.ms ?? 0, node.division ?? '1/8', ctx.bpm);
-        const kids = flowChildren(graph, node);
+        const kids = planFlowChildren(plan, node);
         for (const entry of newEntries) {
           const draft = routePlay(entry.draft);
           if (delayMs <= 0) {

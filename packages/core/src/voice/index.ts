@@ -16,6 +16,7 @@ export * from './envelope';
 export * from './modulation';
 export * from './scope';
 export * from './graph-integrity';
+export * from './render-plan';
 export {
   MODULATION_PARITY_CASES,
   PARITY_PHASES,
