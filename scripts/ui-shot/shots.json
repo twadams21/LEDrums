@@ -1,504 +1,129 @@
 {
   "shell": {
-    "route": "?view=trigger"
+    "state": "view:trigger"
   },
   "top-bar": {
-    "route": "?view=trigger",
-    "select": ".top"
+    "state": "view:trigger",
+    "target": ".top"
   },
   "transport": {
-    "route": "?view=trigger",
-    "select": ".xport"
+    "state": "view:trigger",
+    "target": ".xport"
   },
   "left-rail": {
-    "route": "?view=trigger",
-    "select": ".rail"
+    "state": "view:trigger",
+    "target": ".rail"
   },
   "trigger-graph": {
-    "route": "?view=trigger",
-    "select": "main.center"
+    "state": "view:trigger",
+    "target": "main.center"
   },
   "node-editor-add": {
-    "route": "?view=trigger",
-    "select": ".node-editor"
+    "state": "view:trigger",
+    "target": "Node editor"
   },
   "gen3-add-pane-route": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Route')"
-      },
-      {
-        "wait": 300
-      }
-    ],
-    "select": ".node-editor"
+    "state": "view:trigger",
+    "target": "Node editor"
   },
   "gen3-scope-inspector": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Route')"
-      },
-      {
-        "wait": 200
-      },
-      {
-        "click": ".node-editor button:has-text('Scope')"
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": ".svelte-flow__node:has-text('Scope')",
-        "force": true
-      },
-      {
-        "wait": 500
-      }
-    ],
-    "select": ".node-editor"
+    "state": "view:trigger,add:scope,select:scope",
+    "target": "Node editor"
   },
   "gen3-mix-node": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Route')"
-      },
-      {
-        "wait": 200
-      },
-      {
-        "click": ".node-editor button:has-text('Mix')"
-      },
-      {
-        "wait": 500
-      }
-    ],
-    "select": "main.center"
+    "state": "view:trigger,add:mix,select:mix",
+    "target": "main.center"
   },
   "gen3-slider-input": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
-      },
-      {
-        "wait": 400
-      }
-    ],
-    "select": ".node-editor"
+    "state": "view:trigger,add:effect,select:effect",
+    "target": "Node editor"
   },
   "trigger-node-selected": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": ".svelte-flow__node"
-      }
-    ],
-    "select": ".node-editor"
+    "state": "view:trigger,add:mix,select:mix",
+    "target": "Node editor"
   },
   "graphs-dock": {
-    "route": "?view=trigger",
-    "select": ".graphbar"
+    "state": "view:trigger",
+    "target": ".graphbar"
   },
   "visualizer": {
-    "route": "?view=trigger",
-    "select": "aside.col2 .viz",
+    "state": "view:trigger",
+    "target": "aside.col2 .viz",
     "settle": 1500
   },
   "buses": {
-    "route": "?view=trigger",
-    "select": "aside.col2 .buses"
+    "state": "view:trigger",
+    "target": "aside.col2 .buses"
   },
   "patch-graph": {
-    "route": "?view=patch",
-    "select": "main.center",
+    "state": "view:patch",
+    "target": "main.center",
+    "settle": 1500
+  },
+  "patch-controller": {
+    "state": "view:patch",
+    "target": "node:controller",
     "settle": 1500
   },
   "objects": {
-    "route": "?view=objects",
-    "select": "main.center"
+    "state": "view:objects",
+    "target": "main.center"
   },
   "song-library": {
-    "route": "?view=objects",
-    "actions": [
-      {
-        "click": "text=Song Library"
-      }
-    ],
-    "select": "main.center"
+    "state": "view:objects",
+    "target": "main.center"
   },
   "sections": {
-    "route": "?view=sections",
-    "select": "main.center"
+    "state": "view:sections",
+    "target": "main.center"
   },
   "section-detail": {
-    "route": "?view=sections",
-    "actions": [
-      {
-        "click": "section.col .li"
-      },
-      {
-        "wait": 300
-      }
-    ],
-    "select": "main.center"
+    "state": "view:sections",
+    "target": "main.center"
   },
   "gen3-sections-arrangement": {
-    "route": "?view=sections",
-    "actions": [
-      {
-        "click": "section.col .li"
-      },
-      {
-        "wait": 300
-      }
-    ],
-    "select": "main.center"
+    "state": "view:sections",
+    "target": "main.center"
   },
   "perform": {
-    "route": "?view=perform"
+    "state": "view:perform"
   },
   "monitor": {
-    "route": "?view=monitor",
-    "select": "main.center"
+    "state": "view:monitor",
+    "target": "main.center"
   },
   "settings-dialog": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button[aria-label=\"Settings\"]"
-      },
-      {
-        "wait": 400
-      }
-    ]
+    "state": "view:trigger,settings",
+    "target": "dialog:Settings",
+    "settle": 300
   },
   "node-editor-play": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": ".svelte-flow__node[data-id*='play'], .svelte-flow__node:has(.thumb)"
-      }
-    ],
-    "select": ".node-editor"
-  },
-  "patch-controller": {
-    "route": "?view=patch",
-    "actions": [
-      {
-        "click": ".svelte-flow__node[data-id='controller']"
-      },
-      {
-        "wait": 400
-      }
-    ],
-    "select": ".node-editor",
-    "settle": 1500
+    "state": "view:trigger,add:effect,select:effect",
+    "target": "Node editor"
   },
   "effect-gallery": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Effect')"
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button[title='Add Ambient & Base']"
-      },
-      {
-        "wait": 800
-      },
-      {
-        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": "button[aria-label='Change effect']",
-        "force": true
-      },
-      {
-        "wait": 600
-      }
-    ],
-    "select": ".dlg-gallery",
+    "state": "view:trigger,add:effect,select:effect,gallery",
+    "target": "dialog:Change effect",
     "settle": 1200
   },
   "effect-gallery-collection": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Effect')"
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button[title='Add Ambient & Base']"
-      },
-      {
-        "wait": 800
-      },
-      {
-        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": "button[aria-label='Change effect']",
-        "force": true
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": ".dlg-gallery .tabs-trigger:has-text('Particles & Air')"
-      },
-      {
-        "wait": 600
-      }
-    ],
-    "select": ".dlg-gallery",
+    "state": "view:trigger,add:effect,select:effect,gallery",
+    "target": "dialog:Change effect",
     "settle": 1200
   },
   "effect-gallery-canvas": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Effect')"
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button[title='Add Ambient & Base']"
-      },
-      {
-        "wait": 800
-      },
-      {
-        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": "button[aria-label='Change effect']",
-        "force": true
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": ".dlg-gallery .tabs-trigger:has-text('Canvas')"
-      },
-      {
-        "wait": 800
-      }
-    ],
-    "select": ".dlg-gallery",
+    "state": "view:trigger,add:effect,select:effect,gallery",
+    "target": "dialog:Change effect",
     "settle": 1200
   },
   "effect-gallery-lenses": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Effect')"
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button[title='Add Ambient & Base']"
-      },
-      {
-        "wait": 800
-      },
-      {
-        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": "button[aria-label='Change effect']",
-        "force": true
-      },
-      {
-        "wait": 800
-      },
-      {
-        "click": ".dlg-gallery .tabs-trigger:has-text('Lenses')"
-      },
-      {
-        "wait": 600
-      }
-    ],
-    "select": ".dlg-gallery",
+    "state": "view:trigger,add:effect,select:effect,gallery",
+    "target": "dialog:Change effect",
     "settle": 1200
   },
   "effect-gallery-filtered": {
-    "route": "?view=trigger",
-    "actions": [
-      {
-        "click": "button:has-text('Take over')",
-        "force": true,
-        "optional": true
-      },
-      {
-        "wait": 500
-      },
-      {
-        "click": "button[aria-label='Add node']",
-        "force": true
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button:has-text('Effect')"
-      },
-      {
-        "wait": 300
-      },
-      {
-        "click": "button[title='Add Ambient & Base']"
-      },
-      {
-        "wait": 800
-      },
-      {
-        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": "button[aria-label='Change effect']",
-        "force": true
-      },
-      {
-        "wait": 600
-      },
-      {
-        "click": ".dlg-gallery .tagrow button:has-text('texture')"
-      },
-      {
-        "wait": 600
-      }
-    ],
-    "select": ".dlg-gallery",
+    "state": "view:trigger,add:effect,select:effect,gallery",
+    "target": "dialog:Change effect",
     "settle": 1200
   }
 }
