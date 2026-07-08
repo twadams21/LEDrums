@@ -223,7 +223,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
   {/if}
   {#if nodeHasModInput(kind)}
     <Handle
@@ -231,11 +231,12 @@
       id="mod"
       position={Position.Left}
       class="mod-handle"
+      aria-label="Modifier chain in"
       style={nodeHasInput(kind) ? 'top: 72%' : 'top: 50%'}
     />
   {/if}
   {#if nodeHasOutput(kind)}
-    <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} />
+    <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'trigger' ? 'Trigger flow out' : 'Effect flow out'} />
   {/if}
   {#if nodeIsModSource(kind)}
     <Handle
@@ -243,6 +244,7 @@
       position={Position.Right}
       class="mod-source-handle"
       title="Modulation output"
+      aria-label="Modulation output"
     />
   {/if}
   {#if modCount > 0}
@@ -259,7 +261,7 @@
   <ul class="noderows">
     {#each modRows as row (row.param)}
       <li class="modrow" class:wired={row.sources.length > 0}>
-        <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
+        <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" aria-label={`Modulation in: ${row.label}`} />
         <span class="pdot" aria-hidden="true"></span>
         <span class="plabel">{row.label}</span>
         <ParamRowTick
@@ -274,7 +276,7 @@
   <ul class="noderows">
     {#each mixRows as row (row.edgeId)}
       <li class="mixrow">
-        <Handle type="target" position={Position.Left} id={row.handleId} class="mix-handle effect-handle" />
+        <Handle type="target" position={Position.Left} id={row.handleId} class="mix-handle effect-handle" aria-label={`Layer in: ${row.label}`} />
         <span class="ldot" aria-hidden="true"></span>
         <span class="plabel">{row.label}</span>
         <span class="opacity">{Math.round(row.opacity * 100)}%</span>
@@ -293,7 +295,7 @@
   <ContextMenu {actions} disabled={store.isViewer}>
   {#if isBandsSwitch}
     {#if nodeHasInput(kind)}
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} aria-label="Trigger flow in" />
     {/if}
     <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
   {:else}

@@ -188,48 +188,27 @@
     stroke: transparent;
     stroke-opacity: 0;
   }
-  /* modifier-chain wires read distinctly from trigger-flow wires: the mod role colour +
-     a dashed stroke, so the two flows separate at a glance (declared BEFORE edge-hot so the
-     hover accent still wins the stroke on a hovered mod wire; the dash stays either way) */
+  /* modifier-chain wires read distinctly from trigger-flow wires by their dashed stroke alone:
+     the wire itself stays grey (signal-flow wires are intentionally de-coloured), so only the
+     dash separates the modifier chain from the trigger flow at a glance. */
   .gcanvas :global(.svelte-flow__edge.edge-mod .svelte-flow__edge-path) {
-    /* stroke: var(--role-mod); */
     stroke-dasharray: 5 4;
   }
-  /* modulation wires (source→param) get the third wire role colour + a finer dotted stroke, so
-     they read distinctly from both trigger-flow and modifier-chain wires at a glance */
+  /* modulation wires (source→param) are the one coloured flow — a value routed into a parameter
+     is a genuinely different wire from signal flow, so it keeps the modulation role colour + a
+     finer dotted stroke to read distinctly from the grey trigger/modifier wires. */
   .gcanvas :global(.svelte-flow__edge.edge-modulation .svelte-flow__edge-path) {
-    /* stroke: var(--role-modulation); */
+    stroke: var(--role-modulation);
     stroke-dasharray: 2 3;
   }
-  .gcanvas :global(.svelte-flow__edge.edge-effect .svelte-flow__edge-path) {
-    /* stroke: var(--role-mod); */
-  }
-  /* a wire one level connected to the hovered node lights up (see graph-hover) */
-  .gcanvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
-    /* stroke: var(--accent); */
-  }
+  /* a directly hovered or selected wire lights up accent (the instant-hover interaction
+     contract); signal-flow wires otherwise read grey. */
   .gcanvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
-  /* the `mod` input handle — mod role colour so it reads as the modifier port, not flow in */
-  .gcanvas :global(.svelte-flow__handle.mod-handle) {
-    /* background: color-mix(in oklch, var(--role-mod) 30%, var(--surface-2));
-    border-color: var(--role-mod); */
-  }
-  .gcanvas :global(.svelte-flow__handle.mod-handle:hover),
-  .gcanvas :global(.svelte-flow__handle.mod-handle.connectingto) {
-    /* background: var(--role-mod);
-    border-color: var(--role-mod); */
-  }
-  .gcanvas :global(.svelte-flow__handle.trigger-handle) {
-    /* background: color-mix(in oklch, var(--accent) 28%, var(--surface-2));
-    border-color: var(--accent); */
-  }
-  .gcanvas :global(.svelte-flow__handle.effect-handle) {
-    /* background: color-mix(in oklch, var(--role-mod) 28%, var(--surface-2));
-    border-color: var(--role-mod); */
-  }
+  /* the modulation input handle keeps the modulation role colour so the param port reads by
+     role; the trigger / effect / mod flow handles stay the neutral grey handle below. */
   .gcanvas :global(.svelte-flow__handle.param-handle) {
     background: color-mix(in oklch, var(--role-modulation) 30%, var(--surface-2));
     border-color: var(--role-modulation);
