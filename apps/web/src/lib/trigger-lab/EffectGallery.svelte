@@ -127,6 +127,14 @@
     activeTags = activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag];
   }
 
+  // Empty-state escape hatch — reset every filter back to the whole library.
+  function clearFilters(): void {
+    scope = 'all';
+    activeTags = [];
+    paramFilter = '';
+    query = '';
+  }
+
   function previewParams(effectId: string) {
     const eff = store.selectableEffects.find((e) => e.id === effectId)!;
     return store.presetById(`${effectId}:default`)?.params ?? defaultParams(eff);
@@ -168,7 +176,10 @@
 
     <div class="gallery-scroll">
       {#if groups.length === 0}
-        <p class="empty">No effects match these filters.</p>
+        <div class="empty">
+          <p>No effects match these filters.</p>
+          <button type="button" class="ghost" onclick={clearFilters}>Clear filters</button>
+        </div>
       {:else}
         {#each groups as group (group.value)}
           <section class="collection-section" aria-labelledby={`effect-section-${group.value}`}>
@@ -256,8 +267,14 @@
     min-width: 0;
   }
   .empty {
-    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
     padding: var(--space-4);
+  }
+  .empty p {
+    margin: 0;
     font-size: var(--text-sm);
     color: var(--text-muted);
   }
@@ -288,7 +305,7 @@
     font-weight: 700;
   }
   .section-head p {
-    margin: 2px 0 0;
+    margin: var(--space-0_5) 0 0;
     color: var(--text-faint);
     font-size: var(--text-2xs);
     line-height: var(--leading-normal);
@@ -313,10 +330,6 @@
   }
   .cell:hover {
     border-color: var(--border-strong);
-    transform: translateY(-1px);
-  }
-  .cell:active {
-    transform: translateY(0) scale(0.98);
   }
   .cell.sel {
     border-color: var(--accent);
@@ -336,7 +349,7 @@
   }
   .desc {
     font-size: var(--text-xs);
-    line-height: 1.4;
+    line-height: var(--leading-snug);
     color: var(--text-muted);
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -359,9 +372,17 @@
     min-width: 0;
   }
   @media (prefers-reduced-motion: no-preference) {
+    .cell:hover {
+      transform: translateY(-1px);
+    }
+    .cell:active {
+      transform: translateY(0) scale(0.98);
+    }
     .cell {
-      animation: cell-in 220ms var(--ease-control) both;
-      animation-delay: calc(min(var(--i), 16) * 22ms);
+      animation: cell-in var(--dur-220) var(--ease-control) both;
+      /* per-item entrance stagger — a tenth of the entrance duration (≈22ms), composed from
+         the same --dur token so it stays in one motion system. */
+      animation-delay: calc(min(var(--i), 16) * var(--dur-220) / 10);
     }
     @keyframes cell-in {
       from {
