@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeNode, type TriggerGraph } from '../sim';
+import { defaultEnvelope, makeNode, type TriggerGraph } from '../sim';
 import { migrateGen3Graph, normalizeGraphs, sanitizeGraphIntegrity } from './hydrate';
 
 const graph = (): TriggerGraph => ({
@@ -121,7 +121,7 @@ describe('migrateGen3Graph', () => {
     expect(g.nodes.filter((n) => n.kind === 'output')).toHaveLength(1);
     expect(g.nodes.some((n) => n.kind === 'play')).toBe(false);
     expect(g.edges.every((e) => g.nodes.some((n) => n.id === e.from) && g.nodes.some((n) => n.id === e.to))).toBe(true);
-    expect(g.edges).toContainEqual(expect.objectContaining({ from: 'p1', to: 'output' }));
+    expect(g.edges).not.toContainEqual(expect.objectContaining({ from: 'p1', to: 'output' }));
   });
 
   it('is idempotent for already migrated Gen3 graphs', () => {
@@ -130,5 +130,30 @@ describe('migrateGen3Graph', () => {
       edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
     });
     expect(migrateGen3Graph(once)).toEqual(once);
+  });
+
+  it('preserves Gen3 version and terminal Output through the full normalize path', () => {
+    const { graphs } = normalizeGraphs(
+      {
+        'kick:0': {
+          version: 3,
+          nodes: [
+            makeNode('trigger', 'trigger'),
+            makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash', env: { brightness: defaultEnvelope('decay') } }),
+            makeNode('output', 'output', 400, 0),
+          ],
+          edges: [{ id: 'e1', from: 'trigger', to: 'p1' }, { id: 'e2', from: 'p1', to: 'output' }],
+        },
+      },
+      {},
+      [{ drumId: 'kick', drumLabel: 'Kick', zone: 0, zoneLabel: 'Center', tree: { id: 'p', kind: 'play', mode: 'oneshot', scope: 'kit', effectId: 'gen:radial-wash', presetId: '', params: {}, env: {} } }],
+      () => [],
+      () => undefined,
+    );
+
+    const g = graphs['kick:0']!;
+    expect(g.version).toBe(3);
+    expect(g.nodes.find((n) => n.id === 'output')?.kind).toBe('output');
+    expect(g.nodes.find((n) => n.kind === 'trigger')?.source).toEqual({ kind: 'drum', drumId: 'kick', zone: '0' });
   });
 });

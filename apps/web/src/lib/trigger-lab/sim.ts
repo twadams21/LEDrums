@@ -278,7 +278,8 @@ type PlayAction = {
   latchKey: string | null;
 };
 type StopAction = { kind: 'stop'; voiceId: string; via: string };
-type Action = PlayAction | StopAction;
+type PendingAction = { kind: 'pending'; descriptor: voice.PendingDescriptor };
+type Action = PlayAction | StopAction | PendingAction;
 type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
 type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
 
@@ -408,7 +409,7 @@ export class Sim {
           this.release(v);
           resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
         }
-      } else {
+      } else if (a.kind === 'play') {
         const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
         if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
       }
@@ -430,7 +431,9 @@ export class Sim {
           this.release(v);
           resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
         }
-      } else {
+      } else if (a.kind === 'pending') {
+        this.enqueueCorePending(a.descriptor);
+      } else if (a.kind === 'play') {
         const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
         if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
       }
@@ -442,9 +445,34 @@ export class Sim {
   }
 
   private evalGraph(graph: TriggerGraph, ctx: TriggerCtx): Action[] {
+    if (graph.version === 3) return voice.evalGraph(this.coreEvalState(), graph, 'preview', ctx) as Action[];
     const trig = graph.nodes.find((n) => n.kind === 'trigger');
     if (!trig) return [];
     return this.evalNode(graph, trig, ctx, '', new Set(), null);
+  }
+
+  private coreEvalState(): voice.EvalState {
+    return {
+      seqIndex: this.seqIndex,
+      lastPick: this.lastPick,
+      latched: this.latched,
+      prng: this.prng,
+      presetsById: this.presetsById as Map<string, voice.Preset>,
+      isVoiceAlive: (id: string) => this.voices.some((v) => v.id === id),
+    };
+  }
+
+  private enqueueCorePending(descriptor: voice.PendingDescriptor): void {
+    this.pendingFires.push({
+      fireAtMs: this.timeMs + descriptor.relativeDelayMs,
+      enqueueOrder: this.pendingFireCounter++,
+      childIds: descriptor.childIds,
+      graph: descriptor.graph,
+      ctx: descriptor.ctx,
+      viaPrefix: descriptor.viaPrefix,
+      seen: descriptor.seen,
+      draft: descriptor.draft as PlayDraft | null | undefined,
+    });
   }
 
   /** A node's wired children, ordered top→bottom (visual y) for determinism. */
@@ -928,18 +956,30 @@ export class Sim {
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
       const { graph, childIds, ctx, viaPrefix, seen, draft } = f;
-      // Re-lookup child nodes by id so y-sort still applies (children may have moved).
-      const childNodes = childIds
-        .map((id) => graph.nodes.find((n) => n.id === id))
-        .filter((n): n is GraphNode => !!n)
-        .sort((a, b) => a.y - b.y);
-      const actions = childNodes.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen, draft ?? null));
+      const actions = graph.version === 3
+        ? ((voice.evalChildren as unknown as (
+            state: voice.EvalState,
+            graph: TriggerGraph,
+            pad: string,
+            childIds: string[],
+            ctx: TriggerCtx,
+            viaPrefix: string,
+            seen: Set<string>,
+            draft: PlayDraft | null,
+          ) => Action[])(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null))
+        : childIds
+            .map((id) => graph.nodes.find((n) => n.id === id))
+            .filter((n): n is GraphNode => !!n)
+            .sort((a, b) => a.y - b.y)
+            .flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen, draft ?? null));
       for (const a of actions) {
         if (a.kind === 'stop') {
           const v = this.voices.find((x) => x.id === a.voiceId);
           if (v) this.release(v);
         } else if (a.kind === 'play') {
           this.spawn(a, ctx.sourceDrumId, ctx.velocity);
+        } else {
+          this.enqueueCorePending(a.descriptor);
         }
       }
     }

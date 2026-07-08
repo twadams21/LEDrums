@@ -4,6 +4,7 @@ export type TriggerGraphIssueCode =
   | 'missing-trigger'
   | 'missing-output'
   | 'duplicate-output'
+  | 'reserved-output-id'
   | 'duplicate-node-id'
   | 'duplicate-edge-id'
   | 'dangling-edge'
@@ -99,6 +100,17 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
 
   const nodes: GraphNode[] = [];
   const seenNodes = new Set<string>();
+  const usedIds = new Set(sourceNodes.map((n) => n.id).filter(Boolean));
+  const remappedNodeId = (base: string): string => {
+    let id = base;
+    let i = 2;
+    while (usedIds.has(id) || seenNodes.has(id)) {
+      id = `${base}-${i}`;
+      i += 1;
+    }
+    usedIds.add(id);
+    return id;
+  };
   const addNode = (node: GraphNode): void => {
     if (!node.id || seenNodes.has(node.id)) {
       issues.push(issue('duplicate-node-id', 'Duplicate or empty node id removed.', { nodeId: node.id }));
@@ -118,6 +130,13 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
       continue;
     }
     if (!legacy && node.kind === 'output') continue;
+    if (!legacy && node.id === OUTPUT_ANCHOR_ID) {
+      const id = remappedNodeId(`${node.kind}:${OUTPUT_ANCHOR_ID}`);
+      remap.set(node.id, id);
+      issues.push(issue('reserved-output-id', 'Gen3 reserves id "output" for the terminal output anchor; node remapped.', { nodeId: node.id }));
+      addNode(node.kind === 'play' ? { ...node, id, kind: 'effect' } : { ...node, id });
+      continue;
+    }
     if (!legacy && node.kind === 'play') {
       issues.push(issue('persisted-play-in-gen3', 'Gen3 graph contained legacy play node; rewritten to effect.', { nodeId: node.id }));
     }
@@ -168,10 +187,12 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
     addEdge(next);
   }
 
-  const hasOutgoingFlow = new Set(edges.filter(isFlowEdge).map((e) => e.from));
-  const leaves = nodes.filter((n) => n.id !== OUTPUT_ANCHOR_ID && isRenderLeafCandidate(n) && !hasOutgoingFlow.has(n.id));
-  for (const leaf of leaves) {
-    addEdge({ id: edgeIdFor(edgeIds, `e-${leaf.id}-output`), from: leaf.id, to: OUTPUT_ANCHOR_ID });
+  if (legacy) {
+    const hasOutgoingFlow = new Set(edges.filter(isFlowEdge).map((e) => e.from));
+    const leaves = nodes.filter((n) => n.id !== OUTPUT_ANCHOR_ID && isRenderLeafCandidate(n) && !hasOutgoingFlow.has(n.id));
+    for (const leaf of leaves) {
+      addEdge({ id: edgeIdFor(edgeIds, `e-${leaf.id}-output`), from: leaf.id, to: OUTPUT_ANCHOR_ID });
+    }
   }
 
   return { graph: { ...graph, version: 3, nodes, edges }, issues };

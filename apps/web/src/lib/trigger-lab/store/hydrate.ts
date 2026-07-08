@@ -72,7 +72,7 @@ export function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
   const source: TriggerSource = { kind: 'drum', drumId: key.slice(0, sep), zone: key.slice(sep + 1) };
   const nodes = graph.nodes.slice();
   nodes[i] = { ...nodes[i]!, source };
-  return { nodes, edges: graph.edges };
+  return { ...graph, nodes, edges: graph.edges };
 }
 
 /** Back-fill an explicit `drum` trigger source on every PAD-BOUND graph (a key matching a real
@@ -146,7 +146,7 @@ export function materializeLinkedNodes(graph: TriggerGraph, presetParamsFor: Pre
     }
     return rest as GraphNode;
   });
-  return { nodes, edges: graph.edges };
+  return { ...graph, nodes, edges: graph.edges };
 }
 
 /** Apply {@link materializeLinkedNodes} across a keyed map of graphs (each unchanged graph keeps
@@ -208,7 +208,7 @@ export function migrateGraphEnvelopes(graph: TriggerGraph): TriggerGraph {
     graphChanged = true;
     return { ...n, env };
   });
-  return graphChanged ? { nodes, edges: graph.edges } : graph;
+  return graphChanged ? { ...graph, nodes, edges: graph.edges } : graph;
 }
 
 /** Apply {@link migrateGraphEnvelopes} across a keyed map of graphs (each unchanged
@@ -294,7 +294,7 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
     // extend the exposed rows only when a param was actually wired.
     nodes.push(placed > 0 ? { ...n, env: {}, modInputs } : { ...n, env: {} });
   }
-  return { nodes, edges: [...graph.edges, ...addedEdges] };
+  return { ...graph, nodes, edges: [...graph.edges, ...addedEdges] };
 }
 
 /** Apply {@link migrateGraphEnvMaps} across a keyed map of graphs (each unchanged graph keeps

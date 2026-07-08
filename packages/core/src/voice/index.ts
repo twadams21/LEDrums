@@ -25,6 +25,15 @@ export {
 } from './modulation-parity';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
+export {
+  evalGraph,
+  evalChildren,
+  type Action,
+  type EvalState,
+  type PendingDescriptor,
+  type PlayAction,
+  type TriggerCtx as EvalTriggerCtx,
+} from './eval-graph';
 // S36 — LFO source node
 export {
   LFO_WAVEFORMS,

@@ -257,23 +257,40 @@ function appendLabel(prefix: string, part: string): string {
 function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
   const trigger = graph.nodes.find((n) => n.kind === 'trigger');
   if (!trigger) return [];
+  return evalGraphGen3From(state, graph, pad, [trigger.id], ctx, '', new Set(), null);
+}
+
+function evalGraphGen3From(
+  state: EvalState,
+  graph: TriggerGraph,
+  pad: string,
+  startIds: readonly string[],
+  ctx: TriggerCtx,
+  viaPrefix: string,
+  seen: Set<string>,
+  initialDraft: PlayDraft | null,
+): Action[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n] as const));
-  const order = [...graph.nodes].sort((a, b) => a.x - b.x || a.y - b.y || a.id.localeCompare(b.id));
-  const rank = new Map(order.map((n, i) => [n.id, i] as const));
   const buckets = new Map<string, BucketEntry[]>();
   const via = new Map<string, string>();
   const actions: Action[] = [];
-  const enqueued = new Set<string>([trigger.id]);
+  const enqueued = new Set<string>();
   const processed = new Set<string>();
-  const queue = [trigger.id];
-  buckets.set(trigger.id, [{ draft: EMPTY_ROUTE }]);
+  const pendingMixes = new Set<string>();
+  const queue: string[] = [];
 
   const enqueue = (id: string): void => {
-    if (!byId.has(id) || enqueued.has(id)) return;
+    if (!byId.has(id) || enqueued.has(id) || seen.has(id)) return;
     enqueued.add(id);
     queue.push(id);
-    queue.sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0) || a.localeCompare(b));
   };
+  for (const id of startIds) {
+    const node = byId.get(id);
+    if (!node || seen.has(id)) continue;
+    buckets.set(id, [{ draft: initialDraft ? { kind: 'play', play: initialDraft } : EMPTY_ROUTE }]);
+    via.set(id, viaPrefix);
+    enqueue(id);
+  }
   const push = (from: GraphNode, edge: GraphEdge, draft: RouteDraft, latchKey: string | null = null): void => {
     const node = byId.get(edge.to);
     if (!node) return;
@@ -290,14 +307,18 @@ function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: 
     return next;
   };
 
-  while (queue.length) {
-    const id = queue.shift()!;
+  while (queue.length || pendingMixes.size) {
+    const id = queue.length ? queue.shift()! : [...pendingMixes].sort((a, b) => {
+      const ay = byId.get(a)?.y ?? 0;
+      const by = byId.get(b)?.y ?? 0;
+      return ay - by || a.localeCompare(b);
+    })[0]!;
+    pendingMixes.delete(id);
     const node = byId.get(id);
     if (!node) continue;
     if (node.kind === 'mix') {
-      const waiting = graph.edges.some((e) => e.to === node.id && isFlowEdge(e) && enqueued.has(e.from) && !processed.has(e.from));
-      if (waiting) {
-        queue.push(id);
+      if (queue.length) {
+        pendingMixes.add(id);
         continue;
       }
     }
@@ -443,7 +464,7 @@ function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: 
                 ctx,
                 childIds: kids.map((kid) => kid.node.id),
                 viaPrefix: labelFor(node, `Delay ${Math.round(delayMs)}ms`),
-                seen: new Set([node.id]),
+                seen: new Set(seen).add(node.id),
                 draft,
               },
             });
@@ -770,6 +791,7 @@ export function evalChildren(
   seen: Set<string>,
   draft: PlayDraft | null = null,
 ): Action[] {
+  if (graph.version === 3) return evalGraphGen3From(state, graph, pad, childIds, ctx, viaPrefix, seen, draft);
   return childIds.flatMap((id) => {
     const child = graph.nodes.find((n) => n.id === id);
     return child ? evalNodeWithDraft(state, graph, pad, child, ctx, viaPrefix, seen, draft) : [];
