@@ -206,11 +206,13 @@ async function resolveTarget(page, target) {
       break;
   }
 
-  // Bare string: walk the chain, accessibility first, CSS last.
+  // Bare string: walk the chain, accessibility first, CSS last. The role step matches
+  // the accessible name EXACTLY — substring matching would let "Node editor" latch onto
+  // a "Node editor tab" control before reaching the aria-labelled drawer itself.
   const chain = [
     { locator: page.locator(`[data-shot="${target}"]`), how: 'data-shot' },
     { locator: page.locator(`[data-ui="${target}"]`), how: 'data-ui' },
-    ...COMMON_ROLES.map((role) => ({ locator: page.getByRole(role, { name: target }), how: `role:${role}` })),
+    ...COMMON_ROLES.map((role) => ({ locator: page.getByRole(role, { name: target, exact: true }), how: `role:${role}` })),
     { locator: page.locator(`[aria-label="${target}"]`), how: 'aria-label' },
     { locator: page.getByText(target), how: 'text' },
     { locator: page.locator(`[title="${target}"]`), how: 'title' },
