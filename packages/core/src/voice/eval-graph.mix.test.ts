@@ -42,6 +42,8 @@ const state = (seed = 1): EvalState => ({
 });
 const play = (graph: TriggerGraph, velocity = 0.25): PlayAction | undefined =>
   evalGraph(state(), graph, 'pad', ctx(velocity)).find((a): a is PlayAction => a.kind === 'play');
+const plays = (graph: TriggerGraph, velocity = 0.25): PlayAction[] =>
+  evalGraph(state(), graph, 'pad', ctx(velocity)).filter((a): a is PlayAction => a.kind === 'play');
 const pending = (graph: TriggerGraph, velocity = 0.25): PendingAction | undefined =>
   evalGraph(state(), graph, 'pad', ctx(velocity)).find((a): a is PendingAction => a.kind === 'pending');
 
@@ -50,6 +52,79 @@ function graph(nodes: GraphNode[], edges: GraphEdge[]): TriggerGraph {
 }
 
 describe('evalGraph Gen3 Mix active branches', () => {
+  it('emits both Output branches when one active path is longer', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'a', { effectId: 'a', x: 100, y: 0 }),
+        node('effect', 'b', { effectId: 'b', x: 100, y: 100 }),
+        node('scope', 'scope-b', { x: 500, y: 100, scope: 'drum', targetId: 'snare' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-a', 'all', 'a'),
+        edge('all-b', 'all', 'b'),
+        edge('a-output', 'a', 'output'),
+        edge('b-scope', 'b', 'scope-b'),
+        edge('scope-output', 'scope-b', 'output'),
+      ],
+    );
+
+    const actions = plays(g).sort((a, b) => a.effectId.localeCompare(b.effectId));
+    expect(actions).toHaveLength(2);
+    expect(actions.map((a) => [a.effectId, a.scope, a.targetId])).toEqual([
+      ['a', 'kit', undefined],
+      ['b', 'drum', 'snare'],
+    ]);
+  });
+
+  it('emits both Output branches when edge and visual order are reversed', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'a', { effectId: 'a', x: 900, y: 100 }),
+        node('effect', 'b', { effectId: 'b', x: 100, y: 0 }),
+        node('scope', 'scope-b', { x: 200, y: 0, scope: 'drum', targetId: 'snare' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-b', 'all', 'b'),
+        edge('all-a', 'all', 'a'),
+        edge('b-scope', 'b', 'scope-b'),
+        edge('scope-output', 'scope-b', 'output'),
+        edge('a-output', 'a', 'output'),
+      ],
+    );
+
+    const actions = plays(g).sort((a, b) => a.effectId.localeCompare(b.effectId));
+    expect(actions).toHaveLength(2);
+    expect(actions.map((a) => [a.effectId, a.scope, a.targetId])).toEqual([
+      ['a', 'kit', undefined],
+      ['b', 'drum', 'snare'],
+    ]);
+  });
+
+  it('does not emit inactive branches that can statically reach Output', () => {
+    const g = graph(
+      [
+        node('all', 'all'),
+        node('effect', 'live', { effectId: 'live' }),
+        node('chance', 'chance', { p: 0 }),
+        node('effect', 'ghost', { effectId: 'ghost' }),
+      ],
+      [
+        edge('t-all', 'trigger', 'all'),
+        edge('all-live', 'all', 'live'),
+        edge('live-output', 'live', 'output'),
+        edge('all-chance', 'all', 'chance'),
+        edge('chance-ghost', 'chance', 'ghost'),
+        edge('ghost-output', 'ghost', 'output'),
+      ],
+    );
+
+    expect(plays(g).map((a) => a.effectId)).toEqual(['live']);
+  });
+
   it('includes only the selected value-switch branch in Mix inputs', () => {
     const g = graph(
       [

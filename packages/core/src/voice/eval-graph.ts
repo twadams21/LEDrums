@@ -277,6 +277,7 @@ function evalGraphGen3From(
   const enqueued = new Set<string>();
   const processed = new Set<string>();
   const pendingMixes = new Set<string>();
+  const pendingOutputs = new Set<string>();
   const queue: string[] = [];
 
   const enqueue = (id: string): void => {
@@ -307,18 +308,25 @@ function evalGraphGen3From(
     return next;
   };
 
-  while (queue.length || pendingMixes.size) {
-    const id = queue.length ? queue.shift()! : [...pendingMixes].sort((a, b) => {
+  while (queue.length || pendingMixes.size || pendingOutputs.size) {
+    const pendingIds = pendingMixes.size ? pendingMixes : pendingOutputs;
+    const id = queue.length ? queue.shift()! : [...pendingIds].sort((a, b) => {
       const ay = byId.get(a)?.y ?? 0;
       const by = byId.get(b)?.y ?? 0;
       return ay - by || a.localeCompare(b);
     })[0]!;
     pendingMixes.delete(id);
+    pendingOutputs.delete(id);
     const node = byId.get(id);
     if (!node) continue;
     if (node.kind === 'mix') {
       if (queue.length) {
         pendingMixes.add(id);
+        continue;
+      }
+    } else if (node.kind === 'output') {
+      if (queue.length || pendingMixes.size) {
+        pendingOutputs.add(id);
         continue;
       }
     }
