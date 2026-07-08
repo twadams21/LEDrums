@@ -3,11 +3,11 @@
   import type { GraphNode } from '../../../trigger-lab/sim';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import ScopeHoopPreview from './ScopeHoopPreview.svelte';
   import {
     commitSelection,
     describeSelection,
     effectiveScopeForNode,
-    hoopLabel,
     isPrimaryMultiSelect,
     selectionFromNode,
     toggleHoop,
@@ -63,28 +63,13 @@
       <SegmentedControl value={selectedDrum} options={drumOptions} onChange={setDrum} ariaLabel="Scope drum" />
     </div>
 
-    <section class={['preview', drum.id === 'kick' && 'sideways']} aria-label={`${drum.label} hoop selector`}>
-      <div class="rings">
-        {#each Array.from({ length: drum.hoopCount }, (_, i) => i) as hoop (hoop)}
-          <button
-            type="button"
-            class={[
-              'hoop',
-              selection.kind === 'drum' && 'whole',
-              selection.kind === 'hoops' && selectedHoops.includes(hoop) && 'selected',
-            ]}
-            style:--i={hoop}
-            style:--count={drum.hoopCount}
-            onclick={(event) => selectHoop(event, hoop)}
-            aria-pressed={selection.kind === 'drum' || selectedHoops.includes(hoop)}
-            aria-label={`${drum.label} ${hoopLabel(hoop)}`}
-          >
-            <span>{hoopLabel(hoop)}</span>
-          </button>
-        {/each}
-        <div class="core">{drum.label}</div>
-      </div>
-    </section>
+    <ScopeHoopPreview
+      label={drum.label}
+      hoopCount={drum.hoopCount}
+      selectedHoops={selectedHoops}
+      whole={selection.kind === 'drum'}
+      onSelectHoop={selectHoop}
+    />
 
     <button class="whole-drum" type="button" onclick={selectWholeDrum}>Whole Drum</button>
   {/if}
@@ -139,80 +124,6 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
   }
-  .preview {
-    position: relative;
-    min-height: 220px;
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    background:
-      radial-gradient(circle at 50% 50%, color-mix(in oklch, var(--role-output) 13%, transparent), transparent 58%),
-      var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, white 4%, transparent);
-  }
-  .rings {
-    position: relative;
-    width: min(190px, 78%);
-    aspect-ratio: 1;
-  }
-  .sideways .rings {
-    transform: scaleX(1.34);
-  }
-  .hoop {
-    position: absolute;
-    inset: calc(var(--i) * 12%);
-    display: grid;
-    place-items: start center;
-    padding-top: 7px;
-    min-width: 40px;
-    min-height: 40px;
-    color: var(--text-faint);
-    background: color-mix(in oklch, var(--surface-2) 72%, transparent);
-    border: 1px solid color-mix(in oklch, var(--role-output) 28%, var(--border));
-    border-radius: 50%;
-    cursor: pointer;
-    transition-property: background-color, border-color, color, scale, box-shadow;
-    transition-duration: var(--dur-120);
-    transition-timing-function: ease;
-  }
-  .hoop span {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    background: var(--surface-1);
-    border-radius: var(--radius-pill);
-    padding: 1px 6px;
-  }
-  .hoop:hover {
-    color: var(--ink);
-    border-color: var(--role-output);
-  }
-  .hoop:active {
-    scale: 0.96;
-  }
-  .hoop.selected,
-  .hoop.whole {
-    color: var(--ink);
-    background: color-mix(in oklch, var(--role-output) 22%, var(--surface-inset));
-    border-color: var(--role-output);
-    box-shadow: 0 0 0 1px color-mix(in oklch, var(--role-output) 24%, transparent);
-  }
-  .core {
-    position: absolute;
-    inset: 42%;
-    display: grid;
-    place-items: center;
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 700;
-    text-align: center;
-  }
-  .sideways .core,
-  .sideways .hoop span {
-    transform: scaleX(0.75);
-  }
   .whole-drum {
     min-height: 40px;
     display: inline-flex;
@@ -265,7 +176,6 @@
     color: var(--text-muted);
   }
   @media (prefers-reduced-motion: reduce) {
-    .hoop,
     .whole-drum {
       transition: none;
     }

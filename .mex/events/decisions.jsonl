@@ -30,3 +30,4 @@
 {"timestamp":"2026-07-08T05:24:20.736Z","kind":"decision","message":"Gen3 Output now waits for active route propagation to settle before emitting converged branches","files":[],"cwd":"."}
 {"timestamp":"2026-07-08T06:45:03.621Z","kind":"decision","message":"Gen3 active route propagation now reprocesses newly arrived buckets via per-node cursors so converged Scope/Modifier routes do not drop late active branches.","files":[],"cwd":"."}
 {"timestamp":"2026-07-08T10:51:09.805Z","kind":"decision","message":"Issue #79: added a pure Gen3 render-plan compile step for explicit node categories, flow adjacency, cycle rejection, and deterministic nested Mix collector scheduling.","files":[],"cwd":"."}
+{"timestamp":"2026-07-08T11:24:38.609Z","kind":"decision","message":"Effect picker now browses the full library grouped by category; picking across categories updates the node playType instead of rejecting the selection.","files":[],"cwd":"."}

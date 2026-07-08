@@ -26,6 +26,21 @@
     "route": "?view=trigger",
     "actions": [
       {
+        "click": "button:has-text('Take over')",
+        "force": true,
+        "optional": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
         "click": "button:has-text('Route')"
       },
       {
@@ -38,13 +53,35 @@
     "route": "?view=trigger",
     "actions": [
       {
+        "click": "button:has-text('Take over')",
+        "force": true,
+        "optional": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
         "click": "button:has-text('Route')"
       },
       {
         "wait": 200
       },
       {
-        "click": "button[title='Add Scope']"
+        "click": ".node-editor button:has-text('Scope')"
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": ".svelte-flow__node:has-text('Scope')",
+        "force": true
       },
       {
         "wait": 500
@@ -56,13 +93,28 @@
     "route": "?view=trigger",
     "actions": [
       {
+        "click": "button:has-text('Take over')",
+        "force": true,
+        "optional": true
+      },
+      {
+        "wait": 500
+      },
+      {
+        "click": "button[aria-label='Add node']",
+        "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
         "click": "button:has-text('Route')"
       },
       {
         "wait": 200
       },
       {
-        "click": "button[title='Add Mix']"
+        "click": ".node-editor button:has-text('Mix')"
       },
       {
         "wait": 500
@@ -202,15 +254,14 @@
         "wait": 500
       },
       {
-        "click": "button[title='Open Snare']",
-        "force": true
-      },
-      {
-        "wait": 800
-      },
-      {
         "click": "button[aria-label='Add node']",
         "force": true
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button:has-text('Effect')"
       },
       {
         "wait": 300
@@ -250,13 +301,6 @@
         "wait": 500
       },
       {
-        "click": "button[title='Open Snare']",
-        "force": true
-      },
-      {
-        "wait": 800
-      },
-      {
         "click": "button[aria-label='Add node']",
         "force": true
       },
@@ -264,13 +308,19 @@
         "wait": 300
       },
       {
-        "click": "button[title='Add Particles & Air']"
+        "click": "button:has-text('Effect')"
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Ambient & Base']"
       },
       {
         "wait": 800
       },
       {
-        "click": ".svelte-flow__node:has-text('Sacred HOGs'), .svelte-flow__node:has-text('Starfield'), .svelte-flow__node:has-text('Orbit Comet'), .svelte-flow__node:has-text('Confetti Burst')"
+        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
       },
       {
         "wait": 600
@@ -278,6 +328,12 @@
       {
         "click": "button[aria-label='Change effect']",
         "force": true
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": ".dlg-gallery .tabs-trigger:has-text('Particles & Air')"
       },
       {
         "wait": 600
@@ -298,13 +354,6 @@
         "wait": 500
       },
       {
-        "click": "button[title='Open Snare']",
-        "force": true
-      },
-      {
-        "wait": 800
-      },
-      {
         "click": "button[aria-label='Add node']",
         "force": true
       },
@@ -312,13 +361,19 @@
         "wait": 300
       },
       {
-        "click": "button[title='Add Canvas']"
+        "click": "button:has-text('Effect')"
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Ambient & Base']"
       },
       {
         "wait": 800
       },
       {
-        "click": ".svelte-flow__node:has-text('Stripe Band')"
+        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
       },
       {
         "wait": 600
@@ -326,6 +381,12 @@
       {
         "click": "button[aria-label='Change effect']",
         "force": true
+      },
+      {
+        "wait": 600
+      },
+      {
+        "click": ".dlg-gallery .tabs-trigger:has-text('Canvas')"
       },
       {
         "wait": 800
@@ -346,13 +407,6 @@
         "wait": 500
       },
       {
-        "click": "button[title='Open Snare']",
-        "force": true
-      },
-      {
-        "wait": 800
-      },
-      {
         "click": "button[aria-label='Add node']",
         "force": true
       },
@@ -360,13 +414,19 @@
         "wait": 300
       },
       {
-        "click": "button[title='Add Canvas']"
+        "click": "button:has-text('Effect')"
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Ambient & Base']"
       },
       {
         "wait": 800
       },
       {
-        "click": ".svelte-flow__node:has-text('Stripe Band')"
+        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
       },
       {
         "wait": 600
@@ -400,13 +460,6 @@
         "wait": 500
       },
       {
-        "click": "button[title='Open Snare']",
-        "force": true
-      },
-      {
-        "wait": 800
-      },
-      {
         "click": "button[aria-label='Add node']",
         "force": true
       },
@@ -414,13 +467,19 @@
         "wait": 300
       },
       {
-        "click": "button[title='Add Textures']"
+        "click": "button:has-text('Effect')"
+      },
+      {
+        "wait": 300
+      },
+      {
+        "click": "button[title='Add Ambient & Base']"
       },
       {
         "wait": 800
       },
       {
-        "click": ".svelte-flow__node:has-text('Aurora'), .svelte-flow__node:has-text('Plasma'), .svelte-flow__node:has-text('Perlin Clouds')"
+        "click": ".svelte-flow__node:has-text('Solid Base'), .svelte-flow__node:has-text('Whole Drum'), .svelte-flow__node:has-text('Whole Kit'), .svelte-flow__node:has-text('Chase Bands')"
       },
       {
         "wait": 600

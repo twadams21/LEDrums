@@ -9,7 +9,7 @@ triggers:
 edges:
   - target: context/conventions.md
     condition: when changing shot manifests, app state, or test expectations
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ---
 
 # ui-shot Sweep
@@ -44,8 +44,14 @@ node of the matching play type.
 - The app may already be in editor mode; a mandatory "Take over" click can fail.
 - The node editor may open on Inspector, not Add. Shots that add nodes must switch tabs
   explicitly.
-- Gallery collection tabs are not enough when the selected node's play type locks the
-  gallery. The selected node has to be the right type.
+- Gen3 Add pane shots need the current two-stage flow: click "Add node" if needed, click the
+  Stage 1 category (Effect / Route / Modulate / Modify), then click the Stage 2 row. If the
+  app is in viewer mode, click "Take over" first; otherwise Stage 2 rows are visible but
+  disabled.
+- Adding a Stage 2 row does not necessarily select the new graph node. Inspector shots should
+  click the newly added `.svelte-flow__node` before capturing the Node Editor.
+- The effect gallery is now a full-library browser: category tabs filter the grouped list
+  instead of depending on the selected node's play type.
 - Persisted local app state can leave an unexpected graph selected after previous manual
   browser work or earlier ui-shot runs.
 - Strict mode only proves that selectors ran and screenshots were written. It does not prove

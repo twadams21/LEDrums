@@ -3266,17 +3266,16 @@ export class TriggerLab {
     return true;
   }
 
-  /** Swap the effect: reset to that effect's Default preset (own instance). The pick is
-      REJECTED when it would change the node's locked play type (the gallery is filtered +
-      locked to `node.playType`; this store guard is the authoritative backstop, U5). */
+  /** Swap the effect: reset to that effect's Default preset (own instance). Cross-category
+      swaps are allowed; the node's playType follows the selected effect so the gallery is a
+      full-library browser rather than a type-locked picker. */
   pickEffect(node: GraphNode, effectId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!isEffectNode(node)) return;
     const eff = this.selectableEffects.find((e) => e.id === effectId);
     if (!eff) return;
 
-    const nodeType = node.playType ?? eff.playType ?? 'ambient';
-    if (eff.playType !== nodeType) return; // mismatched play type — reject (locked gallery backstop)
+    const nodeType = eff.playType ?? 'ambient';
 
     if (nodeType === 'canvas') {
       this.setCanvasScene(node, effectId.slice('canvas:'.length));
