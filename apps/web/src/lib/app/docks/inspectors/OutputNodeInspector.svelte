@@ -60,6 +60,7 @@
     gap: var(--space-2);
   }
   .k {
+    width: var(--field-label-col);
     color: var(--text-muted);
     font-weight: 500;
     font-size: var(--text-2xs);

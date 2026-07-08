@@ -115,6 +115,7 @@
     min-width: 0;
   }
   .k {
+    width: var(--field-label-col);
     color: var(--text-muted);
     font-size: var(--text-2xs);
     font-weight: 600;
