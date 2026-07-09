@@ -32,7 +32,7 @@ function node(kind: NodeKind, id: string, over: Partial<GraphNode> = {}): GraphN
 const edge = (id: string, from: string, to: string, over: Partial<GraphEdge> = {}): GraphEdge => ({ id, from, to, ...over });
 
 /** Ids the compiler flags with an `empty-scope` finding, in issue order. */
-function emptyScopeIds(graph: TriggerGraph): string[] {
+function emptyScopeIds(graph: TriggerGraph): Array<string | undefined> {
   return compileRenderPlan(graph)
     .issues.filter((i) => i.code === 'empty-scope')
     .map((i) => i.nodeId);
