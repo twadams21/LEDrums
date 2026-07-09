@@ -22,6 +22,7 @@ import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
+import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -95,6 +96,9 @@ export interface ShotSeam {
       anchor. Lights the node-face no-path-to-output badge + the lint strip row (Effect selected).
       Uses genuine `compileRenderPlan` output. */
   notReachingOutput(): void;
+  /** Push transient toast(s) so ui-shot can capture the top-centre ToastHost stack and its
+      per-role tint. `arg` is a single tone (`info`/`success`/`error`); omitted → one of each. */
+  previewToasts(tone?: ToastTone): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -120,6 +124,7 @@ class ShotSeamImpl implements ShotSeam {
     spliceArmedPreview.clear();
     lintPreview.clear();
     canvasDropPreview.clear();
+    toastStore.clear();
     this.added.clear();
     this.lastAdded = null;
   }
@@ -301,6 +306,18 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  previewToasts(tone?: ToastTone): void {
+    // ttl:0 keeps them pinned for the capture (no auto-dismiss race). Oldest-first so the
+    // host renders info → success → error top-to-bottom when showing the full set.
+    const tones: ToastTone[] = tone ? [tone] : ['info', 'success', 'error'];
+    const messages: Record<ToastTone, string> = {
+      info: 'Pasted 3 layers.',
+      success: 'Section copied.',
+      error: 'That clipboard content isn’t from LEDrums.',
+    };
+    for (const t of tones) pushToast(messages[t], { tone: t, ttl: 0 });
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -372,6 +389,10 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'no-path-to-output':
         this.notReachingOutput();
+        break;
+      case 'toast':
+      case 'toasts':
+        this.previewToasts(arg as ToastTone | undefined);
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
