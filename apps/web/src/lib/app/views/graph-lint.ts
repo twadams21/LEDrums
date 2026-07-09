@@ -28,6 +28,7 @@ const PROBLEM: Record<voice.RenderPlanIssueCode, string> = {
   'missing-trigger': 'No trigger source',
   'missing-output': 'No output',
   'flow-cycle': 'Wires form a loop',
+  'empty-scope': 'Scope never matches',
 };
 
 /** The next step that clears each issue — imperative, one action. */
@@ -35,6 +36,7 @@ const ACTION: Record<voice.RenderPlanIssueCode, string> = {
   'missing-trigger': 'Add a trigger source so something can fire this graph.',
   'missing-output': 'Add an Output node and wire your render chain into it.',
   'flow-cycle': 'Remove one wire in the loop so the flow runs start to finish.',
+  'empty-scope': 'Widen this scope or the one upstream — they don’t overlap, so nothing here lights.',
 };
 
 /** The compiler prefixes cycle detail with this — a dev-facing lead-in the strip drops so the
@@ -60,4 +62,18 @@ export function lintEntries(issues: readonly voice.RenderPlanIssue[]): LintEntry
     detail: detailOf(issue),
     nodeId: issue.nodeId,
   }));
+}
+
+/** Group the anchored findings by their node so the canvas can badge each offending node with
+    the SAME entries the strip renders (strip ↔ badge agree — one lint model, two surfaces).
+    Findings without a `nodeId` (missing-trigger / missing-output) live only on the strip. */
+export function lintEntriesByNode(entries: readonly LintEntry[]): Map<string, LintEntry[]> {
+  const byNode = new Map<string, LintEntry[]>();
+  for (const entry of entries) {
+    if (!entry.nodeId) continue;
+    const list = byNode.get(entry.nodeId);
+    if (list) list.push(entry);
+    else byNode.set(entry.nodeId, [entry]);
+  }
+  return byNode;
 }

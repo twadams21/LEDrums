@@ -19,6 +19,8 @@
   import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
   import { canvasDropPreview } from './canvas-drop-preview.svelte';
   import { lintPreview } from './lint-preview.svelte';
+  import { lintEntries, lintEntriesByNode } from './graph-lint';
+  import { GraphLintIndex, GRAPH_LINT_KEY } from './graph-lint-index.svelte';
   import GraphLintStrip from './GraphLintStrip.svelte';
   import { edgeUnderNode, type NodeRect } from './splice-geometry';
   import { voice, type PlayType } from '@ledrums/core';
@@ -66,6 +68,12 @@
   const nodeTypes: NodeTypes = { trigger: TriggerNode };
   const edgeTypes: EdgeTypes = { wire: WireEdge };
   const hover = new GraphHover();
+
+  // Per-node lint badges (R06): the offending node wears a badge for the same finding the
+  // strip shows. Handed to the custom nodes via context (like `hover`); kept in sync from the
+  // one compiled issue list below so strip and badges can never drift.
+  const lintIndex = new GraphLintIndex();
+  setContext(GRAPH_LINT_KEY, lintIndex);
 
   // ---- Node Editor drawer (wave-3 shell): Add palette + Inspector -----------
   // The Add tab lists everything the graph can gain in one searchable surface:
@@ -403,6 +411,9 @@
     const g = store.selectedGraph;
     return g ? voice.compileRenderPlan(g).issues : [];
   });
+  // The strip and the node badges read ONE derived entry list; the badges index it by node.
+  const lintDisplay = $derived(lintEntries(lintIssues));
+  $effect(() => lintIndex.set(lintEntriesByNode(lintDisplay)));
 
   // ---- canvas interactions (all flow through the store) ---------------------
   function syncPos(fn: { id: string; position: { x: number; y: number } }): void {

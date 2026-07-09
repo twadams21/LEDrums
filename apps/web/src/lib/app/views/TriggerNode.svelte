@@ -44,11 +44,16 @@
   import { voice, collectionMeta } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
+  import { GRAPH_LINT_KEY, type GraphLintIndex } from './graph-lint-index.svelte';
   import { mixLayerRowsFor } from './mix-layer-rows';
 
   let { id, data, selected }: NodeProps = $props();
 
   const store = getContext<TriggerStoreContext>(TRIGGER_STORE_KEY);
+  // Lint findings anchored to THIS node (R06) — the same findings the strip shows, indexed by
+  // node id. Drives the corner badge; empty when the node is clean.
+  const lint = getContext<GraphLintIndex | undefined>(GRAPH_LINT_KEY);
+  const lintFindings = $derived(lint?.forNode(id) ?? []);
   const kind = $derived((data as { kind: NodeKind }).kind);
   // the live store node (reactive — Inspector edits flow straight through)
   const node = $derived(store.selectedGraph?.nodes.find((n) => n.id === id) ?? null);
@@ -218,6 +223,20 @@
   {/if}
 {/snippet}
 
+<!-- Lint badge (R06): a warn-toned corner marker on any node the render-plan compiler flagged,
+     carrying the SAME finding the lint strip shows (empty scope, a cycle member, …). Instant,
+     no motion (the locked node interaction contract); the tooltip names the problem + fix. -->
+{#snippet lintBadge()}
+  {#if lintFindings.length > 0}
+    {@const primary = lintFindings[0]!}
+    <Tooltip text={`${primary.problem}. ${primary.action}`}>
+      <span class="lintbadge" role="status" aria-label={`${primary.problem}. ${primary.action}`}>
+        <TriangleAlert size={11} aria-hidden="true" />
+      </span>
+    </Tooltip>
+  {/if}
+{/snippet}
+
 <!-- Wiring handles anchored to the card HEAD row (NodeCard renders these inside its
      position:relative head, so their %-offsets track the head — a param footer growing
      the card can't drag them off the face (item 1.7 / E). -->
@@ -299,7 +318,7 @@
     {/if}
     <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
   {:else}
-    <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass}>
+    <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass} class:linted={lintFindings.length > 0}>
       <NodeCard
         icon={Icon}
         {title}
@@ -312,6 +331,7 @@
         leadHandles={cardHandles}
         footer={mixRows.length > 0 ? mixFooter : modRows.length > 0 ? paramFooter : undefined}
       />
+      {@render lintBadge()}
     </div>
   {/if}
   </ContextMenu>
@@ -344,6 +364,29 @@
   /* a bypassed modifier reads as muted but present (its wire + state slot survive) */
   .tnode.bypassed {
     opacity: 0.55;
+  }
+  /* a flagged node carries a faint warn wash on its card so the fault reads at a glance even
+     before the corner badge is noticed — guides authoring (warn), never the red fault alarm. */
+  .tnode.linted :global(.card) {
+    border-color: color-mix(in oklch, var(--warn) 55%, var(--border));
+  }
+  /* the lint badge — a warn-toned corner marker (top-left, opposite the drum-link badge) that
+     rides the card corner like `.modcount`. No motion: the badge is instant (locked contract). */
+  .lintbadge {
+    position: absolute;
+    top: -7px;
+    left: -7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-pill);
+    color: var(--warn);
+    background: color-mix(in oklch, var(--warn) 16%, var(--surface-3));
+    border: 1px solid color-mix(in oklch, var(--warn) 55%, transparent);
+    box-shadow: var(--shadow-1);
+    line-height: 0;
   }
   /* exposed modulation-target rows — now INSIDE the node card (NodeCard footer), so no
      border / surface / shadow of their own: the card supplies the single border + surface. */
