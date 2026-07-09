@@ -5,6 +5,7 @@
   import Field from '../../../ui/Field.svelte';
   import Select from '../../../ui/Select.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import NodeSignalPreview from '../../views/NodeSignalPreview.svelte';
   import { onNum } from './forms';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
@@ -24,6 +25,10 @@
 
 {#if node.kind === 'randomMod'}
   <div class="kindbody">
+    <figure class="preview">
+      <NodeSignalPreview kind="random" {distribution} {steps} w={228} h={72} />
+      <figcaption>Distribution curve</figcaption>
+    </figure>
     <Field layout="row" label="Distribution">
       <Select
         value={distribution}
@@ -56,5 +61,18 @@
   }
   .kindbody :global(.sel) {
     width: 100%;
+  }
+  .preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+  }
+  figcaption {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 </style>

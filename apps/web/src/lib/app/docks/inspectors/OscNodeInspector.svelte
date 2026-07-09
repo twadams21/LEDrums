@@ -3,6 +3,7 @@
   import type { GraphNode } from '../../../trigger-lab/sim';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import NodeSignalPreview from '../../views/NodeSignalPreview.svelte';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
   const address = $derived(store.oscNodeAddress(node));
@@ -10,6 +11,10 @@
 
 {#if node.kind === 'osc'}
   <div class="kindbody">
+    <figure class="preview">
+      <NodeSignalPreview kind="osc" ccValue={() => store.oscNodeLiveValue(node)} w={188} h={30} />
+      <figcaption>Live value</figcaption>
+    </figure>
     <Field layout="row" label="OSC address" hint="e.g. /fader/1">
       <CommitInput
         type="text"
@@ -40,5 +45,18 @@
     color: var(--text-muted);
     line-height: var(--leading-normal);
     text-wrap: pretty;
+  }
+  .preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+  }
+  figcaption {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 </style>

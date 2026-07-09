@@ -143,6 +143,47 @@ export function lfoTrace(s: voice.LfoSettings, tMs: number, bpm: number): Signal
   return { shape, cursor, value: clamp01(voice.sampleLfo(s, tMs, bpm)) };
 }
 
+/**
+ * Random SOURCE distribution preview: the probability-density curve of a distribution — x runs
+ * 0..1 across the output range, y is the (peak-normalized) likelihood of landing there. Sampled
+ * through the SAME core `voice.sampleRandomDistribution` the engine draws with, so the drawn
+ * curve can never lie about what the node emits (`stepped` quantizes to its comb via
+ * `voice.quantizeSteppedRandom`). Static — depends only on `distribution` + `steps`, so callers
+ * compute it once (a `$derived`), never per frame. Deterministic: a fixed-seed LCG stands in for
+ * the engine's PRNG, so the histogram never flickers between renders.
+ */
+export function randomDistributionTrace(
+  distribution: voice.RandomDistribution,
+  steps?: number,
+  samples = 16384,
+): PreviewPoint[] {
+  // Fixed-seed LCG (Numerical Recipes constants) — a deterministic uniform stream so the density
+  // is identical every call; the engine's real pick uses its own seeded PRNG.
+  let s = 0x2545f491 >>> 0;
+  const rng = {
+    next: (): number => {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 0x100000000;
+    },
+  };
+  const bins = new Array<number>(SHAPE_SAMPLES).fill(0);
+  for (let i = 0; i < samples; i++) {
+    let v = clamp01(voice.sampleRandomDistribution(distribution, rng));
+    if (distribution === 'stepped') v = voice.quantizeSteppedRandom(v, steps);
+    const b = Math.min(SHAPE_SAMPLES - 1, Math.floor(v * SHAPE_SAMPLES));
+    bins[b] = (bins[b] ?? 0) + 1;
+  }
+  const peak = Math.max(1, ...bins);
+  const shape: PreviewPoint[] = [];
+  for (let i = 0; i <= SHAPE_SAMPLES; i++) {
+    // Sample bin centers; the endpoints (i=0, i=SHAPE_SAMPLES) clamp to the outer bins so the
+    // filled area closes cleanly at both edges.
+    const bin = Math.min(SHAPE_SAMPLES - 1, i);
+    shape.push({ x: i / SHAPE_SAMPLES, y: (bins[bin] ?? 0) / peak });
+  }
+  return shape;
+}
+
 /** CC source preview: the live 0..1 level from the engine's CC table (the offline mirror in the
     sim). No shape — the face draws a value bar + numeric readout. Absent/unheard ⇒ 0. */
 export function ccPreviewValue(

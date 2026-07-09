@@ -13,6 +13,7 @@ import {
   lfoTrace,
   paramRowSignal,
   previewCtx,
+  randomDistributionTrace,
   triggerClock,
 } from './signal-preview';
 
@@ -167,6 +168,49 @@ describe('signal-preview — pure sampling (S38)', () => {
       expect(a).toEqual(b);
       expect(a.cursor).toBeCloseTo(0.25, 10);
     });
+  });
+});
+
+describe('randomDistributionTrace (distribution density)', () => {
+  it('is a peak-normalized 0..1 polyline sampled left→right', () => {
+    const t = randomDistributionTrace('linear');
+    expect(t.length).toBe(41);
+    expect(t[0]!.x).toBe(0);
+    expect(t.at(-1)!.x).toBe(1);
+    let sawPeak = false;
+    for (const p of t) {
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(1);
+      if (p.y >= 0.999) sawPeak = true;
+    }
+    expect(sawPeak).toBe(true); // normalized so the tallest bin hits 1
+  });
+
+  it('is deterministic — same distribution ⇒ identical density', () => {
+    expect(randomDistributionTrace('gaussian')).toEqual(randomDistributionTrace('gaussian'));
+  });
+
+  it('gaussian concentrates mass in the middle; linear is roughly flat', () => {
+    const mid = (t: ReturnType<typeof randomDistributionTrace>): number => t[Math.floor(t.length / 2)]!.y;
+    const edge = (t: ReturnType<typeof randomDistributionTrace>): number => t[2]!.y;
+    const g = randomDistributionTrace('gaussian');
+    const l = randomDistributionTrace('linear');
+    expect(mid(g)).toBeGreaterThan(edge(g)); // a bell — center taller than the tail
+    expect(Math.abs(mid(l) - edge(l))).toBeLessThan(0.35); // uniform — near flat
+  });
+
+  it('stepped quantizes to a discrete comb — most bins are empty between steps', () => {
+    const t = randomDistributionTrace('stepped', 4);
+    const empty = t.filter((p) => p.y === 0).length;
+    expect(empty).toBeGreaterThan(t.length / 2); // 4 steps ⇒ mass clusters, gaps dominate
+  });
+
+  it('every plotted value stays within the distribution range', () => {
+    for (const d of ['linear', 'gaussian', 'exponential', 'logarithmic', 'triangular', 'beta', 'stepped'] as const) {
+      for (const p of randomDistributionTrace(d, 8)) {
+        expect(Number.isNaN(p.y)).toBe(false);
+      }
+    }
   });
 });
 
