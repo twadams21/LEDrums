@@ -196,11 +196,14 @@ describe('eval-graph integration', () => {
     const trig = node('trigger', 'trigger');
     const play = node('play', 'p', { effectId: 'fx' });
     const trail = mod('m', 'trail', { params: { decayMs: 250 } });
+    const output = node('output', 'output', { scope: 'kit' });
     const graph: TriggerGraph = {
-      nodes: [trig, play, trail],
+      version: 3,
+      nodes: [trig, play, trail, output],
       edges: [
         edge('e0', 'trigger', 'p'),
         edge('e1', 'm', 'p', { toPort: 'mod' }),
+        edge('e2', 'p', 'output'),
       ],
     };
     const play0 = firstPlay(graph);

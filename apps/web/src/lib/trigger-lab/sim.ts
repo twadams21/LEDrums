@@ -23,7 +23,7 @@
 
 import { voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
 import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
-import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
+import { type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
 // `clampUnit` is intentionally NOT re-exported here — it stays an internal cross-module
@@ -445,10 +445,11 @@ export class Sim {
   }
 
   private evalGraph(graph: TriggerGraph, ctx: TriggerCtx): Action[] {
-    if (graph.version === 3) return voice.evalGraph(this.coreEvalState(), graph, 'preview', ctx) as Action[];
-    const trig = graph.nodes.find((n) => n.kind === 'trigger');
-    if (!trig) return [];
-    return this.evalNode(graph, trig, ctx, '', new Set(), null);
+    // ONE evaluator: delegate to the pure core Gen3 evaluator. A raw legacy graph is
+    // normalized to Gen3 first, exactly as the real engine does at `setShow` — so the
+    // offline preview and live output share a single evaluation path.
+    const g = graph.version === 3 ? graph : voice.normalizeTriggerGraphToGen3(graph).graph;
+    return voice.evalGraph(this.coreEvalState(), g, 'preview', ctx) as Action[];
   }
 
   private coreEvalState(): voice.EvalState {
@@ -473,271 +474,6 @@ export class Sim {
       seen: descriptor.seen,
       draft: descriptor.draft as PlayDraft | null | undefined,
     });
-  }
-
-  /** A node's wired children, ordered top→bottom (visual y) for determinism. */
-  private childrenOf(graph: TriggerGraph, node: GraphNode): GraphNode[] {
-    return graph.edges
-      .filter((e) => e.from === node.id)
-      .map((e) => graph.nodes.find((n) => n.id === e.to))
-      .filter((n): n is GraphNode => !!n)
-      .sort((a, b) => a.y - b.y);
-  }
-
-  /** Children wired from a specific source handle (value+bands switch). Mirrors
-      {@link childrenOf} but filters by `fromPort`, still y-sorted for determinism. */
-  private childrenViaPort(graph: TriggerGraph, node: GraphNode, port: string): GraphNode[] {
-    return graph.edges
-      .filter((e) => e.from === node.id && e.fromPort === port)
-      .map((e) => graph.nodes.find((n) => n.id === e.to))
-      .filter((n): n is GraphNode => !!n)
-      .sort((a, b) => a.y - b.y);
-  }
-
-  private incomingFlowEdges(graph: TriggerGraph, node: GraphNode) {
-    return graph.edges
-      .filter((e) => e.to === node.id && (e.toPort == null || e.toPort === 'in'))
-      .sort((a, b) => {
-        const ay = graph.nodes.find((n) => n.id === a.from)?.y ?? 0;
-        const by = graph.nodes.find((n) => n.id === b.from)?.y ?? 0;
-        return ay - by || a.id.localeCompare(b.id);
-      });
-  }
-
-  private edgeOpacity(value: number | undefined): number {
-    return value == null ? 1 : value < 0 ? 0 : value > 1 ? 1 : value;
-  }
-
-  private draftFromUpstream(graph: TriggerGraph, source: GraphNode, sourceDrumId: string, seen = new Set<string>()): PlayDraft | null {
-    if (seen.has(source.id)) return null;
-    const seen2 = new Set(seen).add(source.id);
-    if (source.kind === 'play' || source.kind === 'effect') {
-      const mods = voice.resolveModifierChain(graph, source);
-      const modulations = this.freezeRandomMappings(voice.resolveNodeModulations(graph, source));
-      return {
-        effectId: source.effectId,
-        mode: source.mode,
-        scope: source.scope,
-        targetId: source.targetId,
-        busId: source.busId,
-        params: this.resolveNodeParams(source),
-        modifiers: mods.length ? mods : undefined,
-        modulations: modulations.length ? modulations : undefined,
-        originNodeId: source.id,
-      };
-    }
-    const upstream = this.incomingFlowEdges(graph, source)
-      .map((e) => graph.nodes.find((n) => n.id === e.from))
-      .filter((n): n is GraphNode => !!n);
-    if (upstream.length !== 1) return null;
-    const draft = this.draftFromUpstream(graph, upstream[0]!, sourceDrumId, seen2);
-    if (!draft) return null;
-    if (source.kind === 'modifier') {
-      return { ...draft, modifiers: [...(draft.modifiers ?? []), voice.resolveModifierNode(graph, source)] };
-    }
-    if (source.kind === 'scope') {
-      const scoped = voice.intersectScopeTargets(draft, source, sourceDrumId);
-      return scoped ? { ...draft, ...scoped } : null;
-    }
-    return null;
-  }
-
-  private mixInputsFor(graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): MixInputDraft[] {
-    return this.incomingFlowEdges(graph, node)
-      .map((edge): MixInputDraft | null => {
-        const source = graph.nodes.find((n) => n.id === edge.from);
-        const draft = source ? this.draftFromUpstream(graph, source, ctx.sourceDrumId) : null;
-        return draft?.originNodeId ? { ...draft, opacity: this.edgeOpacity(edge.opacity), originNodeId: draft.originNodeId } : null;
-      })
-      .filter((d): d is MixInputDraft => !!d);
-  }
-
-  private evalNode(
-    graph: TriggerGraph,
-    node: GraphNode,
-    ctx: TriggerCtx,
-    viaPrefix: string,
-    seen: Set<string>,
-    draft: PlayDraft | null,
-  ): Action[] {
-    if (seen.has(node.id)) return []; // cycle guard
-    const seen2 = new Set(seen).add(node.id);
-    const label = (s: string): string => (viaPrefix ? `${viaPrefix} → ${s}` : s);
-    const kids = this.childrenOf(graph, node);
-    switch (node.kind) {
-      case 'trigger':
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2, draft));
-      case 'play':
-      case 'effect': {
-        if (!node.effectId) return [];
-        // Resolve this play node's `mod` input into a flat modifier chain (S29) — the SAME
-        // pure core resolver the engine uses, so the offline preview and real output agree.
-        const mods = voice.resolveModifierChain(graph, node);
-        // Resolve incoming `param:<key>` modulation edges into mappings (S34) — the SAME pure
-        // core resolver the engine uses, so offline preview and real output agree.
-        const modulations = this.freezeRandomMappings(voice.resolveNodeModulations(graph, node));
-        const next: PlayDraft = {
-          effectId: node.effectId,
-          mode: node.mode,
-          scope: node.scope,
-          targetId: node.targetId,
-          busId: node.busId,
-          params: this.resolveNodeParams(node),
-          modifiers: mods.length ? mods : undefined,
-          modulations: modulations.length ? modulations : undefined,
-          originNodeId: node.id,
-        };
-        if (kids.length > 0) {
-          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(this.modeWord(node.mode)), seen2, next));
-        }
-        if (graph.version === 3) return [];
-        return [{ kind: 'play', ...next, via: label(this.modeWord(node.mode)), latchKey: null }];
-      }
-      case 'modifier': {
-        if (!draft) return [];
-        const next: PlayDraft = {
-          ...draft,
-          modifiers: [...(draft.modifiers ?? []), voice.resolveModifierNode(graph, node)],
-        };
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Modifier'), seen2, next));
-      }
-      case 'mix': {
-        const mixInputs = this.mixInputsFor(graph, node, ctx);
-        if (mixInputs.length === 0) return [];
-        const first = mixInputs[0]!;
-        if (draft && draft.originNodeId !== first.originNodeId) return [];
-        const next: PlayDraft = { ...first, mixBlendMode: node.mixBlendMode ?? 'normal', mixInputs };
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Mix'), seen2, next));
-      }
-      case 'scope': {
-        if (!draft) return [];
-        const scoped = voice.intersectScopeTargets(draft, node, ctx.sourceDrumId);
-        if (!scoped) return [];
-        const next: PlayDraft = { ...draft, ...scoped };
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Scope'), seen2, next));
-      }
-      case 'output':
-        if (!draft) return [];
-        if (node.scope !== 'kit' || node.targetId) {
-          const scoped = voice.intersectScopeTargets(draft, node, ctx.sourceDrumId);
-          if (!scoped) return [];
-          return [{ kind: 'play', ...draft, ...scoped, via: label('Output'), latchKey: null }];
-        }
-        return [{ kind: 'play', ...draft, via: label('Output'), latchKey: null }];
-      case 'randomMod':
-      case 'envelope':
-      case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
-      case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
-      case 'note':
-      case 'osc':
-        // Inert in trigger-flow eval: neither a modifier nor a modulation-source node fires
-        // children. A modifier reaches a voice via the play node's resolved `mod` chain; an
-        // envelope via a target's resolved `param:<key>` modulations — not here.
-        return [];
-      case 'all':
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2, draft));
-      case 'random': {
-        if (kids.length === 0) return [];
-        let i = this.prng.nextInt(kids.length);
-        if (node.noRepeat && kids.length > 1) {
-          const prev = this.lastPick.get(node.id);
-          while (i === prev) i = this.prng.nextInt(kids.length);
-        }
-        this.lastPick.set(node.id, i);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2, draft);
-      }
-      case 'sequence': {
-        if (kids.length === 0) return [];
-        const i = (this.seqIndex.get(node.id) ?? 0) % kids.length;
-        this.seqIndex.set(node.id, i + 1);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2, draft);
-      }
-      case 'switch': {
-        // `value` (gate/bands) is canonical. `velocity` was folded into it and dropped from
-        // SwitchOn — graphs are migrated on hydrate (foldVelocitySwitch), but route anything
-        // that isn't a count-based mode (`section`/`beat`) through value eval so a stray
-        // legacy `velocity` never throws or mis-routes (mirrors core engine).
-        if (node.on !== 'section' && node.on !== 'beat') return this.evalValueSwitch(graph, node, ctx, label, seen2, draft);
-        if (kids.length === 0) return [];
-        const i = this.switchIndexN(kids.length, node.on, ctx);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2, draft);
-      }
-      case 'chance': {
-        if (this.prng.next() > node.p) return [];
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2, draft));
-      }
-      case 'toggle': {
-        const current = this.latched.get(node.id);
-        const alive = current ? this.voices.some((v) => v.id === current) : false;
-        if (alive && current) {
-          this.latched.set(node.id, null);
-          return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
-        }
-        const actions = kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Toggle on'), seen2, draft));
-        const firstPlay = actions.find((a) => a.kind === 'play') as PlayAction | undefined;
-        if (firstPlay) firstPlay.latchKey = node.id;
-        return actions;
-      }
-      case 'delay': {
-        const delayMs = voice.computeDelayMs(node.delayMode, node.ms, node.division, ctx.bpm);
-        if (delayMs <= 0) {
-          // Degenerate: zero/negative delay fires children immediately (mirrors core).
-          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay 0ms'), seen2, draft));
-        }
-        const delayLabel = node.delayMode === 'time' ? `Delay ${node.ms}ms` : `Delay ${node.division}`;
-        this.pendingFires.push({
-          fireAtMs: this.timeMs + delayMs,
-          enqueueOrder: this.pendingFireCounter++,
-          childIds: kids.map((k) => k.id),
-          graph,
-          ctx,
-          viaPrefix: label(delayLabel),
-          seen: seen2,
-          draft,
-        });
-        return [];
-      }
-    }
-  }
-
-  private resolveNodeParams(node: GraphNode): ParamValues {
-    return node.params;
-  }
-  /** Count-based child index for the `section`/`beat` switch modes (the only modes that
-      reach here — `value` is routed to {@link evalValueSwitch}). */
-  private switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
-    if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-    const frac = on === 'beat' ? ctx.beatPhase : 0;
-    return Math.min(n - 1, Math.floor(frac * n));
-  }
-
-  /** Evaluate an on:'value' switch (value source = ctx.velocity, normalized 0..1).
-      New fields are defaulted defensively so graphs persisted before value-mode
-      existed (which lack them) still evaluate. */
-  private evalValueSwitch(
-    graph: TriggerGraph,
-    node: GraphNode,
-    ctx: TriggerCtx,
-    label: (s: string) => string,
-    seen: Set<string>,
-    draft: PlayDraft | null,
-  ): Action[] {
-    const value = ctx.velocity;
-    const mode = node.valueMode ?? 'gate';
-    if (mode === 'gate') {
-      const threshold = node.threshold ?? 0.5;
-      const invert = node.invert ?? false;
-      const pass = invert ? value > threshold : value <= threshold;
-      if (!pass) return [];
-      const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
-      return this.childrenOf(graph, node).flatMap((c) => this.evalNode(graph, c, ctx, label(gateVia), seen, draft));
-    }
-    const cutoffs = node.bands ?? [0.5];
-    const b = bandIndex(value, cutoffs);
-    const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
-    return this.childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
-      this.evalNode(graph, c, ctx, label(bandVia), seen, draft),
-    );
   }
 
   /** Resolve a Play block's live params — always the block's own node-local copy. */
@@ -920,18 +656,6 @@ export class Sim {
     this.oscTable.set(address, voice.oscValue01(value));
   }
 
-  private freezeRandomMappings(mappings: Mapping[]): Mapping[] {
-    let changed = false;
-    const out = mappings.map((m) => {
-      if (m.source.kind !== 'random') return m;
-      changed = true;
-      const raw = voice.sampleRandomDistribution(m.source.distribution, this.prng);
-      const value = m.source.distribution === 'stepped' ? voice.quantizeSteppedRandom(raw, m.source.steps) : raw;
-      return { ...m, source: { ...m.source, value } };
-    });
-    return changed ? out : mappings;
-  }
-
   setNote(note: number, velocity: number, channel: number | null, on: boolean): void {
     const v = voice.noteValue01(velocity / 127);
     const write = (ch: number | null): void => {
@@ -946,8 +670,9 @@ export class Sim {
   // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------
 
   /** Drain pending delay fires whose `fireAtMs ≤ this.timeMs`, in stable
-      `(fireAtMs, enqueueOrder)` order. Re-enters `evalNode` on each child so nested
-      delays re-enqueue and the cycle guard (seen-set) is preserved. */
+      `(fireAtMs, enqueueOrder)` order. Re-enters the core Gen3 evaluator on each child so
+      nested delays re-enqueue and the cycle guard (seen-set) is preserved. The descriptor's
+      graph is always Gen3 — it was produced by the core evaluator that enqueued this fire. */
   private drainPendingFires(): void {
     if (this.pendingFires.length === 0) return;
     const due = this.pendingFires.filter((f) => f.fireAtMs <= this.timeMs);
@@ -956,22 +681,16 @@ export class Sim {
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
       const { graph, childIds, ctx, viaPrefix, seen, draft } = f;
-      const actions = graph.version === 3
-        ? ((voice.evalChildren as unknown as (
-            state: voice.EvalState,
-            graph: TriggerGraph,
-            pad: string,
-            childIds: string[],
-            ctx: TriggerCtx,
-            viaPrefix: string,
-            seen: Set<string>,
-            draft: PlayDraft | null,
-          ) => Action[])(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null))
-        : childIds
-            .map((id) => graph.nodes.find((n) => n.id === id))
-            .filter((n): n is GraphNode => !!n)
-            .sort((a, b) => a.y - b.y)
-            .flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen, draft ?? null));
+      const actions = (voice.evalChildren as unknown as (
+        state: voice.EvalState,
+        graph: TriggerGraph,
+        pad: string,
+        childIds: string[],
+        ctx: TriggerCtx,
+        viaPrefix: string,
+        seen: Set<string>,
+        draft: PlayDraft | null,
+      ) => Action[])(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null);
       for (const a of actions) {
         if (a.kind === 'stop') {
           const v = this.voices.find((x) => x.id === a.voiceId);
