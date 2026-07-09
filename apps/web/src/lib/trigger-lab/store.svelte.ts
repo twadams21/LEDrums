@@ -2837,7 +2837,10 @@ export class TriggerLab {
 
   moveNode(node: GraphNode, x: number, y: number): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    this.pushUndoSnapshot();
+    // R15: only checkpoint undo when the node actually moved. A zero-displacement commit — a drag
+    // (or a splice-drop onto a wire) that ends where it started — must not push an undo entry, or
+    // Ctrl/Z after a splice pops an empty position checkpoint before it reaches the splice wiring.
+    if (node.x !== x || node.y !== y) this.pushUndoSnapshot();
     node.x = x;
     node.y = y;
     this.setLiveNodePosition(node.id, x, y);
