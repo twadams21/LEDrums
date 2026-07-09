@@ -705,6 +705,10 @@ export class TriggerLab {
   private readonly undoLimit = 10000;
   private undoStack: AuthoredState[] = [];
   private restoringUndo = false;
+  /** When true, {@link pushUndoSnapshot} is a no-op so a follow-on mutation folds into the
+      caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
+      undoable action. Set only via {@link batchIntoCurrentUndo}. */
+  private suppressUndoSnapshot = false;
   controllerScanning = $state(false);
   /** Whether boot found a REAL local song library (a valid blob) — the same local-wins signal as
       {@link bootedFromLocalLibrary}, so the server's cold-load song library can't clobber unsynced
@@ -1116,7 +1120,7 @@ export class TriggerLab {
   }
 
   private pushUndoSnapshot(): void {
-    if (this.restoringUndo || this.isViewer) return;
+    if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
     this.undoStack.push(structuredClone(this.toAuthored()));
     if (this.undoStack.length > this.undoLimit) {
       this.undoStack.splice(0, this.undoStack.length - this.undoLimit);
@@ -1126,6 +1130,19 @@ export class TriggerLab {
   runUndoable<T>(edit: () => T): T {
     this.pushUndoSnapshot();
     return edit();
+  }
+
+  /** Run `edit` WITHOUT opening a new undo checkpoint — any {@link pushUndoSnapshot} inside it is
+      suppressed, so its mutations fold into the caller's existing snapshot and a single undo
+      reverts the whole batch (R04: an added Effect and its auto-wire undo together). */
+  private batchIntoCurrentUndo<T>(edit: () => T): T {
+    const prev = this.suppressUndoSnapshot;
+    this.suppressUndoSnapshot = true;
+    try {
+      return edit();
+    } finally {
+      this.suppressUndoSnapshot = prev;
+    }
   }
 
   undo(): boolean {
@@ -2842,7 +2859,27 @@ export class TriggerLab {
       node = makeNode(kind, nid('n'), x, y);
     }
     g.nodes.push(node);
+    // R04: a freshly-added Effect auto-wires to the terminal Output so it makes light on the next
+    // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
+    // both), announced with a toast. Only the light-making Effect node auto-wires.
+    if (node.kind === 'effect') this.autoWireEffectToOutput(node);
     return node;
+  }
+
+  /** Auto-wire a freshly-added Effect to the selected graph's terminal Output anchor (R04) so it
+      renders on the next hit. Routes through the validated {@link connect} path — a rejected wire
+      (never expected for a fresh Effect → Output, but belt-and-braces) is skipped silently — and
+      batches into the add's undo checkpoint so add + wire revert as one. Announces a successful
+      wire with a single toast (R02 conventions). No-op when the graph has no Output anchor. */
+  private autoWireEffectToOutput(node: GraphNode): void {
+    const g = this.selectedGraph;
+    if (!g) return;
+    const output = g.nodes.find((n) => n.kind === 'output');
+    if (!output) return;
+    const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
+    if (rejection === null) {
+      pushToast('Effect wired to the Output anchor — it lights on the next hit.', { tone: 'info' });
+    }
   }
 
   /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
