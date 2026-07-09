@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { voice } from '@ledrums/core';
-import { lintEntries, lintEntriesByNode } from './graph-lint';
+import { lintEntries, lintEntriesByNode, nodeLintEntries } from './graph-lint';
 import { makeNode, type TriggerGraph } from '../../trigger-lab/sim';
 
 /* Component-seam test (R05 / GH #84): the lint strip's copy is produced by `lintEntries`
@@ -118,6 +118,32 @@ describe('lintEntries', () => {
     expect(entry.action).toBeTruthy();
     expect(entry.action).not.toBe(entry.problem); // names the fix, not just the fault
     expect(entry.nodeId).toBe('output');
+  });
+});
+
+describe('nodeLintEntries (inspector row model, R15)', () => {
+  const fxUnwired = () => {
+    // effect fired by the trigger but never wired onward to Output → 'fx' carries no-path-to-output.
+    const fx = makeNode('effect', 'fx', 200, 0, { effectId: 'plasma' });
+    return voice.compileRenderPlan(graph([trigger, fx, output], [{ id: 't-fx', from: 'trigger', to: 'fx' }]));
+  };
+
+  it('returns only the entries anchored to the given node', () => {
+    const entries = nodeLintEntries(fxUnwired().issues, 'fx');
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((e) => e.nodeId === 'fx')).toBe(true);
+    expect(entries.map((e) => e.code)).toContain('no-path-to-output');
+  });
+
+  it('narrows to a code set when one is given', () => {
+    const issues = fxUnwired().issues;
+    expect(nodeLintEntries(issues, 'fx', ['no-path-to-output']).map((e) => e.code)).toEqual(['no-path-to-output']);
+    expect(nodeLintEntries(issues, 'fx', ['dead-branch'])).toEqual([]); // fx carries no dead-branch
+  });
+
+  it('returns [] for a node with no findings', () => {
+    const plan = voice.compileRenderPlan(graph([trigger, output]));
+    expect(nodeLintEntries(plan.issues, 'output')).toEqual([]);
   });
 });
 
