@@ -116,14 +116,25 @@
 </div>
 
 <style>
+  /* Each graph row is a raised tile in the trigger-graph-thumbnail language (GraphsDock
+     `.gcard`): the `--surface-2` thumb surface, a faint border, and square (`--radius-card`)
+     corners matching the Objects view. Hover lifts the border like the thumbs rather than
+     swapping the fill, so the inner ListItem's own hover/active states stay legible. */
   .graph-drag {
     position: relative;
     min-height: 40px;
-    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
     /* Row content sits past the grip gutter; the grip is absolutely positioned within it so the
        row layout (and its Workflow icon) is unshifted. */
     padding-inline-start: var(--space-4);
-    transition: opacity var(--dur-120) ease;
+    transition:
+      opacity var(--dur-120) ease,
+      border-color var(--dur-120) ease;
+  }
+  .graph-drag:hover {
+    border-color: var(--border-strong);
   }
   /* Drag source: dim the original so the moving row reads as the compact drag image,
      not a second full-layout copy. Opacity only — no layout jump. */
@@ -143,7 +154,7 @@
     padding: var(--space-1_5) var(--space-2);
     background: var(--surface-3);
     border: 1px solid color-mix(in oklch, var(--accent) 45%, var(--border));
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-card);
     box-shadow: var(--shadow-2);
     color: var(--ink);
     font-size: var(--text-sm);

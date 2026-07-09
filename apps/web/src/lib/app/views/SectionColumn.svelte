@@ -153,7 +153,7 @@
     padding: var(--space-2);
     background: var(--surface-inset);
     border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-card);
     transition: border-color var(--dur-120) ease;
   }
   /* Active-section border. Mixed in oklab (rectangular), NOT oklch: oklch interpolates
@@ -180,7 +180,7 @@
     flex-direction: column;
     gap: var(--space-1);
     min-height: 42px;
-    border-radius: calc(var(--radius-2) - 2px);
+    border-radius: var(--radius-card);
   }
   /* Insertion line marking the gap a dragged graph row will land in. The negative
      margins collapse the parent flex gap so the line sits IN the gap rather than
@@ -220,7 +220,7 @@
     color: var(--text-muted);
     background: var(--surface-inset);
     border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-card);
     transition:
       color var(--dur-120) ease,
       border-color var(--dur-120) ease;

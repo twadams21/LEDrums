@@ -423,7 +423,7 @@
     <DemoCard
       title="Toast"
       src="lib/ui/ToastHost"
-      note="Transient notifications: a singleton store (pushToast) + one ToastHost near the app root. Role colour always rides an icon + text; each is dismissible; enter rises + fades, exit is subtler; reduced motion collapses both. Used for clipboard paste feedback (S44)."
+      note="Transient notifications: a singleton store (pushToast) + one ToastHost near the app root. A top-centre stack; role rides an icon + text + a slight tone-tinted background wash (never colour alone); each is dismissible; enter descends + fades, exit is subtler; reduced motion collapses both. Used for clipboard paste feedback (S44)."
     >
       <div class="comp-row">
         <button onclick={() => pushToast('Section copied.', { tone: 'success' })}>Success toast</button>

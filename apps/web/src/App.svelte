@@ -7,6 +7,8 @@
   import { TriggerLab } from './lib/trigger-lab/store.svelte';
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
+  import { platformShortcutModifier } from './lib/app/primary-shortcut';
+  import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
@@ -33,17 +35,40 @@
     };
   });
 
+  const shortcutPlatform = platformShortcutModifier(
+    typeof navigator !== 'undefined' ? navigator.platform : '',
+  );
+
+  /** Duplicate the node selected on the Trigger canvas; a no-op (returns false, so the seam
+      lets the key fall through) unless a real, selected graph node exists — this lets the
+      Sections view keep its own Cmd/Ctrl+D (duplicate section) when a section is selected. */
+  function duplicateSelectedNode(): boolean {
+    const sel = shell.selection;
+    if (sel?.kind !== 'node') return false;
+    const node = store.selectedGraph?.nodes.find((n) => n.id === sel.nodeId);
+    if (!node) return false;
+    const clone = store.duplicateNode(node);
+    if (!clone) return false;
+    shell.select({ kind: 'node', nodeId: clone.id });
+    return true;
+  }
+
+  // The app-level shortcut registry (data → action + description; see lib/app/shortcuts.ts).
+  // Browser-default combos are CLAIMED here in capture phase. Undo lives here now rather than
+  // as an inline branch below. Ctrl/Cmd+D duplicates the selected trigger-graph node.
+  const shortcuts: ShortcutEntry[] = [
+    { combo: 'mod+z', description: 'Undo', run: () => store.undo() },
+    { combo: 'mod+d', description: 'Duplicate selected node', run: duplicateSelectedNode },
+  ];
+
   // Performance keys (approved wave-3 shell): 1–9 fire the active section's graphs
   // 1–9 (0 → graph 10); ←/→ step through the active song's sections. Skip while
   // typing in a control; leave arrows alone inside the flow canvas (xyflow nudges
   // the selected node with them).
   function onKey(e: KeyboardEvent): void {
+    if (dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-      if (store.undo()) e.preventDefault();
-      return;
-    }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       const selection = shell.selection;
       if (selection?.kind === 'node') {
