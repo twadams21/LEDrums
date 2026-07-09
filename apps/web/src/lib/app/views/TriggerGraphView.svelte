@@ -560,7 +560,6 @@
   <div class="graphrow" style:--editor-w={`${editorW}px`}>
   <div
     class="gwrap"
-    class:drop-active={dropActive}
     bind:this={canvasWrap}
     role="region"
     aria-label="Trigger graph canvas"
