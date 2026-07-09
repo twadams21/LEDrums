@@ -92,6 +92,7 @@ import { nid, freshId, reserveIds } from './store/ids';
 import { findFreePosition } from '../app/views/node-placement';
 import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
+import { announceSystemActions } from './store/system-toasts';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
 import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './store/graph-wiring';
@@ -991,7 +992,7 @@ export class TriggerLab {
       hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
       constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
   private normalizeGraphs(): void {
-    const { graphs, graphNames } = hydrateGraphs(
+    const { graphs, graphNames, actions } = hydrateGraphs(
       this.graphs,
       this.graphNames,
       this.pads,
@@ -1000,6 +1001,10 @@ export class TriggerLab {
     );
     this.graphs = graphs;
     this.graphNames = graphNames;
+    // Announce anything the hydrate did on the user's behalf (R02) — the single choke point every
+    // load/adopt/show-switch funnels through, so a migration/auto-wire announces once and batched.
+    // A no-op hydrate (already Gen3) yields an empty summary, so this stays silent.
+    announceSystemActions(actions);
   }
 
   /** Reset every authored rune to the blank-document seed (via {@link seedAuthored}) — the
