@@ -153,11 +153,13 @@ function play(graph: TriggerGraph): PlayAction | undefined {
 describe('evalGraph — typed play nodes (D3)', () => {
   it('carries playType + canvasScene from a canvas play node onto the PlayAction', () => {
     const graph: TriggerGraph = {
+      version: 3,
       nodes: [
         node('trigger', 't'),
         node('play', 'p', { effectId: 'canvas:stripe-band', playType: 'canvas', canvasScene: 'stripe-band' }),
+        node('output', 'output', { scope: 'kit' }),
       ],
-      edges: [edge('e1', 't', 'p')],
+      edges: [edge('e1', 't', 'p'), edge('e2', 'p', 'output')],
     };
     const a = play(graph)!;
     expect(a.playType).toBe('canvas');
@@ -166,8 +168,9 @@ describe('evalGraph — typed play nodes (D3)', () => {
 
   it('a hosted play node without playType (pre-migration persisted shape) still evals; fields stay undefined', () => {
     const graph: TriggerGraph = {
-      nodes: [node('trigger', 't'), node('play', 'p', { effectId: 'plasma' })],
-      edges: [edge('e1', 't', 'p')],
+      version: 3,
+      nodes: [node('trigger', 't'), node('play', 'p', { effectId: 'plasma' }), node('output', 'output', { scope: 'kit' })],
+      edges: [edge('e1', 't', 'p'), edge('e2', 'p', 'output')],
     };
     const a = play(graph)!;
     expect(a.effectId).toBe('plasma');
