@@ -11,6 +11,7 @@
   import { sectionRecall } from '../recall';
   import { hasPrimaryModifier, isEditableShortcutTarget, platformShortcutModifier, type ShortcutPlatform } from '../primary-shortcut';
   import SectionColumn from './SectionColumn.svelte';
+  import { columnGapIndexAt } from './sections-dnd';
   import { sectionsDndPreview } from './sections-dnd-preview.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
@@ -32,12 +33,14 @@
   type DragItem = SectionDrag | GraphDrag;
   let dragging = $state<DragItem | null>(null);
 
-  // Drop-target indicators: the gap a dragged graph row would land in, and the
-  // column a dragged section would reorder onto. Both clear on drop/cancel (via
-  // clearDrag, wired to dragend). In dev, the screenshot seam can pin one so
-  // ui-shot can capture these otherwise drag-only states (sections-dnd-preview).
+  // Drop-target indicators: the gap a dragged graph row would land in (horizontal
+  // insert-line, in-column), and the gap between columns a dragged section would land
+  // in (vertical insert-line — R11b, replacing the old section-target column wash).
+  // Both clear on drop/cancel (via clearDrag, wired to dragend). In dev, the screenshot
+  // seam can pin one so ui-shot can capture these otherwise drag-only states.
   let graphGap = $state<{ sectionId: string; index: number } | null>(null);
-  let sectionDropId = $state<string | null>(null);
+  let sectionGap = $state<number | null>(null);
+  let colsEl = $state<HTMLDivElement | null>(null);
 
   const preview = $derived(import.meta.env.DEV ? sectionsDndPreview.current : null);
   const draggingKind = $derived(dragging?.kind ?? preview?.kind ?? null);
@@ -47,10 +50,41 @@
     if (preview?.kind === 'graph' && preview.sectionId === sectionId) return preview.index;
     return null;
   }
-  function sectionTargetFor(sectionId: string): boolean {
-    if (sectionDropId === sectionId) return true;
-    return preview?.kind === 'section' && preview.sectionId === sectionId;
-  }
+
+  // The section-reorder gap index (0..sections.length), from live drag state or the
+  // pinned preview. `??` is nullish so gap 0 (drop before the first column) survives.
+  const sectionGapIdx = $derived(
+    sectionGap ?? (preview?.kind === 'section' ? preview.index : null),
+  );
+
+  // Geometry of the vertical insert-line for the current section gap: an x in the
+  // scrolling `.cols` content, plus the top/height of the tallest column so the bar
+  // spans the row. Recomputed on each dragover (sectionGap changes) and for the preview.
+  let sectionLine = $state<{ x: number; top: number; height: number } | null>(null);
+  $effect(() => {
+    const gap = draggingKind === 'section' ? sectionGapIdx : null;
+    if (gap == null || !colsEl) {
+      sectionLine = null;
+      return;
+    }
+    const cols = Array.from(colsEl.querySelectorAll<HTMLElement>('[data-section-col]'));
+    if (cols.length === 0) {
+      sectionLine = null;
+      return;
+    }
+    const host = colsEl.getBoundingClientRect();
+    const rects = cols.map((c) => c.getBoundingClientRect());
+    const half = 6; // ~half the inter-column gap (--space-3 = 12px), for edge lines
+    let vx: number;
+    if (gap <= 0) vx = rects[0]!.left - half;
+    else if (gap >= rects.length) vx = rects[rects.length - 1]!.right + half;
+    else vx = (rects[gap - 1]!.right + rects[gap]!.left) / 2;
+    // viewport → scrolling content coordinates
+    const x = Math.max(1, vx - host.left + colsEl.scrollLeft);
+    const top = Math.min(...rects.map((r) => r.top)) - host.top + colsEl.scrollTop;
+    const height = Math.max(...rects.map((r) => r.height));
+    sectionLine = { x, top, height };
+  });
 
   // --- selected section detail (rename + transport recall), inline in this view -----
   // Resolves over the RESOLVED song list (S42) so a referenced section resolves, and the
@@ -117,7 +151,7 @@
   function clearDrag(): void {
     dragging = null;
     graphGap = null;
-    sectionDropId = null;
+    sectionGap = null;
   }
 
   function allowDrop(event: DragEvent): void {
@@ -125,11 +159,22 @@
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
-  /** A section is being dragged over `sectionId`: arm the target outline. */
-  function sectionDragOver(sectionId: string, event: DragEvent): void {
+  /** The gap index (0..sections.length) the pointer X sits at across the columns row. */
+  function sectionGapAt(clientX: number): number {
+    const cols = Array.from(colsEl?.querySelectorAll<HTMLElement>('[data-section-col]') ?? []);
+    return columnGapIndexAt(
+      cols.map((c) => c.getBoundingClientRect()),
+      clientX,
+    );
+  }
+
+  /** A section is being dragged over the columns row: arm the vertical insert-line at the
+      pointer's gap. Handled at the `.cols` level so hovering the empty inter-column gaps
+      (not just a column) still resolves a target. */
+  function onColsDragOver(event: DragEvent): void {
     if (!store.canEdit || dragging?.kind !== 'section') return;
     allowDrop(event);
-    sectionDropId = sectionId;
+    sectionGap = sectionGapAt(event.clientX);
   }
 
   /** A graph row is being dragged over `sectionId` at gap `index`: arm the insertion line. */
@@ -139,11 +184,11 @@
     graphGap = { sectionId, index };
   }
 
-  function dropOnSection(sectionIndex: number, event: DragEvent): void {
+  function onColsDrop(event: DragEvent): void {
     if (!store.canEdit || dragging?.kind !== 'section') return;
     event.preventDefault();
     event.stopPropagation();
-    store.moveSection(dragging.sectionId, sectionIndex);
+    store.moveSection(dragging.sectionId, sectionGapAt(event.clientX));
     store.setActiveSection(dragging.sectionId);
     shell.select({ kind: 'section', sectionId: dragging.sectionId });
     clearDrag();
@@ -164,7 +209,7 @@
     const related = event.relatedTarget as Node | null;
     if (related && event.currentTarget instanceof Node && event.currentTarget.contains(related)) return;
     graphGap = null;
-    sectionDropId = null;
+    sectionGap = null;
   }
 </script>
 
@@ -185,8 +230,16 @@
 
   {#if song}
     <div class="body" class:with-detail={!!sectionSel}>
-      <div class="cols" role="list" aria-label="Sections" ondragleave={onColsDragLeave}>
-        {#each sections as sec, i (sec.id)}
+      <div
+        class="cols"
+        role="list"
+        aria-label="Sections"
+        bind:this={colsEl}
+        ondragover={onColsDragOver}
+        ondrop={onColsDrop}
+        ondragleave={onColsDragLeave}
+      >
+        {#each sections as sec (sec.id)}
           <SectionColumn
             {store}
             {shell}
@@ -194,17 +247,23 @@
             section={sec}
             {draggingKind}
             dropIndex={gapFor(sec.id)}
-            sectionTarget={sectionTargetFor(sec.id)}
             onAddGraph={(id) => (pendingSectionId = id)}
             onSectionDragStart={(event) => startSectionDrag(sec.id, event)}
             onGraphDragStart={(graphKey, event) => startGraphDrag(sec.id, graphKey, event)}
             onDragEnd={clearDrag}
-            onSectionDragOver={(event) => sectionDragOver(sec.id, event)}
             onGraphDragOver={(index, event) => graphDragOver(sec.id, index, event)}
-            onSectionDrop={(event) => dropOnSection(i, event)}
             onGraphDrop={(index, event) => dropOnGraph(sec.id, index, event)}
           />
         {/each}
+        {#if draggingKind === 'section' && sectionLine}
+          <div
+            class="section-insert-line"
+            aria-hidden="true"
+            style:left="{sectionLine.x}px"
+            style:top="{sectionLine.top}px"
+            style:height="{sectionLine.height}px"
+          ></div>
+        {/if}
       </div>
 
       {#if sectionSel}
@@ -305,12 +364,43 @@
     grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   }
   .cols {
+    position: relative;
     min-height: 0;
     overflow: auto;
     display: flex;
     gap: var(--space-3);
     align-items: flex-start;
     padding-bottom: var(--space-2);
+  }
+  /* Section-reorder insert-line: the vertical twin of the graph row insert-line
+     (SectionColumn .insert-line). A 2px accent bar pinned in the gap between the
+     columns the section would land between; positioned absolutely (no layout shift)
+     from geometry so it also reaches the leading/trailing gaps. */
+  .section-insert-line {
+    position: absolute;
+    width: 2px;
+    transform: translateX(-1px);
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 6px color-mix(in oklch, var(--accent) 60%, transparent);
+    pointer-events: none;
+    z-index: var(--z-docked);
+    animation: section-insert-line-in var(--dur-120) var(--ease-control, ease);
+  }
+  @keyframes section-insert-line-in {
+    from {
+      opacity: 0;
+      scale: 1 0.6;
+    }
+    to {
+      opacity: 1;
+      scale: 1 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .section-insert-line {
+      animation: none;
+    }
   }
   .detail {
     min-height: 0;

@@ -12,10 +12,35 @@ export interface RowExtent {
   height: number;
 }
 
-export function gapIndexAt(rows: readonly RowExtent[], clientY: number): number {
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!;
-    if (clientY < row.top + row.height / 2) return i;
+export interface ColExtent {
+  left: number;
+  width: number;
+}
+
+/** Shared gap resolver along one axis: the pointer "passes" an extent once it crosses
+    its midpoint, so the result is the ORIGINAL-list gap index (0..extents.length). */
+function gapIndex(extents: readonly [number, number][], pos: number): number {
+  for (let i = 0; i < extents.length; i++) {
+    const [start, size] = extents[i]!;
+    if (pos < start + size / 2) return i;
   }
-  return rows.length;
+  return extents.length;
+}
+
+/** Gap a dragged graph ROW would land in — pointer Y vs each row's vertical midpoint. */
+export function gapIndexAt(rows: readonly RowExtent[], clientY: number): number {
+  return gapIndex(
+    rows.map((r) => [r.top, r.height]),
+    clientY,
+  );
+}
+
+/** Gap a dragged SECTION column would land in — pointer X vs each column's horizontal
+    midpoint. The horizontal twin of {@link gapIndexAt}; the index feeds `moveSection`,
+    which accounts for the source removal itself. */
+export function columnGapIndexAt(cols: readonly ColExtent[], clientX: number): number {
+  return gapIndex(
+    cols.map((c) => [c.left, c.width]),
+    clientX,
+  );
 }

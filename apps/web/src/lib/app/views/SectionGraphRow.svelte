@@ -36,9 +36,25 @@
   } = $props();
 
   let editing = $state(false);
+  let dragging = $state(false);
+  let ghostEl = $state<HTMLDivElement | null>(null);
   const current = $derived(store.activeSectionId === section.id && store.selectedPadKey === graphKey);
   const reused = $derived(isReused(song, graphKey));
   const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.drums).sub);
+
+  /* The native HTML5 drag ghost snapshots the whole row — grip, status dot, and the
+     hover-revealed ✕ — semi-transparent over the still-visible original, reading as a
+     broken double. Instead: pin a clean compact drag image (icon + name only) and dim
+     the source row so there's a single "this is moving" representation (R11b). */
+  function handleDragStart(event: DragEvent): void {
+    if (ghostEl && event.dataTransfer) event.dataTransfer.setDragImage(ghostEl, 12, 16);
+    dragging = true;
+    onDragStart(event);
+  }
+  function handleDragEnd(): void {
+    dragging = false;
+    onDragEnd();
+  }
 
   function open(): void {
     store.selectGraphInSection(section.id, graphKey);
@@ -57,12 +73,13 @@
 
 <div
   class="graph-drag"
+  class:dragging
   role="listitem"
   data-graph-row
   draggable={store.canEdit && !editing}
   aria-label={`Drag ${store.graphLabel(graphKey)}`}
-  ondragstart={onDragStart}
-  ondragend={onDragEnd}
+  ondragstart={handleDragStart}
+  ondragend={handleDragEnd}
 >
   {#if store.canEdit && !editing}
     <!-- Explicit drag affordance: the grab cursor is confined to this grip rather than smeared
@@ -87,6 +104,15 @@
       <IconButton icon={X} label="Remove from section" size={12} onclick={removeFromSection} />
     {/snippet}
   </EditableRow>
+
+  {#if store.canEdit && !editing}
+    <!-- Compact drag image: rendered off-screen (never display:none — Chrome won't snapshot
+         a hidden node) and handed to setDragImage on dragstart. Icon + name only, no ✕. -->
+    <div class="drag-ghost" bind:this={ghostEl} aria-hidden="true">
+      <Workflow size={13} />
+      <span>{store.graphLabel(graphKey)}</span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -97,6 +123,37 @@
     /* Row content sits past the grip gutter; the grip is absolutely positioned within it so the
        row layout (and its Workflow icon) is unshifted. */
     padding-inline-start: var(--space-4);
+    transition: opacity var(--dur-120) ease;
+  }
+  /* Drag source: dim the original so the moving row reads as the compact drag image,
+     not a second full-layout copy. Opacity only — no layout jump. */
+  .graph-drag.dragging {
+    opacity: 0.4;
+  }
+  /* Off-screen drag-image template (see setDragImage). Kept in normal flow but parked far
+     off-canvas so it has real dimensions to snapshot without affecting layout. */
+  .drag-ghost {
+    position: fixed;
+    top: -9999px;
+    inset-inline-start: -9999px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1_5);
+    max-width: 200px;
+    padding: var(--space-1_5) var(--space-2);
+    background: var(--surface-3);
+    border: 1px solid color-mix(in oklch, var(--accent) 45%, var(--border));
+    border-radius: var(--radius-2);
+    box-shadow: var(--shadow-2);
+    color: var(--ink);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .drag-ghost :global(svg) {
+    flex: none;
+    color: var(--accent);
   }
   /* The grip owns the grab affordance — the rest of the row keeps its default (select) cursor. */
   .grip {
@@ -116,7 +173,8 @@
     cursor: grabbing;
   }
   @media (prefers-reduced-motion: reduce) {
-    .grip {
+    .grip,
+    .graph-drag {
       transition: none;
     }
   }
