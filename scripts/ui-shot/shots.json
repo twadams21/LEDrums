@@ -101,6 +101,11 @@
     "state": "view:trigger,add:effect,select:effect",
     "target": "Node editor"
   },
+  "gen3-add-pane-search": {
+    "state": "view:trigger,search:s",
+    "target": "Node editor",
+    "settle": 300
+  },
   "effect-gallery": {
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
