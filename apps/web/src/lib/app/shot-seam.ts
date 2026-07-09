@@ -16,6 +16,7 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { ShellStore, View } from './shell-store.svelte';
 import type { GraphNode, NodeKind } from '../trigger-lab/sim';
+import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -45,6 +46,9 @@ export interface ShotSeam {
       results state). The field's value is component-local, so this drives the
       real input rather than a store method. */
   setSearch(query: string): void;
+  /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
+      states: `graph` = insertion line at a gap, `section` = reorder target outline. */
+  previewSectionsDnd(kind: 'graph' | 'section'): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -65,6 +69,7 @@ class ShotSeamImpl implements ShotSeam {
     this.store.closeGallery();
     this.store.closeSettings();
     this.shell.clearSelection();
+    sectionsDndPreview.clear();
     this.added.clear();
     this.lastAdded = null;
   }
@@ -137,6 +142,21 @@ class ShotSeamImpl implements ShotSeam {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  previewSectionsDnd(kind: 'graph' | 'section'): void {
+    this.shell.setView('sections');
+    const sections = this.store.activeSong?.sections ?? [];
+    if (sections.length === 0) return;
+    if (kind === 'graph') {
+      // Land the line one gap in from the top of the first non-empty section (or gap 0).
+      const target = sections.find((s) => s.graphs.length > 0) ?? sections[0]!;
+      sectionsDndPreview.set({ kind: 'graph', sectionId: target.id, index: Math.min(1, target.graphs.length) });
+    } else {
+      // Outline a column other than the active one when possible, so it reads as a target.
+      const target = sections.find((s) => s.id !== this.store.activeSectionId) ?? sections[0]!;
+      sectionsDndPreview.set({ kind: 'section', sectionId: target.id });
+    }
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -175,6 +195,12 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'search':
         this.setSearch(arg ?? '');
+        break;
+      case 'sections-insert':
+        this.previewSectionsDnd('graph');
+        break;
+      case 'sections-reorder':
+        this.previewSectionsDnd('section');
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);

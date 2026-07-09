@@ -11,6 +11,7 @@
   import { sectionRecall } from '../recall';
   import { hasPrimaryModifier, isEditableShortcutTarget, platformShortcutModifier, type ShortcutPlatform } from '../primary-shortcut';
   import SectionColumn from './SectionColumn.svelte';
+  import { sectionsDndPreview } from './sections-dnd-preview.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
@@ -30,6 +31,26 @@
   type GraphDrag = { kind: 'graph'; sectionId: string; graphKey: string };
   type DragItem = SectionDrag | GraphDrag;
   let dragging = $state<DragItem | null>(null);
+
+  // Drop-target indicators: the gap a dragged graph row would land in, and the
+  // column a dragged section would reorder onto. Both clear on drop/cancel (via
+  // clearDrag, wired to dragend). In dev, the screenshot seam can pin one so
+  // ui-shot can capture these otherwise drag-only states (sections-dnd-preview).
+  let graphGap = $state<{ sectionId: string; index: number } | null>(null);
+  let sectionDropId = $state<string | null>(null);
+
+  const preview = $derived(import.meta.env.DEV ? sectionsDndPreview.current : null);
+  const draggingKind = $derived(dragging?.kind ?? preview?.kind ?? null);
+
+  function gapFor(sectionId: string): number | null {
+    if (graphGap?.sectionId === sectionId) return graphGap.index;
+    if (preview?.kind === 'graph' && preview.sectionId === sectionId) return preview.index;
+    return null;
+  }
+  function sectionTargetFor(sectionId: string): boolean {
+    if (sectionDropId === sectionId) return true;
+    return preview?.kind === 'section' && preview.sectionId === sectionId;
+  }
 
   // --- selected section detail (rename + transport recall), inline in this view -----
   // Resolves over the RESOLVED song list (S42) so a referenced section resolves, and the
@@ -95,38 +116,55 @@
 
   function clearDrag(): void {
     dragging = null;
+    graphGap = null;
+    sectionDropId = null;
   }
 
   function allowDrop(event: DragEvent): void {
-    if (!store.canEdit || !dragging) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
-  function dropOnSection(sectionId: string, sectionIndex: number, event: DragEvent): void {
-    if (!store.canEdit || !dragging) return;
+  /** A section is being dragged over `sectionId`: arm the target outline. */
+  function sectionDragOver(sectionId: string, event: DragEvent): void {
+    if (!store.canEdit || dragging?.kind !== 'section') return;
+    allowDrop(event);
+    sectionDropId = sectionId;
+  }
+
+  /** A graph row is being dragged over `sectionId` at gap `index`: arm the insertion line. */
+  function graphDragOver(sectionId: string, index: number, event: DragEvent): void {
+    if (!store.canEdit || dragging?.kind !== 'graph') return;
+    allowDrop(event);
+    graphGap = { sectionId, index };
+  }
+
+  function dropOnSection(sectionIndex: number, event: DragEvent): void {
+    if (!store.canEdit || dragging?.kind !== 'section') return;
     event.preventDefault();
     event.stopPropagation();
-    if (dragging.kind === 'section') {
-      store.moveSection(dragging.sectionId, sectionIndex);
-      store.setActiveSection(dragging.sectionId);
-      shell.select({ kind: 'section', sectionId: dragging.sectionId });
-    } else {
-      const target = sections.find((sec) => sec.id === sectionId);
-      store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, target?.graphs.length ?? 0);
-      store.selectGraphInSection(sectionId, dragging.graphKey);
-    }
+    store.moveSection(dragging.sectionId, sectionIndex);
+    store.setActiveSection(dragging.sectionId);
+    shell.select({ kind: 'section', sectionId: dragging.sectionId });
     clearDrag();
   }
 
-  function dropOnGraph(sectionId: string, graphIndex: number, event: DragEvent): void {
-    if (!store.canEdit || !dragging) return;
+  function dropOnGraph(sectionId: string, index: number, event: DragEvent): void {
+    if (!store.canEdit || dragging?.kind !== 'graph') return;
     event.preventDefault();
     event.stopPropagation();
-    if (dragging.kind !== 'graph') return;
-    store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, graphIndex);
+    store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, index);
     store.selectGraphInSection(sectionId, dragging.graphKey);
     clearDrag();
+  }
+
+  /** Clear indicators when the pointer leaves the columns region (not just one
+      column) mid-drag, so a stale line/outline doesn't linger over the detail pane. */
+  function onColsDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as Node | null;
+    if (related && event.currentTarget instanceof Node && event.currentTarget.contains(related)) return;
+    graphGap = null;
+    sectionDropId = null;
   }
 </script>
 
@@ -147,21 +185,24 @@
 
   {#if song}
     <div class="body" class:with-detail={!!sectionSel}>
-      <div class="cols" role="list" aria-label="Sections">
+      <div class="cols" role="list" aria-label="Sections" ondragleave={onColsDragLeave}>
         {#each sections as sec, i (sec.id)}
           <SectionColumn
             {store}
             {shell}
             {song}
             section={sec}
-            draggingKind={dragging?.kind ?? null}
+            {draggingKind}
+            dropIndex={gapFor(sec.id)}
+            sectionTarget={sectionTargetFor(sec.id)}
             onAddGraph={(id) => (pendingSectionId = id)}
             onSectionDragStart={(event) => startSectionDrag(sec.id, event)}
             onGraphDragStart={(graphKey, event) => startGraphDrag(sec.id, graphKey, event)}
             onDragEnd={clearDrag}
-            onDragOver={allowDrop}
-            onSectionDrop={(event) => dropOnSection(sec.id, i, event)}
-            onGraphDrop={(graphIndex, event) => dropOnGraph(sec.id, graphIndex, event)}
+            onSectionDragOver={(event) => sectionDragOver(sec.id, event)}
+            onGraphDragOver={(index, event) => graphDragOver(sec.id, index, event)}
+            onSectionDrop={(event) => dropOnSection(i, event)}
+            onGraphDrop={(index, event) => dropOnGraph(sec.id, index, event)}
           />
         {/each}
       </div>

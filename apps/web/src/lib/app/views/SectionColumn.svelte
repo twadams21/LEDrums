@@ -9,6 +9,7 @@
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import SectionGraphRow from './SectionGraphRow.svelte';
+  import { gapIndexAt } from './sections-dnd';
   import Copy from '@lucide/svelte/icons/copy';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
@@ -21,11 +22,14 @@
     song,
     section,
     draggingKind,
+    dropIndex,
+    sectionTarget,
     onAddGraph,
     onSectionDragStart,
     onGraphDragStart,
     onDragEnd,
-    onDragOver,
+    onGraphDragOver,
+    onSectionDragOver,
     onSectionDrop,
     onGraphDrop,
   }: {
@@ -34,17 +38,42 @@
     song: Song;
     section: SetlistSection;
     draggingKind: 'section' | 'graph' | null;
+    /** Insertion-line gap for a graph drag over THIS column (0..graphs.length), or null. */
+    dropIndex: number | null;
+    /** True while a section reorder is hovering this column (draw the target outline). */
+    sectionTarget: boolean;
     onAddGraph: (sectionId: string) => void;
     onSectionDragStart: (event: DragEvent) => void;
     onGraphDragStart: (graphKey: string, event: DragEvent) => void;
     onDragEnd: () => void;
-    onDragOver: (event: DragEvent) => void;
+    onGraphDragOver: (index: number, event: DragEvent) => void;
+    onSectionDragOver: (event: DragEvent) => void;
     onSectionDrop: (event: DragEvent) => void;
-    onGraphDrop: (graphIndex: number, event: DragEvent) => void;
+    onGraphDrop: (index: number, event: DragEvent) => void;
   } = $props();
 
   let editing = $state(false);
   const active = $derived(store.activeSectionId === section.id);
+
+  let listEl = $state<HTMLDivElement | null>(null);
+
+  /** The gap index (0..graphs.length) the pointer sits at, by comparing the pointer's
+      Y against each row's vertical midpoint. Header/above-first hover → 0; below the
+      last row → graphs.length. Pure geometry, so it matches `moveGraphPlacement`. */
+  function gapAt(clientY: number): number {
+    const rows = listEl?.querySelectorAll<HTMLElement>('[data-graph-row]') ?? [];
+    return gapIndexAt(Array.from(rows, (r) => r.getBoundingClientRect()), clientY);
+  }
+
+  function handleDragOver(event: DragEvent): void {
+    if (draggingKind === 'graph') onGraphDragOver(gapAt(event.clientY), event);
+    else if (draggingKind === 'section') onSectionDragOver(event);
+  }
+
+  function handleDrop(event: DragEvent): void {
+    if (draggingKind === 'graph') onGraphDrop(gapAt(event.clientY), event);
+    else if (draggingKind === 'section') onSectionDrop(event);
+  }
 
   function selectSection(): void {
     store.setActiveSection(section.id);
@@ -59,7 +88,14 @@
   ]);
 </script>
 
-<section class="col" class:active role="listitem" ondragover={onDragOver} ondrop={onSectionDrop}>
+<section
+  class="col"
+  class:active
+  class:section-target={sectionTarget}
+  role="listitem"
+  ondragover={handleDragOver}
+  ondrop={handleDrop}
+>
   <div
     class="section-drag"
     role="group"
@@ -85,8 +121,11 @@
     </EditableRow>
   </div>
 
-  <div class="graphlist" class:drop-active={draggingKind === 'graph'} role="list" ondragover={onDragOver} ondrop={onSectionDrop}>
+  <div class="graphlist" class:drop-active={draggingKind === 'graph'} role="list" bind:this={listEl}>
     {#each section.graphs as key, i (key)}
+      {#if draggingKind === 'graph' && dropIndex === i}
+        <div class="insert-line" aria-hidden="true"></div>
+      {/if}
       <SectionGraphRow
         {store}
         {shell}
@@ -95,10 +134,11 @@
         graphKey={key}
         onDragStart={(event) => onGraphDragStart(key, event)}
         {onDragEnd}
-        onDragOver={onDragOver}
-        onDrop={(event) => onGraphDrop(i, event)}
       />
     {/each}
+    {#if draggingKind === 'graph' && dropIndex === section.graphs.length}
+      <div class="insert-line" aria-hidden="true"></div>
+    {/if}
 
     {#if section.graphs.length === 0}
       <p class="empty">No graphs yet.</p>
@@ -125,6 +165,15 @@
   .col.active {
     border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
   }
+  /* Section reorder drop target: a bright accent ring + faint wash so the landing
+     column reads clearly apart from the merely-active one (thin 45% border above). */
+  .col.section-target {
+    border-color: color-mix(in oklch, var(--accent) 70%, var(--border));
+    background: color-mix(in oklch, var(--accent) 7%, var(--surface-inset));
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent),
+      0 0 0 4px color-mix(in oklch, var(--accent) 14%, transparent);
+  }
   .section-drag {
     cursor: grab;
   }
@@ -149,6 +198,27 @@
   .graphlist.drop-active {
     background: color-mix(in oklch, var(--accent) 6%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 25%, transparent);
+  }
+  /* Insertion line marking the gap a dragged graph row will land in. The negative
+     margins collapse the parent flex gap so the line sits IN the gap rather than
+     adding its own; the glow makes the 2px bar read as a live target. */
+  .insert-line {
+    height: 2px;
+    margin: -1.5px 2px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 6px color-mix(in oklch, var(--accent) 60%, transparent);
+    animation: insert-line-in var(--dur-120) var(--ease-control, ease);
+  }
+  @keyframes insert-line-in {
+    from {
+      opacity: 0;
+      scale: 0.6 1;
+    }
+    to {
+      opacity: 1;
+      scale: 1 1;
+    }
   }
   .empty {
     margin: 0;
@@ -184,6 +254,9 @@
     .addgraph,
     .graphlist {
       transition: none;
+    }
+    .insert-line {
+      animation: none;
     }
   }
 </style>

@@ -24,8 +24,6 @@
     graphKey,
     onDragStart,
     onDragEnd,
-    onDragOver,
-    onDrop,
   }: {
     store: TriggerLab;
     shell: ShellStore;
@@ -34,8 +32,6 @@
     graphKey: string;
     onDragStart: (event: DragEvent) => void;
     onDragEnd: () => void;
-    onDragOver: (event: DragEvent) => void;
-    onDrop: (event: DragEvent) => void;
   } = $props();
 
   let editing = $state(false);
@@ -61,12 +57,11 @@
 <div
   class="graph-drag"
   role="listitem"
+  data-graph-row
   draggable={store.canEdit && !editing}
   aria-label={`Drag ${store.graphLabel(graphKey)}`}
   ondragstart={onDragStart}
   ondragend={onDragEnd}
-  ondragover={onDragOver}
-  ondrop={onDrop}
 >
   <EditableRow
     icon={Workflow}
