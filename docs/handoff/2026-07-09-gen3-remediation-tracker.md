@@ -102,7 +102,17 @@ R05 #84 (lint strip) queued — held back to avoid canvas collision with R08. Af
 P1 review gate needs R05–R08; P5 review needs R27 (R25✅ R26✅).
 Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fixed in `scripts/with-gate-lock.mjs` + CONVENTIONS. r16 also flagged a dead pre-graph Block-tree evaluator in sim.ts — dead-code sweep candidate (note for R19/R15 triage).
 
+## Final wave (2026-07-10 — freeze lifted: Trent "Let's finish off the gen3 ux lift")
+PR #113 (Phases 1–3+5, store-split 1–2, extras) MERGED to main (`a652f30`, v0.2.4 bump `601aa55`). Integration branch `codex/gen3-graph-authoring` now sits on post-merge HEAD; final-wave branch base `63ecddc` (briefs commit).
+| Ticket | GH | Worktree | Branch | Session | Status |
+|---|---|---|---|---|---|
+| R15 sweep + carried nits | #94 | wt-1 | gen3r/r15-review-sweep | r15-sweep-74caf0 | running (opus/high; fixes 4 carried nits + read-only two-axis sweep; orchestrator files sweep issues) |
+| R19 plan-output prune | #98 | wt-2 | gen3r/r19-plan-output-prune | r19-prune-2affa0 | running (opus/medium) |
+| R22 store split 3/5 controller-test | #101 | wt-3 | gen3r/r22-store-split-3 | r22-split-2f0353 | running (opus/medium; issue body says controller-test — reconciled over Notion title) |
+Queue after: R23 #102 → R24 #103 (same-file chain into freed wt), then P4 review gate over R15–R24. R28 #107 stays MANUAL (Trent hardware gate).
+
 ## Decisions
+- **2026-07-10: FREEZE LIFTED** — Trent: "Let's finish off the gen3 ux lift." Usage 8% of 5h window at launch time; 70% self-budget stands.
 - **2026-07-09 ~11:10Z: Trent — LAUNCH FREEZE.** No new agent launches until he lifts it. In-flight (R21, P5 review, R11b) run to completion and get normal closeout (merge/gates/GH/Notion); freed slots stay empty; queue accumulates (R15, R19, R22→R24, then P4 review).
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
 - Impl agents: opus/medium; R01 opus/high (diagnosis gate). New tmux windows (user directive), killed after verified completion.
