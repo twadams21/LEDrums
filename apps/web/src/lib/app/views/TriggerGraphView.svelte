@@ -168,7 +168,9 @@
       (mode + band count). Drives reactive rebuilds AND decides which flow-node objects can be
       reused on re-projection — reuse keeps xyflow's measured handleBounds + live position, so a
       structure change to one node never makes every node drop its wires or snap position. */
-  const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map(triggerNodeSignature).join('|'));
+  const nodeSig = $derived(
+    (store.selectedGraph?.nodes ?? []).map((n) => triggerNodeSignature(n, store.selectedGraph)).join('|'),
+  );
   const edgeSig = $derived(
     (store.selectedGraph?.edges ?? []).map(triggerEdgeSignature).join('|'),
   );
