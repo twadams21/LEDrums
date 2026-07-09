@@ -18,7 +18,7 @@ import type { ShellStore, View } from './shell-store.svelte';
 import type { GraphNode, NodeKind } from '../trigger-lab/sim';
 import type { ControllerStatus } from '../ws/protocol-types';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
-import { wireInvalidPreview } from './views/wire-preview.svelte';
+import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -60,6 +60,10 @@ export interface ShotSeam {
       capture it — the live state is drag-only and headless Chrome can't drive the gesture. Opens
       the Trigger graph and ensures it has a target node the static stand-in wire can end on. */
   previewWireInvalid(): void;
+  /** Pin the R08 armed-splice indication (the accent/glow a wire wears while a node is dragged
+      over it) so ui-shot can capture it — the live state is drag-only. Opens the Trigger graph,
+      ensures a flow wire exists (a fresh Effect auto-wires to Output), and arms it. */
+  previewSpliceArmed(): void;
   /** Open the Patch controller inspector on a synthetic ADOPTED controller so ui-shot can
       capture the controller panel (incl. the R29 admin-password field), which otherwise needs
       a live PixLite on the network. `auth` = authenticated (calm); `needs` = requires a password
@@ -91,6 +95,7 @@ class ShotSeamImpl implements ShotSeam {
     this.shell.clearSelection();
     sectionsDndPreview.clear();
     wireInvalidPreview.clear();
+    spliceArmedPreview.clear();
     this.added.clear();
     this.lastAdded = null;
   }
@@ -195,6 +200,16 @@ class ShotSeamImpl implements ShotSeam {
     wireInvalidPreview.set(true);
   }
 
+  previewSpliceArmed(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // The armed indication needs a flow wire to sit on; a fresh Effect auto-wires to Output (R04),
+    // so add one if the open graph has no non-trigger nodes yet.
+    const graph = this.store.selectedGraph;
+    if (graph && graph.nodes.every((n) => n.kind === 'trigger' || n.kind === 'output')) this.addNode('effect');
+    spliceArmedPreview.set(true);
+  }
+
   mockController(kind: 'auth' | 'needs' = 'auth'): void {
     if (this.store.canTakeover) this.store.takeover();
     this.shell.setView('patch');
@@ -286,6 +301,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'wire-invalid':
         this.previewWireInvalid();
+        break;
+      case 'splice-armed':
+        this.previewSpliceArmed();
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : 'auth');

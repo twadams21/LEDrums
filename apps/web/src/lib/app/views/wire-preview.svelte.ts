@@ -22,3 +22,22 @@ class WireInvalidPreviewState {
 }
 
 export const wireInvalidPreview = new WireInvalidPreviewState();
+
+/* R08 armed-splice indication. The wire only arms while a node is dragged over it — the same
+   drag-only state headless Chrome can't drive — so the shot seam pins this and TriggerGraphView
+   (under `import.meta.env.DEV`) arms its first eligible flow edge for the capture. Inert and
+   dead-code-eliminated in production. */
+class SpliceArmedPreviewState {
+  /** True when the armed-splice indication is pinned for a capture. */
+  current = $state(false);
+
+  set(on: boolean): void {
+    this.current = on;
+  }
+
+  clear(): void {
+    this.current = false;
+  }
+}
+
+export const spliceArmedPreview = new SpliceArmedPreviewState();

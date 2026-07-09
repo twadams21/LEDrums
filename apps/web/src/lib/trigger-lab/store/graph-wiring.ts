@@ -115,6 +115,26 @@ export function classifyReconnect(
   return null;
 }
 
+/** Whether dropped node `nodeId` can splice into edge `edgeId` (R08): the edge must be a plain
+    trigger-FLOW wire (its target is the default flow input — never a `mod` chain or a `param:`
+    modulation wire, where "insert a node in the middle" has no meaning), the node must not be one
+    of the edge's own endpoints, and BOTH resulting wires must be legal on their own —
+    `source →(source-port) node` on the node's flow input, and `node → target (target-port)` back
+    onto the target's original input port. Validation runs on the graph WITHOUT the spliced edge
+    (it is removed by the splice), so the edge being replaced never trips the dup / cycle guard.
+    Pure + total — never throws (unknown ids just yield `false`). */
+export function canSplice(graph: TriggerGraph, edgeId: string, nodeId: string): boolean {
+  const edge = graph.edges.find((e) => e.id === edgeId);
+  if (!edge) return false;
+  if (normalizeToPort(edge.toPort) !== undefined) return false; // flow wires only
+  if (edge.from === nodeId || edge.to === nodeId) return false; // can't splice into your own wire
+  const without: TriggerGraph = { ...graph, edges: graph.edges.filter((e) => e.id !== edgeId) };
+  return (
+    classifyConnection(without, edge.from, nodeId, edge.fromPort, undefined) === null &&
+    classifyConnection(without, nodeId, edge.to, undefined, edge.toPort) === null
+  );
+}
+
 /** Whether a new wire `fromId →(fromPort) toId (toPort)` is legal: distinct endpoints, both
     nodes exist, direction is valid for the port (a `mod` wire only from a modifier node into a
     `mod` input; a flow wire the normal way, never from a modifier), not a duplicate (same
