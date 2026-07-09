@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { voice } from '@ledrums/core';
-import { lintEntries } from './graph-lint';
+import { lintEntries, lintEntriesByNode } from './graph-lint';
 import { makeNode, type TriggerGraph } from '../../trigger-lab/sim';
 
 /* Component-seam test (R05 / GH #84): the lint strip's copy is produced by `lintEntries`
@@ -70,5 +70,56 @@ describe('lintEntries', () => {
     expect(entry.detail).not.toMatch(/Flow cycle rejected/); // dev prefix dropped
     expect(entry.detail).not.toMatch(/\.$/); // trailing period trimmed
     expect(entry.nodeId).toBe(cycle!.nodeId);
+  });
+
+  it('surfaces an empty-scope finding anchored to the offending node with a next step', () => {
+    // effect scoped to `kick` → Output scoped to `snare`: the effective scope is empty (R06).
+    const fx = makeNode('effect', 'fx', 200, 0, { effectId: 'plasma', scope: 'drum', targetId: 'kick' });
+    const out = makeNode('output', 'output', 400, 0, { scope: 'drum', targetId: 'snare' });
+    const plan = voice.compileRenderPlan(graph([trigger, fx, out], [{ id: 'fx-out', from: 'fx', to: 'output' }]));
+    const empty = plan.issues.find((i) => i.code === 'empty-scope');
+    expect(empty).toBeTruthy();
+    expect(empty!.nodeId).toBe('output');
+    const entry = lintEntries(plan.issues).find((e) => e.code === 'empty-scope')!;
+    expect(entry.problem).toBeTruthy();
+    expect(entry.action).toBeTruthy();
+    expect(entry.action).not.toBe(entry.problem); // names the fix, not just the fault
+    expect(entry.nodeId).toBe('output');
+  });
+});
+
+describe('lintEntriesByNode (strip ↔ badge agreement)', () => {
+  it('groups anchored findings by node, referencing the SAME entries the strip renders', () => {
+    // Two anchored findings on different nodes: a flow cycle (route `a`) and an empty scope (output).
+    const a = route('a', 0);
+    const b = route('b', 100);
+    const fx = makeNode('effect', 'fx', 300, 0, { effectId: 'plasma', scope: 'drum', targetId: 'kick' });
+    const out = makeNode('output', 'output', 500, 0, { scope: 'drum', targetId: 'snare' });
+    const plan = voice.compileRenderPlan(
+      graph([trigger, a, b, fx, out], [
+        { id: 'e1', from: 'a', to: 'b' },
+        { id: 'e2', from: 'b', to: 'a' },
+        { id: 'e3', from: 'fx', to: 'output' },
+      ]),
+    );
+    const strip = lintEntries(plan.issues);
+    const byNode = lintEntriesByNode(strip);
+
+    // Every badge entry is one of the strip's entries (same object) — one lint model, two surfaces.
+    for (const [nodeId, entries] of byNode) {
+      for (const entry of entries) {
+        expect(entry.nodeId).toBe(nodeId);
+        expect(strip).toContain(entry);
+      }
+    }
+    // The output's badge shows exactly its empty-scope finding.
+    expect(byNode.get('output')?.map((e) => e.code)).toEqual(['empty-scope']);
+    // Anchor-less findings (missing trigger/output) never appear on a badge.
+    expect([...byNode.keys()]).not.toContain(undefined);
+  });
+
+  it('is empty when no finding carries a node id', () => {
+    const plan = voice.compileRenderPlan(graph([output])); // missing-trigger only, no nodeId
+    expect(lintEntriesByNode(lintEntries(plan.issues)).size).toBe(0);
   });
 });
