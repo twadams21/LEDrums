@@ -1,7 +1,7 @@
 ---
 name: agents
 description: Always-loaded project anchor. Read this first. Contains project identity, non-negotiables, commands, and pointer to ROUTER.md for full context.
-last_updated: 2026-07-02
+last_updated: 2026-07-09
 ---
 
 # LEDrums
@@ -27,6 +27,12 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - Build: `pnpm build`
 - Design system (regenerate `docs/design-system.html`): `pnpm design-system`
 - Start (prod, serves built web): `pnpm start`
+
+## Ticket Tracking (Notion + GitHub)
+Remediation/initiative tickets are tracked in two places with distinct roles:
+- **GitHub issues** (`twadams21/LEDrums`) reflect **merge status only** — close an issue when its change is merged. Blocking edges live in the issue bodies.
+- **The Notion DB is the authoritative truth on completion.** Current initiative: "Gen3 UX Remediation Tickets" under the LEDrums Notion page (<https://app.notion.com/p/0b24b7e353064ec0bd3d64c51bc12aee>, data source `collection://199954bb-9870-48eb-b3c6-c3c81a496d7a`). A ticket is done when its Notion row Status says Done — not merely when the GH issue is closed. Update Status (`Ready` / `Blocked` / `In progress` / `Done`) as work moves, and unblock downstream rows when their blockers complete.
+- **Reports live on the Notion row.** Write implementation reports and review reports into the ticket's row page body (the row is a page).
 
 ## After Every Task
 After meaningful work, run GROW:
