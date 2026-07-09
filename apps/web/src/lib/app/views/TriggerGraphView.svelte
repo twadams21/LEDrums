@@ -22,7 +22,6 @@
   import GraphLintStrip from './GraphLintStrip.svelte';
   import { edgeUnderNode, type NodeRect } from './splice-geometry';
   import { voice, type PlayType } from '@ledrums/core';
-  import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
     graphToFlowEdges,
     type TriggerFlowEdge,
