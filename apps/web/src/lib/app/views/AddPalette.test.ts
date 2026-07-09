@@ -6,7 +6,7 @@ import AddPalette, { type AddGroup } from './AddPalette.svelte';
 import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
 
 const groups: AddGroup[] = [
-  { key: 'effect', label: 'Effect', items: [{ id: 'waves', name: 'Waves', icon: Circle, hint: 'canvas texture' }] },
+  { key: 'effect', label: 'Effect', icon: Circle, tint: 'var(--role-content)', items: [{ id: 'waves', name: 'Waves', icon: Circle, hint: 'canvas texture' }] },
   { key: 'route', label: 'Route', items: [{ id: 'switch', name: 'Switch', icon: Circle, hint: 'branch logic' }] },
   { key: 'modulate', label: 'Modulate', items: [{ id: 'lfo', name: 'LFO', icon: Circle, hint: 'continuous wave' }] },
   { key: 'modify', label: 'Modify', items: [{ id: 'slice', name: 'Slice', icon: Circle, hint: 'pixel bands' }] },
@@ -24,6 +24,16 @@ describe('AddPalette', () => {
     mount();
     expect(screen.getByText('Select a node category.')).toBeTruthy();
     expect(screen.queryByTitle('Add Waves')).toBeNull();
+  });
+
+  it('renders a node icon chip on a category tile that carries one', () => {
+    mount();
+    const tile = screen.getByRole('button', { name: /Effect/ });
+    // The chip is an aria-hidden tinted glyph (NodeIconChip) — assert its svg is present.
+    expect(tile.querySelector('svg')).toBeTruthy();
+    // A category without a group icon (Route) shows no chip.
+    const bare = screen.getByRole('button', { name: /Route/ });
+    expect(bare.querySelector('svg')).toBeNull();
   });
 
   it('uses a temporary Stage 1 selection and resets on remount', async () => {

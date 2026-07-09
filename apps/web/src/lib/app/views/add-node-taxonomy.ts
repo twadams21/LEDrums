@@ -1,6 +1,8 @@
 import type { AddGroup } from './AddPalette.svelte';
 import { COLLECTIONS, listModifiersByCategory } from '@ledrums/core';
 import Blend from '@lucide/svelte/icons/blend';
+import GitBranch from '@lucide/svelte/icons/git-branch';
+import Waves from '@lucide/svelte/icons/waves';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
 import type { NodeKind } from '../../trigger-lab/sim';
 
@@ -32,6 +34,8 @@ export function buildAddGroups(): AddGroup[] {
     {
       key: EFFECT_GROUP_KEY,
       label: 'Effect',
+      icon: kindIcon.play,
+      tint: tint.play,
       items: COLLECTIONS.map((c) => ({
         id: c.type,
         name: c.label,
@@ -43,6 +47,8 @@ export function buildAddGroups(): AddGroup[] {
     {
       key: ROUTE_GROUP_KEY,
       label: 'Route',
+      icon: GitBranch,
+      tint: tint.switch,
       items: [
         ...ROUTE_KINDS.map((kind) => ({
           id: kind,
@@ -58,6 +64,8 @@ export function buildAddGroups(): AddGroup[] {
     {
       key: MODULATE_GROUP_KEY,
       label: 'Modulate',
+      icon: Waves,
+      tint: tint.lfo,
       items: [
         ...ENVELOPE_PRESETS.map((p) => ({
           id: `envelope:${p.id}`,
@@ -86,6 +94,8 @@ export function buildAddGroups(): AddGroup[] {
     {
       key: `${MODIFIER_GROUP_PREFIX}all`,
       label: 'Modify',
+      icon: Blend,
+      tint: 'var(--role-mod)',
       items: listModifiersByCategory().flatMap((g) =>
         g.modifiers.map((m) => ({
           id: m.id,

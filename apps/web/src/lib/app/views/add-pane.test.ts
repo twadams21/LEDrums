@@ -30,6 +30,13 @@ describe('add pane helpers', () => {
     ]);
   });
 
+  it('carries a group icon and tint onto its category (node visual language)', () => {
+    const withChip = [{ key: 'effect', label: 'Effect', icon: Circle, tint: 'var(--role-content)', items: groups[0]!.items }];
+    const [cat] = addCategories(withChip);
+    expect(cat?.icon).toBe(Circle);
+    expect(cat?.tint).toBe('var(--role-content)');
+  });
+
   it('keeps Stage 2 empty until a category is selected', () => {
     expect(selectedAddItems(groups, null)).toEqual([]);
     expect(selectedAddItems(groups, 'route').map((i) => i.id)).toEqual(['switch', 'delay']);

@@ -4,6 +4,7 @@
      language that will appear on the canvas. */
   import type { Component } from 'svelte';
   import NodeCard from './NodeCard.svelte';
+  import NodeIconChip from './NodeIconChip.svelte';
   import NodeSignalPreview from './NodeSignalPreview.svelte';
   import NodeStatePreview from './NodeStatePreview.svelte';
   import {
@@ -34,6 +35,11 @@
   export type AddGroup = {
     key: string;
     label: string;
+    /** Category icon for the stage-1 tile — a representative node glyph so the category
+        reads as part of the node visual language. */
+    icon?: Component;
+    /** CSS colour for the category's icon chip (a representative role tint). */
+    tint?: string;
     items: readonly AddItem[];
   };
 
@@ -203,6 +209,13 @@
           aria-pressed={selectedKey === category.key}
           onclick={() => (selectedKey = category.key)}
         >
+          {#if category.icon}
+            <NodeIconChip
+              icon={category.icon}
+              tint={category.tint ?? 'var(--accent)'}
+              size={26}
+            />
+          {/if}
           <span class="cat-name">{category.label}</span>
           <span class="cat-count">{category.count}</span>
         </button>
@@ -211,9 +224,7 @@
 
     <div class="stage2" aria-live="polite">
       {#if selectedKey === null}
-        <div class="empty">
-          <p>Select a node category.</p>
-        </div>
+        <p class="empty">Select a node category.</p>
       {:else}
         <section class="previews" aria-label="{selectedLabel} nodes">
           <h5 class="glbl">{selectedLabel}</h5>
@@ -271,11 +282,11 @@
     border-bottom: 1px solid var(--border-faint);
   }
   .cat {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
     align-items: center;
-    min-height: 40px;
-    padding: 0 var(--space-2);
+    gap: var(--space-2);
+    min-height: 44px;
+    padding: var(--space-1) var(--space-2);
     background: var(--surface-2);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
@@ -300,6 +311,7 @@
     background: color-mix(in oklch, var(--accent) 10%, var(--surface-2));
   }
   .cat-name {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -363,16 +375,10 @@
     box-shadow: none;
     pointer-events: none;
   }
+  /* Prompt, not content: plain text, no card chrome — an empty box read as a thing to
+     interact with (R10). Left-aligned to match the category tiles above it. */
   .empty {
-    min-height: 160px;
-    display: grid;
-    place-items: center;
-    border: 1px dashed var(--border-faint);
-    border-radius: var(--radius-3);
-    background: color-mix(in oklch, var(--surface-2) 56%, transparent);
-  }
-  .empty p {
-    margin: 0;
+    margin: var(--space-4) var(--space-2);
     color: var(--text-faint);
     font-size: var(--text-xs);
   }
