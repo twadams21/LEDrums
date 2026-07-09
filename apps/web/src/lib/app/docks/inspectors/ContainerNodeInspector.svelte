@@ -8,6 +8,7 @@
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import Field from '../../../ui/Field.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import { SWITCH_OPTS, VALUEMODE_OPTS, pct } from '../../views/node-options';
   import { mixLayerRowsFor } from '../../views/mix-layer-rows';
@@ -39,32 +40,28 @@
 
 {#if node.kind === 'random'}
   <div class="kindbody">
-    <label class="lblrow">
-      <span class="k">No-repeat</span>
+    <Field layout="row" label="No-repeat">
       <Toggle pressed={node.noRepeat} onChange={(v) => store.setNoRepeat(node, v)} ariaLabel="No-repeat" />
-    </label>
+    </Field>
     <p class="hint">Picks a random wired child on each hit{node.noRepeat ? ', never the same one twice running' : ''}.</p>
   </div>
 {:else if node.kind === 'switch'}
   <div class="kindbody">
-    <label class="lblrow">
-      <span class="k">On</span>
+    <Field layout="row" label="On">
       <Select value={node.on} options={SWITCH_OPTS} onChange={(v) => store.setSwitchOn(node, v as SwitchOn)} ariaLabel="Switch on" />
-    </label>
+    </Field>
     {#if node.on === 'value'}
       {@const mode = node.valueMode ?? 'gate'}
       <SegmentedControl value={mode} options={VALUEMODE_OPTS} onChange={(v) => store.setValueMode(node, v as ValueMode)} ariaLabel="Value mode" />
       {#if mode === 'gate'}
         {@const threshold = node.threshold ?? 0.5}
         {@const invert = node.invert ?? false}
-        <label class="lblrow">
-          <span class="k">Threshold</span>
-          <span class="sld"><Slider min={0} max={1} step={0.01} value={threshold} onChange={(v) => store.setThreshold(node, v)} format={pct} ariaLabel="Gate threshold" /></span>
-        </label>
-        <label class="lblrow">
-          <span class="k">Invert</span>
+        <Field layout="row" label="Threshold">
+          <Slider min={0} max={1} step={0.01} value={threshold} onChange={(v) => store.setThreshold(node, v)} format={pct} ariaLabel="Gate threshold" />
+        </Field>
+        <Field layout="row" label="Invert">
           <Toggle pressed={invert} onChange={(v) => store.setInvert(node, v)} ariaLabel="Invert gate" />
-        </label>
+        </Field>
         <p class="hint">
           {invert
             ? `Passes when value > ${pct(threshold)} — does nothing below.`
@@ -97,25 +94,21 @@
   </div>
 {:else if node.kind === 'chance'}
   <div class="kindbody">
-    <label class="lblrow">
-      <span class="k">Chance</span>
-      <span class="sld">
-        <Slider min={0} max={1} step={0.05} value={node.p} onChange={(v) => store.setChance(node, v)} format={(v) => `${Math.round(v * 100)}%`} />
-      </span>
-    </label>
+    <Field layout="row" label="Chance">
+      <Slider min={0} max={1} step={0.05} value={node.p} onChange={(v) => store.setChance(node, v)} format={(v) => `${Math.round(v * 100)}%`} />
+    </Field>
     <p class="hint">Plays its wired child {Math.round(node.p * 100)}% of the time.</p>
   </div>
 {:else if node.kind === 'mix'}
   <div class="kindbody">
-    <label class="lblrow">
-      <span class="k">Blend</span>
+    <Field layout="row" label="Blend">
       <Select
         value={node.mixBlendMode ?? 'normal'}
         options={BLEND_OPTS}
         onChange={(v) => store.setMixBlendMode(node, v as BlendMode)}
         ariaLabel="Mix blend mode"
       />
-    </label>
+    </Field>
     {#if mixRows.length}
       <div class="mixlist">
         {#each mixRows as row (row.edgeId)}
@@ -151,24 +144,6 @@
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3);
-  }
-  .lblrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    min-width: 0;
-  }
-  .lblrow > .k {
-    width: var(--field-label-col, 6.5rem);
-    flex: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .lblrow > :global(.sel) {
-    flex: 1;
   }
   .k {
     color: var(--text-muted);

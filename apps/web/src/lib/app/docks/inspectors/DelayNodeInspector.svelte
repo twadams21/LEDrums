@@ -7,6 +7,7 @@
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Select from '../../../ui/Select.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import Field from '../../../ui/Field.svelte';
   import { DELAY_MODE_OPTS, DIVISION_OPTS } from '../../views/node-options';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
@@ -14,42 +15,36 @@
 
 {#if node.kind === 'delay'}
   <div class="kindbody">
-    <label class="lblrow">
-      <span class="k">Mode</span>
+    <Field layout="row" label="Mode">
       <SegmentedControl
         value={node.delayMode}
         options={DELAY_MODE_OPTS}
         onChange={(v) => store.setDelayMode(node, v as 'time' | 'beats')}
         ariaLabel="Delay mode"
       />
-    </label>
+    </Field>
 
     {#if node.delayMode === 'time'}
-      <label class="lblrow">
-        <span class="k">Time</span>
-        <span class="input-wrap">
-          <CommitInput
-            type="number"
-            value={node.ms}
-            min={0}
-            max={60000}
-            step={1}
-            onCommit={(v) => store.setDelayMs(node, Number(v))}
-            ariaLabel="Delay milliseconds"
-          />
-        </span>
-        <span class="unit">ms</span>
-      </label>
+      <Field layout="row" label="Time" unit="ms">
+        <CommitInput
+          type="number"
+          value={node.ms}
+          min={0}
+          max={60000}
+          step={1}
+          onCommit={(v) => store.setDelayMs(node, Number(v))}
+          ariaLabel="Delay milliseconds"
+        />
+      </Field>
     {:else}
-      <label class="lblrow">
-        <span class="k">Division</span>
+      <Field layout="row" label="Division">
         <Select
           value={node.division}
           options={DIVISION_OPTS}
           onChange={(v) => store.setDivision(node, v)}
           ariaLabel="Delay division"
         />
-      </label>
+      </Field>
     {/if}
 
     <p class="hint">Children fire this long after the trigger. Wire them below the delay node on the canvas.</p>
@@ -62,34 +57,6 @@
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3);
-  }
-  .lblrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-  }
-  .lblrow > :global(.sel) {
-    flex: 1;
-  }
-  .k {
-    color: var(--text-muted);
-    font-weight: 500;
-    font-size: var(--text-2xs);
-    white-space: nowrap;
-    flex: none;
-    width: var(--field-label-col, 6.5rem);
-  }
-  .input-wrap {
-    flex: 1;
-    min-width: 0;
-  }
-  .unit {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    flex: none;
   }
   .hint {
     margin: 0;

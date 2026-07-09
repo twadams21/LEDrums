@@ -4,6 +4,7 @@
   import { SCOPE_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Select from '../../../ui/Select.svelte';
+  import Field from '../../../ui/Field.svelte';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -23,19 +24,17 @@
 </script>
 
 <div class="body">
-  <div class="row">
-    <span class="k">Scope</span>
+  <Field layout="row" label="Scope">
     <SegmentedControl
       value={node.scope}
       options={SCOPE_OPTS}
       onChange={(v) => store.setScope(node, v as Scope)}
       ariaLabel="Output scope"
     />
-  </div>
+  </Field>
 
   {#if node.scope !== 'kit'}
-    <div class="row">
-      <span class="k">Target</span>
+    <Field layout="row" label="Target">
       <Select
         value={node.targetId ?? ''}
         options={targetOptions}
@@ -43,7 +42,7 @@
         placeholder="Auto (firing drum)"
         ariaLabel="Output target"
       />
-    </div>
+    </Field>
   {/if}
 </div>
 
@@ -53,21 +52,5 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: var(--space-3);
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .k {
-    width: var(--field-label-col);
-    color: var(--text-muted);
-    font-weight: 500;
-    font-size: var(--text-2xs);
-    white-space: nowrap;
-  }
-  .row :global(.select-trigger) {
-    flex: 1;
-    min-width: 0;
   }
 </style>
