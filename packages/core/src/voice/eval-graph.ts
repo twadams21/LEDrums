@@ -267,6 +267,12 @@ function evalGraphGen3FromPlan(
   const actions: Action[] = [];
   const queued = new Set<string>();
   const processedCount = new Map<string, number>();
+  /** R14 — Effect/play node ids that have already emitted their firing in THIS eval call.
+      Fan-in (multiple flow edges converging on one Effect) coalesces to a single firing per
+      trigger: the play draft is a pure function of the node, so re-firing per incoming edge
+      would emit identical duplicate voices (double / N× brightness). A delayed re-arrival
+      drains in a SEPARATE eval call (fresh set) and stays a distinct temporal firing (R13). */
+  const firedEffects = new Set<string>();
   const pendingMixes = new Set<string>();
   const pendingOutputs = new Set<string>();
   const queue: string[] = [];
@@ -365,8 +371,15 @@ function evalGraphGen3FromPlan(
         const draft = makePlayDraft(state, graph, node);
         if (!draft) break;
         via.set(node.id, labelFor(node, modeWord(node.mode)));
-        const sourceEntries = newEntries.length ? newEntries : [{ draft: EMPTY_ROUTE, latchKey: null }];
-        for (const entry of sourceEntries) pushKids(node, { kind: 'play', play: draft }, entry.latchKey ?? null);
+        // R14 — fan-in coalescing. All flow edges converging on this Effect within one trigger
+        // fire produce ONE voice, not one per edge. `draft` is derived purely from the node, so
+        // the incoming entries only carry the latch key; pick the first latched one (matching the
+        // Mix collector). Guard by node id so later waves in the same call (e.g. an Effect fed
+        // downstream of a Mix) don't re-fire either. Delayed drains are a fresh call → separate.
+        if (firedEffects.has(node.id)) break;
+        firedEffects.add(node.id);
+        const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        pushKids(node, { kind: 'play', play: draft }, latchKey);
         break;
       }
       case 'modifier':
