@@ -105,6 +105,10 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 const env = { ...process.env };
 env.VITEST_MAX_FORKS ??= '4';
 env.VITEST_MAX_THREADS ??= '4';
+// Tinypool errors if its default min (cpu-based, can exceed 4 on big machines)
+// is above our max — pin the floors too.
+env.VITEST_MIN_FORKS ??= '1';
+env.VITEST_MIN_THREADS ??= '1';
 
 console.error(`[gate-lock] acquired — running: ${cmd} ${args.join(' ')}`);
 const child = spawn(cmd, args, { stdio: 'inherit', env });

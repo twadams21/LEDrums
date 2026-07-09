@@ -22,7 +22,9 @@ This file is the shared logistics contract.
   machine and flake each other. If the lock is held you'll see who holds it;
   just wait, it polls.
 - During development, run SCOPED tests only (`pnpm --filter <pkg> exec vitest
-  run <file>`), with workers capped: `VITEST_MAX_FORKS=2 VITEST_MAX_THREADS=2`.
+  run <file>`), with workers capped: `VITEST_MAX_FORKS=2 VITEST_MAX_THREADS=2
+  VITEST_MIN_FORKS=1 VITEST_MIN_THREADS=1` (MINs required — Tinypool rejects
+  min>max on many-core machines).
 - UI-touching tickets: `pnpm ui-shot` capture(s) of the affected surface, and regenerate `docs/design-system.html` (`pnpm design-system`) if you added/changed styleguide-covered UI.
 
 ## ui-shot: reach states ad-hoc, don't register presets
