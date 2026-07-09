@@ -53,7 +53,8 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
 | R16 delete legacy eval | #95 | wt-1 | gen3r/r16-delete-legacy-eval | r16-eval-415ced | ✅ merged `f30918f` (−627 lines, gates green via lock); #95 closed; Notion Done; R17 #96 → Ready; window killed |
-| R25 signal previews | #104 | wt-2 | gen3r/r25-signal-previews | r25-previews-a61432 | running |
+| R25 signal previews | #104 | wt-2 | gen3r/r25-signal-previews | r25-previews-a61432 | ✅ merged (HEAD ea2f0a8; merged gates green 1333 web); #104 closed; Notion Done + report; window killed. Follow-up flagged: `nid()` id collisions vs persisted graphs (latent, breaks select-by-id) — sweep candidate |
+| R26 field migration | #105 | wt-2 | gen3r/r26-field-migration | r26-field-41a9a2 | running (dispatched into r25's freed slot; unblocked by R25) |
 | R29 pixlite password | #108 | wt-3 | gen3r/r29-pixlite-admin-password | r29-pixlite-11270e | ✅ merged `8c5576a` (UI→server-hash→transport auth; merged gates green); #108 closed; Notion Done; window killed |
 | R03 connection validation | #82 | wt-3 | gen3r/r03-connection-validation | r03-validation-855f6a | running (dispatched into r29's freed slot; builds on R01+R02) |
 | R13 delay timeline | #92 | wt-1 | gen3r/r13-delay-timeline | r13-timeline-18ae74 | running (opus/high, dispatched into r16's freed slot off r16-merged HEAD) |
