@@ -17,6 +17,8 @@
   import { pushToast } from '../../ui/toast.svelte';
   import type { WireDragFrom } from './WireDragValidity.svelte';
   import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
+  import { lintPreview } from './lint-preview.svelte';
+  import GraphLintStrip from './GraphLintStrip.svelte';
   import { edgeUnderNode, type NodeRect } from './splice-geometry';
   import { voice, type PlayType } from '@ledrums/core';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
@@ -377,6 +379,18 @@
     return { x1: src.x - rect.left, y1: src.y - rect.top, x2: tgt.x - rect.left, y2: tgt.y - rect.top };
   });
 
+  // ---- lint strip (R05): render-plan compile issues on the graph surface -----
+  // The render plan is computed but consumed nowhere in the web app; surface its `issues` as a
+  // persistent strip that says what is wrong and what to do next. DEV/ui-shot only: `lintPreview`
+  // pins real compiler issues (from a degenerate graph) because a well-formed authored graph is
+  // guaranteed anchors and refuses cycles, so the live strip is otherwise empty. Absent when there
+  // are no issues; the component itself renders nothing for an empty list.
+  const lintIssues = $derived.by(() => {
+    if (import.meta.env.DEV && lintPreview.current) return lintPreview.current;
+    const g = store.selectedGraph;
+    return g ? voice.compileRenderPlan(g).issues : [];
+  });
+
   // ---- canvas interactions (all flow through the store) ---------------------
   function syncPos(fn: { id: string; position: { x: number; y: number } }): void {
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
@@ -566,6 +580,11 @@
         <p class="thint">Select a graph from the section to edit it.</p>
       {/snippet}
     </GraphCanvas>
+    <!-- Lint strip: persistent, pinned top-left over the canvas so it reads as belonging to the
+         surface without reflowing the flow area. Fades in/out with the issue list. -->
+    <div class="lint-overlay">
+      <GraphLintStrip issues={lintIssues} />
+    </div>
   </div>
 
   <div class="editor-wrap">
@@ -609,8 +628,23 @@
     position: relative;
   }
   .gwrap {
+    position: relative;
     min-width: 0;
     min-height: 0;
+  }
+  /* Lint strip overlay — pinned to the canvas's top-left, above the flow surface but out of
+     its interaction layer except where the strip itself sits. */
+  .lint-overlay {
+    position: absolute;
+    top: var(--space-3);
+    left: var(--space-3);
+    right: var(--space-3);
+    z-index: 5;
+    display: flex;
+    pointer-events: none;
+  }
+  .lint-overlay > :global(*) {
+    pointer-events: auto;
   }
   .editor-wrap {
     position: relative;

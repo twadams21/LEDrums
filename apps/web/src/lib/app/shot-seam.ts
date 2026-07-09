@@ -15,10 +15,12 @@
 
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { ShellStore, View } from './shell-store.svelte';
-import type { GraphNode, NodeKind } from '../trigger-lab/sim';
+import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
 import type { ControllerStatus } from '../ws/protocol-types';
+import { voice } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
+import { lintPreview } from './views/lint-preview.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -64,6 +66,11 @@ export interface ShotSeam {
       over it) so ui-shot can capture it — the live state is drag-only. Opens the Trigger graph,
       ensures a flow wire exists (a fresh Effect auto-wires to Output), and arms it. */
   previewSpliceArmed(): void;
+  /** Pin the R05 graph lint strip's issues so ui-shot can capture it — a well-formed authored
+      graph is guaranteed anchors and refuses cycles, so the live strip is otherwise empty. Opens
+      the Trigger graph and pins REAL `compileRenderPlan` issues (from a degenerate graph) so the
+      capture shows genuine compiler output, not a mock. */
+  previewLintIssues(): void;
   /** Open the Patch controller inspector on a synthetic ADOPTED controller so ui-shot can
       capture the controller panel (incl. the R29 admin-password field), which otherwise needs
       a live PixLite on the network. `auth` = authenticated (calm); `needs` = requires a password
@@ -96,6 +103,7 @@ class ShotSeamImpl implements ShotSeam {
     sectionsDndPreview.clear();
     wireInvalidPreview.clear();
     spliceArmedPreview.clear();
+    lintPreview.clear();
     this.added.clear();
     this.lastAdded = null;
   }
@@ -210,6 +218,24 @@ class ShotSeamImpl implements ShotSeam {
     spliceArmedPreview.set(true);
   }
 
+  previewLintIssues(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // Compile a deliberately degenerate graph so the pinned issues are genuine compiler output,
+    // not hand-written copy: a trigger with two route nodes wired into a cycle and NO Output
+    // anchor → `missing-output` + `flow-cycle`. This exercises both a plain row and the cycle
+    // detail line in one capture.
+    const degenerate: TriggerGraph = {
+      version: 3,
+      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('all', 'a', 200, 0), makeNode('all', 'b', 200, 120)],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b' },
+        { id: 'e2', from: 'b', to: 'a' },
+      ],
+    };
+    lintPreview.set(voice.compileRenderPlan(degenerate).issues);
+  }
+
   mockController(kind: 'auth' | 'needs' = 'auth'): void {
     if (this.store.canTakeover) this.store.takeover();
     this.shell.setView('patch');
@@ -304,6 +330,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'splice-armed':
         this.previewSpliceArmed();
+        break;
+      case 'lint-issues':
+        this.previewLintIssues();
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : 'auth');
