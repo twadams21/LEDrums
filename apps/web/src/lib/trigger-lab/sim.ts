@@ -236,6 +236,12 @@ export interface Voice {
   releaseFromLevel: number;
   via: string;
   deckGain: number;
+  /** Eval state prefix this voice was spawned under (always `'preview'` in the sim) — scopes
+      origin-keyed liveness for R13 delay-overlap Mix composition. Mirrors the core Voice field. */
+  pad?: string;
+  /** Graph node that produced this voice's layer — read by the sim's `isLayerLive` mirror so a
+      delayed branch composes with still-live Mix members. Mirrors the core Voice field. */
+  originNodeId?: string;
 }
 
 export interface LogEntry {
@@ -274,6 +280,9 @@ type PlayAction = {
   modulations?: Mapping[];
   mixBlendMode?: BlendMode;
   mixInputs?: MixInputDraft[];
+  /** Origin graph node this layer was produced by — mirrors core `PlayAction.originNodeId`;
+      tags the spawned voice for origin-keyed liveness (R13 delay-overlap Mix). */
+  originNodeId?: string;
   via: string;
   latchKey: string | null;
 };
@@ -330,6 +339,10 @@ export class Sim {
   private seqIndex = new Map<string, number>();
   private lastPick = new Map<string, number>();
   private latched = new Map<string, string | null>();
+  /** R13 — per-(pad, mix-node) member snapshots for delay-overlap Mix composition. Mirrors
+      core `engine.ts` `mixMemberSnapshots`; populated by the core evaluator this Sim delegates
+      to, and read by a delayed drain to re-compose with still-live members. */
+  private mixMemberSnapshots = new Map<string, voice.MixInputDraft[]>();
 
   /** Pending-fire queue for delay nodes — mirrors core `engine.ts` `pendingFires`.
       Each entry carries an absolute `fireAtMs` (sim time at enqueue + resolved delayMs)
@@ -460,7 +473,18 @@ export class Sim {
       prng: this.prng,
       presetsById: this.presetsById as Map<string, voice.Preset>,
       isVoiceAlive: (id: string) => this.voices.some((v) => v.id === id),
+      mixMemberSnapshots: this.mixMemberSnapshots,
+      isLayerLive: (pad, originNodeId) => this.isLayerLive(pad, originNodeId),
     };
+  }
+
+  /** Origin-keyed layer liveness for R13 delay-overlap Mix composition — the offline mirror
+      of core `VoicePool.isLayerLive`. A member is live while a voice spawned under `pad`
+      still carries its origin (as its own producer or as a Mix member). */
+  private isLayerLive(pad: string, originNodeId: string): boolean {
+    return this.voices.some(
+      (v) => v.pad === pad && (v.originNodeId === originNodeId || !!v.mixInputs?.some((mi) => mi.originNodeId === originNodeId)),
+    );
   }
 
   private enqueueCorePending(descriptor: voice.PendingDescriptor): void {
@@ -595,6 +619,7 @@ export class Sim {
           modifiers: input.modifiers,
           modState: undefined,
           opacity: input.opacity,
+          originNodeId: input.originNodeId,
         };
       }).filter((input): input is voice.MixInput => input !== null),
       modifiers: a.modifiers,
@@ -612,6 +637,8 @@ export class Sim {
       releaseFromLevel: 1,
       via: a.via,
       deckGain: 1,
+      pad: 'preview',
+      originNodeId: a.originNodeId,
     };
     this.voices.push(voice);
     if (a.latchKey) this.latched.set(a.latchKey, voice.id);
@@ -631,6 +658,7 @@ export class Sim {
   stopAll(): void {
     for (const v of this.voices) this.release(v);
     this.clearPendingFires();
+    this.mixMemberSnapshots.clear();
   }
 
   /** Discard all enqueued deferred fires — call when authored content changes so

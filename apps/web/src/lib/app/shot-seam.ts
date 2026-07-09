@@ -60,6 +60,10 @@ export interface ShotSeam {
       a live PixLite on the network. `auth` = authenticated (calm); `needs` = requires a password
       it doesn't have yet (warn). Injects a `controllerStatus` the panel reads verbatim. */
   mockController(kind?: 'auth' | 'needs'): void;
+  /** Author a Mix with two wired layer branches and select it, so the Mix inspector shows
+      its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
+      an empty Mix hides the rows. */
+  mixWithLayers(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -267,9 +271,25 @@ class ShotSeamImpl implements ShotSeam {
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : 'auth');
         break;
+      case 'mix-layers':
+        this.mixWithLayers();
+        break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }
+  }
+
+  mixWithLayers(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const mix = this.store.addNode('mix', 620, 200);
+    const top = this.store.addNode('effect', 360, 150);
+    const bottom = this.store.addNode('effect', 360, 300);
+    if (!mix || !top || !bottom) return;
+    this.store.connect(top.id, mix.id);
+    this.store.connect(bottom.id, mix.id);
+    this.added.set('mix', mix);
+    this.lastAdded = mix;
+    this.shell.select({ kind: 'node', nodeId: mix.id });
   }
 
   private resolveGraphKey(nameOrKey: string): string | null {

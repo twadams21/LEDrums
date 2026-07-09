@@ -23,6 +23,10 @@ export interface SpawnDeps {
   busById: Map<string, Bus>;
   latched: Map<string, string | null>;
   timeMs: number;
+  /** Eval state prefix (pad / slot key) the spawning action belongs to — tagged onto the
+      voice so origin-keyed liveness scans (R13 delay-overlap Mix) can be pad-scoped. `''`
+      for non-graph spawns (section looks). */
+  pad?: string;
 }
 
 /**
@@ -58,6 +62,21 @@ export class VoicePool {
 
   isVoiceAlive(id: string): boolean {
     return this.findActiveVoice(id) != null;
+  }
+
+  /**
+   * Is a layer origin node still live for this pad? True when an active voice spawned under
+   * `pad` represents `originNodeId` — either as its own producing node or as one of a Mix
+   * voice's members. The delay-overlap Mix evaluator (R13) reads this to keep still-live
+   * siblings in a delayed composition and drop decayed ones.
+   */
+  isLayerLive(pad: string, originNodeId: string): boolean {
+    for (const v of this.pool) {
+      if (!v.active || v.pad !== pad) continue;
+      if (v.originNodeId === originNodeId) return true;
+      if (v.mixInputs?.some((mi) => mi.originNodeId === originNodeId)) return true;
+    }
+    return false;
   }
 
   /**
@@ -140,6 +159,7 @@ export class VoicePool {
         modifiers: input.modifiers,
         modState: undefined,
         opacity: input.opacity,
+        originNodeId: input.originNodeId,
       };
     }).filter((input): input is MixInput => input !== null);
     // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
@@ -164,6 +184,8 @@ export class VoicePool {
     slot.releaseFromLevel = 1;
     slot.via = a.via;
     slot.deckGain = 1;
+    slot.pad = deps.pad ?? '';
+    slot.originNodeId = a.originNodeId;
 
     if (a.latchKey) deps.latched.set(a.latchKey, slot.id);
     return slot;

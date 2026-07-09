@@ -117,6 +117,7 @@
       />
     </label>
     {#if mixRows.length}
+      <p class="hint">Layers stack in canvas order: the topmost branch is the base, and each branch below blends over it.</p>
       <div class="mixlist">
         {#each mixRows as row (row.edgeId)}
           <label class="mixctl">
@@ -263,6 +264,7 @@
     font-size: var(--text-xs);
     color: var(--text-muted);
     line-height: var(--leading-normal);
+    text-wrap: pretty;
   }
   @media (prefers-reduced-motion: reduce) {
     .addband {
