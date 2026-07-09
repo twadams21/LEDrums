@@ -7,6 +7,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Link2 from '@lucide/svelte/icons/link-2';
   import NodeCard from '../../app/views/NodeCard.svelte';
+  import NodeIconChip from '../../app/views/NodeIconChip.svelte';
   import GraphLintStrip from '../../app/views/GraphLintStrip.svelte';
   import { voice } from '@ledrums/core';
   import { makeNode } from '../../trigger-lab/sim';
@@ -215,6 +216,19 @@
 
   <div class="comp-grid">
     <DemoCard
+      title="Node icon chip"
+      src={['lib/app/views/NodeIconChip', 'lib/app/views/trigger-node-meta']}
+      note="The tinted glyph chip that carries a node's role/kind colour — the atom of every node face. Reused wherever a node reads as itself: the NodeCard, and the Add pane's category tiles. `size` scales chip + glyph together (30 on cards, 26 on category tiles)."
+      wide
+    >
+      <div class="chip-row">
+        {#each faceKinds as k (k)}
+          <NodeIconChip icon={kindIcon[k]} tint={tint[k]} />
+        {/each}
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Node card — every kind"
       src={['lib/app/views/NodeCard', 'lib/app/views/trigger-node-meta']}
       note="The ONE face both graphs render. Kind icon + tint from trigger-node-meta; title bold, sub mono-faint."
@@ -397,6 +411,12 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
+  }
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
   }
   .thumb-row {
     display: flex;

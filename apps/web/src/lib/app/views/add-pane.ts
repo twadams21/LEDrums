@@ -1,9 +1,14 @@
+import type { Component } from 'svelte';
 import type { AddGroup, AddItem } from './AddPalette.svelte';
 
 export type AddCategory = {
   key: string;
   label: string;
   count: number;
+  /** Representative node glyph for the stage-1 tile's icon chip. */
+  icon?: Component;
+  /** CSS colour for the category's icon chip. */
+  tint?: string;
 };
 
 export type AddDragPayload = {
@@ -14,7 +19,13 @@ export type AddDragPayload = {
 export const ADD_NODE_DRAG_TYPE = 'application/x-ledrums-add-node';
 
 export function addCategories(groups: readonly AddGroup[]): AddCategory[] {
-  return groups.map((g) => ({ key: g.key, label: g.label, count: g.items.length }));
+  return groups.map((g) => ({
+    key: g.key,
+    label: g.label,
+    count: g.items.length,
+    icon: g.icon,
+    tint: g.tint,
+  }));
 }
 
 export function selectedAddItems(groups: readonly AddGroup[], selectedKey: string | null): readonly AddItem[] {
