@@ -157,3 +157,40 @@ describe('migrateGen3Graph', () => {
     expect(g.nodes.find((n) => n.kind === 'trigger')?.source).toEqual({ kind: 'drum', drumId: 'kick', zone: '0' });
   });
 });
+
+describe('normalizeGraphs — system-action summary (R02)', () => {
+  const legacy = (): TriggerGraph => ({
+    nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
+    edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
+  });
+
+  it('reports one migration + one auto-wire for a single legacy graph', () => {
+    const { actions } = normalizeGraphs({ 'kick:0': legacy() }, {}, [], () => [], () => undefined);
+    expect(actions).toEqual({ migratedGraphs: 1, autoWiredNodes: 1 });
+  });
+
+  it('batches the summary across several legacy graphs (one summary, not per-graph)', () => {
+    const { actions } = normalizeGraphs(
+      { 'kick:0': legacy(), 'snare:0': legacy(), 'tom:0': legacy() },
+      {},
+      [],
+      () => [],
+      () => undefined,
+    );
+    expect(actions).toEqual({ migratedGraphs: 3, autoWiredNodes: 3 });
+  });
+
+  it('reports no system actions for an already-Gen3, fully-wired graph', () => {
+    const gen3: TriggerGraph = {
+      version: 3,
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' }),
+        makeNode('output', 'output', 400, 0),
+      ],
+      edges: [{ id: 'e1', from: 'trigger', to: 'p1' }, { id: 'e2', from: 'p1', to: 'output' }],
+    };
+    const { actions } = normalizeGraphs({ g: gen3 }, {}, [], () => [], () => undefined);
+    expect(actions).toEqual({ migratedGraphs: 0, autoWiredNodes: 0 });
+  });
+});
