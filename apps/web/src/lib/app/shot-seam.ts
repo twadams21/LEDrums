@@ -304,6 +304,14 @@ class ShotSeamImpl implements ShotSeam {
     const top = this.store.addNode('effect', 360, 150);
     const bottom = this.store.addNode('effect', 360, 300);
     if (!mix || !top || !bottom) return;
+    // The fresh Effects auto-wired straight to Output (R04); this demo routes them through the
+    // Mix instead, so drop those direct edges before composing top + bottom → mix.
+    const graph = this.store.selectedGraph;
+    if (graph) {
+      for (const e of graph.edges.filter((e) => (e.from === top.id || e.from === bottom.id) && e.to === 'output')) {
+        this.store.disconnect(e.id);
+      }
+    }
     this.store.connect(top.id, mix.id);
     this.store.connect(bottom.id, mix.id);
     this.added.set('mix', mix);
