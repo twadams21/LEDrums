@@ -1,4 +1,5 @@
 import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
+import { detectEmptyScopes } from './scope-lint';
 
 export type RenderPlanNodeCategory =
   | 'trigger-source'
@@ -8,7 +9,7 @@ export type RenderPlanNodeCategory =
   | 'collector'
   | 'modulation-source';
 
-export type RenderPlanIssueCode = 'missing-trigger' | 'missing-output' | 'flow-cycle';
+export type RenderPlanIssueCode = 'missing-trigger' | 'missing-output' | 'flow-cycle' | 'empty-scope';
 
 export interface RenderPlanIssue {
   code: RenderPlanIssueCode;
@@ -110,6 +111,9 @@ export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
   if (!triggerId) issues.push({ code: 'missing-trigger', message: 'Gen3 render plan requires a trigger source.' });
   if (!outputId) issues.push({ code: 'missing-output', message: 'Gen3 render plan requires a terminal output collector.' });
   issues.push(...detectFlowCycles(graph.nodes, flowChildrenById));
+  // Empty-scope is a per-branch warning, not a fatal — other branches still render; a dead
+  // scope branch just contributes nothing. Kept out of the `fatal` set below on purpose.
+  issues.push(...detectEmptyScopes(nodesById, flowChildrenById));
 
   return {
     graph,
