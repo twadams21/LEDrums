@@ -13,6 +13,9 @@
        - type="number" — clamped numeric field. min/max clamp on commit, optional unit `suffix`,
                          native step. Does NOT autofocus by default. An emptied field commits ''
                          so the caller can clear vs ignore; non-finite input is rejected (reverts).
+       - type="password" — masked credential field. NEVER trims (whitespace can be significant) and
+                         never round-trips its value (pass value=''); commits any non-empty draft
+                         raw, then clears. Does NOT autofocus. An empty draft is a no-op.
 
      Exactly ONE of `onCommit(value)` / `onCancel()` fires per edit session. `onCommit` always
      receives a string (a clamped numeric string, or '' when a number/allowEmpty field is cleared).

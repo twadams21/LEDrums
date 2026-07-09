@@ -2142,6 +2142,15 @@ export class TriggerLab {
     this.setOutput({ host });
   }
 
+  /** Set the adopted controller's admin password (R29). Sends the PLAINTEXT over the local WS; the
+      server hashes it and persists ONLY the hash on the Project (never the plaintext) — so an
+      authenticated PixLite's management calls succeed. Empty restores the password-less default.
+      Editor-gated; a no-op server-side when nothing is adopted. */
+  setControllerAuth(password: string): void {
+    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
+    this.client.send({ t: 'setControllerAuth', password });
+  }
+
   /** Flash the adopted controller's status LED for `durationS` seconds — the "which box is this?"
       confirmation. Editor-gated; a no-op server-side when nothing is adopted. */
   identifyController(durationS = 5): void {

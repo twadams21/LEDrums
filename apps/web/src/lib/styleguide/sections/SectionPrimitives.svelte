@@ -164,7 +164,7 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Commit input" src="lib/ui/CommitInput" note="Inline rename / numeric entry: commits on Enter or blur, reverts on Esc.">
+    <DemoCard title="Commit input" src="lib/ui/CommitInput" note="Inline rename / numeric entry / masked credential: commits on Enter or blur, reverts on Esc.">
       <div class="comp-stack">
         <Field label="Inline rename">
           <CommitInput
@@ -183,6 +183,15 @@
             suffix="bpm"
             ariaLabel="BPM"
             onCommit={(v) => (bpm = v)}
+          />
+        </Field>
+        <Field label="Password" hint="Masked credential — never trimmed, never round-tripped; clears after a set">
+          <CommitInput
+            type="password"
+            value=""
+            placeholder="••••••••"
+            ariaLabel="Admin password"
+            onCommit={(v) => (renameVal = v)}
           />
         </Field>
       </div>
