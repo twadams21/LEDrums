@@ -78,7 +78,8 @@ NOTE: r27 was ALSO limit-stalled (like p3-review) — resumed with a prompt ~09:
 ## Wave 5 (dispatched 2026-07-09 ~10:00Z, 3 wide)
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
-| R17 sim↔core types | #96 | wt-1 | gen3r/r17-sim-core-types | r17-types-e44723 | running |
+| R17 sim↔core types | #96 | wt-1 | gen3r/r17-sim-core-types | r17-types-e44723 | ✅ merged `f277b48` (HEAD a16a744; gates green); #96 closed; Notion Done + report; window killed. −59 mirror lines, 3 casts gone; accepted deviation: type-only PlayDraft re-export in core barrel |
+| R18 plan caching | #97 | wt-1 | gen3r/r18-plan-caching | r18-cache-7a0d36 | running (compile-step cache, engine-owned state; told to stay off issues-emission — R06 may touch it) |
 | R06 node lint badges | #85 | wt-2 | gen3r/r06-node-lint-badges | r06-badges-9e8350 | running (extends R05 lint seam; empty-scope likely first real lint code — may add a core issue code) |
 | R12 canvas drag-over | #91 | wt-3 | gen3r/r12-canvas-dragover | r12-dragover-295499 | running |
 Queue: R07 #86 (after R06), R15 #94, R18 #97, R19 #98 (after 86+97), R20→R24 chain, R26 done, P1 review after R07 (R03✅ R04✅ R05✅ R08✅), P2 review after R12, P5 review after R27✅+R26✅ → ready to dispatch once a slot frees.
