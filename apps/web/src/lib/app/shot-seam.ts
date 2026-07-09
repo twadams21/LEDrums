@@ -33,6 +33,11 @@ export interface ShotSeam {
   /** Open a trigger graph. No arg keeps the pre-selected pad graph; an arg matches a
       graph by key, key prefix (`snare` → `snare:0`), or label substring. */
   openGraph(nameOrKey?: string): void;
+  /** Author a fresh empty graph and select it — a clean slate whose only node is the implicit
+      trigger. A source node added here gets a collision-free id, so `add:<kind>,select:<kind>`
+      reliably reaches that kind's inspector even when the authored pad graphs carry ids that a
+      fresh session's id counter would otherwise duplicate. */
+  newGraph(): void;
   /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
   addNode(kind: NodeKind): GraphNode | null;
   /** Select a node — by the kind most recently added, by node id, else the first
@@ -87,6 +92,13 @@ class ShotSeamImpl implements ShotSeam {
     const section = this.store.activeSectionId;
     if (section) this.store.selectGraphInSection(section, key);
     else this.store.selectedPadKey = key;
+  }
+
+  newGraph(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.store.createGraph();
+    this.added.clear();
+    this.lastAdded = null;
   }
 
   addNode(kind: NodeKind): GraphNode | null {
@@ -180,6 +192,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'graph':
       case 'open':
         this.openGraph(arg);
+        break;
+      case 'new-graph':
+        this.newGraph();
         break;
       case 'add':
         if (arg) this.addNode(arg as NodeKind);

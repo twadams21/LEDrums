@@ -45,6 +45,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | ----------- | ------ |
 | `view:<v>`  | switch workspace view (`perform` · `objects` · `sections` · `trigger` · `patch` · `monitor`) |
 | `graph:<g>` | open a trigger graph by key / key-prefix (`snare`) / label; bare `graph` keeps the pre-selected pad |
+| `new-graph` | author a fresh empty graph and select it — a clean slate for `add`/`select` free of authored-graph id clashes |
 | `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |
 | `select:<k>`| select the node most recently `add`ed with that kind (flips the Node Editor to Inspector) |
 | `gallery`   | open the effect gallery for the selected / last-added effect node |

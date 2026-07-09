@@ -155,7 +155,7 @@ export function lfoTrace(s: voice.LfoSettings, tMs: number, bpm: number): Signal
 export function randomDistributionTrace(
   distribution: voice.RandomDistribution,
   steps?: number,
-  samples = 16384,
+  samples = 65536,
 ): PreviewPoint[] {
   // Fixed-seed LCG (Numerical Recipes constants) — a deterministic uniform stream so the density
   // is identical every call; the engine's real pick uses its own seeded PRNG.
