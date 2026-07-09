@@ -140,6 +140,11 @@ export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
  * structural edit does. That in-place mutation is also why object-identity alone can't gate reuse
  * (same object, changed structure); the signature closes that gap. Keep this in lockstep with the
  * fields {@link compileRenderPlan} actually reads.
+ *
+ * One sanctioned exception: the `empty-scope` lint (scope-lint.ts) reads scope/target PARAMS,
+ * so a cached plan's `issues` can be stale for that code after a param-only edit. Safe today
+ * because `empty-scope` is non-fatal (never gates eval) and every lint UI surface compiles
+ * uncached/reactively — do not consume `issues` through {@link RenderPlanCache} for UI.
  */
 export function renderPlanSignature(graph: TriggerGraph): string {
   const parts: string[] = [`v:${graph.version ?? ''}`, `n:${graph.nodes.length}`, `e:${graph.edges.length}`];
