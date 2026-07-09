@@ -90,6 +90,11 @@ export interface ShotSeam {
       scope is empty. Lights the node-face lint badge, the lint strip row, AND (Output selected)
       the inspector's empty-scope row in one capture. Uses genuine `compileRenderPlan` output. */
   emptyScope(): void;
+  /** Author a REAL no-path-to-Output graph so ui-shot can capture the R07 reachability lint:
+      an Effect whose flow wire to Output is severed → the effect can never reach the terminal
+      anchor. Lights the node-face no-path-to-output badge + the lint strip row (Effect selected).
+      Uses genuine `compileRenderPlan` output. */
+  notReachingOutput(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -365,6 +370,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'empty-scope':
         this.emptyScope();
         break;
+      case 'no-path-to-output':
+        this.notReachingOutput();
+        break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }
@@ -413,6 +421,24 @@ class ShotSeamImpl implements ShotSeam {
     // Select the Output so its inspector (with the empty-scope row) is captured alongside the
     // canvas badge + strip.
     this.shell.select({ kind: 'node', nodeId: output.id });
+  }
+
+  notReachingOutput(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    const graph = this.store.selectedGraph;
+    if (!graph) return;
+    // Reuse an existing Effect if one is wired; otherwise a fresh one auto-wires to Output (R04),
+    // giving us an Effect → Output edge to sever.
+    const fx = graph.nodes.find((n) => n.kind === 'effect' || n.kind === 'play') ?? this.addNode('effect') ?? undefined;
+    if (!fx) return;
+    // Cut every outgoing flow wire from the Effect: with no path forward it can never reach the
+    // terminal Output anchor → the R07 no-path-to-output lint (badge + strip). Re-read the graph so
+    // the freshly auto-wired edge is included.
+    const live = this.store.selectedGraph;
+    if (live) for (const e of live.edges.filter((e) => e.from === fx.id)) this.store.disconnect(e.id);
+    // Select the Effect so its inspector + node badge + strip row are captured together.
+    this.shell.select({ kind: 'node', nodeId: fx.id });
   }
 
   private resolveGraphKey(nameOrKey: string): string | null {

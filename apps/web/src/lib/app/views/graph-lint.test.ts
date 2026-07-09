@@ -72,6 +72,39 @@ describe('lintEntries', () => {
     expect(entry.nodeId).toBe(cycle!.nodeId);
   });
 
+  it('surfaces a no-path-to-output finding anchored to the render leaf with a next step', () => {
+    // effect fired by the trigger but never wired onward to Output (R07 — the unwired render leaf).
+    const fx = makeNode('effect', 'fx', 200, 0, { effectId: 'plasma' });
+    const plan = voice.compileRenderPlan(graph([trigger, fx, output], [{ id: 't-fx', from: 'trigger', to: 'fx' }]));
+    const issue = plan.issues.find((i) => i.code === 'no-path-to-output');
+    expect(issue).toBeTruthy();
+    expect(issue!.nodeId).toBe('fx');
+    const entry = lintEntries(plan.issues).find((e) => e.code === 'no-path-to-output')!;
+    expect(entry.problem).toMatch(/output/i);
+    expect(entry.action).toMatch(/output/i);
+    expect(entry.action).not.toBe(entry.problem); // names the fix, not just the fault
+    expect(entry.nodeId).toBe('fx');
+  });
+
+  it('surfaces a dead-branch finding anchored to the producerless branch head with a next step', () => {
+    // trigger -> route -> Output: a branch reaching Output with no producer to render (R07).
+    const rt = route('rt');
+    const plan = voice.compileRenderPlan(
+      graph([trigger, rt, output], [
+        { id: 't-rt', from: 'trigger', to: 'rt' },
+        { id: 'rt-out', from: 'rt', to: 'output' },
+      ]),
+    );
+    const issue = plan.issues.find((i) => i.code === 'dead-branch');
+    expect(issue).toBeTruthy();
+    expect(issue!.nodeId).toBe('output');
+    const entry = lintEntries(plan.issues).find((e) => e.code === 'dead-branch')!;
+    expect(entry.problem).toBeTruthy();
+    expect(entry.action).toMatch(/effect|play|layer/i);
+    expect(entry.action).not.toBe(entry.problem);
+    expect(entry.nodeId).toBe('output');
+  });
+
   it('surfaces an empty-scope finding anchored to the offending node with a next step', () => {
     // effect scoped to `kick` → Output scoped to `snare`: the effective scope is empty (R06).
     const fx = makeNode('effect', 'fx', 200, 0, { effectId: 'plasma', scope: 'drum', targetId: 'kick' });
