@@ -16,7 +16,8 @@
   import { wireRejectionMessage } from '../../trigger-lab/store/wire-toasts';
   import { pushToast } from '../../ui/toast.svelte';
   import type { WireDragFrom } from './WireDragValidity.svelte';
-  import { wireInvalidPreview } from './wire-preview.svelte';
+  import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
+  import { edgeUnderNode, type NodeRect } from './splice-geometry';
   import { voice, type PlayType } from '@ledrums/core';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
@@ -300,9 +301,31 @@
       }
     });
   }
+  // R08 wire-splice: the edge a dragged node is currently armed to splice into (null = none).
+  // Set by the drag hit-test below; the edges effect re-decorates so the armed wire lights up
+  // BEFORE release (pre-release indication). Release then splices via the store.
+  let armedSpliceEdgeId = $state<string | null>(null);
+
+  /** The edge to render armed: the live drag arming, or — DEV/ui-shot only — the first flow wire
+      when the shot seam pins `spliceArmedPreview` (the live arming is drag-only, unreachable by a
+      headless capture). Null (and tree-shaken) outside DEV. */
+  function spliceArmedEdgeForRender(built: TriggerFlowEdge[]): string | null {
+    if (armedSpliceEdgeId) return armedSpliceEdgeId;
+    if (import.meta.env.DEV && spliceArmedPreview.current) {
+      return built.find((e) => !e.data?.mod && !e.data?.modulation)?.id ?? null;
+    }
+    return null;
+  }
+
   function rebuildEdges(): void {
     const g = store.selectedGraph;
-    edges = hover.decorate(g ? untrack(() => graphToFlowEdges(g)) : []);
+    const built = hover.decorate(g ? untrack(() => graphToFlowEdges(g)) : []);
+    const armed = spliceArmedEdgeForRender(built);
+    edges = armed
+      ? built.map((e) =>
+          e.id === armed ? { ...e, class: e.class ? `${e.class} edge-splice-armed` : 'edge-splice-armed' } : e,
+        )
+      : built;
   }
 
   // node array: rebuild on graph switch, structure change, or selection change
@@ -312,11 +335,13 @@
     selectedNodeId;
     rebuildNodes();
   });
-  // edge array: rebuild on graph switch, edge change, or hover (highlight)
+  // edge array: rebuild on graph switch, edge change, hover (highlight), or splice-arming
   $effect(() => {
     store.selectedPadKey;
     edgeSig;
     hover.hoveredId;
+    armedSpliceEdgeId;
+    spliceArmedPreview.current;
     rebuildEdges();
   });
 
@@ -384,11 +409,38 @@
     rebuildEdges();
   }
   function onDragStop(detail: { nodes: TriggerFlowNode[] }): void {
+    // Commit the drag position FIRST — this is its own undo checkpoint (moveNode).
     for (const n of detail.nodes) syncPos(n);
+    // Then, if a splice was armed, wire it as a SEPARATE checkpoint recorded AFTER the position
+    // commit (R08): one Ctrl/Z pops the splice wiring while the node stays where it was dropped.
+    const armed = armedSpliceEdgeId;
+    armedSpliceEdgeId = null;
+    if (armed && detail.nodes.length === 1 && store.spliceOnDrop(armed, detail.nodes[0]!.id)) {
+      rebuildEdges();
+    }
   }
   function onDrag(detail: { targetNode: TriggerFlowNode | null; nodes: TriggerFlowNode[] }): void {
     const moving = detail.targetNode ? [detail.targetNode] : detail.nodes;
     for (const n of moving) store.setLiveNodePosition(n.id, n.position.x, n.position.y);
+    updateSpliceArming(moving);
+  }
+  /** Arm the wire the dragged node is sitting on (single-node drags only): a spatial hit-test
+      (splice-geometry) picks the overlapped wire, then the store's `canSplice` confirms the
+      splice would be legal — so the pre-release indication only lights when release will act. */
+  function nodeRect(n: TriggerFlowNode): NodeRect {
+    return { x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? PLACE_H };
+  }
+  function updateSpliceArming(moving: TriggerFlowNode[]): void {
+    if (moving.length !== 1) {
+      armedSpliceEdgeId = null;
+      return;
+    }
+    const dragged = moving[0]!;
+    const rects = new Map<string, NodeRect>(nodes.map((n) => [n.id, nodeRect(n)]));
+    rects.set(dragged.id, nodeRect(dragged)); // the dragged node's LIVE position wins
+    const ends = edges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    const hit = edgeUnderNode(dragged.id, rects.get(dragged.id)!, ends, rects);
+    armedSpliceEdgeId = hit && store.canSplice(hit, dragged.id) ? hit : null;
   }
   const onConnectEnd: OnConnectEnd = (event, conn) => {
     if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle

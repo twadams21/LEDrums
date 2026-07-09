@@ -237,6 +237,14 @@
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
+  /* R08: a wire ARMED for a splice (a node is dragged over it) lights accent, thickens, and
+     glows — the pending insert reads clearly BEFORE release. Instant, no motion (the locked
+     graph-interaction contract). Wins over the grey/hover strokes via later cascade + weight. */
+  .gcanvas :global(.svelte-flow__edge.edge-splice-armed .svelte-flow__edge-path) {
+    stroke: var(--accent);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 4px color-mix(in oklch, var(--accent) 60%, transparent));
+  }
   /* the modulation input handle keeps the modulation role colour so the param port reads by
      role; the trigger / effect / mod flow handles stay the neutral grey handle below. */
   .gcanvas :global(.svelte-flow__handle.param-handle) {
