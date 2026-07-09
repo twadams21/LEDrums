@@ -110,8 +110,11 @@ PR #113 (Phases 1–3+5, store-split 1–2, extras) MERGED to main (`a652f30`, v
 | R19 plan-output prune | #98 | wt-2 | gen3r/r19-plan-output-prune | r19-prune-2affa0 | ✅ merged `a8bbef5` (gates green, web 1417/core 726); dropped planNodesById+taxonomy, outputId, incomingFlowEdgesById; #98 closed; Notion Done + report; window killed. wt-2 idle — R23 waits on R22 (same-file chain) |
 | R22 store split 3/5 controller-test | #101 | wt-3 | gen3r/r22-store-split-3 | r22-split-2f0353 | ✅ merged `92dd305` (gates green). Carved controller-test OUT of ControllerMonitor (R20 had bundled it) → spec's 5 separate controllers realized; store API preserved, controller tests unmodified. #101 closed; Notion Done + report; window killed |
 | R23 store split 4/5 shows/setlist | #102 | wt-3 | gen3r/r23-store-split-4 | r23-split-345c44 | ✅ merged `a267848` (gates green). ShowsController +661 lines; store 3888→3532; tests unmodified. #102 closed; Notion Done + report; window killed. NOTE: stalled pre-edit, resumed via prompt |
-| R24 store split 5/5 sections | #103 | wt-3 | gen3r/r24-store-split-5 | r24-split-c3ef9f | running (opus/medium; final slice; seam map from R23 report) |
-Queue after: P4 review gate over R15–R24 once R24 lands. R28 #107 stays MANUAL (Trent hardware gate). Sweep follow-ups filed: #114, #115, #116 (ready-for-agent, outside this initiative's gate).
+| R24 store split 5/5 sections | #103 | wt-3 | gen3r/r24-store-split-5 | r24-split-c3ef9f | ✅ merged `fb94bef` (gates green). SectionsController +201; store 3549→3517; **split 5/5 COMPLETE** (monitor/MIDI/controller-test/shows/sections). #103 closed; Notion Done + report; window killed |
+Queue after: P4 review gate over R15–R24. R28 #107 stays MANUAL (Trent hardware gate). Sweep follow-ups filed: #114, #115, #116 (ready-for-agent, outside this initiative's gate).
+
+## CI incident (2026-07-09) — diagnosed & fixed 2026-07-10
+Symptom: CI runs burning 15 min then dying, "job not starting". Diagnosis: runs 29018754458/29019770053 had BOTH jobs queued with **no runner ever assigned** (0 steps, empty runner_name, no logs) — GitHub-side runner starvation on 2026-07-09, not workflow code (repo is public, so no minutes quota; ci.yml unchanged since June). Separately, main was genuinely red since 2026-07-06 (store.modifiers.test.ts ×3, old wiring code) — cured by PR #113's merge. Fix/verify: reran the cancelled main run → runners picked up instantly, run GREEN. Hardening committed to ci.yml: `timeout-minutes` (checks 10, desktop 20) + per-ref `concurrency: cancel-in-progress` so queued/stale runs can never stack or burn long again.
 
 ## Decisions
 - **2026-07-10: FREEZE LIFTED** — Trent: "Let's finish off the gen3 ux lift." Usage 8% of 5h window at launch time; 70% self-budget stands.
