@@ -4,6 +4,7 @@
   import Field from '../../../ui/Field.svelte';
   import Select from '../../../ui/Select.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import NodeSignalPreview from '../../views/NodeSignalPreview.svelte';
   import { onNum } from './forms';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
@@ -25,6 +26,10 @@
 
 {#if node.kind === 'note'}
   <div class="kindbody">
+    <figure class="preview">
+      <NodeSignalPreview kind="note" ccValue={() => store.noteNodeLiveValue(node)} w={188} h={30} />
+      <figcaption>Live {mode === 'velocity' ? 'velocity' : 'gate'}</figcaption>
+    </figure>
     <Field layout="row" label="Note" hint="0-127">
       <CommitInput
         type="number"
@@ -67,5 +72,18 @@
   }
   .kindbody :global(.sel) {
     width: 100%;
+  }
+  .preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+  }
+  figcaption {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 </style>
