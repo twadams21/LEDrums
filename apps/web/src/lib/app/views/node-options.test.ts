@@ -16,7 +16,7 @@ import {
   pct,
   uLabel,
 } from './node-options';
-import { NODE_KINDS, type BlockKind } from '../../trigger-lab/sim';
+import { NODE_KINDS, type BlockKind, type NodeKind } from '../../trigger-lab/sim';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
 import { voice } from '@ledrums/core';
 
@@ -153,7 +153,7 @@ describe('iconed option arrays', () => {
     expect(KIND_OPTS.some((o) => o.value === ('trigger' as BlockKind))).toBe(false);
     expect(KIND_OPTS.some((o) => o.value === ('output' as BlockKind))).toBe(false);
     // modulation sources are value-emitting sources, not conversion targets.
-    for (const src of ['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod'] as BlockKind[]) {
+    for (const src of ['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod'] as NodeKind[]) {
       expect(KIND_OPTS.some((o) => o.value === src)).toBe(false);
     }
   });

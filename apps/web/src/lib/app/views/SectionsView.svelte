@@ -270,7 +270,9 @@
     font-weight: var(--font-semibold);
     letter-spacing: var(--tracking-label);
   }
-  .title-icon {
+  /* :global — the class lands on the Lucide component's rendered <svg>, which
+     scoped selectors can't reach; scoped under .title so it can't leak. */
+  .title :global(.title-icon) {
     color: var(--accent);
     filter: drop-shadow(0 0 8px color-mix(in oklab, var(--accent), transparent 58%));
   }
