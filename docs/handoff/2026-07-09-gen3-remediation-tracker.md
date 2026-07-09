@@ -79,7 +79,9 @@ NOTE: r27 was ALSO limit-stalled (like p3-review) — resumed with a prompt ~09:
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
 | R17 sim↔core types | #96 | wt-1 | gen3r/r17-sim-core-types | r17-types-e44723 | ✅ merged `f277b48` (HEAD a16a744; gates green); #96 closed; Notion Done + report; window killed. −59 mirror lines, 3 casts gone; accepted deviation: type-only PlayDraft re-export in core barrel |
-| R18 plan caching | #97 | wt-1 | gen3r/r18-plan-caching | r18-cache-7a0d36 | running (compile-step cache, engine-owned state; told to stay off issues-emission — R06 may touch it) |
+| R18 plan caching | #97 | wt-1 | gen3r/r18-plan-caching | r18-cache-7a0d36 | ✅ merged `31bf969` (HEAD eb17560; gates core 707, web 1394); #97 closed; Notion Done + report; window killed. EvalState-injected cache, parity test included |
+| R20 store split 1/5 | #99 | wt-1 | gen3r/r20-store-monitor | r20-monitor-09b053 | running (monitor controller extraction; API-preserving = existing tests unmodified) |
+| P2 review (R09–R12) | — | wt-3 | — | p2-review-7a86f1 | ✅ CLEAN (0 blocking). Report merged. N1 (dead drop-active class) fixed by orchestrator `0b38010` + dead trigger-node-meta import removed `5c169a4`. **S1 AWAITING TRENT'S RULING:** R11 insert-line has a 120ms enter animation (SectionColumn.svelte:205-212) vs the locked instant-highlight contract — is the contract graph-canvas-only, or does it cover Sections DnD? Phase 2 closes on that ruling |
 | R06 node lint badges | #85 | wt-2 | gen3r/r06-node-lint-badges | r06-badges-9e8350 | running (extends R05 lint seam; empty-scope likely first real lint code — may add a core issue code) |
 | R12 canvas drag-over | #91 | wt-3 | gen3r/r12-canvas-dragover | r12-dragover-295499 | ✅ merged `d607341` (HEAD fbad847; gates 1394 web); #91 closed; Notion Done + report; window killed. **PHASE 2 tickets complete** (R09–R12) |
 | P2 review (R09–R12) | — | wt-3 | gen3r/p2-review-report | p2-review-7a86f1 | running (opus/high; affordance surface + interaction contract + DEV-rune leak checks) |
