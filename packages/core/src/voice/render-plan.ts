@@ -1,14 +1,6 @@
-import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
+import type { GraphEdge, GraphNode, TriggerGraph } from './types';
 import { detectEmptyScopes } from './scope-lint';
 import { detectUnreachable } from './reachability-lint';
-
-export type RenderPlanNodeCategory =
-  | 'trigger-source'
-  | 'route-control'
-  | 'layer-producer'
-  | 'layer-transform'
-  | 'collector'
-  | 'modulation-source';
 
 export type RenderPlanIssueCode =
   | 'missing-trigger'
@@ -24,11 +16,6 @@ export interface RenderPlanIssue {
   nodeId?: string;
 }
 
-export interface RenderPlanNode {
-  node: GraphNode;
-  category: RenderPlanNodeCategory;
-}
-
 export interface RenderPlanChild {
   edge: GraphEdge;
   node: GraphNode;
@@ -37,44 +24,10 @@ export interface RenderPlanChild {
 export interface RenderPlan {
   graph: TriggerGraph;
   nodesById: Map<string, GraphNode>;
-  planNodesById: Map<string, RenderPlanNode>;
   triggerId: string | null;
-  outputId: string | null;
   flowChildrenById: Map<string, RenderPlanChild[]>;
-  incomingFlowEdgesById: Map<string, GraphEdge[]>;
   issues: RenderPlanIssue[];
   fatal: boolean;
-}
-
-export function nodeCategory(kind: NodeKind): RenderPlanNodeCategory {
-  switch (kind) {
-    case 'trigger':
-      return 'trigger-source';
-    case 'all':
-    case 'random':
-    case 'sequence':
-    case 'switch':
-    case 'chance':
-    case 'toggle':
-    case 'delay':
-      return 'route-control';
-    case 'effect':
-    case 'play':
-      return 'layer-producer';
-    case 'scope':
-    case 'modifier':
-      return 'layer-transform';
-    case 'mix':
-    case 'output':
-      return 'collector';
-    case 'envelope':
-    case 'lfo':
-    case 'cc':
-    case 'note':
-    case 'osc':
-    case 'randomMod':
-      return 'modulation-source';
-  }
 }
 
 export function isFlowEdge(edge: Pick<GraphEdge, 'toPort'>): boolean {
@@ -83,7 +36,6 @@ export function isFlowEdge(edge: Pick<GraphEdge, 'toPort'>): boolean {
 
 export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node] as const));
-  const planNodesById = new Map(graph.nodes.map((node) => [node.id, { node, category: nodeCategory(node.kind) }] as const));
   const flowChildrenById = new Map<string, RenderPlanChild[]>();
   const incomingFlowEdgesById = new Map<string, GraphEdge[]>();
   const issues: RenderPlanIssue[] = [];
@@ -129,11 +81,8 @@ export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
   return {
     graph,
     nodesById,
-    planNodesById,
     triggerId,
-    outputId,
     flowChildrenById,
-    incomingFlowEdgesById,
     issues,
     fatal: issues.some((issue) => issue.code === 'missing-trigger' || issue.code === 'missing-output' || issue.code === 'flow-cycle'),
   };
