@@ -23,14 +23,11 @@
     section,
     draggingKind,
     dropIndex,
-    sectionTarget,
     onAddGraph,
     onSectionDragStart,
     onGraphDragStart,
     onDragEnd,
     onGraphDragOver,
-    onSectionDragOver,
-    onSectionDrop,
     onGraphDrop,
   }: {
     store: TriggerLab;
@@ -40,15 +37,11 @@
     draggingKind: 'section' | 'graph' | null;
     /** Insertion-line gap for a graph drag over THIS column (0..graphs.length), or null. */
     dropIndex: number | null;
-    /** True while a section reorder is hovering this column (draw the target outline). */
-    sectionTarget: boolean;
     onAddGraph: (sectionId: string) => void;
     onSectionDragStart: (event: DragEvent) => void;
     onGraphDragStart: (graphKey: string, event: DragEvent) => void;
     onDragEnd: () => void;
     onGraphDragOver: (index: number, event: DragEvent) => void;
-    onSectionDragOver: (event: DragEvent) => void;
-    onSectionDrop: (event: DragEvent) => void;
     onGraphDrop: (index: number, event: DragEvent) => void;
   } = $props();
 
@@ -65,14 +58,15 @@
     return gapIndexAt(Array.from(rows, (r) => r.getBoundingClientRect()), clientY);
   }
 
+  // Only graph-row drags are handled per-column (they need this column's row geometry).
+  // Section reorder is handled at the `.cols` level in SectionsView so the vertical
+  // insert-line resolves across the whole row, including the inter-column gaps.
   function handleDragOver(event: DragEvent): void {
     if (draggingKind === 'graph') onGraphDragOver(gapAt(event.clientY), event);
-    else if (draggingKind === 'section') onSectionDragOver(event);
   }
 
   function handleDrop(event: DragEvent): void {
     if (draggingKind === 'graph') onGraphDrop(gapAt(event.clientY), event);
-    else if (draggingKind === 'section') onSectionDrop(event);
   }
 
   function selectSection(): void {
@@ -91,8 +85,8 @@
 <section
   class="col"
   class:active
-  class:section-target={sectionTarget}
   role="listitem"
+  data-section-col
   ondragover={handleDragOver}
   ondrop={handleDrop}
 >
@@ -121,7 +115,7 @@
     </EditableRow>
   </div>
 
-  <div class="graphlist" class:drop-active={draggingKind === 'graph'} role="list" bind:this={listEl}>
+  <div class="graphlist" role="list" bind:this={listEl}>
     {#each section.graphs as key, i (key)}
       {#if draggingKind === 'graph' && dropIndex === i}
         <div class="insert-line" aria-hidden="true"></div>
@@ -162,17 +156,13 @@
     border-radius: var(--radius-2);
     transition: border-color var(--dur-120) ease;
   }
+  /* Active-section border. Mixed in oklab (rectangular), NOT oklch: oklch interpolates
+     the HUE ARC from lime (128°) through cyan (~205°) to the blue-grey border (256°), so
+     an oklch mix reads as a cyan/blue "selection" ring — the treatment Trent flagged while
+     dragging (R11b-1). oklab keeps it a muted accent-green, in the same language as the
+     insert-lines. */
   .col.active {
-    border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
-  }
-  /* Section reorder drop target: a bright accent ring + faint wash so the landing
-     column reads clearly apart from the merely-active one (thin 45% border above). */
-  .col.section-target {
-    border-color: color-mix(in oklch, var(--accent) 70%, var(--border));
-    background: color-mix(in oklch, var(--accent) 7%, var(--surface-inset));
-    box-shadow:
-      0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent),
-      0 0 0 4px color-mix(in oklch, var(--accent) 14%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
   }
   .section-drag {
     cursor: grab;
@@ -191,13 +181,6 @@
     gap: var(--space-1);
     min-height: 42px;
     border-radius: calc(var(--radius-2) - 2px);
-    transition:
-      background-color var(--dur-120) ease,
-      box-shadow var(--dur-120) ease;
-  }
-  .graphlist.drop-active {
-    background: color-mix(in oklch, var(--accent) 6%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 25%, transparent);
   }
   /* Insertion line marking the gap a dragged graph row will land in. The negative
      margins collapse the parent flex gap so the line sits IN the gap rather than

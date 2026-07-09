@@ -208,9 +208,9 @@ class ShotSeamImpl implements ShotSeam {
       const target = sections.find((s) => s.graphs.length > 0) ?? sections[0]!;
       sectionsDndPreview.set({ kind: 'graph', sectionId: target.id, index: Math.min(1, target.graphs.length) });
     } else {
-      // Outline a column other than the active one when possible, so it reads as a target.
-      const target = sections.find((s) => s.id !== this.store.activeSectionId) ?? sections[0]!;
-      sectionsDndPreview.set({ kind: 'section', sectionId: target.id });
+      // Pin the vertical insert-line in an interior gap (between the first two columns when
+      // there are ≥2, else the leading gap) so it reads as a mid-setlist reorder target.
+      sectionsDndPreview.set({ kind: 'section', index: sections.length >= 2 ? 1 : 0 });
     }
   }
 

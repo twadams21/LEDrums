@@ -10,7 +10,7 @@
 
 export type SectionsDndPreview =
   | { kind: 'graph'; sectionId: string; index: number }
-  | { kind: 'section'; sectionId: string };
+  | { kind: 'section'; index: number };
 
 class SectionsDndPreviewState {
   /** The pinned indicator, or null when no preview is active. */
