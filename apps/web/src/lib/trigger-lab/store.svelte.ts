@@ -46,7 +46,7 @@ import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
-import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
+import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
@@ -78,6 +78,7 @@ import {
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
 import { ControllerMonitor } from './controller-monitor.svelte';
+import { MidiController, type MidiLearnTarget } from './midi-controller.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
   acceptsChannel,
@@ -141,10 +142,6 @@ import {
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 
-/** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
-    so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
-const RESERVED_CC_CONTROLLER = 0;
-
 export type EnvelopeCreationPreset = 'pluck' | 'stab' | 'swell' | 'gate' | 'custom';
 export type LfoCreationPreset = voice.LfoWaveform;
 export type AddNodeOptions = {
@@ -152,10 +149,9 @@ export type AddNodeOptions = {
   lfoWaveform?: string;
 };
 
-export type MidiLearnTarget =
-  | { kind: 'zone'; drumId: string; slot: number }
-  | { kind: 'trigger'; graphKey: string }
-  | { kind: 'cc-node'; nodeId: string }; // S37: bind a CC source node to the next incoming CC
+/** Re-exported from the extracted MIDI controller (R21) so `MidiLearnTarget` stays importable from
+    the store — the inspectors that arm a learn keep their import path unchanged. */
+export type { MidiLearnTarget };
 
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */
@@ -664,19 +660,37 @@ export class TriggerLab {
       defaults to the real auto-reconnecting client. Created in start(), closed
       in stop(). */
   private readonly client: WSClient;
-  /** WebMIDI access handle (real hardware → WS). Browser-only, opened in start(),
-      released in stop(); null when MIDI is unavailable or not yet requested. */
-  private midiHandle: MidiInitResult | null = null;
-  midiLearnTarget = $state<MidiLearnTarget | null>(null);
+  /** MIDI input + MIDI-learn (R6/S37) — the WebMIDI device layer + learn-arm machinery, extracted
+      into {@link MidiController} (R21). The store keeps `forwardMidi`/`receiveInputEcho` (entangled
+      with the offline sim + S04 badges) and delegates the rest via the accessors + forwarders below,
+      so callers/tests are unchanged. */
+  private readonly midi = new MidiController({
+    isViewer: () => this.isViewer,
+    getInputMap: () => this.project?.inputMap ?? null,
+    setInputMap: (inputMap) => this.setInputMap(inputMap),
+    setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
+    selectedGraphNodes: () => this.selectedGraph?.nodes,
+  });
+  /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
+      {@link MidiController.learnTarget}. */
+  get midiLearnTarget(): MidiLearnTarget | null {
+    return this.midi.learnTarget;
+  }
+  /** The global MIDI channel filter (null = omni), from the patch input map. */
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
-  /** Live WebMIDI input devices for the settings list, refreshed on hot-plug via the
-      initMidi device callback (empty until MIDI is requested / when unavailable). */
-  midiDevices = $state<MidiDeviceInfo[]>([]);
-  /** Whether WebMIDI access succeeded — drives the settings empty-state copy
-      (unavailable ⇒ browser/permission hint; available+empty ⇒ "connect one"). */
-  midiAvailable = $state(false);
-  /** Why WebMIDI is unavailable, when it is (e.g. 'no-api' or an access-error message). */
-  midiUnavailableReason = $state<string | undefined>(undefined);
+  /** Live WebMIDI input devices for the settings list. See {@link MidiController.devices}. */
+  get midiDevices(): MidiDeviceInfo[] {
+    return this.midi.devices;
+  }
+  /** Whether WebMIDI access succeeded — drives the settings empty-state copy. See
+      {@link MidiController.available}. */
+  get midiAvailable(): boolean {
+    return this.midi.available;
+  }
+  /** Why WebMIDI is unavailable, when it is. See {@link MidiController.unavailableReason}. */
+  get midiUnavailableReason(): string | undefined {
+    return this.midi.unavailableReason;
+  }
 
   // --- input activity ("last heard") ---------------------------------------
   /** Last-heard event per input identity (note / OSC address), for the S04 activity
@@ -880,7 +894,7 @@ export class TriggerLab {
     this.client.connect();
     // Request hardware MIDI and forward it to the server (notes + transport recall).
     // Fire-and-forget: degrades to a no-op when the browser has no WebMIDI / in tests.
-    void this.initMidiInput();
+    void this.midi.openInput((ev) => this.forwardMidi(ev));
     this.last = performance.now();
     this.fpsLast = this.last;
     this.fpsFrames = 0;
@@ -917,11 +931,7 @@ export class TriggerLab {
   stop(): void {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
-    this.midiHandle?.stop();
-    this.midiHandle = null;
-    this.midiDevices = [];
-    this.midiAvailable = false;
-    this.midiUnavailableReason = undefined;
+    this.midi.release();
     this.client.close();
     this.engineSync.reset();
     if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
@@ -956,26 +966,6 @@ export class TriggerLab {
     this.client.reconnectWithPin(trimmed);
   }
 
-  /** Open WebMIDI (browser-only) and forward every parsed event to the server. Never
-      throws: an absent API / denied access resolves to an unavailable handle. */
-  private async initMidiInput(): Promise<void> {
-    try {
-      this.midiHandle = await initMidi(
-        (ev) => this.forwardMidi(ev),
-        undefined,
-        (devices) => (this.midiDevices = devices),
-      );
-      this.midiAvailable = this.midiHandle.available;
-      this.midiUnavailableReason = this.midiHandle.reason;
-      this.midiDevices = this.midiHandle.devices;
-    } catch {
-      this.midiHandle = null;
-      this.midiAvailable = false;
-      this.midiUnavailableReason = 'access-denied';
-      this.midiDevices = [];
-    }
-  }
-
   /** Forward a parsed MIDI event over the engine link: notes as `midi`, Control Change as
       `cc`, Program Change as `programChange` (the latter two drive global transport recall —
       the server maps them to song/section recall before the per-trigger zone-map). */
@@ -988,7 +978,7 @@ export class TriggerLab {
           // badge activity here (channel-filtered inside recordInputActivity).
           this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
           if (this.acceptsMidiChannel(ev.channel)) {
-            this.applyMidiLearn(ev.note);
+            this.midi.applyNoteLearn(ev.note);
             // Preview the fire on the local sim ONLY when offline. When connected the server is the
             // sole resolver/renderer and streams its frames/levels back — firing here as well would
             // double the hit (the echo loop). Authority principle, doc 03.
@@ -1001,7 +991,7 @@ export class TriggerLab {
         // S37: a CC source node can MIDI-learn the next incoming controller; the live value
         // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
         // Controller 0 is reserved for section recall and never learns/binds here.
-        if (this.acceptsMidiChannel(ev.channel)) this.applyCcLearn(ev.controller, ev.channel);
+        if (this.acceptsMidiChannel(ev.channel)) this.midi.applyCcLearn(ev.controller);
         this.sim.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
@@ -1618,7 +1608,7 @@ export class TriggerLab {
       const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
       this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
       if (value > 0 && this.acceptsMidiChannel(channel)) {
-        this.applyMidiLearn(note);
+        this.midi.applyNoteLearn(note);
       }
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson).
@@ -2075,12 +2065,11 @@ export class TriggerLab {
   }
 
   startMidiLearn(target: MidiLearnTarget): void {
-    if (this.isViewer) return;
-    this.midiLearnTarget = target;
+    this.midi.startLearn(target);
   }
 
   cancelMidiLearn(): void {
-    this.midiLearnTarget = null;
+    this.midi.cancelLearn();
   }
 
   private acceptsMidiChannel(channel: number | undefined): boolean {
@@ -2106,39 +2095,6 @@ export class TriggerLab {
       the age clock, so a component `$derived(store.inputBadge(b))` tracks both. */
   inputBadge(binding: InputBinding | null): InputBadgeView | null {
     return deriveInputBadge(binding, this.inputActivity, this.nowTick);
-  }
-
-  private applyMidiLearn(note: number): void {
-    const target = this.midiLearnTarget;
-    if (!target || this.isViewer) return;
-    if (target.kind === 'zone') {
-      if (!this.project) return;
-      const rest = this.project.inputMap.midiNotes.filter(
-        (n) => !(n.drumId === target.drumId && n.slot === target.slot),
-      );
-      this.setInputMap({
-        ...this.project.inputMap,
-        midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
-      });
-    } else if (target.kind === 'trigger') {
-      this.setTriggerSource(target.graphKey, { kind: 'midi', note });
-    } else {
-      return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
-    }
-    this.midiLearnTarget = null;
-  }
-
-  /** Bind an armed CC-node learn target to the next incoming controller (S37). Controller 0 is
-      reserved for section recall, so it is never learned — the target stays armed for a real CC.
-      No-op unless a `cc-node` learn is armed and its node still exists. */
-  private applyCcLearn(controller: number, _channel: number): void {
-    const target = this.midiLearnTarget;
-    if (!target || target.kind !== 'cc-node' || this.isViewer) return;
-    if (controller === RESERVED_CC_CONTROLLER) return; // reserved → keep waiting for a real CC
-    const node = this.selectedGraph?.nodes.find((n) => n.id === target.nodeId);
-    if (!node || node.kind !== 'cc') return;
-    node.ccController = controller;
-    this.midiLearnTarget = null;
   }
 
   /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */
