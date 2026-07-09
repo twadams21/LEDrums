@@ -21,8 +21,8 @@ scoped to that phase's merged range; fix findings before closing the phase.
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
 | R01 wire bug | #80 | wt-1 | gen3r/r01-wire-bug | r01-wire-490f49 | running |
-| R02 toasts | #81 | wt-2 | gen3r/r02-system-toasts | r02-toasts-a57c1c | running |
-| R09 add-pane search | #88 | wt-3 | gen3r/r09-add-pane-search | r09-search-e4130d | running |
+| R02 toasts | #81 | wt-2 | gen3r/r02-system-toasts | r02-toasts-a57c1c | reported done 03:39Z (HEAD 8d0657e, tests green; deviation: no ui-shot — transient toast, no new UI surface) — merge held |
+| R09 add-pane search | #88 | wt-3 | gen3r/r09-add-pane-search | r09-search-e4130d | reported done 03:39Z (HEAD daa035a, 1302 web tests green, ui-shot strict clean, design-system regenerated) — merge held |
 | R11 sections DnD | #90 | wt-4 | gen3r/r11-sections-dnd | r11-dnd-5e6af3 | reported done 03:21Z (HEAD 173e469, web suite green, report committed) — merge held while Trent drives. Agent flagged pre-existing typecheck error on clean HEAD: `node-options.test.ts:156` (`as BlockKind[]`) |
 | R16 delete legacy eval | #95 | wt-5 | gen3r/r16-delete-legacy-eval | r16-eval-413010 | PAUSED by Trent (width cap) — resume when a slot frees |
 | R25 signal previews | #104 | wt-6 | gen3r/r25-signal-previews | r25-previews-7be5d4 | PAUSED by Trent (width cap) — resume when a slot frees |
