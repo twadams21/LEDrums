@@ -17,25 +17,34 @@ merge. Integration branch: `codex/gen3-graph-authoring`.
 When a phase's tickets are all Done → `/twux rev` agent running `/code-review`
 scoped to that phase's merged range; fix findings before closing the phase.
 
-## Wave 1 (dispatched 2026-07-09 ~02:34Z; Trent capped width at 4 — normally 3)
-| Ticket | Issue | Worktree | Branch | Session | Status |
-|---|---|---|---|---|---|
-| R01 wire bug | #80 | wt-1 | gen3r/r01-wire-bug | r01-wire-490f49 | running |
-| R02 toasts | #81 | wt-2 | gen3r/r02-system-toasts | r02-toasts-a57c1c | reported done 03:39Z (HEAD 8d0657e, tests green; deviation: no ui-shot — transient toast, no new UI surface) — merge held |
-| R09 add-pane search | #88 | wt-3 | gen3r/r09-add-pane-search | r09-search-e4130d | reported done 03:39Z (HEAD daa035a, 1302 web tests green, ui-shot strict clean, design-system regenerated) — merge held |
-| R11 sections DnD | #90 | wt-4 | gen3r/r11-sections-dnd | r11-dnd-5e6af3 | reported done 03:21Z (HEAD 173e469, web suite green, report committed) — merge held while Trent drives. Agent flagged pre-existing typecheck error on clean HEAD: `node-options.test.ts:156` (`as BlockKind[]`) |
-| R16 delete legacy eval | #95 | wt-5 | gen3r/r16-delete-legacy-eval | r16-eval-413010 | PAUSED by Trent (width cap) — resume when a slot frees |
-| R25 signal previews | #104 | wt-6 | gen3r/r25-signal-previews | r25-previews-7be5d4 | PAUSED by Trent (width cap) — resume when a slot frees |
-| R29 pixlite password | #108 | wt-7 | gen3r/r29-pixlite-admin-password | r29-pixlite-d31856 | PAUSED by Trent (width cap) — resume when a slot frees |
-
-## Queued next (frontier once wave-1 merges)
-R05 #84 (after R01 — graph surface), R10 #89 (after R09), R12 #91 (after
-R11+R01), R13 #92 (after R16), R27 #106 (after R25), R20 #99 (after
-R01+R02), R03 #82 (after R01+R02), R04 #83 (after R01+R02), R15 #94
-(independent — dispatch when usage allows).
+## Wave 1 (✅ CLOSED OUT 2026-07-09 ~04:15Z)
+All four running tickets merged, gates green, GH issues closed, Notion Done
+with reports pasted. Sessions killed (resumable via registry). The three
+over-wide launches (r16/r25/r29) never started work — Trent exited their
+sessions; worktrees wt-4..7 removed, their unstarted branches deleted;
+tickets returned to the queue for re-dispatch ≤3 wide via wt-1..3.
 
 ## Merge log
-(orchestrator appends: ticket → merge sha → gates → issue closed → Notion Done)
+- R01 #80 → merge `4512714` (branch HEAD c1d1b85). Root cause: Mix-node per-edge handle set missing from projection signature → stale flow-node reuse → wire had no measured handle until refresh. 2 regression tests.
+- R02 #81 → merge `1d8f436` (HEAD 8d0657e). System-action toast seam: core normalize returns actions summary → hydrate batches → one toast at normalizeGraphs.
+- R09 #88 → merge `da3f8a4` (HEAD daa035a). Add-pane search across all categories; ui-shot strict clean; design system regenerated.
+- R11 #90 → merge `e45da99` (HEAD 173e469). Sections DnD insertion line + section-target outline; dev-only preview rune for ui-shot. Conflict in `shot-seam.ts` vs R09 (both additive) — unioned by orchestrator.
+- Baseline debt cleared post-merge in `2994f0a`: `node-options.test.ts:156` cast → `NodeKind[]`; `SectionsView` `.title-icon` → `:global` under `.title`. Typecheck now 0 errors / 0 warnings (2435 files); full suite 1321 web + all packages green.
+- GH: #80 #81 #88 #90 closed with merge refs. Notion: 4 rows Done + commit shas + report bodies; R03 #82 + R04 #83 flipped Blocked→Ready.
+
+## Queued next (current frontier, dispatch ≤3 wide into wt-1..3)
+R03 #82, R04 #83 (both newly Ready), R05 #84, R10 #89, R12 #91, R13 #92,
+R15 #94, R16 #95, R20 #99, R25 #104, R27 #106, R29 #108. R28 #107 is a
+MANUAL hardware gate for Trent. Phase-review gates unchanged (P1 needs
+R03–R08; P2 needs R10+R12).
+Suggested next wave (disjoint): R16 (core/sim eval delete) + R25
+(inspectors) + R29 (io/settings) — the original paused trio.
+
+## Open question (Trent asked 2026-07-09): test-run contention
+Parallel agents' full `pnpm test` runs exhaust memory / flake (vitest fetch
+timeouts, timing assertions). Proposal pending Trent's pick — see
+conversation: gate-lock mutex (`pnpm gates` wrapping typecheck+test behind a
+machine-wide lock) + bounded vitest workers via env.
 
 ## Decisions
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
