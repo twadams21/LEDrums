@@ -50,6 +50,7 @@ import {
   type TriggerSource,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
+import { createRenderPlanCache } from './render-plan';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -181,6 +182,9 @@ class VoiceBusEngine implements RenderEngine {
       composition. Populated by the pure evaluator; read by a delayed drain to re-compose
       with still-live members. Keyed like the maps above; cleared on `setShow`. */
   private mixMemberSnapshots = new Map<string, MixInputDraft[]>();
+  /** R18 — compiled render-plan cache, keyed by graph identity + structure signature, so fast
+      rolls reuse the plan instead of recompiling per hit. Reset on `setShow` (graphs replaced). */
+  private renderPlanCache = createRenderPlanCache();
 
   private prng = new Prng(PRNG_SEED);
 
@@ -275,6 +279,7 @@ class VoiceBusEngine implements RenderEngine {
     this.lastPick.clear();
     this.latched.clear();
     this.mixMemberSnapshots.clear();
+    this.renderPlanCache.reset(); // R18: authored graphs replaced → drop cached plans
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
     this.pendingFires = [];
@@ -605,6 +610,7 @@ class VoiceBusEngine implements RenderEngine {
       isVoiceAlive: (id) => this.voices.isVoiceAlive(id),
       mixMemberSnapshots: this.mixMemberSnapshots,
       isLayerLive: (pad, originNodeId) => this.voices.isLayerLive(pad, originNodeId),
+      renderPlanCache: this.renderPlanCache,
     };
   }
 

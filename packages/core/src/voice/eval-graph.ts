@@ -25,7 +25,7 @@ import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
-import { compileRenderPlan, type RenderPlan, type RenderPlanChild } from './render-plan';
+import { compileRenderPlan, type RenderPlan, type RenderPlanCache, type RenderPlanChild } from './render-plan';
 import { intersectScopeTargets } from './scope';
 import type { BlendMode } from '../color/blend';
 
@@ -165,6 +165,19 @@ export interface EvalState {
    * Absent → no member is treated as live, so a drain stays batch-scoped.
    */
   isLayerLive?(pad: string, originNodeId: string): boolean;
+  /**
+   * Render-plan compile cache (R18). When present, {@link compileRenderPlan} is served through it so
+   * repeated hits on an unchanged graph reuse the plan instead of recompiling per fire. Engine-owned
+   * (like {@link mixMemberSnapshots}); absent → eval compiles fresh every call, so output is identical
+   * with and without the cache (only the compile is skipped, never the plan's content).
+   */
+  renderPlanCache?: RenderPlanCache;
+}
+
+/** Compile `graph` via the injected cache when the engine supplies one, else a fresh compile.
+    Determinism is unaffected — the cache only returns a plan a fresh compile would have produced. */
+function compilePlan(state: EvalState, graph: TriggerGraph): RenderPlan {
+  return state.renderPlanCache ? state.renderPlanCache.compile(graph) : compileRenderPlan(graph);
 }
 
 /**
@@ -241,7 +254,7 @@ function appendLabel(prefix: string, part: string): string {
 }
 
 function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
-  const plan = compileRenderPlan(graph);
+  const plan = compilePlan(state, graph);
   if (plan.fatal || !plan.triggerId) return [];
   return evalGraphGen3FromPlan(state, plan, pad, [plan.triggerId], ctx, '', new Set(), null);
 }
@@ -256,7 +269,7 @@ function evalGraphGen3From(
   seen: Set<string>,
   initialDraft: PlayDraft | null,
 ): Action[] {
-  const plan = compileRenderPlan(graph);
+  const plan = compilePlan(state, graph);
   if (plan.fatal) return [];
   return evalGraphGen3FromPlan(state, plan, pad, startIds, ctx, viaPrefix, seen, initialDraft);
 }
