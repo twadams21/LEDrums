@@ -133,6 +133,32 @@ describe('wire-splice on drop (R08)', () => {
     expect(afterSecond.y).toBe(0);
   });
 
+  it('a zero-displacement drop pushes no position undo — the splice is the only new checkpoint (R15)', () => {
+    const { store, effectId, mixId, edgeId } = graphWithFlowWireAndFreeNode();
+    const out = outputId(store);
+    const mix = graphOf(store).nodes.find((n) => n.id === mixId)!;
+    const { x: x0, y: y0 } = mix; // 400, 0 — where the Mix was created
+
+    // The gesture ends where it started: syncPos commits the same position (no-op), THEN the splice.
+    store.moveNode(mix, x0, y0); // zero displacement — must NOT open an undo checkpoint
+    store.spliceOnDrop(edgeId, mixId);
+    expect(edgeBetween(store, effectId, mixId)).toBeDefined();
+
+    // First undo pops the splice wiring; the node stays where it was (it never moved).
+    expect(store.undo()).toBe(true);
+    expect(edgeBetween(store, effectId, out)).toBeDefined(); // wire un-spliced
+    expect(edgeBetween(store, effectId, mixId)).toBeUndefined();
+    const afterUndo = graphOf(store).nodes.find((n) => n.id === mixId)!;
+    expect(afterUndo.x).toBe(x0); // node stayed put throughout
+    expect(afterUndo.y).toBe(y0);
+
+    // The checkpoint directly below the splice is the Mix's ADD, not a no-op position entry:
+    // undoing it removes the node. Had moveNode checkpointed the zero-move, this undo would instead
+    // be a position no-op with the Mix still present — which is exactly the wasted keystroke R15 fixes.
+    expect(store.undo()).toBe(true);
+    expect(graphOf(store).nodes.some((n) => n.id === mixId)).toBe(false);
+  });
+
   it('announces the splice with one info toast', () => {
     const { store, mixId, edgeId } = graphWithFlowWireAndFreeNode();
     store.spliceOnDrop(edgeId, mixId);
