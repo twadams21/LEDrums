@@ -53,6 +53,8 @@
   let searchVal = $state('');
   let renameVal = $state('Kick base');
   let bpm = $state('120');
+  let delayMs = $state('250');
+  let phase = $state(0.25);
   let protocol = $state('artnet');
   let mode = $state('arrange');
   let layerBus = $state('trigger');
@@ -149,7 +151,7 @@
     <DemoCard
       title="Field · row layout"
       src="lib/ui/Field"
-      note="The inspector rhythm: label column left (--field-label-col), control right, one --control-h height across TextField / CommitInput / Select. Hint renders under the control. Use layout=&quot;row&quot; in every inspector/editor panel; the stacked default is for dialogs and wide forms."
+      note="The inspector rhythm: label column left (--field-label-col), control right, one --control-h height across TextField / CommitInput / Select. Hint renders under the control; a short unit (ms / Hz / a live %) renders in its own column OUTSIDE the control via the unit prop — for a slider or numeric field whose readout lives beside the box, not inside it (CommitInput's inner suffix). Use layout=&quot;row&quot; in every inspector/editor panel; the stacked default is for dialogs and wide forms."
     >
       <div class="comp-stack">
         <Field layout="row" label="Name" hint="display label">
@@ -160,6 +162,12 @@
         </Field>
         <Field layout="row" label="BPM" hint="Clamped number 20–300">
           <CommitInput type="number" min={20} max={300} value={bpm} suffix="bpm" ariaLabel="Row BPM" autofocus={false} onCommit={(v) => (bpm = v)} />
+        </Field>
+        <Field layout="row" label="Time" unit="ms">
+          <CommitInput type="number" min={0} value={delayMs} ariaLabel="Row time" autofocus={false} onCommit={(v) => (delayMs = v)} />
+        </Field>
+        <Field layout="row" label="Phase" unit={`${Math.round(phase * 100)}%`}>
+          <Slider bind:value={phase} min={0} max={1} step={0.01} ariaLabel="Row phase" />
         </Field>
       </div>
     </DemoCard>
