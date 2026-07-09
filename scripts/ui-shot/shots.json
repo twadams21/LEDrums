@@ -101,11 +101,6 @@
     "state": "view:trigger,add:effect,select:effect",
     "target": "Node editor"
   },
-  "gen3-add-pane-search": {
-    "state": "view:trigger,search:s",
-    "target": "Node editor",
-    "settle": 300
-  },
   "effect-gallery": {
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
@@ -130,13 +125,5 @@
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
     "settle": 1200
-  },
-  "gen3-sections-insert-line": {
-    "state": "view:sections,sections-insert",
-    "target": "role:list[name='Sections']"
-  },
-  "gen3-sections-reorder-target": {
-    "state": "view:sections,sections-reorder",
-    "target": "role:list[name='Sections']"
   }
 }
