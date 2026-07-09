@@ -12,6 +12,7 @@
   import IconButton from '../../ui/IconButton.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
+  import GripVertical from '@lucide/svelte/icons/grip-vertical';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
@@ -63,6 +64,11 @@
   ondragstart={onDragStart}
   ondragend={onDragEnd}
 >
+  {#if store.canEdit && !editing}
+    <!-- Explicit drag affordance: the grab cursor is confined to this grip rather than smeared
+         across the whole row (R12). Faint at rest, brightens with the row on hover. -->
+    <span class="grip" aria-hidden="true"><GripVertical size={13} /></span>
+  {/if}
   <EditableRow
     icon={Workflow}
     label={store.graphLabel(graphKey)}
@@ -85,11 +91,33 @@
 
 <style>
   .graph-drag {
+    position: relative;
     min-height: 40px;
     border-radius: var(--radius-2);
-    cursor: grab;
+    /* Row content sits past the grip gutter; the grip is absolutely positioned within it so the
+       row layout (and its Workflow icon) is unshifted. */
+    padding-inline-start: var(--space-4);
   }
-  .graph-drag:active {
+  /* The grip owns the grab affordance — the rest of the row keeps its default (select) cursor. */
+  .grip {
+    position: absolute;
+    inset-inline-start: 1px;
+    inset-block: 0;
+    display: flex;
+    align-items: center;
+    color: var(--text-faint);
+    cursor: grab;
+    transition: color var(--dur-120) ease;
+  }
+  .graph-drag:hover .grip {
+    color: var(--text-muted);
+  }
+  .grip:active {
     cursor: grabbing;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grip {
+      transition: none;
+    }
   }
 </style>

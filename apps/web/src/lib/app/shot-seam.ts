@@ -21,6 +21,7 @@ import { voice } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 import { lintPreview } from './views/lint-preview.svelte';
+import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -66,6 +67,10 @@ export interface ShotSeam {
       over it) so ui-shot can capture it — the live state is drag-only. Opens the Trigger graph,
       ensures a flow wire exists (a fresh Effect auto-wires to Output), and arms it. */
   previewSpliceArmed(): void;
+  /** Pin the R12 canvas drag-over highlight (the accent ring the graph canvas wears while a new
+      node is dragged in from the Add pane) so ui-shot can capture it — the live state is drag-only
+      and headless Chrome can't drive the gesture. Opens the Trigger graph so the canvas is live. */
+  previewCanvasDrop(): void;
   /** Pin the R05 graph lint strip's issues so ui-shot can capture it — a well-formed authored
       graph is guaranteed anchors and refuses cycles, so the live strip is otherwise empty. Opens
       the Trigger graph and pins REAL `compileRenderPlan` issues (from a degenerate graph) so the
@@ -104,6 +109,7 @@ class ShotSeamImpl implements ShotSeam {
     wireInvalidPreview.clear();
     spliceArmedPreview.clear();
     lintPreview.clear();
+    canvasDropPreview.clear();
     this.added.clear();
     this.lastAdded = null;
   }
@@ -216,6 +222,14 @@ class ShotSeamImpl implements ShotSeam {
     const graph = this.store.selectedGraph;
     if (graph && graph.nodes.every((n) => n.kind === 'trigger' || n.kind === 'output')) this.addNode('effect');
     spliceArmedPreview.set(true);
+  }
+
+  previewCanvasDrop(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // The highlight lives on the open Trigger canvas; a pad graph is pre-selected on boot, so no
+    // node is required — the ring wraps the whole surface regardless of graph contents.
+    canvasDropPreview.set(true);
   }
 
   previewLintIssues(): void {
@@ -333,6 +347,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'lint-issues':
         this.previewLintIssues();
+        break;
+      case 'canvas-drop':
+        this.previewCanvasDrop();
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : 'auth');
