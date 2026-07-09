@@ -80,6 +80,11 @@ export interface ShotSeam {
       its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
       an empty Mix hides the rows. */
   mixWithLayers(): void;
+  /** Author a REAL empty-scope graph so ui-shot can capture the R06 lint surface end to end:
+      an Effect scoped to one drum wired to an Output scoped to a different drum → the effective
+      scope is empty. Lights the node-face lint badge, the lint strip row, AND (Output selected)
+      the inspector's empty-scope row in one capture. Uses genuine `compileRenderPlan` output. */
+  emptyScope(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -340,6 +345,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'mix-layers':
         this.mixWithLayers();
         break;
+      case 'empty-scope':
+        this.emptyScope();
+        break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }
@@ -364,6 +372,30 @@ class ShotSeamImpl implements ShotSeam {
     this.added.set('mix', mix);
     this.lastAdded = mix;
     this.shell.select({ kind: 'node', nodeId: mix.id });
+  }
+
+  emptyScope(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    const graph = this.store.selectedGraph;
+    if (!graph) return;
+    // Reuse an existing Effect if one is already wired; otherwise a fresh one auto-wires to
+    // Output (R04), giving the Effect → Output flow path the lint walks.
+    const fx = graph.nodes.find((n) => n.kind === 'effect' || n.kind === 'play') ?? this.addNode('effect') ?? undefined;
+    const output = graph.nodes.find((n) => n.kind === 'output');
+    if (!fx || !output) return;
+    // Two distinct drums so the intersection is provably empty for every firing drum. Prefer
+    // real kit drums; fall back to canonical ids if the kit isn't populated in this session.
+    const drums = this.store.kitDrumInfos;
+    const drumA = drums[0]?.id ?? 'kick';
+    const drumB = drums.find((d) => d.id !== drumA)?.id ?? 'snare';
+    this.store.setScope(fx, 'drum');
+    this.store.setTargetId(fx, drumA);
+    this.store.setScope(output, 'drum');
+    this.store.setTargetId(output, drumB);
+    // Select the Output so its inspector (with the empty-scope row) is captured alongside the
+    // canvas badge + strip.
+    this.shell.select({ kind: 'node', nodeId: output.id });
   }
 
   private resolveGraphKey(nameOrKey: string): string | null {
