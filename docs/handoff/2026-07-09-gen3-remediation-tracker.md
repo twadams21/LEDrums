@@ -72,7 +72,16 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 | R05 lint strip | #84 | wt-3 | gen3r/r05-lint-strip | r05-lint-c8cb25 | ✅ merged `21f4724` (HEAD ec993db; gates 1383 web); #84 closed; Notion Done + report; window killed. Note: live strip is empty for authored graphs today (anchors guaranteed, cycles refused at wire time) — R06/R07 add the codes that light it up |
 | R10 category chips | #89 | wt-3 | gen3r/r10-category-chips | r10-chips-7f5673 | running. R06 #85 HELD BACK: it touches the Output inspector = R27's active turf; dispatch R06 after R27 merges |
 NOTE: r27 was ALSO limit-stalled (like p3-review) — resumed with a prompt ~09:25Z. Lesson: after a session-limit reset, capture-check ALL running agents, not just idle-listed ones.
-| R27 anchor header | #106 | wt-2 | gen3r/r27-anchor-header | r27-header-e9cbbc | running |
+| R27 anchor header | #106 | wt-2 | gen3r/r27-anchor-header | r27-header-e9cbbc | ✅ merged `f197859` (HEAD 3e0969e; design-system regen at merge; gates 1392 web); #106 closed; Notion Done + report; window killed. New AnchorHeader primitive. Follow-up: migrate TriggerSource/patch ihead to it. OPS: its first ui-shot captured a sibling worktree's :5173 server — agents must use own ports (already in CONVENTIONS; it self-corrected) |
+| R10 category chips | #89 | wt-3 | gen3r/r10-category-chips | r10-chips-7f5673 | ✅ merged `3bbb613` (HEAD 0cd5529; design-system regen at merge; gates green); #89 closed; Notion Done + report; window killed. New NodeIconChip shared primitive (NodeCard refactored to use it) |
+
+## Wave 5 (dispatched 2026-07-09 ~10:00Z, 3 wide)
+| Ticket | Issue | Worktree | Branch | Session | Status |
+|---|---|---|---|---|---|
+| R17 sim↔core types | #96 | wt-1 | gen3r/r17-sim-core-types | r17-types-e44723 | running |
+| R06 node lint badges | #85 | wt-2 | gen3r/r06-node-lint-badges | r06-badges-9e8350 | running (extends R05 lint seam; empty-scope likely first real lint code — may add a core issue code) |
+| R12 canvas drag-over | #91 | wt-3 | gen3r/r12-canvas-dragover | r12-dragover-295499 | running |
+Queue: R07 #86 (after R06), R15 #94, R18 #97, R19 #98 (after 86+97), R20→R24 chain, R26 done, P1 review after R07 (R03✅ R04✅ R05✅ R08✅), P2 review after R12, P5 review after R27✅+R26✅ → ready to dispatch once a slot frees.
 | P3 review (R13+R14) | — | wt-1 | gen3r/p3-review-report | p3-review-e1f2f1 | ✅ report merged. Verdict: eval-seam semantics correct, but 1 BLOCKING: delay→Mix overlap composites the still-live member TWICE (poly buses never steal; fold gate ≡ old-voice-alive). Unowned between R13/R14. Also S1 (no engine-level overlap test), S2 (liveness aliases across trigger instances), N2 (latch-key drop uncommented). Window killed. NOTE: agent stalled ~2.5h on the session usage limit mid-review — resumed post-reset with a prompt |
 | P3 fix (B1/S1/S2/N2) | — | wt-1 | gen3r/p3-fix-overlap | p3-fix-b5f0c1 | ✅ merged `3ff3256` (HEAD fab0cca; gates green core 698, web 1385). Drained re-composition releases superseded (pad,mixNodeId) voice; 5 engine overlap tests (verified failing pre-fix) + 2 sim. **PHASE 3 CLOSED** (noted on #92 + Notion R13). Follow-up (non-blocking): composite re-attacks members on drain. Window killed |
 | R17 sim↔core types | #96 | wt-1 | gen3r/r17-sim-core-types | r17-types-e44723 | running (mechanical type-import sweep; keeps sim re-exports so web imports stay contained) |
