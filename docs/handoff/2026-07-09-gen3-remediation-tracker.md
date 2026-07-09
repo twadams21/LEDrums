@@ -99,6 +99,7 @@ P1 review gate needs R05–R08; P5 review needs R27 (R25✅ R26✅).
 Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fixed in `scripts/with-gate-lock.mjs` + CONVENTIONS. r16 also flagged a dead pre-graph Block-tree evaluator in sim.ts — dead-code sweep candidate (note for R19/R15 triage).
 
 ## Decisions
+- **2026-07-09 ~11:10Z: Trent — LAUNCH FREEZE.** No new agent launches until he lifts it. In-flight (R21, P5 review, R11b) run to completion and get normal closeout (merge/gates/GH/Notion); freed slots stay empty; queue accumulates (R15, R19, R22→R24, then P4 review).
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
 - Impl agents: opus/medium; R01 opus/high (diagnosis gate). New tmux windows (user directive), killed after verified completion.
 - **Width cap (Trent, 2026-07-09): max 3 agents wide normally, 4 absolute ceiling.** The paused wave-1 agents (r16/r25/r29) count toward width when resumed.
