@@ -29,6 +29,8 @@ const PROBLEM: Record<voice.RenderPlanIssueCode, string> = {
   'missing-output': 'No output',
   'flow-cycle': 'Wires form a loop',
   'empty-scope': 'Scope never matches',
+  'no-path-to-output': 'Not reaching Output',
+  'dead-branch': 'No layer to render',
 };
 
 /** The next step that clears each issue — imperative, one action. */
@@ -37,6 +39,8 @@ const ACTION: Record<voice.RenderPlanIssueCode, string> = {
   'missing-output': 'Add an Output node and wire your render chain into it.',
   'flow-cycle': 'Remove one wire in the loop so the flow runs start to finish.',
   'empty-scope': 'Widen this scope or the one upstream — they don’t overlap, so nothing here lights.',
+  'no-path-to-output': 'Wire this into the Output node so what it renders can light.',
+  'dead-branch': 'Wire an Effect or Play into this branch so it has a layer to render.',
 };
 
 /** The compiler prefixes cycle detail with this — a dev-facing lead-in the strip drops so the

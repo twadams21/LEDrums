@@ -1,5 +1,6 @@
 import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
 import { detectEmptyScopes } from './scope-lint';
+import { detectUnreachable } from './reachability-lint';
 
 export type RenderPlanNodeCategory =
   | 'trigger-source'
@@ -9,7 +10,13 @@ export type RenderPlanNodeCategory =
   | 'collector'
   | 'modulation-source';
 
-export type RenderPlanIssueCode = 'missing-trigger' | 'missing-output' | 'flow-cycle' | 'empty-scope';
+export type RenderPlanIssueCode =
+  | 'missing-trigger'
+  | 'missing-output'
+  | 'flow-cycle'
+  | 'empty-scope'
+  | 'no-path-to-output'
+  | 'dead-branch';
 
 export interface RenderPlanIssue {
   code: RenderPlanIssueCode;
@@ -114,6 +121,10 @@ export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
   // Empty-scope is a per-branch warning, not a fatal — other branches still render; a dead
   // scope branch just contributes nothing. Kept out of the `fatal` set below on purpose.
   issues.push(...detectEmptyScopes(nodesById, flowChildrenById));
+  // Reachability warnings (R07): a producer with no path to Output, or a branch that reaches
+  // Output with no producer to render. Non-fatal like empty-scope — other branches still render.
+  // Purely structural (kinds + edges), so unlike empty-scope these can't go param-stale in the cache.
+  issues.push(...detectUnreachable(nodesById, flowChildrenById, incomingFlowEdgesById, outputId));
 
   return {
     graph,
@@ -144,7 +155,9 @@ export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
  * One sanctioned exception: the `empty-scope` lint (scope-lint.ts) reads scope/target PARAMS,
  * so a cached plan's `issues` can be stale for that code after a param-only edit. Safe today
  * because `empty-scope` is non-fatal (never gates eval) and every lint UI surface compiles
- * uncached/reactively — do not consume `issues` through {@link RenderPlanCache} for UI.
+ * uncached/reactively — do not consume `issues` through {@link RenderPlanCache} for UI. The
+ * `no-path-to-output`/`dead-branch` reachability lints (reachability-lint.ts) read structure
+ * ONLY (kinds + flow edges), so they are fully covered by this signature and never go stale.
  */
 export function renderPlanSignature(graph: TriggerGraph): string {
   const parts: string[] = [`v:${graph.version ?? ''}`, `n:${graph.nodes.length}`, `e:${graph.edges.length}`];
