@@ -107,7 +107,7 @@ PR #113 (Phases 1–3+5, store-split 1–2, extras) MERGED to main (`a652f30`, v
 | Ticket | GH | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
 | R15 sweep + carried nits | #94 | wt-1 | gen3r/r15-review-sweep | r15-sweep-74caf0 | running (opus/high; fixes 4 carried nits + read-only two-axis sweep; orchestrator files sweep issues) |
-| R19 plan-output prune | #98 | wt-2 | gen3r/r19-plan-output-prune | r19-prune-2affa0 | running (opus/medium) |
+| R19 plan-output prune | #98 | wt-2 | gen3r/r19-plan-output-prune | r19-prune-2affa0 | ✅ merged `a8bbef5` (gates green, web 1417/core 726); dropped planNodesById+taxonomy, outputId, incomingFlowEdgesById; #98 closed; Notion Done + report; window killed. wt-2 idle — R23 waits on R22 (same-file chain) |
 | R22 store split 3/5 controller-test | #101 | wt-3 | gen3r/r22-store-split-3 | r22-split-2f0353 | running (opus/medium; issue body says controller-test — reconciled over Notion title) |
 Queue after: R23 #102 → R24 #103 (same-file chain into freed wt), then P4 review gate over R15–R24. R28 #107 stays MANUAL (Trent hardware gate).
 
