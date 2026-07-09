@@ -110,6 +110,7 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   controller?: {
     discover(): Promise<unknown>;
     adopt(host: string): Promise<{ ok: boolean; error?: string }>;
+    setAuth(password: string): void;
     identify(durationS: number): Promise<void>;
     setTestData(pattern: ControllerTestPattern): Promise<void>;
     backToLive(): Promise<void>;
@@ -199,6 +200,11 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       void deps.controller?.adopt(msg.host).then((r) => {
         if (!r.ok && r.error) ws.send(encodeServer({ t: 'error', message: r.error }));
       });
+      return;
+    }
+    if (msg.t === 'setControllerAuth') {
+      // Editor-gated above (deny-by-default). The server hashes + persists ONLY the hash (R29).
+      deps.controller?.setAuth(msg.password);
       return;
     }
     if (msg.t === 'identifyController') {

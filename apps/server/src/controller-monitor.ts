@@ -19,7 +19,7 @@
  */
 import { networkInterfaces } from 'node:os';
 import type { Controller, OutputSettings } from '@ledrums/core';
-import { sweep } from '@ledrums/io';
+import { authHash, sweep } from '@ledrums/io';
 import type {
   ControllerIdentity,
   ControllerStats,
@@ -386,6 +386,31 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       // If clients are already watching, begin polling now (else it starts on the next watch).
       startPolling();
       return { ok: true };
+    },
+
+    /** Set (or clear) the adopted controller's admin password (R29 / GH #108). Hashes the PLAINTEXT
+     * to `Base64URL(SHA256(password))` and persists ONLY the hash on the Project (never the
+     * plaintext); an empty string clears auth back to the password-less default. Rebuilds the client
+     * with the new credential so every subsequent management call authenticates, forgets the prior
+     * identity/success so a wrong password shows as unreachable on the next poll, and kicks an
+     * immediate poll for instant success/failure feedback. No-op when nothing is adopted. */
+    setAuth(password: string): void {
+      if (!host) return;
+      auth = password ? authHash(password) : undefined;
+      identity = null; // re-probe `/ver` so `authReqd` refreshes
+      statsEverSucceeded = false; // a stale success must not mask a wrong-password failure
+      client = deps.createClient({ host, auth });
+      deps.persistController({ host, nickname, ...(auth ? { auth } : {}) });
+      deps.monitor?.({
+        type: 'system',
+        direction: 'local',
+        source: 'client',
+        destination: host,
+        label: auth ? 'Controller password set' : 'Controller password cleared',
+      });
+      emitStatus();
+      // Immediate poll (only does work when a client is watching) so auth success is visible at once.
+      void pollOnce();
     },
 
     /** Flash the adopted controller's status LED for `durationS` seconds. No-op when unadopted. */

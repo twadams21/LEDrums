@@ -451,6 +451,7 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   controller: {
     discover: () => controllerMonitor.discover(),
     adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),
+    setAuth: (password) => controllerMonitor.setAuth(password),
     identify: (durationS) => controllerMonitor.identify(durationS),
     setTestData: (pattern) => controllerMonitor.setTestData(pattern),
     backToLive: () => controllerMonitor.backToLive(),

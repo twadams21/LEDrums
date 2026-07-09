@@ -115,6 +115,13 @@ export type ClientMessage =
   // live status via `controllerStatus`. Editor-gated. A host that doesn't answer as a PixLite is
   // reported back as an `error` (no adoption).
   | { t: 'adoptController'; host: string }
+  // Set (or clear) the adopted controller's admin password (R29 / GH #108). Carries the PLAINTEXT
+  // password over the local WS; the server hashes it (`Base64URL(SHA256(password))`) and only ever
+  // PERSISTS/transmits the hash onward (never the plaintext) — the LOCKED `controller.auth` contract.
+  // An empty string clears auth, restoring the password-less default. Editor-gated. No-op when
+  // nothing is adopted. Authenticated controllers use it for every management call (statisticRead /
+  // identify / test-data); success shows as the controller becoming reachable while `authReqd`.
+  | { t: 'setControllerAuth'; password: string }
   // Flash the adopted controller's status LED for `durationS` seconds (0 = off, 121 = continuous)
   // — the "which box is this?" confirmation. Editor-gated. No-op when nothing is adopted.
   | { t: 'identifyController'; durationS: number }
