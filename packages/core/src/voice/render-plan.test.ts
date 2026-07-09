@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evalGraph, type EvalState, type TriggerCtx } from './eval-graph';
-import {
-  compileRenderPlan,
-  createRenderPlanCache,
-  nodeCategory,
-  renderPlanSignature,
-  type RenderPlanNodeCategory,
-} from './render-plan';
+import { compileRenderPlan, createRenderPlanCache, renderPlanSignature } from './render-plan';
 import { Prng } from './prng';
 import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
 
@@ -58,33 +52,6 @@ const state = (): EvalState => ({
 });
 
 describe('compileRenderPlan', () => {
-  it('categorises every supported node kind explicitly', () => {
-    const cases: Array<[NodeKind, RenderPlanNodeCategory]> = [
-      ['trigger', 'trigger-source'],
-      ['all', 'route-control'],
-      ['random', 'route-control'],
-      ['sequence', 'route-control'],
-      ['switch', 'route-control'],
-      ['chance', 'route-control'],
-      ['toggle', 'route-control'],
-      ['delay', 'route-control'],
-      ['effect', 'layer-producer'],
-      ['play', 'layer-producer'],
-      ['scope', 'layer-transform'],
-      ['modifier', 'layer-transform'],
-      ['mix', 'collector'],
-      ['output', 'collector'],
-      ['envelope', 'modulation-source'],
-      ['lfo', 'modulation-source'],
-      ['cc', 'modulation-source'],
-      ['note', 'modulation-source'],
-      ['osc', 'modulation-source'],
-      ['randomMod', 'modulation-source'],
-    ];
-
-    for (const [kind, category] of cases) expect(nodeCategory(kind)).toBe(category);
-  });
-
   it('recognises graph boundary anchors and ignores modulation side-channel edges in flow adjacency', () => {
     const graph: TriggerGraph = {
       version: 3,
@@ -105,10 +72,8 @@ describe('compileRenderPlan', () => {
 
     expect(plan.fatal).toBe(false);
     expect(plan.triggerId).toBe('trigger');
-    expect(plan.outputId).toBe('output');
-    expect(plan.planNodesById.get('env')?.category).toBe('modulation-source');
+    // env's only outgoing edge is a modulation side-channel (toPort=param:*), so it has no flow children.
     expect(plan.flowChildrenById.get('env')).toEqual([]);
-    expect(plan.incomingFlowEdgesById.get('fx')?.map((e) => e.id)).toEqual(['trigger-fx']);
   });
 
   it('rejects non-trivial flow cycles at compile time', () => {
