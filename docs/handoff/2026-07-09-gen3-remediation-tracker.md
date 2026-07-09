@@ -40,11 +40,22 @@ R03–R08; P2 needs R10+R12).
 Suggested next wave (disjoint): R16 (core/sim eval delete) + R25
 (inspectors) + R29 (io/settings) — the original paused trio.
 
-## Open question (Trent asked 2026-07-09): test-run contention
-Parallel agents' full `pnpm test` runs exhaust memory / flake (vitest fetch
-timeouts, timing assertions). Proposal pending Trent's pick — see
-conversation: gate-lock mutex (`pnpm gates` wrapping typecheck+test behind a
-machine-wide lock) + bounded vitest workers via env.
+## Test-run contention — SOLVED (approved by Trent, landed `6c9eb2d`)
+`pnpm gates` = typecheck + full suite behind a machine-wide lock
+(`scripts/with-gate-lock.mjs`, ~/.ledrums/locks, stale-steal). Vitest workers
+bounded via VITEST_MAX_FORKS/THREADS (defaults set inside the lock; agents cap
+scoped runs at 2). CONVENTIONS.md mandates `pnpm gates` for final verification.
+Also landed `8b72b50`: ui-shot presets removed (agents must capture ad-hoc via
+--state/--target; presets = locked CI baselines only — rule added to
+CONVENTIONS.md after wave-1 agents registered three out of habit).
+
+## Wave 2 (dispatched 2026-07-09 ~04:30Z, 3 wide, off `8b72b50`)
+| Ticket | Issue | Worktree | Branch | Session | Status |
+|---|---|---|---|---|---|
+| R16 delete legacy eval | #95 | wt-1 | gen3r/r16-delete-legacy-eval | r16-eval-415ced | running |
+| R25 signal previews | #104 | wt-2 | gen3r/r25-signal-previews | r25-previews-a61432 | running |
+| R29 pixlite password | #108 | wt-3 | gen3r/r29-pixlite-admin-password | r29-pixlite-11270e | running |
+Notion rows set In progress.
 
 ## Decisions
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
