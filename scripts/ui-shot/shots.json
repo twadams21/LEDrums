@@ -125,5 +125,13 @@
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
     "settle": 1200
+  },
+  "gen3-sections-insert-line": {
+    "state": "view:sections,sections-insert",
+    "target": "role:list[name='Sections']"
+  },
+  "gen3-sections-reorder-target": {
+    "state": "view:sections,sections-reorder",
+    "target": "role:list[name='Sections']"
   }
 }
