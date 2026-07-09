@@ -41,4 +41,5 @@ R01+R02), R03 #82 (after R01+R02), R04 #83 (after R01+R02), R15 #94
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
 - Impl agents: opus/medium; R01 opus/high (diagnosis gate). New tmux windows (user directive), killed after verified completion.
 - **Width cap (Trent, 2026-07-09): max 3 agents wide normally, 4 absolute ceiling.** The paused wave-1 agents (r16/r25/r29) count toward width when resumed.
+- **2026-07-09 ~03:00Z: Trent dropped to 1 wide** — parallel test suites contend for system resources. **Trent is driving the agents manually; orchestrator is hands-off** (no messaging/resuming/merging/killing) until he hands control back. Orchestrator remains available for bookkeeping (Notion, tracker, merges) on request.
 - Reports: committed `docs/reports/2026-07-09-gen3-r<NN>.md`, orchestrator copies into Notion row + sets Status.
