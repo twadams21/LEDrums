@@ -28,6 +28,7 @@
   import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
   import Drawer from '../../ui/Drawer.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
+  import AnchorHeader from '../../ui/AnchorHeader.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
   import { pushToast } from '../../ui/toast.svelte';
@@ -47,6 +48,8 @@
   import Disc3 from '@lucide/svelte/icons/disc-3';
   import Activity from '@lucide/svelte/icons/activity';
   import Wand2 from '@lucide/svelte/icons/wand-2';
+  import CircleDot from '@lucide/svelte/icons/circle-dot';
+  import Zap from '@lucide/svelte/icons/zap';
 
   let textVal = $state('Opening set');
   let pillTags = $state<string[]>(['hit']);
@@ -376,6 +379,24 @@
         <PanelHeader icon={ListMusic} title="Setlist">
           <IconButton icon={Plus} label="Add song" size={14} />
         </PanelHeader>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Anchor header"
+      src="lib/ui/AnchorHeader"
+      wide
+      note="Inspector title block for a PROTECTED graph anchor (the trigger root / output terminal). Those nodes aren't conversion targets, so they can't carry the shared kind selector — this is its stand-in: tinted icon + h3 title, mono sub-line, optional trailing action. Same scale as the patch / trigger headers."
+    >
+      <div class="ph-demo">
+        <AnchorHeader icon={CircleDot} tint="var(--role-output)" title="Output" sub="graph output — every layer lands here" />
+      </div>
+      <div class="ph-demo">
+        <AnchorHeader icon={Zap} tint="var(--accent)" title="Kick · Centre" sub="graph input">
+          {#snippet action()}
+            <IconButton icon={Copy} label="Duplicate graph" variant="soft" size={14} />
+          {/snippet}
+        </AnchorHeader>
       </div>
     </DemoCard>
 

@@ -116,6 +116,10 @@
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
     <RandomModNodeInspector {store} {node} />
+  {:else if node && node.kind === 'output'}
+    <!-- protected graph anchor: KIND_OPTS excludes `output`, so the shared kind selector
+         would render empty — the output editor supplies its own anchor header instead. -->
+    <OutputNodeInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">
@@ -132,8 +136,6 @@
       <ModifierNodeInspector {store} {node} />
     {:else if node.kind === 'scope'}
       <ScopeNodeInspector {store} {node} />
-    {:else if node.kind === 'output'}
-      <OutputNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}

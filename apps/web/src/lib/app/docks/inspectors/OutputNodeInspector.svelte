@@ -5,6 +5,8 @@
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Select from '../../../ui/Select.svelte';
   import Field from '../../../ui/Field.svelte';
+  import AnchorHeader from '../../../ui/AnchorHeader.svelte';
+  import CircleDot from '@lucide/svelte/icons/circle-dot';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -22,6 +24,10 @@
     return [];
   });
 </script>
+
+<!-- output is a protected graph anchor (like the trigger root): no kind selector, no remove —
+     it gets a title-block header instead of the shared node header the dispatcher hosts. -->
+<AnchorHeader icon={CircleDot} tint="var(--role-output)" title="Output" sub="graph output — every layer lands here" />
 
 <div class="body">
   <Field layout="row" label="Scope">
