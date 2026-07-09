@@ -77,6 +77,7 @@ import {
   type PersistedSongLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
+import { ControllerMonitor } from './controller-monitor.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
   acceptsChannel,
@@ -514,21 +515,30 @@ export class TriggerLab {
   /** Previous packet counter sample, kept to derive {@link outputPacketsPerSec}. Plain field —
       must NOT be reactive (it is bookkeeping for the derivation, not rendered). */
   private prevPacketSample: PacketSample | null = null;
-  /** Live status of the ADOPTED PixLite controller (S47/S48) — the last link in the confidence
-      chain (controller received → controller outputting). null when nothing is adopted, and
-      cleared on a link drop (a dropped socket can't confirm the box's rx truth). Populated by the
-      server's `controllerStatus` broadcast while a client watches the controller panel. */
-  controllerStatus = $state<ControllerStatus | null>(null);
-  /** Ranked discovery candidates (best-first) from the last `discoverControllers` sweep — replaced
-      wholesale by each `controllerDiscovery` reply, cleared on a link drop. Empty = none found / no
-      sweep run yet. The panel lists these with an Adopt-IP action. */
-  controllerCandidates = $state<DiscoveredController[]>([]);
-  /** The active controller test pattern (S49), or null in normal LIVE mode. Server-authoritative
-      (carried on `controllerStatus.testPattern`), so every client's takeover banner + output pill
-      agree. Non-null = the LOUD takeover state: the box is running synthetic data and IGNORING the
-      live Art-Net stream. Drives the panel banner AND {@link deriveOutputPill}'s third argument. */
+  /** PixLite controller monitor (S48/S49/R29) — reactive status/candidates/scanning + the panel send
+      helpers, extracted into {@link ControllerMonitor} (R20). The store delegates its public surface
+      to this via the accessors + forwarders below, so callers/tests are unchanged. */
+  private readonly monitor = new ControllerMonitor({
+    send: (msg) => this.client.send(msg),
+    isViewer: () => this.isViewer,
+    setOutput: (patch) => this.setOutput(patch),
+  });
+  /** Live status of the ADOPTED PixLite controller (S47/S48). See {@link ControllerMonitor.status}.
+      Settable so the ui-shot seam can inject a synthetic status. */
+  get controllerStatus(): ControllerStatus | null {
+    return this.monitor.status;
+  }
+  set controllerStatus(status: ControllerStatus | null) {
+    this.monitor.status = status;
+  }
+  /** Ranked discovery candidates (best-first). See {@link ControllerMonitor.candidates}. */
+  get controllerCandidates(): DiscoveredController[] {
+    return this.monitor.candidates;
+  }
+  /** The active controller test pattern (S49), or null in LIVE mode. Drives the panel banner AND
+      {@link deriveOutputPill}'s third argument. See {@link ControllerMonitor.takeover}. */
   get controllerTakeover(): ControllerTestPattern | null {
-    return this.controllerStatus?.testPattern ?? null;
+    return this.monitor.takeover;
   }
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
@@ -710,7 +720,10 @@ export class TriggerLab {
       caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
       undoable action. Set only via {@link batchIntoCurrentUndo}. */
   private suppressUndoSnapshot = false;
-  controllerScanning = $state(false);
+  /** Whether a controller discovery sweep is in flight. See {@link ControllerMonitor.scanning}. */
+  get controllerScanning(): boolean {
+    return this.monitor.scanning;
+  }
   /** Whether boot found a REAL local song library (a valid blob) — the same local-wins signal as
       {@link bootedFromLocalLibrary}, so the server's cold-load song library can't clobber unsynced
       local song-library edits on a single-writer refresh. */
@@ -1505,12 +1518,11 @@ export class TriggerLab {
       onControllerStatus: (status) => {
         // Live truth of the adopted controller (S47/S48). null = nothing adopted (panel shows the
         // Discover affordance). This is the confidence chain's last link — rendered directly.
-        this.controllerStatus = status;
+        this.monitor.ingestStatus(status);
       },
       onControllerDiscovery: (candidates) => {
         // A discovery sweep finished — replace the candidate list wholesale (best-first).
-        this.controllerCandidates = candidates;
-        this.controllerScanning = false;
+        this.monitor.ingestDiscovery(candidates);
       },
       onAuthError: () => {
         // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
@@ -1548,8 +1560,7 @@ export class TriggerLab {
           // Same for the adopted controller (S48): a dropped link can't confirm the box's rx truth,
           // so the panel must not keep a frozen "receiving". The next `controllerStatus` after a
           // reconnect (once the panel re-subscribes via watchController) repopulates it.
-          this.controllerStatus = null;
-          this.controllerCandidates = [];
+          this.monitor.clearOnLinkDrop();
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
@@ -2138,66 +2149,35 @@ export class TriggerLab {
   }
 
   // --- PixLite controller monitor (S48, group L) ----------------------------
-  // The panel-facing send helpers. `watchController` is the ONLY one NOT editor-gated: a viewer
-  // watching the panel keeps live status flowing for everyone (server-side poll gating). The
-  // rest re-rig the device, so they no-op for a viewer.
+  // Public API preserved as thin forwarders onto {@link monitor} (R20 store split). The domain
+  // docs + gating live on ControllerMonitor; these keep the store's call surface unchanged.
 
-  /** Client-interest signal that gates the server's controller poll loop — send `true` when the
-      controller panel opens (mounts), `false` when it closes. NOT editor-gated (a viewer's watch
-      keeps status live for all); a disconnect implicitly clears it server-side. */
   watchController(watching: boolean): void {
-    this.client.send({ t: 'watchController', watching });
+    this.monitor.watch(watching);
   }
 
-  /** Kick off a one-shot discovery sweep of the candidate subnet(s). Editor-gated. The ranked
-      results arrive asynchronously via `controllerDiscovery` → {@link controllerCandidates}. */
   discoverControllers(): void {
-    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
-    this.controllerScanning = true;
-    this.client.send({ t: 'discoverControllers' });
+    this.monitor.discover();
   }
 
-  /** Adopt-IP: make `host` THE controller for this project AND point the output transport at it in
-      one click — the confidence chain wants the box we're monitoring to be the box we're sending
-      to. The server probes + persists the controller ({@link controllerStatus} follows); `setOutput`
-      copies the IP into the output settings. Editor-gated. */
   adoptController(host: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
-    this.client.send({ t: 'adoptController', host });
-    this.setOutput({ host });
+    this.monitor.adopt(host);
   }
 
-  /** Set the adopted controller's admin password (R29). Sends the PLAINTEXT over the local WS; the
-      server hashes it and persists ONLY the hash on the Project (never the plaintext) — so an
-      authenticated PixLite's management calls succeed. Empty restores the password-less default.
-      Editor-gated; a no-op server-side when nothing is adopted. */
   setControllerAuth(password: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
-    this.client.send({ t: 'setControllerAuth', password });
+    this.monitor.setAuth(password);
   }
 
-  /** Flash the adopted controller's status LED for `durationS` seconds — the "which box is this?"
-      confirmation. Editor-gated; a no-op server-side when nothing is adopted. */
   identifyController(durationS = 5): void {
-    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
-    this.client.send({ t: 'identifyController', durationS });
+    this.monitor.identify(durationS);
   }
 
-  /** Drive the controller's built-in test-data mode (S49): the box synthesizes a solid colour /
-      RGBW cycle / colour fade and IGNORES the live Art-Net stream — a LOUD takeover state. Editor-
-      gated. The server echoes the active pattern back on `controllerStatus.testPattern`
-      ({@link controllerTakeover}), which lights the panel banner + output pill for every watcher. */
   setControllerTestData(pattern: ControllerTestPattern): void {
-    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
-    this.client.send({ t: 'controllerTestData', pattern });
+    this.monitor.setTestData(pattern);
   }
 
-  /** Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
-      Editor-gated. The server clears the takeover state (and also auto-reverts when the last panel
-      watcher leaves, so a controller is never stranded in test mode). */
   backToLive(): void {
-    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
-    this.client.send({ t: 'controllerBackToLive' });
+    this.monitor.backToLive();
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).
