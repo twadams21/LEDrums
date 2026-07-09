@@ -68,7 +68,8 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 ## Wave 4 (dispatched 2026-07-09 ~06:20Z, 3 wide) — Phase 3 COMPLETE → review gate running
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
-| R08 wire-splice | #87 | wt-3 | gen3r/r08-wire-splice | r08-splice-4b6295 | running (builds on R03 drag layer + R04 undo batching) |
+| R08 wire-splice | #87 | wt-3 | gen3r/r08-wire-splice | r08-splice-4b6295 | ✅ merged `dc17794` (HEAD 10412d5; gates 1378 web); #87 closed; Notion Done + report; window killed. Splice-only undo verified (two-step: wiring first, position second). Follow-up: unused trigger-node-meta import in TriggerGraphView (cleanup pass) |
+| R05 lint strip | #84 | wt-3 | gen3r/r05-lint-strip | r05-lint-c8cb25 | running (dispatched after 5h window reset ~19:00; usage was 84% pre-reset — launches were frozen per new 70% budget rule) |
 | R27 anchor header | #106 | wt-2 | gen3r/r27-anchor-header | r27-header-e9cbbc | running |
 | P3 review (R13+R14) | — | wt-1 | gen3r/p3-review-report | p3-review-e1f2f1 | running (opus/high, /code-review over 8c5576a...e3f0c92 core/sim scope) |
 R05 #84 (lint strip) queued — held back to avoid canvas collision with R08. After: R06→R07, R10, R12, R15, R17, R18, R20-chain.
