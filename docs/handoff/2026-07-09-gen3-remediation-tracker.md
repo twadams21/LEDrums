@@ -71,7 +71,8 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 | R08 wire-splice | #87 | wt-3 | gen3r/r08-wire-splice | r08-splice-4b6295 | ✅ merged `dc17794` (HEAD 10412d5; gates 1378 web); #87 closed; Notion Done + report; window killed. Splice-only undo verified (two-step: wiring first, position second). Follow-up: unused trigger-node-meta import in TriggerGraphView (cleanup pass) |
 | R05 lint strip | #84 | wt-3 | gen3r/r05-lint-strip | r05-lint-c8cb25 | running (dispatched after 5h window reset ~19:00; usage was 84% pre-reset — launches were frozen per new 70% budget rule) |
 | R27 anchor header | #106 | wt-2 | gen3r/r27-anchor-header | r27-header-e9cbbc | running |
-| P3 review (R13+R14) | — | wt-1 | gen3r/p3-review-report | p3-review-e1f2f1 | running (opus/high, /code-review over 8c5576a...e3f0c92 core/sim scope) |
+| P3 review (R13+R14) | — | wt-1 | gen3r/p3-review-report | p3-review-e1f2f1 | ✅ report merged. Verdict: eval-seam semantics correct, but 1 BLOCKING: delay→Mix overlap composites the still-live member TWICE (poly buses never steal; fold gate ≡ old-voice-alive). Unowned between R13/R14. Also S1 (no engine-level overlap test), S2 (liveness aliases across trigger instances), N2 (latch-key drop uncommented). Window killed. NOTE: agent stalled ~2.5h on the session usage limit mid-review — resumed post-reset with a prompt |
+| P3 fix (B1/S1/S2/N2) | — | wt-1 | gen3r/p3-fix-overlap | p3-fix-b5f0c1 | running (opus/high). Phase 3 NOT closed until this merges + engine-level overlap tests green |
 R05 #84 (lint strip) queued — held back to avoid canvas collision with R08. After: R06→R07, R10, R12, R15, R17, R18, R20-chain.
 P1 review gate needs R05–R08; P5 review needs R27 (R25✅ R26✅).
 Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fixed in `scripts/with-gate-lock.mjs` + CONVENTIONS. r16 also flagged a dead pre-graph Block-tree evaluator in sim.ts — dead-code sweep candidate (note for R19/R15 triage).
