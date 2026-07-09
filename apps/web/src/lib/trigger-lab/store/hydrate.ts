@@ -384,7 +384,15 @@ export function splitModulationSources(
     - Render leaves are wired to Output so legacy authored light paths keep emitting.
 
     The pass is pure, idempotent, and defensive. It does not guess at invalid duplicate ids:
-    sanitizeGraphIntegrity runs before this, then this pass owns Gen3 anchor invariants. */
+    sanitizeGraphIntegrity runs before this, then this pass owns Gen3 anchor invariants.
+
+    SEAM (R01 → R02, GH #80/#82): `normalizeTriggerGraphToGen3` ALSO returns an `issues[]` naming
+    every refresh-time normalisation it performed (Gen3 migration, Output-anchor insertion,
+    legacy leaf→Output auto-wire, duplicate/dangling-edge drops). We discard it here, so those
+    fix-ups are currently SILENT — exactly the "system announces what it changed" gap R02 owns.
+    When R02 lands, thread `.issues` out of this pass (and `sanitizeGraphIntegrity`) up to the
+    store so it can raise one system-action toast per user-visible event. Do NOT surface it from
+    here (no toast UI in the pure hydrate slice). */
 export function migrateGen3Graph(graph: TriggerGraph): TriggerGraph {
   return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
 }
