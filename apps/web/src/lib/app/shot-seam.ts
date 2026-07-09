@@ -41,6 +41,10 @@ export interface ShotSeam {
   openGallery(): void;
   /** Open the app Settings dialog (clicks the stable TopBar control). */
   openSettings(): void;
+  /** Type a query into the Add pane's search field (drives the flat grouped
+      results state). The field's value is component-local, so this drives the
+      real input rather than a store method. */
+  setSearch(query: string): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -124,6 +128,15 @@ class ShotSeamImpl implements ShotSeam {
     button?.click();
   }
 
+  setSearch(query: string): void {
+    // The Add pane's search value is AddPalette-local state (not the store), so
+    // drive the real input and fire `input` for Svelte's bind:value to pick up.
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
+    if (!input) return;
+    input.value = query;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -159,6 +172,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'settings':
         this.openSettings();
+        break;
+      case 'search':
+        this.setSearch(arg ?? '');
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);

@@ -63,6 +63,55 @@ describe('AddPalette', () => {
     });
   });
 
+  it('filters across every category from the search field, not just the open one', async () => {
+    mount();
+    // Browse: no category open, so no previews are visible yet.
+    expect(screen.queryByTitle('Add Switch')).toBeNull();
+    const search = screen.getByLabelText('Search nodes');
+    await fireEvent.input(search, { target: { value: 's' } });
+    // "s" matches Waves, Switch, Slice across three different categories.
+    expect(screen.getByTitle('Add Waves')).toBeTruthy();
+    expect(screen.getByTitle('Add Switch')).toBeTruthy();
+    expect(screen.getByTitle('Add Slice')).toBeTruthy();
+    // Category tiles are hidden while a query is active.
+    expect(screen.queryByRole('button', { name: /Effect/ })).toBeNull();
+  });
+
+  it('groups active-query results by category', async () => {
+    mount();
+    const search = screen.getByLabelText('Search nodes');
+    await fireEvent.input(search, { target: { value: 's' } });
+    expect(screen.getByRole('region', { name: 'Effect nodes' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Route nodes' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Modify nodes' })).toBeTruthy();
+  });
+
+  it('adds from a search result with the item\'s own category key', async () => {
+    const { onAdd } = mount();
+    const search = screen.getByLabelText('Search nodes');
+    await fireEvent.input(search, { target: { value: 'switch' } });
+    await fireEvent.click(screen.getByTitle('Add Switch'));
+    expect(onAdd).toHaveBeenCalledWith('switch', 'route');
+  });
+
+  it('shows an empty message when nothing matches', async () => {
+    mount();
+    const search = screen.getByLabelText('Search nodes');
+    await fireEvent.input(search, { target: { value: 'zzzz' } });
+    expect(screen.getByText(/No nodes match/)).toBeTruthy();
+  });
+
+  it('restores the category browse when the query is cleared', async () => {
+    mount();
+    const search = screen.getByLabelText('Search nodes');
+    await fireEvent.input(search, { target: { value: 'switch' } });
+    expect(screen.queryByRole('button', { name: /Effect/ })).toBeNull();
+    await fireEvent.input(search, { target: { value: '' } });
+    // Category tiles + the Stage 2 prompt are back.
+    expect(screen.getByRole('button', { name: /Effect/ })).toBeTruthy();
+    expect(screen.getByText('Select a node category.')).toBeTruthy();
+  });
+
   it('keeps unavailable previews visible but inert', async () => {
     const { onAdd } = mount();
     await fireEvent.click(screen.getByRole('button', { name: /Future/ }));
