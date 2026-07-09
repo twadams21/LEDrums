@@ -17,6 +17,7 @@
   import { pushToast } from '../../ui/toast.svelte';
   import type { WireDragFrom } from './WireDragValidity.svelte';
   import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
+  import { canvasDropPreview } from './canvas-drop-preview.svelte';
   import { lintPreview } from './lint-preview.svelte';
   import GraphLintStrip from './GraphLintStrip.svelte';
   import { edgeUnderNode, type NodeRect } from './splice-geometry';
@@ -89,6 +90,11 @@
   // the on-screen rect to centre on.
   let flowApi = $state<FlowApi | null>(null);
   let canvasWrap = $state<HTMLElement | null>(null);
+  // R12: the canvas wears a "drop target is live" ring while a new node is dragged in from the
+  // Add pane. Live during the drag; the shot seam pins it (DEV-only) for a ui-shot capture since
+  // headless Chrome can't drive the HTML5 drag.
+  let dragActive = $state(false);
+  const dropActive = $derived(dragActive || (import.meta.env.DEV && canvasDropPreview.current));
   function canvasCentre(): { x: number; y: number } {
     const r = canvasWrap?.getBoundingClientRect();
     if (!flowApi) return { x: 0, y: 0 };
@@ -155,8 +161,16 @@
     if (!dt || !Array.from(dt.types).includes(ADD_NODE_DRAG_TYPE)) return;
     e.preventDefault();
     dt.dropEffect = 'copy';
+    dragActive = true;
+  }
+  function onPaletteDragLeave(e: DragEvent): void {
+    // dragleave fires when crossing into child elements too; only clear when the pointer has
+    // actually left the canvas wrapper (relatedTarget null = left the window entirely).
+    const to = e.relatedTarget as Node | null;
+    if (!to || !canvasWrap?.contains(to)) dragActive = false;
   }
   function onPaletteDrop(e: DragEvent): void {
+    dragActive = false;
     const payload = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
     if (!payload || !flowApi) return;
     e.preventDefault();
@@ -546,10 +560,12 @@
   <div class="graphrow" style:--editor-w={`${editorW}px`}>
   <div
     class="gwrap"
+    class:drop-active={dropActive}
     bind:this={canvasWrap}
     role="region"
     aria-label="Trigger graph canvas"
     ondragover={onPaletteDragOver}
+    ondragleave={onPaletteDragLeave}
     ondrop={onPaletteDrop}
   >
     <GraphCanvas
@@ -585,6 +601,12 @@
     <div class="lint-overlay">
       <GraphLintStrip issues={lintIssues} />
     </div>
+    <!-- R12 drop-target ring: an accent ring + faint wash while a new node is dragged in from the
+         Add pane, matching the Sections reorder target language (R11 `.section-target`). Non-
+         interactive so it never eats the drop; only mounted while the drag is live. -->
+    {#if dropActive}
+      <div class="drop-ring" aria-hidden="true"></div>
+    {/if}
   </div>
 
   <div class="editor-wrap">
@@ -631,6 +653,20 @@
     position: relative;
     min-width: 0;
     min-height: 0;
+  }
+  /* Drop-target ring for add-node drags from the Add pane — the canvas analogue of the Sections
+     reorder target (R11 `.col.section-target`): a bright accent ring + faint wash so "drop is
+     live" reads at a glance. Overlaid and non-interactive so it never intercepts the drop. */
+  .drop-ring {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    border-radius: var(--radius-2);
+    background: color-mix(in oklch, var(--accent) 6%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent),
+      inset 0 0 0 4px color-mix(in oklch, var(--accent) 14%, transparent);
   }
   /* Lint strip overlay — pinned to the canvas's top-left, above the flow surface but out of
      its interaction layer except where the strip itself sits. */
