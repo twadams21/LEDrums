@@ -14,7 +14,7 @@
 
    STRUCTURE (S3.3 split): this core file holds the Block-tree model, the
    effect/preset/bus/voice/section types, and the `Sim` class (voice lifecycle +
-   graph/tree evaluation). The cohesive sub-concerns live alongside and are
+   graph evaluation). The cohesive sub-concerns live alongside and are
    re-exported below so the public `./sim` surface is unchanged:
      - `./sim.envelopes`         — ADSR shapes/sampling + param primitives.
      - `./sim.trigger-source`    — TriggerSource matching + value normalization.
@@ -382,27 +382,6 @@ export class Sim {
 
   // --- triggering ----------------------------------------------------------
 
-  trigger(padLabel: string, tree: Block, ctx: TriggerCtx): string[] {
-    const actions = this.evaluate(tree, ctx);
-    const resolved: string[] = [];
-    for (const a of actions) {
-      if (a.kind === 'stop') {
-        const v = this.voices.find((x) => x.id === a.voiceId);
-        if (v) {
-          this.release(v);
-          resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
-        }
-      } else if (a.kind === 'play') {
-        const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
-        if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
-      }
-    }
-    if (resolved.length === 0) resolved.push('— nothing (chance/empty)');
-    this.log.unshift({ t: this.timeMs, pad: padLabel, resolved });
-    if (this.log.length > 60) this.log.length = 60;
-    return resolved;
-  }
-
   /** Fire a freeform trigger graph: evaluate from the trigger node, spawn/stop. */
   triggerGraph(padLabel: string, graph: TriggerGraph, ctx: TriggerCtx): string[] {
     const actions = this.evalGraph(graph, ctx);
@@ -468,77 +447,6 @@ export class Sim {
       seen: descriptor.seen,
       draft: descriptor.draft,
     });
-  }
-
-  /** Resolve a Play block's live params — always the block's own node-local copy. */
-  private resolveParams(block: PlayBlock): ParamValues {
-    return block.params;
-  }
-
-  private evaluate(block: Block, ctx: TriggerCtx, viaPrefix = ''): Action[] {
-    const label = (s: string) => (viaPrefix ? `${viaPrefix} → ${s}` : s);
-    switch (block.kind) {
-      case 'play': {
-        return [
-          {
-            kind: 'play',
-            effectId: block.effectId,
-            mode: block.mode,
-            scope: block.scope,
-            busId: '',
-            params: this.resolveParams(block),
-            via: label(this.modeWord(block.mode)),
-            latchKey: null,
-          },
-        ];
-      }
-      case 'all':
-        return block.children.flatMap((c) => this.evaluate(c, ctx, label('All')));
-      case 'random': {
-        if (block.children.length === 0) return [];
-        let i = this.prng.nextInt(block.children.length);
-        if (block.noRepeat && block.children.length > 1) {
-          const prev = this.lastPick.get(block.id);
-          while (i === prev) i = this.prng.nextInt(block.children.length);
-        }
-        this.lastPick.set(block.id, i);
-        return this.evaluate(block.children[i]!, ctx, label(`Random[${i + 1}/${block.children.length}]`));
-      }
-      case 'sequence': {
-        if (block.children.length === 0) return [];
-        const i = this.seqIndex.get(block.id) ?? 0;
-        this.seqIndex.set(block.id, (i + 1) % block.children.length);
-        return this.evaluate(block.children[i]!, ctx, label(`Seq[${i + 1}/${block.children.length}]`));
-      }
-      case 'switch': {
-        if (block.children.length === 0) return [];
-        const i = this.switchIndex(block, ctx);
-        return this.evaluate(block.children[i]!, ctx, label(`Switch:${block.on}[${i + 1}]`));
-      }
-      case 'chance': {
-        if (this.prng.next() > block.p) return [];
-        return this.evaluate(block.child, ctx, label(`Chance ${Math.round(block.p * 100)}%`));
-      }
-      case 'toggle': {
-        const current = this.latched.get(block.id);
-        const alive = current ? this.voices.some((v) => v.id === current) : false;
-        if (alive && current) {
-          this.latched.set(block.id, null);
-          return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
-        }
-        const actions = this.evaluate(block.child, ctx, label('Toggle on'));
-        const firstPlay = actions.find((a) => a.kind === 'play') as PlayAction | undefined;
-        if (firstPlay) firstPlay.latchKey = block.id;
-        return actions;
-      }
-    }
-  }
-
-  private switchIndex(block: SwitchBlock, ctx: TriggerCtx): number {
-    const n = block.children.length;
-    if (block.on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-    const frac = block.on === 'beat' ? ctx.beatPhase : 0;
-    return Math.min(n - 1, Math.floor(frac * n));
   }
 
   // --- voice lifecycle -----------------------------------------------------
@@ -796,9 +704,6 @@ export class Sim {
 
   private busName(id: string): string {
     return this.bus(id)?.name ?? id;
-  }
-  private modeWord(m: PlayMode): string {
-    return m === 'oneshot' ? 'One-shot' : m === 'loop' ? 'Loop' : 'Hold';
   }
   private modeGlyph(m: PlayMode): string {
     return m === 'oneshot' ? '⚡' : m === 'loop' ? '∞' : '⊓';
