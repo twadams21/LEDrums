@@ -33,6 +33,7 @@ export {
   type EvalState,
   type PendingDescriptor,
   type PlayAction,
+  type MixInputDraft,
   type TriggerCtx as EvalTriggerCtx,
 } from './eval-graph';
 // S36 — LFO source node

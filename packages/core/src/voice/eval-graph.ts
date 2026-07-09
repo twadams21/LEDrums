@@ -63,6 +63,10 @@ export interface PlayAction {
   modulations?: Mapping[];
   mixBlendMode?: BlendMode;
   mixInputs?: MixInputDraft[];
+  /** Origin graph node this action's layer was produced by (a play/effect node, or the
+      Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
+      origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
+  originNodeId?: string;
   via: string;
   latchKey: string | null;
 }
@@ -107,8 +111,8 @@ export interface PendingAction {
 }
 
 export type Action = PlayAction | StopAction | PendingAction;
-type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
-type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
+export type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
+export type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
 
 export interface TriggerCtx {
   velocity: number;
@@ -135,6 +139,21 @@ export interface EvalState {
   prng: Prng;
   presetsById: Map<string, Preset>;
   isVoiceAlive(id: string): boolean;
+  /**
+   * Persistent per-(pad, mix-node) snapshot of the Mix's contributing layer members
+   * (R13 delay = timeline shift). Populated by the Mix evaluator as members arrive across
+   * eval batches; a delayed branch draining into the same Mix reads it to re-compose with
+   * members that started earlier. Engine-owned (like {@link seqIndex}); absent → the
+   * overlap machinery is off and eval falls back to eval-batch membership.
+   */
+  mixMemberSnapshots?: Map<string, MixInputDraft[]>;
+  /**
+   * Is a layer origin node still live (its voice not yet decayed) for this pad? Read by the
+   * Mix evaluator on a delayed drain to decide which snapshotted members still compose;
+   * decayed members are absent. Backed by the engine/sim scanning active voices' origins.
+   * Absent → no member is treated as live, so a drain stays batch-scoped.
+   */
+  isLayerLive?(pad: string, originNodeId: string): boolean;
 }
 
 /**
@@ -374,12 +393,31 @@ function evalGraphGen3FromPlan(
             const play = routePlay(entry.draft);
             return play?.originNodeId ? { ...play, opacity: edgeOpacity(entry.edge?.opacity), originNodeId: play.originNodeId } : null;
           })
-          .filter((input): input is MixInputDraft => !!input)
-          .sort((a, b) => {
-            const ay = byId.get(a.originNodeId)?.y ?? 0;
-            const by = byId.get(b.originNodeId)?.y ?? 0;
-            return ay - by || a.originNodeId.localeCompare(b.originNodeId);
-          });
+          .filter((input): input is MixInputDraft => !!input);
+
+        // R13 — delay = timeline shift. Composition membership at a Mix is temporal overlap,
+        // not eval-batch membership. Record this batch's members into the persistent snapshot,
+        // then (on a delayed drain) fold back the members that started in an earlier batch and
+        // are still live, so the delayed layer composes with them per the Mix blend rules;
+        // decayed members are absent. Render-time coalescing of the overlap is R14.
+        const snapKey = nodeStateKey(pad, node.id);
+        const snapshots = state.mixMemberSnapshots;
+        if (snapshots) {
+          const merged = new Map((snapshots.get(snapKey) ?? []).map((m) => [m.originNodeId, m] as const));
+          for (const m of inputs) merged.set(m.originNodeId, m);
+          snapshots.set(snapKey, [...merged.values()]);
+          if (seen.size > 0 && state.isLayerLive) {
+            const inBatch = new Set(inputs.map((m) => m.originNodeId));
+            for (const m of snapshots.get(snapKey) ?? []) {
+              if (!inBatch.has(m.originNodeId) && state.isLayerLive(pad, m.originNodeId)) inputs.push(m);
+            }
+          }
+        }
+        inputs.sort((a, b) => {
+          const ay = byId.get(a.originNodeId)?.y ?? 0;
+          const by = byId.get(b.originNodeId)?.y ?? 0;
+          return ay - by || a.originNodeId.localeCompare(b.originNodeId);
+        });
         if (!inputs.length) break;
         const host = inputs[0]!;
         const mixed: PlayDraft = {

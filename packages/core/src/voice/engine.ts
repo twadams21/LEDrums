@@ -28,6 +28,7 @@ import {
   type EvalState,
   type TriggerCtx,
   type PendingDescriptor,
+  type MixInputDraft,
 } from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
@@ -176,6 +177,10 @@ class VoiceBusEngine implements RenderEngine {
   private seqIndex = new Map<string, number>();
   private lastPick = new Map<string, number>();
   private latched = new Map<string, string | null>();
+  /** R13 — persistent per-(pad, mix-node) member snapshots for delay-overlap Mix
+      composition. Populated by the pure evaluator; read by a delayed drain to re-compose
+      with still-live members. Keyed like the maps above; cleared on `setShow`. */
+  private mixMemberSnapshots = new Map<string, MixInputDraft[]>();
 
   private prng = new Prng(PRNG_SEED);
 
@@ -269,6 +274,7 @@ class VoiceBusEngine implements RenderEngine {
     this.seqIndex.clear();
     this.lastPick.clear();
     this.latched.clear();
+    this.mixMemberSnapshots.clear();
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
     this.pendingFires = [];
@@ -597,6 +603,8 @@ class VoiceBusEngine implements RenderEngine {
       prng: this.prng,
       presetsById: this.presetsById,
       isVoiceAlive: (id) => this.voices.isVoiceAlive(id),
+      mixMemberSnapshots: this.mixMemberSnapshots,
+      isLayerLive: (pad, originNodeId) => this.voices.isLayerLive(pad, originNodeId),
     };
   }
 
@@ -614,7 +622,7 @@ class VoiceBusEngine implements RenderEngine {
       actionCount: actions.length,
       playEffects,
     });
-    this.applyActions(actions, ctx);
+    this.applyActions(actions, ctx, resolved.statePrefix);
   }
 
   /**
@@ -622,9 +630,10 @@ class VoiceBusEngine implements RenderEngine {
    * `PlayAction`s spawn voices; `StopAction`s release them; `PendingAction`s enqueue a
    * deferred fire at `timeMs + relativeDelayMs`. Shared between the immediate fire path
    * (`fireGraph`) and the drain path (`drainPendingFires`) so nested delays work
-   * identically to immediate fires.
+   * identically to immediate fires. `pad` is the eval state prefix — tagged onto each
+   * spawned voice so origin-keyed liveness (R13 delay-overlap Mix) can scope its scan.
    */
-  private applyActions(actions: Action[], ctx: TriggerCtx): void {
+  private applyActions(actions: Action[], ctx: TriggerCtx, pad: string): void {
     for (const a of actions) {
       if (a.kind === 'stop') {
         const v = this.voices.findActiveVoice(a.voiceId);
@@ -637,6 +646,7 @@ class VoiceBusEngine implements RenderEngine {
           busById: this.busById,
           latched: this.latched,
           timeMs: this.timeMs,
+          pad,
         });
       }
     }
@@ -669,7 +679,7 @@ class VoiceBusEngine implements RenderEngine {
     for (const f of due) {
       const { graph, pad, ctx, childIds, viaPrefix, seen, draft } = f.descriptor;
       const actions = evalChildren(this.evalState(), graph, pad, childIds, ctx, viaPrefix, seen, draft ?? null);
-      this.applyActions(actions, ctx);
+      this.applyActions(actions, ctx, pad);
     }
   }
 

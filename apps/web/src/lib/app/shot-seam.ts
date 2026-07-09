@@ -49,6 +49,10 @@ export interface ShotSeam {
   /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
       states: `graph` = insertion line at a gap, `section` = reorder target outline. */
   previewSectionsDnd(kind: 'graph' | 'section'): void;
+  /** Author a Mix with two wired layer branches and select it, so the Mix inspector shows
+      its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
+      an empty Mix hides the rows. */
+  mixWithLayers(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -202,9 +206,25 @@ class ShotSeamImpl implements ShotSeam {
       case 'sections-reorder':
         this.previewSectionsDnd('section');
         break;
+      case 'mix-layers':
+        this.mixWithLayers();
+        break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }
+  }
+
+  mixWithLayers(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const mix = this.store.addNode('mix', 620, 200);
+    const top = this.store.addNode('effect', 360, 150);
+    const bottom = this.store.addNode('effect', 360, 300);
+    if (!mix || !top || !bottom) return;
+    this.store.connect(top.id, mix.id);
+    this.store.connect(bottom.id, mix.id);
+    this.added.set('mix', mix);
+    this.lastAdded = mix;
+    this.shell.select({ kind: 'node', nodeId: mix.id });
   }
 
   private resolveGraphKey(nameOrKey: string): string | null {

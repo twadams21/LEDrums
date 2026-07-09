@@ -569,6 +569,14 @@ export interface Voice {
   releaseFromLevel: number;
   via: string;
   deckGain: number;
+  /** Eval state prefix (pad / slot key) this voice was spawned under. Scopes origin-keyed
+      liveness scans for R13 delay-overlap Mix composition; `''` for non-graph voices
+      (e.g. section looks). */
+  pad?: string;
+  /** Graph node this voice's layer was produced by — its play/effect node, or the Mix node
+      for a composite. Read by `VoicePool.isLayerLive` so a delayed branch can tell whether a
+      Mix's sibling members are still live. */
+  originNodeId?: string;
 }
 
 export interface MixInput {
@@ -586,4 +594,7 @@ export interface MixInput {
   modifiers?: ResolvedModifier[];
   modState?: unknown[];
   opacity: number;
+  /** Graph node that produced this mix member — carried so `VoicePool.isLayerLive` can
+      report member liveness for R13 delay-overlap Mix composition. */
+  originNodeId?: string;
 }
