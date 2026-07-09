@@ -61,10 +61,18 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 ## Wave 3 (dispatched 2026-07-09 ~05:50Z, 3 wide)
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
-| R26 field migration | #105 | wt-2 | gen3r/r26-field-migration | r26-field-41a9a2 | running |
-| R14 fan-in coalescing | #93 | wt-1 | gen3r/r14-fanin-coalescing | r14-fanin-09815b | running (opus/high — core temporal semantics; defined against R13's model) |
-| R04 effect auto-wire | #83 | wt-3 | gen3r/r04-effect-autowire | r04-autowire-b1ad6c | running |
-Phase 3 (R13+R14) completes with R14 → dispatch P3 review agent then. P1 review needs R03✅–R08 (R05→R06→R07 chain + R08 still queued).
+| R26 field migration | #105 | wt-2 | gen3r/r26-field-migration | r26-field-41a9a2 | ✅ merged `d39a39a` (HEAD 388dedf; design-system.html conflict resolved by regen at merge; gates 1350 web); #105 closed; Notion Done + report; window killed. Field gained `unit` prop; out-of-scope rows documented in report (need further Field variants) |
+| R14 fan-in coalescing | #93 | wt-1 | gen3r/r14-fanin-coalescing | r14-fanin-09815b | ✅ merged `e3f0c92` (HEAD 6fc0d2d; gates 1352 web, core 693); #93 closed; Notion Done + report; R18 #97 → Ready; window killed. Root cause: play draft pushed once per incoming bucket entry; fixed with per-eval-call firedEffects set |
+| R04 effect auto-wire | #83 | wt-3 | gen3r/r04-effect-autowire | r04-autowire-b1ad6c | ✅ merged `5f0e7ae` (HEAD 9cdba31; gates 1358 web); #83 closed; Notion Done + report; window killed. Added batchIntoCurrentUndo store helper (reusable) |
+
+## Wave 4 (dispatched 2026-07-09 ~06:20Z, 3 wide) — Phase 3 COMPLETE → review gate running
+| Ticket | Issue | Worktree | Branch | Session | Status |
+|---|---|---|---|---|---|
+| R08 wire-splice | #87 | wt-3 | gen3r/r08-wire-splice | r08-splice-4b6295 | running (builds on R03 drag layer + R04 undo batching) |
+| R27 anchor header | #106 | wt-2 | gen3r/r27-anchor-header | r27-header-e9cbbc | running |
+| P3 review (R13+R14) | — | wt-1 | gen3r/p3-review-report | p3-review-e1f2f1 | running (opus/high, /code-review over 8c5576a...e3f0c92 core/sim scope) |
+R05 #84 (lint strip) queued — held back to avoid canvas collision with R08. After: R06→R07, R10, R12, R15, R17, R18, R20-chain.
+P1 review gate needs R05–R08; P5 review needs R27 (R25✅ R26✅).
 Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fixed in `scripts/with-gate-lock.mjs` + CONVENTIONS. r16 also flagged a dead pre-graph Block-tree evaluator in sim.ts — dead-code sweep candidate (note for R19/R15 triage).
 
 ## Decisions
