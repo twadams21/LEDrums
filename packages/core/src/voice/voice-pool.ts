@@ -112,6 +112,25 @@ export class VoicePool {
       }
     }
 
+    // B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
+    // (pad, originNodeId): release it so their shared members aren't composited twice (double
+    // brightness across the overlap window). Poly buses never steal, so without this the
+    // immediate Mix[A] voice and the re-composed Mix[A,B] voice both render A. The two composites
+    // are one evolving timeline voice, not siblings. Release the OLDEST still-live match — a
+    // single delayed fire has exactly one; the (pad, originNodeId) key can't distinguish trigger
+    // instances (S2), so under rapid multi-fires this releases the oldest composite at that key.
+    // Immediate/`delay 0` spawns never set the flag, so genuine multiplicity is untouched.
+    if (a.supersedePriorVoice && a.originNodeId) {
+      const pad = deps.pad ?? '';
+      let prior: Voice | null = null;
+      for (const v of this.pool) {
+        if (!v.active || v.phase === 'release') continue;
+        if (v.pad !== pad || v.originNodeId !== a.originNodeId) continue;
+        if (!prior || v.bornAtMs < prior.bornAtMs) prior = v;
+      }
+      if (prior) releaseVoice(prior, deps.timeMs);
+    }
+
     const slot = this.acquireSlot();
     if (!slot) return null;
 

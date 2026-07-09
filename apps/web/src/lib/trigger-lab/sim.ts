@@ -283,6 +283,10 @@ type PlayAction = {
   /** Origin graph node this layer was produced by — mirrors core `PlayAction.originNodeId`;
       tags the spawned voice for origin-keyed liveness (R13 delay-overlap Mix). */
   originNodeId?: string;
+  /** B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
+      (pad, originNodeId); the spawner releases that voice instead of double-counting shared
+      members. Mirrors core `PlayAction.supersedePriorVoice`; set only on a drained re-composition. */
+  supersedePriorVoice?: boolean;
   via: string;
   latchKey: string | null;
 };
@@ -583,6 +587,20 @@ export class Sim {
       for (const v of this.voices) {
         if (v.busId === bus.id && v.phase !== 'release') this.release(v);
       }
+    }
+
+    // B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
+    // (pad, originNodeId): release it so their shared members aren't composited twice. Mirrors
+    // core `VoicePool.spawn`; release the oldest still-live match (see S2 for the multi-instance
+    // aliasing note). Immediate/`delay 0` spawns never set the flag, so multiplicity is untouched.
+    if (a.supersedePriorVoice && a.originNodeId) {
+      let prior: Voice | null = null;
+      for (const v of this.voices) {
+        if (v.phase === 'release') continue;
+        if (v.pad !== 'preview' || v.originNodeId !== a.originNodeId) continue;
+        if (!prior || v.bornAtMs < prior.bornAtMs) prior = v;
+      }
+      if (prior) this.release(prior);
     }
 
     // per-trigger seed (item C) — same recipe as the core VoicePool, so random-look

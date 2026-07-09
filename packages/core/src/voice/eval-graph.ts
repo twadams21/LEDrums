@@ -67,6 +67,17 @@ export interface PlayAction {
       Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
       origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
   originNodeId?: string;
+  /**
+   * B1 — this composite is a delayed Mix *re-composition* that supersedes the prior still-live
+   * composite at the same `(pad, originNodeId)`. On a delayed drain the fold re-includes A into
+   * a fresh `Mix[A,B]`, but the immediate `Mix[A]` voice keeps rendering A (poly buses never
+   * steal), so A composites twice for the whole overlap window. When this flag is set the voice
+   * pool releases the prior `(pad, originNodeId)` voice before spawning — the two composites are
+   * one evolving timeline voice, not siblings. Set ONLY on a drained re-composition (`seen.size
+   * > 0` with the overlap machinery on); immediate and `delay 0`-inline folds spawn the first
+   * voice and leave it unset, so genuine multiplicity (rapid re-fires, distinct effects) is
+   * untouched. See {@link VoicePool.spawn}. */
+  supersedePriorVoice?: boolean;
   via: string;
   latchKey: string | null;
 }
@@ -378,6 +389,9 @@ function evalGraphGen3FromPlan(
         // downstream of a Mix) don't re-fire either. Delayed drains are a fresh call → separate.
         if (firedEffects.has(node.id)) break;
         firedEffects.add(node.id);
+        // N2 — one voice ⇒ one latch: only the first latched edge's key registers; any secondary
+        // per-edge latch keys from other converging edges are intentionally dropped (mirrors the
+        // Mix collector). Two distinct toggle paths into one Effect thus share a single latch.
         const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
         pushKids(node, { kind: 'play', play: draft }, latchKey);
         break;
@@ -415,6 +429,19 @@ function evalGraphGen3FromPlan(
         // decayed members are absent. Render-time coalescing of the overlap is R14.
         const snapKey = nodeStateKey(pad, node.id);
         const snapshots = state.mixMemberSnapshots;
+        // A drained batch (`seen.size > 0`) re-composing with folded-back members is the delay-
+        // overlap re-composition B1 fixes: it supersedes the still-live immediate composite at
+        // this (pad, mix-node) rather than stacking a second voice over the shared members.
+        // S2 — liveness + supersession key on (pad, originNodeId) only; they cannot tell WHICH
+        // trigger instance's voice is live. Under the timeline model a pad's Mix node carries a
+        // single evolving composite, so a delayed drain folds/supersedes by (pad, mix-node)
+        // regardless of instance. Two rapid fires on one pad therefore alias: a drain re-includes
+        // (and later supersedes) whichever instance's members are still live, and the pool
+        // releases the OLDEST still-live composite at that key (the most likely predecessor of
+        // this evolving timeline). This is intentional and bounded — accepted as correct-enough
+        // for the "one composite timeline per (pad, mix-node)" model, not a stale-params leak
+        // (folds are gated on live voices; the snapshot map is engine-owned and reset on setShow).
+        const isDrainRecomposition = !!snapshots && seen.size > 0;
         if (snapshots) {
           const merged = new Map((snapshots.get(snapKey) ?? []).map((m) => [m.originNodeId, m] as const));
           for (const m of inputs) merged.set(m.originNodeId, m);
@@ -444,6 +471,9 @@ function evalGraphGen3FromPlan(
           mixInputs: inputs,
           originNodeId: node.id,
         };
+        // B1 — a delayed drain re-composition supersedes the prior still-live composite at this
+        // (pad, mix-node); the pool releases it instead of double-counting the shared members.
+        if (isDrainRecomposition) mixed.supersedePriorVoice = true;
         via.set(node.id, labelFor(node, 'Mix'));
         pushKids(node, { kind: 'play', play: mixed }, entries.find((entry) => entry.latchKey)?.latchKey ?? null);
         break;
