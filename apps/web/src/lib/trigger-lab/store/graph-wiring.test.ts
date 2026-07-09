@@ -3,6 +3,7 @@ import { makeNode, type TriggerGraph } from '../sim';
 import {
   canConnect,
   canReconnect,
+  canSplice,
   classifyConnection,
   classifyReconnect,
   normalizeFromPort,
@@ -401,5 +402,55 @@ describe('graph-wiring — rejection reasons (classifyReconnect)', () => {
       ],
     };
     expect(classifyReconnect(chain, 'e3', 'c', 'a')).toBe('cycle');
+  });
+});
+
+describe('canSplice (R08 wire-splice guard)', () => {
+  /** a --(band-1)--> b --> c : a flow chain to splice a fresh node into. */
+  function chain(): TriggerGraph {
+    return {
+      nodes: [
+        makeNode('random', 'a', 0, 0),
+        makeNode('random', 'b', 100, 0),
+        makeNode('random', 'c', 200, 0),
+        makeNode('random', 'x', 100, 200), // the free node to splice in
+      ],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b', fromPort: 'band-1' },
+        { id: 'e2', from: 'b', to: 'c' },
+      ],
+    };
+  }
+
+  it('accepts inserting a free node into a plain flow wire', () => {
+    expect(canSplice(chain(), 'e1', 'x')).toBe(true);
+  });
+
+  it('refuses when the node is one of the wire’s own endpoints', () => {
+    expect(canSplice(chain(), 'e1', 'a')).toBe(false);
+    expect(canSplice(chain(), 'e1', 'b')).toBe(false);
+  });
+
+  it('refuses an unknown edge', () => {
+    expect(canSplice(chain(), 'nope', 'x')).toBe(false);
+  });
+
+  it('refuses when a resulting wire would duplicate an existing one', () => {
+    // x already feeds c; splicing x into b→c would re-create x→c (node→target duplicate).
+    const g = chain();
+    g.edges.push({ id: 'e3', from: 'x', to: 'c' });
+    expect(canSplice(g, 'e2', 'x')).toBe(false);
+  });
+
+  it('refuses a modulation wire (only flow wires splice)', () => {
+    const g: TriggerGraph = {
+      nodes: [
+        makeNode('envelope', 'env', 0, 0),
+        makeNode('effect', 'fx', 100, 0),
+        makeNode('mix', 'm', 100, 200),
+      ],
+      edges: [{ id: 'e1', from: 'env', to: 'fx', toPort: 'param:opacity' }],
+    };
+    expect(canSplice(g, 'e1', 'm')).toBe(false);
   });
 });
