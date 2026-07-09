@@ -23,7 +23,7 @@ scoped to that phase's merged range; fix findings before closing the phase.
 | R01 wire bug | #80 | wt-1 | gen3r/r01-wire-bug | r01-wire-490f49 | running |
 | R02 toasts | #81 | wt-2 | gen3r/r02-system-toasts | r02-toasts-a57c1c | running |
 | R09 add-pane search | #88 | wt-3 | gen3r/r09-add-pane-search | r09-search-e4130d | running |
-| R11 sections DnD | #90 | wt-4 | gen3r/r11-sections-dnd | r11-dnd-5e6af3 | running |
+| R11 sections DnD | #90 | wt-4 | gen3r/r11-sections-dnd | r11-dnd-5e6af3 | reported done 03:21Z (HEAD 173e469, web suite green, report committed) — merge held while Trent drives. Agent flagged pre-existing typecheck error on clean HEAD: `node-options.test.ts:156` (`as BlockKind[]`) |
 | R16 delete legacy eval | #95 | wt-5 | gen3r/r16-delete-legacy-eval | r16-eval-413010 | PAUSED by Trent (width cap) — resume when a slot frees |
 | R25 signal previews | #104 | wt-6 | gen3r/r25-signal-previews | r25-previews-7be5d4 | PAUSED by Trent (width cap) — resume when a slot frees |
 | R29 pixlite password | #108 | wt-7 | gen3r/r29-pixlite-admin-password | r29-pixlite-d31856 | PAUSED by Trent (width cap) — resume when a slot frees |
