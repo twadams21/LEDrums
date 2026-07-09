@@ -69,7 +69,9 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
 | R08 wire-splice | #87 | wt-3 | gen3r/r08-wire-splice | r08-splice-4b6295 | ✅ merged `dc17794` (HEAD 10412d5; gates 1378 web); #87 closed; Notion Done + report; window killed. Splice-only undo verified (two-step: wiring first, position second). Follow-up: unused trigger-node-meta import in TriggerGraphView (cleanup pass) |
-| R05 lint strip | #84 | wt-3 | gen3r/r05-lint-strip | r05-lint-c8cb25 | running (dispatched after 5h window reset ~19:00; usage was 84% pre-reset — launches were frozen per new 70% budget rule) |
+| R05 lint strip | #84 | wt-3 | gen3r/r05-lint-strip | r05-lint-c8cb25 | ✅ merged `21f4724` (HEAD ec993db; gates 1383 web); #84 closed; Notion Done + report; window killed. Note: live strip is empty for authored graphs today (anchors guaranteed, cycles refused at wire time) — R06/R07 add the codes that light it up |
+| R10 category chips | #89 | wt-3 | gen3r/r10-category-chips | r10-chips-7f5673 | running. R06 #85 HELD BACK: it touches the Output inspector = R27's active turf; dispatch R06 after R27 merges |
+NOTE: r27 was ALSO limit-stalled (like p3-review) — resumed with a prompt ~09:25Z. Lesson: after a session-limit reset, capture-check ALL running agents, not just idle-listed ones.
 | R27 anchor header | #106 | wt-2 | gen3r/r27-anchor-header | r27-header-e9cbbc | running |
 | P3 review (R13+R14) | — | wt-1 | gen3r/p3-review-report | p3-review-e1f2f1 | ✅ report merged. Verdict: eval-seam semantics correct, but 1 BLOCKING: delay→Mix overlap composites the still-live member TWICE (poly buses never steal; fold gate ≡ old-voice-alive). Unowned between R13/R14. Also S1 (no engine-level overlap test), S2 (liveness aliases across trigger instances), N2 (latch-key drop uncommented). Window killed. NOTE: agent stalled ~2.5h on the session usage limit mid-review — resumed post-reset with a prompt |
 | P3 fix (B1/S1/S2/N2) | — | wt-1 | gen3r/p3-fix-overlap | p3-fix-b5f0c1 | running (opus/high). Phase 3 NOT closed until this merges + engine-level overlap tests green |
