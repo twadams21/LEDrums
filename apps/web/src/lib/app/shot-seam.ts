@@ -16,6 +16,7 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { ShellStore, View } from './shell-store.svelte';
 import type { GraphNode, NodeKind } from '../trigger-lab/sim';
+import type { ControllerStatus } from '../ws/protocol-types';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
@@ -49,6 +50,11 @@ export interface ShotSeam {
   /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
       states: `graph` = insertion line at a gap, `section` = reorder target outline. */
   previewSectionsDnd(kind: 'graph' | 'section'): void;
+  /** Open the Patch controller inspector on a synthetic ADOPTED controller so ui-shot can
+      capture the controller panel (incl. the R29 admin-password field), which otherwise needs
+      a live PixLite on the network. `auth` = authenticated (calm); `needs` = requires a password
+      it doesn't have yet (warn). Injects a `controllerStatus` the panel reads verbatim. */
+  mockController(kind?: 'auth' | 'needs'): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -157,6 +163,47 @@ class ShotSeamImpl implements ShotSeam {
     }
   }
 
+  mockController(kind: 'auth' | 'needs' = 'auth'): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('patch');
+    const reachable = kind === 'auth';
+    // A representative adopted PixLite (authReqd true so the panel's password field is the point of
+    // interest). The same shape the server's `controllerStatus` broadcast carries.
+    const status: ControllerStatus = {
+      host: '192.168.1.50',
+      reachable,
+      identity: {
+        host: '192.168.1.50',
+        prodName: 'PixLite A4-S Mk3',
+        nickname: 'Kick Left',
+        fwVer: '1.4.2',
+        authReqd: true,
+      },
+      universes: reachable
+        ? [
+            { uniNum: 0, protocol: 'sACN', receiving: true, inGood: 44_318, inBadSeq: 0, priority: 100 },
+            { uniNum: 1, protocol: 'sACN', receiving: true, inGood: 44_012, inBadSeq: 0, priority: 100 },
+          ]
+        : [],
+      rates: reachable ? { inFrmRate: 44, outFrmRate: 44 } : {},
+      health: reachable ? { tempC: 41, bankVoltsMv: [12_100], ethLinkUp: [true, false] } : {},
+      lastSeen: reachable ? Date.now() : Date.now() - 8_000,
+      testPattern: null,
+    };
+    this.store.controllerStatus = status;
+    // Open the Patch controller node's inspector (patch selection 'controller' → PatchControllerInspector).
+    this.shell.select({ kind: 'patch', nodeId: 'controller' });
+    // The inspector's mount sends `watchController`, and a dev server with no adopted controller may
+    // answer with a null `controllerStatus` that would wipe the synthetic one. Re-assert across a few
+    // frames so the injected status is what the panel renders when ui-shot captures. Dev-only.
+    let frames = 0;
+    const reassert = (): void => {
+      this.store.controllerStatus = status;
+      if (frames++ < 30) requestAnimationFrame(reassert);
+    };
+    requestAnimationFrame(reassert);
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -201,6 +248,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'sections-reorder':
         this.previewSectionsDnd('section');
+        break;
+      case 'controller':
+        this.mockController(arg === 'needs' ? 'needs' : 'auth');
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);

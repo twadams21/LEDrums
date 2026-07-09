@@ -40,6 +40,7 @@
   canEdit={store.canEdit}
   onDiscover={() => store.discoverControllers()}
   onAdopt={(host) => store.adoptController(host)}
+  onSetAuth={(password) => store.setControllerAuth(password)}
   onIdentify={() => store.identifyController()}
   onTestData={(pattern) => store.setControllerTestData(pattern)}
   onBackToLive={() => store.backToLive()}

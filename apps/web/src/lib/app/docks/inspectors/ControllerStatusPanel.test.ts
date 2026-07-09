@@ -158,6 +158,62 @@ describe('ControllerStatusPanel — actions', () => {
   });
 });
 
+describe('ControllerStatusPanel — admin password (R29)', () => {
+  it('commits the typed password to onSetAuth on blur (plaintext, not trimmed) and then clears', async () => {
+    const onSetAuth = vi.fn();
+    const { getByLabelText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, onSetAuth },
+    });
+    const input = getByLabelText('Controller admin password') as HTMLInputElement;
+    expect(input.type).toBe('password');
+    await fireEvent.focus(input); // guards the draft against the not-editing reseed
+    await fireEvent.input(input, { target: { value: ' s3cret ' } });
+    await fireEvent.blur(input); // commit-on-change (Enter blurs to here too)
+    // Raw value, whitespace preserved (a credential is never trimmed).
+    expect(onSetAuth).toHaveBeenCalledWith(' s3cret ');
+    // The field never round-trips a stored value — it clears after the commit.
+    expect(input.value).toBe('');
+  });
+
+  it('does not fire onSetAuth for an empty submit (no accidental clear)', async () => {
+    const onSetAuth = vi.fn();
+    const { getByLabelText } = render(ControllerStatusPanel, {
+      props: { controller: ctrl(), candidates: [], nowMs: NOW, onSetAuth },
+    });
+    const input = getByLabelText('Controller admin password') as HTMLInputElement;
+    await fireEvent.focus(input);
+    await fireEvent.blur(input);
+    expect(onSetAuth).not.toHaveBeenCalled();
+  });
+
+  it('warns when the controller requires auth but is unreachable, and disables the field for a viewer', () => {
+    const { container, getByLabelText, rerender } = render(ControllerStatusPanel, {
+      props: {
+        controller: ctrl({ reachable: false, lastSeen: NOW - 3000, identity: { host: '192.168.1.50', prodName: 'PixLite A16-S Mk3', nickname: 'Roof', fwVer: '1.4.2', authReqd: true } }),
+        candidates: [],
+        nowMs: NOW,
+      },
+    });
+    expect(container.querySelector('.auth.needs')).not.toBeNull();
+    // Viewer (canEdit=false) can't edit the credential.
+    rerender({
+      controller: ctrl(),
+      candidates: [],
+      nowMs: NOW,
+      canEdit: false,
+    });
+    const input = getByLabelText('Controller admin password') as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+  });
+
+  it('has no admin-password field until a controller is adopted', () => {
+    const { queryByLabelText } = render(ControllerStatusPanel, {
+      props: { controller: null, candidates: [], nowMs: NOW },
+    });
+    expect(queryByLabelText('Controller admin password')).toBeNull();
+  });
+});
+
 describe('ControllerStatusPanel — test patterns + takeover (S49)', () => {
   it('sends a setColor pattern (all ports/pixels) when a solid swatch is clicked', async () => {
     const onTestData = vi.fn();
