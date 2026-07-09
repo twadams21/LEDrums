@@ -106,11 +106,12 @@ Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fix
 PR #113 (Phases 1–3+5, store-split 1–2, extras) MERGED to main (`a652f30`, v0.2.4 bump `601aa55`). Integration branch `codex/gen3-graph-authoring` now sits on post-merge HEAD; final-wave branch base `63ecddc` (briefs commit).
 | Ticket | GH | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
-| R15 sweep + carried nits | #94 | wt-1 | gen3r/r15-review-sweep | r15-sweep-74caf0 | running (opus/high; fixes 4 carried nits + read-only two-axis sweep; orchestrator files sweep issues) |
+| R15 sweep + carried nits | #94 | wt-1 | gen3r/r15-review-sweep | r15-sweep-74caf0 | ✅ merged `c5c2788` (gates green after 1 flaky rerun). 4 nits fixed (dead Block-tree eval, no-op undo guard, freshId mints, LintCallout reachability rows). Sweep: 0 blocking; filed #114 (SF2 scope readout vs lint), #115 (sim type tail), #116 (micro-cleanup); SF1 obsoleted by R19, SF3 = split chain in flight. #94 closed; Notion Done + report; window killed. NOTE: stalled mid-nit-1, resumed via prompt |
 | R19 plan-output prune | #98 | wt-2 | gen3r/r19-plan-output-prune | r19-prune-2affa0 | ✅ merged `a8bbef5` (gates green, web 1417/core 726); dropped planNodesById+taxonomy, outputId, incomingFlowEdgesById; #98 closed; Notion Done + report; window killed. wt-2 idle — R23 waits on R22 (same-file chain) |
 | R22 store split 3/5 controller-test | #101 | wt-3 | gen3r/r22-store-split-3 | r22-split-2f0353 | ✅ merged `92dd305` (gates green). Carved controller-test OUT of ControllerMonitor (R20 had bundled it) → spec's 5 separate controllers realized; store API preserved, controller tests unmodified. #101 closed; Notion Done + report; window killed |
-| R23 store split 4/5 shows/setlist | #102 | wt-3 | gen3r/r23-store-split-4 | r23-split-345c44 | running (opus/medium; seam map from R22 report) |
-Queue after: R24 #103 (after R23, same-file), then P4 review gate over R15–R24. R28 #107 stays MANUAL (Trent hardware gate).
+| R23 store split 4/5 shows/setlist | #102 | wt-3 | gen3r/r23-store-split-4 | r23-split-345c44 | ✅ merged `a267848` (gates green). ShowsController +661 lines; store 3888→3532; tests unmodified. #102 closed; Notion Done + report; window killed. NOTE: stalled pre-edit, resumed via prompt |
+| R24 store split 5/5 sections | #103 | wt-3 | gen3r/r24-store-split-5 | r24-split-c3ef9f | running (opus/medium; final slice; seam map from R23 report) |
+Queue after: P4 review gate over R15–R24 once R24 lands. R28 #107 stays MANUAL (Trent hardware gate). Sweep follow-ups filed: #114, #115, #116 (ready-for-agent, outside this initiative's gate).
 
 ## Decisions
 - **2026-07-10: FREEZE LIFTED** — Trent: "Let's finish off the gen3 ux lift." Usage 8% of 5h window at launch time; 70% self-budget stands.
