@@ -19,9 +19,20 @@ export interface TriggerGraphIssue {
   edgeId?: string;
 }
 
+/** Plain-language summary of the actions the normalize pass performed ON THE USER'S BEHALF —
+    the "system did this for you" facts a UI announces (R02). Distinct from {@link TriggerGraphIssue}
+    (which is diagnostic/lint detail): this is the batched, user-visible what-changed. */
+export interface TriggerGraphSystemActions {
+  /** The input was a legacy (pre-Gen3) graph and was migrated to the Gen3 schema. */
+  migratedToGen3: boolean;
+  /** Number of render leaves the migration auto-wired to the terminal Output anchor. */
+  autoWiredToOutput: number;
+}
+
 export interface TriggerGraphIntegrityResult {
   graph: TriggerGraph;
   issues: TriggerGraphIssue[];
+  actions: TriggerGraphSystemActions;
 }
 
 const OUTPUT_ANCHOR_ID = 'output';
@@ -187,15 +198,17 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
     addEdge(next);
   }
 
+  let autoWiredToOutput = 0;
   if (legacy) {
     const hasOutgoingFlow = new Set(edges.filter(isFlowEdge).map((e) => e.from));
     const leaves = nodes.filter((n) => n.id !== OUTPUT_ANCHOR_ID && isRenderLeafCandidate(n) && !hasOutgoingFlow.has(n.id));
     for (const leaf of leaves) {
       addEdge({ id: edgeIdFor(edgeIds, `e-${leaf.id}-output`), from: leaf.id, to: OUTPUT_ANCHOR_ID });
+      autoWiredToOutput += 1;
     }
   }
 
-  return { graph: { ...graph, version: 3, nodes, edges }, issues };
+  return { graph: { ...graph, version: 3, nodes, edges }, issues, actions: { migratedToGen3: legacy, autoWiredToOutput } };
 }
 
 export function validateTriggerGraphIntegrity(graph: TriggerGraph): TriggerGraphIssue[] {

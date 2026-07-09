@@ -104,6 +104,25 @@ describe('normalizeTriggerGraphToGen3', () => {
     expect(next.edges).not.toContainEqual(expect.objectContaining({ from: 'p', to: 'output' }));
   });
 
+  it('reports the system actions performed: legacy migration + auto-wired leaf count', () => {
+    const graph: TriggerGraph = {
+      nodes: [node('trigger', 'trigger'), node('play', 'a', { effectId: 'fx' }), node('play', 'b', { effectId: 'fx' })],
+      edges: [edge('e1', 'trigger', 'a'), edge('e2', 'trigger', 'b')],
+    };
+    const { actions } = normalizeTriggerGraphToGen3(graph);
+    expect(actions).toEqual({ migratedToGen3: true, autoWiredToOutput: 2 });
+  });
+
+  it('reports no system actions for an already-Gen3, fully-wired graph', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [node('trigger', 'trigger'), node('effect', 'p', { effectId: 'fx' }), node('output', 'output')],
+      edges: [edge('e1', 'trigger', 'p'), edge('e2', 'p', 'output')],
+    };
+    const { actions } = normalizeTriggerGraphToGen3(graph);
+    expect(actions).toEqual({ migratedToGen3: false, autoWiredToOutput: 0 });
+  });
+
   it('is idempotent after the first repair pass', () => {
     const once = normalizeTriggerGraphToGen3({ nodes: [node('trigger', 'trigger'), node('play', 'p')], edges: [] }).graph;
     const twice = normalizeTriggerGraphToGen3(once);

@@ -426,6 +426,38 @@ export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): R
   return changed ? out : graphs;
 }
 
+/** Batched, plain-language summary of the actions the hydrate performed ON THE USER'S BEHALF
+    (R02) — aggregated across every graph in the map so a single hydrate announces ONCE, not
+    per-graph. `migratedGraphs` counts legacy (pre-Gen3) graphs rewritten to the Gen3 schema;
+    `autoWiredNodes` counts render leaves the migration wired to the terminal Output anchor. */
+export interface SystemActionSummary {
+  migratedGraphs: number;
+  autoWiredNodes: number;
+}
+
+export const NO_SYSTEM_ACTIONS: SystemActionSummary = { migratedGraphs: 0, autoWiredNodes: 0 };
+
+/** Sanitize/migrate every graph to Gen3 AND report the batched system actions performed. The
+    Gen3 normalize is the single seam where migration + auto-wire happen, so the actions are read
+    straight off it — no guessing from before/after diffs. Used at the FIRST integrity pass of
+    {@link normalizeGraphs} (subsequent idempotent passes over already-Gen3 graphs report nothing). */
+export function sanitizeGraphsIntegrityWithActions(
+  graphs: Record<string, TriggerGraph>,
+): { graphs: Record<string, TriggerGraph>; actions: SystemActionSummary } {
+  let changed = false;
+  let migratedGraphs = 0;
+  let autoWiredNodes = 0;
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    const { graph: clean, actions } = voice.normalizeTriggerGraphToGen3(graph);
+    if (clean !== graph) changed = true;
+    if (actions.migratedToGen3) migratedGraphs += 1;
+    autoWiredNodes += actions.autoWiredToOutput;
+    out[key] = clean as TriggerGraph;
+  }
+  return { graphs: changed ? out : graphs, actions: { migratedGraphs, autoWiredNodes } };
+}
+
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
     every pad-bound graph's trigger source explicit, materialize formerly-linked play nodes' params
     and drop the `linked` flag, fold legacy velocity switches into the canonical value+bands form,
@@ -438,13 +470,17 @@ export function normalizeGraphs(
   pads: readonly Pad[],
   specsFor: SpecsFor,
   presetParamsFor: PresetParamsFor,
-): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
+): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string>; actions: SystemActionSummary } {
   const padKeys = new Set(pads.map(padKey));
   // Consult the effect alias map FIRST (D1, locked decision 1): a show referencing a
   // retired effect id has its play nodes rewritten to the live target before anything
   // else resolves them. Empty map today (U3 populates it) → an identity pass for now.
   let next = resolveGraphAliases(graphs);
-  next = sanitizeGraphsIntegrity(next);
+  // FIRST integrity pass owns the Gen3 migration + auto-wire, so read the batched system
+  // actions off it here (R02); the later idempotent passes over already-Gen3 graphs add nothing.
+  const firstPass = sanitizeGraphsIntegrityWithActions(next);
+  next = firstPass.graphs;
+  const actions = firstPass.actions;
   // AFTER alias resolution (a retired id must infer from its live replacement): give every
   // persisted play node its D3 `playType` so typed-node UI (U5) always has one.
   next = inferPlayTypes(next);
@@ -461,5 +497,5 @@ export function normalizeGraphs(
   next = splitModulationSources(next);
   next = sanitizeGraphsIntegrity(next);
   const names = hydratePadNames(next, graphNames, pads);
-  return { graphs: next, graphNames: names };
+  return { graphs: next, graphNames: names, actions };
 }
