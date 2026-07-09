@@ -124,6 +124,73 @@ export function compileRenderPlan(graph: TriggerGraph): RenderPlan {
   };
 }
 
+/**
+ * Structure signature over exactly what {@link compileRenderPlan} reads to build a plan:
+ * each node's `id`/`kind`/`y` and each edge's `id`/`from`/`to`/`toPort`. Two graphs with
+ * equal signatures compile to structurally identical plans.
+ *
+ * Deliberately EXCLUDES params (effectId, mode, mixBlendMode, thresholds, …): compile never
+ * reads them, and eval reads them off the live node objects the plan references. Under the
+ * store's in-place mutation an edit mutates those node objects without replacing the graph, so
+ * a cached plan keeps reading current params — a param edit needn't invalidate the plan, only a
+ * structural edit does. That in-place mutation is also why object-identity alone can't gate reuse
+ * (same object, changed structure); the signature closes that gap. Keep this in lockstep with the
+ * fields {@link compileRenderPlan} actually reads.
+ */
+export function renderPlanSignature(graph: TriggerGraph): string {
+  const parts: string[] = [`v:${graph.version ?? ''}`, `n:${graph.nodes.length}`, `e:${graph.edges.length}`];
+  for (const node of graph.nodes) parts.push(`${node.id}~${node.kind}~${node.y}`);
+  for (const edge of graph.edges) parts.push(`${edge.id}>${edge.from}>${edge.to}>${edge.toPort ?? ''}`);
+  return parts.join('|');
+}
+
+interface CacheEntry {
+  signature: string;
+  plan: RenderPlan;
+}
+
+/**
+ * Caches compiled render plans across trigger hits so fast rolls don't recompile the graph per
+ * hit. Keyed by graph object identity (a {@link WeakMap}, so per-graph — a multi-pad kit doesn't
+ * thrash a single slot, and dropped graphs are collected) AND guarded by the structure signature,
+ * so an in-place structural edit invalidates while a param-only edit reuses. Determinism is
+ * preserved: a hit returns the very plan a fresh compile would have produced.
+ *
+ * Engine-owned/injected state (like `mixMemberSnapshots`), never a module-level global, so core
+ * eval stays pure and deterministic given (time, inputs, model).
+ */
+export interface RenderPlanCache {
+  /** Return the compiled plan for `graph`, reusing the cached one when its structure signature
+      (and graph identity) is unchanged; otherwise compile, store, and return. */
+  compile(graph: TriggerGraph): RenderPlan;
+  /** Full compiles performed so far (cache misses). For tests/telemetry — reuse leaves it flat. */
+  readonly compileCount: number;
+  /** Drop all cached plans (e.g. on `setShow`, when authored content is replaced wholesale). */
+  reset(): void;
+}
+
+export function createRenderPlanCache(): RenderPlanCache {
+  let byGraph = new WeakMap<TriggerGraph, CacheEntry>();
+  let compileCount = 0;
+  return {
+    get compileCount() {
+      return compileCount;
+    },
+    compile(graph: TriggerGraph): RenderPlan {
+      const signature = renderPlanSignature(graph);
+      const cached = byGraph.get(graph);
+      if (cached && cached.signature === signature) return cached.plan;
+      const plan = compileRenderPlan(graph);
+      byGraph.set(graph, { signature, plan });
+      compileCount++;
+      return plan;
+    },
+    reset(): void {
+      byGraph = new WeakMap<TriggerGraph, CacheEntry>();
+    },
+  };
+}
+
 function detectFlowCycles(nodes: GraphNode[], flowChildrenById: Map<string, RenderPlanChild[]>): RenderPlanIssue[] {
   const visiting = new Set<string>();
   const visited = new Set<string>();
