@@ -46,12 +46,12 @@ import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
-import { initMidi, type MidiDeviceInfo, type MidiEvent, type MidiInitResult } from '../midi/webmidi';
+import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
+import type { BlendMode, InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
 import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
 import { voice, listModifiers, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
@@ -77,6 +77,8 @@ import {
   type PersistedSongLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
+import { ControllerMonitor } from './controller-monitor.svelte';
+import { MidiController, type MidiLearnTarget } from './midi-controller.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
   acceptsChannel,
@@ -92,9 +94,18 @@ import { nid, freshId, reserveIds } from './store/ids';
 import { findFreePosition } from '../app/views/node-placement';
 import { padKey, seedGraphs, seedSongs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
+import { announceSystemActions } from './store/system-toasts';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
-import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './store/graph-wiring';
+import {
+  canSplice,
+  classifyConnection,
+  classifyReconnect,
+  normalizeFromPort,
+  normalizeToPort,
+  type ToPort,
+  type WireRejection,
+} from './store/graph-wiring';
 import * as vsw from './store/value-switch';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
@@ -131,19 +142,76 @@ import {
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 
-/** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
-    so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
-const RESERVED_CC_CONTROLLER = 0;
+export type EnvelopeCreationPreset = 'pluck' | 'stab' | 'swell' | 'gate' | 'custom';
+export type LfoCreationPreset = voice.LfoWaveform;
+export type AddNodeOptions = {
+  envelopePreset?: string;
+  lfoWaveform?: string;
+};
 
-export type MidiLearnTarget =
-  | { kind: 'zone'; drumId: string; slot: number }
-  | { kind: 'trigger'; graphKey: string }
-  | { kind: 'cc-node'; nodeId: string }; // S37: bind a CC source node to the next incoming CC
+/** Re-exported from the extracted MIDI controller (R21) so `MidiLearnTarget` stays importable from
+    the store — the inspectors that arm a learn keep their import path unchanged. */
+export type { MidiLearnTarget };
 
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */
 function nodeHasParams(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'modifier';
+  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier';
+}
+
+function isAnchorNode(node: GraphNode): boolean {
+  return node.kind === 'trigger' || node.kind === 'output';
+}
+
+function isEffectNode(node: GraphNode): boolean {
+  return node.kind === 'play' || node.kind === 'effect';
+}
+
+function envelopePresetAdsr(preset: string | undefined): AdsrShape {
+  const base = defaultAdsr();
+  switch (preset) {
+    case 'pluck':
+      return { ...base, attack: 0.03, decay: 0.16, sustain: 0, release: 0.18 };
+    case 'stab':
+      return { ...base, attack: 0.02, decay: 0.08, sustain: 0.78, release: 0.22 };
+    case 'swell':
+      return { ...base, attack: 0.62, decay: 0.08, sustain: 0.92, release: 0.3 };
+    case 'gate':
+      return { ...base, attack: 0.01, decay: 0.02, sustain: 1, release: 0.04 };
+    case 'custom':
+    default:
+      return base;
+  }
+}
+
+function lfoPresetWaveform(waveform: string | undefined): voice.LfoWaveform {
+  return voice.LFO_WAVEFORMS.includes(waveform as voice.LfoWaveform) ? (waveform as voice.LfoWaveform) : 'sine';
+}
+
+function envelopeNodeDefaults(preset: string | undefined = 'pluck'): Pick<GraphNode, 'env'> {
+  const adsr = envelopePresetAdsr(preset);
+  return {
+    env: {
+      [voice.ENVELOPE_NODE_KEY]: {
+        kind: 'custom',
+        amount: 1,
+        points: adsrToPoints(adsr),
+        adsr,
+      },
+    },
+  };
+}
+
+function pruneEdgesForModSource(graph: TriggerGraph, nodeId: string): void {
+  graph.edges = graph.edges.filter((edge) => {
+    // Modulate/source nodes take no incoming wires.
+    if (edge.to === nodeId) return false;
+
+    // They may only output to parameter-input rows.
+    if (edge.from === nodeId) return voice.paramKeyOf(edge.toPort) !== null;
+
+    return true;
+  });
 }
 
 /** Read + JSON-parse a localStorage key. Guards SSR / no-localStorage / quota /
@@ -348,6 +416,7 @@ export class TriggerLab {
   // popups (targets are play nodes from the active graph)
   galleryBlock = $state<voice.GraphNode | null>(null); // effect swap
   settingsBlock = $state<voice.GraphNode | null>(null); // preset + params + envelopes
+  liveNodePositions = $state.raw<Record<string, { x: number; y: number }>>({});
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
 
   // --- setlist (songs → sections → flat ordered graph lists) ---------------
@@ -442,21 +511,30 @@ export class TriggerLab {
   /** Previous packet counter sample, kept to derive {@link outputPacketsPerSec}. Plain field —
       must NOT be reactive (it is bookkeeping for the derivation, not rendered). */
   private prevPacketSample: PacketSample | null = null;
-  /** Live status of the ADOPTED PixLite controller (S47/S48) — the last link in the confidence
-      chain (controller received → controller outputting). null when nothing is adopted, and
-      cleared on a link drop (a dropped socket can't confirm the box's rx truth). Populated by the
-      server's `controllerStatus` broadcast while a client watches the controller panel. */
-  controllerStatus = $state<ControllerStatus | null>(null);
-  /** Ranked discovery candidates (best-first) from the last `discoverControllers` sweep — replaced
-      wholesale by each `controllerDiscovery` reply, cleared on a link drop. Empty = none found / no
-      sweep run yet. The panel lists these with an Adopt-IP action. */
-  controllerCandidates = $state<DiscoveredController[]>([]);
-  /** The active controller test pattern (S49), or null in normal LIVE mode. Server-authoritative
-      (carried on `controllerStatus.testPattern`), so every client's takeover banner + output pill
-      agree. Non-null = the LOUD takeover state: the box is running synthetic data and IGNORING the
-      live Art-Net stream. Drives the panel banner AND {@link deriveOutputPill}'s third argument. */
+  /** PixLite controller monitor (S48/S49/R29) — reactive status/candidates/scanning + the panel send
+      helpers, extracted into {@link ControllerMonitor} (R20). The store delegates its public surface
+      to this via the accessors + forwarders below, so callers/tests are unchanged. */
+  private readonly monitor = new ControllerMonitor({
+    send: (msg) => this.client.send(msg),
+    isViewer: () => this.isViewer,
+    setOutput: (patch) => this.setOutput(patch),
+  });
+  /** Live status of the ADOPTED PixLite controller (S47/S48). See {@link ControllerMonitor.status}.
+      Settable so the ui-shot seam can inject a synthetic status. */
+  get controllerStatus(): ControllerStatus | null {
+    return this.monitor.status;
+  }
+  set controllerStatus(status: ControllerStatus | null) {
+    this.monitor.status = status;
+  }
+  /** Ranked discovery candidates (best-first). See {@link ControllerMonitor.candidates}. */
+  get controllerCandidates(): DiscoveredController[] {
+    return this.monitor.candidates;
+  }
+  /** The active controller test pattern (S49), or null in LIVE mode. Drives the panel banner AND
+      {@link deriveOutputPill}'s third argument. See {@link ControllerMonitor.takeover}. */
   get controllerTakeover(): ControllerTestPattern | null {
-    return this.controllerStatus?.testPattern ?? null;
+    return this.monitor.takeover;
   }
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
@@ -582,19 +660,37 @@ export class TriggerLab {
       defaults to the real auto-reconnecting client. Created in start(), closed
       in stop(). */
   private readonly client: WSClient;
-  /** WebMIDI access handle (real hardware → WS). Browser-only, opened in start(),
-      released in stop(); null when MIDI is unavailable or not yet requested. */
-  private midiHandle: MidiInitResult | null = null;
-  midiLearnTarget = $state<MidiLearnTarget | null>(null);
+  /** MIDI input + MIDI-learn (R6/S37) — the WebMIDI device layer + learn-arm machinery, extracted
+      into {@link MidiController} (R21). The store keeps `forwardMidi`/`receiveInputEcho` (entangled
+      with the offline sim + S04 badges) and delegates the rest via the accessors + forwarders below,
+      so callers/tests are unchanged. */
+  private readonly midi = new MidiController({
+    isViewer: () => this.isViewer,
+    getInputMap: () => this.project?.inputMap ?? null,
+    setInputMap: (inputMap) => this.setInputMap(inputMap),
+    setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
+    selectedGraphNodes: () => this.selectedGraph?.nodes,
+  });
+  /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
+      {@link MidiController.learnTarget}. */
+  get midiLearnTarget(): MidiLearnTarget | null {
+    return this.midi.learnTarget;
+  }
+  /** The global MIDI channel filter (null = omni), from the patch input map. */
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
-  /** Live WebMIDI input devices for the settings list, refreshed on hot-plug via the
-      initMidi device callback (empty until MIDI is requested / when unavailable). */
-  midiDevices = $state<MidiDeviceInfo[]>([]);
-  /** Whether WebMIDI access succeeded — drives the settings empty-state copy
-      (unavailable ⇒ browser/permission hint; available+empty ⇒ "connect one"). */
-  midiAvailable = $state(false);
-  /** Why WebMIDI is unavailable, when it is (e.g. 'no-api' or an access-error message). */
-  midiUnavailableReason = $state<string | undefined>(undefined);
+  /** Live WebMIDI input devices for the settings list. See {@link MidiController.devices}. */
+  get midiDevices(): MidiDeviceInfo[] {
+    return this.midi.devices;
+  }
+  /** Whether WebMIDI access succeeded — drives the settings empty-state copy. See
+      {@link MidiController.available}. */
+  get midiAvailable(): boolean {
+    return this.midi.available;
+  }
+  /** Why WebMIDI is unavailable, when it is. See {@link MidiController.unavailableReason}. */
+  get midiUnavailableReason(): string | undefined {
+    return this.midi.unavailableReason;
+  }
 
   // --- input activity ("last heard") ---------------------------------------
   /** Last-heard event per input identity (note / OSC address), for the S04 activity
@@ -634,7 +730,14 @@ export class TriggerLab {
   private readonly undoLimit = 10000;
   private undoStack: AuthoredState[] = [];
   private restoringUndo = false;
-  controllerScanning = $state(false);
+  /** When true, {@link pushUndoSnapshot} is a no-op so a follow-on mutation folds into the
+      caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
+      undoable action. Set only via {@link batchIntoCurrentUndo}. */
+  private suppressUndoSnapshot = false;
+  /** Whether a controller discovery sweep is in flight. See {@link ControllerMonitor.scanning}. */
+  get controllerScanning(): boolean {
+    return this.monitor.scanning;
+  }
   /** Whether boot found a REAL local song library (a valid blob) — the same local-wins signal as
       {@link bootedFromLocalLibrary}, so the server's cold-load song library can't clobber unsynced
       local song-library edits on a single-writer refresh. */
@@ -791,7 +894,7 @@ export class TriggerLab {
     this.client.connect();
     // Request hardware MIDI and forward it to the server (notes + transport recall).
     // Fire-and-forget: degrades to a no-op when the browser has no WebMIDI / in tests.
-    void this.initMidiInput();
+    void this.midi.openInput((ev) => this.forwardMidi(ev));
     this.last = performance.now();
     this.fpsLast = this.last;
     this.fpsFrames = 0;
@@ -828,11 +931,7 @@ export class TriggerLab {
   stop(): void {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
-    this.midiHandle?.stop();
-    this.midiHandle = null;
-    this.midiDevices = [];
-    this.midiAvailable = false;
-    this.midiUnavailableReason = undefined;
+    this.midi.release();
     this.client.close();
     this.engineSync.reset();
     if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
@@ -867,38 +966,19 @@ export class TriggerLab {
     this.client.reconnectWithPin(trimmed);
   }
 
-  /** Open WebMIDI (browser-only) and forward every parsed event to the server. Never
-      throws: an absent API / denied access resolves to an unavailable handle. */
-  private async initMidiInput(): Promise<void> {
-    try {
-      this.midiHandle = await initMidi(
-        (ev) => this.forwardMidi(ev),
-        undefined,
-        (devices) => (this.midiDevices = devices),
-      );
-      this.midiAvailable = this.midiHandle.available;
-      this.midiUnavailableReason = this.midiHandle.reason;
-      this.midiDevices = this.midiHandle.devices;
-    } catch {
-      this.midiHandle = null;
-      this.midiAvailable = false;
-      this.midiUnavailableReason = 'access-denied';
-      this.midiDevices = [];
-    }
-  }
-
   /** Forward a parsed MIDI event over the engine link: notes as `midi`, Control Change as
       `cc`, Program Change as `programChange` (the latter two drive global transport recall —
       the server maps them to song/section recall before the per-trigger zone-map). */
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
+        this.sim.setNote(ev.note, ev.velocity, ev.channel, ev.on && ev.velocity > 0);
         if (ev.on && ev.velocity > 0) {
           // Local WebMIDI never round-trips back as a server `input` echo, so record the
           // badge activity here (channel-filtered inside recordInputActivity).
           this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
           if (this.acceptsMidiChannel(ev.channel)) {
-            this.applyMidiLearn(ev.note);
+            this.midi.applyNoteLearn(ev.note);
             // Preview the fire on the local sim ONLY when offline. When connected the server is the
             // sole resolver/renderer and streams its frames/levels back — firing here as well would
             // double the hit (the echo loop). Authority principle, doc 03.
@@ -911,7 +991,7 @@ export class TriggerLab {
         // S37: a CC source node can MIDI-learn the next incoming controller; the live value
         // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
         // Controller 0 is reserved for section recall and never learns/binds here.
-        if (this.acceptsMidiChannel(ev.channel)) this.applyCcLearn(ev.controller, ev.channel);
+        if (this.acceptsMidiChannel(ev.channel)) this.midi.applyCcLearn(ev.controller);
         this.sim.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
@@ -927,7 +1007,7 @@ export class TriggerLab {
       hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
       constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
   private normalizeGraphs(): void {
-    const { graphs, graphNames } = hydrateGraphs(
+    const { graphs, graphNames, actions } = hydrateGraphs(
       this.graphs,
       this.graphNames,
       this.pads,
@@ -936,6 +1016,10 @@ export class TriggerLab {
     );
     this.graphs = graphs;
     this.graphNames = graphNames;
+    // Announce anything the hydrate did on the user's behalf (R02) — the single choke point every
+    // load/adopt/show-switch funnels through, so a migration/auto-wire announces once and batched.
+    // A no-op hydrate (already Gen3) yields an empty summary, so this stays silent.
+    announceSystemActions(actions);
   }
 
   /** Reset every authored rune to the blank-document seed (via {@link seedAuthored}) — the
@@ -1040,7 +1124,7 @@ export class TriggerLab {
   }
 
   private pushUndoSnapshot(): void {
-    if (this.restoringUndo || this.isViewer) return;
+    if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
     this.undoStack.push(structuredClone(this.toAuthored()));
     if (this.undoStack.length > this.undoLimit) {
       this.undoStack.splice(0, this.undoStack.length - this.undoLimit);
@@ -1050,6 +1134,19 @@ export class TriggerLab {
   runUndoable<T>(edit: () => T): T {
     this.pushUndoSnapshot();
     return edit();
+  }
+
+  /** Run `edit` WITHOUT opening a new undo checkpoint — any {@link pushUndoSnapshot} inside it is
+      suppressed, so its mutations fold into the caller's existing snapshot and a single undo
+      reverts the whole batch (R04: an added Effect and its auto-wire undo together). */
+  private batchIntoCurrentUndo<T>(edit: () => T): T {
+    const prev = this.suppressUndoSnapshot;
+    this.suppressUndoSnapshot = true;
+    try {
+      return edit();
+    } finally {
+      this.suppressUndoSnapshot = prev;
+    }
   }
 
   undo(): boolean {
@@ -1411,12 +1508,11 @@ export class TriggerLab {
       onControllerStatus: (status) => {
         // Live truth of the adopted controller (S47/S48). null = nothing adopted (panel shows the
         // Discover affordance). This is the confidence chain's last link — rendered directly.
-        this.controllerStatus = status;
+        this.monitor.ingestStatus(status);
       },
       onControllerDiscovery: (candidates) => {
         // A discovery sweep finished — replace the candidate list wholesale (best-first).
-        this.controllerCandidates = candidates;
-        this.controllerScanning = false;
+        this.monitor.ingestDiscovery(candidates);
       },
       onAuthError: () => {
         // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
@@ -1454,8 +1550,7 @@ export class TriggerLab {
           // Same for the adopted controller (S48): a dropped link can't confirm the box's rx truth,
           // so the panel must not keep a frozen "receiving". The next `controllerStatus` after a
           // reconnect (once the panel re-subscribes via watchController) repopulates it.
-          this.controllerStatus = null;
-          this.controllerCandidates = [];
+          this.monitor.clearOnLinkDrop();
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
@@ -1513,7 +1608,7 @@ export class TriggerLab {
       const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
       this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
       if (value > 0 && this.acceptsMidiChannel(channel)) {
-        this.applyMidiLearn(note);
+        this.midi.applyNoteLearn(note);
       }
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson).
@@ -1970,12 +2065,11 @@ export class TriggerLab {
   }
 
   startMidiLearn(target: MidiLearnTarget): void {
-    if (this.isViewer) return;
-    this.midiLearnTarget = target;
+    this.midi.startLearn(target);
   }
 
   cancelMidiLearn(): void {
-    this.midiLearnTarget = null;
+    this.midi.cancelLearn();
   }
 
   private acceptsMidiChannel(channel: number | undefined): boolean {
@@ -2003,39 +2097,6 @@ export class TriggerLab {
     return deriveInputBadge(binding, this.inputActivity, this.nowTick);
   }
 
-  private applyMidiLearn(note: number): void {
-    const target = this.midiLearnTarget;
-    if (!target || this.isViewer) return;
-    if (target.kind === 'zone') {
-      if (!this.project) return;
-      const rest = this.project.inputMap.midiNotes.filter(
-        (n) => !(n.drumId === target.drumId && n.slot === target.slot),
-      );
-      this.setInputMap({
-        ...this.project.inputMap,
-        midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
-      });
-    } else if (target.kind === 'trigger') {
-      this.setTriggerSource(target.graphKey, { kind: 'midi', note });
-    } else {
-      return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
-    }
-    this.midiLearnTarget = null;
-  }
-
-  /** Bind an armed CC-node learn target to the next incoming controller (S37). Controller 0 is
-      reserved for section recall, so it is never learned — the target stays armed for a real CC.
-      No-op unless a `cc-node` learn is armed and its node still exists. */
-  private applyCcLearn(controller: number, _channel: number): void {
-    const target = this.midiLearnTarget;
-    if (!target || target.kind !== 'cc-node' || this.isViewer) return;
-    if (controller === RESERVED_CC_CONTROLLER) return; // reserved → keep waiting for a real CC
-    const node = this.selectedGraph?.nodes.find((n) => n.id === target.nodeId);
-    if (!node || node.kind !== 'cc') return;
-    node.ccController = controller;
-    this.midiLearnTarget = null;
-  }
-
   /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */
   setOutput(partial: routing.OutputPartial): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -2044,57 +2105,35 @@ export class TriggerLab {
   }
 
   // --- PixLite controller monitor (S48, group L) ----------------------------
-  // The panel-facing send helpers. `watchController` is the ONLY one NOT editor-gated: a viewer
-  // watching the panel keeps live status flowing for everyone (server-side poll gating). The
-  // rest re-rig the device, so they no-op for a viewer.
+  // Public API preserved as thin forwarders onto {@link monitor} (R20 store split). The domain
+  // docs + gating live on ControllerMonitor; these keep the store's call surface unchanged.
 
-  /** Client-interest signal that gates the server's controller poll loop — send `true` when the
-      controller panel opens (mounts), `false` when it closes. NOT editor-gated (a viewer's watch
-      keeps status live for all); a disconnect implicitly clears it server-side. */
   watchController(watching: boolean): void {
-    this.client.send({ t: 'watchController', watching });
+    this.monitor.watch(watching);
   }
 
-  /** Kick off a one-shot discovery sweep of the candidate subnet(s). Editor-gated. The ranked
-      results arrive asynchronously via `controllerDiscovery` → {@link controllerCandidates}. */
   discoverControllers(): void {
-    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
-    this.controllerScanning = true;
-    this.client.send({ t: 'discoverControllers' });
+    this.monitor.discover();
   }
 
-  /** Adopt-IP: make `host` THE controller for this project AND point the output transport at it in
-      one click — the confidence chain wants the box we're monitoring to be the box we're sending
-      to. The server probes + persists the controller ({@link controllerStatus} follows); `setOutput`
-      copies the IP into the output settings. Editor-gated. */
   adoptController(host: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
-    this.client.send({ t: 'adoptController', host });
-    this.setOutput({ host });
+    this.monitor.adopt(host);
   }
 
-  /** Flash the adopted controller's status LED for `durationS` seconds — the "which box is this?"
-      confirmation. Editor-gated; a no-op server-side when nothing is adopted. */
+  setControllerAuth(password: string): void {
+    this.monitor.setAuth(password);
+  }
+
   identifyController(durationS = 5): void {
-    if (this.isViewer) return; // read-only viewer (S2): network re-rig no-op
-    this.client.send({ t: 'identifyController', durationS });
+    this.monitor.identify(durationS);
   }
 
-  /** Drive the controller's built-in test-data mode (S49): the box synthesizes a solid colour /
-      RGBW cycle / colour fade and IGNORES the live Art-Net stream — a LOUD takeover state. Editor-
-      gated. The server echoes the active pattern back on `controllerStatus.testPattern`
-      ({@link controllerTakeover}), which lights the panel banner + output pill for every watcher. */
   setControllerTestData(pattern: ControllerTestPattern): void {
-    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
-    this.client.send({ t: 'controllerTestData', pattern });
+    this.monitor.setTestData(pattern);
   }
 
-  /** Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
-      Editor-gated. The server clears the takeover state (and also auto-reverts when the last panel
-      watcher leaves, so a controller is never stranded in test mode). */
   backToLive(): void {
-    if (this.isViewer) return; // read-only viewer (S2): device re-rig no-op
-    this.client.send({ t: 'controllerBackToLive' });
+    this.monitor.backToLive();
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).
@@ -2243,6 +2282,16 @@ export class TriggerLab {
   /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
   setSectionGraphs(sectionId: string, graphs: string[]): void {
     this.updateActiveSong((song) => setlist.setGraphs(song, sectionId, graphs));
+  }
+
+  /** Reorder a section in the active song by drag/drop. */
+  moveSection(sectionId: string, toIndex: number): void {
+    this.updateActiveSong((song) => setlist.moveSection(song, sectionId, toIndex));
+  }
+
+  /** Move one graph placement within a section or across sections by drag/drop. */
+  moveGraphPlacement(fromSectionId: string, graphKey: string, toSectionId: string, toIndex: number): void {
+    this.updateActiveSong((song) => setlist.moveGraphPlacement(song, fromSectionId, graphKey, toSectionId, toIndex));
   }
 
   /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). `effectId` `null`
@@ -2660,7 +2709,7 @@ export class TriggerLab {
     return this.selectableEffects.filter((e) => e.scope === scope);
   }
   effectOf(node: GraphNode) {
-    return node.kind === 'play' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
+    return node.kind === 'play' || node.kind === 'effect' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
   }
   presetsForEffect(effectId: string): Preset[] {
     return this.allPresets.filter((p) => p.effectId === effectId);
@@ -2671,7 +2720,7 @@ export class TriggerLab {
   /** Live params shown for a play node — always its own node-local copy (a preset is a
       snapshot, not a live binding — S39). */
   liveParams(node: GraphNode): voice.ParamValues {
-    if (node.kind !== 'play') return {};
+    if (node.kind !== 'play' && node.kind !== 'effect') return {};
     return node.params;
   }
 
@@ -2687,7 +2736,7 @@ export class TriggerLab {
   private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
     if (this.isViewer) return null;
     const g = this.selectedGraph;
-    if (!g || src.kind === 'trigger') return null;
+    if (!g || isAnchorNode(src)) return null;
     const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
     const pos = findFreePosition(occupied, x, y, 184, 76);
     const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: nid('n'), x: pos.x, y: pos.y };
@@ -2697,7 +2746,7 @@ export class TriggerLab {
 
   /** Copy a node onto the node clipboard (deep, non-reactive). No-op for the trigger node. */
   copyNode(node: GraphNode): void {
-    if (node.kind === 'trigger') return;
+    if (isAnchorNode(node)) return;
     this.nodeClipboard = structuredClone($state.snapshot(node));
   }
 
@@ -2714,35 +2763,60 @@ export class TriggerLab {
   }
 
   /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
-  addNode(kind: NodeKind, x: number, y: number): GraphNode | null {
+  addNode(kind: NodeKind, x: number, y: number, options: AddNodeOptions = {}): GraphNode | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || kind === 'trigger') return null;
+    if (!g || kind === 'trigger' || kind === 'output') return null;
     this.pushUndoSnapshot();
     let node: GraphNode;
-    if (kind === 'play') {
-      node = makeNode('play', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
+    if (kind === 'play' || kind === 'effect') {
+      node = makeNode('effect', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
       node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
-    } else if (kind === 'envelope') {
+        } else if (kind === 'envelope') {
       // Seed a modulation-source envelope with a default shape in the well-known slot so it
       // animates the moment it is wired (the inspector edits this shape via the S24 editor).
-      const adsr = defaultAdsr();
-      node = makeNode('envelope', nid('n'), x, y, {
-        env: { [voice.ENVELOPE_NODE_KEY]: { kind: 'custom', amount: 1, points: adsrToPoints(adsr), adsr } },
-      });
+      node = makeNode('envelope', nid('n'), x, y, envelopeNodeDefaults(options.envelopePreset));
     } else if (kind === 'lfo') {
       // S36 — seed default LFO settings so it animates the moment it is wired.
-      node = makeNode('lfo', nid('n'), x, y, { lfo: voice.defaultLfoSettings() });
+      node = makeNode('lfo', nid('n'), x, y, {
+        lfo: { ...voice.defaultLfoSettings(), waveform: lfoPresetWaveform(options.lfoWaveform) },
+      });
     } else if (kind === 'cc') {
       // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
       // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
       node = makeNode('cc', nid('n'), x, y, { ccController: 1, ccChannel: null });
+    } else if (kind === 'note') {
+      node = makeNode('note', nid('n'), x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
+    } else if (kind === 'osc') {
+      node = makeNode('osc', nid('n'), x, y, { oscAddress: '' });
+    } else if (kind === 'randomMod') {
+      node = makeNode('randomMod', nid('n'), x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
       node = makeNode(kind, nid('n'), x, y);
     }
     g.nodes.push(node);
+    // R04: a freshly-added Effect auto-wires to the terminal Output so it makes light on the next
+    // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
+    // both), announced with a toast. Only the light-making Effect node auto-wires.
+    if (node.kind === 'effect') this.autoWireEffectToOutput(node);
     return node;
+  }
+
+  /** Auto-wire a freshly-added Effect to the selected graph's terminal Output anchor (R04) so it
+      renders on the next hit. Routes through the validated {@link connect} path — a rejected wire
+      (never expected for a fresh Effect → Output, but belt-and-braces) is skipped silently — and
+      batches into the add's undo checkpoint so add + wire revert as one. Announces a successful
+      wire with a single toast (R02 conventions). No-op when the graph has no Output anchor. */
+  private autoWireEffectToOutput(node: GraphNode): void {
+    const g = this.selectedGraph;
+    if (!g) return;
+    const output = g.nodes.find((n) => n.kind === 'output');
+    if (!output) return;
+    const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
+    if (rejection === null) {
+      pushToast('Effect wired to the Output anchor — it lights on the next hit.', { tone: 'info' });
+    }
   }
 
   /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
@@ -2766,12 +2840,21 @@ export class TriggerLab {
     this.pushUndoSnapshot();
     node.x = x;
     node.y = y;
+    this.setLiveNodePosition(node.id, x, y);
+  }
+
+  setLiveNodePosition(nodeId: string, x: number, y: number): void {
+    this.liveNodePositions = { ...this.liveNodePositions, [nodeId]: { x, y } };
+  }
+
+  liveNodeY(nodeId: string): number | undefined {
+    return this.liveNodePositions[nodeId]?.y;
   }
 
   removeNode(node: GraphNode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || node.kind === 'trigger') return;
+    if (!g || isAnchorNode(node)) return;
     this.pushUndoSnapshot();
     g.nodes = g.nodes.filter((n) => n.id !== node.id);
     g.edges = g.edges.filter((e) => e.from !== node.id && e.to !== node.id);
@@ -2784,11 +2867,17 @@ export class TriggerLab {
       `fromPort` is the source handle the wire leaves (a value+bands switch's `band-${i}`);
       undefined = the node's default single output. `toPort` is the target input handle:
       `'mod'` routes a modifier-chain wire into a play/modifier node's `mod` input, undefined
-      the trigger-flow `in`. Validation is total — never throws (bad wires are ignored). */
-  connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+      the trigger-flow `in`. Validation is total — never throws (bad wires are ignored).
+
+      Returns the rejection reason (`direction` / `duplicate` / `cycle`) when the wire was
+      refused, else `null` on success — so the caller can surface *why* (a reason toast, R03).
+      A viewer / missing-graph no-op returns `null` (nothing the user did wrong to explain). */
+  connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): WireRejection | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
+    if (!g) return null;
+    const rejection = classifyConnection(g, fromId, toId, fromPort, toPort);
+    if (rejection) return rejection;
     this.pushUndoSnapshot();
     // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
     // never dodge the dedup guard under a differently-spelled duplicate later
@@ -2811,6 +2900,7 @@ export class TriggerLab {
       edge.rangeMax = spec?.max ?? 1;
     }
     g.edges.push(edge);
+    return null;
   }
   disconnect(edgeId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -2822,26 +2912,83 @@ export class TriggerLab {
   /** Re-point an existing edge to a new source/target (an edge-end drag). Validates
       exactly as connect() does — but ignoring the edge being moved — and leaves the
       wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
-      reconnect drag snaps back instead of deleting the wire. */
-  reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string, toPort?: ToPort): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+      reconnect drag snaps back instead of deleting the wire. Returns the rejection reason
+      when the move was refused, else `null` on success (see {@link connect}). */
+  reconnect(
+    edgeId: string,
+    fromId: string,
+    toId: string,
+    fromPort?: string,
+    toPort?: ToPort,
+  ): WireRejection | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || !canReconnect(g, edgeId, fromId, toId, fromPort, toPort)) return;
+    if (!g) return null;
+    const rejection = classifyReconnect(g, edgeId, fromId, toId, fromPort, toPort);
+    if (rejection) return rejection;
     this.pushUndoSnapshot();
     const edge = g.edges.find((e) => e.id === edgeId)!;
     edge.from = fromId;
     edge.to = toId;
     edge.fromPort = normalizeFromPort(fromPort);
     edge.toPort = normalizeToPort(toPort);
+    return null;
   }
 
-  /** Change a node's kind, seeding play fields and dropping outgoing wires for sinks. */
+  /** Would dropping node `nodeId` onto flow edge `edgeId` splice it in? Read-only mirror of
+      {@link spliceOnDrop}'s guard (R08), so the view can ARM the wire during a drag (pre-release
+      indication) knowing release will actually splice. No side effects. */
+  canSplice(edgeId: string, nodeId: string): boolean {
+    const g = this.selectedGraph;
+    return !!g && !this.isViewer && canSplice(g, edgeId, nodeId);
+  }
+
+  /** Splice dropped node `nodeId` into flow edge `edgeId` (R08): remove the edge and re-wire
+      `source →(source-port) node → target (target-port)`, preserving the source band/output port
+      and the target's input port so routing is unchanged but for the inserted node. Recorded as
+      its OWN undo checkpoint — the caller commits the drag position FIRST (a separate checkpoint),
+      so one Ctrl/Z pops the splice wiring while the node stays where it was dropped. The remove +
+      two connects fold into this single checkpoint (batched) so undo reverts the whole splice at
+      once. No-op (returns false) when the splice is invalid; announces a successful splice with one
+      toast. */
+  spliceOnDrop(edgeId: string, nodeId: string): boolean {
+    if (this.isViewer) return false;
+    const g = this.selectedGraph;
+    if (!g || !canSplice(g, edgeId, nodeId)) return false;
+    const edge = g.edges.find((e) => e.id === edgeId)!;
+    const { from, to, fromPort, toPort } = edge;
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      g.edges = g.edges.filter((e) => e.id !== edgeId);
+      this.connect(from, nodeId, fromPort ?? undefined, undefined);
+      this.connect(nodeId, to, undefined, toPort);
+    });
+    pushToast('Node spliced into the wire.', { tone: 'info' });
+    return true;
+  }
+
+  setMixEdgeOpacity(edgeId: string, opacity: number): void {
+    this.editEdge(edgeId, (e) => (e.opacity = Math.max(0, Math.min(1, opacity))));
+  }
+
+  setMixBlendMode(node: GraphNode, mode: BlendMode): void {
+    if (this.isViewer || node.kind !== 'mix') return;
+    this.pushUndoSnapshot();
+    node.mixBlendMode = mode;
+  }
+
+    /** Change a node's kind, seeding kind-specific defaults and pruning invalid wires. */
   changeKind(node: GraphNode, kind: NodeKind): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind === 'trigger' || kind === 'trigger') return;
+    if (isAnchorNode(node) || kind === 'trigger' || kind === 'output') return;
+    if (node.kind === kind) return;
+
     this.pushUndoSnapshot();
+
+    const g = this.selectedGraph;
     node.kind = kind;
-    if (kind === 'play') {
+
+    if (kind === 'play' || kind === 'effect') {
       if (!node.effectId) {
         const init = graphsLib.playNodeInit(this.effects, (id) => this.presetById(id));
         node.effectId = init.effectId;
@@ -2849,7 +2996,6 @@ export class TriggerLab {
         node.presetId = init.presetId;
         node.params = init.params;
       }
-      const g = this.selectedGraph;
       if (g) g.edges = g.edges.filter((e) => e.from !== node.id);
     } else if (kind === 'modifier') {
       // Seed a modifier id if the node has none yet. A modifier takes no trigger-flow input,
@@ -2859,8 +3005,31 @@ export class TriggerLab {
         node.modifierId = init.modifierId;
         node.params = init.params;
       }
-      const g = this.selectedGraph;
       if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort !== 'mod'));
+    } else if (kind === 'envelope') {
+      Object.assign(node, envelopeNodeDefaults('pluck'));
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'lfo') {
+      node.lfo = voice.defaultLfoSettings();
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'cc') {
+      node.ccController = 1;
+      node.ccChannel = null;
+      node.ccSource = 'midi';
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'note') {
+      node.noteNumber = 60;
+      node.noteChannel = null;
+      node.noteMode = 'gate';
+      node.noteReleaseMs = 0;
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'osc') {
+      node.oscAddress = '';
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'randomMod') {
+      node.randomDistribution = 'linear';
+      node.randomSteps = 4;
+      if (g) pruneEdgesForModSource(g, node.id);
     }
   }
 
@@ -2871,7 +3040,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' || node.mode === mode) return;
+    if ((node.kind !== 'play' && node.kind !== 'effect') || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }
@@ -2880,7 +3049,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -2890,7 +3059,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }
@@ -3026,13 +3195,13 @@ export class TriggerLab {
   // --- effect / preset / params / envelopes --------------------------------
 
   openGallery(node: GraphNode): void {
-    if (node.kind === 'play') this.galleryBlock = node;
+    if (isEffectNode(node)) this.galleryBlock = node;
   }
   closeGallery(): void {
     this.galleryBlock = null;
   }
   openSettings(node: GraphNode): void {
-    if (node.kind === 'play') this.settingsBlock = node;
+    if (isEffectNode(node)) this.settingsBlock = node;
   }
   closeSettings(): void {
     this.settingsBlock = null;
@@ -3141,17 +3310,16 @@ export class TriggerLab {
     return true;
   }
 
-  /** Swap the effect: reset to that effect's Default preset (own instance). The pick is
-      REJECTED when it would change the node's locked play type (the gallery is filtered +
-      locked to `node.playType`; this store guard is the authoritative backstop, U5). */
+  /** Swap the effect: reset to that effect's Default preset (own instance). Cross-category
+      swaps are allowed; the node's playType follows the selected effect so the gallery is a
+      full-library browser rather than a type-locked picker. */
   pickEffect(node: GraphNode, effectId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!isEffectNode(node)) return;
     const eff = this.selectableEffects.find((e) => e.id === effectId);
     if (!eff) return;
 
-    const nodeType = node.playType ?? eff.playType ?? 'ambient';
-    if (eff.playType !== nodeType) return; // mismatched play type — reject (locked gallery backstop)
+    const nodeType = eff.playType ?? 'ambient';
 
     if (nodeType === 'canvas') {
       this.setCanvasScene(node, effectId.slice('canvas:'.length));
@@ -3238,7 +3406,7 @@ export class TriggerLab {
 
   /** Point a canvas play node at a scene, seeding its default preset params. */
   setCanvasScene(node: GraphNode, sceneId: string): void {
-    if (this.isViewer || node.kind !== 'play') return;
+    if (this.isViewer || !isEffectNode(node)) return;
     const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
     if (!scene) return;
     const eff = canvasScenesLib.canvasEffectDef(scene);
@@ -3270,7 +3438,7 @@ export class TriggerLab {
       if (!scene) return null;
       const eff = canvasScenesLib.canvasEffectDef(scene);
       const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
-      node = makeNode('play', nid('n'), x, y, {
+      node = makeNode('effect', nid('n'), x, y, {
         playType: 'canvas',
         canvasScene: scene.id,
         effectId: eff.id,
@@ -3284,7 +3452,7 @@ export class TriggerLab {
         this.selectableEffects.find((e) => !e.deprecated);
       if (!eff) return null;
       const preset = this.presetById(`${eff.id}:default`);
-      node = makeNode('play', nid('n'), x, y, {
+      node = makeNode('effect', nid('n'), x, y, {
         playType,
         effectId: eff.id,
         presetId: `${eff.id}:default`,
@@ -3300,13 +3468,13 @@ export class TriggerLab {
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' || node.busId === busId) return;
+    if (!isEffectNode(node) || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
   }
   /** The effective layer for a play node (its override, or the effect's default). */
   busOf(node: GraphNode): string {
-    if (node.kind !== 'play') return '';
+    if (!isEffectNode(node)) return '';
     return node.busId || this.effectOf(node)?.busId || '';
   }
 
@@ -3316,7 +3484,7 @@ export class TriggerLab {
       node or for an unknown preset. */
   selectPreset(node: GraphNode, presetId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!isEffectNode(node)) return;
     const pr = this.presetById(presetId);
     if (!pr) return;
     this.pushUndoSnapshot();
@@ -3329,7 +3497,7 @@ export class TriggerLab {
       No-op when the node's `presetId` resolves to nothing. */
   applyPreset(node: GraphNode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return;
+    if (!isEffectNode(node)) return;
     const pr = this.presetById(node.presetId);
     if (!pr) return;
     node.params = { ...pr.params };
@@ -3341,7 +3509,7 @@ export class TriggerLab {
       authored autosave. */
   saveNodeAsPreset(node: GraphNode, name?: string): string | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play') return null;
+    if (!isEffectNode(node)) return null;
     const eff = this.effectOf(node);
     if (!eff) return null;
     const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
@@ -3437,7 +3605,7 @@ export class TriggerLab {
       `{ key, label, min, max }` — effect params for play nodes, modifier params for modifier
       nodes (which use the core `type` spec field). Non-number params are excluded. */
   modTargetSpecs(node: GraphNode): { key: string; label: string; min?: number; max?: number }[] {
-    if (node.kind === 'play') {
+    if (isEffectNode(node)) {
       const eff = this.effectOf(node);
       return (eff?.params ?? [])
         .filter((s) => s.kind === 'number')
@@ -3468,7 +3636,7 @@ export class TriggerLab {
   /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
   addModInput(node: GraphNode, param: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'modifier') return;
+    if (!isEffectNode(node) && node.kind !== 'modifier') return;
     if (!node.modInputs) node.modInputs = [];
     if (node.modInputs.some((m) => m.param === param)) return;
     this.pushUndoSnapshot();
@@ -3514,8 +3682,17 @@ export class TriggerLab {
       + readout (S38); the branch keeps the preview honest for both live inputs. */
   ccNodeLiveValue(node: GraphNode): number {
     if (node?.kind !== 'cc') return 0;
-    if (node.ccSource === 'osc') return voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '');
     return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
+  }
+
+  oscNodeLiveValue(node: GraphNode): number {
+    return node?.kind === 'osc' ? voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '') : 0;
+  }
+
+  noteNodeLiveValue(node: GraphNode): number {
+    return node?.kind === 'note'
+      ? voice.sampleNote(this.sim.noteTable, node.noteNumber ?? 60, node.noteChannel ?? null, node.noteMode ?? 'gate', node.noteReleaseMs ?? 0, this.sim.timeMs)
+      : 0;
   }
 
   /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
@@ -3644,12 +3821,57 @@ export class TriggerLab {
   }
   /** The cc node's OSC address (read when in OSC mode); '' until one is set. */
   oscNodeAddress(node: GraphNode): string {
-    return node?.kind === 'cc' ? node.oscAddress ?? '' : '';
+    return node?.kind === 'osc' ? node.oscAddress ?? '' : '';
   }
   /** Set the cc node's OSC address (trimmed). Empty is allowed (⇒ neutral until set). */
   setOscNodeAddress(node: GraphNode, address: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'cc') return;
+    if (node.kind !== 'osc') return;
     node.oscAddress = address.trim();
+  }
+
+  noteNodeNumber(node: GraphNode): number {
+    return node?.kind === 'note' ? node.noteNumber ?? 60 : 60;
+  }
+  noteNodeChannel(node: GraphNode): number | null {
+    return node?.kind === 'note' ? node.noteChannel ?? null : null;
+  }
+  noteNodeMode(node: GraphNode): voice.NoteModMode {
+    return node?.kind === 'note' ? node.noteMode ?? 'gate' : 'gate';
+  }
+  noteNodeReleaseMs(node: GraphNode): number {
+    return node?.kind === 'note' ? node.noteReleaseMs ?? 0 : 0;
+  }
+  setNoteNodeNumber(node: GraphNode, note: number): void {
+    if (this.isViewer || node.kind !== 'note' || !Number.isFinite(note)) return;
+    node.noteNumber = Math.max(0, Math.min(127, Math.round(note)));
+  }
+  setNoteNodeChannel(node: GraphNode, channel: number | null): void {
+    if (this.isViewer || node.kind !== 'note') return;
+    if (channel === null) node.noteChannel = null;
+    else if (Number.isFinite(channel) && channel >= 1 && channel <= 16) node.noteChannel = Math.round(channel);
+  }
+  setNoteNodeMode(node: GraphNode, mode: voice.NoteModMode): void {
+    if (this.isViewer || node.kind !== 'note') return;
+    node.noteMode = mode;
+  }
+  setNoteNodeReleaseMs(node: GraphNode, releaseMs: number): void {
+    if (this.isViewer || node.kind !== 'note' || !Number.isFinite(releaseMs)) return;
+    node.noteReleaseMs = Math.max(0, Math.round(releaseMs));
+  }
+
+  randomDistribution(node: GraphNode): voice.RandomDistribution {
+    return node?.kind === 'randomMod' ? node.randomDistribution ?? 'linear' : 'linear';
+  }
+  setRandomDistribution(node: GraphNode, distribution: voice.RandomDistribution): void {
+    if (this.isViewer || node.kind !== 'randomMod') return;
+    node.randomDistribution = distribution;
+  }
+  randomSteps(node: GraphNode): number {
+    return node?.kind === 'randomMod' ? node.randomSteps ?? 4 : 4;
+  }
+  setRandomSteps(node: GraphNode, steps: number): void {
+    if (this.isViewer || node.kind !== 'randomMod' || !Number.isFinite(steps)) return;
+    node.randomSteps = Math.max(2, Math.min(64, Math.round(steps)));
   }
 }

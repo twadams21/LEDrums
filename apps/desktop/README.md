@@ -210,7 +210,11 @@ Infisical also injects in `prod`.
 PROJ=a7e707cd-322f-4cf1-a8ec-48da2e35fe72
 BASE=https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev
 
-# 1. bump `version` in src-tauri/tauri.conf.json (this is the OTA version clients compare against)
+# 1. from a clean git working tree, bump the app version. `pnpm ota bump` updates root package.json,
+#    apps/web/package.json, apps/desktop/package.json, src-tauri/tauri.conf.json,
+#    Cargo.toml, and Cargo.lock, then commits:
+#    version bump: v<old> -> v<new>
+#    tauri.conf.json is still the OTA version clients compare against.
 
 # 2. SIGNED build. Build per platform you ship (run on an arm64 Mac for darwin-aarch64).
 infisical run --projectId "$PROJ" --env prod -- pnpm tauri:build

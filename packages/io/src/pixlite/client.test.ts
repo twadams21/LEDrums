@@ -2,6 +2,7 @@ import { createServer, type RequestListener, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpPixliteClient, probe, type HttpTransport } from './client';
+import { authHash, EMPTY_PASSWORD_AUTH } from './auth';
 
 const VER_BODY =
   '{"resp":"version","result":{"fwVer":"1.2.3","prodName":"PixLite A4-S Mk3","nickname":"Test Kit","apiVer":[{"maj":"v1","min":[0,7]}],"authReqd":false}}';
@@ -38,6 +39,42 @@ describe('HttpPixliteClient (injected transport)', () => {
     await c.identify(30);
     expect(url).toContain('user=admin&auth=');
     expect(url).not.toContain('hunter2'); // plaintext never on the wire
+  });
+
+  it('authenticates a management call with the configured password hash, distinct from the empty-password default (R29)', async () => {
+    const seen: string[] = [];
+    const transport: HttpTransport = async (spec) => {
+      seen.push(spec.url);
+      return { status: 200, body: STAT_BODY };
+    };
+    // A non-empty admin password authenticates: the request carries the exact SHA256 hash of 'letmein'
+    // (Base64URL, unpadded) — the same hash the server persists as `controller.auth` and injects here.
+    const authed = new HttpPixliteClient({ host: '10.0.0.9', password: 'letmein', transport });
+    await authed.statisticRead(['']);
+    const AUTH_HASH = authHash('letmein');
+    expect(seen[0]).toBe(`http://10.0.0.9:80/v1.7/?user=admin&auth=${AUTH_HASH}`);
+    // Passing a pre-computed hash (the server's real path — plaintext never held) is byte-identical.
+    seen.length = 0;
+    const authedByHash = new HttpPixliteClient({ host: '10.0.0.9', auth: AUTH_HASH, transport });
+    await authedByHash.statisticRead(['']);
+    expect(seen[0]).toBe(`http://10.0.0.9:80/v1.7/?user=admin&auth=${AUTH_HASH}`);
+    // The authenticated hash is NOT the empty-password default — an authed box is addressed differently.
+    expect(AUTH_HASH).not.toBe(EMPTY_PASSWORD_AUTH);
+    expect(seen[0]).not.toContain(EMPTY_PASSWORD_AUTH);
+  });
+
+  it('an empty password is byte-for-byte the unauthenticated default (unchanged behaviour, R29)', async () => {
+    const seen: string[] = [];
+    const transport: HttpTransport = async (spec) => {
+      seen.push(spec.url);
+      return { status: 200, body: STAT_BODY };
+    };
+    const dflt = new HttpPixliteClient({ host: '10.0.0.9', transport });
+    const empty = new HttpPixliteClient({ host: '10.0.0.9', password: '', transport });
+    await dflt.statisticRead(['']);
+    await empty.statisticRead(['']);
+    expect(seen[0]).toContain(`auth=${EMPTY_PASSWORD_AUTH}`);
+    expect(seen[1]).toBe(seen[0]); // empty password === today's password-less controller
   });
 
   it('throws on a non-200 management response', async () => {
@@ -127,6 +164,21 @@ describe('HttpPixliteClient / probe over the real node:http transport', () => {
     expect(id?.host).toBe('127.0.0.1');
     const stats = await c.statisticRead(['']);
     expect(stats.rates.inFrmRate).toBe(44);
+  }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
+
+  it('sends Connection: close so the controller is never asked to keep-alive a socket it closes (§4.4)', async () => {
+    const connHeaders: (string | undefined)[] = [];
+    const port = await start((req, res) => {
+      connHeaders.push(req.headers.connection);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(req.url === '/ver' ? VER_BODY : STAT_BODY);
+    });
+    const c = new HttpPixliteClient({ host: '127.0.0.1', port, timeoutMs: 10_000 });
+    await c.probe();
+    await c.statisticRead(['']);
+    // both the GET probe and the POST statisticRead must announce a per-request connection
+    expect(connHeaders.length).toBe(2);
+    expect(connHeaders.every((h) => h?.toLowerCase() === 'close')).toBe(true);
   }, REAL_TRANSPORT_TEST_TIMEOUT_MS);
 
   it('returns null on probe timeout (server never responds)', async () => {

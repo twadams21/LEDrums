@@ -31,6 +31,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
 const repoRoot = resolve(desktopDir, '..', '..');
 const tauriConf = join(desktopDir, 'src-tauri', 'tauri.conf.json');
+const versionFiles = [
+  join(repoRoot, 'package.json'),
+  join(repoRoot, 'apps', 'web', 'package.json'),
+  join(desktopDir, 'package.json'),
+  join(desktopDir, 'src-tauri', 'tauri.conf.json'),
+  join(desktopDir, 'src-tauri', 'Cargo.toml'),
+  join(desktopDir, 'src-tauri', 'Cargo.lock'),
+];
 
 function loadEnvLocal() {
   const envPath = join(repoRoot, '.env.local');
@@ -81,14 +89,51 @@ function updateCargoVersion(file, next) {
   writeFileSync(file, text.replace(/^version = "[^"]+"/m, `version = "${next}"`));
 }
 
-/** Bump the version across tauri.conf.json (source of truth), package.json and Cargo.toml. */
+function updateCargoLockPackageVersion(file, packageName, next) {
+  const text = readFileSync(file, 'utf8');
+  const block = new RegExp(`(\\[\\[package\\]\\]\\nname = "${packageName}"\\nversion = ")[^"]+(")`);
+  if (!block.test(text)) throw new Error(`could not find ${packageName} package version in ${file}`);
+  writeFileSync(file, text.replace(block, `$1${next}$2`));
+}
+
+function relativePath(file) {
+  return file.startsWith(`${repoRoot}/`) ? file.slice(repoRoot.length + 1) : file;
+}
+
+function runGit(args, errorMessage) {
+  const child = spawnSync('git', args, { cwd: repoRoot, stdio: 'inherit' });
+  if (child.status !== 0) {
+    throw new Error(`${errorMessage} (git ${args.join(' ')})`);
+  }
+}
+
+function ensureCleanWorkingTree() {
+  const child = spawnSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
+  if (child.status !== 0) {
+    throw new Error('could not inspect git working tree before OTA bump');
+  }
+  if (child.stdout.trim()) {
+    throw new Error('cannot run OTA bump with a dirty working tree; commit, stash, or discard local changes first');
+  }
+}
+
+function commitVersionBump(current, next) {
+  const paths = versionFiles.map(relativePath);
+  runGit(['add', ...paths], 'could not stage OTA version files');
+  runGit(['commit', '-m', `version bump: v${current} -> v${next}`], 'could not commit OTA version bump');
+}
+
+/** Bump the app version across web + desktop metadata. tauri.conf.json remains OTA source of truth. */
 function bumpFiles(level) {
   const current = JSON.parse(readFileSync(tauriConf, 'utf8')).version;
   const next = bumpVersion(current, level);
   updateJsonVersion(tauriConf, next);
+  updateJsonVersion(join(repoRoot, 'package.json'), next);
+  updateJsonVersion(join(repoRoot, 'apps', 'web', 'package.json'), next);
   updateJsonVersion(join(desktopDir, 'package.json'), next);
   updateCargoVersion(join(desktopDir, 'src-tauri', 'Cargo.toml'), next);
-  console.log(`[ota] bumped desktop version ${current} -> ${next} (${level})`);
+  updateCargoLockPackageVersion(join(desktopDir, 'src-tauri', 'Cargo.lock'), 'ledrums-desktop', next);
+  console.log(`[ota] bumped app version ${current} -> ${next} (${level})`);
   return next;
 }
 
@@ -141,14 +186,18 @@ function release(level, dryRun) {
   const next = bumpVersion(current, level);
   if (dryRun) {
     console.log(`[ota] DRY RUN — would release ${current} -> ${next} (${level}):`);
-    console.log('  1. bump the version in tauri.conf.json, package.json, Cargo.toml');
-    console.log('  2. build a signed desktop bundle (tauri build)');
-    console.log("  3. verify the signature key matches the app's updater pubkey");
-    console.log('  4. publish the artifact + manifest to R2');
+    console.log('  1. require a clean git working tree');
+    console.log('  2. bump app versions in root package.json, apps/web/package.json, desktop package.json, tauri.conf.json, Cargo.toml, Cargo.lock');
+    console.log(`  3. commit: version bump: v${current} -> v${next}`);
+    console.log('  4. build a signed desktop bundle (tauri build)');
+    console.log("  5. verify the signature key matches the app's updater pubkey");
+    console.log('  6. publish the artifact + manifest to R2');
     console.log('[ota] dry run — nothing was changed, built, or published.');
     return;
   }
+  ensureCleanWorkingTree();
   bumpFiles(level);
+  commitVersionBump(current, next);
   build();
   publish(); // exits with publish-ota's status
 }

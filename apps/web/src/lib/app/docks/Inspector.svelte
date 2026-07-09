@@ -21,16 +21,23 @@
   import Spline from '@lucide/svelte/icons/spline';
   import Waves from '@lucide/svelte/icons/waves'; // S36
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
+  import Music2 from '@lucide/svelte/icons/music-2';
+  import RadioTower from '@lucide/svelte/icons/radio-tower';
+  import Dice5 from '@lucide/svelte/icons/dice-5';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
+  import ScopeNodeInspector from './inspectors/ScopeNodeInspector.svelte';
   import OutputNodeInspector from './inspectors/OutputNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
   import CcNodeInspector from './inspectors/CcNodeInspector.svelte'; // S37
+  import NoteNodeInspector from './inspectors/NoteNodeInspector.svelte';
+  import OscNodeInspector from './inspectors/OscNodeInspector.svelte';
+  import RandomModNodeInspector from './inspectors/RandomModNodeInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
@@ -88,6 +95,31 @@
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
     <CcNodeInspector {store} {node} />
+  {:else if node && node.kind === 'note'}
+    <header class="nodehead">
+      <Eyebrow icon={Music2}>Note source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <NoteNodeInspector {store} {node} />
+  {:else if node && node.kind === 'osc'}
+    <header class="nodehead">
+      <Eyebrow icon={RadioTower}>OSC source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <OscNodeInspector {store} {node} />
+  {:else if node && node.kind === 'randomMod'}
+    <header class="nodehead">
+      <Eyebrow icon={Dice5}>Random source</Eyebrow>
+      <span class="grow"></span>
+      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
+    </header>
+    <RandomModNodeInspector {store} {node} />
+  {:else if node && node.kind === 'output'}
+    <!-- protected graph anchor: KIND_OPTS excludes `output`, so the shared kind selector
+         would render empty — the output editor supplies its own anchor header instead. -->
+    <OutputNodeInspector {store} {node} />
   {:else if node}
     <!-- shared header for every editable node: change its kind + remove it -->
     <header class="nodehead">
@@ -96,14 +128,14 @@
       </span>
       <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
     </header>
-    {#if node.kind === 'play'}
+    {#if node.kind === 'play' || node.kind === 'effect'}
       <PlayNodeInspector {store} {node} />
     {:else if node.kind === 'delay'}
       <DelayNodeInspector {store} {node} />
     {:else if node.kind === 'modifier'}
       <ModifierNodeInspector {store} {node} />
-    {:else if node.kind === 'output'}
-      <OutputNodeInspector {store} {node} />
+    {:else if node.kind === 'scope'}
+      <ScopeNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}

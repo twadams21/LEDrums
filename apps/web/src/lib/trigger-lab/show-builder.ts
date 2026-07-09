@@ -9,7 +9,7 @@
    If a future divergence appears between the two type sets, this is the single
    place to map it explicitly (rather than casting at the call site). */
 
-import { assertShowIntegrity, resolveEffectAlias, type voice, type CanvasScene } from '@ledrums/core';
+import { assertShowIntegrity, resolveEffectAlias, voice, type CanvasScene } from '@ledrums/core';
 import { referencedGraphs, type Song } from '../app/setlist';
 import { triggerSourceOf, type Bus, type EffectDef, type Preset, type Section, type TriggerGraph } from './sim';
 
@@ -29,10 +29,10 @@ export interface ShowSource {
 }
 
 /**
- * Assemble a {@link voice.Show} from the lab store. Graphs stay keyed by the
- * padKey `"drumId:zone"` the store already uses — the engine's registry expects
- * exactly that key, so the map is passed through verbatim. Arrays are copied so
- * the sent Show is a snapshot, not a live alias of the rune state.
+ * Assemble a {@link voice.Show} from the lab store. This is the explicit bridge from
+ * web-authored setlists (songs → sections → flat ordered graph-key lists) to the runtime
+ * show model (songs → sections → padKey slot grids). Graph definitions stay shared by key
+ * in `Show.graphs`; sections reference those keys and never copy graph bodies.
  *
  * Validates referential integrity at this boundary (the same core check the server
  * load path reuses): every graph key resolves to a kit drum, and every setlist slot
@@ -51,7 +51,7 @@ export function buildShow(source: ShowSource): voice.Show {
     // `fromPort`, so the web↔core graph types have re-converged (no cast needed).
     // Effect aliases (D1) are consulted here too so a Show pushed to the engine never
     // carries a retired effect id — retired ids resolve to their live replacement.
-    graphs: aliasResolvedGraphs(source.graphs),
+    graphs: normalizeRuntimeGraphs(aliasResolvedGraphs(source.graphs)),
     // Section snapshots carry the per-bus `looks` the engine spawns on recall (S15).
     // Deep-copy `looks` so the sent Show is a true snapshot, never a live alias of the
     // rune-backed section state (the header's snapshot invariant).
@@ -88,7 +88,7 @@ function aliasResolvedGraphs(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if (n.kind !== 'play' || !n.effectId) return n;
+      if ((n.kind !== 'play' && n.kind !== 'effect') || !n.effectId) return n;
       const resolved = resolveEffectAlias(n.effectId);
       if (resolved === n.effectId) return n;
       changed = true;
@@ -96,6 +96,12 @@ function aliasResolvedGraphs(
     });
     out[key] = changed ? { ...graph, nodes } : graph;
   }
+  return out;
+}
+
+function normalizeRuntimeGraphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) out[key] = voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
   return out;
 }
 

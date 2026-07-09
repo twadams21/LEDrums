@@ -7,6 +7,10 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Link2 from '@lucide/svelte/icons/link-2';
   import NodeCard from '../../app/views/NodeCard.svelte';
+  import NodeIconChip from '../../app/views/NodeIconChip.svelte';
+  import GraphLintStrip from '../../app/views/GraphLintStrip.svelte';
+  import { voice } from '@ledrums/core';
+  import { makeNode } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
@@ -71,6 +75,7 @@
   const faceSubs: Record<NodeKind, string> = {
     trigger: 'kick · center',
     play: 'Soft strike',
+    effect: 'Soft strike',
     all: 'all at once',
     random: 'no-repeat',
     sequence: 'in order',
@@ -79,10 +84,14 @@
     toggle: 'on · off',
     delay: '1/8 dotted',
     modifier: 'Trail',
+    mix: 'normal',
+    scope: 'Snare',
     output: 'Hoop',
     envelope: 'modulation source',
     lfo: 'sine · 1Hz',
     cc: 'CC 74 · ch 1',
+    note: 'Note 60 · gate',
+    osc: 'OSC /fader/1',
     randomMod: 'per trigger',
   };
   const faceKinds = Object.keys(faceSubs) as NodeKind[];
@@ -175,6 +184,23 @@
 
   let inspectorGain = $state(0.7);
 
+  /* ---- GraphLintStrip — pure props (compileRenderPlan issues) ------------------- */
+  // Real compiler output: compile deliberately degenerate graphs so the demo can never drift
+  // from what the render-plan linter actually emits.
+  const lintDegenerate = voice.compileRenderPlan({
+    version: 3,
+    nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('all', 'a', 200, 0), makeNode('all', 'b', 200, 120)],
+    edges: [
+      { id: 'e1', from: 'a', to: 'b' },
+      { id: 'e2', from: 'b', to: 'a' },
+    ],
+  }).issues;
+  const lintMissingTrigger = voice.compileRenderPlan({
+    version: 3,
+    nodes: [makeNode('output', 'output', 400, 0)],
+    edges: [],
+  }).issues;
+
   /* ---- BootOverlay — pure props (status + active) ------------------------------ */
   const boot = (patch: Partial<BootStatus>): BootStatus => ({ ...initialBootStatus, ...patch });
 </script>
@@ -189,6 +215,19 @@
   </div>
 
   <div class="comp-grid">
+    <DemoCard
+      title="Node icon chip"
+      src={['lib/app/views/NodeIconChip', 'lib/app/views/trigger-node-meta']}
+      note="The tinted glyph chip that carries a node's role/kind colour — the atom of every node face. Reused wherever a node reads as itself: the NodeCard, and the Add pane's category tiles. `size` scales chip + glyph together (30 on cards, 26 on category tiles)."
+      wide
+    >
+      <div class="chip-row">
+        {#each faceKinds as k (k)}
+          <NodeIconChip icon={kindIcon[k]} tint={tint[k]} />
+        {/each}
+      </div>
+    </DemoCard>
+
     <DemoCard
       title="Node card — every kind"
       src={['lib/app/views/NodeCard', 'lib/app/views/trigger-node-meta']}
@@ -291,6 +330,17 @@
     </DemoCard>
 
     <DemoCard
+      title="Graph lint strip"
+      src={['lib/app/views/GraphLintStrip', 'lib/app/views/graph-lint']}
+      note="Persistent strip on the trigger-graph surface rendering the render-plan compiler's issues (R05) — each row states the problem plainly and names the next step, with the compiler's specific detail (cycle path) beneath. Warn family (amber), not the red output fault: it guides authoring, it doesn't alarm. Absent entirely when the graph compiles clean. Complementary to R03's transient wire toasts."
+    >
+      <div class="lint-demo">
+        <GraphLintStrip issues={lintMissingTrigger} />
+        <GraphLintStrip issues={lintDegenerate} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Controller status panel (PixLite)"
       src={['lib/app/docks/inspectors/ControllerStatusPanel', 'lib/app/docks/inspectors/output-status']}
       note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify, plus the S49 built-in test patterns (solid-colour swatches / RGBW cycle / colour fade). The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. The TAKEOVER state (a test pattern running) is the amber warn family — a loud but deliberate 'the box is showing test data, not your live show', with one-click Back-to-live. Un-adopted shows the Discover affordance + ranked candidates."
@@ -362,6 +412,12 @@
     flex-wrap: wrap;
     gap: var(--space-3);
   }
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
   .thumb-row {
     display: flex;
     flex-wrap: wrap;
@@ -395,6 +451,16 @@
     flex-direction: column;
     gap: var(--space-3);
     max-width: 300px;
+  }
+  /* Sit the strip on a canvas-like inset so it reads as it does over the graph surface. */
+  .lint-demo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-width: 440px;
+    padding: var(--space-3);
+    border-radius: var(--radius-3);
+    background: var(--surface-inset);
   }
   .readrows {
     display: flex;

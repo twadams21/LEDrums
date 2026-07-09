@@ -14,6 +14,9 @@ export * from './diagnostics';
 export * from './easing';
 export * from './envelope';
 export * from './modulation';
+export * from './scope';
+export * from './graph-integrity';
+export * from './render-plan';
 export {
   MODULATION_PARITY_CASES,
   PARITY_PHASES,
@@ -23,6 +26,17 @@ export {
 } from './modulation-parity';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
+export {
+  evalGraph,
+  evalChildren,
+  type Action,
+  type EvalState,
+  type PendingDescriptor,
+  type PlayAction,
+  type PlayDraft,
+  type MixInputDraft,
+  type TriggerCtx as EvalTriggerCtx,
+} from './eval-graph';
 // S36 — LFO source node
 export {
   LFO_WAVEFORMS,
@@ -33,7 +47,7 @@ export {
   type LfoRateMode,
   type LfoSettings,
 } from './lfo';
-export { resolveModifierChain } from './modifier-graph';
+export { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 export {
   resolveNodeModulations,
   nodeModSource,

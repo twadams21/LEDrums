@@ -43,6 +43,100 @@ const state = (): EvalState => ({
   isVoiceAlive: () => false,
 });
 
+describe('evalGraph Gen3 terminal output', () => {
+  it('effect nodes emit only when their route reaches Output', () => {
+    const loose: TriggerGraph = {
+      version: 3,
+      nodes: [node('trigger', 't'), node('effect', 'fx', { effectId: 'plasma' }), node('output', 'output')],
+      edges: [edge('e1', 't', 'fx')],
+    };
+    expect(play(loose)).toBeUndefined();
+
+    const wired: TriggerGraph = {
+      version: 3,
+      nodes: loose.nodes,
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'output')],
+    };
+    expect(play(wired)?.effectId).toBe('plasma');
+  });
+
+  it('scope nodes carry legacy scoped-output targeting forward to the terminal Output', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'kit' }),
+        node('scope', 'old-output', { scope: 'drum', targetId: 'snare' }),
+        node('output', 'output'),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'old-output'), edge('e3', 'old-output', 'output')],
+    };
+
+    const a = play(graph)!;
+    expect(a.scope).toBe('drum');
+    expect(a.targetId).toBe('snare');
+  });
+
+  it('intersects cascading scopes strictly and renders nothing for an empty intersection', () => {
+    const scoped: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'kit' }),
+        node('scope', 'snare', { scope: 'drum', targetId: 'snare' }),
+        node('scope', 'snare-hoop', { scope: 'hoop', targetId: 'snare#1' }),
+        node('output', 'output'),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'snare'), edge('e3', 'snare', 'snare-hoop'), edge('e4', 'snare-hoop', 'output')],
+    };
+
+    const a = play(scoped)!;
+    expect(a.scope).toBe('hoop');
+    expect(a.targetId).toBe('snare#1');
+
+    const empty: TriggerGraph = {
+      ...scoped,
+      nodes: scoped.nodes.map((n) => (n.id === 'snare-hoop' ? { ...n, targetId: 'kick#1' } : n)),
+    };
+    expect(play(empty)).toBeUndefined();
+  });
+
+  it('whole-kit Scope is a no-op and does not broaden a narrowed upstream scope', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'drum', targetId: 'snare' }),
+        node('scope', 'kit-scope', { scope: 'kit' }),
+        node('output', 'output'),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'kit-scope'), edge('e3', 'kit-scope', 'output')],
+    };
+
+    const a = play(graph)!;
+    expect(a.scope).toBe('drum');
+    expect(a.targetId).toBe('snare');
+  });
+
+  it('intersects multi-hoop Scope targets without broadening them', () => {
+    const scoped: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 't'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'kit' }),
+        node('scope', 'outer-hoops', { scope: 'hoop', targetId: 'snare#0,2,3' }),
+        node('scope', 'inner-hoops', { scope: 'hoop', targetId: 'snare#2,3' }),
+        node('output', 'output', { scope: 'kit' }),
+      ],
+      edges: [edge('e1', 't', 'fx'), edge('e2', 'fx', 'outer-hoops'), edge('e3', 'outer-hoops', 'inner-hoops'), edge('e4', 'inner-hoops', 'output')],
+    };
+
+    const a = play(scoped)!;
+    expect(a.scope).toBe('hoop');
+    expect(a.targetId).toBe('snare#2,3');
+  });
+});
+
 const ctx: TriggerCtx = {
   velocity: 1,
   sectionIndex: 0,
@@ -59,11 +153,13 @@ function play(graph: TriggerGraph): PlayAction | undefined {
 describe('evalGraph — typed play nodes (D3)', () => {
   it('carries playType + canvasScene from a canvas play node onto the PlayAction', () => {
     const graph: TriggerGraph = {
+      version: 3,
       nodes: [
         node('trigger', 't'),
         node('play', 'p', { effectId: 'canvas:stripe-band', playType: 'canvas', canvasScene: 'stripe-band' }),
+        node('output', 'output', { scope: 'kit' }),
       ],
-      edges: [edge('e1', 't', 'p')],
+      edges: [edge('e1', 't', 'p'), edge('e2', 'p', 'output')],
     };
     const a = play(graph)!;
     expect(a.playType).toBe('canvas');
@@ -72,8 +168,9 @@ describe('evalGraph — typed play nodes (D3)', () => {
 
   it('a hosted play node without playType (pre-migration persisted shape) still evals; fields stay undefined', () => {
     const graph: TriggerGraph = {
-      nodes: [node('trigger', 't'), node('play', 'p', { effectId: 'plasma' })],
-      edges: [edge('e1', 't', 'p')],
+      version: 3,
+      nodes: [node('trigger', 't'), node('play', 'p', { effectId: 'plasma' }), node('output', 'output', { scope: 'kit' })],
+      edges: [edge('e1', 't', 'p'), edge('e2', 'p', 'output')],
     };
     const a = play(graph)!;
     expect(a.effectId).toBe('plasma');

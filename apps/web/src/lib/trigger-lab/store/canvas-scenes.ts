@@ -67,7 +67,7 @@ export function canvasDefaultPreset(scene: CanvasScene): Preset {
 export function sceneRefsInGraph(graph: TriggerGraph): string[] {
   const out = new Set<string>();
   for (const node of graph.nodes) {
-    if (node.kind !== 'play') continue;
+    if (node.kind !== 'play' && node.kind !== 'effect') continue;
     const sceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
     if (sceneId) out.add(sceneId);
   }
@@ -91,7 +91,7 @@ export function retargetSceneRefs(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((node) => {
-      if (node.kind !== 'play') return node;
+      if (node.kind !== 'play' && node.kind !== 'effect') return node;
       const sceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
       if (sceneId !== oldSceneId) return node;
       changed = true;

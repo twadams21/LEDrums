@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultProject, parseProject, controllerSchema, type Controller, type OutputSettings } from '@ledrums/core';
-import { FakePixliteClient, makeFakeProber, type ControllerIdentity } from '@ledrums/io';
+import { authHash, FakePixliteClient, makeFakeProber, type ControllerIdentity } from '@ledrums/io';
 import {
   candidateSubnets,
   createControllerMonitor,
@@ -203,6 +203,33 @@ describe('controller monitor', () => {
     h2.monitor.watch({});
     await h2.monitor.pollOnce();
     expect(h2.lastStatus()?.host).toBe(CONTROLLER_HOST);
+  });
+
+  it('setAuth hashes the admin password, rebuilds the client with it, and persists ONLY the hash (R29)', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    expect(h.persisted.controller).toEqual({ host: CONTROLLER_HOST, nickname: 'Roof Left 1' });
+
+    h.monitor.setAuth('hunter2');
+
+    const hash = authHash('hunter2');
+    // The client was rebuilt with the hash, never the plaintext.
+    expect(h.createClientCalls.at(-1)).toEqual({ host: CONTROLLER_HOST, auth: hash });
+    // Persisted controller carries the hash only — the plaintext never leaves the handler.
+    expect(h.persisted.controller).toEqual({ host: CONTROLLER_HOST, nickname: 'Roof Left 1', auth: hash });
+    expect(JSON.stringify(h.persisted.controller)).not.toContain('hunter2');
+
+    // Clearing the password restores the password-less default (no `auth` persisted = today's behaviour).
+    h.monitor.setAuth('');
+    expect(h.createClientCalls.at(-1)).toEqual({ host: CONTROLLER_HOST, auth: undefined });
+    expect(h.persisted.controller).toEqual({ host: CONTROLLER_HOST, nickname: 'Roof Left 1' });
+  });
+
+  it('setAuth is a no-op when nothing is adopted', () => {
+    const h = makeHarness();
+    h.monitor.setAuth('hunter2');
+    expect(h.createClientCalls).toEqual([]);
+    expect(h.persisted.controller).toBeUndefined();
   });
 
   it('polls ONLY while a client is watching — no idle traffic', async () => {

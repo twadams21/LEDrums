@@ -34,18 +34,31 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
   import { pct } from './node-options';
-  import { nodeHasInput, nodeHasModInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
+  import {
+  nodeHasInput,
+  nodeHasModInput,
+  nodeHasOutput,
+  nodeIsModSource,
+  type NodeKind,
+} from '../../trigger-lab/sim';
   import { voice, collectionMeta } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
   import { TRIGGER_STORE_KEY, type TriggerStoreContext } from './trigger-context';
+  import { GRAPH_LINT_KEY, type GraphLintIndex } from './graph-lint-index.svelte';
+  import { mixLayerRowsFor } from './mix-layer-rows';
 
   let { id, data, selected }: NodeProps = $props();
 
   const store = getContext<TriggerStoreContext>(TRIGGER_STORE_KEY);
+  // Lint findings anchored to THIS node (R06) — the same findings the strip shows, indexed by
+  // node id. Drives the corner badge; empty when the node is clean.
+  const lint = getContext<GraphLintIndex | undefined>(GRAPH_LINT_KEY);
+  const lintFindings = $derived(lint?.forNode(id) ?? []);
   const kind = $derived((data as { kind: NodeKind }).kind);
   // the live store node (reactive — Inspector edits flow straight through)
   const node = $derived(store.selectedGraph?.nodes.find((n) => n.id === id) ?? null);
-  const eff = $derived(node && node.kind === 'play' ? store.effectOf(node) : undefined);
+  const isEffectNode = $derived(node?.kind === 'play' || node?.kind === 'effect');
+  const eff = $derived(node && isEffectNode ? store.effectOf(node) : undefined);
 
   // a value+bands switch fans out one source handle per band (the rest render a single
   // default output handle). The cutoffs default defensively (older persisted graphs).
@@ -62,14 +75,14 @@
   const title = $derived.by(() => {
     if (!node) return '';
     if (node.kind === 'trigger') return 'Trigger';
-    if (node.kind === 'play') return eff?.name ?? 'effect';
+    if (node.kind === 'play' || node.kind === 'effect') return eff?.name ?? 'effect';
     if (node.kind === 'modifier') return modifierName(node.modifierId);
     return kindLabel[node.kind];
   });
   // play-type sub-label (D3) — the node's collection name, shown as a NodeCard chip. Falls
   // back to the effect's own play type for graphs authored before the node carried one.
   const playTypeChip = $derived.by(() => {
-    if (!node || node.kind !== 'play') return undefined;
+    if (!node || (node.kind !== 'play' && node.kind !== 'effect')) return undefined;
     const type = node.playType ?? eff?.playType ?? 'ambient';
     return collectionMeta(type).label;
   });
@@ -77,7 +90,7 @@
     if (!node) return '';
     // the resolved input source — drum · zone / MIDI note·CC / OSC address, or "unbound"
     if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
-    if (node.kind === 'play') return store.presetById(node.presetId)?.name ?? '';
+    if (node.kind === 'play' || node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
     if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
     return kindSummary(node);
   });
@@ -85,7 +98,7 @@
   // A play node's resolved modifier-chain length (mod→mod flattened) — drives the small
   // count chip riding the mod input handle, so the chain reads at a glance on the canvas.
   const modCount = $derived(
-    node && node.kind === 'play' && store.selectedGraph
+    node && isEffectNode && store.selectedGraph
       ? voice.resolveModifierChain(store.selectedGraph, node).length
       : 0,
   );
@@ -93,7 +106,7 @@
   // Exposed modulation-target rows (doc 10, S34): each renders its own labelled node-face row
   // with a `param:<key>` input handle scoped to modulation sources. Play + modifier nodes only.
   const modRows = $derived.by(() => {
-    if (!node || (node.kind !== 'play' && node.kind !== 'modifier')) return [];
+    if (!node || (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'modifier')) return [];
     const rows = node.modInputs ?? [];
     if (rows.length === 0) return [];
     const specs = store.modTargetSpecs(node);
@@ -104,15 +117,19 @@
       sources: store.modSourcesFor(node, r.param),
     }));
   });
+  const mixRows = $derived.by(() => {
+    if (!node || node.kind !== 'mix' || !store.selectedGraph) return [];
+    return mixLayerRowsFor(store.selectedGraph, node.id, (nodeId) => store.liveNodeY(nodeId));
+  });
 
   // A modulation SOURCE node (envelope / LFO / CC) shows a live signal preview on its face,
   // mirroring how a play node shows its EffectThumb (S38). Sampled through core, ticker-driven.
-  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'randomMod');
+  const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'note' || kind === 'osc' || kind === 'randomMod');
   // Gating / routing kinds get a STATE face (wave-4 decision 1): static configured state +
   // a trigger-driven flash. (Bands switches keep their dedicated BandSwitchNode face.)
   const isStateKind = $derived(
     kind === 'chance' || kind === 'toggle' || kind === 'delay' || kind === 'sequence' ||
-    kind === 'all' || kind === 'random' || kind === 'switch' || kind === 'modifier',
+    kind === 'all' || kind === 'random' || kind === 'switch' || kind === 'modifier' || kind === 'mix',
   );
   // Wired default-port children — sizes the fan / sequence-step faces.
   const wiredChildren = $derived(
@@ -137,7 +154,7 @@
   const actions = $derived.by<ContextMenuAction[]>(() => {
     if (!node) return [];
     const canPaste = store.nodeClipboard !== null;
-    if (node.kind === 'trigger') {
+    if (node.kind === 'trigger' || node.kind === 'output') {
       return [{ label: 'Paste', icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() }];
     }
     const n = node;
@@ -151,7 +168,7 @@
 </script>
 
 {#snippet playThumb()}
-  {#if node && node.kind === 'play' && eff}
+  {#if node && isEffectNode && eff}
     <EffectThumb
       params={store.liveParams(node)}
       generatorId={eff.generatorId}
@@ -175,6 +192,12 @@
     <NodeSignalPreview kind="lfo" lfo={store.lfoSettings(node)} bpm={store.bpm} w={56} h={32} />
   {:else if node && node.kind === 'cc'}
     <NodeSignalPreview kind="cc" ccValue={() => store.ccNodeLiveValue(node)} w={56} h={32} />
+  {:else if node && node.kind === 'note'}
+    <NodeSignalPreview kind="note" ccValue={() => store.noteNodeLiveValue(node)} w={56} h={32} />
+  {:else if node && node.kind === 'osc'}
+    <NodeSignalPreview kind="osc" ccValue={() => store.oscNodeLiveValue(node)} w={56} h={32} />
+  {:else if node && node.kind === 'randomMod'}
+    <NodeSignalPreview kind="random" w={56} h={32} />
   {/if}
 {/snippet}
 
@@ -200,12 +223,26 @@
   {/if}
 {/snippet}
 
+<!-- Lint badge (R06): a warn-toned corner marker on any node the render-plan compiler flagged,
+     carrying the SAME finding the lint strip shows (empty scope, a cycle member, …). Instant,
+     no motion (the locked node interaction contract); the tooltip names the problem + fix. -->
+{#snippet lintBadge()}
+  {#if lintFindings.length > 0}
+    {@const primary = lintFindings[0]!}
+    <Tooltip text={`${primary.problem}. ${primary.action}`}>
+      <span class="lintbadge" role="status" aria-label={`${primary.problem}. ${primary.action}`}>
+        <TriangleAlert size={11} aria-hidden="true" />
+      </span>
+    </Tooltip>
+  {/if}
+{/snippet}
+
 <!-- Wiring handles anchored to the card HEAD row (NodeCard renders these inside its
      position:relative head, so their %-offsets track the head — a param footer growing
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' ? 'trigger-handle' : 'effect-handle'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
   {/if}
   {#if nodeHasModInput(kind)}
     <Handle
@@ -213,11 +250,21 @@
       id="mod"
       position={Position.Left}
       class="mod-handle"
+      aria-label="Modifier chain in"
       style={nodeHasInput(kind) ? 'top: 72%' : 'top: 50%'}
     />
   {/if}
   {#if nodeHasOutput(kind)}
-    <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} />
+    <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'trigger' ? 'Trigger flow out' : 'Effect flow out'} />
+  {/if}
+  {#if nodeIsModSource(kind)}
+    <Handle
+      type="source"
+      position={Position.Right}
+      class="mod-source-handle"
+      title="Modulation output"
+      aria-label="Modulation output"
+    />
   {/if}
   {#if modCount > 0}
     <span class="modcount" title={`${modCount} modifier${modCount === 1 ? '' : 's'} in chain`}>
@@ -230,15 +277,28 @@
      border, one surface, concentric radii (item E). Each row is its own drop target (a
      `param:<key>` handle scoped to modulation sources). -->
 {#snippet paramFooter()}
-  <ul class="modrows">
+  <ul class="noderows">
     {#each modRows as row (row.param)}
       <li class="modrow" class:wired={row.sources.length > 0}>
-        <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" />
+        <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" aria-label={`Modulation in: ${row.label}`} />
         <span class="pdot" aria-hidden="true"></span>
         <span class="plabel">{row.label}</span>
         <ParamRowTick
           sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
         />
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
+{#snippet mixFooter()}
+  <ul class="noderows">
+    {#each mixRows as row (row.edgeId)}
+      <li class="mixrow">
+        <Handle type="target" position={Position.Left} id={row.handleId} class="mix-handle effect-handle" aria-label={`Layer in: ${row.label}`} />
+        <span class="ldot" aria-hidden="true"></span>
+        <span class="plabel">{row.label}</span>
+        <span class="opacity">{Math.round(row.opacity * 100)}%</span>
       </li>
     {/each}
   </ul>
@@ -254,11 +314,11 @@
   <ContextMenu {actions} disabled={store.isViewer}>
   {#if isBandsSwitch}
     {#if nodeHasInput(kind)}
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} aria-label="Trigger flow in" />
     {/if}
     <BandSwitchNode icon={Icon} {title} tint={chipTint} selected={!!selected} {bandLabels} />
   {:else}
-    <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass}>
+    <div class="tnode" class:bypassed={kind === 'modifier' && !!node.bypass} class:linted={lintFindings.length > 0}>
       <NodeCard
         icon={Icon}
         {title}
@@ -266,15 +326,16 @@
         tint={chipTint}
         typeChip={playTypeChip}
         selected={!!selected}
-        thumb={kind === 'play' && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
+        thumb={(kind === 'play' || kind === 'effect') && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
         leadHandles={cardHandles}
-        footer={modRows.length > 0 ? paramFooter : undefined}
+        footer={mixRows.length > 0 ? mixFooter : modRows.length > 0 ? paramFooter : undefined}
       />
+      {@render lintBadge()}
     </div>
   {/if}
   </ContextMenu>
-  {#if node.kind !== 'trigger'}
+  {#if node.kind !== 'trigger' && node.kind !== 'output'}
     <ConfirmDialog
       bind:open={confirmDelete}
       title="Delete node?"
@@ -304,9 +365,32 @@
   .tnode.bypassed {
     opacity: 0.55;
   }
+  /* a flagged node carries a faint warn wash on its card so the fault reads at a glance even
+     before the corner badge is noticed — guides authoring (warn), never the red fault alarm. */
+  .tnode.linted :global(.card) {
+    border-color: color-mix(in oklch, var(--warn) 55%, var(--border));
+  }
+  /* the lint badge — a warn-toned corner marker (top-left, opposite the drum-link badge) that
+     rides the card corner like `.modcount`. No motion: the badge is instant (locked contract). */
+  .lintbadge {
+    position: absolute;
+    top: -7px;
+    left: -7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-pill);
+    color: var(--warn);
+    background: color-mix(in oklch, var(--warn) 16%, var(--surface-3));
+    border: 1px solid color-mix(in oklch, var(--warn) 55%, transparent);
+    box-shadow: var(--shadow-1);
+    line-height: 0;
+  }
   /* exposed modulation-target rows — now INSIDE the node card (NodeCard footer), so no
      border / surface / shadow of their own: the card supplies the single border + surface. */
-  .modrows {
+  .noderows {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -314,7 +398,8 @@
     flex-direction: column;
     gap: 3px;
   }
-  .modrow {
+  .modrow,
+  .mixrow {
     position: relative; /* offset parent for the per-row param handle (sits at the row's left) */
     display: flex;
     align-items: center;
@@ -325,6 +410,9 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-1);
   }
+  .mixrow {
+    background: color-mix(in oklch, var(--role-mod) 10%, var(--surface-inset));
+  }
   .pdot {
     width: 6px;
     height: 6px;
@@ -332,6 +420,14 @@
     border-radius: 50%;
     border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
     background: transparent;
+  }
+  .ldot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--role-mod);
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--role-mod) 65%, transparent);
   }
   .modrow.wired .pdot {
     background: var(--role-modulation);
@@ -346,12 +442,31 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* the scoped modulation input handle rides the row's left edge */
-  .modrow :global(.param-handle) {
-    left: -12px;
-    background: var(--role-modulation);
-    border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+  .opacity {
+    flex: none;
+    min-width: 3ch;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    text-align: right;
   }
+  /* the scoped modulation input handle rides the row's left edge */
+.modrow :global(.param-handle) {
+  left: -12px;
+  background: var(--role-modulation);
+  border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+}
+
+.tnode :global(.mod-source-handle) {
+  right: -12px;
+  background: var(--role-modulation);
+  border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+}
+
+.mixrow :global(.mix-handle) {
+  left: -12px;
+}
   /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
   .modcount {
     position: absolute;

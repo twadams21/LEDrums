@@ -28,6 +28,7 @@
   import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
   import Drawer from '../../ui/Drawer.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
+  import AnchorHeader from '../../ui/AnchorHeader.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
   import { pushToast } from '../../ui/toast.svelte';
@@ -47,12 +48,16 @@
   import Disc3 from '@lucide/svelte/icons/disc-3';
   import Activity from '@lucide/svelte/icons/activity';
   import Wand2 from '@lucide/svelte/icons/wand-2';
+  import CircleDot from '@lucide/svelte/icons/circle-dot';
+  import Zap from '@lucide/svelte/icons/zap';
 
   let textVal = $state('Opening set');
   let pillTags = $state<string[]>(['hit']);
   let searchVal = $state('');
   let renameVal = $state('Kick base');
   let bpm = $state('120');
+  let delayMs = $state('250');
+  let phase = $state(0.25);
   let protocol = $state('artnet');
   let mode = $state('arrange');
   let layerBus = $state('trigger');
@@ -149,7 +154,7 @@
     <DemoCard
       title="Field · row layout"
       src="lib/ui/Field"
-      note="The inspector rhythm: label column left (--field-label-col), control right, one --control-h height across TextField / CommitInput / Select. Hint renders under the control. Use layout=&quot;row&quot; in every inspector/editor panel; the stacked default is for dialogs and wide forms."
+      note="The inspector rhythm: label column left (--field-label-col), control right, one --control-h height across TextField / CommitInput / Select. Hint renders under the control; a short unit (ms / Hz / a live %) renders in its own column OUTSIDE the control via the unit prop — for a slider or numeric field whose readout lives beside the box, not inside it (CommitInput's inner suffix). Use layout=&quot;row&quot; in every inspector/editor panel; the stacked default is for dialogs and wide forms."
     >
       <div class="comp-stack">
         <Field layout="row" label="Name" hint="display label">
@@ -161,10 +166,16 @@
         <Field layout="row" label="BPM" hint="Clamped number 20–300">
           <CommitInput type="number" min={20} max={300} value={bpm} suffix="bpm" ariaLabel="Row BPM" autofocus={false} onCommit={(v) => (bpm = v)} />
         </Field>
+        <Field layout="row" label="Time" unit="ms">
+          <CommitInput type="number" min={0} value={delayMs} ariaLabel="Row time" autofocus={false} onCommit={(v) => (delayMs = v)} />
+        </Field>
+        <Field layout="row" label="Phase" unit={`${Math.round(phase * 100)}%`}>
+          <Slider bind:value={phase} min={0} max={1} step={0.01} ariaLabel="Row phase" />
+        </Field>
       </div>
     </DemoCard>
 
-    <DemoCard title="Commit input" src="lib/ui/CommitInput" note="Inline rename / numeric entry: commits on Enter or blur, reverts on Esc.">
+    <DemoCard title="Commit input" src="lib/ui/CommitInput" note="Inline rename / numeric entry / masked credential: commits on Enter or blur, reverts on Esc.">
       <div class="comp-stack">
         <Field label="Inline rename">
           <CommitInput
@@ -183,6 +194,15 @@
             suffix="bpm"
             ariaLabel="BPM"
             onCommit={(v) => (bpm = v)}
+          />
+        </Field>
+        <Field label="Password" hint="Masked credential — never trimmed, never round-tripped; clears after a set">
+          <CommitInput
+            type="password"
+            value=""
+            placeholder="••••••••"
+            ariaLabel="Admin password"
+            onCommit={(v) => (renameVal = v)}
           />
         </Field>
       </div>
@@ -362,6 +382,24 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Anchor header"
+      src="lib/ui/AnchorHeader"
+      wide
+      note="Inspector title block for a PROTECTED graph anchor (the trigger root / output terminal). Those nodes aren't conversion targets, so they can't carry the shared kind selector — this is its stand-in: tinted icon + h3 title, mono sub-line, optional trailing action. Same scale as the patch / trigger headers."
+    >
+      <div class="ph-demo">
+        <AnchorHeader icon={CircleDot} tint="var(--role-output)" title="Output" sub="graph output — every layer lands here" />
+      </div>
+      <div class="ph-demo">
+        <AnchorHeader icon={Zap} tint="var(--accent)" title="Kick · Centre" sub="graph input">
+          {#snippet action()}
+            <IconButton icon={Copy} label="Duplicate graph" variant="soft" size={14} />
+          {/snippet}
+        </AnchorHeader>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Logo / mark" src="lib/ui/Logo" note="Neon-rainbow drum kit (kick, snare, two rack toms, floor tom, hi-hat, ride) on a dark rounded tile — a vector trace of the desktop app icon, re-coloured with a fixed brand gradient + soft glow so the mark matches the dock icon in any theme. Detailed by design; richest from ~32px up.">
       <div class="comp-row" style="align-items:center; gap:var(--space-4)">
         <Logo size={20} />
@@ -385,7 +423,7 @@
     <DemoCard
       title="Toast"
       src="lib/ui/ToastHost"
-      note="Transient notifications: a singleton store (pushToast) + one ToastHost near the app root. Role colour always rides an icon + text; each is dismissible; enter rises + fades, exit is subtler; reduced motion collapses both. Used for clipboard paste feedback (S44)."
+      note="Transient notifications: a singleton store (pushToast) + one ToastHost near the app root. A top-centre stack; role rides an icon + text + a slight tone-tinted background wash (never colour alone); each is dismissible; enter descends + fades, exit is subtler; reduced motion collapses both. Used for clipboard paste feedback (S44)."
     >
       <div class="comp-row">
         <button onclick={() => pushToast('Section copied.', { tone: 'success' })}>Success toast</button>

@@ -11,11 +11,19 @@
   import type { Connection, EdgeTypes, NodeTypes, OnConnectEnd } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import { NODE_KINDS, NODE_W, type NodeKind } from '../../trigger-lab/sim';
-  import type { ToPort } from '../../trigger-lab/store/graph-wiring';
-  import { listModifiersByCategory, voice, COLLECTIONS, type PlayType } from '@ledrums/core';
-  import Blend from '@lucide/svelte/icons/blend';
-  import { kindIcon, kindLabel, tint } from './trigger-node-meta';
+  import { NODE_W, type NodeKind } from '../../trigger-lab/sim';
+  import { canConnect, type ToPort, type WireRejection } from '../../trigger-lab/store/graph-wiring';
+  import { wireRejectionMessage } from '../../trigger-lab/store/wire-toasts';
+  import { pushToast } from '../../ui/toast.svelte';
+  import type { WireDragFrom } from './WireDragValidity.svelte';
+  import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
+  import { canvasDropPreview } from './canvas-drop-preview.svelte';
+  import { lintPreview } from './lint-preview.svelte';
+  import { lintEntries, lintEntriesByNode } from './graph-lint';
+  import { GraphLintIndex, GRAPH_LINT_KEY } from './graph-lint-index.svelte';
+  import GraphLintStrip from './GraphLintStrip.svelte';
+  import { edgeUnderNode, type NodeRect } from './splice-geometry';
+  import { voice, type PlayType } from '@ledrums/core';
   import {
     graphToFlowEdges,
     type TriggerFlowEdge,
@@ -41,8 +49,11 @@
   import type { FlowApi } from './FlowHandle.svelte';
   import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
   import AddPalette, { type AddGroup } from './AddPalette.svelte';
+  import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
+  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from './add-node-taxonomy';
   import GraphsDock from './GraphsDock.svelte';
   import Inspector from '../docks/Inspector.svelte';
+  import Splitter from '../../ui/Splitter.svelte';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -58,6 +69,12 @@
   const edgeTypes: EdgeTypes = { wire: WireEdge };
   const hover = new GraphHover();
 
+  // Per-node lint badges (R06): the offending node wears a badge for the same finding the
+  // strip shows. Handed to the custom nodes via context (like `hover`); kept in sync from the
+  // one compiled issue list below so strip and badges can never drift.
+  const lintIndex = new GraphLintIndex();
+  setContext(GRAPH_LINT_KEY, lintIndex);
+
   // ---- Node Editor drawer (wave-3 shell): Add palette + Inspector -----------
   // The Add tab lists everything the graph can gain in one searchable surface:
   // node kinds, then modulation sources, then the modifier registry grouped by
@@ -67,60 +84,24 @@
   $effect(() => {
     neTab = shell.selection?.kind === 'node' ? 'inspector' : 'add';
   });
-
-  const MOD_HINT: Partial<Record<NodeKind, string>> = {
-    envelope: 'per-hit shape',
-    lfo: 'continuous wave',
-    cc: 'MIDI CC or OSC',
+  const EDITOR_W = { key: 'triggerNodeEditorW', min: 280, max: 520, def: 340 };
+  const editorW = $derived(store.paneSizes[EDITOR_W.key] ?? EDITOR_W.def);
+  const setEditorW = (v: number): void => {
+    store.paneSizes = { ...store.paneSizes, [EDITOR_W.key]: v };
   };
-  const MODIFIER_GROUP_PREFIX = 'modifier:';
-  const addGroups = $derived<AddGroup[]>([
-    {
-      key: 'play',
-      label: 'Play',
-      items: COLLECTIONS.map((c) => ({
-        id: c.type,
-        name: c.label,
-        icon: kindIcon.play,
-        tint: tint.play,
-        hint: c.blurb,
-      })),
-    },
-    {
-      key: 'kinds',
-      label: 'Nodes',
-      items: NODE_KINDS.filter(
-        (kind) => kind !== 'play' && kind !== 'modifier' && !voice.isModSourceKind(kind),
-      ).map((kind) => ({
-        id: kind,
-        name: kindLabel[kind],
-        icon: kindIcon[kind],
-        tint: tint[kind],
-      })),
-    },
-    {
-      key: 'modulation',
-      label: 'Modulation',
-      items: NODE_KINDS.filter((kind) => voice.isModSourceKind(kind)).map((kind) => ({
-        id: kind,
-        name: kindLabel[kind],
-        icon: kindIcon[kind],
-        tint: tint[kind],
-        hint: MOD_HINT[kind],
-      })),
-    },
-    ...listModifiersByCategory().map((g) => ({
-      key: `${MODIFIER_GROUP_PREFIX}${g.category}`,
-      label: `Modifiers · ${g.label}`,
-      items: g.modifiers.map((m) => ({ id: m.id, name: m.name, icon: Blend, tint: 'var(--role-mod)' })),
-    })),
-  ]);
+
+  const addGroups = $derived<AddGroup[]>(buildAddGroups());
 
   // Placement: new nodes land at a free spot near the visible canvas centre. The
   // flow instance arrives via GraphCanvas's FlowHandle; the wrapper element gives
   // the on-screen rect to centre on.
   let flowApi = $state<FlowApi | null>(null);
   let canvasWrap = $state<HTMLElement | null>(null);
+  // R12: the canvas wears a "drop target is live" ring while a new node is dragged in from the
+  // Add pane. Live during the drag; the shot seam pins it (DEV-only) for a ui-shot capture since
+  // headless Chrome can't drive the HTML5 drag.
+  let dragActive = $state(false);
+  const dropActive = $derived(dragActive || (import.meta.env.DEV && canvasDropPreview.current));
   function canvasCentre(): { x: number; y: number } {
     const r = canvasWrap?.getBoundingClientRect();
     if (!flowApi) return { x: 0, y: 0 };
@@ -128,9 +109,14 @@
   }
   function handleAdd(id: string, groupKey: string): void {
     const c = canvasCentre();
-    if (groupKey === 'play') addPlayNodeAt(id as PlayType, c.x, c.y);
-    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, c.x, c.y);
-    else addNodeAt(id as NodeKind, c.x, c.y);
+    handleAddAt(id, groupKey, c.x, c.y);
+  }
+  function handleAddAt(id: string, groupKey: string, x: number, y: number): void {
+    if (groupKey === EFFECT_GROUP_KEY) addPlayNodeAt(id as PlayType, x, y);
+    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, x, y);
+    else if (id.startsWith('envelope:')) addEnvelopeNodeAt(id.slice('envelope:'.length), x, y);
+    else if (id.startsWith('lfo:')) addLfoNodeAt(id.slice('lfo:'.length), x, y);
+    else addNodeAt(id as NodeKind, x, y);
   }
   /** Add a typed play node (D3) near the palette-supplied flow centre. */
   function addPlayNodeAt(playType: PlayType, cx: number, cy: number): void {
@@ -164,10 +150,39 @@
     const p = spawnAt(cx, cy);
     store.addNode(kind, p.x, p.y);
   }
+  function addEnvelopeNodeAt(preset: string, cx: number, cy: number): void {
+    const p = spawnAt(cx, cy);
+    store.addNode('envelope', p.x, p.y, { envelopePreset: preset });
+  }
+  function addLfoNodeAt(waveform: string, cx: number, cy: number): void {
+    const p = spawnAt(cx, cy);
+    store.addNode('lfo', p.x, p.y, { lfoWaveform: waveform });
+  }
   /** Add a specific modifier node (category palette) near the palette-supplied flow centre. */
   function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
     const p = spawnAt(cx, cy);
     store.addModifierNode(modifierId, p.x, p.y);
+  }
+  function onPaletteDragOver(e: DragEvent): void {
+    const dt = e.dataTransfer;
+    if (!dt || !Array.from(dt.types).includes(ADD_NODE_DRAG_TYPE)) return;
+    e.preventDefault();
+    dt.dropEffect = 'copy';
+    dragActive = true;
+  }
+  function onPaletteDragLeave(e: DragEvent): void {
+    // dragleave fires when crossing into child elements too; only clear when the pointer has
+    // actually left the canvas wrapper (relatedTarget null = left the window entirely).
+    const to = e.relatedTarget as Node | null;
+    if (!to || !canvasWrap?.contains(to)) dragActive = false;
+  }
+  function onPaletteDrop(e: DragEvent): void {
+    dragActive = false;
+    const payload = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
+    if (!payload || !flowApi) return;
+    e.preventDefault();
+    const p = flowApi.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    handleAddAt(payload.id, payload.groupKey, p.x, p.y);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -181,7 +196,9 @@
       (mode + band count). Drives reactive rebuilds AND decides which flow-node objects can be
       reused on re-projection — reuse keeps xyflow's measured handleBounds + live position, so a
       structure change to one node never makes every node drop its wires or snap position. */
-  const nodeSig = $derived((store.selectedGraph?.nodes ?? []).map(triggerNodeSignature).join('|'));
+  const nodeSig = $derived(
+    (store.selectedGraph?.nodes ?? []).map((n) => triggerNodeSignature(n, store.selectedGraph)).join('|'),
+  );
   const edgeSig = $derived(
     (store.selectedGraph?.edges ?? []).map(triggerEdgeSignature).join('|'),
   );
@@ -307,9 +324,31 @@
       }
     });
   }
+  // R08 wire-splice: the edge a dragged node is currently armed to splice into (null = none).
+  // Set by the drag hit-test below; the edges effect re-decorates so the armed wire lights up
+  // BEFORE release (pre-release indication). Release then splices via the store.
+  let armedSpliceEdgeId = $state<string | null>(null);
+
+  /** The edge to render armed: the live drag arming, or — DEV/ui-shot only — the first flow wire
+      when the shot seam pins `spliceArmedPreview` (the live arming is drag-only, unreachable by a
+      headless capture). Null (and tree-shaken) outside DEV. */
+  function spliceArmedEdgeForRender(built: TriggerFlowEdge[]): string | null {
+    if (armedSpliceEdgeId) return armedSpliceEdgeId;
+    if (import.meta.env.DEV && spliceArmedPreview.current) {
+      return built.find((e) => !e.data?.mod && !e.data?.modulation)?.id ?? null;
+    }
+    return null;
+  }
+
   function rebuildEdges(): void {
     const g = store.selectedGraph;
-    edges = hover.decorate(g ? untrack(() => graphToFlowEdges(g)) : []);
+    const built = hover.decorate(g ? untrack(() => graphToFlowEdges(g)) : []);
+    const armed = spliceArmedEdgeForRender(built);
+    edges = armed
+      ? built.map((e) =>
+          e.id === armed ? { ...e, class: e.class ? `${e.class} edge-splice-armed` : 'edge-splice-armed' } : e,
+        )
+      : built;
   }
 
   // node array: rebuild on graph switch, structure change, or selection change
@@ -319,11 +358,13 @@
     selectedNodeId;
     rebuildNodes();
   });
-  // edge array: rebuild on graph switch, edge change, or hover (highlight)
+  // edge array: rebuild on graph switch, edge change, hover (highlight), or splice-arming
   $effect(() => {
     store.selectedPadKey;
     edgeSig;
     hover.hoveredId;
+    armedSpliceEdgeId;
+    spliceArmedPreview.current;
     rebuildEdges();
   });
 
@@ -334,6 +375,45 @@
     store.selectedPadKey; // a switch hides the canvas until GraphFitView reports back
     fitted = false;
   });
+
+  // ---- ui-shot: static invalid-wire stand-in (R03 / dev-only) ---------------
+  // The red/dotted/dull wire-in-progress is drag-only, so a screenshot can't reach it live.
+  // When the shot seam pins `wireInvalidPreview`, span a static line (canvas-local px) between
+  // the first node's output and the last node's input so the capture shows a real target. Null
+  // (and tree-shaken) outside DEV; depends on `fitted` so it recomputes with the post-fit viewport.
+  const wirePreview = $derived.by(() => {
+    if (!import.meta.env.DEV || !wireInvalidPreview.current) return null;
+    fitted; // recompute once the graph has fit (screen coords depend on the viewport)
+    const rect = canvasWrap?.getBoundingClientRect();
+    if (!flowApi || !rect || nodes.length < 2) return null;
+    const a = nodes[0]!;
+    // Land the stand-in on the node most vertically offset from the source, so it reads as a
+    // wire arriving AT a target (a diagonal curve) rather than a flat line skewering the row.
+    const b = nodes.slice(1).reduce((best, n) =>
+      Math.abs(n.position.y - a.position.y) > Math.abs(best.position.y - a.position.y) ? n : best,
+    );
+    const aw = a.measured?.width ?? NODE_W;
+    const ah = a.measured?.height ?? 40;
+    const bh = b.measured?.height ?? 40;
+    const src = flowApi.flowToScreenPosition({ x: a.position.x + aw, y: a.position.y + ah / 2 });
+    const tgt = flowApi.flowToScreenPosition({ x: b.position.x, y: b.position.y + bh / 2 });
+    return { x1: src.x - rect.left, y1: src.y - rect.top, x2: tgt.x - rect.left, y2: tgt.y - rect.top };
+  });
+
+  // ---- lint strip (R05): render-plan compile issues on the graph surface -----
+  // The render plan is computed but consumed nowhere in the web app; surface its `issues` as a
+  // persistent strip that says what is wrong and what to do next. DEV/ui-shot only: `lintPreview`
+  // pins real compiler issues (from a degenerate graph) because a well-formed authored graph is
+  // guaranteed anchors and refuses cycles, so the live strip is otherwise empty. Absent when there
+  // are no issues; the component itself renders nothing for an empty list.
+  const lintIssues = $derived.by(() => {
+    if (import.meta.env.DEV && lintPreview.current) return lintPreview.current;
+    const g = store.selectedGraph;
+    return g ? voice.compileRenderPlan(g).issues : [];
+  });
+  // The strip and the node badges read ONE derived entry list; the badges index it by node.
+  const lintDisplay = $derived(lintEntries(lintIssues));
+  $effect(() => lintIndex.set(lintEntriesByNode(lintDisplay)));
 
   // ---- canvas interactions (all flow through the store) ---------------------
   function syncPos(fn: { id: string; position: { x: number; y: number } }): void {
@@ -346,13 +426,20 @@
     if (handle === 'mod') return 'mod';
     return handle && voice.paramKeyOf(handle as ToPort) !== null ? (handle as `param:${string}`) : undefined;
   }
+  /** Surface a refused wire as one plain-language error toast naming the reason (R03 / doc 1.1).
+      A `null` reason (accepted, or a viewer/no-graph no-op) says nothing. */
+  function toastRejection(reason: WireRejection | null): void {
+    if (reason) pushToast(wireRejectionMessage(reason), { tone: 'error' });
+  }
   function onConnect(c: Connection): void {
-    // store validates (dup / cycle / direction / port scoping)
-    store.connect(c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
+    // store validates (dup / cycle / direction / port scoping) and returns the reason if refused
+    toastRejection(store.connect(c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle)));
     rebuildEdges(); // drop any edge xyflow added optimistically that the store rejected
   }
   function onReconnect(oldEdge: { id: string }, c: Connection): void {
-    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
+    toastRejection(
+      store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle)),
+    );
     rebuildEdges(); // revert the anchor's optimistic move if the store rejected it
   }
   function onDeleteEdges(removed: ReadonlyArray<{ id: string }>): void {
@@ -360,7 +447,38 @@
     rebuildEdges();
   }
   function onDragStop(detail: { nodes: TriggerFlowNode[] }): void {
+    // Commit the drag position FIRST — this is its own undo checkpoint (moveNode).
     for (const n of detail.nodes) syncPos(n);
+    // Then, if a splice was armed, wire it as a SEPARATE checkpoint recorded AFTER the position
+    // commit (R08): one Ctrl/Z pops the splice wiring while the node stays where it was dropped.
+    const armed = armedSpliceEdgeId;
+    armedSpliceEdgeId = null;
+    if (armed && detail.nodes.length === 1 && store.spliceOnDrop(armed, detail.nodes[0]!.id)) {
+      rebuildEdges();
+    }
+  }
+  function onDrag(detail: { targetNode: TriggerFlowNode | null; nodes: TriggerFlowNode[] }): void {
+    const moving = detail.targetNode ? [detail.targetNode] : detail.nodes;
+    for (const n of moving) store.setLiveNodePosition(n.id, n.position.x, n.position.y);
+    updateSpliceArming(moving);
+  }
+  /** Arm the wire the dragged node is sitting on (single-node drags only): a spatial hit-test
+      (splice-geometry) picks the overlapped wire, then the store's `canSplice` confirms the
+      splice would be legal — so the pre-release indication only lights when release will act. */
+  function nodeRect(n: TriggerFlowNode): NodeRect {
+    return { x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? PLACE_H };
+  }
+  function updateSpliceArming(moving: TriggerFlowNode[]): void {
+    if (moving.length !== 1) {
+      armedSpliceEdgeId = null;
+      return;
+    }
+    const dragged = moving[0]!;
+    const rects = new Map<string, NodeRect>(nodes.map((n) => [n.id, nodeRect(n)]));
+    rects.set(dragged.id, nodeRect(dragged)); // the dragged node's LIVE position wins
+    const ends = edges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    const hit = edgeUnderNode(dragged.id, rects.get(dragged.id)!, ends, rects);
+    armedSpliceEdgeId = hit && store.canSplice(hit, dragged.id) ? hit : null;
   }
   const onConnectEnd: OnConnectEnd = (event, conn) => {
     if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
@@ -388,6 +506,40 @@
     if (key && !store.modInputsOf(to).some((r) => r.param === key)) store.addModInput(to, key);
     return key ? (`param:${key}` as const) : undefined;
   }
+  /** The `param:<key>` port a modulation-source drop on `toId` WOULD land on — the read-only
+      mirror of {@link paramPortFor} used by the in-drag validity check (no auto-expose side
+      effect, so hovering a target never mutates the graph). */
+  function predictParamPort(toId: string): ToPort {
+    const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
+    if (!to) return undefined;
+    const key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
+    return key ? (`param:${key}` as const) : undefined;
+  }
+  /** Would dropping the in-progress wire on `toId` (optionally the precise handle under the
+      pointer) be ACCEPTED? Read-only mirror of {@link dropConnect}'s routing so the in-drag
+      red/dotted/dull styling agrees with what release will actually do — every branch resolves
+      to the store's {@link canConnect} verdict, and nothing here mutates the graph. */
+  function validateDrop(from: WireDragFrom, toId: string, toHandle: string | null): boolean {
+    const g = store.selectedGraph;
+    if (!g) return false;
+    // Pointer inside a precise handle's radius → validate that exact port (mod / param / flow).
+    if (toHandle != null) {
+      if (from.type === 'target') return canConnect(g, toId, from.nodeId, undefined, toPortOf(from.handleId));
+      return canConnect(g, from.nodeId, toId, from.handleId ?? undefined, toPortOf(toHandle));
+    }
+    // Drop-anywhere on the node body → mirror dropConnect's source-kind routing.
+    if (from.type === 'target') {
+      const paramPort = toPortOf(from.handleId);
+      const toPort =
+        paramPort && voice.paramKeyOf(paramPort) !== null ? paramPort : kindOf(toId) === 'modifier' ? 'mod' : undefined;
+      return canConnect(g, toId, from.nodeId, undefined, toPort);
+    }
+    if (kindOf(from.nodeId) && voice.isModSourceKind(kindOf(from.nodeId)!)) {
+      const port = predictParamPort(toId);
+      return port ? canConnect(g, from.nodeId, toId, from.handleId ?? undefined, port) : false;
+    }
+    return canConnect(g, from.nodeId, toId, from.handleId ?? undefined, kindOf(from.nodeId) === 'modifier' ? 'mod' : undefined);
+  }
   function dropConnect(
     fromId: string,
     fromType: 'source' | 'target' | null,
@@ -395,26 +547,36 @@
     toId: string,
   ): void {
     if (fromId === toId) return;
+    let reason: WireRejection | null = null;
     if (fromType === 'target') {
       // drag began at an INPUT handle → the dropped-on node becomes the source; route by ITS kind.
       // If the drag left a `param:<key>` row, keep that port (the dropped node must be a source).
       const paramPort = toPortOf(fromPort);
       const toPort = paramPort && voice.paramKeyOf(paramPort) !== null ? paramPort : kindOf(toId) === 'modifier' ? 'mod' : undefined;
-      store.connect(toId, fromId, undefined, toPort);
+      reason = store.connect(toId, fromId, undefined, toPort);
     } else if (kindOf(fromId) && voice.isModSourceKind(kindOf(fromId)!)) {
       // Drop-anywhere from a modulation source routes to a param row (memory `graph-interaction-prefs`).
       const port = paramPortFor(toId);
-      if (port) store.connect(fromId, toId, fromPort ?? undefined, port);
+      if (port) reason = store.connect(fromId, toId, fromPort ?? undefined, port);
     } else {
-      store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
+      reason = store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
     }
+    toastRejection(reason);
     rebuildEdges();
   }
 </script>
 
 <div class="trigger-view">
-  <div class="graphrow">
-  <div class="gwrap" bind:this={canvasWrap}>
+  <div class="graphrow" style:--editor-w={`${editorW}px`}>
+  <div
+    class="gwrap"
+    bind:this={canvasWrap}
+    role="region"
+    aria-label="Trigger graph canvas"
+    ondragover={onPaletteDragOver}
+    ondragleave={onPaletteDragLeave}
+    ondrop={onPaletteDrop}
+  >
     <GraphCanvas
       bind:nodes
       bind:edges
@@ -430,26 +592,52 @@
       onPaneClick={() => shell.clearSelection()}
       onNodeEnter={(id) => hover.enter(id)}
       onNodeLeave={() => hover.leave()}
+      onNodeDrag={guard('drag-live', onDrag)}
       onNodeDragStop={guard('drag', onDragStop)}
       onConnect={guard('connect', onConnect)}
       onConnectEnd={guard('connect-end', onConnectEnd)}
       onReconnect={guard('reconnect', onReconnect)}
       onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
+      validateDrag={validateDrop}
+      {wirePreview}
     >
       {#snippet empty()}
         <p class="thint">Select a graph from the section to edit it.</p>
       {/snippet}
     </GraphCanvas>
+    <!-- Lint strip: persistent, pinned top-left over the canvas so it reads as belonging to the
+         surface without reflowing the flow area. Fades in/out with the issue list. -->
+    <div class="lint-overlay">
+      <GraphLintStrip issues={lintIssues} />
+    </div>
+    <!-- R12 drop-target ring: an accent ring + faint wash while a new node is dragged in from the
+         Add pane, matching the Sections reorder target language (R11 `.section-target`). Non-
+         interactive so it never eats the drop; only mounted while the drag is live. -->
+    {#if dropActive}
+      <div class="drop-ring" aria-hidden="true"></div>
+    {/if}
   </div>
 
-  <NodeEditor bind:tab={neTab}>
-    {#snippet add()}
-      <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
-    {/snippet}
-    {#snippet inspector()}
-      <Inspector {store} {shell} />
-    {/snippet}
-  </NodeEditor>
+  <div class="editor-wrap">
+    <Splitter
+      orientation="vertical"
+      size={editorW}
+      min={EDITOR_W.min}
+      max={EDITOR_W.max}
+      invert
+      label="Resize node editor"
+      onResize={setEditorW}
+      style="left: calc(var(--shell-gap) * -0.5); top: 0; bottom: 0;"
+    />
+    <NodeEditor bind:tab={neTab}>
+      {#snippet add()}
+        <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
+      {/snippet}
+      {#snippet inspector()}
+        <Inspector {store} {shell} />
+      {/snippet}
+    </NodeEditor>
+  </div>
   </div>
 
   <GraphsDock {store} {shell} />
@@ -465,11 +653,46 @@
   }
   .graphrow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) var(--editor-w);
     gap: var(--shell-gap);
     min-height: 0;
+    position: relative;
   }
   .gwrap {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* Drop-target ring for add-node drags from the Add pane — the canvas analogue of the Sections
+     reorder target (R11 `.col.section-target`): a bright accent ring + faint wash so "drop is
+     live" reads at a glance. Overlaid and non-interactive so it never intercepts the drop. */
+  .drop-ring {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    border-radius: var(--radius-2);
+    background: color-mix(in oklch, var(--accent) 6%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent),
+      inset 0 0 0 4px color-mix(in oklch, var(--accent) 14%, transparent);
+  }
+  /* Lint strip overlay — pinned to the canvas's top-left, above the flow surface but out of
+     its interaction layer except where the strip itself sits. */
+  .lint-overlay {
+    position: absolute;
+    top: var(--space-3);
+    left: var(--space-3);
+    right: var(--space-3);
+    z-index: 5;
+    display: flex;
+    pointer-events: none;
+  }
+  .lint-overlay > :global(*) {
+    pointer-events: auto;
+  }
+  .editor-wrap {
+    position: relative;
     min-width: 0;
     min-height: 0;
   }

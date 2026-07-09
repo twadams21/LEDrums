@@ -27,6 +27,7 @@
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import StatusPill from '../../../ui/StatusPill.svelte';
   import StatusDot from '../../../ui/StatusDot.svelte';
+  import CommitInput from '../../../ui/CommitInput.svelte';
   import ReadRow from './ReadRow.svelte';
   import {
     controllerHeadline,
@@ -51,6 +52,7 @@
     nowMs,
     onDiscover,
     onAdopt,
+    onSetAuth,
     onIdentify,
     onTestData,
     onBackToLive,
@@ -77,6 +79,8 @@
     onDiscover?: () => void;
     /** Adopt-IP: adopt this host AND copy it into the output settings (one click). */
     onAdopt?: (host: string) => void;
+    /** Set the adopted controller's admin password (R29) — plaintext, hashed + persisted server-side. */
+    onSetAuth?: (password: string) => void;
     onIdentify?: () => void;
     /** Start / switch the controller's built-in test-data mode (S49). */
     onTestData?: (pattern: ControllerTestPattern) => void;
@@ -92,6 +96,19 @@
   /** Adopted controller's IP has drifted from the output target — offer a one-click resync. */
   const outputDrift = $derived(
     !!controller && !!outputHost && controller.host !== outputHost,
+  );
+
+  // --- Admin password (R29) -------------------------------------------------
+  // Authenticated controllers (non-empty admin password) need it for every management call. We hold
+  // only the server-side hash, so the field never shows a stored value — it clears after each set.
+  // The device's own `authReqd` + whether we're reaching it tell the honest story (no local flag).
+  const authReqd = $derived(controller?.identity?.authReqd === true);
+  const authHint = $derived(
+    authReqd
+      ? controller?.reachable
+        ? 'Authenticated — the controller accepted this password.'
+        : 'This controller requires an admin password to read its status.'
+      : 'Only needed if the controller has an admin password set.',
   );
 
   // --- Test patterns (S49) --------------------------------------------------
@@ -201,6 +218,22 @@
         {/each}
       </div>
     {/if}
+
+    <!-- Admin password (R29): authenticated controllers need it for every management call. The field
+         holds no stored value (we keep only the server-side hash), so it reads empty and clears after
+         a set; the hint reflects the device's own authReqd + whether we're reaching it. -->
+    <div class="auth" class:needs={authReqd && !controller.reachable}>
+      <span class="auth-label">Admin password</span>
+      <CommitInput
+        type="password"
+        value=""
+        placeholder="•••••••• · leave blank if none"
+        disabled={!canEdit}
+        ariaLabel="Controller admin password"
+        onCommit={(pw) => onSetAuth?.(pw)}
+      />
+      <p class="auth-hint">{authHint}</p>
+    </div>
 
     <div class="actions">
       {#if outputDrift}
@@ -518,6 +551,33 @@
   .uni-counts .pri {
     color: var(--text-faint);
     margin-left: 3px;
+  }
+
+  /* Admin password (R29) — a quiet config field under the readouts. Reuses the CommitInput primitive;
+     the label + hint sit above/below it so the credential reads as deliberate device config, not a
+     status readout. `.needs` warms the label when the device demands a password we don't yet have. */
+  .auth {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+  }
+  .auth-label {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
+    color: var(--text-faint);
+  }
+  .auth.needs .auth-label {
+    color: var(--warn);
+  }
+  .auth-hint {
+    margin: 0;
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+    line-height: var(--leading-snug);
+    text-wrap: pretty;
   }
 
   /* Actions — reuse the app's soft text-button vocabulary (cf. ShareInfo .action). Scale-on-press

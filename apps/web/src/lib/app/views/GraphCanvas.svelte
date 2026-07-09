@@ -30,8 +30,10 @@
   import type { Snippet } from 'svelte';
   import GraphFitView from './GraphFitView.svelte';
   import FlowHandle, { type FlowApi } from './FlowHandle.svelte';
+  import WireDragValidity, { type WireDragFrom } from './WireDragValidity.svelte';
 
   type DragStop = { nodes: NodeType[] };
+  type Drag = { targetNode: NodeType | null; nodes: NodeType[] };
   type DeleteDetail = { nodes: NodeType[]; edges: EdgeType[] };
 
   let {
@@ -55,8 +57,11 @@
     onReconnect,
     onDelete,
     onNodeDragStop,
+    onNodeDrag,
     onConnectEnd,
     onFlow,
+    validateDrag,
+    wirePreview,
     empty,
   }: {
     nodes: NodeType[];
@@ -84,14 +89,25 @@
     onReconnect?: (oldEdge: Edge, conn: Connection) => void;
     onDelete?: (detail: DeleteDetail) => void;
     onNodeDragStop?: (detail: DragStop) => void;
+    onNodeDrag?: (detail: Drag) => void;
     onConnectEnd?: OnConnectEnd;
     /** Receives the flow instance once mounted — for view-side placement math. */
     onFlow?: (flow: FlowApi) => void;
+    /** In-drag validity predicate (R03): true when dropping the wire-in-progress on the given
+        node/handle would be accepted. When provided, the wire-in-progress turns red / dotted /
+        dull over an invalid target. Omitted by graphs that don't need connection-time feedback. */
+    validateDrag?: (from: WireDragFrom, toNodeId: string, toHandleId: string | null) => boolean;
+    /** Dev/ui-shot only: pin a static invalid-wire line (canvas-local px) so the otherwise
+        drag-only red/dotted/dull state can be screenshotted. Inert in production. */
+    wirePreview?: { x1: number; y1: number; x2: number; y2: number } | null;
     empty?: Snippet;
   } = $props();
+
+  // In-drag invalid-target state (R03): the tracker flips this as the pointer crosses targets.
+  let dragInvalid = $state(false);
 </script>
 
-<div class="gcanvas" class:swapping>
+<div class="gcanvas" class:swapping class:wire-invalid={dragInvalid || !!wirePreview}>
   {#if ready}
     <SvelteFlow
       bind:nodes
@@ -114,15 +130,33 @@
       onconnect={onConnect}
       onreconnect={onReconnect}
       ondelete={(detail) => onDelete?.(detail as DeleteDetail)}
+      onnodedrag={(detail) => onNodeDrag?.(detail as Drag)}
       onnodedragstop={(detail) => onNodeDragStop?.(detail as DragStop)}
       onconnectend={onConnectEnd}
     >
       <GraphFitView padding={fitPadding} watch={fitWatch} onfitted={onFitted} />
       {#if onFlow}<FlowHandle onflow={onFlow} />{/if}
+      {#if validateDrag}
+        <WireDragValidity validate={validateDrag} onChange={(v) => (dragInvalid = v)} />
+      {/if}
       <Background variant={BackgroundVariant.Dots} />
       <Controls />
       {#if minimap}<MiniMap />{/if}
     </SvelteFlow>
+    {#if wirePreview}
+      <!-- ui-shot only: a static stand-in for the drag-only connection line, wearing the same
+           xyflow classes so the `.wire-invalid` styling below paints it identically — zero visual
+           duplication. Dev-only callers pin it; production never passes `wirePreview`. -->
+      <svg class="svelte-flow__connectionline wire-preview" aria-hidden="true">
+        <path
+          class="svelte-flow__connection-path"
+          fill="none"
+          d={`M ${wirePreview.x1},${wirePreview.y1} C ${wirePreview.x1 + 70},${wirePreview.y1} ${
+            wirePreview.x2 - 70
+          },${wirePreview.y2} ${wirePreview.x2},${wirePreview.y2}`}
+        />
+      </svg>
+    {/if}
   {:else if empty}
     <div class="gempty">{@render empty()}</div>
   {/if}
@@ -184,48 +218,35 @@
     stroke: transparent;
     stroke-opacity: 0;
   }
-  /* modifier-chain wires read distinctly from trigger-flow wires: the mod role colour +
-     a dashed stroke, so the two flows separate at a glance (declared BEFORE edge-hot so the
-     hover accent still wins the stroke on a hovered mod wire; the dash stays either way) */
+  /* modifier-chain wires read distinctly from trigger-flow wires by their dashed stroke alone:
+     the wire itself stays grey (signal-flow wires are intentionally de-coloured), so only the
+     dash separates the modifier chain from the trigger flow at a glance. */
   .gcanvas :global(.svelte-flow__edge.edge-mod .svelte-flow__edge-path) {
-    stroke: var(--role-mod);
     stroke-dasharray: 5 4;
   }
-  /* modulation wires (source→param) get the third wire role colour + a finer dotted stroke, so
-     they read distinctly from both trigger-flow and modifier-chain wires at a glance */
+  /* modulation wires (source→param) are the one coloured flow — a value routed into a parameter
+     is a genuinely different wire from signal flow, so it keeps the modulation role colour + a
+     finer dotted stroke to read distinctly from the grey trigger/modifier wires. */
   .gcanvas :global(.svelte-flow__edge.edge-modulation .svelte-flow__edge-path) {
     stroke: var(--role-modulation);
     stroke-dasharray: 2 3;
   }
-  .gcanvas :global(.svelte-flow__edge.edge-effect .svelte-flow__edge-path) {
-    stroke: var(--role-mod);
-  }
-  /* a wire one level connected to the hovered node lights up (see graph-hover) */
-  .gcanvas :global(.svelte-flow__edge.edge-hot .svelte-flow__edge-path) {
-    stroke: var(--accent);
-  }
+  /* a directly hovered or selected wire lights up accent (the instant-hover interaction
+     contract); signal-flow wires otherwise read grey. */
   .gcanvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
-  /* the `mod` input handle — mod role colour so it reads as the modifier port, not flow in */
-  .gcanvas :global(.svelte-flow__handle.mod-handle) {
-    background: color-mix(in oklch, var(--role-mod) 30%, var(--surface-2));
-    border-color: var(--role-mod);
+  /* R08: a wire ARMED for a splice (a node is dragged over it) lights accent, thickens, and
+     glows — the pending insert reads clearly BEFORE release. Instant, no motion (the locked
+     graph-interaction contract). Wins over the grey/hover strokes via later cascade + weight. */
+  .gcanvas :global(.svelte-flow__edge.edge-splice-armed .svelte-flow__edge-path) {
+    stroke: var(--accent);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 4px color-mix(in oklch, var(--accent) 60%, transparent));
   }
-  .gcanvas :global(.svelte-flow__handle.mod-handle:hover),
-  .gcanvas :global(.svelte-flow__handle.mod-handle.connectingto) {
-    background: var(--role-mod);
-    border-color: var(--role-mod);
-  }
-  .gcanvas :global(.svelte-flow__handle.trigger-handle) {
-    background: color-mix(in oklch, var(--accent) 28%, var(--surface-2));
-    border-color: var(--accent);
-  }
-  .gcanvas :global(.svelte-flow__handle.effect-handle) {
-    background: color-mix(in oklch, var(--role-mod) 28%, var(--surface-2));
-    border-color: var(--role-mod);
-  }
+  /* the modulation input handle keeps the modulation role colour so the param port reads by
+     role; the trigger / effect / mod flow handles stay the neutral grey handle below. */
   .gcanvas :global(.svelte-flow__handle.param-handle) {
     background: color-mix(in oklch, var(--role-modulation) 30%, var(--surface-2));
     border-color: var(--role-modulation);
@@ -254,7 +275,26 @@
     stroke: var(--accent);
     stroke-width: 2;
     stroke-dasharray: 5 4;
-  } 
+  }
+  /* Over an INVALID drop target the wire-in-progress reads red, dotted, and dull the moment the
+     pointer crosses it (item 1.1) — the refusal is announced before release, never a wire that
+     silently vanishes. `--live-bright` is the same red the error toast uses, so the in-drag cue
+     and the reason toast read as one signal. */
+  .gcanvas.wire-invalid :global(.svelte-flow__connectionline .svelte-flow__connection-path) {
+    stroke: var(--live-bright);
+    stroke-dasharray: 2 3;
+    opacity: 0.45;
+  }
+  /* ui-shot only: the pinned static stand-in fills the canvas so its path lands in flow space. */
+  .gcanvas :global(svg.wire-preview) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 5;
+  }
   .gcanvas :global(.svelte-flow__controls) {
     background: var(--surface);
     padding: var(--space-1);

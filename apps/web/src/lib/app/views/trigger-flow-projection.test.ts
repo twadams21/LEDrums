@@ -6,6 +6,7 @@ import {
   projectTriggerFlowNodes,
   resetProjectionCache,
   triggerEdgeSignature,
+  triggerNodeSignature,
 } from './trigger-flow-projection';
 
 describe('projectTriggerFlowNodes', () => {
@@ -63,6 +64,73 @@ describe('projectTriggerFlowNodes', () => {
     });
 
     expect(second.nodes[0]).not.toBe(first.nodes[0]);
+  });
+
+  // R01 (GH #80) regression — the vanishing/reappearing wire. A Mix node renders ONE input
+  // handle per incoming flow edge (`mix-edge:<edgeId>`). Adding a wire into a Mix node changes
+  // its handle SET but not any node FIELD, so a signature that ignores incoming edges made the
+  // projection reuse the mix node with stale measured handleBounds — xyflow then had nowhere to
+  // attach the new edge, so the wire vanished until a refresh re-measured. The mix node must
+  // rebuild when its incoming flow-edge set changes (mirrors the modulation-rows case above).
+  it('rebuilds a Mix node when an incoming flow edge is added (handle set changed)', () => {
+    const base = (edges: TriggerGraph['edges']): TriggerGraph => ({
+      version: 3,
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('effect', 'e1', 100, 0, { effectId: 'gen:radial-wash' }),
+        makeNode('effect', 'e2', 100, 120, { effectId: 'gen:radial-wash' }),
+        makeNode('mix', 'm1', 300, 60),
+        makeNode('output', 'output', 500, 60),
+      ],
+      edges,
+    });
+    const before = base([{ id: 'w1', from: 'e1', to: 'm1' }]);
+    const after = base([
+      { id: 'w1', from: 'e1', to: 'm1' },
+      { id: 'w2', from: 'e2', to: 'm1' },
+    ]);
+
+    const first = projectTriggerFlowNodes({
+      graph: before,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: [],
+      cache: emptyTriggerProjectionCache(),
+    });
+    const second = projectTriggerFlowNodes({
+      graph: after,
+      graphKey: 'graph-a',
+      selectedNodeId: null,
+      previousNodes: first.nodes,
+      cache: first.cache,
+    });
+
+    const mixBefore = first.nodes.find((n) => n.id === 'm1')!;
+    const mixAfter = second.nodes.find((n) => n.id === 'm1')!;
+    expect(mixAfter).not.toBe(mixBefore); // rebuilt → xyflow re-measures the new mix-row handle
+  });
+
+  it('folds a Mix node incoming flow-edge set into its signature (add / remove / dedupe)', () => {
+    const nodes = [makeNode('trigger', 'trigger', 0, 0), makeNode('mix', 'm1', 100, 0)];
+    const sig = (edges: TriggerGraph['edges']) => triggerNodeSignature(nodes[1]!, { version: 3, nodes, edges });
+
+    const none = sig([]);
+    const one = sig([{ id: 'w1', from: 'a', to: 'm1' }]);
+    const two = sig([
+      { id: 'w1', from: 'a', to: 'm1' },
+      { id: 'w2', from: 'b', to: 'm1' },
+    ]);
+    expect(one).not.toBe(none); // adding an incoming flow edge changes the signature
+    expect(two).not.toBe(one); // a second incoming edge changes it again
+    // A modulation / mod wire is NOT a mix input row — it must not perturb the flow-row set.
+    const modOnly = sig([{ id: 'w3', from: 'env', to: 'm1', toPort: 'param:brightness' }]);
+    expect(modOnly).toBe(none);
+    // Signature is order-independent of edge declaration order (row identity is the set).
+    const twoReordered = sig([
+      { id: 'w2', from: 'b', to: 'm1' },
+      { id: 'w1', from: 'a', to: 'm1' },
+    ]);
+    expect(twoReordered).toBe(two);
   });
 
   it('does not reuse flow-node positions across graph keys when node ids match', () => {

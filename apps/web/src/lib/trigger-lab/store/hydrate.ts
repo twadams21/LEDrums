@@ -72,7 +72,7 @@ export function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
   const source: TriggerSource = { kind: 'drum', drumId: key.slice(0, sep), zone: key.slice(sep + 1) };
   const nodes = graph.nodes.slice();
   nodes[i] = { ...nodes[i]!, source };
-  return { nodes, edges: graph.edges };
+  return { ...graph, nodes, edges: graph.edges };
 }
 
 /** Back-fill an explicit `drum` trigger source on every PAD-BOUND graph (a key matching a real
@@ -140,13 +140,13 @@ export function materializeLinkedNodes(graph: TriggerGraph, presetParamsFor: Pre
     if (!('linked' in (n as MaybeLinked))) return n; // already migrated — keep the ref
     const wasLinked = (n as MaybeLinked).linked === true;
     const { linked: _drop, ...rest } = n as GraphNode & MaybeLinked;
-    if (wasLinked && n.kind === 'play') {
+    if (wasLinked && (n.kind === 'play' || n.kind === 'effect')) {
       const shared = presetParamsFor(n.presetId);
       if (shared) return { ...rest, params: { ...(shared as Record<string, unknown>) } } as GraphNode;
     }
     return rest as GraphNode;
   });
-  return { nodes, edges: graph.edges };
+  return { ...graph, nodes, edges: graph.edges };
 }
 
 /** Apply {@link materializeLinkedNodes} across a keyed map of graphs (each unchanged graph keeps
@@ -188,7 +188,7 @@ function adsrEqual(a: AdsrShape, b: AdsrShape): boolean {
 export function migrateGraphEnvelopes(graph: TriggerGraph): TriggerGraph {
   let graphChanged = false;
   const nodes = graph.nodes.map((n) => {
-    if (n.kind !== 'play') return n;
+    if (n.kind !== 'play' && n.kind !== 'effect') return n;
     let envChanged = false;
     const env: EnvMap = {};
     for (const [key, e] of Object.entries(n.env)) {
@@ -208,7 +208,7 @@ export function migrateGraphEnvelopes(graph: TriggerGraph): TriggerGraph {
     graphChanged = true;
     return { ...n, env };
   });
-  return graphChanged ? { nodes, edges: graph.edges } : graph;
+  return graphChanged ? { ...graph, nodes, edges: graph.edges } : graph;
 }
 
 /** Apply {@link migrateGraphEnvelopes} across a keyed map of graphs (each unchanged
@@ -254,13 +254,13 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
   // Any play node still carrying an `env` map is un-migrated (post-migration play env is `{}`), so
   // its mere presence is the trigger — including a map with only inert (`none` / non-number)
   // entries, which must still be cleared or the pass would never reach its fixed point.
-  const hasLegacyEnv = graph.nodes.some((n) => n.kind === 'play' && Object.keys(n.env).length > 0);
+  const hasLegacyEnv = graph.nodes.some((n) => (n.kind === 'play' || n.kind === 'effect') && Object.keys(n.env).length > 0);
   if (!hasLegacyEnv) return graph; // nothing to migrate → same reference (idempotent)
 
   const nodes: GraphNode[] = [];
   const addedEdges: GraphEdge[] = [];
   for (const n of graph.nodes) {
-    if (n.kind !== 'play' || Object.keys(n.env).length === 0) {
+    if ((n.kind !== 'play' && n.kind !== 'effect') || Object.keys(n.env).length === 0) {
       nodes.push(n); // non-play, or an already-migrated play node — untouched (alias-stable)
       continue;
     }
@@ -294,7 +294,7 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
     // extend the exposed rows only when a param was actually wired.
     nodes.push(placed > 0 ? { ...n, env: {}, modInputs } : { ...n, env: {} });
   }
-  return { nodes, edges: [...graph.edges, ...addedEdges] };
+  return { ...graph, nodes, edges: [...graph.edges, ...addedEdges] };
 }
 
 /** Apply {@link migrateGraphEnvMaps} across a keyed map of graphs (each unchanged graph keeps
@@ -318,7 +318,7 @@ export function resolveGraphAliases(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if (n.kind !== 'play' || !n.effectId) return n;
+      if ((n.kind !== 'play' && n.kind !== 'effect') || !n.effectId) return n;
       const resolved = resolveEffectAlias(n.effectId);
       if (resolved === n.effectId) return n;
       changed = true;
@@ -342,7 +342,7 @@ export function inferPlayTypes(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if (n.kind !== 'play' || n.playType) return n;
+      if ((n.kind !== 'play' && n.kind !== 'effect') || n.playType) return n;
       changed = true;
       return { ...n, playType: n.canvasScene ? ('canvas' as const) : playTypeForEffect(n.effectId) };
     });
@@ -351,44 +351,68 @@ export function inferPlayTypes(
   return out;
 }
 
+/** Split the old dual-mode CC modulation node into explicit CC and OSC source kinds.
+    Existing MIDI CC nodes stay `cc`; existing `ccSource:'osc'` nodes become `osc` and keep
+    their id, position and OSC address so wires survive unchanged. */
+export function splitModulationSourceNodes(graph: TriggerGraph): TriggerGraph {
+  let changed = false;
+  const nodes = graph.nodes.map((n) => {
+    if (n.kind !== 'cc' || n.ccSource !== 'osc') return n;
+    changed = true;
+    return { ...n, kind: 'osc' as const, ccSource: undefined, ccController: undefined, ccChannel: undefined };
+  });
+  return changed ? { ...graph, nodes } : graph;
+}
+
+export function splitModulationSources(
+  graphs: Record<string, TriggerGraph>,
+): Record<string, TriggerGraph> {
+  let changed = false;
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    const migrated = splitModulationSourceNodes(graph);
+    out[key] = migrated;
+    if (migrated !== graph) changed = true;
+  }
+  return changed ? out : graphs;
+}
+
+/** Gen3 trigger-graph migration:
+    - `play` is accepted as a legacy serialized alias and rewritten to canonical `effect`.
+    - Gen2 scoped `output` nodes are rewritten to `scope` route filters.
+    - Every graph gets exactly one visible terminal Output anchor.
+    - Render leaves are wired to Output so legacy authored light paths keep emitting.
+
+    The pass is pure, idempotent, and defensive. It does not guess at invalid duplicate ids:
+    sanitizeGraphIntegrity runs before this, then this pass owns Gen3 anchor invariants.
+
+    SEAM (R01 → R02, GH #80/#82): `normalizeTriggerGraphToGen3` ALSO returns an `issues[]` naming
+    every refresh-time normalisation it performed (Gen3 migration, Output-anchor insertion,
+    legacy leaf→Output auto-wire, duplicate/dangling-edge drops). We discard it here, so those
+    fix-ups are currently SILENT — exactly the "system announces what it changed" gap R02 owns.
+    When R02 lands, thread `.issues` out of this pass (and `sanitizeGraphIntegrity`) up to the
+    store so it can raise one system-action toast per user-visible event. Do NOT surface it from
+    here (no toast UI in the pure hydrate slice). */
+export function migrateGen3Graph(graph: TriggerGraph): TriggerGraph {
+  return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
+}
+
+export function migrateGen3Graphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  let changed = false;
+  for (const [key, graph] of Object.entries(graphs)) {
+    const migrated = migrateGen3Graph(graph);
+    out[key] = migrated;
+    if (migrated !== graph) changed = true;
+  }
+  return changed ? out : graphs;
+}
+
 /** Repair graph records at the hydrate boundary so a stale/partial sync packet cannot leave
     dangling wires or duplicate ids in the live editor/sim state. Existing valid references keep
     their object identity; invalid records are dropped rather than guessed. */
 export function sanitizeGraphIntegrity(graph: TriggerGraph): TriggerGraph {
-  let changed = false;
-  const seenNodes = new Set<string>();
-  const nodes: GraphNode[] = [];
-  for (const node of graph.nodes) {
-    if (!node.id || seenNodes.has(node.id)) {
-      changed = true;
-      continue;
-    }
-    seenNodes.add(node.id);
-    nodes.push(node);
-  }
-
-  const seenEdges = new Set<string>();
-  const seenConnections = new Set<string>();
-  const edges: GraphEdge[] = [];
-  for (const edge of graph.edges) {
-    const connectionKey = `${edge.from}:${edge.fromPort ?? ''}>${edge.to}:${edge.toPort ?? ''}`;
-    if (
-      !edge.id ||
-      seenEdges.has(edge.id) ||
-      seenConnections.has(connectionKey) ||
-      edge.from === edge.to ||
-      !seenNodes.has(edge.from) ||
-      !seenNodes.has(edge.to)
-    ) {
-      changed = true;
-      continue;
-    }
-    seenEdges.add(edge.id);
-    seenConnections.add(connectionKey);
-    edges.push(edge);
-  }
-
-  return changed ? { nodes, edges } : graph;
+  return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
 }
 
 export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
@@ -400,6 +424,38 @@ export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): R
     out[key] = clean;
   }
   return changed ? out : graphs;
+}
+
+/** Batched, plain-language summary of the actions the hydrate performed ON THE USER'S BEHALF
+    (R02) — aggregated across every graph in the map so a single hydrate announces ONCE, not
+    per-graph. `migratedGraphs` counts legacy (pre-Gen3) graphs rewritten to the Gen3 schema;
+    `autoWiredNodes` counts render leaves the migration wired to the terminal Output anchor. */
+export interface SystemActionSummary {
+  migratedGraphs: number;
+  autoWiredNodes: number;
+}
+
+export const NO_SYSTEM_ACTIONS: SystemActionSummary = { migratedGraphs: 0, autoWiredNodes: 0 };
+
+/** Sanitize/migrate every graph to Gen3 AND report the batched system actions performed. The
+    Gen3 normalize is the single seam where migration + auto-wire happen, so the actions are read
+    straight off it — no guessing from before/after diffs. Used at the FIRST integrity pass of
+    {@link normalizeGraphs} (subsequent idempotent passes over already-Gen3 graphs report nothing). */
+export function sanitizeGraphsIntegrityWithActions(
+  graphs: Record<string, TriggerGraph>,
+): { graphs: Record<string, TriggerGraph>; actions: SystemActionSummary } {
+  let changed = false;
+  let migratedGraphs = 0;
+  let autoWiredNodes = 0;
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) {
+    const { graph: clean, actions } = voice.normalizeTriggerGraphToGen3(graph);
+    if (clean !== graph) changed = true;
+    if (actions.migratedToGen3) migratedGraphs += 1;
+    autoWiredNodes += actions.autoWiredToOutput;
+    out[key] = clean as TriggerGraph;
+  }
+  return { graphs: changed ? out : graphs, actions: { migratedGraphs, autoWiredNodes } };
 }
 
 /** The full graph back-compat pass the constructor + every show-load runs (idempotent): make
@@ -414,13 +470,17 @@ export function normalizeGraphs(
   pads: readonly Pad[],
   specsFor: SpecsFor,
   presetParamsFor: PresetParamsFor,
-): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
+): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string>; actions: SystemActionSummary } {
   const padKeys = new Set(pads.map(padKey));
   // Consult the effect alias map FIRST (D1, locked decision 1): a show referencing a
   // retired effect id has its play nodes rewritten to the live target before anything
   // else resolves them. Empty map today (U3 populates it) → an identity pass for now.
   let next = resolveGraphAliases(graphs);
-  next = sanitizeGraphsIntegrity(next);
+  // FIRST integrity pass owns the Gen3 migration + auto-wire, so read the batched system
+  // actions off it here (R02); the later idempotent passes over already-Gen3 graphs add nothing.
+  const firstPass = sanitizeGraphsIntegrityWithActions(next);
+  next = firstPass.graphs;
+  const actions = firstPass.actions;
   // AFTER alias resolution (a retired id must infer from its live replacement): give every
   // persisted play node its D3 `playType` so typed-node UI (U5) always has one.
   next = inferPlayTypes(next);
@@ -433,6 +493,9 @@ export function normalizeGraphs(
   // AFTER the ADSR-v2 normalize (so envelope nodes carry v2 shapes): fold legacy play-node
   // env maps into envelope nodes + `param:<key>` mappings, then drop the legacy field (S35).
   next = migrateGraphsEnvMaps(next, specsFor);
+  next = migrateGen3Graphs(next);
+  next = splitModulationSources(next);
+  next = sanitizeGraphsIntegrity(next);
   const names = hydratePadNames(next, graphNames, pads);
-  return { graphs: next, graphNames: names };
+  return { graphs: next, graphNames: names, actions };
 }

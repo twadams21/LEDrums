@@ -10,7 +10,7 @@
 import { canvasEffectId } from '../canvas/ids';
 import type { PlayAction } from './eval-graph';
 import { deriveSeed } from './prng';
-import type { Bus, EffectDef, ParamSpec, Voice } from './types';
+import type { Bus, EffectDef, MixInput, ParamSpec, Voice } from './types';
 
 const VOICE_CAP = 256;
 /** Base mixed with the monotonic voice counter into each voice's per-trigger seed. */
@@ -23,6 +23,10 @@ export interface SpawnDeps {
   busById: Map<string, Bus>;
   latched: Map<string, string | null>;
   timeMs: number;
+  /** Eval state prefix (pad / slot key) the spawning action belongs to — tagged onto the
+      voice so origin-keyed liveness scans (R13 delay-overlap Mix) can be pad-scoped. `''`
+      for non-graph spawns (section looks). */
+  pad?: string;
 }
 
 /**
@@ -61,6 +65,21 @@ export class VoicePool {
   }
 
   /**
+   * Is a layer origin node still live for this pad? True when an active voice spawned under
+   * `pad` represents `originNodeId` — either as its own producing node or as one of a Mix
+   * voice's members. The delay-overlap Mix evaluator (R13) reads this to keep still-live
+   * siblings in a delayed composition and drop decayed ones.
+   */
+  isLayerLive(pad: string, originNodeId: string): boolean {
+    for (const v of this.pool) {
+      if (!v.active || v.pad !== pad) continue;
+      if (v.originNodeId === originNodeId) return true;
+      if (v.mixInputs?.some((mi) => mi.originNodeId === originNodeId)) return true;
+    }
+    return false;
+  }
+
+  /**
    * Find a free pool slot; if the pool is saturated, steal the oldest releasing
    * voice, else the oldest voice overall (voice-capped, no GC churn).
    */
@@ -93,6 +112,25 @@ export class VoicePool {
       }
     }
 
+    // B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
+    // (pad, originNodeId): release it so their shared members aren't composited twice (double
+    // brightness across the overlap window). Poly buses never steal, so without this the
+    // immediate Mix[A] voice and the re-composed Mix[A,B] voice both render A. The two composites
+    // are one evolving timeline voice, not siblings. Release the OLDEST still-live match — a
+    // single delayed fire has exactly one; the (pad, originNodeId) key can't distinguish trigger
+    // instances (S2), so under rapid multi-fires this releases the oldest composite at that key.
+    // Immediate/`delay 0` spawns never set the flag, so genuine multiplicity is untouched.
+    if (a.supersedePriorVoice && a.originNodeId) {
+      const pad = deps.pad ?? '';
+      let prior: Voice | null = null;
+      for (const v of this.pool) {
+        if (!v.active || v.phase === 'release') continue;
+        if (v.pad !== pad || v.originNodeId !== a.originNodeId) continue;
+        if (!prior || v.bornAtMs < prior.bornAtMs) prior = v;
+      }
+      if (prior) releaseVoice(prior, deps.timeMs);
+    }
+
     const slot = this.acquireSlot();
     if (!slot) return null;
 
@@ -116,8 +154,33 @@ export class VoicePool {
     // A canvas play node's scene doc is authoritative: it hosts the scene's adapter id
     // (`canvas:<sceneId>`, resolved by the effects registry) through the SAME bridge path
     // a hosted generator takes — no dispatch fork (locked dec 7).
-    slot.generatorId = a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
+    slot.generatorId = a.mixInputs?.length
+      ? (effect.generatorId ?? null)
+      : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
+    slot.mixInputs = a.mixInputs?.map((input, index): MixInput | null => {
+      const inputEffect = deps.effectsById.get(input.effectId);
+      if (!inputEffect) return null;
+      const generatorId = input.canvasScene ? canvasEffectId(input.canvasScene) : inputEffect.generatorId;
+      if (!generatorId) return null;
+      return {
+        generatorId,
+        scope: input.scope,
+        targetId: input.targetId,
+        sourceDrumId,
+        velocity,
+        seed: deriveSeed(slot.seed, index + 1),
+        params: { ...input.params },
+        liveParams: {},
+        specs: inputEffect.params,
+        modulations: input.modulations,
+        genState: null,
+        modifiers: input.modifiers,
+        modState: undefined,
+        opacity: input.opacity,
+        originNodeId: input.originNodeId,
+      };
+    }).filter((input): input is MixInput => input !== null);
     // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
     // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
@@ -128,6 +191,7 @@ export class VoicePool {
     // takes the new list (or undefined) with nothing to reset.
     slot.modulations = a.modulations;
     slot.params = { ...a.params };
+    slot.mixBlendMode = a.mixBlendMode;
     slot.specs = effect.params;
     slot.attackMs = effect.attackMs;
     slot.sustainMs = effect.sustainMs;
@@ -139,6 +203,8 @@ export class VoicePool {
     slot.releaseFromLevel = 1;
     slot.via = a.via;
     slot.deckGain = 1;
+    slot.pad = deps.pad ?? '';
+    slot.originNodeId = a.originNodeId;
 
     if (a.latchKey) deps.latched.set(a.latchKey, slot.id);
     return slot;
@@ -166,6 +232,7 @@ function makeVoiceSlot(): Voice {
     modState: undefined,
     modulations: undefined,
     params: {},
+    mixBlendMode: undefined,
     liveParams: {},
     specs: EMPTY_SPECS,
     attackMs: 0,
@@ -178,6 +245,7 @@ function makeVoiceSlot(): Voice {
     releaseFromLevel: 1,
     via: '',
     deckGain: 1,
+    mixInputs: undefined,
   };
 }
 

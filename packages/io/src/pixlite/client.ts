@@ -39,14 +39,18 @@ export type HttpTransport = (spec: HttpRequestSpec) => Promise<HttpResponse>;
 export const nodeHttpTransport: HttpTransport = (spec) =>
   new Promise<HttpResponse>((resolve, reject) => {
     const url = new URL(spec.url);
-    const headers: Record<string, string> =
-      spec.body !== undefined
-        ? {
-            'Content-Type': 'application/json',
-            'Content-Length': String(Buffer.byteLength(spec.body)),
-          }
-        : {};
-    const req = httpRequest(url, { method: spec.method, headers }, (res) => {
+    // The PixLite controller closes its TCP connection after each response (spec §4.4: an HTTP
+    // client should close a connection it has no next request for). Node's global agent defaults
+    // to keepAlive, so the POST after the adopt-probe reuses a socket the controller has already
+    // half-closed → timeout / ECONNRESET, and stats reads fail on real hardware even though the
+    // request bytes are correct. Force a one-off connection per request (no global agent) and
+    // announce it with `Connection: close`, matching the controller's own behaviour.
+    const headers: Record<string, string> = { Connection: 'close' };
+    if (spec.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = String(Buffer.byteLength(spec.body));
+    }
+    const req = httpRequest(url, { method: spec.method, headers, agent: false }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c: Buffer) => chunks.push(c));
       res.on('end', () =>

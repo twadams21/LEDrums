@@ -51,22 +51,18 @@ export type TriggerGraph = voice.TriggerGraph;
     `modifier` + `envelope` are `NodeKind`s but not block types in the Block union, so the
     element type is widened to `Exclude<NodeKind, 'trigger'>`. `envelope` is a modulation
     source (doc 10) — palette-grouped separately, but addable like the rest. */
-export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['play', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'output', 'envelope', 'lfo', 'cc', 'randomMod']; // S36 'lfo' + S37 'cc'
+export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['effect', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'modifier', 'mix', 'scope', 'output', 'envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod']; // S36 'lfo' + S37 'cc'
 
-/** Whether a kind emits a trigger-flow / mod / modulation OUTPUT handle. 'play' is a sink (no
-    children); 'trigger' is a source. A 'modifier' emits its `mod` output; a modulation source
-    ('envelope', doc 10) emits its modulation output — both wire from the right, so both count. */
+/** Whether a kind emits a trigger/effect-flow or modulation OUTPUT handle. */
 export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && !voice.isModSourceKind(kind);
-/** Whether a kind takes a trigger-FLOW input (the default `in` handle). 'trigger' is the
-    root; 'modifier' + modulation sources ('envelope') take NO flow input — their inputs are
-    the `mod` handle / none, so they are excluded here. */
+/** Whether a kind takes a trigger/effect-FLOW input (the default `in` handle). */
 export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && !voice.isModSourceKind(kind);
 /** Whether a kind exposes a `mod` INPUT handle (a modifier chain lands here). Play nodes
     take modifiers; modifier nodes take upstream modifiers (mod→mod chains). */
-export const nodeHasModInput = (_kind: NodeKind): boolean => false;
+export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
 /** Whether a kind carries exposable modulation-target params (play + modifier nodes). A
     `param:<key>` modulation wire may land only on these. */
-export const nodeHasParams = (kind: NodeKind): boolean => kind === 'play' || kind === 'modifier';
+export const nodeHasParams = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
 /** Whether a kind is a modulation SOURCE (wires from its output into a `param:<key>` input).
     Re-exported from core so the wiring layer and the resolver share one list. */
 export const nodeIsModSource = (kind: NodeKind): boolean => voice.isModSourceKind(kind);
@@ -98,6 +94,7 @@ export function makeNode(kind: NodeKind, id: string, x = 0, y = 0, over: Partial
     invert: false,
     bands: [0.5],
     p: 0.5,
+    mixBlendMode: 'normal',
     // delay (only meaningful when kind === 'delay'; defaults mirror the core engine defaults)
     delayMode: 'time',
     ms: 250,
@@ -121,7 +118,7 @@ export function bandIndex(value: number, cutoffs: readonly number[]): number {
 function nodeFromBlock(b: Block): GraphNode {
   switch (b.kind) {
     case 'play':
-      return makeNode('play', b.id, 0, 0, {
+      return makeNode('effect', b.id, 0, 0, {
         mode: b.mode,
         scope: b.scope,
         effectId: b.effectId,
@@ -147,45 +144,56 @@ function nodeFromBlock(b: Block): GraphNode {
 export const NODE_W = 220;
 const H_GAP = 90;
 const ROW_H = 140;
+const OUTPUT_ANCHOR_ID = 'output';
 
-/** Convert an authored Block tree into a positioned graph (trigger + nodes + edges). */
+/** Convert an authored Block tree into a positioned Gen3 graph. The legacy block tree has
+    `play` leaves, but Gen3 persists canonical `effect` nodes and renders only routes that
+    explicitly reach the Output anchor. */
 export function treeToGraph(tree: Block): TriggerGraph {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  const renderLeaves: string[] = [];
   let row = 0;
   let edgeSeq = 0;
   const link = (from: string, to: string, fromPort?: string): void => {
     edges.push(fromPort === undefined ? { id: `e${edgeSeq++}`, from, to } : { id: `e${edgeSeq++}`, from, to, fromPort });
   };
 
-  const walk = (b: Block, depth: number): { id: string; y: number } => {
+  const walk = (b: Block, depth: number): { id: string; y: number; maxDepth: number } => {
     const node = nodeFromBlock(b);
     node.x = depth * (NODE_W + H_GAP);
     nodes.push(node);
     const kids = blockChildren(b);
     if (kids.length === 0) {
       node.y = row++ * ROW_H;
-    } else {
-      // A value+bands switch routes each child from its own band handle (`band-${i}`),
-      // in child order — which is top→bottom (ascending y) in this layout, matching
-      // both childrenViaPort's y-sort and the fold migration, so a seed graph is
-      // identical to a migrated persisted one.
-      const bandPorts = b.kind === 'switch' && b.on === 'value' && b.valueMode === 'bands';
-      const infos = kids.map((k, i) => {
-        const ci = walk(k, depth + 1);
-        link(node.id, ci.id, bandPorts ? `band-${i}` : undefined);
-        return ci;
-      });
-      node.y = (infos[0]!.y + infos[infos.length - 1]!.y) / 2;
+      if (node.kind === 'effect' || node.kind === 'play') renderLeaves.push(node.id);
+      return { id: node.id, y: node.y, maxDepth: depth };
     }
-    return { id: node.id, y: node.y };
+
+    // A value+bands switch routes each child from its own band handle (`band-${i}`),
+    // in child order — which is top→bottom (ascending y) in this layout, matching
+    // both childrenViaPort's y-sort and the fold migration, so a seed graph is
+    // identical to a migrated persisted one.
+    const bandPorts = b.kind === 'switch' && b.on === 'value' && b.valueMode === 'bands';
+    const infos = kids.map((k, i) => {
+      const ci = walk(k, depth + 1);
+      link(node.id, ci.id, bandPorts ? `band-${i}` : undefined);
+      return ci;
+    });
+    node.y = (infos[0]!.y + infos[infos.length - 1]!.y) / 2;
+    return { id: node.id, y: node.y, maxDepth: Math.max(depth, ...infos.map((info) => info.maxDepth)) };
   };
 
   const root = walk(tree, 1);
   const trigger = makeNode('trigger', 'trigger', 0, root.y);
-  nodes.push(trigger);
+  const output = makeNode('output', OUTPUT_ANCHOR_ID, (root.maxDepth + 1) * (NODE_W + H_GAP), root.y, {
+    scope: 'kit',
+    targetId: undefined,
+  });
+  nodes.push(trigger, output);
   link(trigger.id, root.id);
-  return { nodes, edges };
+  for (const leafId of renderLeaves) link(leafId, output.id);
+  return { version: 3, nodes, edges };
 }
 
 // ---- velocity → value fold (migration) --------------------------------------
@@ -233,7 +241,7 @@ export function foldVelocitySwitch(graph: TriggerGraph): TriggerGraph {
       e.fromPort = `band-${i}`;
     });
   }
-  return { nodes, edges };
+  return { ...graph, nodes, edges };
 }
 
 /** Apply {@link foldVelocitySwitch} across a keyed map of graphs (the store's hydrate

@@ -6,7 +6,26 @@ export type TriggerProjectionCache = {
   nodeSigs: Map<string, string>;
 };
 
-export function triggerNodeSignature(n: GraphNode): string {
+/** The identity of a Mix node's dynamic input handles: one `mix-edge:<edgeId>` row per incoming
+    FLOW edge (see graph-to-flow's mix-row handles). Sorted by edge id so it is the row SET, order-
+    independent of edge declaration order — a source-node drag reorders rows visually without
+    perturbing this. Empty when the graph isn't supplied (defensive) or the node takes no flow rows.
+    Modulation (`param:*`) / modifier (`mod`) wires are excluded — they are not mix input rows. */
+function mixRowSetSignature(graph: TriggerGraph | null | undefined, mixNodeId: string): string {
+  if (!graph) return '';
+  return graph.edges
+    .filter((e) => e.to === mixNodeId && (e.toPort == null || e.toPort === 'in'))
+    .map((e) => e.id)
+    .sort()
+    .join(',');
+}
+
+/** Structural signature of a graph node for projection reuse. When `graph` is supplied, a Mix
+    node's signature also folds in its incoming flow-edge SET, so ADDING or REMOVING a wire into a
+    Mix node rebuilds it — xyflow then re-measures the per-edge `mix-edge:<id>` handles instead of
+    reusing stale bounds that have nowhere to attach the new wire (R01/GH #80: the vanishing wire).
+    Mirrors how `modInputs` (a play/modifier node's dynamic param handles) already lives in `base`. */
+export function triggerNodeSignature(n: GraphNode, graph?: TriggerGraph | null): string {
   const modInputs = (n.modInputs ?? []).map((m) => m.param).join(',');
   const base = `${n.id}:${n.kind}:pos=${n.x},${n.y}:mod=${modInputs}`;
   switch (n.kind) {
@@ -16,8 +35,16 @@ export function triggerNodeSignature(n: GraphNode): string {
       return `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
     case 'modifier':
       return `${base}:modifier=${n.modifierId ?? ''}`;
+    case 'mix':
+      return `${base}:mix=${n.mixBlendMode ?? 'normal'}:rows=${mixRowSetSignature(graph, n.id)}`;
     case 'cc':
-      return `${base}:cc=${n.ccSource ?? 'midi'}:${n.ccController ?? ''}:${n.ccChannel ?? ''}:${n.oscAddress ?? ''}`;
+      return `${base}:cc=${n.ccController ?? ''}:${n.ccChannel ?? ''}`;
+    case 'note':
+      return `${base}:note=${n.noteNumber ?? ''}:${n.noteChannel ?? ''}:${n.noteMode ?? ''}:${n.noteReleaseMs ?? ''}`;
+    case 'osc':
+      return `${base}:osc=${n.oscAddress ?? ''}`;
+    case 'randomMod':
+      return `${base}:random=${n.randomDistribution ?? ''}:${n.randomSteps ?? ''}`;
     case 'lfo':
       return `${base}:lfo=${n.lfo?.waveform ?? ''}:${n.lfo?.rateMode ?? ''}:${n.lfo?.rateHz ?? ''}:${n.lfo?.division ?? ''}:${n.lfo?.phase ?? ''}`;
     default:
@@ -25,8 +52,8 @@ export function triggerNodeSignature(n: GraphNode): string {
   }
 }
 
-export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort'>): string {
-  return `${e.id}:${e.from}:${e.fromPort ?? ''}>${e.to}:${e.toPort ?? ''}`;
+export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort' | 'opacity'>): string {
+  return `${e.id}:${e.from}:${e.fromPort ?? ''}>${e.to}:${e.toPort ?? ''}:opacity=${e.opacity ?? ''}`;
 }
 
 export function emptyTriggerProjectionCache(): TriggerProjectionCache {
@@ -69,7 +96,7 @@ export function projectTriggerFlowNodes(args: {
   const prevById = sameGraph ? new Map(previousNodes.map((n) => [n.id, n])) : new Map<string, TriggerFlowNode>();
   const nodes = graphToFlowNodes(graph).map((fn, i) => {
     const sn = graph.nodes[i]!;
-    const sig = triggerNodeSignature(sn);
+    const sig = triggerNodeSignature(sn, graph);
     const wantSel = fn.id === selectedNodeId;
     const prev = prevById.get(fn.id);
     if (prev && cache.nodeSigs.get(fn.id) === sig) {
@@ -86,7 +113,7 @@ export function projectTriggerFlowNodes(args: {
     nodes,
     cache: {
       graphKey,
-      nodeSigs: new Map(graph.nodes.map((n) => [n.id, triggerNodeSignature(n)])),
+      nodeSigs: new Map(graph.nodes.map((n) => [n.id, triggerNodeSignature(n, graph)])),
     },
   };
 }

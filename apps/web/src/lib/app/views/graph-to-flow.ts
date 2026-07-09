@@ -12,6 +12,7 @@
 import type { Edge, Node } from '@xyflow/svelte';
 import type { GraphNode, NodeKind, TriggerGraph } from '../../trigger-lab/sim';
 import { voice } from '@ledrums/core';
+import { mixRowHandleId } from './mix-layer-rows';
 
 export type TriggerNodeData = { kind: NodeKind };
 export type TriggerFlowNode = Node<TriggerNodeData>;
@@ -41,13 +42,13 @@ export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
     source: e.from,
     target: e.to,
     sourceHandle: e.fromPort,
-    targetHandle: e.toPort,
+    targetHandle: kindById.get(e.to) === 'mix' && (e.toPort == null || e.toPort === 'in') ? mixRowHandleId(e.id) : e.toPort,
     type: 'wire',
     ...(e.toPort === 'mod'
       ? { data: { mod: true } }
       : voice.paramKeyOf(e.toPort) !== null
         ? { data: { modulation: true } }
-        : kindById.get(e.from) === 'play' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
+        : kindById.get(e.from) === 'play' || kindById.get(e.from) === 'effect' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
           ? { data: { effect: true } }
         : {}),
   }));
@@ -69,10 +70,10 @@ export function applyFlowPositions(
 ): TriggerGraph {
   const pos = new Map(flowNodes.map((n) => [n.id, n.position]));
   return {
+    ...graph,
     nodes: graph.nodes.map((n): GraphNode => {
       const p = pos.get(n.id);
       return p ? { ...n, x: p.x, y: p.y } : n;
     }),
-    edges: graph.edges,
   };
 }

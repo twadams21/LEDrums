@@ -21,9 +21,9 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
+import { voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
 import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
-import { bandIndex, type GraphNode, type TriggerGraph } from './sim.graph-compilation';
+import { type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
 // `clampUnit` is intentionally NOT re-exported here — it stays an internal cross-module
@@ -222,6 +222,8 @@ export interface Voice {
       core Voice field; applied by the offline renderer's param sweep. Populated from graph
       topology at spawn (S34). */
   modulations?: Mapping[];
+  mixBlendMode?: BlendMode;
+  mixInputs?: voice.MixInput[];
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   attackMs: number;
@@ -234,6 +236,12 @@ export interface Voice {
   releaseFromLevel: number;
   via: string;
   deckGain: number;
+  /** Eval state prefix this voice was spawned under (always `'preview'` in the sim) — scopes
+      origin-keyed liveness for R13 delay-overlap Mix composition. Mirrors the core Voice field. */
+  pad?: string;
+  /** Graph node that produced this voice's layer — read by the sim's `isLayerLive` mirror so a
+      delayed branch composes with still-live Mix members. Mirrors the core Voice field. */
+  originNodeId?: string;
 }
 
 export interface LogEntry {
@@ -252,41 +260,19 @@ export interface Section {
 }
 
 // ---- Evaluation actions -----------------------------------------------------
+// CANONICAL in core `voice/eval-graph.ts` — imported as type aliases (R17) so any
+// drift between this sim and the core evaluator it delegates to fails to compile.
+// The former local mirrors + the `as unknown as` bridge casts are gone: the sim's
+// runtime eval already IS the core evaluator (R16), so these are the exact action
+// shapes `evalGraph`/`evalChildren` return.
+type PlayAction = voice.PlayAction;
+type Action = voice.Action;
+type PlayDraft = voice.PlayDraft;
 
-type PlayAction = {
-  kind: 'play';
-  effectId: string;
-  mode: PlayMode;
-  scope: Scope;
-  /** Per-play-node scope target (see GraphNode.targetId). Carried verbatim from node
-      to voice so the renderer can resolve the pixel range. */
-  targetId?: string;
-  /** layer/bus override ('' → the effect's default bus). */
-  busId: string;
-  params: ParamValues;
-  /** Resolved modifier chain for this play node's `mod` input (S29 populates from graph
-      topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modifiers`. */
-  modifiers?: ResolvedModifier[];
-  /** Resolved modulation mappings for this play node's exposed params (S34 populates from
-      graph topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modulations`. */
-  modulations?: Mapping[];
-  via: string;
-  latchKey: string | null;
-};
-type StopAction = { kind: 'stop'; voiceId: string; via: string };
-type Action = PlayAction | StopAction;
-
-export interface TriggerCtx {
-  velocity: number;
-  sectionIndex: number;
-  sectionCount: number;
-  beatPhase: number;
-  sourceDrumId: string;
-  /** Transport BPM at trigger time — snapshotted by delay nodes to resolve musical
-      divisions into milliseconds at enqueue time; later bpm changes do not alter
-      already-enqueued fires. Mirrors core `eval-graph.ts` `TriggerCtx.bpm`. */
-  bpm: number;
-}
+/** Trigger context — CANONICAL in core `voice/eval-graph.ts` (there `TriggerCtx`,
+    re-exported from `@ledrums/core` as `EvalTriggerCtx`). Aliased here so web
+    importers keep the `TriggerCtx` name on the `./sim` surface. */
+export type TriggerCtx = voice.EvalTriggerCtx;
 
 /** Per-trigger voice seed — the core VoicePool recipe (same base constant). */
 function deriveSeedFromCounter(counter: number): number {
@@ -323,6 +309,10 @@ export class Sim {
   private seqIndex = new Map<string, number>();
   private lastPick = new Map<string, number>();
   private latched = new Map<string, string | null>();
+  /** R13 — per-(pad, mix-node) member snapshots for delay-overlap Mix composition. Mirrors
+      core `engine.ts` `mixMemberSnapshots`; populated by the core evaluator this Sim delegates
+      to, and read by a delayed drain to re-compose with still-live members. */
+  private mixMemberSnapshots = new Map<string, voice.MixInputDraft[]>();
 
   /** Pending-fire queue for delay nodes — mirrors core `engine.ts` `pendingFires`.
       Each entry carries an absolute `fireAtMs` (sim time at enqueue + resolved delayMs)
@@ -336,6 +326,7 @@ export class Sim {
     ctx: TriggerCtx;
     viaPrefix: string;
     seen: Set<string>;
+    draft?: PlayDraft | null;
   }> = [];
   private pendingFireCounter = 0;
 
@@ -354,6 +345,7 @@ export class Sim {
       address → 0..1. Fed by {@link setOsc} from the store's OSC input path so an OSC-bound
       modulation source previews live; the render sweep reads it per frame via `render.ts`. */
   oscTable = new Map<string, number>();
+  noteTable = new Map<string, voice.NoteState>();
 
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
@@ -400,7 +392,7 @@ export class Sim {
           this.release(v);
           resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
         }
-      } else {
+      } else if (a.kind === 'play') {
         const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
         if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
       }
@@ -422,7 +414,9 @@ export class Sim {
           this.release(v);
           resolved.push(`■ stop ${this.effectName(v.effectId)} (${a.via})`);
         }
-      } else {
+      } else if (a.kind === 'pending') {
+        this.enqueueCorePending(a.descriptor);
+      } else if (a.kind === 'play') {
         const v = this.spawn(a, ctx.sourceDrumId, ctx.velocity);
         if (v) resolved.push(`▶ ${this.modeGlyph(a.mode)} ${this.effectName(a.effectId)} → ${this.busName(v.busId)}  (${a.via})`);
       }
@@ -434,174 +428,46 @@ export class Sim {
   }
 
   private evalGraph(graph: TriggerGraph, ctx: TriggerCtx): Action[] {
-    const trig = graph.nodes.find((n) => n.kind === 'trigger');
-    if (!trig) return [];
-    return this.evalNode(graph, trig, ctx, '', new Set());
+    // ONE evaluator: delegate to the pure core Gen3 evaluator. A raw legacy graph is
+    // normalized to Gen3 first, exactly as the real engine does at `setShow` — so the
+    // offline preview and live output share a single evaluation path.
+    const g = graph.version === 3 ? graph : voice.normalizeTriggerGraphToGen3(graph).graph;
+    return voice.evalGraph(this.coreEvalState(), g, 'preview', ctx);
   }
 
-  /** A node's wired children, ordered top→bottom (visual y) for determinism. */
-  private childrenOf(graph: TriggerGraph, node: GraphNode): GraphNode[] {
-    return graph.edges
-      .filter((e) => e.from === node.id)
-      .map((e) => graph.nodes.find((n) => n.id === e.to))
-      .filter((n): n is GraphNode => !!n)
-      .sort((a, b) => a.y - b.y);
+  private coreEvalState(): voice.EvalState {
+    return {
+      seqIndex: this.seqIndex,
+      lastPick: this.lastPick,
+      latched: this.latched,
+      prng: this.prng,
+      presetsById: this.presetsById as Map<string, voice.Preset>,
+      isVoiceAlive: (id: string) => this.voices.some((v) => v.id === id),
+      mixMemberSnapshots: this.mixMemberSnapshots,
+      isLayerLive: (pad, originNodeId) => this.isLayerLive(pad, originNodeId),
+    };
   }
 
-  /** Children wired from a specific source handle (value+bands switch). Mirrors
-      {@link childrenOf} but filters by `fromPort`, still y-sorted for determinism. */
-  private childrenViaPort(graph: TriggerGraph, node: GraphNode, port: string): GraphNode[] {
-    return graph.edges
-      .filter((e) => e.from === node.id && e.fromPort === port)
-      .map((e) => graph.nodes.find((n) => n.id === e.to))
-      .filter((n): n is GraphNode => !!n)
-      .sort((a, b) => a.y - b.y);
-  }
-
-  private evalNode(graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx, viaPrefix: string, seen: Set<string>): Action[] {
-    if (seen.has(node.id)) return []; // cycle guard
-    const seen2 = new Set(seen).add(node.id);
-    const label = (s: string): string => (viaPrefix ? `${viaPrefix} → ${s}` : s);
-    const kids = this.childrenOf(graph, node);
-    switch (node.kind) {
-      case 'trigger':
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen2));
-      case 'play': {
-        if (!node.effectId) return [];
-        // Resolve this play node's `mod` input into a flat modifier chain (S29) — the SAME
-        // pure core resolver the engine uses, so the offline preview and real output agree.
-        const mods = voice.resolveModifierChain(graph, node);
-        // Resolve incoming `param:<key>` modulation edges into mappings (S34) — the SAME pure
-        // core resolver the engine uses, so offline preview and real output agree.
-        const modulations = voice.resolveNodeModulations(graph, node);
-        return [
-          {
-            kind: 'play',
-            effectId: node.effectId,
-            mode: node.mode,
-            scope: node.scope,
-            targetId: node.targetId,
-            busId: node.busId,
-            params: this.resolveNodeParams(node),
-            modifiers: mods.length ? mods : undefined,
-            modulations: modulations.length ? modulations : undefined,
-            via: label(this.modeWord(node.mode)),
-            latchKey: null,
-          },
-        ];
-      }
-      case 'modifier':
-      case 'output':
-      case 'randomMod':
-      case 'envelope':
-      case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
-      case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
-        // Inert in trigger-flow eval: neither a modifier nor a modulation-source node fires
-        // children. A modifier reaches a voice via the play node's resolved `mod` chain; an
-        // envelope via a target's resolved `param:<key>` modulations — not here.
-        return [];
-      case 'all':
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('All'), seen2));
-      case 'random': {
-        if (kids.length === 0) return [];
-        let i = this.prng.nextInt(kids.length);
-        if (node.noRepeat && kids.length > 1) {
-          const prev = this.lastPick.get(node.id);
-          while (i === prev) i = this.prng.nextInt(kids.length);
-        }
-        this.lastPick.set(node.id, i);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2);
-      }
-      case 'sequence': {
-        if (kids.length === 0) return [];
-        const i = (this.seqIndex.get(node.id) ?? 0) % kids.length;
-        this.seqIndex.set(node.id, i + 1);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2);
-      }
-      case 'switch': {
-        // `value` (gate/bands) is canonical. `velocity` was folded into it and dropped from
-        // SwitchOn — graphs are migrated on hydrate (foldVelocitySwitch), but route anything
-        // that isn't a count-based mode (`section`/`beat`) through value eval so a stray
-        // legacy `velocity` never throws or mis-routes (mirrors core engine).
-        if (node.on !== 'section' && node.on !== 'beat') return this.evalValueSwitch(graph, node, ctx, label, seen2);
-        if (kids.length === 0) return [];
-        const i = this.switchIndexN(kids.length, node.on, ctx);
-        return this.evalNode(graph, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2);
-      }
-      case 'chance': {
-        if (this.prng.next() > node.p) return [];
-        return kids.flatMap((c) => this.evalNode(graph, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2));
-      }
-      case 'toggle': {
-        const current = this.latched.get(node.id);
-        const alive = current ? this.voices.some((v) => v.id === current) : false;
-        if (alive && current) {
-          this.latched.set(node.id, null);
-          return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
-        }
-        const actions = kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Toggle on'), seen2));
-        const firstPlay = actions.find((a) => a.kind === 'play') as PlayAction | undefined;
-        if (firstPlay) firstPlay.latchKey = node.id;
-        return actions;
-      }
-      case 'delay': {
-        const delayMs = voice.computeDelayMs(node.delayMode, node.ms, node.division, ctx.bpm);
-        if (delayMs <= 0) {
-          // Degenerate: zero/negative delay fires children immediately (mirrors core).
-          return kids.flatMap((c) => this.evalNode(graph, c, ctx, label('Delay 0ms'), seen2));
-        }
-        const delayLabel = node.delayMode === 'time' ? `Delay ${node.ms}ms` : `Delay ${node.division}`;
-        this.pendingFires.push({
-          fireAtMs: this.timeMs + delayMs,
-          enqueueOrder: this.pendingFireCounter++,
-          childIds: kids.map((k) => k.id),
-          graph,
-          ctx,
-          viaPrefix: label(delayLabel),
-          seen: seen2,
-        });
-        return [];
-      }
-    }
-  }
-
-  private resolveNodeParams(node: GraphNode): ParamValues {
-    return node.params;
-  }
-  /** Count-based child index for the `section`/`beat` switch modes (the only modes that
-      reach here — `value` is routed to {@link evalValueSwitch}). */
-  private switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
-    if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
-    const frac = on === 'beat' ? ctx.beatPhase : 0;
-    return Math.min(n - 1, Math.floor(frac * n));
-  }
-
-  /** Evaluate an on:'value' switch (value source = ctx.velocity, normalized 0..1).
-      New fields are defaulted defensively so graphs persisted before value-mode
-      existed (which lack them) still evaluate. */
-  private evalValueSwitch(
-    graph: TriggerGraph,
-    node: GraphNode,
-    ctx: TriggerCtx,
-    label: (s: string) => string,
-    seen: Set<string>,
-  ): Action[] {
-    const value = ctx.velocity;
-    const mode = node.valueMode ?? 'gate';
-    if (mode === 'gate') {
-      const threshold = node.threshold ?? 0.5;
-      const invert = node.invert ?? false;
-      const pass = invert ? value > threshold : value <= threshold;
-      if (!pass) return [];
-      const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
-      return this.childrenOf(graph, node).flatMap((c) => this.evalNode(graph, c, ctx, label(gateVia), seen));
-    }
-    const cutoffs = node.bands ?? [0.5];
-    const b = bandIndex(value, cutoffs);
-    const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
-    return this.childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
-      this.evalNode(graph, c, ctx, label(bandVia), seen),
+  /** Origin-keyed layer liveness for R13 delay-overlap Mix composition — the offline mirror
+      of core `VoicePool.isLayerLive`. A member is live while a voice spawned under `pad`
+      still carries its origin (as its own producer or as a Mix member). */
+  private isLayerLive(pad: string, originNodeId: string): boolean {
+    return this.voices.some(
+      (v) => v.pad === pad && (v.originNodeId === originNodeId || !!v.mixInputs?.some((mi) => mi.originNodeId === originNodeId)),
     );
+  }
+
+  private enqueueCorePending(descriptor: voice.PendingDescriptor): void {
+    this.pendingFires.push({
+      fireAtMs: this.timeMs + descriptor.relativeDelayMs,
+      enqueueOrder: this.pendingFireCounter++,
+      childIds: descriptor.childIds,
+      graph: descriptor.graph,
+      ctx: descriptor.ctx,
+      viaPrefix: descriptor.viaPrefix,
+      seen: descriptor.seen,
+      draft: descriptor.draft,
+    });
   }
 
   /** Resolve a Play block's live params — always the block's own node-local copy. */
@@ -689,6 +555,20 @@ export class Sim {
       }
     }
 
+    // B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
+    // (pad, originNodeId): release it so their shared members aren't composited twice. Mirrors
+    // core `VoicePool.spawn`; release the oldest still-live match (see S2 for the multi-instance
+    // aliasing note). Immediate/`delay 0` spawns never set the flag, so multiplicity is untouched.
+    if (a.supersedePriorVoice && a.originNodeId) {
+      let prior: Voice | null = null;
+      for (const v of this.voices) {
+        if (v.phase === 'release') continue;
+        if (v.pad !== 'preview' || v.originNodeId !== a.originNodeId) continue;
+        if (!prior || v.bornAtMs < prior.bornAtMs) prior = v;
+      }
+      if (prior) this.release(prior);
+    }
+
     // per-trigger seed (item C) — same recipe as the core VoicePool, so random-look
     // generator effects differ per fire yet replay exactly given the same inputs.
     // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
@@ -705,9 +585,31 @@ export class Sim {
       seed,
       generatorId: effect.generatorId ?? null,
       genState: null,
+      mixInputs: a.mixInputs?.map((input, index): voice.MixInput | null => {
+        const inputEffect = this.effect(input.effectId);
+        if (!inputEffect?.generatorId) return null;
+        return {
+          generatorId: inputEffect.generatorId,
+          scope: input.scope,
+          targetId: input.targetId,
+          sourceDrumId,
+          velocity,
+          seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
+          params: { ...input.params },
+          liveParams: {},
+          specs: inputEffect.params,
+          modulations: input.modulations,
+          genState: null,
+          modifiers: input.modifiers,
+          modState: undefined,
+          opacity: input.opacity,
+          originNodeId: input.originNodeId,
+        };
+      }).filter((input): input is voice.MixInput => input !== null),
       modifiers: a.modifiers,
       modState: undefined,
       modulations: a.modulations,
+      mixBlendMode: a.mixBlendMode,
       params: { ...a.params },
       attackMs: effect.attackMs,
       sustainMs: effect.sustainMs,
@@ -719,6 +621,8 @@ export class Sim {
       releaseFromLevel: 1,
       via: a.via,
       deckGain: 1,
+      pad: 'preview',
+      originNodeId: a.originNodeId,
     };
     this.voices.push(voice);
     if (a.latchKey) this.latched.set(a.latchKey, voice.id);
@@ -738,6 +642,7 @@ export class Sim {
   stopAll(): void {
     for (const v of this.voices) this.release(v);
     this.clearPendingFires();
+    this.mixMemberSnapshots.clear();
   }
 
   /** Discard all enqueued deferred fires — call when authored content changes so
@@ -763,11 +668,23 @@ export class Sim {
     this.oscTable.set(address, voice.oscValue01(value));
   }
 
+  setNote(note: number, velocity: number, channel: number | null, on: boolean): void {
+    const v = voice.noteValue01(velocity / 127);
+    const write = (ch: number | null): void => {
+      const key = voice.noteKey(note, ch);
+      const prev = this.noteTable.get(key);
+      this.noteTable.set(key, on ? { gate: 1, velocity: v, releasedAtMs: null } : { gate: prev?.gate ?? 0, velocity: prev?.velocity ?? 0, releasedAtMs: this.timeMs });
+    };
+    write(channel);
+    write(null);
+  }
+
   // --- pending-fire drain (mirrors core engine.ts drainPendingFires) ----------
 
   /** Drain pending delay fires whose `fireAtMs ≤ this.timeMs`, in stable
-      `(fireAtMs, enqueueOrder)` order. Re-enters `evalNode` on each child so nested
-      delays re-enqueue and the cycle guard (seen-set) is preserved. */
+      `(fireAtMs, enqueueOrder)` order. Re-enters the core Gen3 evaluator on each child so
+      nested delays re-enqueue and the cycle guard (seen-set) is preserved. The descriptor's
+      graph is always Gen3 — it was produced by the core evaluator that enqueued this fire. */
   private drainPendingFires(): void {
     if (this.pendingFires.length === 0) return;
     const due = this.pendingFires.filter((f) => f.fireAtMs <= this.timeMs);
@@ -775,19 +692,16 @@ export class Sim {
     this.pendingFires = this.pendingFires.filter((f) => f.fireAtMs > this.timeMs);
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
-      const { graph, childIds, ctx, viaPrefix, seen } = f;
-      // Re-lookup child nodes by id so y-sort still applies (children may have moved).
-      const childNodes = childIds
-        .map((id) => graph.nodes.find((n) => n.id === id))
-        .filter((n): n is GraphNode => !!n)
-        .sort((a, b) => a.y - b.y);
-      const actions = childNodes.flatMap((c) => this.evalNode(graph, c, ctx, viaPrefix, seen));
+      const { graph, childIds, ctx, viaPrefix, seen, draft } = f;
+      const actions = voice.evalChildren(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null);
       for (const a of actions) {
         if (a.kind === 'stop') {
           const v = this.voices.find((x) => x.id === a.voiceId);
           if (v) this.release(v);
         } else if (a.kind === 'play') {
           this.spawn(a, ctx.sourceDrumId, ctx.velocity);
+        } else {
+          this.enqueueCorePending(a.descriptor);
         }
       }
     }

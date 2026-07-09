@@ -9,6 +9,7 @@
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import SectionGraphRow from './SectionGraphRow.svelte';
+  import { gapIndexAt } from './sections-dnd';
   import Copy from '@lucide/svelte/icons/copy';
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
@@ -20,17 +21,53 @@
     shell,
     song,
     section,
+    draggingKind,
+    dropIndex,
     onAddGraph,
+    onSectionDragStart,
+    onGraphDragStart,
+    onDragEnd,
+    onGraphDragOver,
+    onGraphDrop,
   }: {
     store: TriggerLab;
     shell: ShellStore;
     song: Song;
     section: SetlistSection;
+    draggingKind: 'section' | 'graph' | null;
+    /** Insertion-line gap for a graph drag over THIS column (0..graphs.length), or null. */
+    dropIndex: number | null;
     onAddGraph: (sectionId: string) => void;
+    onSectionDragStart: (event: DragEvent) => void;
+    onGraphDragStart: (graphKey: string, event: DragEvent) => void;
+    onDragEnd: () => void;
+    onGraphDragOver: (index: number, event: DragEvent) => void;
+    onGraphDrop: (index: number, event: DragEvent) => void;
   } = $props();
 
   let editing = $state(false);
   const active = $derived(store.activeSectionId === section.id);
+
+  let listEl = $state<HTMLDivElement | null>(null);
+
+  /** The gap index (0..graphs.length) the pointer sits at, by comparing the pointer's
+      Y against each row's vertical midpoint. Header/above-first hover → 0; below the
+      last row → graphs.length. Pure geometry, so it matches `moveGraphPlacement`. */
+  function gapAt(clientY: number): number {
+    const rows = listEl?.querySelectorAll<HTMLElement>('[data-graph-row]') ?? [];
+    return gapIndexAt(Array.from(rows, (r) => r.getBoundingClientRect()), clientY);
+  }
+
+  // Only graph-row drags are handled per-column (they need this column's row geometry).
+  // Section reorder is handled at the `.cols` level in SectionsView so the vertical
+  // insert-line resolves across the whole row, including the inter-column gaps.
+  function handleDragOver(event: DragEvent): void {
+    if (draggingKind === 'graph') onGraphDragOver(gapAt(event.clientY), event);
+  }
+
+  function handleDrop(event: DragEvent): void {
+    if (draggingKind === 'graph') onGraphDrop(gapAt(event.clientY), event);
+  }
 
   function selectSection(): void {
     store.setActiveSection(section.id);
@@ -45,27 +82,57 @@
   ]);
 </script>
 
-<section class="col" class:active>
-  <EditableRow
-    label={section.name}
-    {active}
-    bind:editing
-    onclick={selectSection}
-    onCommit={(name) => store.renameSection(section.id, name)}
-    {actions}
-    renameLabel="Section name"
+<section
+  class="col"
+  class:active
+  role="listitem"
+  data-section-col
+  ondragover={handleDragOver}
+  ondrop={handleDrop}
+>
+  <div
+    class="section-drag"
+    role="group"
+    draggable={store.canEdit && !editing}
+    aria-label={`Drag ${section.name}`}
+    ondragstart={onSectionDragStart}
+    ondragend={onDragEnd}
   >
-    {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
-    {#snippet quickActions()}
-      <IconButton icon={Copy} label="Copy section to clipboard" size={13} onclick={() => void store.copySectionToClipboard(section.id)} />
-      <IconButton icon={ClipboardPaste} label="Paste section" size={13} onclick={() => void store.pasteSectionFromClipboard()} />
-    {/snippet}
-  </EditableRow>
+    <EditableRow
+      label={section.name}
+      {active}
+      bind:editing
+      onclick={selectSection}
+      onCommit={(name) => store.renameSection(section.id, name)}
+      {actions}
+      renameLabel="Section name"
+    >
+      {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
+      {#snippet quickActions()}
+        <IconButton icon={Copy} label="Copy section to clipboard" size={13} onclick={() => void store.copySectionToClipboard(section.id)} />
+        <IconButton icon={ClipboardPaste} label="Paste section" size={13} onclick={() => void store.pasteSectionFromClipboard()} />
+      {/snippet}
+    </EditableRow>
+  </div>
 
-  <div class="graphlist">
-    {#each section.graphs as key (key)}
-      <SectionGraphRow {store} {shell} {song} {section} graphKey={key} />
+  <div class="graphlist" role="list" bind:this={listEl}>
+    {#each section.graphs as key, i (key)}
+      {#if draggingKind === 'graph' && dropIndex === i}
+        <div class="insert-line" aria-hidden="true"></div>
+      {/if}
+      <SectionGraphRow
+        {store}
+        {shell}
+        {song}
+        {section}
+        graphKey={key}
+        onDragStart={(event) => onGraphDragStart(key, event)}
+        {onDragEnd}
+      />
     {/each}
+    {#if draggingKind === 'graph' && dropIndex === section.graphs.length}
+      <div class="insert-line" aria-hidden="true"></div>
+    {/if}
 
     {#if section.graphs.length === 0}
       <p class="empty">No graphs yet.</p>
@@ -86,11 +153,22 @@
     padding: var(--space-2);
     background: var(--surface-inset);
     border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-card);
     transition: border-color var(--dur-120) ease;
   }
+  /* Active-section border. Mixed in oklab (rectangular), NOT oklch: oklch interpolates
+     the HUE ARC from lime (128°) through cyan (~205°) to the blue-grey border (256°), so
+     an oklch mix reads as a cyan/blue "selection" ring — the treatment Trent flagged while
+     dragging (R11b-1). oklab keeps it a muted accent-green, in the same language as the
+     insert-lines. */
   .col.active {
-    border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
+    border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  }
+  .section-drag {
+    cursor: grab;
+  }
+  .section-drag:active {
+    cursor: grabbing;
   }
   .colcount {
     font-family: var(--font-mono);
@@ -101,6 +179,29 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-height: 42px;
+    border-radius: var(--radius-card);
+  }
+  /* Insertion line marking the gap a dragged graph row will land in. The negative
+     margins collapse the parent flex gap so the line sits IN the gap rather than
+     adding its own; the glow makes the 2px bar read as a live target. */
+  .insert-line {
+    height: 2px;
+    margin: -1.5px 2px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 6px color-mix(in oklch, var(--accent) 60%, transparent);
+    animation: insert-line-in var(--dur-120) var(--ease-control, ease);
+  }
+  @keyframes insert-line-in {
+    from {
+      opacity: 0;
+      scale: 0.6 1;
+    }
+    to {
+      opacity: 1;
+      scale: 1 1;
+    }
   }
   .empty {
     margin: 0;
@@ -119,7 +220,7 @@
     color: var(--text-muted);
     background: var(--surface-inset);
     border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-card);
     transition:
       color var(--dur-120) ease,
       border-color var(--dur-120) ease;
@@ -133,8 +234,12 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .col,
-    .addgraph {
+    .addgraph,
+    .graphlist {
       transition: none;
+    }
+    .insert-line {
+      animation: none;
     }
   }
 </style>

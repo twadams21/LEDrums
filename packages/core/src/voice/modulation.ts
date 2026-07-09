@@ -16,7 +16,8 @@
  */
 import { sampleEnvelope } from './envelope';
 import { sampleLfo, type LfoSettings } from './lfo'; // S36
-import type { Envelope, ParamSpec, ParamValues } from './types';
+import type { Envelope, NoteModMode, ParamSpec, ParamValues, RandomDistribution } from './types';
+import type { Prng } from './prng';
 
 /**
  * What drives a mapping. A discriminated union keyed by `kind` so new source kinds extend
@@ -30,7 +31,8 @@ export type ModSource =
   | { kind: 'lfo'; lfo: LfoSettings } // S36
   | { kind: 'cc'; controller: number; channel: number | null } // S37
   | { kind: 'osc'; address: string } // OSC modulation — a live 0..1 value at an OSC address
-  | { kind: 'random'; value: number }; // per-voice frozen random value, resolved at trigger time
+  | { kind: 'note'; note: number; channel: number | null; mode: NoteModMode; releaseMs: number }
+  | { kind: 'random'; value: number; distribution: RandomDistribution; steps: number }; // per-voice frozen random value, resolved at trigger time
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
 export type ModSourceKind = ModSource['kind'];
@@ -92,6 +94,74 @@ export function sampleOsc(table: OscTable | undefined, address: string): number 
   return table.get(address) ?? 0;
 }
 
+export interface NoteState {
+  gate: number;
+  velocity: number;
+  releasedAtMs: number | null;
+}
+
+export type NoteTable = ReadonlyMap<string, NoteState>;
+
+export function noteKey(note: number, channel: number | null): string {
+  return channel === null ? `n${note}` : `n${note}@${channel}`;
+}
+
+export function noteValue01(raw: number): number {
+  return raw < 0 ? 0 : raw > 1 ? 1 : raw;
+}
+
+export function sampleNote(
+  table: NoteTable | undefined,
+  note: number,
+  channel: number | null,
+  mode: NoteModMode,
+  releaseMs: number,
+  timeMs: number,
+): number {
+  const state = table?.get(noteKey(note, channel));
+  if (!state) return 0;
+  const level = mode === 'velocity' ? state.velocity : state.gate;
+  if (state.releasedAtMs === null) return level;
+  const release = Math.max(0, releaseMs);
+  if (release <= 0) return 0;
+  const t = (timeMs - state.releasedAtMs) / release;
+  return t >= 1 ? 0 : level * (1 - Math.max(0, t));
+}
+
+export function sampleRandomDistribution(distribution: RandomDistribution | undefined, rng: Pick<Prng, 'next'>): number {
+  const kind = distribution ?? 'linear';
+  const u = (): number => rng.next();
+  switch (kind) {
+    case 'linear':
+      return u();
+    case 'gaussian': {
+      const a = Math.max(1e-12, u());
+      const b = u();
+      const z = Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b);
+      return Math.max(0, Math.min(1, 0.5 + z / 6));
+    }
+    case 'exponential':
+      return -Math.expm1(-4 * u()) / -Math.expm1(-4);
+    case 'logarithmic':
+      return Math.log1p(9 * u()) / Math.log(10);
+    case 'triangular':
+      return (u() + u()) / 2;
+    case 'beta': {
+      const a = u() + u();
+      const b = u() + u();
+      return a / (a + b || 1);
+    }
+    case 'stepped':
+      return u();
+  }
+}
+
+export function quantizeSteppedRandom(value: number, steps: number | undefined): number {
+  const count = Math.max(2, Math.min(64, Math.round(steps ?? 4)));
+  const clamped = value < 0 ? 0 : value > 1 ? 1 : value;
+  return Math.round(clamped * (count - 1)) / (count - 1);
+}
+
 /**
  * One resolved modulation mapping onto a single param. `targetParam` is a bare param key
  * relative to the carrier's param spec (the carrier — voice or modifier link — is the
@@ -129,6 +199,8 @@ export interface ModSampleCtx {
   /** Live OSC value table — an `osc` source reads its address here. Optional (⇒ `sampleOsc`
       neutral) with the same rationale as {@link cc}. */
   osc?: OscTable;
+  /** Live MIDI note table — a `note` source reads note gate/velocity here. */
+  notes?: NoteTable;
 }
 
 const num = (v: number | boolean | string | undefined, d: number): number =>
@@ -165,6 +237,8 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
       return sampleCc(ctx.cc, src.controller, src.channel);
     case 'osc': // live 0..1 at an OSC address
       return sampleOsc(ctx.osc, src.address);
+    case 'note':
+      return sampleNote(ctx.notes, src.note, src.channel, src.mode, src.releaseMs, ctx.timeMs);
     case 'random':
       return src.value;
   }

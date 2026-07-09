@@ -10,6 +10,7 @@
 import type { Prng } from './prng';
 import type {
   GraphNode,
+  GraphEdge,
   ParamValues,
   PlayMode,
   PlayType,
@@ -20,9 +21,13 @@ import type {
   TriggerGraph,
 } from './types';
 import type { Mapping } from './modulation';
+import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
 import { resolveModifierChain, resolveModifierNode } from './modifier-graph';
 import { resolveNodeModulations } from './modulation-graph';
+import { compileRenderPlan, type RenderPlan, type RenderPlanCache, type RenderPlanChild } from './render-plan';
+import { intersectScopeTargets } from './scope';
+import type { BlendMode } from '../color/blend';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -56,6 +61,23 @@ export interface PlayAction {
    * injects them at the compositor seam.
    */
   modulations?: Mapping[];
+  mixBlendMode?: BlendMode;
+  mixInputs?: MixInputDraft[];
+  /** Origin graph node this action's layer was produced by (a play/effect node, or the
+      Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
+      origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
+  originNodeId?: string;
+  /**
+   * B1 — this composite is a delayed Mix *re-composition* that supersedes the prior still-live
+   * composite at the same `(pad, originNodeId)`. On a delayed drain the fold re-includes A into
+   * a fresh `Mix[A,B]`, but the immediate `Mix[A]` voice keeps rendering A (poly buses never
+   * steal), so A composites twice for the whole overlap window. When this flag is set the voice
+   * pool releases the prior `(pad, originNodeId)` voice before spawning — the two composites are
+   * one evolving timeline voice, not siblings. Set ONLY on a drained re-composition (`seen.size
+   * > 0` with the overlap machinery on); immediate and `delay 0`-inline folds spawn the first
+   * voice and leave it unset, so genuine multiplicity (rapid re-fires, distinct effects) is
+   * untouched. See {@link VoicePool.spawn}. */
+  supersedePriorVoice?: boolean;
   via: string;
   latchKey: string | null;
 }
@@ -100,7 +122,8 @@ export interface PendingAction {
 }
 
 export type Action = PlayAction | StopAction | PendingAction;
-type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'>;
+export type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
+export type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
 
 export interface TriggerCtx {
   velocity: number;
@@ -127,48 +150,50 @@ export interface EvalState {
   prng: Prng;
   presetsById: Map<string, Preset>;
   isVoiceAlive(id: string): boolean;
+  /**
+   * Persistent per-(pad, mix-node) snapshot of the Mix's contributing layer members
+   * (R13 delay = timeline shift). Populated by the Mix evaluator as members arrive across
+   * eval batches; a delayed branch draining into the same Mix reads it to re-compose with
+   * members that started earlier. Engine-owned (like {@link seqIndex}); absent → the
+   * overlap machinery is off and eval falls back to eval-batch membership.
+   */
+  mixMemberSnapshots?: Map<string, MixInputDraft[]>;
+  /**
+   * Is a layer origin node still live (its voice not yet decayed) for this pad? Read by the
+   * Mix evaluator on a delayed drain to decide which snapshotted members still compose;
+   * decayed members are absent. Backed by the engine/sim scanning active voices' origins.
+   * Absent → no member is treated as live, so a drain stays batch-scoped.
+   */
+  isLayerLive?(pad: string, originNodeId: string): boolean;
+  /**
+   * Render-plan compile cache (R18). When present, {@link compileRenderPlan} is served through it so
+   * repeated hits on an unchanged graph reuse the plan instead of recompiling per fire. Engine-owned
+   * (like {@link mixMemberSnapshots}); absent → eval compiles fresh every call, so output is identical
+   * with and without the cache (only the compile is skipped, never the plan's content).
+   */
+  renderPlanCache?: RenderPlanCache;
 }
 
-/** Entry point: eval a graph from its trigger node into a flat action list. */
+/** Compile `graph` via the injected cache when the engine supplies one, else a fresh compile.
+    Determinism is unaffected — the cache only returns a plan a fresh compile would have produced. */
+function compilePlan(state: EvalState, graph: TriggerGraph): RenderPlan {
+  return state.renderPlanCache ? state.renderPlanCache.compile(graph) : compileRenderPlan(graph);
+}
+
+/**
+ * Entry point: eval a Gen3 graph from its trigger node into a flat action list.
+ *
+ * The graph is always Gen3 (`version === 3`): the engine normalizes every graph to
+ * Gen3 at `setShow` (see {@link normalizeTriggerGraphToGen3}) before it can reach eval,
+ * so there is exactly one evaluator. Callers that hand this a raw legacy graph must
+ * normalize first.
+ */
 export function evalGraph(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
-  const trig = graph.nodes.find((n) => n.kind === 'trigger');
-  if (!trig) return [];
-  return evalNode(state, graph, pad, trig, ctx, '', new Set());
-}
-
-/** A node's wired children, ordered top→bottom (visual y) for determinism. */
-function childrenOf(graph: TriggerGraph, node: GraphNode): GraphNode[] {
-  return graph.edges
-    .filter((e) => e.from === node.id)
-    .map((e) => graph.nodes.find((n) => n.id === e.to))
-    .filter((n): n is GraphNode => !!n)
-    .sort((a, b) => a.y - b.y);
-}
-
-/** Children wired from a specific source handle (value+bands switch). Mirrors
-    {@link childrenOf} but filters by `fromPort`, still y-sorted for determinism. */
-function childrenViaPort(graph: TriggerGraph, node: GraphNode, port: string): GraphNode[] {
-  return graph.edges
-    .filter((e) => e.from === node.id && e.fromPort === port)
-    .map((e) => graph.nodes.find((n) => n.id === e.to))
-    .filter((n): n is GraphNode => !!n)
-    .sort((a, b) => a.y - b.y);
+  return evalGraphGen3(state, graph, pad, ctx);
 }
 
 function nodeStateKey(pad: string, nodeId: string): string {
   return `${pad}#${nodeId}`;
-}
-
-function evalNode(
-  state: EvalState,
-  graph: TriggerGraph,
-  pad: string,
-  node: GraphNode,
-  ctx: TriggerCtx,
-  viaPrefix: string,
-  seen: Set<string>,
-): Action[] {
-  return evalNodeWithDraft(state, graph, pad, node, ctx, viaPrefix, seen, null);
 }
 
 function freezeRandomMappings(mappings: Mapping[] | undefined, prng: Prng): Mapping[] | undefined {
@@ -177,189 +202,393 @@ function freezeRandomMappings(mappings: Mapping[] | undefined, prng: Prng): Mapp
   const out = mappings.map((m) => {
     if (m.source.kind !== 'random') return m;
     changed = true;
-    return { ...m, source: { kind: 'random' as const, value: prng.next() } };
+    const raw = sampleRandomDistribution(m.source.distribution, prng);
+    const value = m.source.distribution === 'stepped' ? quantizeSteppedRandom(raw, m.source.steps) : raw;
+    return { ...m, source: { ...m.source, value } };
   });
   return changed ? out : mappings;
 }
 
-function evalNodeWithDraft(
+function edgeOpacity(value: number | undefined): number {
+  return value == null ? 1 : value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+function planFlowChildren(plan: RenderPlan, node: GraphNode): RenderPlanChild[] {
+  return plan.flowChildrenById.get(node.id) ?? [];
+}
+
+type RouteDraft = { kind: 'empty' } | { kind: 'play'; play: PlayDraft };
+interface BucketEntry {
+  draft: RouteDraft;
+  edge?: GraphEdge;
+  latchKey?: string | null;
+}
+
+const EMPTY_ROUTE: RouteDraft = { kind: 'empty' };
+
+function routePlay(draft: RouteDraft): PlayDraft | null {
+  return draft.kind === 'play' ? draft.play : null;
+}
+
+function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): PlayDraft | null {
+  if (!node.effectId) return null;
+  const mods = resolveModifierChain(graph, node);
+  const modulations = resolveNodeModulations(graph, node);
+  return {
+    effectId: node.effectId,
+    playType: node.playType,
+    canvasScene: node.canvasScene,
+    mode: node.mode,
+    scope: node.scope,
+    targetId: node.targetId,
+    busId: node.busId,
+    params: node.params,
+    modifiers: mods.length ? mods : undefined,
+    modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+    originNodeId: node.id,
+  };
+}
+
+function appendLabel(prefix: string, part: string): string {
+  return prefix ? `${prefix} → ${part}` : part;
+}
+
+function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
+  const plan = compilePlan(state, graph);
+  if (plan.fatal || !plan.triggerId) return [];
+  return evalGraphGen3FromPlan(state, plan, pad, [plan.triggerId], ctx, '', new Set(), null);
+}
+
+function evalGraphGen3From(
   state: EvalState,
   graph: TriggerGraph,
   pad: string,
-  node: GraphNode,
+  startIds: readonly string[],
   ctx: TriggerCtx,
   viaPrefix: string,
   seen: Set<string>,
-  draft: PlayDraft | null,
+  initialDraft: PlayDraft | null,
 ): Action[] {
-  if (seen.has(node.id)) return []; // cycle guard
-  const seen2 = new Set(seen).add(node.id);
-  const label = (s: string): string => (viaPrefix ? `${viaPrefix} → ${s}` : s);
-  const kids = childrenOf(graph, node);
-  const sk = nodeStateKey(pad, node.id);
-  switch (node.kind) {
-    case 'trigger':
-      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, viaPrefix, seen2, draft));
-    case 'play': {
-      if (!node.effectId) return [];
-      // Resolve this play node's `mod` input into a flat modifier chain (S29). Empty →
-      // undefined so the spawned voice keeps the zero-alloc, unmodified hot path.
-      const mods = resolveModifierChain(graph, node);
-      // Resolve incoming `param:<key>` modulation edges into mappings (S34). Effect specs
-      // aren't available here, so ranges come from the edge (the store bakes spec min/max at
-      // wire time); the render sweep filters non-number params against the live voice specs.
-      const modulations = resolveNodeModulations(graph, node);
-      const next: PlayDraft = {
-        effectId: node.effectId,
-        playType: node.playType,
-        canvasScene: node.canvasScene,
-        mode: node.mode,
-        scope: node.scope,
-        targetId: node.targetId,
-        busId: node.busId,
-        params: node.params,
-        modifiers: mods.length ? mods : undefined,
-        modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
-      };
-      if (kids.length > 0) {
-        return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label(modeWord(node.mode)), seen2, next));
-      }
-      return [{ kind: 'play', ...next, via: label(modeWord(node.mode)), latchKey: null }];
-    }
-    case 'modifier': {
-      if (!draft) return [];
-      const next: PlayDraft = {
-        ...draft,
-        modifiers: [...(draft.modifiers ?? []), resolveModifierNode(graph, node)],
-      };
-      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Modifier'), seen2, next));
-    }
-    case 'output':
-      if (!draft) return [];
-      return [{ kind: 'play', ...draft, scope: node.scope, targetId: node.targetId, via: label('Output'), latchKey: null }];
-    case 'randomMod':
-    case 'envelope':
-    case 'lfo': // S36 — modulation source, inert in flow (reaches voices via param:<key>)
-    case 'cc': // S37: a CC source is inert in trigger-flow eval (reaches voices via `param:<key>`)
-      // Inert in trigger-flow eval: neither a modifier node nor a modulation-source node fires
-      // children. A modifier reaches a voice via a play node's resolved `mod` chain; an envelope
-      // via a target's resolved `param:<key>` modulations — never through the fire flow here.
-      return [];
-    case 'all':
-      return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('All'), seen2, draft));
-    case 'random': {
-      if (kids.length === 0) return [];
-      let i = state.prng.nextInt(kids.length);
-      if (node.noRepeat && kids.length > 1) {
-        const prev = state.lastPick.get(sk);
-        while (i === prev) i = state.prng.nextInt(kids.length);
-      }
-      state.lastPick.set(sk, i);
-      return evalNodeWithDraft(state, graph, pad, kids[i]!, ctx, label(`Random[${i + 1}/${kids.length}]`), seen2, draft);
-    }
-    case 'sequence': {
-      if (kids.length === 0) return [];
-      const i = (state.seqIndex.get(sk) ?? 0) % kids.length;
-      state.seqIndex.set(sk, i + 1);
-      return evalNodeWithDraft(state, graph, pad, kids[i]!, ctx, label(`Seq[${i + 1}/${kids.length}]`), seen2, draft);
-    }
-    case 'switch': {
-      // `value` (gate/bands) is canonical. `velocity` was folded into `value` and dropped
-      // from SwitchOn — web migrates persisted graphs on hydrate, but core must never throw
-      // or mis-route on a stray legacy `velocity` (un-migrated in-flight data), so anything
-      // that isn't an explicit count-based mode (`section`/`beat`) routes through value eval.
-      if (node.on !== 'section' && node.on !== 'beat') {
-        return evalValueSwitch(state, graph, pad, node, ctx, label, seen2, draft);
-      }
-      if (kids.length === 0) return [];
-      const i = switchIndexN(kids.length, node.on, ctx);
-      return evalNodeWithDraft(state, graph, pad, kids[i]!, ctx, label(`Switch:${node.on}[${i + 1}]`), seen2, draft);
-    }
-    case 'chance': {
-      if (state.prng.next() > node.p) return [];
-      return kids.flatMap((c) =>
-        evalNodeWithDraft(state, graph, pad, c, ctx, label(`Chance ${Math.round(node.p * 100)}%`), seen2, draft),
-      );
-    }
-    case 'toggle': {
-      const current = state.latched.get(sk);
-      const alive = current ? state.isVoiceAlive(current) : false;
-      if (alive && current) {
-        state.latched.set(sk, null);
-        return [{ kind: 'stop', voiceId: current, via: label('Toggle off') }];
-      }
-      const actions = kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label('Toggle on'), seen2, draft));
-      const firstPlay = actions.find((a): a is PlayAction => a.kind === 'play');
-      if (firstPlay) firstPlay.latchKey = sk;
-      return actions;
-    }
-    case 'delay': {
-      // Compute the delay at enqueue time from the snapshotted bpm — later transport
-      // changes must NOT alter the resolved fire time.
-      const delayMs = computeDelayMs(
-        node.delayMode ?? 'time',
-        node.ms ?? 0,
-        node.division ?? '1/8',
-        ctx.bpm,
-      );
-      const delayLabel = label(`Delay ${Math.round(delayMs)}ms`);
-      if (delayMs <= 0) {
-        // Zero / negative → fire children immediately, no enqueue.
-        return kids.flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, delayLabel, seen2, draft));
-      }
-      // Deferred: emit a PendingDescriptor; the engine enqueues it and drains at the right
-      // tick. `seen2` (which already includes this delay node's id) becomes the cycle guard
-      // for the drain path, so a self-referencing delay cannot loop.
-      const descriptor: PendingDescriptor = {
-        relativeDelayMs: delayMs,
-        graph,
-        pad,
-        ctx,
-        childIds: kids.map((c) => c.id),
-        viaPrefix: delayLabel,
-        seen: seen2,
-        draft,
-      };
-      return [{ kind: 'pending', descriptor }];
-    }
-  }
+  const plan = compilePlan(state, graph);
+  if (plan.fatal) return [];
+  return evalGraphGen3FromPlan(state, plan, pad, startIds, ctx, viaPrefix, seen, initialDraft);
 }
 
-/**
- * Evaluate an `on:'value'` switch (value source = `ctx.velocity`, normalized 0..1).
- * New value-fields are defaulted defensively so graphs persisted before value-mode
- * existed (which lack them) still evaluate. Mirrors `sim.evalValueSwitch`.
- *  - gate: pass when value ≤ threshold (or > when inverted); pass → eval the default
- *    children, else nothing.
- *  - bands: resolve which band the value lands in (ascending cutoffs) → eval the
- *    children wired from that band's handle (`band-${i}`); other bands stay silent.
- */
-function evalValueSwitch(
+function evalGraphGen3FromPlan(
   state: EvalState,
-  graph: TriggerGraph,
+  plan: RenderPlan,
   pad: string,
-  node: GraphNode,
+  startIds: readonly string[],
   ctx: TriggerCtx,
-  label: (s: string) => string,
+  viaPrefix: string,
   seen: Set<string>,
-  draft: PlayDraft | null = null,
+  initialDraft: PlayDraft | null,
 ): Action[] {
-  const value = ctx.velocity;
-  const mode = node.valueMode ?? 'gate';
-  if (mode === 'gate') {
-    const threshold = node.threshold ?? 0.5;
-    const invert = node.invert ?? false;
-    const pass = invert ? value > threshold : value <= threshold;
-    if (!pass) return [];
-    const gateVia = `Gate ${invert ? '>' : '≤'}${Math.round(threshold * 100)}%`;
-    return childrenOf(graph, node).flatMap((c) => evalNodeWithDraft(state, graph, pad, c, ctx, label(gateVia), seen, draft));
+  const graph = plan.graph;
+  const byId = plan.nodesById;
+  const buckets = new Map<string, BucketEntry[]>();
+  const via = new Map<string, string>();
+  const actions: Action[] = [];
+  const queued = new Set<string>();
+  const processedCount = new Map<string, number>();
+  /** R14 — Effect/play node ids that have already emitted their firing in THIS eval call.
+      Fan-in (multiple flow edges converging on one Effect) coalesces to a single firing per
+      trigger: the play draft is a pure function of the node, so re-firing per incoming edge
+      would emit identical duplicate voices (double / N× brightness). A delayed re-arrival
+      drains in a SEPARATE eval call (fresh set) and stays a distinct temporal firing (R13). */
+  const firedEffects = new Set<string>();
+  const pendingMixes = new Set<string>();
+  const pendingOutputs = new Set<string>();
+  const queue: string[] = [];
+  const reachability = new Map<string, boolean>();
+
+  const enqueue = (id: string): void => {
+    if (!byId.has(id) || queued.has(id) || seen.has(id)) return;
+    const entries = buckets.get(id) ?? [];
+    if (entries.length <= (processedCount.get(id) ?? 0)) return;
+    queued.add(id);
+    queue.push(id);
+  };
+  for (const id of startIds) {
+    const node = byId.get(id);
+    if (!node || seen.has(id)) continue;
+    buckets.set(id, [{ draft: initialDraft ? { kind: 'play', play: initialDraft } : EMPTY_ROUTE }]);
+    via.set(id, viaPrefix);
+    enqueue(id);
   }
-  const cutoffs = node.bands ?? [0.5];
-  const b = bandIndex(value, cutoffs);
-  const bandVia = `Band[${b + 1}/${cutoffs.length + 1}]`;
-  return childrenViaPort(graph, node, `band-${b}`).flatMap((c) =>
-    evalNodeWithDraft(state, graph, pad, c, ctx, label(bandVia), seen, draft),
-  );
+  const push = (from: GraphNode, edge: GraphEdge, draft: RouteDraft, latchKey: string | null = null): void => {
+    const node = byId.get(edge.to);
+    if (!node) return;
+    const list = buckets.get(node.id) ?? [];
+    list.push({ draft, edge, latchKey });
+    buckets.set(node.id, list);
+    enqueue(node.id);
+  };
+  const pushKids = (node: GraphNode, draft: RouteDraft, latchKey: string | null = null): void => {
+    for (const { edge } of planFlowChildren(plan, node)) push(node, edge, draft, latchKey);
+  };
+  const labelFor = (node: GraphNode, part: string): string => {
+    const next = appendLabel(via.get(node.id) ?? '', part);
+    return next;
+  };
+  const canReach = (fromId: string, toId: string, seenIds = new Set<string>()): boolean => {
+    const key = `${fromId}->${toId}`;
+    const cached = reachability.get(key);
+    if (cached != null) return cached;
+    if (fromId === toId) {
+      reachability.set(key, true);
+      return true;
+    }
+    if (seenIds.has(fromId)) {
+      reachability.set(key, false);
+      return false;
+    }
+    const from = byId.get(fromId);
+    if (!from) {
+      reachability.set(key, false);
+      return false;
+    }
+    const seenNext = new Set(seenIds).add(fromId);
+    const result = planFlowChildren(plan, from).some((child) => canReach(child.node.id, toId, seenNext));
+    reachability.set(key, result);
+    return result;
+  };
+  const hasPendingUpstreamMix = (nodeId: string): boolean => [...pendingMixes].some((mixId) => canReach(mixId, nodeId));
+
+  while (queue.length || pendingMixes.size || pendingOutputs.size) {
+    const pendingIds = pendingMixes.size ? pendingMixes : pendingOutputs;
+    const id = queue.length
+      ? queue.shift()!
+      : [...pendingIds].sort((a, b) => {
+          const ay = byId.get(a)?.y ?? 0;
+          const by = byId.get(b)?.y ?? 0;
+          return ay - by || a.localeCompare(b);
+        })[0]!;
+    queued.delete(id);
+    pendingMixes.delete(id);
+    pendingOutputs.delete(id);
+    const node = byId.get(id);
+    if (!node) continue;
+    if (node.kind === 'mix') {
+      if (queue.length || hasPendingUpstreamMix(id)) {
+        pendingMixes.add(id);
+        continue;
+      }
+    } else if (node.kind === 'output') {
+      if (queue.length || pendingMixes.size) {
+        pendingOutputs.add(id);
+        continue;
+      }
+    }
+    const entries = buckets.get(id) ?? [];
+    const cursor = processedCount.get(id) ?? 0;
+    const newEntries = entries.slice(cursor);
+    if (!newEntries.length) continue;
+    processedCount.set(id, entries.length);
+    const sk = nodeStateKey(pad, node.id);
+    switch (node.kind) {
+      case 'trigger':
+        pushKids(node, EMPTY_ROUTE);
+        break;
+      case 'effect':
+      case 'play': {
+        const draft = makePlayDraft(state, graph, node);
+        if (!draft) break;
+        via.set(node.id, labelFor(node, modeWord(node.mode)));
+        // R14 — fan-in coalescing. All flow edges converging on this Effect within one trigger
+        // fire produce ONE voice, not one per edge. `draft` is derived purely from the node, so
+        // the incoming entries only carry the latch key; pick the first latched one (matching the
+        // Mix collector). Guard by node id so later waves in the same call (e.g. an Effect fed
+        // downstream of a Mix) don't re-fire either. Delayed drains are a fresh call → separate.
+        if (firedEffects.has(node.id)) break;
+        firedEffects.add(node.id);
+        // N2 — one voice ⇒ one latch: only the first latched edge's key registers; any secondary
+        // per-edge latch keys from other converging edges are intentionally dropped (mirrors the
+        // Mix collector). Two distinct toggle paths into one Effect thus share a single latch.
+        const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        pushKids(node, { kind: 'play', play: draft }, latchKey);
+        break;
+      }
+      case 'modifier':
+        for (const entry of newEntries) {
+          const play = routePlay(entry.draft);
+          if (!play) continue;
+          via.set(node.id, labelFor(node, 'Modifier'));
+          pushKids(node, { kind: 'play', play: { ...play, modifiers: [...(play.modifiers ?? []), resolveModifierNode(graph, node)] } }, entry.latchKey ?? null);
+        }
+        break;
+      case 'scope':
+        for (const entry of newEntries) {
+          const play = routePlay(entry.draft);
+          if (!play) continue;
+          const scoped = intersectScopeTargets(play, node, ctx.sourceDrumId);
+          if (!scoped) continue;
+          via.set(node.id, labelFor(node, 'Scope'));
+          pushKids(node, { kind: 'play', play: { ...play, ...scoped } }, entry.latchKey ?? null);
+        }
+        break;
+      case 'mix': {
+        const inputs = entries
+          .map((entry): MixInputDraft | null => {
+            const play = routePlay(entry.draft);
+            return play?.originNodeId ? { ...play, opacity: edgeOpacity(entry.edge?.opacity), originNodeId: play.originNodeId } : null;
+          })
+          .filter((input): input is MixInputDraft => !!input);
+
+        // R13 — delay = timeline shift. Composition membership at a Mix is temporal overlap,
+        // not eval-batch membership. Record this batch's members into the persistent snapshot,
+        // then (on a delayed drain) fold back the members that started in an earlier batch and
+        // are still live, so the delayed layer composes with them per the Mix blend rules;
+        // decayed members are absent. Render-time coalescing of the overlap is R14.
+        const snapKey = nodeStateKey(pad, node.id);
+        const snapshots = state.mixMemberSnapshots;
+        // A drained batch (`seen.size > 0`) re-composing with folded-back members is the delay-
+        // overlap re-composition B1 fixes: it supersedes the still-live immediate composite at
+        // this (pad, mix-node) rather than stacking a second voice over the shared members.
+        // S2 — liveness + supersession key on (pad, originNodeId) only; they cannot tell WHICH
+        // trigger instance's voice is live. Under the timeline model a pad's Mix node carries a
+        // single evolving composite, so a delayed drain folds/supersedes by (pad, mix-node)
+        // regardless of instance. Two rapid fires on one pad therefore alias: a drain re-includes
+        // (and later supersedes) whichever instance's members are still live, and the pool
+        // releases the OLDEST still-live composite at that key (the most likely predecessor of
+        // this evolving timeline). This is intentional and bounded — accepted as correct-enough
+        // for the "one composite timeline per (pad, mix-node)" model, not a stale-params leak
+        // (folds are gated on live voices; the snapshot map is engine-owned and reset on setShow).
+        const isDrainRecomposition = !!snapshots && seen.size > 0;
+        if (snapshots) {
+          const merged = new Map((snapshots.get(snapKey) ?? []).map((m) => [m.originNodeId, m] as const));
+          for (const m of inputs) merged.set(m.originNodeId, m);
+          snapshots.set(snapKey, [...merged.values()]);
+          if (seen.size > 0 && state.isLayerLive) {
+            const inBatch = new Set(inputs.map((m) => m.originNodeId));
+            for (const m of snapshots.get(snapKey) ?? []) {
+              if (!inBatch.has(m.originNodeId) && state.isLayerLive(pad, m.originNodeId)) inputs.push(m);
+            }
+          }
+        }
+        inputs.sort((a, b) => {
+          const ay = byId.get(a.originNodeId)?.y ?? 0;
+          const by = byId.get(b.originNodeId)?.y ?? 0;
+          return ay - by || a.originNodeId.localeCompare(b.originNodeId);
+        });
+        if (!inputs.length) break;
+        const host = inputs[0]!;
+        const mixed: PlayDraft = {
+          ...host,
+          scope: 'kit',
+          targetId: undefined,
+          params: {},
+          modifiers: undefined,
+          modulations: undefined,
+          mixBlendMode: node.mixBlendMode ?? 'normal',
+          mixInputs: inputs,
+          originNodeId: node.id,
+        };
+        // B1 — a delayed drain re-composition supersedes the prior still-live composite at this
+        // (pad, mix-node); the pool releases it instead of double-counting the shared members.
+        if (isDrainRecomposition) mixed.supersedePriorVoice = true;
+        via.set(node.id, labelFor(node, 'Mix'));
+        pushKids(node, { kind: 'play', play: mixed }, entries.find((entry) => entry.latchKey)?.latchKey ?? null);
+        break;
+      }
+      case 'output':
+        for (const entry of newEntries) {
+          const play = routePlay(entry.draft);
+          if (!play) continue;
+          const out =
+            node.scope !== 'kit' || node.targetId ? intersectScopeTargets(play, node, ctx.sourceDrumId) : { scope: play.scope, targetId: play.targetId };
+          if (!out) continue;
+          actions.push({ kind: 'play', ...play, ...out, via: labelFor(node, 'Output'), latchKey: entry.latchKey ?? null });
+        }
+        break;
+      case 'all':
+        for (const entry of newEntries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        break;
+      case 'random': {
+        const kids = planFlowChildren(plan, node);
+        if (!kids.length) break;
+        let i = state.prng.nextInt(kids.length);
+        if (node.noRepeat && kids.length > 1) {
+          const prev = state.lastPick.get(sk);
+          while (i === prev) i = state.prng.nextInt(kids.length);
+        }
+        state.lastPick.set(sk, i);
+        for (const entry of newEntries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
+        break;
+      }
+      case 'sequence': {
+        const kids = planFlowChildren(plan, node);
+        if (!kids.length) break;
+        const i = (state.seqIndex.get(sk) ?? 0) % kids.length;
+        state.seqIndex.set(sk, i + 1);
+        for (const entry of newEntries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
+        break;
+      }
+      case 'switch': {
+        let kids: RenderPlanChild[];
+        if (node.on !== 'section' && node.on !== 'beat') {
+          if ((node.valueMode ?? 'gate') === 'gate') {
+            const threshold = node.threshold ?? 0.5;
+            const invert = node.invert ?? false;
+            kids = (invert ? ctx.velocity > threshold : ctx.velocity <= threshold) ? planFlowChildren(plan, node) : [];
+          } else {
+            kids = planFlowChildren(plan, node).filter((x) => x.edge.fromPort === `band-${bandIndex(ctx.velocity, node.bands ?? [0.5])}`);
+          }
+        } else {
+          kids = planFlowChildren(plan, node).filter((_, i, arr) => i === switchIndexN(arr.length, node.on, ctx));
+        }
+        for (const entry of newEntries) for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
+        break;
+      }
+      case 'chance':
+        if (state.prng.next() <= node.p) for (const entry of newEntries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        break;
+      case 'toggle': {
+        const current = state.latched.get(sk);
+        const alive = current ? state.isVoiceAlive(current) : false;
+        if (alive && current) {
+          state.latched.set(sk, null);
+          actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, 'Toggle off') });
+        } else {
+          for (const entry of newEntries) pushKids(node, entry.draft, sk);
+        }
+        break;
+      }
+      case 'delay': {
+        const delayMs = computeDelayMs(node.delayMode ?? 'time', node.ms ?? 0, node.division ?? '1/8', ctx.bpm);
+        const kids = planFlowChildren(plan, node);
+        for (const entry of newEntries) {
+          const draft = routePlay(entry.draft);
+          if (delayMs <= 0) {
+            for (const kid of kids) push(node, kid.edge, entry.draft, entry.latchKey ?? null);
+          } else {
+            actions.push({
+              kind: 'pending',
+              descriptor: {
+                relativeDelayMs: delayMs,
+                graph,
+                pad,
+                ctx,
+                childIds: kids.map((kid) => kid.node.id),
+                viaPrefix: labelFor(node, `Delay ${Math.round(delayMs)}ms`),
+                seen: new Set(seen).add(node.id),
+                draft,
+              },
+            });
+          }
+        }
+        break;
+      }
+      case 'randomMod':
+      case 'envelope':
+      case 'lfo':
+      case 'cc':
+      case 'note':
+      case 'osc':
+        break;
+    }
+  }
+  return actions;
 }
 
 function modeWord(m: PlayMode): string {
@@ -367,7 +596,7 @@ function modeWord(m: PlayMode): string {
 }
 
 /** Count-based child index for the `section`/`beat` switch modes (the only modes that
-    reach here — `value` is handled by {@link evalValueSwitch}). */
+    reach here — the `value` switch is resolved inline in the Gen3 `switch` case). */
 function switchIndexN(n: number, on: SwitchOn, ctx: TriggerCtx): number {
   if (on === 'section') return ctx.sectionCount > 0 ? ctx.sectionIndex % n : 0;
   const frac = on === 'beat' ? ctx.beatPhase : 0;
@@ -393,10 +622,7 @@ export function evalChildren(
   seen: Set<string>,
   draft: PlayDraft | null = null,
 ): Action[] {
-  return childIds.flatMap((id) => {
-    const child = graph.nodes.find((n) => n.id === id);
-    return child ? evalNodeWithDraft(state, graph, pad, child, ctx, viaPrefix, seen, draft) : [];
-  });
+  return evalGraphGen3From(state, graph, pad, childIds, ctx, viaPrefix, seen, draft);
 }
 
 /** Resolve which band a 0..1 value lands in against ascending cutoffs. N cutoffs →

@@ -154,8 +154,7 @@ describe('TriggerLab.createGraph', () => {
     expect(store.graphs[key]).toBeTruthy();
     expect(store.selectedPadKey).toBe(key);
     expect(store.graphNames[key]).toBe('New graph 1');
-    expect(store.graphs[key]!.nodes).toHaveLength(1);
-    expect(store.graphs[key]!.nodes[0]!.kind).toBe('trigger');
+    expect(store.graphs[key]!.nodes.map((n) => n.kind)).toEqual(['trigger', 'output']);
   });
 
   it('uses the given name and auto-increments the default for the next', () => {

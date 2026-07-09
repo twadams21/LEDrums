@@ -94,6 +94,32 @@ describe('section graph-list mutators', () => {
     store.removeGraphFromSection(id, key);
     expect(store.activeSong!.sections[0]!.graphs).not.toContain(key);
   });
+
+  it('moveSection reorders sections in the active song', () => {
+    const store = new TriggerLab(fakeClient);
+    const ids = store.activeSong!.sections.map((s) => s.id);
+    store.moveSection(ids[0]!, 2);
+    expect(store.activeSong!.sections.map((s) => s.id)).toEqual([ids[1], ids[0], ids[2], ...ids.slice(3)]);
+  });
+
+  it('moveGraphPlacement reorders a graph inside one section', () => {
+    const store = new TriggerLab(fakeClient);
+    const section = store.activeSong!.sections[0]!;
+    const [first, second, third] = section.graphs;
+    store.moveGraphPlacement(section.id, first!, section.id, 2);
+    expect(store.activeSong!.sections[0]!.graphs.slice(0, 3)).toEqual([second, first, third]);
+  });
+
+  it('moveGraphPlacement moves a graph between sections', () => {
+    const store = new TriggerLab(fakeClient);
+    const from = store.activeSong!.sections[0]!;
+    const to = store.activeSong!.sections[1]!;
+    const graph = from.graphs[0]!;
+    store.removeGraphFromSection(to.id, graph);
+    store.moveGraphPlacement(from.id, graph, to.id, 0);
+    expect(store.activeSong!.sections[0]!.graphs).not.toContain(graph);
+    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(graph);
+  });
 });
 
 describe('copy / paste section (clipboard)', () => {

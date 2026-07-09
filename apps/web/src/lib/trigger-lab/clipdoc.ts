@@ -68,7 +68,7 @@ export interface ClipDocDeps {
 function graphSceneRefs(graph: TriggerGraph): Set<string> {
   const out = new Set<string>();
   for (const node of graph.nodes) {
-    if (node.kind !== 'play') continue;
+    if (node.kind !== 'play' && node.kind !== 'effect') continue;
     const sceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
     if (sceneId) out.add(sceneId);
   }
@@ -607,7 +607,7 @@ function remapGraph(
     so they're rewritten here rather than through the effect/preset maps. Returns null for a
     non-canvas node (so the caller applies the generic effect/preset remap instead). */
 function remapCanvasNode(node: GraphNode, remapSceneRef: (id: string) => string): GraphNode | null {
-  if (node.kind !== 'play') return null;
+  if (node.kind !== 'play' && node.kind !== 'effect') return null;
   const oldSceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
   if (!oldSceneId) return null;
   const nextSceneId = remapSceneRef(oldSceneId);

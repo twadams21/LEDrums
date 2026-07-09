@@ -16,7 +16,7 @@ import {
   pct,
   uLabel,
 } from './node-options';
-import { NODE_KINDS, type BlockKind } from '../../trigger-lab/sim';
+import { NODE_KINDS, type BlockKind, type NodeKind } from '../../trigger-lab/sim';
 import { kindIcon, kindLabel, tint } from './trigger-node-meta';
 import { voice } from '@ledrums/core';
 
@@ -140,10 +140,8 @@ describe('iconed option arrays', () => {
     expect(MODE_OPTS.every((o) => typeof o.icon !== 'undefined')).toBe(true);
   });
 
-  it('KIND_OPTS — every conversion-target kind (excludes modulation sources), meta-mirrored', () => {
-    // Modulation sources (envelope/LFO/CC) are added from their own palette + edited in their
-    // own inspector, so they are NOT conversion targets in the kind selector (doc 10, S34).
-    const expected = NODE_KINDS.filter((k) => !voice.isModSourceKind(k));
+  it('KIND_OPTS — every conversion-target kind except protected anchors + mod sources, meta-mirrored', () => {
+    const expected = NODE_KINDS.filter((k) => k !== 'output' && !voice.isModSourceKind(k));
     expect(KIND_OPTS.map((o) => o.value)).toEqual(expected);
     for (const opt of KIND_OPTS) {
       const k = opt.value as BlockKind;
@@ -151,8 +149,12 @@ describe('iconed option arrays', () => {
       expect(opt.icon).toBe(kindIcon[k]);
       expect(opt.iconColor).toBe(tint[k]);
     }
-    // never includes the trigger root nor a modulation source (not selectable kinds)
+    // never includes protected graph anchors.
     expect(KIND_OPTS.some((o) => o.value === ('trigger' as BlockKind))).toBe(false);
-    expect(KIND_OPTS.some((o) => voice.isModSourceKind(o.value))).toBe(false);
+    expect(KIND_OPTS.some((o) => o.value === ('output' as BlockKind))).toBe(false);
+    // modulation sources are value-emitting sources, not conversion targets.
+    for (const src of ['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod'] as NodeKind[]) {
+      expect(KIND_OPTS.some((o) => o.value === src)).toBe(false);
+    }
   });
 });

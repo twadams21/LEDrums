@@ -201,14 +201,17 @@ function firstPlay(graph: TriggerGraph): PlayAction | undefined {
 describe('evalGraph — play modulations + inert source', () => {
   it('populates PlayAction.modulations from incoming param edges', () => {
     const g: TriggerGraph = {
+      version: 3,
       nodes: [
         node('trigger', 'trigger'),
         node('play', 'p', { effectId: 'fx', params: { brightness: 0.5 } }),
         envNode('e', defaultEnvelope('rise')),
+        node('output', 'output', { scope: 'kit' }),
       ],
       edges: [
         edge('t', 'trigger', 'p'),
         edge('w', 'e', 'p', { toPort: 'param:brightness' }),
+        edge('o', 'p', 'output'),
       ],
     };
     const play = firstPlay(g);
@@ -285,8 +288,9 @@ describe('modulation graph — end to end (engine render path)', () => {
         node('trigger', 'trigger'),
         node('play', playId, { effectId: 'fx', params: { brightness: 0.5 } }),
         envNode('e', defaultEnvelope('rise')),
+        node('output', 'output', { scope: 'kit' }),
       ],
-      edges: [edge('t', 'trigger', playId), edge('w', 'e', playId, { toPort: 'param:brightness' })],
+      edges: [edge('t', 'trigger', playId), edge('w', 'e', playId, { toPort: 'param:brightness' }), edge('o', playId, 'output')],
     };
   }
 
@@ -305,17 +309,21 @@ describe('modulation graph — end to end (engine render path)', () => {
   it('one envelope driving two target nodes runs independent phases (per-voice)', () => {
     // Two play nodes, each exposing brightness, both wired from ONE envelope node.
     const g: TriggerGraph = {
+      version: 3,
       nodes: [
         node('trigger', 'trigger'),
         node('play', 'p1', { effectId: 'fx', params: { brightness: 0.5 } }),
         node('play', 'p2', { effectId: 'fx', params: { brightness: 0.5 } }),
         envNode('e', defaultEnvelope('rise')),
+        node('output', 'output', { scope: 'kit' }),
       ],
       edges: [
         edge('t1', 'trigger', 'p1'),
         edge('t2', 'trigger', 'p2'),
         edge('w1', 'e', 'p1', { toPort: 'param:brightness' }),
         edge('w2', 'e', 'p2', { toPort: 'param:brightness' }),
+        edge('o1', 'p1', 'output'),
+        edge('o2', 'p2', 'output'),
       ],
     };
     const plays = evalGraph(freshState(), g, 'pad', ctx).filter((a): a is PlayAction => a.kind === 'play');

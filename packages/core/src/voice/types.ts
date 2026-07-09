@@ -7,6 +7,7 @@
 import type { ResolvedModifier } from '../modifiers/types';
 import type { PlayType } from '../effects/vocabulary';
 import type { CanvasScene } from '../canvas/types';
+import type { BlendMode } from '../color/blend';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
 
@@ -195,7 +196,29 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
 
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
-export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
+export type LegacyGraphNodeKind = 'play';
+export type CanonicalGraphNodeKind =
+  | 'trigger'
+  | 'effect'
+  | 'all'
+  | 'random'
+  | 'sequence'
+  | 'switch'
+  | 'chance'
+  | 'toggle'
+  | 'delay'
+  | 'modifier'
+  | 'mix'
+  | 'scope'
+  | 'output'
+  | 'envelope'
+  | 'lfo'
+  | 'cc'
+  | 'note'
+  | 'osc'
+  | 'randomMod';
+
+export type BlockKind = LegacyGraphNodeKind | 'effect' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
 /**
  * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
  * fires children). It is a media-effects node wired to a play node's `mod` input handle;
@@ -209,7 +232,12 @@ export type BlockKind = 'play' | 'all' | 'random' | 'sequence' | 'switch' | 'cha
  * graph resolution turns it into a {@link import('./modulation').Mapping}. `lfo`/`cc` join it
  * as source kinds in S36/S37.
  */
-export type NodeKind = 'trigger' | BlockKind | 'modifier' | 'output' | 'envelope' | 'lfo' | 'cc' | 'randomMod'; // S36 'lfo' + S37 'cc'
+export type RandomDistribution = 'linear' | 'gaussian' | 'exponential' | 'logarithmic' | 'triangular' | 'beta' | 'stepped';
+export type NoteModMode = 'gate' | 'velocity';
+
+/** `play` is accepted only as a legacy persisted graph alias. Gen3 authoring and
+    normalisation must emit canonical `effect` nodes instead. */
+export type NodeKind = CanonicalGraphNodeKind | LegacyGraphNodeKind;
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -261,6 +289,8 @@ export interface GraphNode {
   /** Modifier bypass: when true the resolved link is identity (kept in the chain so its
       per-voice state slot survives toggling). Optional; defaults to not-bypassed. */
   bypass?: boolean;
+  /** Buffer-level route composition mode for `kind === 'mix'`. */
+  mixBlendMode?: BlendMode;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes
   /** Ordered list of params this node has EXPOSED as modulation targets (doc 10). Empty /
       absent by default; the target Inspector's "Add parameter" appends one. Each entry
@@ -284,6 +314,18 @@ export interface GraphNode {
   /** OSC address this source reads a 0..1 value from when {@link ccSource} is 'osc'. Absent → ''
       (⇒ `sampleOsc` neutral until an address is set). */
   oscAddress?: string;
+  /** MIDI note this note modulation source reads (0..127). Absent → 60. */
+  noteNumber?: number;
+  /** MIDI channel filter (1..16), or `null` for omni. Absent → omni. */
+  noteChannel?: number | null;
+  /** Whether a note source outputs held gate level or the last note-on velocity. */
+  noteMode?: NoteModMode;
+  /** Release time in milliseconds for gate mode after note-off. */
+  noteReleaseMs?: number;
+  /** Distribution used by a random modulation source. Absent → linear back-compat. */
+  randomDistribution?: RandomDistribution;
+  /** Number of quantization steps when randomDistribution === 'stepped'. */
+  randomSteps?: number;
   // random
   noRepeat: boolean;
   // switch
@@ -339,9 +381,13 @@ export interface GraphEdge {
   rangeMin?: number;
   /** high bound the source maps into (default = target param spec max). */
   rangeMax?: number;
+  /** Per-input Mix opacity. Meaningful only for flow edges landing on a `mix` node. */
+  opacity?: number;
 }
 
 export interface TriggerGraph {
+  /** Trigger graph schema generation. Missing/2 = legacy Gen2; 3 = terminal Output anchor. */
+  version?: 3;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
@@ -355,7 +401,7 @@ export interface Section {
   looks: Record<string, string | null>;
 }
 
-// ---- Setlist (song → section → per-drum graph slots) -----------------------
+// ---- Runtime setlist (song → section → per-pad graph slots) ----------------
 
 /**
  * padKey "drumId:zone" → ordered list of graph keys (null = empty slot). Keyed per
@@ -365,7 +411,9 @@ export interface Section {
  */
 export type SlotRefs = Record<string, (string | null)[]>;
 
-/** One section in a song's arrangement: per-pad ordered graph-key slots. */
+/** One runtime section in a song arrangement: per-pad ordered graph-key slots.
+    The web authoring model stores each section as a flat ordered graph list; the
+    show-builder bridge groups those graph keys into this runtime slot shape. */
 export interface SongSection {
   id: string;
   name: string;
@@ -373,8 +421,9 @@ export interface SongSection {
 }
 
 /**
- * An authored song: a named sequence of arrangement sections. Structural
- * mirror of the web's `setlist.Song` so `show-builder` assembles by pass-through.
+ * Runtime song: a named sequence of slot-grid sections consumed by the engine.
+ * Do not confuse this with the web-authored setlist `Song`, whose sections contain
+ * flat graph lists for direct arrangement editing.
  */
 export interface ShowSong {
   id: string;
@@ -385,9 +434,9 @@ export interface ShowSong {
 // ---- Show aggregate (the authored content) ----------------------------------
 
 /**
- * The authored content the engine runs: buses, per-pad trigger graphs (keyed by
- * padKey `"drumId:zone"`), section snapshots, the effect/preset registries, and
- * the optional setlist arrangement (songs → sections → per-drum graph slots).
+ * The runtime content the engine runs: buses, trigger graphs, section look snapshots,
+ * effect/preset registries, and optional runtime setlist arrangement. Web authoring
+ * may use friendlier shapes, but must cross `show-builder` before reaching this seam.
  */
 export interface Show {
   buses: Bus[];
@@ -397,7 +446,7 @@ export interface Show {
   effects: EffectDef[];
   presets: Preset[];
   /**
-   * Authored arrangement: songs with per-section slot grids keyed per pad by
+   * Runtime arrangement: songs with per-section slot grids keyed per pad by
    * padKey "drumId:zone". Each slot holds a graph key into `Show.graphs` (null =
    * empty). When an active section is set, a hit fires the non-null slot graphs for
    * THAT pad (layered, in slot order) instead of the flat `graphs[padKey(drumId,
@@ -473,6 +522,9 @@ export interface Voice {
    * is reused. Opaque to everything but the hosted generator.
    */
   genState: unknown;
+  /** Buffer-level Mix branches rendered into intermediate buffers, then blended before
+      this voice's downstream modifiers/output mask continue. Undefined for ordinary voices. */
+  mixInputs?: MixInput[];
   /**
    * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
    * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from
@@ -497,6 +549,8 @@ export interface Voice {
   modulations?: Mapping[];
   /** resolved param snapshot at spawn (live params for the frame derive from this). */
   params: ParamValues;
+  /** Blend mode used when this voice represents a Mix node. */
+  mixBlendMode?: BlendMode;
   /**
    * Per-frame effective params (envelopes + tempo-sync applied). A reused scratch
    * object owned by the pool slot — the engine refills it each tick before the
@@ -515,4 +569,32 @@ export interface Voice {
   releaseFromLevel: number;
   via: string;
   deckGain: number;
+  /** Eval state prefix (pad / slot key) this voice was spawned under. Scopes origin-keyed
+      liveness scans for R13 delay-overlap Mix composition; `''` for non-graph voices
+      (e.g. section looks). */
+  pad?: string;
+  /** Graph node this voice's layer was produced by — its play/effect node, or the Mix node
+      for a composite. Read by `VoicePool.isLayerLive` so a delayed branch can tell whether a
+      Mix's sibling members are still live. */
+  originNodeId?: string;
+}
+
+export interface MixInput {
+  generatorId: string;
+  scope: Scope;
+  targetId?: string;
+  sourceDrumId: string | null;
+  velocity: number;
+  seed: number;
+  params: ParamValues;
+  liveParams: ParamValues;
+  specs: ParamSpec[];
+  modulations?: Mapping[];
+  genState: unknown;
+  modifiers?: ResolvedModifier[];
+  modState?: unknown[];
+  opacity: number;
+  /** Graph node that produced this mix member — carried so `VoicePool.isLayerLive` can
+      report member liveness for R13 delay-overlap Mix composition. */
+  originNodeId?: string;
 }

@@ -95,3 +95,24 @@ describe('resolveCommit — number mode (clamped field)', () => {
     });
   });
 });
+
+describe('resolveCommit — password (credential) mode (R29)', () => {
+  it('commits a non-empty draft raw, WITHOUT trimming (whitespace can be significant in a credential)', () => {
+    expect(resolveCommit({ draft: ' s3cret ', value: '', type: 'password' })).toEqual({
+      action: 'commit',
+      value: ' s3cret ', // untouched — never trimmed like text mode
+    });
+  });
+
+  it('is a no-op for an empty draft (a blank submit never clears a set password)', () => {
+    expect(resolveCommit({ draft: '', value: '', type: 'password' })).toEqual({ action: 'cancel' });
+  });
+
+  it('never round-trips the stored value — a same-looking draft still commits (only a hash is held)', () => {
+    // The caller passes value='' (never the plaintext), so any typed password is a fresh set.
+    expect(resolveCommit({ draft: 'pw', value: 'pw', type: 'password' })).toEqual({
+      action: 'commit',
+      value: 'pw',
+    });
+  });
+});

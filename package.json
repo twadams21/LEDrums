@@ -1,6 +1,6 @@
 {
   "name": "ledrums",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "private": true,
   "description": "LEDrums — real-time generative lighting engine and content authoring app for a 3D LED-pixel drum kit.",
   "type": "module",
@@ -18,6 +18,8 @@
     "ota": "pnpm --filter @ledrums/desktop ota",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
+    "gates": "node scripts/with-gate-lock.mjs pnpm run gates:run",
+    "gates:run": "pnpm typecheck && pnpm test",
     "lint": "pnpm -r run lint",
     "clean": "pnpm -r exec rimraf dist .svelte-kit node_modules/.vite"
   },

@@ -10,11 +10,19 @@
      canvas with theme-token colours. The SIGNAL moves; the chrome stays still. */
   import { voice } from '@ledrums/core';
   import SignalFace from '../../trigger-lab/SignalFace.svelte';
-  import { envelopeTrace, formatCcReadout, lfoTrace, triggerClock, type SignalTrace } from '../../trigger-lab/signal-preview';
+  import {
+    envelopeTrace,
+    formatCcReadout,
+    lfoTrace,
+    randomDistributionTrace,
+    triggerClock,
+    type PreviewPoint,
+    type SignalTrace,
+  } from '../../trigger-lab/signal-preview';
   import { readThemeTokens } from '../../ui/theme-tokens';
 
   interface Props {
-    kind: 'envelope' | 'lfo' | 'cc';
+    kind: 'envelope' | 'lfo' | 'cc' | 'note' | 'osc' | 'random';
     env?: voice.Envelope;
     lfo?: voice.LfoSettings;
     bpm?: number;
@@ -26,8 +34,18 @@
         an ENVELOPE preview is trigger-driven — static until the fire, then sweeps one hit from
         t=0 (an envelope is a per-hit shape). LFO/CC ignore it: they are continuous by nature. */
     fireAt?: number | null;
+    /** RANDOM kind only: draw the real distribution's density curve instead of the generic
+        node-face glyph. When set, `steps` shapes the `stepped` comb. */
+    distribution?: voice.RandomDistribution;
+    steps?: number;
   }
-  let { kind, env, lfo, bpm = 120, ccValue, w = 56, h = 32, fireAt }: Props = $props();
+  let { kind, env, lfo, bpm = 120, ccValue, w = 56, h = 32, fireAt, distribution, steps }: Props = $props();
+
+  // The random density is static (distribution + steps only) — compute it once here, not per
+  // frame. Absent `distribution` ⇒ the node-face fallback glyph below.
+  const randomDensity = $derived(
+    kind === 'random' && distribution ? randomDistributionTrace(distribution, steps) : null,
+  );
 
   let root = $state<HTMLElement>();
   // Theme-aware canvas colours via the shared token reader — fixed fallbacks, never the
@@ -79,6 +97,41 @@
     g.fill();
   }
 
+  // A static probability-density curve (the random distribution preview): baseline + a filled
+  // area under the curve + the stroke. No phase cursor — a distribution has no clock to sweep.
+  function drawDensity(g: CanvasRenderingContext2D, shape: PreviewPoint[]): void {
+    const iw = w - PAD * 2;
+    const ih = h - PAD * 2;
+    const X = (x: number): number => PAD + x * iw;
+    const Y = (y: number): number => PAD + (1 - y) * ih;
+
+    g.strokeStyle = c.grid;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(PAD, Y(0));
+    g.lineTo(w - PAD, Y(0));
+    g.stroke();
+
+    // filled mass under the density
+    g.fillStyle = c.signal;
+    g.globalAlpha = 0.16;
+    g.beginPath();
+    g.moveTo(X(0), Y(0));
+    shape.forEach((p) => g.lineTo(X(p.x), Y(p.y)));
+    g.lineTo(X(1), Y(0));
+    g.closePath();
+    g.fill();
+    g.globalAlpha = 1;
+
+    // the density curve itself
+    g.strokeStyle = c.signal;
+    g.lineWidth = 1.5;
+    g.lineJoin = 'round';
+    g.beginPath();
+    shape.forEach((p, i) => (i === 0 ? g.moveTo(X(p.x), Y(p.y)) : g.lineTo(X(p.x), Y(p.y))));
+    g.stroke();
+  }
+
   function drawBar(g: CanvasRenderingContext2D, value: number): void {
     const iw = w - PAD * 2;
     const ih = h - PAD * 2;
@@ -92,11 +145,22 @@
     g.fillRect(PAD, y, iw * value, barH);
   }
 
+  // The signal itself animates via the shared ticker (SignalFace), which reads live values each
+  // frame; reduced-motion falls back to one static frame — the existing thumb-ticker behaviour.
   const draw = (g: CanvasRenderingContext2D, tMs: number): void => {
-    if (kind === 'cc') {
+    if (kind === 'cc' || kind === 'note' || kind === 'osc') {
       const v = ccValue ? ccValue() : 0;
       drawBar(g, v);
       ccReadout = formatCcReadout(v);
+      return;
+    }
+    if (kind === 'random') {
+      if (randomDensity) {
+        drawDensity(g, randomDensity);
+        return;
+      }
+      // Node-face fallback (no distribution supplied): the generic sampled glyph.
+      drawTrace(g, { shape: Array.from({ length: 16 }, (_, i) => ({ x: i / 15, y: voice.sampleRandomDistribution(i % 2 ? 'triangular' : 'linear', { next: () => ((i * 9301 + 49297) % 233280) / 233280 }) })), cursor: 0.5, value: 0.5 });
       return;
     }
     // Envelope is a per-hit shape → trigger-driven: sample at the local time since the fire
@@ -113,13 +177,19 @@
       ? 'Envelope signal preview'
       : kind === 'lfo'
         ? 'LFO signal preview'
-        : 'CC live value',
+        : kind === 'note'
+          ? 'Note live value'
+          : kind === 'osc'
+            ? 'OSC live value'
+            : kind === 'random'
+              ? 'Random distribution preview'
+              : 'CC live value',
   );
 </script>
 
-<div class="preview" bind:this={root} class:cc={kind === 'cc'}>
+<div class="preview" bind:this={root} class:cc={kind === 'cc' || kind === 'note' || kind === 'osc'}>
   <SignalFace {draw} {w} {h} ariaLabel={label} />
-  {#if kind === 'cc'}
+  {#if kind === 'cc' || kind === 'note' || kind === 'osc'}
     <span class="readout" aria-hidden="true">{ccReadout}</span>
   {/if}
 </div>

@@ -97,11 +97,12 @@ describe('connect / reconnect with a `mod` target port', () => {
     expect(edgesOf(store).length).toBe(before); // rejected
   });
 
-  it("rejects a modifier's output on a trigger-flow wire (no edge added)", () => {
+  it("accepts a modifier's output on an effect-flow wire", () => {
     const { store, play, mod } = withModifier();
     const before = edgesOf(store).length;
     store.connect(mod.id, play.id); // flow wire (no toPort)
-    expect(edgesOf(store).length).toBe(before);
+    expect(edgesOf(store).length).toBe(before + 1);
+    expect(edgesOf(store).at(-1)?.toPort).toBeUndefined();
   });
 
   it('reconnect carries the mod port through', () => {

@@ -3,7 +3,7 @@
    focus / keyboard wiring; this owns the "what should happen on commit" rules
    for both text (inline-rename) and number (clamped field) modes. */
 
-export type CommitInputType = 'text' | 'number';
+export type CommitInputType = 'text' | 'number' | 'password';
 
 /** The outcome of a commit attempt (Enter / blur). `commit` fires `onCommit(value)`;
     `cancel` fires `onCancel?.()` and leaves the value untouched; `revert` additionally
@@ -39,6 +39,14 @@ export function clampNumber(n: number, min?: number, max?: number): number {
     Esc-revert is handled directly by the component and does not go through here. */
 export function resolveCommit(o: ResolveCommitOptions): CommitDecision {
   const original = o.value;
+
+  if (o.type === 'password') {
+    // A credential: NEVER trim (surrounding whitespace can be significant) and never round-trip the
+    // stored value — the caller holds only a hash and passes `value=''`, so the field always starts
+    // empty and clears after a commit. Any non-empty draft commits the raw password; an empty draft
+    // is a no-op (clearing a set password is done elsewhere, not by submitting blank).
+    return o.draft ? { action: 'commit', value: o.draft } : { action: 'cancel' };
+  }
 
   if (o.type === 'number') {
     const raw = o.draft.trim();

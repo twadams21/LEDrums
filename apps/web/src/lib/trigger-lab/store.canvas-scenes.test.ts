@@ -61,14 +61,14 @@ describe('canvas scene store mutators', () => {
     expect(eff?.playType).toBe('particles');
   });
 
-  it('pickEffect rejects a mismatched play type', () => {
+  it('pickEffect allows cross-category swaps and updates the node play type', () => {
     const store = new TriggerLab(fakeClient);
     const node = store.addPlayNode('particles', 0, 0)!;
-    const before = node.effectId;
     const wave = store.selectableEffects.find((e) => e.playType === 'waves' && !e.deprecated);
     expect(wave).toBeDefined();
     store.pickEffect(node, wave!.id);
-    expect(node.effectId).toBe(before); // unchanged — different play type
+    expect(node.effectId).toBe(wave!.id);
+    expect(node.playType).toBe('waves');
   });
 
   it('setCanvasScene repoints a canvas node', () => {

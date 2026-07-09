@@ -1,8 +1,9 @@
 <script lang="ts">
-  /* ToastHost — renders the shared {@link toastStore} as a bottom-centre stack (S44). Mount ONCE
-     near the app root (AuthorShell). Each toast enters with a soft rise + fade and leaves subtler
-     than it arrived; role colour always rides an icon + text (never colour alone), and the whole
-     card is dismissible with a ≥40px hit target. Reduced motion collapses every transition to 0ms. */
+  /* ToastHost — renders the shared {@link toastStore} as a top-centre stack (S44). Mount ONCE
+     near the app root (AuthorShell). Each toast descends in with a soft fade and leaves subtler
+     than it arrived; role rides an icon + text + a slight background wash (never colour alone),
+     and the whole card is dismissible with a ≥40px hit target. Reduced motion collapses every
+     transition to 0ms. */
   import { fly, fade } from 'svelte/transition';
   import { toastStore, type ToastTone } from './toast.svelte';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
@@ -22,7 +23,8 @@
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   });
-  const enterY = $derived(reduced ? 0 : 10);
+  // Top-anchored stack: enter by descending from just above (negative Y), not rising from below.
+  const enterY = $derived(reduced ? 0 : -10);
   const enterMs = $derived(reduced ? 0 : 240);
   const exitMs = $derived(reduced ? 0 : 140);
 
@@ -53,7 +55,7 @@
   .toast-host {
     position: fixed;
     left: 50%;
-    bottom: var(--space-4);
+    top: var(--space-4);
     transform: translateX(-50%);
     z-index: var(--z-toast, 1200);
     display: flex;
@@ -86,18 +88,33 @@
     align-items: center;
     justify-content: center;
   }
+  /* Role tint: a slight wash of the tone colour over the base surface plus a matching border,
+     so the card reads its role at a glance while the icon + text still carry it (never colour
+     alone). Mixed in oklab — oklch would sweep the hue arc and muddy the green/red washes. */
+  .tone-info {
+    background: color-mix(in oklab, var(--accent) 10%, var(--surface-3));
+    border-color: color-mix(in oklab, var(--accent) 32%, var(--border));
+  }
   .tone-info .ic {
     color: var(--accent);
   }
+  .tone-success {
+    background: color-mix(in oklab, var(--ok) 10%, var(--surface-3));
+    border-color: color-mix(in oklab, var(--ok) 32%, var(--border));
+  }
   .tone-success .ic {
     color: var(--ok, var(--accent));
+  }
+  .tone-error {
+    background: color-mix(in oklab, var(--live) 12%, var(--surface-3));
+    border-color: color-mix(in oklab, var(--live) 38%, var(--border));
   }
   .tone-error .ic {
     color: var(--live-bright);
   }
   .msg {
     min-width: 0;
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     line-height: 1.35;
     text-wrap: pretty;
   }

@@ -89,9 +89,9 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
     }
     if (msg.t === 'midi') {
       if (msg.on && msg.velocity > 0) {
-        voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127 });
+        voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127, channel: msg.channel });
       } else {
-        voiceHost.applyInput({ kind: 'noteOff', note: msg.note });
+        voiceHost.applyInput({ kind: 'noteOff', note: msg.note, channel: msg.channel });
       }
       deps.broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127, note: msg.note, channel: msg.channel });
       return true;

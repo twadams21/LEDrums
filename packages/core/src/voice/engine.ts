@@ -28,13 +28,14 @@ import {
   type EvalState,
   type TriggerCtx,
   type PendingDescriptor,
+  type MixInputDraft,
 } from './eval-graph';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import type { CanvasScene } from '../canvas/types';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
-import { ccKey, ccValue01, oscValue01 } from './modulation';
+import { ccKey, ccValue01, noteKey, noteValue01, oscValue01, type NoteState } from './modulation';
 import {
   emptyShow,
   normalizeTriggerValue,
@@ -48,6 +49,8 @@ import {
   type TriggerGraph,
   type TriggerSource,
 } from './types';
+import { normalizeTriggerGraphToGen3 } from './graph-integrity';
+import { createRenderPlanCache } from './render-plan';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -175,6 +178,13 @@ class VoiceBusEngine implements RenderEngine {
   private seqIndex = new Map<string, number>();
   private lastPick = new Map<string, number>();
   private latched = new Map<string, string | null>();
+  /** R13 — persistent per-(pad, mix-node) member snapshots for delay-overlap Mix
+      composition. Populated by the pure evaluator; read by a delayed drain to re-compose
+      with still-live members. Keyed like the maps above; cleared on `setShow`. */
+  private mixMemberSnapshots = new Map<string, MixInputDraft[]>();
+  /** R18 — compiled render-plan cache, keyed by graph identity + structure signature, so fast
+      rolls reuse the plan instead of recompiling per hit. Reset on `setShow` (graphs replaced). */
+  private renderPlanCache = createRenderPlanCache();
 
   private prng = new Prng(PRNG_SEED);
 
@@ -193,6 +203,7 @@ class VoiceBusEngine implements RenderEngine {
    * so the same address can drive a trigger and modulate params.
    */
   private oscTable = new Map<string, number>();
+  private noteTable = new Map<string, NoteState>();
 
   private queue: InputEvent[] = [];
   private timeMs = 0;
@@ -255,21 +266,27 @@ class VoiceBusEngine implements RenderEngine {
 
   setShow(show: Show): void {
     this.syncCanvasScenes(show.canvasScenes);
-    this.show = show;
-    this.busById = new Map(show.buses.map((b) => [b.id, b] as const));
-    this.effectsById = new Map(show.effects.map((e) => [e.id, e] as const));
-    this.presetsById = new Map(show.presets.map((p) => [p.id, p] as const));
+    this.show = {
+      ...show,
+      graphs: Object.fromEntries(Object.entries(show.graphs).map(([key, graph]) => [key, normalizeTriggerGraphToGen3(graph).graph])),
+    };
+    this.busById = new Map(this.show.buses.map((b) => [b.id, b] as const));
+    this.effectsById = new Map(this.show.effects.map((e) => [e.id, e] as const));
+    this.presetsById = new Map(this.show.presets.map((p) => [p.id, p] as const));
     // Authored content changed: clear live state so eval starts clean & deterministic.
     this.voices.reset();
     this.seqIndex.clear();
     this.lastPick.clear();
     this.latched.clear();
+    this.mixMemberSnapshots.clear();
+    this.renderPlanCache.reset(); // R18: authored graphs replaced → drop cached plans
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
     this.pendingFires = [];
     this.pendingFireCounter = 0;
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
+    this.noteTable.clear();
     // Seed active section from the first song/section (a recallSection event can
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
@@ -319,6 +336,20 @@ class VoiceBusEngine implements RenderEngine {
       this.ccTable.set(ccKey(controller, e.channel ?? null), value01);
       this.ccTable.set(ccKey(controller, null), value01);
       return;
+    }
+    if (e.kind === 'noteOn' && e.note !== undefined) {
+      const velocity = noteValue01(e.velocity ?? 0);
+      this.noteTable.set(noteKey(e.note, e.channel ?? null), { gate: 1, velocity, releasedAtMs: null });
+      this.noteTable.set(noteKey(e.note, null), { gate: 1, velocity, releasedAtMs: null });
+    }
+    if (e.kind === 'noteOff' && e.note !== undefined) {
+      const write = (channel: number | null): void => {
+        const key = noteKey(e.note!, channel);
+        const prev = this.noteTable.get(key);
+        this.noteTable.set(key, { gate: prev?.gate ?? 0, velocity: prev?.velocity ?? 0, releasedAtMs: this.timeMs });
+      };
+      write(e.channel ?? null);
+      write(null);
     }
     // An OSC event ALSO feeds the OSC value table (an `osc` modulation source reads its address
     // here) in addition to firing trigger graphs below — deterministic: state only changes here.
@@ -577,6 +608,9 @@ class VoiceBusEngine implements RenderEngine {
       prng: this.prng,
       presetsById: this.presetsById,
       isVoiceAlive: (id) => this.voices.isVoiceAlive(id),
+      mixMemberSnapshots: this.mixMemberSnapshots,
+      isLayerLive: (pad, originNodeId) => this.voices.isLayerLive(pad, originNodeId),
+      renderPlanCache: this.renderPlanCache,
     };
   }
 
@@ -594,7 +628,7 @@ class VoiceBusEngine implements RenderEngine {
       actionCount: actions.length,
       playEffects,
     });
-    this.applyActions(actions, ctx);
+    this.applyActions(actions, ctx, resolved.statePrefix);
   }
 
   /**
@@ -602,9 +636,10 @@ class VoiceBusEngine implements RenderEngine {
    * `PlayAction`s spawn voices; `StopAction`s release them; `PendingAction`s enqueue a
    * deferred fire at `timeMs + relativeDelayMs`. Shared between the immediate fire path
    * (`fireGraph`) and the drain path (`drainPendingFires`) so nested delays work
-   * identically to immediate fires.
+   * identically to immediate fires. `pad` is the eval state prefix — tagged onto each
+   * spawned voice so origin-keyed liveness (R13 delay-overlap Mix) can scope its scan.
    */
-  private applyActions(actions: Action[], ctx: TriggerCtx): void {
+  private applyActions(actions: Action[], ctx: TriggerCtx, pad: string): void {
     for (const a of actions) {
       if (a.kind === 'stop') {
         const v = this.voices.findActiveVoice(a.voiceId);
@@ -617,6 +652,7 @@ class VoiceBusEngine implements RenderEngine {
           busById: this.busById,
           latched: this.latched,
           timeMs: this.timeMs,
+          pad,
         });
       }
     }
@@ -649,7 +685,7 @@ class VoiceBusEngine implements RenderEngine {
     for (const f of due) {
       const { graph, pad, ctx, childIds, viaPrefix, seen, draft } = f.descriptor;
       const actions = evalChildren(this.evalState(), graph, pad, childIds, ctx, viaPrefix, seen, draft ?? null);
-      this.applyActions(actions, ctx);
+      this.applyActions(actions, ctx, pad);
     }
   }
 
@@ -672,12 +708,12 @@ class VoiceBusEngine implements RenderEngine {
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {
       for (const v of this.voices.pool) {
-        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable);
+        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
       }
       this.compositor.render(
         this.voices.pool,
         this.model,
-        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable },
+        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable, notes: this.noteTable },
         this.finalFb,
       );
     }

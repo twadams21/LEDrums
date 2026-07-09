@@ -26,6 +26,12 @@ function fireValueSwitch(sw: Partial<GraphNode>, children: GraphNode[], edges: G
   return sim.voices.map((v) => v.effectId).sort();
 }
 
+function fireGraph(graph: TriggerGraph): Sim['voices'] {
+  const sim = mk();
+  sim.triggerGraph('pad', graph, ctxV(1));
+  return sim.voices;
+}
+
 describe('bandIndex resolver', () => {
   it('routes value at or below a cutoff to that band (lower wins at the boundary)', () => {
     expect(bandIndex(0.0, [0.5])).toBe(0);
@@ -168,5 +174,84 @@ describe('non-value switch modes unchanged', () => {
     };
     sim.triggerGraph('pad', graph, ctxV(0.2)); // ctx sectionIndex 0 → first child
     expect(sim.voices.map((v) => v.effectId)).toEqual(['gen:chase-bands']);
+  });
+});
+
+describe('Gen3 output-gated rendering and cascading Scope', () => {
+  it('effect nodes emit only when their route reaches Output', () => {
+    const loose: TriggerGraph = {
+      version: 3,
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('effect', 'fx', 200, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+        makeNode('output', 'output', 400, 0),
+      ],
+      edges: [{ id: 'e1', from: 'trigger', to: 'fx' }],
+    };
+    expect(fireGraph(loose)).toHaveLength(0);
+
+    const wired: TriggerGraph = { ...loose, edges: [...loose.edges, { id: 'e2', from: 'fx', to: 'output' }] };
+    expect(fireGraph(wired).map((v) => v.effectId)).toEqual(['gen:chase-bands']);
+  });
+
+  it('migrated legacy routes wired through Scope to Output still emit', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('effect', 'fx', 200, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default', scope: 'kit' }),
+        makeNode('scope', 'legacy-output', 400, 0, { scope: 'drum', targetId: 'snare' }),
+        makeNode('output', 'output', 600, 0),
+      ],
+      edges: [
+        { id: 'e1', from: 'trigger', to: 'fx' },
+        { id: 'e2', from: 'fx', to: 'legacy-output' },
+        { id: 'e3', from: 'legacy-output', to: 'output' },
+      ],
+    };
+
+    expect(fireGraph(graph)[0]).toMatchObject({ effectId: 'gen:chase-bands', scope: 'drum', targetId: 'snare' });
+  });
+
+  it('composes Scope filters by strict intersection and renders empty intersections as nothing', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('effect', 'fx', 200, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default', scope: 'kit' }),
+        makeNode('scope', 'snare', 400, 0, { scope: 'drum', targetId: 'snare' }),
+        makeNode('scope', 'snare-hoop', 600, 0, { scope: 'hoop', targetId: 'snare#1' }),
+        makeNode('output', 'output', 800, 0),
+      ],
+      edges: [
+        { id: 'e1', from: 'trigger', to: 'fx' },
+        { id: 'e2', from: 'fx', to: 'snare' },
+        { id: 'e3', from: 'snare', to: 'snare-hoop' },
+        { id: 'e4', from: 'snare-hoop', to: 'output' },
+      ],
+    };
+
+    expect(fireGraph(graph)[0]).toMatchObject({ scope: 'hoop', targetId: 'snare#1' });
+    const empty = { ...graph, nodes: graph.nodes.map((n) => (n.id === 'snare-hoop' ? { ...n, targetId: 'kick#1' } : n)) };
+    expect(fireGraph(empty)).toHaveLength(0);
+  });
+
+  it('whole-kit Scope never broadens or resets a narrowed upstream scope', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        makeNode('trigger', 'trigger'),
+        makeNode('effect', 'fx', 200, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default', scope: 'drum', targetId: 'snare' }),
+        makeNode('scope', 'kit-scope', 400, 0, { scope: 'kit' }),
+        makeNode('output', 'output', 600, 0),
+      ],
+      edges: [
+        { id: 'e1', from: 'trigger', to: 'fx' },
+        { id: 'e2', from: 'fx', to: 'kit-scope' },
+        { id: 'e3', from: 'kit-scope', to: 'output' },
+      ],
+    };
+
+    expect(fireGraph(graph)[0]).toMatchObject({ scope: 'drum', targetId: 'snare' });
   });
 });

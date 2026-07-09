@@ -38,6 +38,7 @@
     canEdit = true,
     onDiscover,
     onAdopt,
+    onSetAuth,
     onIdentify,
     onTestData,
     onBackToLive,
@@ -62,6 +63,8 @@
     canEdit?: boolean;
     onDiscover?: () => void;
     onAdopt?: (host: string) => void;
+    /** Set the adopted controller's admin password (R29) — forwarded to the controller panel. */
+    onSetAuth?: (password: string) => void;
     onIdentify?: () => void;
     onTestData?: (pattern: ControllerTestPattern) => void;
     onBackToLive?: () => void;
@@ -113,6 +116,7 @@
       {canEdit}
       {onDiscover}
       {onAdopt}
+      {onSetAuth}
       {onIdentify}
       {onTestData}
       {onBackToLive}

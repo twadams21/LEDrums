@@ -17,11 +17,14 @@ import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
 import Blend from '@lucide/svelte/icons/blend';
+import GitMerge from '@lucide/svelte/icons/git-merge';
 import Spline from '@lucide/svelte/icons/spline';
 import Waves from '@lucide/svelte/icons/waves'; // S36
 import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
 import CircleDot from '@lucide/svelte/icons/circle-dot';
 import Dice5 from '@lucide/svelte/icons/dice-5';
+import Music2 from '@lucide/svelte/icons/music-2';
+import RadioTower from '@lucide/svelte/icons/radio-tower';
 import { listModifiers } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
@@ -29,6 +32,7 @@ import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 export const kindIcon: Record<NodeKind, Component> = {
   trigger: Zap,
   play: Sparkles,
+  effect: Sparkles,
   all: Layers,
   random: Shuffle,
   sequence: ListOrdered,
@@ -37,10 +41,14 @@ export const kindIcon: Record<NodeKind, Component> = {
   toggle: Power,
   delay: Timer,
   modifier: Blend,
+  mix: GitMerge,
+  scope: CircleDot,
   output: CircleDot,
   envelope: Spline,
   lfo: Waves, // S36
   cc: SlidersHorizontal, // S37
+  note: Music2,
+  osc: RadioTower,
   randomMod: Dice5,
 };
 
@@ -55,6 +63,7 @@ export const busIcon: Record<string, Component> = {
 export const tint: Record<NodeKind, string> = {
   trigger: 'var(--accent)',
   play: 'var(--role-content)',
+  effect: 'var(--role-content)',
   all: 'var(--role-layer)',
   random: 'var(--role-effect)',
   sequence: 'var(--role-output)',
@@ -63,10 +72,14 @@ export const tint: Record<NodeKind, string> = {
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
   modifier: 'var(--role-mod)',
+  mix: 'var(--role-effect)',
+  scope: 'var(--role-output)',
   output: 'var(--role-output)',
   envelope: 'var(--role-modulation)',
   lfo: 'var(--role-modulation)', // S36
   cc: 'var(--role-modulation)', // S37
+  note: 'var(--role-modulation)',
+  osc: 'var(--role-modulation)',
   randomMod: 'var(--role-modulation)',
 };
 
@@ -74,6 +87,7 @@ export const tint: Record<NodeKind, string> = {
 export const kindLabel: Record<NodeKind, string> = {
   trigger: 'Trigger',
   play: 'Play',
+  effect: 'Effect',
   all: 'All',
   random: 'Random',
   sequence: 'Sequence',
@@ -82,10 +96,14 @@ export const kindLabel: Record<NodeKind, string> = {
   toggle: 'Toggle',
   delay: 'Delay',
   modifier: 'Modifier',
+  mix: 'Mix',
+  scope: 'Scope',
   output: 'Output',
   envelope: 'Envelope',
   lfo: 'LFO', // S36
   cc: 'CC', // S37
+  note: 'Note',
+  osc: 'OSC',
   randomMod: 'Random',
 };
 
@@ -115,6 +133,10 @@ export function kindSummary(node: GraphNode): string {
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
     case 'modifier':
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
+    case 'mix':
+      return node.mixBlendMode ?? 'normal';
+    case 'scope':
+      return node.scope === 'kit' ? 'whole kit' : node.targetId || node.scope;
     case 'envelope':
       return 'modulation source';
     case 'lfo': // S36
@@ -122,9 +144,15 @@ export function kindSummary(node: GraphNode): string {
         ? `${node.lfo.waveform} · ${node.lfo.division}`
         : `${node.lfo?.waveform ?? 'sine'} · ${node.lfo?.rateHz ?? 1}Hz`;
     case 'cc':
-      return node.ccSource === 'osc'
-        ? `OSC ${node.oscAddress || '—'}`
-        : `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
+      return `CC ${node.ccController ?? 1}${node.ccChannel != null ? ` · ch ${node.ccChannel}` : ''}`; // S37
+    case 'note':
+      return `Note ${node.noteNumber ?? 60}${node.noteMode === 'velocity' ? ' · velocity' : ' · gate'}`;
+    case 'osc':
+      return `OSC ${node.oscAddress || '—'}`;
+    case 'randomMod':
+      return node.randomDistribution === 'stepped'
+        ? `stepped · ${node.randomSteps ?? 4}`
+        : node.randomDistribution ?? 'linear';
     default:
       return '';
   }

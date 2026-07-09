@@ -6,6 +6,7 @@
      reflects the selected / dropTarget state it's handed; hover is pure CSS (instant) and
      the wire highlight lives in the view (see graph-hover). */
   import type { Component, Snippet } from 'svelte';
+  import NodeIconChip from './NodeIconChip.svelte';
 
   type Props = {
     icon: Component;
@@ -64,7 +65,7 @@
 >
   <div class="card-head">
     {#if leadHandles}{@render leadHandles()}{/if}
-    <span class="icon"><Icon size={16} aria-hidden="true" /></span>
+    <span class="icon"><NodeIconChip icon={Icon} {tint} /></span>
     <span class="title">{title}</span>
     {#if typeChip}<span class="typechip">{typeChip}</span>{/if}
     <span class="sub">{sub}</span>
@@ -144,17 +145,10 @@
   .card.stale .title {
     color: var(--warn);
   }
-  /* signal-path role / kind colour rides the icon chip (icon + tinted wash) */
+  /* grid cell for the role/kind-tinted icon chip (the chip itself is NodeIconChip) */
   .icon {
     grid-area: icon;
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    border-radius: var(--radius-2);
-    color: var(--tint);
-    background: color-mix(in oklch, var(--tint) 16%, transparent);
   }
   .title {
     grid-area: title;

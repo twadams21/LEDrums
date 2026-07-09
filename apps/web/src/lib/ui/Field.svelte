@@ -3,24 +3,31 @@
      - `stack` (default): label above its control — dialogs, wide forms.
      - `row`: label column left, control right — the inspector/editor rhythm
        (label column = --field-label-col). Hint renders beside the label in
-       stack, under the control in row. */
+       stack, under the control in row.
+     `unit` is a short trailing readout that sits OUTSIDE the control, in its own
+     column after it (e.g. "ms" / "Hz" / a live "50%") — the inspector idiom for a
+     numeric field or slider whose unit lives beside the box, not inside it. Row
+     layout only; ignored in stack. */
   import type { Snippet } from 'svelte';
 
   type Props = {
     label: string;
     hint?: string;
+    unit?: string;
     for?: string;
     layout?: 'stack' | 'row';
     class?: string;
     children: Snippet;
   };
 
-  let { label, hint, for: forId, layout = 'stack', class: klass, children }: Props = $props();
+  let { label, hint, unit, for: forId, layout = 'stack', class: klass, children }: Props = $props();
+  const hasUnit = $derived(unit != null && unit !== '' && layout === 'row');
 </script>
 
-<label class={['field', klass]} class:row={layout === 'row'} for={forId}>
+<label class={['field', klass]} class:row={layout === 'row'} class:has-unit={hasUnit} for={forId}>
   <span class="flabel">{label}{#if hint && layout === 'stack'}<em class="fhint">{hint}</em>{/if}</span>
   <span class="fcontrol">{@render children()}</span>
+  {#if hasUnit}<span class="funit">{unit}</span>{/if}
   {#if hint && layout === 'row'}<em class="fhint under">{hint}</em>{/if}
 </label>
 
@@ -37,6 +44,9 @@
     align-items: center;
     column-gap: var(--space-2);
     row-gap: 3px;
+  }
+  .field.row.has-unit {
+    grid-template-columns: var(--field-label-col, 6.5rem) minmax(0, 1fr) auto;
   }
   .flabel {
     display: inline-flex;
@@ -59,6 +69,13 @@
   .fcontrol > :global(*) {
     flex: 1;
     min-width: 0;
+  }
+  .funit {
+    flex: none;
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
+    white-space: nowrap;
   }
   .fhint {
     font-style: normal;
