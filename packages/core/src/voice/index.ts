@@ -33,6 +33,7 @@ export {
   type EvalState,
   type PendingDescriptor,
   type PlayAction,
+  type PlayDraft,
   type MixInputDraft,
   type TriggerCtx as EvalTriggerCtx,
 } from './eval-graph';
