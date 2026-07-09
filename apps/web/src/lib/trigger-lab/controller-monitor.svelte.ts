@@ -1,15 +1,15 @@
 /** PixLite controller monitor (S48/S49/R29) — the reactive state + panel-facing helpers behind
     the ControllerStatusPanel, extracted from the store god-file (R20, store split 1/5) into a
     constructor-injected controller. Owns the "adopted controller" confidence-chain truth: live
-    status, discovery candidates, the test-pattern takeover, and the send helpers that watch /
-    discover / adopt / identify / drive the box.
+    status, discovery candidates, and the send helpers that watch / discover / adopt / identify the
+    box. The S49 test-pattern takeover (drive/exit) is its sibling {@link ControllerTest} (R22).
 
     Reactivity lives here (Svelte 5 runes fields); the store delegates via getters/setter so its
     public surface is unchanged. The store passes a thin {@link ControllerMonitorHost}: how to send
     over the WS link, whether we're a read-only viewer, and how to re-point the output transport
     (Adopt-IP), keeping those cross-cutting concerns in one place. */
 
-import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, DiscoveredController } from '../ws/protocol-types';
 
 /** The store-side surface the monitor depends on — injected so the controller stays free of the
     WS-client lifecycle, the presence/role derivation, and the output-settings write. */
@@ -36,13 +36,6 @@ export class ControllerMonitor {
   scanning = $state(false);
 
   constructor(private readonly host: ControllerMonitorHost) {}
-
-  /** The active controller test pattern (S49), or null in normal LIVE mode. Server-authoritative
-      (carried on `status.testPattern`), so every client's takeover banner + output pill agree.
-      Non-null = the LOUD takeover state: the box runs synthetic data and IGNORES live Art-Net. */
-  get takeover(): ControllerTestPattern | null {
-    return this.status?.testPattern ?? null;
-  }
 
   // --- server broadcasts (ingest) -------------------------------------------
 
@@ -104,20 +97,5 @@ export class ControllerMonitor {
   identify(durationS = 5): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): network re-rig no-op
     this.host.send({ t: 'identifyController', durationS });
-  }
-
-  /** Drive the controller's built-in test-data mode (S49): the box synthesizes a pattern and
-      IGNORES the live Art-Net stream — a LOUD takeover. Editor-gated. The server echoes the active
-      pattern back on `status.testPattern` ({@link takeover}), lighting the banner + output pill. */
-  setTestData(pattern: ControllerTestPattern): void {
-    if (this.host.isViewer()) return; // read-only viewer (S2): device re-rig no-op
-    this.host.send({ t: 'controllerTestData', pattern });
-  }
-
-  /** Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
-      Editor-gated. The server clears the takeover (and auto-reverts when the last watcher leaves). */
-  backToLive(): void {
-    if (this.host.isViewer()) return; // read-only viewer (S2): device re-rig no-op
-    this.host.send({ t: 'controllerBackToLive' });
   }
 }
