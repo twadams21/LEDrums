@@ -260,53 +260,19 @@ export interface Section {
 }
 
 // ---- Evaluation actions -----------------------------------------------------
+// CANONICAL in core `voice/eval-graph.ts` — imported as type aliases (R17) so any
+// drift between this sim and the core evaluator it delegates to fails to compile.
+// The former local mirrors + the `as unknown as` bridge casts are gone: the sim's
+// runtime eval already IS the core evaluator (R16), so these are the exact action
+// shapes `evalGraph`/`evalChildren` return.
+type PlayAction = voice.PlayAction;
+type Action = voice.Action;
+type PlayDraft = voice.PlayDraft;
 
-type PlayAction = {
-  kind: 'play';
-  effectId: string;
-  mode: PlayMode;
-  scope: Scope;
-  /** Per-play-node scope target (see GraphNode.targetId). Carried verbatim from node
-      to voice so the renderer can resolve the pixel range. */
-  targetId?: string;
-  /** layer/bus override ('' → the effect's default bus). */
-  busId: string;
-  params: ParamValues;
-  /** Resolved modifier chain for this play node's `mod` input (S29 populates from graph
-      topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modifiers`. */
-  modifiers?: ResolvedModifier[];
-  /** Resolved modulation mappings for this play node's exposed params (S34 populates from
-      graph topology); carried verbatim to the spawned voice. Mirrors core `PlayAction.modulations`. */
-  modulations?: Mapping[];
-  mixBlendMode?: BlendMode;
-  mixInputs?: MixInputDraft[];
-  /** Origin graph node this layer was produced by — mirrors core `PlayAction.originNodeId`;
-      tags the spawned voice for origin-keyed liveness (R13 delay-overlap Mix). */
-  originNodeId?: string;
-  /** B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
-      (pad, originNodeId); the spawner releases that voice instead of double-counting shared
-      members. Mirrors core `PlayAction.supersedePriorVoice`; set only on a drained re-composition. */
-  supersedePriorVoice?: boolean;
-  via: string;
-  latchKey: string | null;
-};
-type StopAction = { kind: 'stop'; voiceId: string; via: string };
-type PendingAction = { kind: 'pending'; descriptor: voice.PendingDescriptor };
-type Action = PlayAction | StopAction | PendingAction;
-type PlayDraft = Omit<PlayAction, 'kind' | 'via' | 'latchKey'> & { originNodeId?: string };
-type MixInputDraft = PlayDraft & { opacity: number; originNodeId: string };
-
-export interface TriggerCtx {
-  velocity: number;
-  sectionIndex: number;
-  sectionCount: number;
-  beatPhase: number;
-  sourceDrumId: string;
-  /** Transport BPM at trigger time — snapshotted by delay nodes to resolve musical
-      divisions into milliseconds at enqueue time; later bpm changes do not alter
-      already-enqueued fires. Mirrors core `eval-graph.ts` `TriggerCtx.bpm`. */
-  bpm: number;
-}
+/** Trigger context — CANONICAL in core `voice/eval-graph.ts` (there `TriggerCtx`,
+    re-exported from `@ledrums/core` as `EvalTriggerCtx`). Aliased here so web
+    importers keep the `TriggerCtx` name on the `./sim` surface. */
+export type TriggerCtx = voice.EvalTriggerCtx;
 
 /** Per-trigger voice seed — the core VoicePool recipe (same base constant). */
 function deriveSeedFromCounter(counter: number): number {
@@ -466,7 +432,7 @@ export class Sim {
     // normalized to Gen3 first, exactly as the real engine does at `setShow` — so the
     // offline preview and live output share a single evaluation path.
     const g = graph.version === 3 ? graph : voice.normalizeTriggerGraphToGen3(graph).graph;
-    return voice.evalGraph(this.coreEvalState(), g, 'preview', ctx) as Action[];
+    return voice.evalGraph(this.coreEvalState(), g, 'preview', ctx);
   }
 
   private coreEvalState(): voice.EvalState {
@@ -500,7 +466,7 @@ export class Sim {
       ctx: descriptor.ctx,
       viaPrefix: descriptor.viaPrefix,
       seen: descriptor.seen,
-      draft: descriptor.draft as PlayDraft | null | undefined,
+      draft: descriptor.draft,
     });
   }
 
@@ -727,16 +693,7 @@ export class Sim {
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
       const { graph, childIds, ctx, viaPrefix, seen, draft } = f;
-      const actions = (voice.evalChildren as unknown as (
-        state: voice.EvalState,
-        graph: TriggerGraph,
-        pad: string,
-        childIds: string[],
-        ctx: TriggerCtx,
-        viaPrefix: string,
-        seen: Set<string>,
-        draft: PlayDraft | null,
-      ) => Action[])(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null);
+      const actions = voice.evalChildren(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null);
       for (const a of actions) {
         if (a.kind === 'stop') {
           const v = this.voices.find((x) => x.id === a.voiceId);
