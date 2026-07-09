@@ -21,6 +21,30 @@ export function selectedAddItems(groups: readonly AddGroup[], selectedKey: strin
   return groups.find((g) => g.key === selectedKey)?.items ?? [];
 }
 
+function itemMatchesQuery(item: AddItem, needle: string): boolean {
+  return (
+    item.name.toLowerCase().includes(needle) ||
+    (item.hint?.toLowerCase().includes(needle) ?? false)
+  );
+}
+
+/**
+ * Filter the whole node vocabulary by a search query. Returns groups (in their
+ * original order) carrying only the items whose name or hint matches, with
+ * empty groups dropped — so an active query renders a flat list still grouped
+ * by category. A blank query returns [] (the caller falls back to browse).
+ */
+export function filterAddGroups(groups: readonly AddGroup[], query: string): AddGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const out: AddGroup[] = [];
+  for (const g of groups) {
+    const items = g.items.filter((it) => itemMatchesQuery(it, needle));
+    if (items.length > 0) out.push({ ...g, items });
+  }
+  return out;
+}
+
 export function addDragPayload(id: string, groupKey: string): AddDragPayload {
   return { id, groupKey };
 }

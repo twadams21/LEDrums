@@ -10,8 +10,10 @@
     addCategories,
     ADD_NODE_DRAG_TYPE,
     encodeAddDragPayload,
+    filterAddGroups,
     selectedAddItems,
   } from './add-pane';
+  import SearchField from '../../ui/SearchField.svelte';
   import { makeNode, type NodeKind } from '../../trigger-lab/sim';
   import { voice } from '@ledrums/core';
 
@@ -47,32 +49,28 @@
   } = $props();
 
   let selectedKey = $state<string | null>(null);
+  let query = $state('');
   const categories = $derived(addCategories(groups));
   const selectedItems = $derived(selectedAddItems(groups, selectedKey));
   const selectedLabel = $derived(
     categories.find((c) => c.key === selectedKey)?.label ?? '',
   );
+  /** Active query → flat list grouped by category; empty → two-stage browse. */
+  const searching = $derived(query.trim().length > 0);
+  const results = $derived(filterAddGroups(groups, query));
 
-  function dragstart(e: DragEvent, id: string, groupKey: string): void {
-    if (disabled) return;
+  function addItem(it: AddItem, groupKey: string): void {
+    if (disabled || it.disabled) return;
+    onAdd(it.id, groupKey);
+  }
+  function dragItem(e: DragEvent, it: AddItem, groupKey: string): void {
+    if (disabled || it.disabled) return;
     e.dataTransfer?.setData(
       ADD_NODE_DRAG_TYPE,
-      encodeAddDragPayload(id, groupKey),
+      encodeAddDragPayload(it.id, groupKey),
     );
-    e.dataTransfer?.setData('text/plain', id);
+    e.dataTransfer?.setData('text/plain', it.id);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
-  }
-  function addSelected(id: string): void {
-    if (selectedKey === null) return;
-    const item = selectedItems.find((it) => it.id === id);
-    if (item?.disabled) return;
-    onAdd(id, selectedKey);
-  }
-  function dragSelected(e: DragEvent, id: string): void {
-    if (selectedKey === null) return;
-    const item = selectedItems.find((it) => it.id === id);
-    if (item?.disabled) return;
-    dragstart(e, id, selectedKey);
   }
 
   function previewNode(it: AddItem) {
@@ -144,62 +142,91 @@
   {/if}
 {/snippet}
 
+{#snippet previewButton(it: AddItem, groupKey: string)}
+  <button
+    type="button"
+    class="preview"
+    class:unavailable={it.disabled}
+    onclick={() => addItem(it, groupKey)}
+    draggable={!disabled && !it.disabled}
+    ondragstart={(e) => dragItem(e, it, groupKey)}
+    disabled={disabled || it.disabled}
+    title={it.disabled
+      ? (it.disabledReason ?? `${it.name} is not available yet`)
+      : `Add ${it.name}`}
+  >
+    {#snippet cardThumb()}
+      {@render paletteThumb(it)}
+    {/snippet}
+
+    <NodeCard
+      icon={it.icon}
+      title={it.name}
+      sub={it.hint ?? (it.disabled ? 'not available yet' : 'add node')}
+      tint={it.tint ?? 'var(--accent)'}
+      thumb={it.preview ? cardThumb : undefined}
+    />
+  </button>
+{/snippet}
+
 <div class="addpal">
-  <div class="stage1" aria-label="Node categories">
-    {#each categories as category (category.key)}
-      <button
-        type="button"
-        class="cat"
-        class:active={selectedKey === category.key}
-        aria-pressed={selectedKey === category.key}
-        onclick={() => (selectedKey = category.key)}
-      >
-        <span class="cat-name">{category.label}</span>
-        <span class="cat-count">{category.count}</span>
-      </button>
-    {/each}
+  <div class="searchbar">
+    <SearchField
+      bind:value={query}
+      placeholder="Search nodes…"
+      ariaLabel="Search nodes"
+      class="add-search"
+    />
   </div>
 
-  <div class="stage2" aria-live="polite">
-    {#if selectedKey === null}
-      <div class="empty">
-        <p>Select a node category.</p>
-      </div>
-    {:else}
-      <section class="previews" aria-label="{selectedLabel} nodes">
-        <h5 class="glbl">{selectedLabel}</h5>
-        {#each selectedItems as it (it.id)}
-          <button
-            type="button"
-            class="preview"
-            class:unavailable={it.disabled}
-            onclick={() => addSelected(it.id)}
-            draggable={!disabled && !it.disabled}
-            ondragstart={(e) => dragSelected(e, it.id)}
-            disabled={disabled || it.disabled}
-            title={it.disabled
-              ? (it.disabledReason ?? `${it.name} is not available yet`)
-              : `Add ${it.name}`}
-          >
-            {#snippet cardThumb()}
-              {@render paletteThumb(it)}
-            {/snippet}
+  {#if searching}
+    <div class="results" aria-live="polite" aria-label="Search results">
+      {#each results as group (group.key)}
+        <section class="previews" aria-label="{group.label} nodes">
+          <h5 class="glbl">{group.label}</h5>
+          {#each group.items as it (it.id)}
+            {@render previewButton(it, group.key)}
+          {/each}
+        </section>
+      {/each}
+      {#if results.length === 0}
+        <p class="none">No nodes match “{query.trim()}”.</p>
+      {/if}
+    </div>
+  {:else}
+    <div class="stage1" aria-label="Node categories">
+      {#each categories as category (category.key)}
+        <button
+          type="button"
+          class="cat"
+          class:active={selectedKey === category.key}
+          aria-pressed={selectedKey === category.key}
+          onclick={() => (selectedKey = category.key)}
+        >
+          <span class="cat-name">{category.label}</span>
+          <span class="cat-count">{category.count}</span>
+        </button>
+      {/each}
+    </div>
 
-            <NodeCard
-              icon={it.icon}
-              title={it.name}
-              sub={it.hint ?? (it.disabled ? 'not available yet' : 'add node')}
-              tint={it.tint ?? 'var(--accent)'}
-              thumb={it.preview ? cardThumb : undefined}
-            />
-          </button>
-        {/each}
-        {#if selectedItems.length === 0}
-          <p class="none">No node previews in this category.</p>
-        {/if}
-      </section>
-    {/if}
-  </div>
+    <div class="stage2" aria-live="polite">
+      {#if selectedKey === null}
+        <div class="empty">
+          <p>Select a node category.</p>
+        </div>
+      {:else}
+        <section class="previews" aria-label="{selectedLabel} nodes">
+          <h5 class="glbl">{selectedLabel}</h5>
+          {#each selectedItems as it (it.id)}
+            {@render previewButton(it, selectedKey)}
+          {/each}
+          {#if selectedItems.length === 0}
+            <p class="none">No node previews in this category.</p>
+          {/if}
+        </section>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -208,6 +235,28 @@
     flex-direction: column;
     min-height: 0;
     height: 100%;
+  }
+  .searchbar {
+    flex: none;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: var(--space-2);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .searchbar :global(.add-search) {
+    display: flex;
+    width: 100%;
+  }
+  .results {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-2) var(--space-3);
   }
   .stage1 {
     flex: none;
