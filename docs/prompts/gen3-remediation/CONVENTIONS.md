@@ -15,9 +15,23 @@ This file is the shared logistics contract.
 - Stay strictly in your ticket's scope. If you discover an adjacent bug, note it in your report; don't fix it.
 
 ## Gates (run before reporting done)
-- `pnpm typecheck` — 0 errors.
-- `pnpm test` — full suite green.
+- **Full gates go through the machine-wide lock: `pnpm gates`** (= typecheck +
+  full test suite, serialized across all worktrees via
+  `scripts/with-gate-lock.mjs`). NEVER run a bare full `pnpm test`/`pnpm
+  typecheck` as your final verification — parallel full suites exhaust the
+  machine and flake each other. If the lock is held you'll see who holds it;
+  just wait, it polls.
+- During development, run SCOPED tests only (`pnpm --filter <pkg> exec vitest
+  run <file>`), with workers capped: `VITEST_MAX_FORKS=2 VITEST_MAX_THREADS=2`.
 - UI-touching tickets: `pnpm ui-shot` capture(s) of the affected surface, and regenerate `docs/design-system.html` (`pnpm design-system`) if you added/changed styleguide-covered UI.
+
+## ui-shot: reach states ad-hoc, don't register presets
+Per `scripts/ui-shot/README.md`: if a shot needs app state that `--state`
+can't reach, extend `window.__LEDRUMS_SHOT__` with ONE adapter method in
+`shot-seam.ts` (never a bespoke click script). Then capture **ad-hoc**:
+`pnpm ui-shot --state "..." --target "..." --name <shot> --strict`.
+**Do NOT add entries to `scripts/ui-shot/shots.json`** — presets are locked
+CI/sweep baselines only, and promoting a shot is the orchestrator's call.
 
 ## Deliverables
 1. Incremental commits on your branch (small, well-messaged).
