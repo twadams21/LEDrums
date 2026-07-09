@@ -17,16 +17,16 @@ merge. Integration branch: `codex/gen3-graph-authoring`.
 When a phase's tickets are all Done → `/twux rev` agent running `/code-review`
 scoped to that phase's merged range; fix findings before closing the phase.
 
-## Wave 1 (dispatched)
+## Wave 1 (dispatched 2026-07-09 ~02:34Z; Trent capped width at 4 — normally 3)
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
-| R01 wire bug | #80 | wt-1 | gen3r/r01-wire-bug | — | launching |
-| R02 toasts | #81 | wt-2 | gen3r/r02-system-toasts | — | launching |
-| R09 add-pane search | #88 | wt-3 | gen3r/r09-add-pane-search | — | launching |
-| R11 sections DnD | #90 | wt-4 | gen3r/r11-sections-dnd | — | launching |
-| R16 delete legacy eval | #95 | wt-5 | gen3r/r16-delete-legacy-eval | — | launching |
-| R25 signal previews | #104 | wt-6 | gen3r/r25-signal-previews | — | launching |
-| R29 pixlite password | #108 | wt-7 | gen3r/r29-pixlite-admin-password | — | launching |
+| R01 wire bug | #80 | wt-1 | gen3r/r01-wire-bug | r01-wire-490f49 | running |
+| R02 toasts | #81 | wt-2 | gen3r/r02-system-toasts | r02-toasts-a57c1c | running |
+| R09 add-pane search | #88 | wt-3 | gen3r/r09-add-pane-search | r09-search-e4130d | running |
+| R11 sections DnD | #90 | wt-4 | gen3r/r11-sections-dnd | r11-dnd-5e6af3 | running |
+| R16 delete legacy eval | #95 | wt-5 | gen3r/r16-delete-legacy-eval | r16-eval-413010 | PAUSED by Trent (width cap) — resume when a slot frees |
+| R25 signal previews | #104 | wt-6 | gen3r/r25-signal-previews | r25-previews-7be5d4 | PAUSED by Trent (width cap) — resume when a slot frees |
+| R29 pixlite password | #108 | wt-7 | gen3r/r29-pixlite-admin-password | r29-pixlite-d31856 | PAUSED by Trent (width cap) — resume when a slot frees |
 
 ## Queued next (frontier once wave-1 merges)
 R05 #84 (after R01 — graph surface), R10 #89 (after R09), R12 #91 (after
@@ -40,4 +40,5 @@ R01+R02), R03 #82 (after R01+R02), R04 #83 (after R01+R02), R15 #94
 ## Decisions
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
 - Impl agents: opus/medium; R01 opus/high (diagnosis gate). New tmux windows (user directive), killed after verified completion.
+- **Width cap (Trent, 2026-07-09): max 3 agents wide normally, 4 absolute ceiling.** The paused wave-1 agents (r16/r25/r29) count toward width when resumed.
 - Reports: committed `docs/reports/2026-07-09-gen3-r<NN>.md`, orchestrator copies into Notion row + sets Status.
