@@ -96,6 +96,7 @@ import { announceSystemActions } from './store/system-toasts';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
 import {
+  canSplice,
   classifyConnection,
   classifyReconnect,
   normalizeFromPort,
@@ -2996,6 +2997,38 @@ export class TriggerLab {
     edge.fromPort = normalizeFromPort(fromPort);
     edge.toPort = normalizeToPort(toPort);
     return null;
+  }
+
+  /** Would dropping node `nodeId` onto flow edge `edgeId` splice it in? Read-only mirror of
+      {@link spliceOnDrop}'s guard (R08), so the view can ARM the wire during a drag (pre-release
+      indication) knowing release will actually splice. No side effects. */
+  canSplice(edgeId: string, nodeId: string): boolean {
+    const g = this.selectedGraph;
+    return !!g && !this.isViewer && canSplice(g, edgeId, nodeId);
+  }
+
+  /** Splice dropped node `nodeId` into flow edge `edgeId` (R08): remove the edge and re-wire
+      `source →(source-port) node → target (target-port)`, preserving the source band/output port
+      and the target's input port so routing is unchanged but for the inserted node. Recorded as
+      its OWN undo checkpoint — the caller commits the drag position FIRST (a separate checkpoint),
+      so one Ctrl/Z pops the splice wiring while the node stays where it was dropped. The remove +
+      two connects fold into this single checkpoint (batched) so undo reverts the whole splice at
+      once. No-op (returns false) when the splice is invalid; announces a successful splice with one
+      toast. */
+  spliceOnDrop(edgeId: string, nodeId: string): boolean {
+    if (this.isViewer) return false;
+    const g = this.selectedGraph;
+    if (!g || !canSplice(g, edgeId, nodeId)) return false;
+    const edge = g.edges.find((e) => e.id === edgeId)!;
+    const { from, to, fromPort, toPort } = edge;
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      g.edges = g.edges.filter((e) => e.id !== edgeId);
+      this.connect(from, nodeId, fromPort ?? undefined, undefined);
+      this.connect(nodeId, to, undefined, toPort);
+    });
+    pushToast('Node spliced into the wire.', { tone: 'info' });
+    return true;
   }
 
   setMixEdgeOpacity(edgeId: string, opacity: number): void {
