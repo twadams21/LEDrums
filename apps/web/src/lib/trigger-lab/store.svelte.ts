@@ -95,7 +95,14 @@ import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './
 import { announceSystemActions } from './store/system-toasts';
 import { authoredIdsFromLibrary, idsFromLibrarySong, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
-import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './store/graph-wiring';
+import {
+  classifyConnection,
+  classifyReconnect,
+  normalizeFromPort,
+  normalizeToPort,
+  type ToPort,
+  type WireRejection,
+} from './store/graph-wiring';
 import * as vsw from './store/value-switch';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
@@ -2886,11 +2893,17 @@ export class TriggerLab {
       `fromPort` is the source handle the wire leaves (a value+bands switch's `band-${i}`);
       undefined = the node's default single output. `toPort` is the target input handle:
       `'mod'` routes a modifier-chain wire into a play/modifier node's `mod` input, undefined
-      the trigger-flow `in`. Validation is total — never throws (bad wires are ignored). */
-  connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+      the trigger-flow `in`. Validation is total — never throws (bad wires are ignored).
+
+      Returns the rejection reason (`direction` / `duplicate` / `cycle`) when the wire was
+      refused, else `null` on success — so the caller can surface *why* (a reason toast, R03).
+      A viewer / missing-graph no-op returns `null` (nothing the user did wrong to explain). */
+  connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): WireRejection | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || !canConnect(g, fromId, toId, fromPort, toPort)) return;
+    if (!g) return null;
+    const rejection = classifyConnection(g, fromId, toId, fromPort, toPort);
+    if (rejection) return rejection;
     this.pushUndoSnapshot();
     // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
     // never dodge the dedup guard under a differently-spelled duplicate later
@@ -2913,6 +2926,7 @@ export class TriggerLab {
       edge.rangeMax = spec?.max ?? 1;
     }
     g.edges.push(edge);
+    return null;
   }
   disconnect(edgeId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -2924,17 +2938,27 @@ export class TriggerLab {
   /** Re-point an existing edge to a new source/target (an edge-end drag). Validates
       exactly as connect() does — but ignoring the edge being moved — and leaves the
       wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
-      reconnect drag snaps back instead of deleting the wire. */
-  reconnect(edgeId: string, fromId: string, toId: string, fromPort?: string, toPort?: ToPort): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+      reconnect drag snaps back instead of deleting the wire. Returns the rejection reason
+      when the move was refused, else `null` on success (see {@link connect}). */
+  reconnect(
+    edgeId: string,
+    fromId: string,
+    toId: string,
+    fromPort?: string,
+    toPort?: ToPort,
+  ): WireRejection | null {
+    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
-    if (!g || !canReconnect(g, edgeId, fromId, toId, fromPort, toPort)) return;
+    if (!g) return null;
+    const rejection = classifyReconnect(g, edgeId, fromId, toId, fromPort, toPort);
+    if (rejection) return rejection;
     this.pushUndoSnapshot();
     const edge = g.edges.find((e) => e.id === edgeId)!;
     edge.from = fromId;
     edge.to = toId;
     edge.fromPort = normalizeFromPort(fromPort);
     edge.toPort = normalizeToPort(toPort);
+    return null;
   }
 
   setMixEdgeOpacity(edgeId: string, opacity: number): void {

@@ -30,6 +30,7 @@
   import type { Snippet } from 'svelte';
   import GraphFitView from './GraphFitView.svelte';
   import FlowHandle, { type FlowApi } from './FlowHandle.svelte';
+  import WireDragValidity, { type WireDragFrom } from './WireDragValidity.svelte';
 
   type DragStop = { nodes: NodeType[] };
   type Drag = { targetNode: NodeType | null; nodes: NodeType[] };
@@ -59,6 +60,8 @@
     onNodeDrag,
     onConnectEnd,
     onFlow,
+    validateDrag,
+    wirePreview,
     empty,
   }: {
     nodes: NodeType[];
@@ -90,11 +93,21 @@
     onConnectEnd?: OnConnectEnd;
     /** Receives the flow instance once mounted — for view-side placement math. */
     onFlow?: (flow: FlowApi) => void;
+    /** In-drag validity predicate (R03): true when dropping the wire-in-progress on the given
+        node/handle would be accepted. When provided, the wire-in-progress turns red / dotted /
+        dull over an invalid target. Omitted by graphs that don't need connection-time feedback. */
+    validateDrag?: (from: WireDragFrom, toNodeId: string, toHandleId: string | null) => boolean;
+    /** Dev/ui-shot only: pin a static invalid-wire line (canvas-local px) so the otherwise
+        drag-only red/dotted/dull state can be screenshotted. Inert in production. */
+    wirePreview?: { x1: number; y1: number; x2: number; y2: number } | null;
     empty?: Snippet;
   } = $props();
+
+  // In-drag invalid-target state (R03): the tracker flips this as the pointer crosses targets.
+  let dragInvalid = $state(false);
 </script>
 
-<div class="gcanvas" class:swapping>
+<div class="gcanvas" class:swapping class:wire-invalid={dragInvalid || !!wirePreview}>
   {#if ready}
     <SvelteFlow
       bind:nodes
@@ -123,10 +136,27 @@
     >
       <GraphFitView padding={fitPadding} watch={fitWatch} onfitted={onFitted} />
       {#if onFlow}<FlowHandle onflow={onFlow} />{/if}
+      {#if validateDrag}
+        <WireDragValidity validate={validateDrag} onChange={(v) => (dragInvalid = v)} />
+      {/if}
       <Background variant={BackgroundVariant.Dots} />
       <Controls />
       {#if minimap}<MiniMap />{/if}
     </SvelteFlow>
+    {#if wirePreview}
+      <!-- ui-shot only: a static stand-in for the drag-only connection line, wearing the same
+           xyflow classes so the `.wire-invalid` styling below paints it identically — zero visual
+           duplication. Dev-only callers pin it; production never passes `wirePreview`. -->
+      <svg class="svelte-flow__connectionline wire-preview" aria-hidden="true">
+        <path
+          class="svelte-flow__connection-path"
+          fill="none"
+          d={`M ${wirePreview.x1},${wirePreview.y1} C ${wirePreview.x1 + 70},${wirePreview.y1} ${
+            wirePreview.x2 - 70
+          },${wirePreview.y2} ${wirePreview.x2},${wirePreview.y2}`}
+        />
+      </svg>
+    {/if}
   {:else if empty}
     <div class="gempty">{@render empty()}</div>
   {/if}
@@ -237,7 +267,26 @@
     stroke: var(--accent);
     stroke-width: 2;
     stroke-dasharray: 5 4;
-  } 
+  }
+  /* Over an INVALID drop target the wire-in-progress reads red, dotted, and dull the moment the
+     pointer crosses it (item 1.1) — the refusal is announced before release, never a wire that
+     silently vanishes. `--live-bright` is the same red the error toast uses, so the in-drag cue
+     and the reason toast read as one signal. */
+  .gcanvas.wire-invalid :global(.svelte-flow__connectionline .svelte-flow__connection-path) {
+    stroke: var(--live-bright);
+    stroke-dasharray: 2 3;
+    opacity: 0.45;
+  }
+  /* ui-shot only: the pinned static stand-in fills the canvas so its path lands in flow space. */
+  .gcanvas :global(svg.wire-preview) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 5;
+  }
   .gcanvas :global(.svelte-flow__controls) {
     background: var(--surface);
     padding: var(--space-1);

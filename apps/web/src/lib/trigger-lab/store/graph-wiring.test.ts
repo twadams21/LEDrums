@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode, type TriggerGraph } from '../sim';
-import { canConnect, canReconnect, normalizeFromPort, normalizeToPort, type ToPort } from './graph-wiring';
+import {
+  canConnect,
+  canReconnect,
+  classifyConnection,
+  classifyReconnect,
+  normalizeFromPort,
+  normalizeToPort,
+  type ToPort,
+} from './graph-wiring';
 
 /* Incident 09 acceptance: wiring validation must RETURN a verdict, never throw — a throw from
    a connect/reconnect guard is what propagates into xyflow mid-gesture and blanks the canvas.
@@ -286,5 +294,112 @@ describe('duplicate detection over canonical ports', () => {
     expect(normalizeToPort(undefined)).toBeUndefined();
     expect(normalizeToPort('mod')).toBe('mod');
     expect(normalizeToPort('param:brightness')).toBe('param:brightness');
+  });
+});
+
+// R03 / doc 1.1: the connection validator must RETURN which of the three reasons refused a wire
+// (direction / duplicate / cycle) so the UI can turn the wire-in-progress red and toast the cause.
+// canConnect stays `classifyConnection(...) === null`, so these lock the reason AND the boolean.
+describe('graph-wiring — rejection reasons (classifyConnection)', () => {
+  /** trigger → random → play, plus an isolated toggle + envelope source. */
+  function g(): TriggerGraph {
+    return sampleGraph();
+  }
+
+  it('returns null for a legal wire', () => {
+    expect(classifyConnection(g(), 'trigger', 't1')).toBeNull(); // trigger → toggle
+    expect(canConnect(g(), 'trigger', 't1')).toBe(true); // and the boolean agrees
+  });
+
+  it('reports `direction` when the ports cannot legally connect', () => {
+    expect(classifyConnection(g(), 'trigger', 'env1')).toBe('direction'); // a mod source takes no flow input
+    expect(classifyConnection(g(), 'env1', 'p1')).toBe('direction'); // a mod source only feeds param ports
+  });
+
+  it('reports `direction` for unknown / cross-graph / prototype-key ids (never throws)', () => {
+    expect(classifyConnection(g(), 'ghost', 'p1')).toBe('direction');
+    expect(classifyConnection(g(), 'r1', 'ghost')).toBe('direction');
+    expect(classifyConnection(g(), '__proto__', 'p1')).toBe('direction');
+  });
+
+  it('reports `duplicate` for an already-wired slot', () => {
+    // e2 already wires r1 → p1 on the default flow input.
+    expect(classifyConnection(g(), 'r1', 'p1')).toBe('duplicate');
+  });
+
+  it('reports `duplicate` only per (source-port → target) slot, not across bands', () => {
+    const bands: TriggerGraph = {
+      nodes: [
+        makeNode('switch', 's1', 0, 0, { on: 'value', valueMode: 'bands', bands: [0.3, 0.6] }),
+        makeNode('play', 'p1', 100, 0),
+      ],
+      edges: [{ id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' }],
+    };
+    expect(classifyConnection(bands, 's1', 'p1', 'band-0')).toBe('duplicate');
+    expect(classifyConnection(bands, 's1', 'p1', 'band-1')).toBeNull(); // a different band is fine
+  });
+
+  it('reports `cycle` for a self-connect and for a back-edge that closes a loop', () => {
+    expect(classifyConnection(g(), 'r1', 'r1')).toBe('cycle'); // self is the smallest loop
+    const loop: TriggerGraph = {
+      nodes: [makeNode('random', 'a', 0, 0), makeNode('random', 'b', 100, 0)],
+      edges: [{ id: 'e1', from: 'a', to: 'b' }],
+    };
+    expect(classifyConnection(loop, 'b', 'a')).toBe('cycle'); // b → a would close a↔b
+  });
+
+  it('precedence: an impossible-direction wire reads as `direction`, never a phantom cycle/dup', () => {
+    // r1 → trigger: `trigger` already reaches r1 (trigger → r1), so a cycle check would ALSO fire —
+    // but the wire is impossible by direction (trigger takes no input), the true first cause.
+    expect(classifyConnection(g(), 'r1', 'trigger')).toBe('direction');
+  });
+});
+
+describe('graph-wiring — rejection reasons (classifyReconnect)', () => {
+  function g(): TriggerGraph {
+    return sampleGraph();
+  }
+
+  it('returns null for a legal repoint', () => {
+    expect(classifyReconnect(g(), 'e2', 'r1', 't1')).toBeNull(); // repoint e2 target r1 → t1
+    expect(canReconnect(g(), 'e2', 'r1', 't1')).toBe(true);
+  });
+
+  it('reports `direction` for an unknown edge id (nothing to move)', () => {
+    expect(classifyReconnect(g(), 'no-such-edge', 'r1', 't1')).toBe('direction');
+  });
+
+  it('ignores the moved edge so its own presence is not a phantom duplicate', () => {
+    // Repointing e2 (r1 → p1) back onto p1 must NOT read as a duplicate of itself.
+    expect(classifyReconnect(g(), 'e2', 'r1', 'p1')).toBeNull();
+  });
+
+  it('reports `duplicate` when the repoint collides with a DIFFERENT edge', () => {
+    const dup: TriggerGraph = {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('random', 'r1', 100, 0),
+        makeNode('toggle', 't1', 100, 100),
+      ],
+      edges: [
+        { id: 'e1', from: 'trigger', to: 'r1' },
+        { id: 'e2', from: 'trigger', to: 't1' },
+      ],
+    };
+    expect(classifyReconnect(dup, 'e2', 'trigger', 'r1')).toBe('duplicate'); // collides with e1
+  });
+
+  it('reports `cycle` when the repoint would close a loop (over the graph WITHOUT the moved edge)', () => {
+    // a → b → c and a → c. Repointing e3 (a → c) to c → a closes a loop, because with e3 gone
+    // the target `a` still reaches the source `c` via a → b → c.
+    const chain: TriggerGraph = {
+      nodes: [makeNode('random', 'a', 0, 0), makeNode('random', 'b', 100, 0), makeNode('random', 'c', 200, 0)],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b' },
+        { id: 'e2', from: 'b', to: 'c' },
+        { id: 'e3', from: 'a', to: 'c' },
+      ],
+    };
+    expect(classifyReconnect(chain, 'e3', 'c', 'a')).toBe('cycle');
   });
 });
