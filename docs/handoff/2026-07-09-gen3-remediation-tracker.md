@@ -52,10 +52,11 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 ## Wave 2 (dispatched 2026-07-09 ~04:30Z, 3 wide, off `8b72b50`)
 | Ticket | Issue | Worktree | Branch | Session | Status |
 |---|---|---|---|---|---|
-| R16 delete legacy eval | #95 | wt-1 | gen3r/r16-delete-legacy-eval | r16-eval-415ced | running |
+| R16 delete legacy eval | #95 | wt-1 | gen3r/r16-delete-legacy-eval | r16-eval-415ced | ✅ merged `f30918f` (−627 lines, gates green via lock); #95 closed; Notion Done; R17 #96 → Ready; window killed |
 | R25 signal previews | #104 | wt-2 | gen3r/r25-signal-previews | r25-previews-a61432 | running |
 | R29 pixlite password | #108 | wt-3 | gen3r/r29-pixlite-admin-password | r29-pixlite-11270e | running |
-Notion rows set In progress.
+| R13 delay timeline | #92 | wt-1 | gen3r/r13-delay-timeline | r13-timeline-18ae74 | running (opus/high, dispatched into r16's freed slot off r16-merged HEAD) |
+Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fixed in `scripts/with-gate-lock.mjs` + CONVENTIONS. r16 also flagged a dead pre-graph Block-tree evaluator in sim.ts — dead-code sweep candidate (note for R19/R15 triage).
 
 ## Decisions
 - Worktree pool reused: `~/Documents/dev/ledrums-wt/wt-1..7` (wt-4..7 created for this run). wt-master untouched (rock-solid).
