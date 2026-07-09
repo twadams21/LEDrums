@@ -54,10 +54,17 @@ CONVENTIONS.md after wave-1 agents registered three out of habit).
 |---|---|---|---|---|---|
 | R16 delete legacy eval | #95 | wt-1 | gen3r/r16-delete-legacy-eval | r16-eval-415ced | ✅ merged `f30918f` (−627 lines, gates green via lock); #95 closed; Notion Done; R17 #96 → Ready; window killed |
 | R25 signal previews | #104 | wt-2 | gen3r/r25-signal-previews | r25-previews-a61432 | ✅ merged (HEAD ea2f0a8; merged gates green 1333 web); #104 closed; Notion Done + report; window killed. Follow-up flagged: `nid()` id collisions vs persisted graphs (latent, breaks select-by-id) — sweep candidate |
-| R26 field migration | #105 | wt-2 | gen3r/r26-field-migration | r26-field-41a9a2 | running (dispatched into r25's freed slot; unblocked by R25) |
 | R29 pixlite password | #108 | wt-3 | gen3r/r29-pixlite-admin-password | r29-pixlite-11270e | ✅ merged `8c5576a` (UI→server-hash→transport auth; merged gates green); #108 closed; Notion Done; window killed |
-| R03 connection validation | #82 | wt-3 | gen3r/r03-connection-validation | r03-validation-855f6a | running (dispatched into r29's freed slot; builds on R01+R02) |
-| R13 delay timeline | #92 | wt-1 | gen3r/r13-delay-timeline | r13-timeline-18ae74 | running (opus/high, dispatched into r16's freed slot off r16-merged HEAD) |
+| R03 connection validation | #82 | wt-3 | gen3r/r03-connection-validation | r03-validation-855f6a | ✅ merged `00701b0` (HEAD 980e47c; merged gates green 1350 web); #82 closed; Notion Done + report; R08 #87 → Ready; window killed |
+| R13 delay timeline | #92 | wt-1 | gen3r/r13-delay-timeline | r13-timeline-18ae74 | ✅ merged `55274ad` (HEAD 2d5e397; merged gates green 1336 web; shot-seam conflict vs R29/R25 unioned by orchestrator); #92 closed; Notion Done + report; window killed. Follow-up flagged: headless ui-shot of a WIRED-Mix inspector throws `validateDrag is not defined` from xyflow (identifier nowhere in source) — pre-existing, needs triage |
+
+## Wave 3 (dispatched 2026-07-09 ~05:50Z, 3 wide)
+| Ticket | Issue | Worktree | Branch | Session | Status |
+|---|---|---|---|---|---|
+| R26 field migration | #105 | wt-2 | gen3r/r26-field-migration | r26-field-41a9a2 | running |
+| R14 fan-in coalescing | #93 | wt-1 | gen3r/r14-fanin-coalescing | r14-fanin-09815b | running (opus/high — core temporal semantics; defined against R13's model) |
+| R04 effect auto-wire | #83 | wt-3 | gen3r/r04-effect-autowire | r04-autowire-b1ad6c | running |
+Phase 3 (R13+R14) completes with R14 → dispatch P3 review agent then. P1 review needs R03✅–R08 (R05→R06→R07 chain + R08 still queued).
 Notion rows kept current. Gate-lock MIN bug (Tinypool min>max, found by r16) fixed in `scripts/with-gate-lock.mjs` + CONVENTIONS. r16 also flagged a dead pre-graph Block-tree evaluator in sim.ts — dead-code sweep candidate (note for R19/R15 triage).
 
 ## Decisions
