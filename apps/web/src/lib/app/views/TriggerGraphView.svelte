@@ -12,7 +12,11 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { NODE_W, type NodeKind } from '../../trigger-lab/sim';
-  import type { ToPort } from '../../trigger-lab/store/graph-wiring';
+  import { canConnect, type ToPort, type WireRejection } from '../../trigger-lab/store/graph-wiring';
+  import { wireRejectionMessage } from '../../trigger-lab/store/wire-toasts';
+  import { pushToast } from '../../ui/toast.svelte';
+  import type { WireDragFrom } from './WireDragValidity.svelte';
+  import { wireInvalidPreview } from './wire-preview.svelte';
   import { voice, type PlayType } from '@ledrums/core';
   import { kindIcon, kindLabel, tint } from './trigger-node-meta';
   import {
@@ -324,6 +328,30 @@
     fitted = false;
   });
 
+  // ---- ui-shot: static invalid-wire stand-in (R03 / dev-only) ---------------
+  // The red/dotted/dull wire-in-progress is drag-only, so a screenshot can't reach it live.
+  // When the shot seam pins `wireInvalidPreview`, span a static line (canvas-local px) between
+  // the first node's output and the last node's input so the capture shows a real target. Null
+  // (and tree-shaken) outside DEV; depends on `fitted` so it recomputes with the post-fit viewport.
+  const wirePreview = $derived.by(() => {
+    if (!import.meta.env.DEV || !wireInvalidPreview.current) return null;
+    fitted; // recompute once the graph has fit (screen coords depend on the viewport)
+    const rect = canvasWrap?.getBoundingClientRect();
+    if (!flowApi || !rect || nodes.length < 2) return null;
+    const a = nodes[0]!;
+    // Land the stand-in on the node most vertically offset from the source, so it reads as a
+    // wire arriving AT a target (a diagonal curve) rather than a flat line skewering the row.
+    const b = nodes.slice(1).reduce((best, n) =>
+      Math.abs(n.position.y - a.position.y) > Math.abs(best.position.y - a.position.y) ? n : best,
+    );
+    const aw = a.measured?.width ?? NODE_W;
+    const ah = a.measured?.height ?? 40;
+    const bh = b.measured?.height ?? 40;
+    const src = flowApi.flowToScreenPosition({ x: a.position.x + aw, y: a.position.y + ah / 2 });
+    const tgt = flowApi.flowToScreenPosition({ x: b.position.x, y: b.position.y + bh / 2 });
+    return { x1: src.x - rect.left, y1: src.y - rect.top, x2: tgt.x - rect.left, y2: tgt.y - rect.top };
+  });
+
   // ---- canvas interactions (all flow through the store) ---------------------
   function syncPos(fn: { id: string; position: { x: number; y: number } }): void {
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
@@ -335,13 +363,20 @@
     if (handle === 'mod') return 'mod';
     return handle && voice.paramKeyOf(handle as ToPort) !== null ? (handle as `param:${string}`) : undefined;
   }
+  /** Surface a refused wire as one plain-language error toast naming the reason (R03 / doc 1.1).
+      A `null` reason (accepted, or a viewer/no-graph no-op) says nothing. */
+  function toastRejection(reason: WireRejection | null): void {
+    if (reason) pushToast(wireRejectionMessage(reason), { tone: 'error' });
+  }
   function onConnect(c: Connection): void {
-    // store validates (dup / cycle / direction / port scoping)
-    store.connect(c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
+    // store validates (dup / cycle / direction / port scoping) and returns the reason if refused
+    toastRejection(store.connect(c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle)));
     rebuildEdges(); // drop any edge xyflow added optimistically that the store rejected
   }
   function onReconnect(oldEdge: { id: string }, c: Connection): void {
-    store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle));
+    toastRejection(
+      store.reconnect(oldEdge.id, c.source, c.target, c.sourceHandle ?? undefined, toPortOf(c.targetHandle)),
+    );
     rebuildEdges(); // revert the anchor's optimistic move if the store rejected it
   }
   function onDeleteEdges(removed: ReadonlyArray<{ id: string }>): void {
@@ -381,6 +416,40 @@
     if (key && !store.modInputsOf(to).some((r) => r.param === key)) store.addModInput(to, key);
     return key ? (`param:${key}` as const) : undefined;
   }
+  /** The `param:<key>` port a modulation-source drop on `toId` WOULD land on — the read-only
+      mirror of {@link paramPortFor} used by the in-drag validity check (no auto-expose side
+      effect, so hovering a target never mutates the graph). */
+  function predictParamPort(toId: string): ToPort {
+    const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
+    if (!to) return undefined;
+    const key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
+    return key ? (`param:${key}` as const) : undefined;
+  }
+  /** Would dropping the in-progress wire on `toId` (optionally the precise handle under the
+      pointer) be ACCEPTED? Read-only mirror of {@link dropConnect}'s routing so the in-drag
+      red/dotted/dull styling agrees with what release will actually do — every branch resolves
+      to the store's {@link canConnect} verdict, and nothing here mutates the graph. */
+  function validateDrop(from: WireDragFrom, toId: string, toHandle: string | null): boolean {
+    const g = store.selectedGraph;
+    if (!g) return false;
+    // Pointer inside a precise handle's radius → validate that exact port (mod / param / flow).
+    if (toHandle != null) {
+      if (from.type === 'target') return canConnect(g, toId, from.nodeId, undefined, toPortOf(from.handleId));
+      return canConnect(g, from.nodeId, toId, from.handleId ?? undefined, toPortOf(toHandle));
+    }
+    // Drop-anywhere on the node body → mirror dropConnect's source-kind routing.
+    if (from.type === 'target') {
+      const paramPort = toPortOf(from.handleId);
+      const toPort =
+        paramPort && voice.paramKeyOf(paramPort) !== null ? paramPort : kindOf(toId) === 'modifier' ? 'mod' : undefined;
+      return canConnect(g, toId, from.nodeId, undefined, toPort);
+    }
+    if (kindOf(from.nodeId) && voice.isModSourceKind(kindOf(from.nodeId)!)) {
+      const port = predictParamPort(toId);
+      return port ? canConnect(g, from.nodeId, toId, from.handleId ?? undefined, port) : false;
+    }
+    return canConnect(g, from.nodeId, toId, from.handleId ?? undefined, kindOf(from.nodeId) === 'modifier' ? 'mod' : undefined);
+  }
   function dropConnect(
     fromId: string,
     fromType: 'source' | 'target' | null,
@@ -388,19 +457,21 @@
     toId: string,
   ): void {
     if (fromId === toId) return;
+    let reason: WireRejection | null = null;
     if (fromType === 'target') {
       // drag began at an INPUT handle → the dropped-on node becomes the source; route by ITS kind.
       // If the drag left a `param:<key>` row, keep that port (the dropped node must be a source).
       const paramPort = toPortOf(fromPort);
       const toPort = paramPort && voice.paramKeyOf(paramPort) !== null ? paramPort : kindOf(toId) === 'modifier' ? 'mod' : undefined;
-      store.connect(toId, fromId, undefined, toPort);
+      reason = store.connect(toId, fromId, undefined, toPort);
     } else if (kindOf(fromId) && voice.isModSourceKind(kindOf(fromId)!)) {
       // Drop-anywhere from a modulation source routes to a param row (memory `graph-interaction-prefs`).
       const port = paramPortFor(toId);
-      if (port) store.connect(fromId, toId, fromPort ?? undefined, port);
+      if (port) reason = store.connect(fromId, toId, fromPort ?? undefined, port);
     } else {
-      store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
+      reason = store.connect(fromId, toId, fromPort ?? undefined, kindOf(fromId) === 'modifier' ? 'mod' : undefined);
     }
+    toastRejection(reason);
     rebuildEdges();
   }
 </script>
@@ -436,6 +507,8 @@
       onConnectEnd={guard('connect-end', onConnectEnd)}
       onReconnect={guard('reconnect', onReconnect)}
       onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
+      validateDrag={validateDrop}
+      {wirePreview}
     >
       {#snippet empty()}
         <p class="thint">Select a graph from the section to edit it.</p>

@@ -18,6 +18,7 @@ import type { ShellStore, View } from './shell-store.svelte';
 import type { GraphNode, NodeKind } from '../trigger-lab/sim';
 import type { ControllerStatus } from '../ws/protocol-types';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
+import { wireInvalidPreview } from './views/wire-preview.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -50,6 +51,10 @@ export interface ShotSeam {
   /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
       states: `graph` = insertion line at a gap, `section` = reorder target outline. */
   previewSectionsDnd(kind: 'graph' | 'section'): void;
+  /** Pin the R03 invalid-wire drag state (red/dotted/dull wire-in-progress) so ui-shot can
+      capture it — the live state is drag-only and headless Chrome can't drive the gesture. Opens
+      the Trigger graph and ensures it has a target node the static stand-in wire can end on. */
+  previewWireInvalid(): void;
   /** Open the Patch controller inspector on a synthetic ADOPTED controller so ui-shot can
       capture the controller panel (incl. the R29 admin-password field), which otherwise needs
       a live PixLite on the network. `auth` = authenticated (calm); `needs` = requires a password
@@ -76,6 +81,7 @@ class ShotSeamImpl implements ShotSeam {
     this.store.closeSettings();
     this.shell.clearSelection();
     sectionsDndPreview.clear();
+    wireInvalidPreview.clear();
     this.added.clear();
     this.lastAdded = null;
   }
@@ -163,6 +169,16 @@ class ShotSeamImpl implements ShotSeam {
     }
   }
 
+  previewWireInvalid(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // The static stand-in wire spans two nodes — make sure the open graph has a non-trigger node
+    // for its far end to land on, so the capture reads as a wire refused AT a target.
+    const graph = this.store.selectedGraph;
+    if (graph && graph.nodes.every((n) => n.kind === 'trigger')) this.addNode('play');
+    wireInvalidPreview.set(true);
+  }
+
   mockController(kind: 'auth' | 'needs' = 'auth'): void {
     if (this.store.canTakeover) this.store.takeover();
     this.shell.setView('patch');
@@ -248,6 +264,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'sections-reorder':
         this.previewSectionsDnd('section');
+        break;
+      case 'wire-invalid':
+        this.previewWireInvalid();
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : 'auth');
