@@ -2831,6 +2831,18 @@ export class TriggerLab {
       session starts empty. The trigger node is never copyable (a graph has exactly one). */
   nodeClipboard = $state<GraphNode | null>(null);
 
+  /** Mint a node id guaranteed free within `g` (R15/R25). The `nid` counter resets to its base on
+      every reload, so a bare `nid('n')` could re-mint an id a persisted/pasted node already carries
+      — and a duplicate id silently breaks select-by-id (the inspector resolves to the first match).
+      `freshId` skips any id already present in the graph, closing that hole at the mint sites. */
+  private freshNodeId(g: voice.TriggerGraph): string {
+    return freshId('n', (id) => g.nodes.some((n) => n.id === id));
+  }
+  /** Mint an edge id guaranteed free within `g` — same reload-collision guard as {@link freshNodeId}. */
+  private freshEdgeId(g: voice.TriggerGraph): string {
+    return freshId('e', (id) => g.edges.some((e) => e.id === id));
+  }
+
   /** Clone `src` into the selected graph with a fresh id at a free position near `(x, y)`,
       select it, and return it. Node-only (no wires). Refuses the trigger kind + viewers. */
   private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
@@ -2839,7 +2851,7 @@ export class TriggerLab {
     if (!g || isAnchorNode(src)) return null;
     const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
     const pos = findFreePosition(occupied, x, y, 184, 76);
-    const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: nid('n'), x: pos.x, y: pos.y };
+    const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: this.freshNodeId(g), x: pos.x, y: pos.y };
     g.nodes.push(clone);
     return clone;
   }
@@ -2868,32 +2880,33 @@ export class TriggerLab {
     const g = this.selectedGraph;
     if (!g || kind === 'trigger' || kind === 'output') return null;
     this.pushUndoSnapshot();
+    const nodeId = this.freshNodeId(g);
     let node: GraphNode;
     if (kind === 'play' || kind === 'effect') {
-      node = makeNode('effect', nid('n'), x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
+      node = makeNode('effect', nodeId, x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
-      node = makeNode('modifier', nid('n'), x, y, graphsLib.modifierNodeInit());
+      node = makeNode('modifier', nodeId, x, y, graphsLib.modifierNodeInit());
         } else if (kind === 'envelope') {
       // Seed a modulation-source envelope with a default shape in the well-known slot so it
       // animates the moment it is wired (the inspector edits this shape via the S24 editor).
-      node = makeNode('envelope', nid('n'), x, y, envelopeNodeDefaults(options.envelopePreset));
+      node = makeNode('envelope', nodeId, x, y, envelopeNodeDefaults(options.envelopePreset));
     } else if (kind === 'lfo') {
       // S36 — seed default LFO settings so it animates the moment it is wired.
-      node = makeNode('lfo', nid('n'), x, y, {
+      node = makeNode('lfo', nodeId, x, y, {
         lfo: { ...voice.defaultLfoSettings(), waveform: lfoPresetWaveform(options.lfoWaveform) },
       });
     } else if (kind === 'cc') {
       // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
       // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
-      node = makeNode('cc', nid('n'), x, y, { ccController: 1, ccChannel: null });
+      node = makeNode('cc', nodeId, x, y, { ccController: 1, ccChannel: null });
     } else if (kind === 'note') {
-      node = makeNode('note', nid('n'), x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
+      node = makeNode('note', nodeId, x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
     } else if (kind === 'osc') {
-      node = makeNode('osc', nid('n'), x, y, { oscAddress: '' });
+      node = makeNode('osc', nodeId, x, y, { oscAddress: '' });
     } else if (kind === 'randomMod') {
-      node = makeNode('randomMod', nid('n'), x, y, { randomDistribution: 'linear', randomSteps: 4 });
+      node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
-      node = makeNode(kind, nid('n'), x, y);
+      node = makeNode(kind, nodeId, x, y);
     }
     g.nodes.push(node);
     // R04: a freshly-added Effect auto-wires to the terminal Output so it makes light on the next
@@ -2927,7 +2940,7 @@ export class TriggerLab {
     const g = this.selectedGraph;
     if (!g) return null;
     this.pushUndoSnapshot();
-    const node = makeNode('modifier', nid('n'), x, y, {
+    const node = makeNode('modifier', this.freshNodeId(g), x, y, {
       modifierId,
       params: graphsLib.modifierParamsFor(modifierId),
     });
@@ -2985,7 +2998,7 @@ export class TriggerLab {
     // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
     // never dodge the dedup guard under a differently-spelled duplicate later
     const edge: GraphEdge = {
-      id: nid('e'),
+      id: this.freshEdgeId(g),
       from: fromId,
       to: toId,
       fromPort: normalizeFromPort(fromPort),
@@ -3533,6 +3546,7 @@ export class TriggerLab {
     if (!g) return null;
 
     this.pushUndoSnapshot();
+    const nodeId = this.freshNodeId(g);
     let node: GraphNode;
     if (playType === 'canvas') {
       // Built-ins always exist, so a new canvas node starts on the first library scene.
@@ -3541,7 +3555,7 @@ export class TriggerLab {
       if (!scene) return null;
       const eff = canvasScenesLib.canvasEffectDef(scene);
       const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
-      node = makeNode('effect', nid('n'), x, y, {
+      node = makeNode('effect', nodeId, x, y, {
         playType: 'canvas',
         canvasScene: scene.id,
         effectId: eff.id,
@@ -3555,7 +3569,7 @@ export class TriggerLab {
         this.selectableEffects.find((e) => !e.deprecated);
       if (!eff) return null;
       const preset = this.presetById(`${eff.id}:default`);
-      node = makeNode('effect', nid('n'), x, y, {
+      node = makeNode('effect', nodeId, x, y, {
         playType,
         effectId: eff.id,
         presetId: `${eff.id}:default`,
