@@ -10,6 +10,7 @@ export type {
   DiscoveredController,
   EffectSpec,
   MonitorEvent,
+  NetworkAdapter,
   OutputStatus,
   SerializedDrum,
   SerializedModel,
@@ -34,6 +35,7 @@ const SERVER_TYPES = new Set<ServerMessage['t']>([
   'songLibrary',
   'controllerDiscovery',
   'controllerStatus',
+  'networkAdapters',
   'error',
 ]);
 

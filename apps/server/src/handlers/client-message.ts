@@ -4,7 +4,7 @@ import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import { encodeServer, type ClientMessage, type ControllerTestPattern, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
+import { encodeServer, type ClientMessage, type ControllerTestPattern, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -44,7 +44,7 @@ function acceptsMidiChannel(msg: ClientMessage, channel: number | null): boolean
  * shared authored state, so they bypass the editor gate — a VIEWER watching the controller panel
  * must keep live status flowing (discover/adopt/identify stay editor-gated by deny-by-default).
  */
-const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover', 'watchController']);
+const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover', 'watchController', 'listNetworkAdapters']);
 
 /**
  * Whether `t` is an AUTHORING mutation that only the editor may apply (S2 read-only policy).
@@ -103,6 +103,10 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   isTunnelClient?(ws: S): boolean;
   /** Append a diagnostic event to the shared Monitor stream. */
   monitor?(event: MonitorDraft): void;
+  /** Enumerate the server machine's network adapters (NICs) for the `listNetworkAdapters` read — the
+   * panel uses them to guide the operator to put the PixLite on the adapter's subnet + recommend an
+   * IP. Absent when the wiring provides none (the message then replies with an empty list). */
+  listNetworkAdapters?: () => NetworkAdapter[];
   /** PixLite controller monitor (S47), or absent when the wiring runs without one (the controller
    * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
    * that client's interest. `adopt` resolves to a result the handler turns into an `error` reply on
@@ -222,6 +226,14 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     if (msg.t === 'watchController') {
       if (msg.watching) deps.controller?.watch(ws);
       else deps.controller?.dropWatcher(ws);
+      return;
+    }
+
+    // Network-adapter enumeration (the "different IP addresses" guide). A pure read, ungated above:
+    // reply to the requesting client only with the server machine's NICs + per-adapter recommended
+    // controller IP. Absent wiring → empty list (the panel just shows no recommendation).
+    if (msg.t === 'listNetworkAdapters') {
+      ws.send(encodeServer({ t: 'networkAdapters', adapters: deps.listNetworkAdapters?.() ?? [] }));
       return;
     }
 

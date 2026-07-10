@@ -4,7 +4,7 @@ import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
-import { encodeServer, serializeModel, type ClientMessage, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
+import { encodeServer, serializeModel, type ClientMessage, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import { createClientMessageHandler, requiresEditor, type HandlerSocket } from './client-message';
 
 /* S2 server handler integration (multi-socket capturing harness, same style as the S1 registry
@@ -40,6 +40,7 @@ function fakeAutosaver(): Autosaver {
 interface TunnelHarnessOpts {
   tunnelControl?: { start(): void; stop(): void };
   isTunnelClient?(ws: FakeSocket): boolean;
+  listNetworkAdapters?: () => NetworkAdapter[];
 }
 
 function harness(opts: TunnelHarnessOpts = {}) {
@@ -94,6 +95,7 @@ function harness(opts: TunnelHarnessOpts = {}) {
     relayToOthers,
     tunnelControl: opts.tunnelControl,
     isTunnelClient: opts.isTunnelClient,
+    listNetworkAdapters: opts.listNetworkAdapters,
     monitor,
   });
 
@@ -543,5 +545,35 @@ describe('tunnel control message (item 4): editor-gated AND refused for tunnel-r
   it('is a safe no-op when the wiring provides no tunnel control', () => {
     const { handle, join } = harness();
     expect(() => handle({ t: 'tunnel', action: 'start' }, join())).not.toThrow();
+  });
+});
+
+describe('listNetworkAdapters (subnet-guidance read)', () => {
+  const adapters: NetworkAdapter[] = [
+    { name: 'Ethernet', address: '192.168.1.10', netmask: '255.255.255.0', cidr: '192.168.1.10/24', subnet: '192.168.1.0/24', recommendedIp: '192.168.1.50' },
+  ];
+
+  it('replies to the SENDER with the enumerated adapters', () => {
+    const { handle, join } = harness({ listNetworkAdapters: () => adapters });
+    const s = join();
+    handle({ t: 'listNetworkAdapters' }, s);
+    const reply = s.sent.find((m): m is Extract<ServerMessage, { t: 'networkAdapters' }> => m.t === 'networkAdapters');
+    expect(reply?.adapters).toEqual(adapters);
+  });
+
+  it('is ungated — a viewer (non-editor) still gets the adapter list', () => {
+    const { handle, join } = harness({ listNetworkAdapters: () => adapters });
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'listNetworkAdapters' }, viewer);
+    expect(viewer.has('networkAdapters')).toBe(true);
+  });
+
+  it('replies with an empty list when the wiring provides no enumerator', () => {
+    const { handle, join } = harness();
+    const s = join();
+    handle({ t: 'listNetworkAdapters' }, s);
+    const reply = s.sent.find((m): m is Extract<ServerMessage, { t: 'networkAdapters' }> => m.t === 'networkAdapters');
+    expect(reply?.adapters).toEqual([]);
   });
 });

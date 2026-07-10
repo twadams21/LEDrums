@@ -13,6 +13,7 @@ export type {
   ControllerUniverseRx,
   DiscoveredController,
   EffectSpec,
+  NetworkAdapter,
   OutputStatus,
   MonitorEvent,
   MonitorEventType,
@@ -38,7 +39,7 @@ const CLIENT_TYPES = new Set<ClientMessage['t']>([
   'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
   'loadProject', 'saveProject', 'listProjects',
   'discoverControllers', 'adoptController', 'setControllerAuth', 'identifyController', 'watchController',
-  'controllerTestData', 'controllerBackToLive',
+  'controllerTestData', 'controllerBackToLive', 'listNetworkAdapters',
 ]);
 
 export function decodeClient(raw: string): ClientMessage {

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import { defaultProject } from '@ledrums/core';
 import type { WSClient, WSCallbacks } from '../ws/client';
-import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, NetworkAdapter } from '../ws/protocol-types';
 
 /* S48 — the PixLite controller monitor wiring in the store: the server's `controllerStatus` /
    `controllerDiscovery` broadcasts land in reactive state, and the panel-facing send helpers
@@ -87,6 +87,15 @@ const candidate = (host: string): DiscoveredController => ({
   fwVer: '1.4.2',
   authReqd: false,
   score: 100,
+});
+
+const adapter = (name: string, address: string, recommendedIp: string): NetworkAdapter => ({
+  name,
+  address,
+  netmask: '255.255.255.0',
+  cidr: `${address}/24`,
+  subnet: `${address.replace(/\.\d+$/, '.0')}/24`,
+  recommendedIp,
 });
 
 describe('store — controller status/discovery broadcasts', () => {
@@ -212,5 +221,34 @@ describe('store — controller test patterns + takeover (S49)', () => {
     expect(store.controllerTakeover).toEqual({ op: 'colorFade' });
     h.cb!.onConnection!('closed');
     expect(store.controllerTakeover).toBeNull();
+  });
+});
+
+describe('store — network adapters + controller recommendation', () => {
+  it('ingests the server network-adapter list', () => {
+    const { store, h } = wired();
+    expect(store.networkAdapters).toEqual([]);
+    const a = adapter('Ethernet', '192.168.1.10', '192.168.1.50');
+    h.cb!.onNetworkAdapters!([a]);
+    expect(store.networkAdapters).toEqual([a]);
+  });
+
+  it('requestNetworkAdapters asks the server to enumerate NICs — ungated, so a viewer still asks', () => {
+    const viewer = wired();
+    viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    expect(viewer.store.isViewer).toBe(true);
+    viewer.store.requestNetworkAdapters();
+    expect(viewer.h.sent).toContainEqual({ t: 'listNetworkAdapters' });
+  });
+
+  it('recommendation picks the adapter the output iface is bound to, else the first', () => {
+    const { store, h } = wired();
+    expect(store.controllerRecommendation).toBeNull(); // none known yet
+    const eth = adapter('Ethernet', '192.168.1.10', '192.168.1.50');
+    const wifi = adapter('Wi-Fi', '10.0.0.5', '10.0.0.50');
+    h.cb!.onNetworkAdapters!([eth, wifi]);
+    expect(store.controllerRecommendation).toEqual(eth); // no iface bound → first NIC
+    store.setOutput({ iface: '10.0.0.5' });
+    expect(store.controllerRecommendation).toEqual(wifi); // iface-bound adapter wins
   });
 });

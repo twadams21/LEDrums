@@ -9,7 +9,7 @@
     over the WS link, whether we're a read-only viewer, and how to re-point the output transport
     (Adopt-IP), keeping those cross-cutting concerns in one place. */
 
-import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, NetworkAdapter } from '../ws/protocol-types';
 
 /** The store-side surface the monitor depends on — injected so the controller stays free of the
     WS-client lifecycle, the presence/role derivation, and the output-settings write. */
@@ -34,6 +34,11 @@ export class ControllerMonitor {
   candidates = $state<DiscoveredController[]>([]);
   /** Whether a discovery sweep is in flight — true from {@link discover} until the reply lands. */
   scanning = $state(false);
+  /** The server machine's network adapters (NICs) with their subnets + a recommended controller IP
+      each — the "different IP addresses" guide. Refreshed via {@link requestNetworkAdapters} when the
+      controller panel opens; empty until the first reply. Survives a link drop (server-machine facts,
+      not live rx truth). */
+  adapters = $state<NetworkAdapter[]>([]);
 
   constructor(private readonly host: ControllerMonitorHost) {}
 
@@ -57,6 +62,23 @@ export class ControllerMonitor {
     this.scanning = false;
   }
 
+  /** Adopt the server's network-adapter list (reply to {@link requestNetworkAdapters}). */
+  ingestNetworkAdapters(adapters: NetworkAdapter[]): void {
+    this.adapters = adapters;
+  }
+
+  /** Pick the adapter whose recommendation to feature: the one the output is bound to (`iface`
+      matches its address), else the first enumerated NIC. null when none are known yet. This is the
+      adapter the operator selected as "where the PixLite is plugged in". */
+  recommendationFor(iface: string | undefined): NetworkAdapter | null {
+    if (this.adapters.length === 0) return null;
+    if (iface) {
+      const bound = this.adapters.find((a) => a.address === iface);
+      if (bound) return bound;
+    }
+    return this.adapters[0] ?? null;
+  }
+
   /** Link drop: a dropped socket can't confirm the box's rx truth, so frozen status/candidates must
       not linger. The next `controllerStatus` after reconnect (once the panel re-subscribes via
       {@link watch}) repopulates it. Scanning is intentionally left untouched, matching prior art. */
@@ -73,6 +95,12 @@ export class ControllerMonitor {
       opens (mounts), `false` when it closes. NOT editor-gated; a disconnect implicitly clears it. */
   watch(watching: boolean): void {
     this.host.send({ t: 'watchController', watching });
+  }
+
+  /** Ask the server to (re)enumerate its network adapters. A pure read — NOT viewer-gated, so a
+      read-only viewer still sees the subnet guidance. Reply lands via {@link ingestNetworkAdapters}. */
+  requestNetworkAdapters(): void {
+    this.host.send({ t: 'listNetworkAdapters' });
   }
 
   /** Kick off a one-shot discovery sweep. Editor-gated. Ranked results arrive asynchronously via
