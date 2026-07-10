@@ -24,8 +24,11 @@
   // is plugged into) + a "Default (auto)" no-bind. A persisted iface that isn't among the current
   // machine's NICs (e.g. a project moved between machines) is preserved as a "(manual)" entry so
   // switching machines never silently drops it.
+  // bits-ui Select renders the placeholder for value '' (it reads as "no selection"),
+  // so "Default (auto)" carries a sentinel value mapped back to '' on write.
+  const AUTO = 'auto';
   const ifaceOptions = $derived.by(() => {
-    const opts = [{ value: '', label: 'Default (auto)' }];
+    const opts = [{ value: AUTO, label: 'Default (auto)' }];
     for (const a of store.networkAdapters) opts.push({ value: a.address, label: `${a.name} · ${a.address}` });
     const cur = out?.iface ?? '';
     if (cur && !store.networkAdapters.some((a) => a.address === cur)) {
@@ -86,52 +89,48 @@
       onCommit={(v) => v.trim() && store.setOutput({ host: v.trim() })}
     />
   </Field>
-  <div class="tworow">
-    <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
-      <CommitInput
-        type="number"
-        min={1}
-        max={65535}
-        value={out.port ?? ''}
-        placeholder={out.protocol === 'sacn' ? '5568' : '6454'}
-        disabled={!project}
-        ariaLabel="Output port"
-        onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
-      />
-    </Field>
-    <Field layout="row" label="Interface" hint="the NIC the PixLite is on">
-      <Select
-        value={out.iface ?? ''}
-        options={ifaceOptions}
-        disabled={!project}
-        onChange={(v) => store.setOutput({ iface: v })}
-        ariaLabel="Source interface (network adapter)"
-      />
-    </Field>
-  </div>
-  <div class="tworow">
-    <Field layout="row" label="RGB order">
-      <Select
-        value={out.rgbOrder}
-        options={RGB_OPTS}
-        disabled={!project}
-        onChange={(v) => store.setOutput({ rgbOrder: v as RgbOrder })}
-        ariaLabel="RGB order"
-      />
-    </Field>
-    <Field layout="row" label="FPS" hint="≤ 120">
-      <CommitInput
-        type="number"
-        min={1}
-        max={120}
-        value={out.fps}
-        disabled={!project}
-        suffix="fps"
-        ariaLabel="Output FPS"
-        onCommit={(v) => onNum(v, (n) => store.setOutput({ fps: n }))}
-      />
-    </Field>
-  </div>
+  <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
+    <CommitInput
+      type="number"
+      min={1}
+      max={65535}
+      value={out.port ?? ''}
+      placeholder={out.protocol === 'sacn' ? '5568' : '6454'}
+      disabled={!project}
+      ariaLabel="Output port"
+      onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
+    />
+  </Field>
+  <Field layout="row" label="Interface" hint="the NIC the PixLite is on">
+    <Select
+      value={out.iface || AUTO}
+      options={ifaceOptions}
+      disabled={!project}
+      onChange={(v) => store.setOutput({ iface: v === AUTO ? '' : v })}
+      ariaLabel="Source interface (network adapter)"
+    />
+  </Field>
+  <Field layout="row" label="RGB order">
+    <Select
+      value={out.rgbOrder}
+      options={RGB_OPTS}
+      disabled={!project}
+      onChange={(v) => store.setOutput({ rgbOrder: v as RgbOrder })}
+      ariaLabel="RGB order"
+    />
+  </Field>
+  <Field layout="row" label="FPS" hint="≤ 120">
+    <CommitInput
+      type="number"
+      min={1}
+      max={120}
+      value={out.fps}
+      disabled={!project}
+      suffix="fps"
+      ariaLabel="Output FPS"
+      onCommit={(v) => onNum(v, (n) => store.setOutput({ fps: n }))}
+    />
+  </Field>
   <label class="checkrow">
     <Toggle
       pressed={out.broadcast}
@@ -163,14 +162,6 @@
     font-size: var(--text-xs);
     color: var(--text-muted);
     line-height: var(--leading-normal);
-  }
-  .tworow {
-    display: flex;
-    gap: var(--space-3);
-  }
-  .tworow :global(.field) {
-    flex: 1;
-    min-width: 0;
   }
   .checkrow {
     display: flex;
