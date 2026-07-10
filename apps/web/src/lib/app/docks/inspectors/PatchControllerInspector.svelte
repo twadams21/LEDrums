@@ -20,11 +20,27 @@
   const project = $derived(store.project);
   const out = $derived(project?.output ?? null);
 
+  // Interface options = the server's enumerated NICs (so the operator picks the adapter the PixLite
+  // is plugged into) + a "Default (auto)" no-bind. A persisted iface that isn't among the current
+  // machine's NICs (e.g. a project moved between machines) is preserved as a "(manual)" entry so
+  // switching machines never silently drops it.
+  const ifaceOptions = $derived.by(() => {
+    const opts = [{ value: '', label: 'Default (auto)' }];
+    for (const a of store.networkAdapters) opts.push({ value: a.address, label: `${a.name} · ${a.address}` });
+    const cur = out?.iface ?? '';
+    if (cur && !store.networkAdapters.some((a) => a.address === cur)) {
+      opts.push({ value: cur, label: `${cur} (manual)` });
+    }
+    return opts;
+  });
+
   // S48: subscribe to controller status while this panel is open — the ONLY thing that gates the
   // server's poll loop (no idle traffic). Watch on mount, un-watch on teardown; a link drop clears
-  // it server-side. onMount's cleanup fires on unmount, so a closed panel stops the poll.
+  // it server-side. onMount's cleanup fires on unmount, so a closed panel stops the poll. Also ask
+  // the server to enumerate its NICs so the subnet recommendation + adapter picker have data.
   onMount(() => {
     store.watchController(true);
+    store.requestNetworkAdapters();
     return () => store.watchController(false);
   });
 </script>
@@ -37,6 +53,7 @@
   candidates={store.controllerCandidates}
   scanning={store.controllerScanning}
   takeover={store.controllerTakeover}
+  recommendation={store.controllerRecommendation}
   canEdit={store.canEdit}
   onDiscover={() => store.discoverControllers()}
   onAdopt={(host) => store.adoptController(host)}
@@ -82,16 +99,13 @@
         onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
       />
     </Field>
-    <Field layout="row" label="Interface" hint="source NIC · blank = default">
-      <CommitInput
+    <Field layout="row" label="Interface" hint="the NIC the PixLite is on">
+      <Select
         value={out.iface ?? ''}
-        mono
-        autofocus={false}
-        allowEmpty
-        placeholder="0.0.0.0"
+        options={ifaceOptions}
         disabled={!project}
-        ariaLabel="Source interface"
-        onCommit={(v) => store.setOutput({ iface: v.trim() })}
+        onChange={(v) => store.setOutput({ iface: v })}
+        ariaLabel="Source interface (network adapter)"
       />
     </Field>
   </div>

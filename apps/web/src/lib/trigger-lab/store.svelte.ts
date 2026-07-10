@@ -47,7 +47,7 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
-import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -1514,6 +1514,10 @@ export class TriggerLab {
         // A discovery sweep finished — replace the candidate list wholesale (best-first).
         this.monitor.ingestDiscovery(candidates);
       },
+      onNetworkAdapters: (adapters) => {
+        // The server enumerated its NICs — used to recommend which subnet/IP to set the PixLite to.
+        this.monitor.ingestNetworkAdapters(adapters);
+      },
       onAuthError: () => {
         // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
         // loop is paused in the client until submitPin() supplies one.
@@ -2110,6 +2114,23 @@ export class TriggerLab {
 
   watchController(watching: boolean): void {
     this.monitor.watch(watching);
+  }
+
+  /** The server machine's network adapters (NICs) + a recommended controller IP each. See
+      {@link ControllerMonitor.adapters}. */
+  get networkAdapters(): NetworkAdapter[] {
+    return this.monitor.adapters;
+  }
+
+  /** The featured adapter for the controller recommendation — the one the output `iface` is bound
+      to, else the first NIC. Drives the panel's "set the A4 to …" guidance. null until known. */
+  get controllerRecommendation(): NetworkAdapter | null {
+    return this.monitor.recommendationFor(this.project?.output.iface);
+  }
+
+  /** Ask the server to (re)enumerate its NICs — called when the controller panel opens. */
+  requestNetworkAdapters(): void {
+    this.monitor.requestNetworkAdapters();
   }
 
   discoverControllers(): void {

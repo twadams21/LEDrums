@@ -33,6 +33,7 @@ import {
 } from './pin-gate';
 import { boot } from './boot';
 import { createControllerMonitor } from './controller-monitor';
+import { listNetworkAdapters } from './network-adapters';
 import { createClientMessageHandler } from './handlers/client-message';
 import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
@@ -448,6 +449,7 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   tunnelControl,
   isTunnelClient: (ws) => tunnelClients.has(ws),
   monitor,
+  listNetworkAdapters: () => listNetworkAdapters(),
   controller: {
     discover: () => controllerMonitor.discover(),
     adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),

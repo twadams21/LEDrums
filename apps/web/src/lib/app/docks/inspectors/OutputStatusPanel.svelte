@@ -14,6 +14,7 @@
     ControllerStatus,
     ControllerTestPattern,
     DiscoveredController,
+    NetworkAdapter,
     OutputStatus,
   } from '../../../ws/protocol-types';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
@@ -35,6 +36,7 @@
     candidates = [],
     scanning = false,
     takeover = null,
+    recommendation = null,
     canEdit = true,
     onDiscover,
     onAdopt,
@@ -59,6 +61,9 @@
     scanning?: boolean;
     /** Active controller test pattern (S49) — forwarded to the controller panel's takeover banner. */
     takeover?: ControllerTestPattern | null;
+    /** Featured network adapter (the NIC the output is bound to, else the first) — forwarded to the
+        controller panel's "set the A4 to …" subnet-recommendation card. null hides it. */
+    recommendation?: NetworkAdapter | null;
     /** Editor gate forwarded to the controller actions. */
     canEdit?: boolean;
     onDiscover?: () => void;
@@ -112,6 +117,7 @@
       {candidates}
       {scanning}
       {takeover}
+      {recommendation}
       outputHost={output?.host}
       {canEdit}
       {onDiscover}

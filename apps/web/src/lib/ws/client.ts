@@ -7,6 +7,7 @@ import {
   type DiscoveredController,
   type EffectSpec,
   type MonitorEvent,
+  type NetworkAdapter,
   type OutputStatus,
   type SerializedModel,
   type ServerMessage,
@@ -63,6 +64,9 @@ export interface WSCallbacks {
   onControllerStatus?: (status: ControllerStatus | null) => void;
   /** Ranked candidate list from a discovery sweep (best-first); replaces the panel's list. */
   onControllerDiscovery?: (candidates: DiscoveredController[]) => void;
+  /** Reply to `listNetworkAdapters`: the server machine's NICs + per-adapter recommended controller
+      IP, so the panel can guide the operator to the right subnet. */
+  onNetworkAdapters?: (adapters: NetworkAdapter[]) => void;
   onError?: (message: string) => void;
   onConnection?: (state: ConnectionState) => void;
   /** The server refused the connection for a wrong/absent room PIN (close 4401). The reconnect
@@ -261,6 +265,9 @@ export class WSClient {
         break;
       case 'controllerStatus':
         this.cb.onControllerStatus?.(msg.status);
+        break;
+      case 'networkAdapters':
+        this.cb.onNetworkAdapters?.(msg.adapters);
         break;
       case 'error':
         this.cb.onError?.(msg.message);

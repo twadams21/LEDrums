@@ -19,10 +19,14 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import FlaskConical from '@lucide/svelte/icons/flask-conical';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import Network from '@lucide/svelte/icons/network';
+  import Copy from '@lucide/svelte/icons/copy';
+  import Check from '@lucide/svelte/icons/check';
   import type {
     ControllerStatus,
     ControllerTestPattern,
     DiscoveredController,
+    NetworkAdapter,
   } from '../../../ws/protocol-types';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import StatusPill from '../../../ui/StatusPill.svelte';
@@ -48,6 +52,7 @@
     scanning = false,
     outputHost,
     takeover = null,
+    recommendation = null,
     canEdit = true,
     nowMs,
     onDiscover,
@@ -70,6 +75,10 @@
         takeover banner + highlights the running control. Server-authoritative (mirrors the store's
         `controllerTakeover`), so every watcher agrees. Defaults null for the styleguide stub. */
     takeover?: ControllerTestPattern | null;
+    /** The featured network adapter (the NIC the output is bound to, else the first) — drives the
+        "set the A4 to …" recommendation shown when nothing is adopted or the controller is lost.
+        null hides the card (no adapters known / offline). */
+    recommendation?: NetworkAdapter | null;
     /** Editor gate — a viewer sees live status but the re-rig actions (discover/adopt/identify/test)
         are disabled. Defaults true for the styleguide stub. */
     canEdit?: boolean;
@@ -97,6 +106,30 @@
   const outputDrift = $derived(
     !!controller && !!outputHost && controller.host !== outputHost,
   );
+
+  // --- Adopt-by-IP + subnet recommendation ----------------------------------
+  // A manual host entry (adopt across subnets / when discovery misses it) plus a copy button for the
+  // recommended controller IP. The common flow: read the recommended IP, set the box to it, then
+  // type it here (the input placeholder pre-fills that value) and Adopt.
+  let adoptHost = $state('');
+  let copied = $state(false);
+
+  function submitAdopt(): void {
+    const h = adoptHost.trim();
+    if (h) onAdopt?.(h);
+  }
+
+  async function copyRecommendedIp(): Promise<void> {
+    const ip = recommendation?.recommendedIp;
+    if (!ip || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(ip);
+      copied = true;
+      setTimeout(() => (copied = false), 1400);
+    } catch {
+      /* clipboard blocked — the value is right there to copy by hand */
+    }
+  }
 
   // --- Admin password (R29) -------------------------------------------------
   // Authenticated controllers (non-empty admin password) need it for every management call. We hold
@@ -137,6 +170,67 @@
     onTestData?.({ op, pixPortNum: 0, pixNum: 0 });
   }
 </script>
+
+<!-- The "different IP addresses" guide: your PC's adapter subnet + a concrete IP to set the box to.
+     Rendered when nothing is adopted OR the adopted controller is lost — the moments you're trying to
+     get on the same subnet. Hidden when no adapter is known (offline / adapters not yet enumerated). -->
+{#snippet recommendationCard()}
+  {#if recommendation}
+    <div class="recommend">
+      <div class="rec-head">
+        <Network size={13} aria-hidden="true" />
+        <span class="rec-title">Put the controller on your subnet</span>
+      </div>
+      <p class="rec-pc">
+        This PC · <span class="mono">{recommendation.name}</span> ·
+        <span class="mono">{recommendation.cidr}</span>
+      </p>
+      <div class="rec-target">
+        <span class="rec-set">Set the A4 to</span>
+        <span class="rec-value mono">{recommendation.recommendedIp}</span>
+        <button
+          type="button"
+          class="copy"
+          onclick={copyRecommendedIp}
+          aria-label="Copy recommended IP"
+          title="Copy recommended IP"
+        >
+          {#if copied}<Check size={12} aria-hidden="true" />{:else}<Copy size={12} aria-hidden="true" />{/if}
+        </button>
+      </div>
+      <p class="rec-hint">
+        Mask <span class="mono">{recommendation.netmask}</span> · any address on
+        <span class="mono">{recommendation.subnet}</span> works, then Discover.
+      </p>
+    </div>
+  {/if}
+{/snippet}
+
+<!-- Manual adopt: connect to a controller at a known IP even when Discover can't see it (still on a
+     different subnet, across a router, or simply missed). Seeds its placeholder from the recommended
+     IP so the "set the box, then adopt it" flow is one glance. -->
+{#snippet adoptByIp()}
+  <div class="adopt-ip">
+    <span class="adopt-label">Adopt by IP</span>
+    <div class="adopt-row">
+      <input
+        class="adopt-input"
+        type="text"
+        inputmode="decimal"
+        bind:value={adoptHost}
+        placeholder={recommendation?.recommendedIp ?? '192.168.0.50'}
+        disabled={!canEdit}
+        aria-label="Controller IP to adopt"
+        onkeydown={(e) => {
+          if (e.key === 'Enter') submitAdopt();
+        }}
+      />
+      <button type="button" class="action" disabled={!canEdit || !adoptHost.trim()} onclick={submitAdopt}>
+        Adopt
+      </button>
+    </div>
+  </div>
+{/snippet}
 
 <section class="controller" aria-label="Controller status">
   <header class="head">
@@ -185,6 +279,13 @@
           </p>
         </div>
       </div>
+    {/if}
+
+    {#if lost}
+      <!-- The box stopped answering — the likeliest cause is a subnet/IP mismatch, so surface the
+           same subnet guidance + manual adopt here, right under the lost alert. -->
+      {@render recommendationCard()}
+      {@render adoptByIp()}
     {/if}
 
     <div class="readrows">
@@ -305,6 +406,8 @@
     <button type="button" class="action wide discover" class:scanning disabled={!canEdit || scanning} onclick={() => onDiscover?.()}>
       <Radar size={13} aria-hidden="true" /> {scanning ? 'Discovering...' : 'Discover controllers'}
     </button>
+    {@render recommendationCard()}
+    {@render adoptByIp()}
   {/if}
 
   {#if candidates.length}
@@ -710,6 +813,146 @@
     .takeover {
       animation: none;
     }
+  }
+
+  /* Subnet recommendation — the "different IP addresses" guide. A calm accent-tinted card (info, not
+     a fault): your PC's adapter subnet + a concrete IP to set the controller to, with one-tap copy. */
+  .recommend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+    border-radius: var(--radius-3);
+    background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset));
+    /* Same gentle fade+rise as the sibling .alert/.takeover callouts, so the guidance reads as one
+       family. Collapses to instant under reduced motion via the --dur-* token reset. */
+    animation: alert-in var(--dur-220) var(--ease-out-quart);
+  }
+  .rec-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--accent);
+  }
+  .rec-head :global(svg) {
+    flex: none;
+  }
+  .rec-title {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
+    color: var(--accent);
+  }
+  .rec-pc {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    line-height: var(--leading-snug);
+    overflow-wrap: anywhere;
+  }
+  .recommend .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .rec-target {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+  .rec-set {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+  .rec-value {
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.01em;
+  }
+  .copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-inset);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+      border-color var(--dur-120) ease,
+      color var(--dur-120) ease,
+      scale var(--dur-120) ease;
+  }
+  .copy:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .copy:active {
+    scale: 0.96;
+  }
+  .rec-hint {
+    margin: 0;
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+    line-height: var(--leading-snug);
+    overflow-wrap: anywhere;
+  }
+
+  /* Manual adopt-by-IP — a labelled IP input + Adopt, reusing the .action button vocabulary. Lets an
+     operator connect to a known controller even when Discover can't see it. */
+  .adopt-ip {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .adopt-label {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
+    color: var(--text-faint);
+  }
+  .adopt-row {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .adopt-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 30px;
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-sm);
+    color: var(--ink);
+    transition: border-color var(--dur-120) ease;
+  }
+  .adopt-input::placeholder {
+    color: var(--text-disabled);
+  }
+  .adopt-input:focus {
+    outline: none;
+    border-color: var(--border-strong);
+  }
+  .adopt-input:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .adopt-row .action {
+    flex: none;
+    width: auto;
+    padding-inline: var(--space-3);
   }
 
   .hint {

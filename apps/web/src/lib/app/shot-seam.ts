@@ -77,11 +77,13 @@ export interface ShotSeam {
       the Trigger graph and pins REAL `compileRenderPlan` issues (from a degenerate graph) so the
       capture shows genuine compiler output, not a mock. */
   previewLintIssues(): void;
-  /** Open the Patch controller inspector on a synthetic ADOPTED controller so ui-shot can
-      capture the controller panel (incl. the R29 admin-password field), which otherwise needs
-      a live PixLite on the network. `auth` = authenticated (calm); `needs` = requires a password
-      it doesn't have yet (warn). Injects a `controllerStatus` the panel reads verbatim. */
-  mockController(kind?: 'auth' | 'needs'): void;
+  /** Open the Patch controller inspector on a synthetic controller so ui-shot can capture the
+      controller panel (incl. the R29 admin-password field + the subnet-recommendation card), which
+      otherwise needs a live PixLite on the network. `auth` = adopted + authenticated (calm); `needs`
+      = adopted but lost/needs-password (warn → shows the subnet guidance under the lost alert);
+      `discover` = nothing adopted (the Discover affordance + recommendation card + Adopt-by-IP). The
+      recommendation itself is real — the panel's mount requests the dev machine's NICs. */
+  mockController(kind?: 'auth' | 'needs' | 'discover'): void;
   /** Author a Mix with two wired layer branches and select it, so the Mix inspector shows
       its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
       an empty Mix hides the rows. */
@@ -265,9 +267,23 @@ class ShotSeamImpl implements ShotSeam {
     lintPreview.set(voice.compileRenderPlan(degenerate).issues);
   }
 
-  mockController(kind: 'auth' | 'needs' = 'auth'): void {
+  mockController(kind: 'auth' | 'needs' | 'discover' = 'auth'): void {
     if (this.store.canTakeover) this.store.takeover();
     this.shell.setView('patch');
+    // Nothing adopted — the un-adopted branch (Discover + recommendation card + Adopt-by-IP). The
+    // recommendation comes from the real NIC list the inspector's mount requests, so this captures
+    // the true "different IP addresses" guidance, not a stub.
+    if (kind === 'discover') {
+      this.store.controllerStatus = null;
+      this.shell.select({ kind: 'patch', nodeId: 'controller' });
+      let f = 0;
+      const hold = (): void => {
+        this.store.controllerStatus = null; // resist the dev server's own (null) status echoes
+        if (f++ < 30) requestAnimationFrame(hold);
+      };
+      requestAnimationFrame(hold);
+      return;
+    }
     const reachable = kind === 'auth';
     // A representative adopted PixLite (authReqd true so the panel's password field is the point of
     // interest). The same shape the server's `controllerStatus` broadcast carries.
@@ -379,7 +395,7 @@ class ShotSeamImpl implements ShotSeam {
         this.previewCanvasDrop();
         break;
       case 'controller':
-        this.mockController(arg === 'needs' ? 'needs' : 'auth');
+        this.mockController(arg === 'needs' ? 'needs' : arg === 'discover' ? 'discover' : 'auth');
         break;
       case 'mix-layers':
         this.mixWithLayers();

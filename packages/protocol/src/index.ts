@@ -140,7 +140,13 @@ export type ClientMessage =
   // closes it; a disconnect implicitly clears it. The server polls `statisticRead` at 1–2s only
   // while ≥1 client is watching AND a controller is adopted. NOT editor-gated — a viewer watching
   // the panel keeps live status flowing for everyone.
-  | { t: 'watchController'; watching: boolean };
+  | { t: 'watchController'; watching: boolean }
+  // Ask the server to enumerate its own network adapters (NICs) so the panel can tell the operator
+  // which subnet the PixLite must join and recommend a concrete static IP for it. The server replies
+  // to the SENDER with a `networkAdapters` message. A pure read (no state mutation) — NOT editor-
+  // gated. Requested when the controller panel opens (and on demand); the list is the server
+  // machine's NICs, so it is refreshed rather than pushed on change.
+  | { t: 'listNetworkAdapters' };
 
 // ---------------------------------------------------------------------------
 // Server → Client (JSON, plus a separate binary frame channel)
@@ -282,6 +288,26 @@ export interface DiscoveredController {
   score: number;
 }
 
+/** A network adapter (NIC) on the SERVER machine, enumerated so the app can tell the operator which
+ * subnet the PixLite must join and recommend a concrete static IP for it. The server computes
+ * `recommendedIp` (a free-ish host in this adapter's subnet, avoiding the PC's own address) so the
+ * web is a pure renderer. Only non-internal IPv4 adapters that have an address are listed. */
+export interface NetworkAdapter {
+  /** OS adapter name, e.g. `"Ethernet"` / `"en0"`. */
+  name: string;
+  /** The PC's IPv4 address on this adapter, e.g. `"192.168.1.10"`. */
+  address: string;
+  /** Dotted-decimal subnet mask, e.g. `"255.255.255.0"`. */
+  netmask: string;
+  /** CIDR of the PC's own address, e.g. `"192.168.1.10/24"`. */
+  cidr: string;
+  /** Network CIDR — the subnet to sweep / that the controller must join, e.g. `"192.168.1.0/24"`. */
+  subnet: string;
+  /** Suggested static IP for the controller in this subnet: in-range, not the PC's own address, and
+   * avoiding the network/broadcast/`.1` gateway addresses. */
+  recommendedIp: string;
+}
+
 /** A built-in controller test pattern (S49) — the wire mirror of the io `ModeTestDataParams`
  * (§7.7.2). The web sends it in `controllerTestData`; the server maps it onto the PixLite client and
  * echoes the active one back on {@link ControllerStatus.testPattern} so every watcher sees the loud
@@ -392,4 +418,8 @@ export type ServerMessage =
   // directly. `status` is null when no controller is adopted (e.g. right after a project with no
   // controller loads) — the panel then shows the un-adopted "Discover" affordance.
   | { t: 'controllerStatus'; status: ControllerStatus | null }
+  // Reply to a client's `listNetworkAdapters` (sent to that client only): the server machine's
+  // non-internal IPv4 NICs, each with its subnet and a recommended controller IP. The panel uses it
+  // to guide the operator to put the PixLite on the same subnet as the adapter it is plugged into.
+  | { t: 'networkAdapters'; adapters: NetworkAdapter[] }
   | { t: 'error'; message: string };

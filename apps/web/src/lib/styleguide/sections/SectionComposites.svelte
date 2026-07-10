@@ -27,7 +27,7 @@
   import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { ControllerStatus, DiscoveredController, MonitorEvent, OutputStatus } from '../../ws/protocol-types';
+  import type { ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OutputStatus } from '../../ws/protocol-types';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
 
   /* ---- OutputStatusPanel (pure props — no store) ------------------------------- */
@@ -69,6 +69,11 @@
     { host: '192.168.1.50', prodName: 'PixLite A16-S Mk3', nickname: 'Roof Left 1', fwVer: '1.4.2', authReqd: false, score: 100 },
     { host: '192.168.1.51', prodName: 'PixLite T8-S Mk3', nickname: 'Stage Right', fwVer: '1.4.0', authReqd: true, score: 80 },
   ];
+  // The subnet-guidance card + Adopt-by-IP shown when nothing is adopted or the box is lost — a
+  // featured NIC with its subnet and a recommended controller IP (the "different IP addresses" fix).
+  const ctrlRecommendation: NetworkAdapter = {
+    name: 'Ethernet', address: '192.168.1.10', netmask: '255.255.255.0', cidr: '192.168.1.10/24', subnet: '192.168.1.0/24', recommendedIp: '192.168.1.50',
+  };
   const noop = () => {};
 
   /* ---- NodeCard faces ------------------------------------------------------- */
@@ -350,8 +355,8 @@
         <ControllerStatusPanel controller={ctrlReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
         <ControllerStatusPanel controller={ctrlTakeover} takeover={ctrlTakeover.testPattern} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
         <ControllerStatusPanel controller={ctrlNotReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
-        <ControllerStatusPanel controller={ctrlLost} candidates={[]} outputHost="192.168.1.99" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
-        <ControllerStatusPanel controller={null} candidates={ctrlCandidates} nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlLost} candidates={[]} recommendation={ctrlRecommendation} outputHost="192.168.1.99" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={null} candidates={ctrlCandidates} recommendation={ctrlRecommendation} nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
       </div>
     </DemoCard>
 
