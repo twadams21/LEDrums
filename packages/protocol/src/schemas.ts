@@ -370,30 +370,32 @@ export const clientMessageTypes: ReadonlySet<string> = new Set(
 // Runtime-schema ↔ hand-written-interface lock helpers: these unused assignments make the full
 // typecheck sweep fail if a server payload schema drifts from the exported wire interface it
 // mirrors, so the two can never disagree.
-type SchemaLocks = [
-  z.infer<typeof serializedModelSchema> extends SerializedModel ? true : never,
-  SerializedModel extends z.infer<typeof serializedModelSchema> ? true : never,
-  z.infer<typeof effectSpecSchema> extends EffectSpec ? true : never,
-  EffectSpec extends z.infer<typeof effectSpecSchema> ? true : never,
-  z.infer<typeof outputStatusSchema> extends OutputStatus ? true : never,
-  OutputStatus extends z.infer<typeof outputStatusSchema> ? true : never,
-  z.infer<typeof engineStatsSchema> extends EngineStats ? true : never,
-  EngineStats extends z.infer<typeof engineStatsSchema> ? true : never,
-  z.infer<typeof monitorEventSchema> extends MonitorEvent ? true : never,
-  MonitorEvent extends z.infer<typeof monitorEventSchema> ? true : never,
-  z.infer<typeof tunnelInfoSchema> extends TunnelInfo ? true : never,
-  TunnelInfo extends z.infer<typeof tunnelInfoSchema> ? true : never,
-  z.infer<typeof controllerStatusSchema> extends ControllerStatus ? true : never,
-  ControllerStatus extends z.infer<typeof controllerStatusSchema> ? true : never,
-  z.infer<typeof controllerUniverseRxSchema> extends ControllerUniverseRx ? true : never,
-  z.infer<typeof discoveredControllerSchema> extends DiscoveredController ? true : never,
-  DiscoveredController extends z.infer<typeof discoveredControllerSchema> ? true : never,
-  z.infer<typeof networkAdapterSchema> extends NetworkAdapter ? true : never,
-  NetworkAdapter extends z.infer<typeof networkAdapterSchema> ? true : never,
-  z.infer<ReturnType<typeof controllerTestPatternSchema>> extends ControllerTestPattern ? true : never,
-  ControllerTestPattern extends z.infer<ReturnType<typeof controllerTestPatternSchema>> ? true : never,
-  z.infer<typeof voiceStatsSchema> extends VoiceStats ? true : never,
-  VoiceStats extends z.infer<typeof voiceStatsSchema> ? true : never,
-];
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _AssertLocks = SchemaLocks extends true[] ? true : never;
+// `Equals` is an exact, bidirectional type-equality check (the classic function-parameter-variance
+// trick): unlike a pair of `extends` conditionals, it distinguishes optionality and never collapses
+// to `never`, so `Assert<Equals<…>>` errors at compile time the moment a schema drifts from its
+// interface in EITHER direction. Each `_Lock*` below fails the package typecheck on any mismatch.
+type Equals<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2)
+  ? true
+  : false;
+type Assert<T extends true> = T;
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
+type _LockSerializedModel = Assert<Equals<z.infer<typeof serializedModelSchema>, SerializedModel>>;
+type _LockEffectSpec = Assert<Equals<z.infer<typeof effectSpecSchema>, EffectSpec>>;
+type _LockOutputStatus = Assert<Equals<z.infer<typeof outputStatusSchema>, OutputStatus>>;
+type _LockEngineStats = Assert<Equals<z.infer<typeof engineStatsSchema>, EngineStats>>;
+type _LockMonitorEvent = Assert<Equals<z.infer<typeof monitorEventSchema>, MonitorEvent>>;
+type _LockTunnelInfo = Assert<Equals<z.infer<typeof tunnelInfoSchema>, TunnelInfo>>;
+type _LockControllerStatus = Assert<Equals<z.infer<typeof controllerStatusSchema>, ControllerStatus>>;
+type _LockControllerUniverseRx = Assert<
+  Equals<z.infer<typeof controllerUniverseRxSchema>, ControllerUniverseRx>
+>;
+type _LockDiscoveredController = Assert<
+  Equals<z.infer<typeof discoveredControllerSchema>, DiscoveredController>
+>;
+type _LockNetworkAdapter = Assert<Equals<z.infer<typeof networkAdapterSchema>, NetworkAdapter>>;
+type _LockControllerTestPattern = Assert<
+  Equals<z.infer<ReturnType<typeof controllerTestPatternSchema>>, ControllerTestPattern>
+>;
+type _LockVoiceStats = Assert<Equals<z.infer<typeof voiceStatsSchema>, VoiceStats>>;
+/* eslint-enable @typescript-eslint/no-unused-vars */
