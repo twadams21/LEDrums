@@ -27,14 +27,7 @@ import type { LabModel } from './kit';
 const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
 function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): { drumId: string | null; hoopIndices: number[] } {
-  if (!targetId || !targetId.includes('#')) return { drumId: sourceDrumId, hoopIndices: [0] };
-  const sep = targetId.indexOf('#');
-  const hoopIndices = targetId
-    .slice(sep + 1)
-    .split(',')
-    .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v >= 0);
-  return { drumId: targetId.slice(0, sep) || sourceDrumId, hoopIndices: hoopIndices.length ? [...new Set(hoopIndices)] : [0] };
+  return voice.parseHoopTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'zero', sort: false });
 }
 
 /** Resolve a voice's params for this frame: apply modulation mappings + tempo sync. */

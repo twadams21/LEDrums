@@ -24,19 +24,15 @@ import { createGeneratorBridge } from './generator-bridge';
 import { applyModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
+import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
 import type { MixInput, ParamValues, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
-function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): { drumId: string | null; hoopIndices: number[] } {
-  if (!targetId || !targetId.includes('#')) return { drumId: sourceDrumId, hoopIndices: [0] };
-  const sep = targetId.indexOf('#');
-  const hoopIndices = targetId
-    .slice(sep + 1)
-    .split(',')
-    .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v >= 0);
-  return { drumId: targetId.slice(0, sep) || sourceDrumId, hoopIndices: hoopIndices.length ? [...new Set(hoopIndices)] : [0] };
+/** Never render nothing: a hash-less id falls back to the source drum's hoop 0, and a
+    `#`-qualified id with no valid indices falls back to `[0]`. Indices keep authoring order. */
+function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): HoopTarget {
+  return parseScopeTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'zero', sort: false });
 }
 
 /**
@@ -77,11 +73,17 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
   return out;
 }
 
+/** The frame-wide slice of a {@link ModSampleCtx}: the absolute clock + tempo and the live
+    CC/OSC/note tables, all identical for every voice this frame. Built once per render and
+    stamped with each voice's own `phase` by {@link modCtxFor}. */
+type FrameModCtx = Omit<ModSampleCtx, 'phase'>;
+
 /** Build the per-frame modulation-sample context for a voice — its life phase (envelope
-    sources restart per hit) plus the absolute clock + tempo continuous sources (S36/S37)
-    read. Shared by the play-param sweep and the modifier chain so both restart together. */
-function modCtxFor(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ModSampleCtx {
-  return { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes };
+    sources restart per hit) over the shared frame context (absolute clock + tempo continuous
+    sources, S36/S37). Shared by the play-param sweep and the modifier chain so both restart
+    together. */
+function modCtxFor(v: Voice, frame: FrameModCtx): ModSampleCtx {
+  return { phase: voicePhase(v, frame.timeMs), ...frame };
 }
 
 function mixInputVoice(input: MixInput, host: Voice): Voice {
@@ -189,6 +191,13 @@ export function createDefaultCompositor(): Compositor {
     render(voices, model, frame, dst): void {
       dst.clear();
       const timeMs = frame.timeMs;
+      const frameCtx: FrameModCtx = {
+        timeMs,
+        bpm: frame.transport.bpm,
+        cc: frame.cc,
+        osc: frame.osc,
+        notes: frame.notes,
+      };
 
       // Refresh the reusable hosted-generator RenderContext for this frame.
       generators.beginFrame(model, timeMs, frame.dt, frame.transport);
@@ -212,17 +221,10 @@ export function createDefaultCompositor(): Compositor {
             for (const key of Object.keys(branch.liveParams)) delete branch.liveParams[key];
             for (const key of Object.keys(branch.params)) branch.liveParams[key] = branch.params[key]!;
             if (branch.modulations?.length) {
-              applyModulations(branch.params, branch.liveParams, branch.modulations, branch.specs, {
-                phase: voicePhase(v, timeMs),
-                timeMs,
-                bpm: frame.transport.bpm,
-                cc: frame.cc,
-                osc: frame.osc,
-                notes: frame.notes,
-              });
+              applyModulations(branch.params, branch.liveParams, branch.modulations, branch.specs, modCtxFor(v, frameCtx));
             }
             const branchVoice = mixInputVoice(branch, v);
-            const branchCtx = modCtxFor(branchVoice, timeMs, frame.transport.bpm, frame.cc, frame.osc, frame.notes);
+            const branchCtx = modCtxFor(branchVoice, frameCtx);
             for (const range of pixelRangesFor(branchVoice, model)) {
               generators.renderVoice(branchVoice, model, timeMs, 1, range.start, range.end, input, branchCtx);
             }
@@ -237,7 +239,7 @@ export function createDefaultCompositor(): Compositor {
           const mods = v.modifiers;
           if (mods && mods.length) {
             if (!v.modState) v.modState = [];
-            const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc, frame.notes);
+            const modCtx = modCtxFor(v, frameCtx);
             for (const range of ranges) applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx);
           }
           for (const range of ranges) {
@@ -270,7 +272,7 @@ export function createDefaultCompositor(): Compositor {
           // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]"; absent → source drum hoop 0.
           const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
           if (drumId == null) continue;
-          const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc, frame.notes);
+          const modCtx = modCtxFor(v, frameCtx);
           for (const hoopIndex of hoopIndices) {
             const range = getHoopPixelRange(model, drumId, hoopIndex);
             if (range) generators.renderVoice(v, model, timeMs, level, range.start, range.end, dst, modCtx);
@@ -280,7 +282,7 @@ export function createDefaultCompositor(): Compositor {
         // scope === 'kit': start=0, end=model.pixelCount (whole kit, targetId ignored)
 
         // Hosted generator voice — the bridge applies the modifier chain internally.
-        const modCtx = modCtxFor(v, timeMs, frame.transport.bpm, frame.cc, frame.osc, frame.notes);
+        const modCtx = modCtxFor(v, frameCtx);
         generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
       }
     },
