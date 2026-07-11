@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { OutputConfig } from '@ledrums/core';
+import { parseKit, type OutputConfig } from '@ledrums/core';
 import {
+  hasHoopFanOut,
   outputsToPatch,
   patchToOutputs,
   pixelRanges,
@@ -220,6 +221,44 @@ describe('pixelRanges', () => {
     expect(byDataLine.real).toEqual({ first: 0, last: 49 });
     expect(byOutput).not.toHaveProperty('blank');
     expect(byOutput.o1).toEqual({ first: 0, last: 49 });
+  });
+});
+
+describe('hasHoopFanOut — S07 fan-out rule, editor-side (S11)', () => {
+  // A kit with two drums, enough hoops to fan out; mirrors routing-integrity.test.ts's builder.
+  const kit = parseKit({
+    global: { ledDensityPxPerM: 100, hoopCount: 1, defaultHoopSpacingMm: 50 },
+    drums: [
+      { id: 'A', diameterIn: 6, hoopSpacingMm: 50, hoopCount: 4, pixelsPerHoop: 10, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+      { id: 'B', diameterIn: 6, hoopSpacingMm: 50, hoopCount: 2, pixelsPerHoop: 10, origin: { x: 500, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+    ],
+    outputs: [],
+  });
+
+  it('is false for a clean routing — every hoop on exactly one line', () => {
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 1)], [h('B', 0)]])] };
+    expect(hasHoopFanOut(kit, routing)).toBe(false);
+  });
+
+  it('is true when a hoop is driven by two data lines (same output)', () => {
+    // A#0 sits on BOTH lines of o1 → the fan-out S07 flags.
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 1)], [h('A', 0)]])] };
+    expect(hasHoopFanOut(kit, routing)).toBe(true);
+  });
+
+  it('is true when a hoop is driven across two outputs', () => {
+    const routing: PatchRouting = {
+      outputs: [output('o1', [[h('A', 0)]]), output('o2', [[h('A', 0)]])],
+    };
+    expect(hasHoopFanOut(kit, routing)).toBe(true);
+  });
+
+  it('a re-home (hoop MOVED to another line) stays clean — reconnect is not a fan-out', () => {
+    // Before: A#0 on line 0. After the move: A#0 on line 1 only. One line throughout → no fan-out.
+    const before: PatchRouting = { outputs: [output('o1', [[h('A', 0)], [h('B', 0)]])] };
+    const afterMove: PatchRouting = { outputs: [output('o1', [[], [h('B', 0), h('A', 0)]])] };
+    expect(hasHoopFanOut(kit, before)).toBe(false);
+    expect(hasHoopFanOut(kit, afterMove)).toBe(false);
   });
 });
 

@@ -35,7 +35,7 @@
     type PatchFlowNode,
     type PatchStage,
   } from '../patch-topology';
-  import { outputsToPatch, patchToOutputs } from '../patch-routing';
+  import { hasHoopFanOut, outputsToPatch, patchToOutputs } from '../patch-routing';
   import {
     buildOutputHalf,
     defaultRouting,
@@ -61,6 +61,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   import { guardFlowCallback } from './flow-guard';
   import { nodeIdAtEvent } from './flow-dom';
   import PanelHeader from '../../ui/PanelHeader.svelte';
+  import { pushToast } from '../../ui/toast.svelte';
   import Cable from '@lucide/svelte/icons/cable';
   import Plug from '@lucide/svelte/icons/plug';
 
@@ -137,11 +138,37 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     addDevice(id as 'dataline' | 'output', c.x, c.y);
   }
 
-  /** Reject self-loops and exact duplicate wires; otherwise accept (xyflow applies
-      the default `wire` type so the new edge is reconnectable). */
+  /** Plain-language reason for a refused fan-out wire — states what's wrong, no jargon
+      (mirrors the Trigger graph's wire-toast copy conventions: one toast, one event). */
+  const FANOUT_REJECTION_MESSAGE =
+    "That hoop is already on a data line — a hoop can only drive one. Move its wire instead of adding a second.";
+
+  /** Would ADDING the wire `c` fan a hoop onto a second data line? Builds the prospective
+      graph, reads it back to a routing, and asks S07's core rule (`hasHoopFanOut`) — one
+      rule definition shared with the server backstop, never restated here. The live routing
+      is already fan-out-free (this guard + the backstop keep it so), so a prospective fan-out
+      can only be the wire being added. NEW connects flow through here; a RECONNECT re-homes a
+      hoop by MOVING its one wire (onReconnect, edge updated in place → still one line), so it
+      never reaches this gate and is never rejected as a fan-out. */
+  function wouldFanOut(c: Connection): boolean {
+    if (!c.source || !c.target) return false;
+    const probe: PatchFlowEdge = { id: 'probe:fanout', source: c.source, target: c.target };
+    const prospective = routingFromGraph(nodes, [...edges, probe], scalarsFor, lineUniverseFor);
+    return hasHoopFanOut(store.project?.kit ?? DEFAULT_KIT, prospective);
+  }
+
+  /** Reject self-loops, exact duplicate wires, and fan-outs (a hoop wired to a second data
+      line — S07's rule, enforced editor-side); otherwise accept (xyflow applies the default
+      `wire` type so the new edge is reconnectable). A fan-out is the one rejection the user
+      might not expect, so it surfaces the established error wire-toast; the structural
+      self/dup rejects stay silent (they can't be produced by a deliberate gesture). */
   function onBeforeConnect(c: Connection): Connection | false {
     if (!c.source || !c.target || c.source === c.target) return false;
     if (edges.some((e) => e.source === c.source && e.target === c.target)) return false;
+    if (wouldFanOut(c)) {
+      pushToast(FANOUT_REJECTION_MESSAGE, { tone: 'error' });
+      return false;
+    }
     return c;
   }
 

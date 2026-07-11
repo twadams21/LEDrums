@@ -20,7 +20,7 @@
    expands each line's segments back to hoops 1:1. `pixelRanges` derives the Inspector's
    first/last global pixel read-outs by sweeping the same transmit order. */
 
-import type { DataLineConfig, OutputConfig, OutputSegment } from '@ledrums/core';
+import { checkRoutingIntegrity, type DataLineConfig, type KitConfig, type OutputConfig, type OutputSegment } from '@ledrums/core';
 
 /** A single hoop on a drum, addressed by drum id + hoop index within that drum. */
 export type HoopRef = { drumId: string; hoop: number };
@@ -130,6 +130,21 @@ export function outputsToPatch(outputs: OutputConfig[]): PatchRouting {
   }));
 
   return { outputs: patchOutputs };
+}
+
+/**
+ * True when `routing` would drive a single physical hoop from more than one data line —
+ * the "fan-out" corruption (that hoop's pixels get silently overwritten, last write wins).
+ *
+ * This does NOT restate the rule: it compiles the routing to core's `OutputConfig[]` and
+ * asks S07's ONE definition ({@link checkRoutingIntegrity}'s `hoop-fan-out` class), the
+ * same predicate the server write-gate enforces. Two enforcement points (this editor's
+ * connect-time guard + the server backstop), one rule. Other issue classes (unknown-drum,
+ * out-of-range) are ignored here — the editor's hoops are always real kit hoops; only the
+ * fan-out is reachable by a connect gesture.
+ */
+export function hasHoopFanOut(kit: KitConfig, routing: PatchRouting): boolean {
+  return checkRoutingIntegrity(kit, patchToOutputs(routing)).some((i) => i.code === 'hoop-fan-out');
 }
 
 /**

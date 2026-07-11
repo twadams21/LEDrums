@@ -13,7 +13,8 @@ import {
   routingSignature,
   type OutputHalfLayout,
 } from './patch-graph';
-import { outputsToPatch, patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
+import { parseKit } from '@ledrums/core';
+import { hasHoopFanOut, outputsToPatch, patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
 import { guardFlowCallback } from './views/flow-guard';
 
@@ -455,5 +456,48 @@ describe('live read-out (S5b): pixelRanges over routingFromGraph keys spans by g
     const r2 = pixelRanges(routingFromGraph(after.nodes, after.edges), px);
     expect(r2.byDataLine['dataline:2']).toEqual({ first: 0, last: 9 });
     expect(r2.byDataLine['dataline:1']).toEqual({ first: 10, last: 19 });
+  });
+});
+
+describe('connect-time fan-out guard (S11) — routingFromGraph ∘ hasHoopFanOut', () => {
+  // The exact composition PatchGraphView.onBeforeConnect runs: read the PROSPECTIVE graph
+  // (current edges + the candidate wire) back to a routing and ask S07's core rule.
+  const kit = parseKit({
+    global: { ledDensityPxPerM: 100, hoopCount: 1, defaultHoopSpacingMm: 50 },
+    drums: [
+      { id: 'snare', diameterIn: 6, hoopSpacingMm: 50, hoopCount: 2, pixelsPerHoop: 10, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+    ],
+    outputs: [],
+  });
+
+  // snare#0 (node `hoop:snare:1`) currently drives dataline:1; two lines both feed output:o1.
+  const baseNodes: PatchFlowNode[] = [
+    node('hoop:snare:1', 'hoop', 0, 800),
+    node('dataline:1', 'dataline', 0, 1000),
+    node('dataline:2', 'dataline', 40, 1000),
+    node('output:o1', 'output', 20, 1200),
+  ];
+  const baseEdges: PatchFlowEdge[] = [
+    edge('hoop:snare:1', 'dataline:1'),
+    edge('dataline:1', 'output:o1'),
+    edge('dataline:2', 'output:o1'),
+  ];
+
+  it('a NEW wire to a second data line is flagged (would be rejected)', () => {
+    const probe = edge('hoop:snare:1', 'dataline:2'); // fan snare#0 onto line 2
+    const prospective = routingFromGraph(baseNodes, [...baseEdges, probe]);
+    expect(hasHoopFanOut(kit, prospective)).toBe(true);
+  });
+
+  it('the live routing (no candidate wire) is clean — the guard never false-positives', () => {
+    expect(hasHoopFanOut(kit, routingFromGraph(baseNodes, baseEdges))).toBe(false);
+  });
+
+  it('a RE-HOME (move the one wire to line 2) is clean — reconnect is not a fan-out', () => {
+    // onReconnect updates the edge in place: hoop:snare:1 → dataline:2 REPLACES → dataline:1.
+    const moved = baseEdges.map((e) =>
+      e.source === 'hoop:snare:1' ? edge('hoop:snare:1', 'dataline:2') : e,
+    );
+    expect(hasHoopFanOut(kit, routingFromGraph(baseNodes, moved))).toBe(false);
   });
 });
