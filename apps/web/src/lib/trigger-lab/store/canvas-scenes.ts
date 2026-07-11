@@ -27,7 +27,7 @@ export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasSc
   return {
     id,
     name,
-    description: 'Authored canvas scene sampled through the drum kit.',
+    description: 'Canvas scene for the drum kit',
     tags: ['canvas'],
     sampler: { kind: 'cylinder' },
     lenses: [],
