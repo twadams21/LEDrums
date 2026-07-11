@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { OutputConfig } from '@ledrums/core';
 import {
   buildOutputHalf,
@@ -8,12 +8,14 @@ import {
   outputsSignature,
   parseHoopNodeId,
   parseOutputNodeId,
+  rebuildOutputHalf,
   routingFromGraph,
   routingSignature,
   type OutputHalfLayout,
 } from './patch-graph';
 import { outputsToPatch, patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
+import { guardFlowCallback } from './views/flow-guard';
 
 /* The pure Patch-graph ⇄ routing seam (S3). Covers the 0-based-core ⇄ 1-based-node hoop
    bridge, the fallback chunker, the output-half builder, and — the load-bearing one —
@@ -265,6 +267,135 @@ describe('routingSignature / outputsSignature (the cold-load adopt discriminator
       outputs: [{ id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }] }] }],
     };
     expect(routingSignature(external)).not.toBe(routingSignature(routing));
+  });
+});
+
+describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from authoritative routing', () => {
+  /* The Patch guard, on a thrown handler, re-derives the output half from the project's
+     authoritative outputs — discarding a half-applied local mutation — while leaving the
+     input half + controller sink intact. This is the pure math the view's forceRebuild binds
+     to; tested through the derivation helpers (no browser), per the acceptance. */
+
+  /** Authoritative routing (dense scalars, so routingFromGraph's defaults compare 1:1). */
+  const auth: PatchRouting = {
+    outputs: [
+      {
+        id: '1',
+        channelsPerPixel: 3,
+        dataLines: [
+          { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
+          { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
+        ],
+      },
+      { id: '2', channelsPerPixel: 3, dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 1 }] }] },
+    ],
+  };
+
+  /** Build a full graph (input-half hoop nodes + controller sink + the output half) that
+      DRAWS `routing`, mirroring the view's mount composition. */
+  function fullGraph(routing: PatchRouting): {
+    nodes: PatchFlowNode[];
+    edges: PatchFlowEdge[];
+    layout: OutputHalfLayout;
+  } {
+    const hoopIds = new Set<string>();
+    const hoopNodes: PatchFlowNode[] = [];
+    let y = 0;
+    for (const o of routing.outputs)
+      for (const dl of o.dataLines)
+        for (const h of dl.hoops) {
+          const id = hoopNodeId(h);
+          if (hoopIds.has(id)) continue;
+          hoopIds.add(id);
+          hoopNodes.push(node(id, 'hoop', y, 0));
+          y += 10;
+        }
+    const layout: OutputHalfLayout = { ...LAYOUT, hasHoop: (id) => hoopIds.has(id) };
+    const oh = buildOutputHalf(routing, layout);
+    return { nodes: [...hoopNodes, node('controller', 'controller', 0, 1400), ...oh.nodes], edges: oh.edges, layout };
+  }
+
+  const sig = (g: { nodes: ReadonlyArray<PatchFlowNode>; edges: ReadonlyArray<PatchFlowEdge> }): string =>
+    routingSignature(routingFromGraph(g.nodes, g.edges));
+
+  /** Segment stream modulo the cosmetic data-line id (buildOutputHalf re-mints those; the
+      load-bearing invariant is the per-output segment stream — as the round-trip test above). */
+  const normLineIds = (s: string): string => {
+    const cfgs = JSON.parse(s) as OutputConfig[];
+    return JSON.stringify(cfgs.map((c) => ({ ...c, dataLines: c.dataLines.map((d, i) => ({ ...d, id: i })) })));
+  };
+
+  it('re-derives canvas state equal to a fresh derivation, discarding a half-applied mutation', () => {
+    const clean = fullGraph(auth);
+    const cleanSig = sig(clean);
+    // "Derived fresh from store.project.kit.outputs" == the authoritative segment stream.
+    expect(normLineIds(cleanSig)).toBe(normLineIds(outputsSignature(patchToOutputs(auth))));
+
+    // Half-applied mutation: a stray misrouted output node + edge, and a dropped line→output
+    // edge (as a throw mid-handler could leave). The read-back now diverges from authoritative.
+    const corrupted = {
+      nodes: [...clean.nodes, node('output:99', 'output', 500, 1200)],
+      edges: [
+        ...clean.edges.filter((e) => e.target !== 'output:1'), // dropped a data line's wire
+        edge('dataline:1', 'output:99'), // stray wire to the ghost output
+      ],
+    };
+    expect(sig(corrupted)).not.toBe(cleanSig); // genuinely corrupt
+
+    const healed = rebuildOutputHalf(auth, corrupted, clean.layout);
+    // Re-derived state === state derived fresh from the authoritative routing.
+    expect(sig(healed)).toBe(cleanSig);
+    expect(normLineIds(sig(healed))).toBe(normLineIds(outputsSignature(patchToOutputs(auth))));
+    // The ghost output node is gone; no stray output-half nodes survive.
+    expect(healed.nodes.some((n) => n.id === 'output:99')).toBe(false);
+  });
+
+  it('leaves the input half + controller sink untouched', () => {
+    const clean = fullGraph(auth);
+    const inputBefore = clean.nodes.filter((n) => n.data.stage === 'hoop' || n.data.stage === 'controller');
+    const healed = rebuildOutputHalf(auth, clean, clean.layout);
+    const inputAfter = healed.nodes.filter((n) => n.data.stage === 'hoop' || n.data.stage === 'controller');
+    expect(inputAfter).toEqual(inputBefore);
+  });
+
+  it('preserves a surviving output node position (a forced rebuild does not fight a nudged layout)', () => {
+    const clean = fullGraph(auth);
+    const nudged = {
+      nodes: clean.nodes.map((n) => (n.id === 'output:1' ? { ...n, position: { x: 9999, y: 7777 } } : n)),
+      edges: clean.edges,
+    };
+    const healed = rebuildOutputHalf(auth, nudged, clean.layout);
+    expect(healed.nodes.find((n) => n.id === 'output:1')!.position).toEqual({ x: 9999, y: 7777 });
+  });
+
+  it('a guarded throw reports the fault AND self-heals to the authoritative state', () => {
+    // Compose exactly what the view's guard does: guardFlowCallback → onFault(report + rebuild).
+    let graph = fullGraph(auth) as { nodes: PatchFlowNode[]; edges: PatchFlowEdge[]; layout: OutputHalfLayout };
+    const layout = graph.layout;
+    const reportError = vi.fn();
+
+    const onFault = (where: string, err: unknown): void => {
+      reportError('patch-graph', where, String(err));
+      const rebuilt = rebuildOutputHalf(auth, graph, layout); // re-derive from authoritative
+      graph = { ...graph, nodes: rebuilt.nodes, edges: rebuilt.edges };
+    };
+    // A handler that applies a partial mutation, THEN throws (the canvas is left half-mutated).
+    const badHandler = guardFlowCallback(
+      'reconnect',
+      () => {
+        graph.edges = [...graph.edges.filter((e) => e.target !== 'output:1'), edge('dataline:1', 'output:99')];
+        graph.nodes = [...graph.nodes, node('output:99', 'output', 500, 1200)];
+        throw new Error('boom');
+      },
+      onFault,
+    );
+
+    badHandler();
+
+    expect(reportError).toHaveBeenCalledWith('patch-graph', 'reconnect', expect.stringContaining('boom'));
+    // healed to the authoritative segment stream, not left half-mutated
+    expect(normLineIds(sig(graph))).toBe(normLineIds(outputsSignature(patchToOutputs(auth))));
+    expect(graph.nodes.some((n) => n.id === 'output:99')).toBe(false);
   });
 });
 
