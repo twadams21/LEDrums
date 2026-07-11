@@ -39,6 +39,15 @@ describe('ws-protocol', () => {
     expect(() => decodeClient('{}')).toThrow();
   });
 
+  it('rejects a known type carrying a malformed payload (schema validation)', () => {
+    // Wrong field type — decodeClient now schema-validates every payload, not just the `t` tag.
+    expect(() => decodeClient(JSON.stringify({ t: 'midi', note: 'x', velocity: 1, on: true }))).toThrow(/Invalid midi/);
+    // Missing required field.
+    expect(() => decodeClient(JSON.stringify({ t: 'adoptController' }))).toThrow(/Invalid adoptController/);
+    // A bad transport value is rejected rather than cast through.
+    expect(() => decodeClient(JSON.stringify({ t: 'tunnel', action: 'nope' }))).toThrow(/Invalid tunnel/);
+  });
+
   it('serializes the model with positions = count * 3', () => {
     const model = buildPixelModel(
       parseKit({ global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 }, drums: [{ id: 'd', diameterIn: 8, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }] }),

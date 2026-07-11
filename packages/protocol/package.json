@@ -14,7 +14,8 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@ledrums/core": "workspace:*"
+    "@ledrums/core": "workspace:*",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

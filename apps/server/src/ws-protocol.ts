@@ -1,5 +1,6 @@
 import type { PixelModel } from '@ledrums/core';
 import { listEffects } from '@ledrums/core';
+import { clientMessageSchema, clientMessageTypes } from '@ledrums/protocol';
 import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '@ledrums/protocol';
 
 // The WS wire contract is defined once in `@ledrums/protocol` (app-shared, NOT pure
@@ -31,23 +32,25 @@ export type {
 // Client → Server (JSON)
 // ---------------------------------------------------------------------------
 
-const CLIENT_TYPES = new Set<ClientMessage['t']>([
-  'midi', 'cc', 'programChange', 'osc', 'setParam', 'setLayer', 'addLayer', 'removeLayer',
-  'addClip', 'removeClip', 'setTransport', 'setKitTransform', 'setKitGlobal', 'setKitOutputs', 'setOutput',
-  'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong',
-  'addSection', 'removeSection', 'setSectionLayerClip', 'setInputMap', 'setProject',
-  'setShow', 'setShowLibrary', 'setSongLibrary', 'key', 'fireGraph', 'recallSection', 'takeover', 'tunnel',
-  'loadProject', 'saveProject', 'listProjects',
-  'discoverControllers', 'adoptController', 'setControllerAuth', 'identifyController', 'watchController',
-  'controllerTestData', 'controllerBackToLive', 'listNetworkAdapters',
-]);
-
+/**
+ * Parse a text WS frame into a validated `ClientMessage`, or THROW. The single-source runtime
+ * schema (`clientMessageSchema` in `@ledrums/protocol`) both narrows `t` and validates every
+ * payload field, so a malformed message never reaches a handler. Callers (`main.ts`,
+ * `http/native-midi.ts`) wrap this in try/catch and surface the throw as an `error` reply / 400,
+ * so the throw-on-invalid contract is preserved. An unrecognised `t` keeps its original
+ * "Unknown client message type" message (the known set is DERIVED from the schema).
+ */
 export function decodeClient(raw: string): ClientMessage {
-  const obj = JSON.parse(raw);
-  if (!obj || typeof obj.t !== 'string' || !CLIENT_TYPES.has(obj.t)) {
-    throw new Error(`Unknown client message type: ${obj?.t}`);
+  const obj: unknown = JSON.parse(raw);
+  const t = (obj as { t?: unknown } | null)?.t;
+  if (typeof t !== 'string' || !clientMessageTypes.has(t)) {
+    throw new Error(`Unknown client message type: ${typeof t === 'string' ? t : String(t)}`);
   }
-  return obj as ClientMessage;
+  const result = clientMessageSchema.safeParse(obj);
+  if (!result.success) {
+    throw new Error(`Invalid ${t} message: ${result.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`);
+  }
+  return result.data;
 }
 
 // ---------------------------------------------------------------------------
