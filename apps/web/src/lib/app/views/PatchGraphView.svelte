@@ -105,7 +105,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       position: pos,
       initialWidth: NODE_W,
       initialHeight: NODE_H,
-      data: { label, sub: 'new — wire it up', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
+      data: { label, sub: 'Connect this device', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
     };
     nodes = [...nodes, node];
   }
@@ -123,7 +123,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       key: 'devices',
       label: 'Devices',
       items: [
-        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'pixel run' },
+        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'LED run' },
         { id: 'output', name: 'Output', icon: Plug, tint: DEVICE_ROLE.output, hint: 'controller port' },
       ],
     },
