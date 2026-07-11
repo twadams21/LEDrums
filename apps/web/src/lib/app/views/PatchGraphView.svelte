@@ -143,18 +143,24 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   const FANOUT_REJECTION_MESSAGE =
     "That hoop is already on a data line — a hoop can only drive one. Move its wire instead of adding a second.";
 
-  /** Would ADDING the wire `c` fan a hoop onto a second data line? Builds the prospective
-      graph, reads it back to a routing, and asks S07's core rule (`hasHoopFanOut`) — one
-      rule definition shared with the server backstop, never restated here. The live routing
-      is already fan-out-free (this guard + the backstop keep it so), so a prospective fan-out
-      can only be the wire being added. NEW connects flow through here; a RECONNECT re-homes a
-      hoop by MOVING its one wire (onReconnect, edge updated in place → still one line), so it
-      never reaches this gate and is never rejected as a fan-out. */
+  /** Does the given PROSPECTIVE edge set drive any hoop from two data lines? Reads it back
+      to a routing and asks S07's core rule (`hasHoopFanOut`) — one rule definition shared with
+      the server backstop, never restated here. The live routing is kept fan-out-free (the two
+      connect guards below + the backstop), so a prospective fan-out is always the pending
+      mutation. Both the add path (`wouldFanOut`) and the re-point path (`onReconnect`) feed
+      their candidate edge set through here so a connect gesture the engine would refuse is
+      refused editor-side first. `kit` falls back to `DEFAULT_KIT` when the project is offline. */
+  function edgesFanOut(prospective: PatchFlowEdge[]): boolean {
+    const routing = routingFromGraph(nodes, prospective, scalarsFor, lineUniverseFor);
+    return hasHoopFanOut(store.project?.kit ?? DEFAULT_KIT, routing);
+  }
+
+  /** Would ADDING the wire `c` fan a hoop onto a second data line? Probes the edge set with `c`
+      appended (a NEW connect). The re-point path has its own guard in {@link onReconnect}. */
   function wouldFanOut(c: Connection): boolean {
     if (!c.source || !c.target) return false;
     const probe: PatchFlowEdge = { id: 'probe:fanout', source: c.source, target: c.target };
-    const prospective = routingFromGraph(nodes, [...edges, probe], scalarsFor, lineUniverseFor);
-    return hasHoopFanOut(store.project?.kit ?? DEFAULT_KIT, prospective);
+    return edgesFanOut([...edges, probe]);
   }
 
   /** Reject self-loops, exact duplicate wires, and fan-outs (a hoop wired to a second data
@@ -216,8 +222,14 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     commitRouting();
   }
 
-  /** Re-point an existing wire (a reconnect-anchor drag). Rejects self / controller-as-
-      source / input-as-target, then updates the ephemeral edge in place + recompiles. */
+  /** Re-point an existing wire (a reconnect-anchor drag re-points EITHER end). Rejects self /
+      controller-as-source / input-as-target, an exact duplicate of another wire, and a fan-out:
+      dragging the HOOP end onto a hoop that already drives a data line puts that hoop on TWO
+      lines — a connect-gesture fan-out (S07's rule) the server would refuse, and the local
+      project + canvas would durably hold the refused edit (the adopt $effect sees local ==
+      lastSig, no snap-back). So the re-point runs the SAME fan-out guard as a new connect. On
+      any rejection, snap the anchor back to the unchanged wire and do not recompile; otherwise
+      update the ephemeral edge in place + recompile. */
   function onReconnect(oldEdge: { id: string }, conn: Connection): void {
     if (!conn.source || !conn.target || conn.source === conn.target) {
       edges = hover.decorate([...edges]); // snap the anchor back to the unchanged wire
@@ -227,9 +239,20 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       edges = hover.decorate([...edges]);
       return;
     }
-    edges = hover.decorate(
-      edges.map((e) => (e.id === oldEdge.id ? { ...e, source: conn.source!, target: conn.target! } : e)),
+    // An exact duplicate of a DIFFERENT existing wire — snap back (a no-op re-point).
+    if (edges.some((e) => e.id !== oldEdge.id && e.source === conn.source && e.target === conn.target)) {
+      edges = hover.decorate([...edges]);
+      return;
+    }
+    const prospective = edges.map((e) =>
+      e.id === oldEdge.id ? { ...e, source: conn.source!, target: conn.target! } : e,
     );
+    if (edgesFanOut(prospective)) {
+      pushToast(FANOUT_REJECTION_MESSAGE, { tone: 'error' });
+      edges = hover.decorate([...edges]); // snap back — the engine would refuse this re-point
+      return;
+    }
+    edges = hover.decorate(prospective);
     commitRouting();
   }
 
