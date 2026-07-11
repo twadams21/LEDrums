@@ -500,4 +500,30 @@ describe('connect-time fan-out guard (S11) — routingFromGraph ∘ hasHoopFanOu
     );
     expect(hasHoopFanOut(kit, routingFromGraph(baseNodes, moved))).toBe(false);
   });
+
+  it('a HOOP-END re-point onto an already-patched hoop IS a fan-out (B1) — guarded', () => {
+    // snare#0 (hoop:snare:1) → dataline:1; snare#1 (hoop:snare:2) → dataline:2. Both lines feed o1.
+    const nodes: PatchFlowNode[] = [
+      node('hoop:snare:1', 'hoop', 0, 800),
+      node('hoop:snare:2', 'hoop', 40, 800),
+      node('dataline:1', 'dataline', 0, 1000),
+      node('dataline:2', 'dataline', 40, 1000),
+      node('output:o1', 'output', 20, 1200),
+    ];
+    const es: PatchFlowEdge[] = [
+      edge('hoop:snare:1', 'dataline:1'),
+      edge('hoop:snare:2', 'dataline:2'),
+      edge('dataline:1', 'output:o1'),
+      edge('dataline:2', 'output:o1'),
+    ];
+    expect(hasHoopFanOut(kit, routingFromGraph(nodes, es))).toBe(false); // clean before
+    // Drag the HOOP end of the dataline:1 wire from snare#0 onto snare#1 (which already has
+    // dataline:2). onReconnect's prospective set: re-point that edge's source. snare#1 now on
+    // BOTH lines → fan-out the editor must refuse (server would too).
+    const old = edge('hoop:snare:1', 'dataline:1');
+    const prospective = es.map((e) =>
+      e.id === old.id ? { ...e, source: 'hoop:snare:2', target: 'dataline:1' } : e,
+    );
+    expect(hasHoopFanOut(kit, routingFromGraph(nodes, prospective))).toBe(true);
+  });
 });
