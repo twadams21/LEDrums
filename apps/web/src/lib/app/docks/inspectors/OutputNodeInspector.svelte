@@ -42,7 +42,7 @@
 
 <!-- output is a protected graph anchor (like the trigger root): no kind selector, no remove —
      it gets a title-block header instead of the shared node header the dispatcher hosts. -->
-<AnchorHeader icon={CircleDot} tint="var(--role-output)" title="Output" sub="graph output — every layer lands here" />
+<AnchorHeader icon={CircleDot} tint="var(--role-output)" title="Output" sub="where all effects combine" />
 
 <div class="body">
   {#if emptyScope}
