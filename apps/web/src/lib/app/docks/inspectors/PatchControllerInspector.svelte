@@ -68,7 +68,7 @@
 <Separator />
 
 {#if out}
-  <p class="grouphint">Art-Net / sACN transport — where the pixel stream is sent.</p>
+  <p class="grouphint">Where pixel data is sent.</p>
   <Field layout="row" label="Protocol">
     <Select
       value={out.protocol}
