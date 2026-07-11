@@ -77,7 +77,12 @@ describe('WSClient', () => {
 
     const msg: ServerMessage = {
       t: 'state',
-      project: { name: 'P' } as never,
+      // A runtime-valid minimal project (kit + one drum): decodeServer now validates `state.project`
+      // through core's projectSchema, so an empty stub would be (correctly) rejected as malformed.
+      project: {
+        name: 'P',
+        kit: { global: {}, drums: [{ id: 'd', diameterIn: 8, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }] },
+      } as never,
       model: { count: 2, positions: [0, 0, 0, 1, 1, 1], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 1 } },
       effects: [],
       projects: ['default'],

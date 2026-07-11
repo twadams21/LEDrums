@@ -6,20 +6,21 @@
 // app/transport boundary, which core must never know about. The server's
 // `ws-protocol.ts` and the web's `lib/ws/protocol-types.ts` both re-export these
 // types and add their own runtime (de)serialization helpers on top.
-import type {
-  Clip,
-  EngineStats,
-  InputMap,
-  Layer,
-  OutputConfig,
-  ParamSpec,
-  Project,
-  ProjectPatch,
-  Section,
-  Song,
-  TriggerBinding,
-  voice,
-} from '@ledrums/core';
+import type { ParamSpec, Project, voice } from '@ledrums/core';
+
+// The runtime wire schemas (and the `ClientMessage`/`ServerMessage` types inferred from them) are
+// the single source of truth for the message contract; they live in `./schemas` and are re-exported
+// here so `@ledrums/protocol` stays the one import path. The payload interfaces below (SerializedModel,
+// EffectSpec, OutputStatus, …) are locked to their schemas by a type-level assertion in `./schemas`.
+export {
+  clientMessageSchema,
+  clientMessageTypes,
+  serverMessageSchema,
+  showLibraryBlobSchema,
+  showSchema,
+  songLibraryBlobSchema,
+} from './schemas';
+export type { ClientMessage, ServerMessage } from './schemas';
 
 // ---------------------------------------------------------------------------
 // Transport-level constants
@@ -31,122 +32,6 @@ import type {
  * auto-reconnect loop and prompts for a PIN instead of dialing forever. */
 export const WS_CLOSE_INVALID_PIN = 4401;
 
-// ---------------------------------------------------------------------------
-// Client → Server (JSON strings via ws.send(JSON.stringify(msg)))
-// ---------------------------------------------------------------------------
-
-export type ClientMessage =
-  | { t: 'midi'; note: number; velocity: number; on: boolean; channel?: number }
-  // Global transport recall (voice mode): a Control Change (cc) and a Program Change.
-  // The server's global recall handler intercepts cc#0 + programChange BEFORE the
-  // per-trigger zone-map; other controllers are currently no-ops.
-  | { t: 'cc'; controller: number; value: number; channel?: number }
-  | { t: 'programChange'; value: number; channel?: number }
-  | { t: 'osc'; address: string; value: number }
-  | { t: 'setParam'; layerId: string; clipId: string; key: string; value: number | string | boolean }
-  | { t: 'setLayer'; layerId: string; blendMode?: Layer['blendMode']; opacity?: number; activeClipId?: string | null; name?: string }
-  | { t: 'addLayer'; layer: Layer }
-  | { t: 'removeLayer'; layerId: string }
-  | { t: 'addClip'; layerId: string; clip: Clip }
-  | { t: 'removeClip'; layerId: string; clipId: string }
-  | { t: 'setTransport'; bpm?: number; playing?: boolean; beatsPerBar?: number }
-  | { t: 'setKitTransform'; drumId: string; origin?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number }; localSpinDeg?: number; startAngleDeg?: number; pixelsPerHoop?: number; hoopSpacingMm?: number; diameterIn?: number; flip?: boolean }
-  // Kit-global geometry (S11): mirror is not per-drum, so it rides its own message rather than
-  // setKitTransform's drum carrier. Both hosts rebuild the model (not just dmxMap) on apply.
-  | { t: 'setKitGlobal'; mirror?: 'none' | 'x' | 'y' }
-  // Reorder/replace the physical-output topology (PixLite patch order) — voice host only.
-  | { t: 'setKitOutputs'; outputs: OutputConfig[] }
-  | { t: 'setOutput'; state?: Project['output']['state']; protocol?: Project['output']['protocol']; host?: string; rgbOrder?: Project['output']['rgbOrder']; fps?: number; broadcast?: boolean; priority?: number; port?: number; iface?: string }
-  // Setlist / songs / sections / per-trigger routing
-  | { t: 'setActiveSection'; songId: string; sectionId: string }
-  | { t: 'setBinding'; sectionId: string; binding: TriggerBinding }
-  | { t: 'removeBinding'; sectionId: string; drumId: string; slot: number }
-  | { t: 'addSong'; song: Song }
-  | { t: 'removeSong'; songId: string }
-  | { t: 'addSection'; songId: string; section: Section }
-  | { t: 'removeSection'; songId: string; sectionId: string }
-  | { t: 'setSectionLayerClip'; sectionId: string; layerId: string; clipId: string | null }
-  | { t: 'setInputMap'; inputMap: InputMap }
-  // Bulk device re-rig (group K / S45): paste a `patch` ClipDoc's Project slices (kit incl.
-  // outputs, input map, output settings) as ONE message. The server schema-validates the whole
-  // payload BEFORE touching any state, applies it once (a single kit reload — NOT a replay of
-  // granular setKit*/setOutput/setInputMap messages), persists, and broadcasts fresh `state`.
-  // An invalid payload is rejected with an `error` reply and zero partial apply. Never merges
-  // authored composition/setlist — it re-rigs only the physical device.
-  | { t: 'setProject'; patch: ProjectPatch }
-  // Voice-bus engine (additive, voice mode only): replace the authored Show.
-  | { t: 'setShow'; show: voice.Show }
-  // Server-authoritative show library: the client pushes the authored library (an opaque
-  // versioned blob — its schema is web-owned) on every authored change; the server persists
-  // it and rebroadcasts it on cold load via the `state` message. Mode-independent.
-  | { t: 'setShowLibrary'; library: ShowLibraryBlob }
-  // Server-authoritative SONG library (the canonical songs shows import). Same contract as
-  // `setShowLibrary`: the client pushes an opaque versioned blob on every library change; the
-  // server persists it as a second named blob and rebroadcasts it on cold load / live.
-  | { t: 'setSongLibrary'; library: SongLibraryBlob }
-  | { t: 'key'; drumId: string; zone?: string; velocity?: number }
-  // Keyboard performance intent (voice mode): play an EXACT authored graph by key. Sent
-  // instead of a synthetic MIDI/OSC source so the server fires precisely that graph, with no
-  // zone-map / direct-binding re-resolution (which could otherwise both-fire). `velocity` is
-  // 0..1. The server validates the key and emits the normal graph diagnostics.
-  | { t: 'fireGraph'; graphKey: string; velocity: number }
-  | { t: 'recallSection'; songId: string; sectionId: string }
-  // Multi-client takeover (S2): any client may claim the single editor slot. The server hands it
-  // the slot, drops the prior editor to viewer, and re-broadcasts `presence` so every client's
-  // role converges (last-press-wins for near-simultaneous takeovers). Carries no payload — the
-  // sender IS the claimant.
-  | { t: 'takeover' }
-  // Remote-access lifecycle control (S3 follow-up): start/stop the outbound share tunnel from
-  // the app. Editor-only (deny-by-default gate) AND refused for clients that arrived VIA the
-  // tunnel — a remote viewer must never kill or restart the tunnel it rode in on. The server
-  // reports progress via `TunnelInfo.status` on the `state` message.
-  | { t: 'tunnel'; action: 'start' | 'stop' }
-  | { t: 'loadProject'; name: string }
-  | { t: 'saveProject'; name: string }
-  | { t: 'listProjects' }
-  // --- PixLite controller monitor (S47, group L) -----------------------------
-  // Trigger a one-shot discovery sweep of the candidate subnet(s) derived from the configured
-  // output host/interface (falling back to local NIC subnets). The server replies with a single
-  // `controllerDiscovery` message carrying the ranked candidate list. Editor-gated (a viewer's
-  // panel can watch live status but not initiate network sweeps or re-rig the device).
-  | { t: 'discoverControllers' }
-  // Adopt `host` as THE controller for this project: the server probes it, persists
-  // `{ host, nickname }` on the Project (rehydrated across restarts), and begins reporting its
-  // live status via `controllerStatus`. Editor-gated. A host that doesn't answer as a PixLite is
-  // reported back as an `error` (no adoption).
-  | { t: 'adoptController'; host: string }
-  // Set (or clear) the adopted controller's admin password (R29 / GH #108). Carries the PLAINTEXT
-  // password over the local WS; the server hashes it (`Base64URL(SHA256(password))`) and only ever
-  // PERSISTS/transmits the hash onward (never the plaintext) — the LOCKED `controller.auth` contract.
-  // An empty string clears auth, restoring the password-less default. Editor-gated. No-op when
-  // nothing is adopted. Authenticated controllers use it for every management call (statisticRead /
-  // identify / test-data); success shows as the controller becoming reachable while `authReqd`.
-  | { t: 'setControllerAuth'; password: string }
-  // Flash the adopted controller's status LED for `durationS` seconds (0 = off, 121 = continuous)
-  // — the "which box is this?" confirmation. Editor-gated. No-op when nothing is adopted.
-  | { t: 'identifyController'; durationS: number }
-  // Drive the controller's built-in test-data mode (S49): a solid colour / RGBW cycle / colour
-  // fade, per-port or per-pixel. While this runs the controller IGNORES the live Art-Net stream
-  // (a LOUD takeover state) — the server reports it back on `ControllerStatus.testPattern`.
-  // Editor-gated. No-op when nothing is adopted.
-  | { t: 'controllerTestData'; pattern: ControllerTestPattern }
-  // Return the adopted controller to LIVE mode — the "back to live data" exit from a test pattern.
-  // Editor-gated. No-op when nothing is adopted / not in test mode. The server also fires this
-  // automatically when the last panel watcher leaves (panel close / disconnect) so a controller is
-  // never stranded in test mode.
-  | { t: 'controllerBackToLive' }
-  // Client interest signal — the ONLY thing that gates the poll loop (no idle traffic). A client
-  // sends `watching: true` while it has the Monitor/Patch controller panel open and `false` when it
-  // closes it; a disconnect implicitly clears it. The server polls `statisticRead` at 1–2s only
-  // while ≥1 client is watching AND a controller is adopted. NOT editor-gated — a viewer watching
-  // the panel keeps live status flowing for everyone.
-  | { t: 'watchController'; watching: boolean }
-  // Ask the server to enumerate its own network adapters (NICs) so the panel can tell the operator
-  // which subnet the PixLite must join and recommend a concrete static IP for it. The server replies
-  // to the SENDER with a `networkAdapters` message. A pure read (no state mutation) — NOT editor-
-  // gated. Requested when the controller panel opens (and on demand); the list is the server
-  // machine's NICs, so it is refreshed rather than pushed on change.
-  | { t: 'listNetworkAdapters' };
 
 // ---------------------------------------------------------------------------
 // Server → Client (JSON, plus a separate binary frame channel)
@@ -386,40 +271,3 @@ export interface TunnelInfo {
   error?: string;
 }
 
-export type ServerMessage =
-  // `showLibrary` carries the server's persisted authored show library (the opaque versioned
-  // blob), or null when the server has none yet — the web adopts it on cold load.
-  // `tunnel` carries the remote-access surface (share URL + room PIN) for the host UI; null when
-  // neither a tunnel nor a PIN gate is configured (plain local dev). See {@link TunnelInfo}.
-  // `songLibrary` carries the server's persisted authored SONG library (a second opaque versioned
-  // blob), or null when the server has none yet — adopted on cold load like `showLibrary`.
-  | { t: 'state'; project: Project; model: SerializedModel; effects: EffectSpec[]; projects: string[]; output: OutputStatus; showLibrary: ShowLibraryBlob | null; songLibrary: SongLibraryBlob | null; tunnel: TunnelInfo | null }
-  | { t: 'stats'; stats: EngineStats; latencyMs: number; fps: number; output: OutputStatus; voice?: VoiceStats }
-  | { t: 'input'; kind: 'midi' | 'osc'; label: string; value: number; note?: number; channel?: number }
-  | { t: 'monitor'; event: MonitorEvent }
-  | { t: 'projects'; names: string[] }
-  // Multi-client presence (S1): who is the single editor, whether THIS recipient is it, and how
-  // many clients are connected. Sent to a client on join and re-broadcast to every client on any
-  // join/leave (each recipient gets its own `youAreEditor`). `editorId` is null when no client
-  // currently holds the editor slot (the editor left with ≥2 viewers remaining — S2 takeover).
-  | { t: 'presence'; editorId: string | null; youAreEditor: boolean; clientCount: number }
-  // Live authored-library push (S1): the editor's `setShowLibrary` relayed to the OTHER clients so
-  // viewers live-follow without a full `state` rebuild. Never echoed back to the editor that sent
-  // it. Carries the same opaque versioned blob the server persists + ships on `state`.
-  | { t: 'showLibrary'; library: ShowLibraryBlob }
-  // Live SONG-library push: the editor's `setSongLibrary` relayed to the OTHER clients, mirroring
-  // the `showLibrary` relay. Never echoed to the sender.
-  | { t: 'songLibrary'; library: SongLibraryBlob }
-  // Result of a `discoverControllers` sweep: the ranked candidate list (best-first). Replaces the
-  // panel's candidate list wholesale each time — an empty array means "sweep finished, found none".
-  | { t: 'controllerDiscovery'; candidates: DiscoveredController[] }
-  // Live status of the adopted controller (S47). Emitted on adopt, on each successful poll, and on a
-  // failed poll (`reachable: false`, frozen `lastSeen`). The S48 panel renders {@link ControllerStatus}
-  // directly. `status` is null when no controller is adopted (e.g. right after a project with no
-  // controller loads) — the panel then shows the un-adopted "Discover" affordance.
-  | { t: 'controllerStatus'; status: ControllerStatus | null }
-  // Reply to a client's `listNetworkAdapters` (sent to that client only): the server machine's
-  // non-internal IPv4 NICs, each with its subnet and a recommended controller IP. The panel uses it
-  // to guide the operator to put the PixLite on the same subnet as the adapter it is plugged into.
-  | { t: 'networkAdapters'; adapters: NetworkAdapter[] }
-  | { t: 'error'; message: string };
