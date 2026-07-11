@@ -1,4 +1,4 @@
-import { kitSchema, projectPatchSchema } from '@ledrums/core';
+import { projectPatchSchema, validateRouting } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
@@ -8,13 +8,6 @@ import { encodeServer, type ClientMessage, type ControllerTestPattern, type Netw
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
-
-/**
- * The physical-output topology array exactly as it lives on `kitSchema` (S01). Reused to
- * gate the granular `setKitOutputs` message the same way `projectPatchSchema` gates the
- * whole `setProject` patch — one source of truth, no new/looser validation shape.
- */
-const kitOutputsSchema = kitSchema.shape.outputs;
 
 // ---------------------------------------------------------------------------
 // Read-only gating policy (S2)
@@ -338,25 +331,26 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
 
-    // S01: gate `setKitOutputs` against the kit output schema BEFORE any state is touched —
-    // the granular sibling of the `setProject` gate above. An invalid outputs payload (e.g.
-    // channelsPerPixel 0, negative hoop range, empty dataLines) is a user-visible `error`
-    // reply to the sender with ZERO state applied, so the last-known-good routing stays live.
-    // Valid payloads fall through to the existing apply path unchanged. Direct fix for the
-    // patch-corruption incident.
+    // S01+S07: gate `setKitOutputs` through the core routing validator BEFORE any state is
+    // touched — the granular sibling of the `setProject` gate above. `validateRouting` covers
+    // ALL corruption classes in one pass: malformed shape (schema — channelsPerPixel 0, empty
+    // dataLines, negative hoop range), plus routing integrity against the CURRENT kit's drums
+    // (dangling drum ref, out-of-range hoop, hoop fan-out across data lines). Any issue is a
+    // user-visible `error` reply with ZERO state applied, so the last-known-good routing stays
+    // live; valid payloads fall through to the existing apply path unchanged. buildDmxMap would
+    // otherwise throw (→ silent flat-map) or silently overwrite a fanned-out pixel.
     if (msg.t === 'setKitOutputs') {
-      const parsed = kitOutputsSchema.safeParse(msg.outputs);
-      if (!parsed.success) {
-        const issue = parsed.error.issues[0];
-        const where = issue?.path.join('.') || 'outputs';
-        ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${where} — ${issue?.message ?? 'validation failed'}` }));
+      const issues = validateRouting(host.engine.getProject().kit, msg.outputs);
+      if (issues.length) {
+        const first = issues[0]!;
+        ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));
         monitor?.({
           type: 'error',
           direction: 'in',
           source: 'client',
           destination: 'project',
           label: 'Outputs rejected (invalid)',
-          detail: `${where}: ${issue?.message ?? 'validation failed'}`,
+          detail: first.message,
         });
         return;
       }

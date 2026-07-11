@@ -2,6 +2,7 @@ import {
   advanceTransport,
   buildDmxMap,
   buildPixelModel,
+  checkRoutingIntegrity,
   SLOT_LABELS,
   voice,
   type DmxMap,
@@ -102,6 +103,11 @@ export class VoiceEngineHost {
   private activeSongId: string | null = null;
   private monitorSink: ((event: MonitorDraft) => void) | null = null;
 
+  /** The offending-reference detail from the most recent routing degradation, buffered until a
+   * monitor sink can carry it (a degradation at construction happens before {@link setMonitor}
+   * wires the sink). null once reported or once routing rebuilds cleanly. */
+  private pendingRoutingDegradation: string | null = null;
+
   constructor(
     project: Project,
     engine: voice.RenderEngine | null = null,
@@ -119,11 +125,25 @@ export class VoiceEngineHost {
   // --- geometry ------------------------------------------------------------
 
   /** Build a DMX map, falling back to a flat single-output map on invalid topology
-   * (mirrors the legacy Engine.buildMapSafe so preview/output never wedge). */
+   * (mirrors the legacy Engine.buildMapSafe so preview/output never wedge). The fallback is
+   * no longer silent (S07): the offending reference is named and reported as a Monitor `error`
+   * event before degrading, so a corrupt routing surfaces loudly instead of going dark. */
   private buildMapSafe(kit: KitConfig): DmxMap {
     try {
-      return buildDmxMap(kit, this.model);
-    } catch {
+      const map = buildDmxMap(kit, this.model);
+      this.pendingRoutingDegradation = null; // routing is healthy again
+      return map;
+    } catch (err) {
+      // Name WHICH reference broke routing (dangling drum ref / out-of-range hoop — exactly what
+      // buildDmxMap throws on) before falling back. checkRoutingIntegrity re-derives it structurally;
+      // fall back to the raw throw text only if it somehow finds nothing.
+      const issues = checkRoutingIntegrity(kit);
+      this.pendingRoutingDegradation = issues.length
+        ? issues.map((i) => i.message).join('; ')
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      this.reportRoutingDegradation();
       const flat: KitConfig = {
         ...kit,
         outputs: [],
@@ -131,6 +151,21 @@ export class VoiceEngineHost {
       };
       return buildDmxMap(flat, this.model);
     }
+  }
+
+  /** Emit the buffered routing-degradation diagnostic once a sink can carry it, then clear it.
+   * A no-op when nothing degraded or no sink is wired yet (the buffer survives until one is). */
+  private reportRoutingDegradation(): void {
+    if (this.pendingRoutingDegradation === null || !this.monitorSink) return;
+    this.monitorSink({
+      type: 'error',
+      direction: 'local',
+      source: 'server/voice',
+      destination: 'routing',
+      label: 'Routing topology invalid — degraded to flat map',
+      detail: this.pendingRoutingDegradation,
+    });
+    this.pendingRoutingDegradation = null;
   }
 
   getProject(): Project {
@@ -455,6 +490,9 @@ export class VoiceEngineHost {
 
   setMonitor(sink: (event: MonitorDraft) => void): void {
     this.monitorSink = sink;
+    // A routing degradation at construction (before any sink) is buffered — flush it now so a
+    // corrupt persisted project loaded at boot still surfaces its named diagnostic.
+    this.reportRoutingDegradation();
   }
 
   private monitorVoiceDiagnostic(d: voice.VoiceDiagnostic): void {
