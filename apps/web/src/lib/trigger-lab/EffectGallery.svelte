@@ -107,7 +107,7 @@
 
     if (collection === 'lens') {
       const effects = source.filter((e) => playTypeOf(e) === 'canvas' && (e.tags ?? []).includes('lens'));
-      return effects.length ? [{ value: 'lens', label: 'Lenses', blurb: 'Coordinate-transform presets for authored Canvas scenes.', effects }] : [];
+      return effects.length ? [{ value: 'lens', label: 'Lenses', blurb: 'Canvas presets', effects }] : [];
     }
 
     return COLLECTIONS.flatMap((c) => {
