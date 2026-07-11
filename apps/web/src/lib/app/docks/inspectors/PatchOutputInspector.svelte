@@ -42,7 +42,7 @@
 
 {#if patchOutput}
   {@const cfg = patchOutput}
-  <p class="grouphint">A physical controller port. The controller owns universe offsets — leave blank to pack dense, or snap the port to a universe.</p>
+  <p class="grouphint">Set which universe this output starts on. Leave blank to auto-assign.</p>
   <Field layout="row" label="Start universe" hint="blank = dense / auto">
     <CommitInput
       type="number"

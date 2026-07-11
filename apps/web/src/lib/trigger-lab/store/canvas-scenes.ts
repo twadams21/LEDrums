@@ -12,7 +12,6 @@ import {
   CANVAS_PARAM_SPEC,
   canvasEffectId,
   canvasSceneIdOf,
-  collectionMeta,
   type CanvasScene,
   type PlayType,
 } from '@ledrums/core';
@@ -27,7 +26,7 @@ export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasSc
   return {
     id,
     name,
-    description: 'Authored canvas scene sampled through the drum kit.',
+    description: 'Canvas scene for the drum kit',
     tags: ['canvas'],
     sampler: { kind: 'cylinder' },
     lenses: [],
@@ -138,9 +137,4 @@ export function parseCanvasSceneJson(id: string, text: string): SceneJsonResult 
   if (!Array.isArray(scene.elements)) return { ok: false, message: 'Scene elements must be an array.' };
   if (!scene.sampler || typeof scene.sampler !== 'object') return { ok: false, message: 'Scene sampler is required.' };
   return { ok: true, scene: scene as CanvasScene };
-}
-
-/** The gallery/palette label for a play type. */
-export function collectionLabel(type: PlayType): string {
-  return collectionMeta(type).label;
 }

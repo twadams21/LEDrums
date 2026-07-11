@@ -18,8 +18,8 @@ export function describeSystemActions(actions: SystemActionSummary): string | nu
   if (migratedGraphs > 0) {
     parts.push(
       migratedGraphs === 1
-        ? 'Graph updated to the Gen3 schema.'
-        : `${migratedGraphs} graphs updated to the Gen3 schema.`,
+        ? 'Graph updated.'
+        : `${migratedGraphs} graphs updated.`,
     );
   }
   if (autoWiredNodes > 0) {

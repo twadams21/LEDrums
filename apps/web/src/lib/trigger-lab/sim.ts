@@ -34,11 +34,8 @@ export {
   type EnvMap,
   type ParamSpec,
   type EnvKind,
-  ENV_KINDS,
   type EnvPoint,
   type Envelope,
-  envShape,
-  presetPoints,
   defaultEnvelope,
   cloneEnvelope,
   type AdsrShape,
@@ -47,11 +44,8 @@ export {
   type EaseSpec,
   defaultAdsr,
   adsrToPoints,
-  sampleEnvelope,
   migrateAdsr,
-  ease,
   applyModulations,
-  envelopeToMapping,
   type Mapping,
   type ModSource,
   type ModSampleCtx,
@@ -133,9 +127,6 @@ export type Block =
   | SwitchBlock
   | ChanceBlock
   | ToggleBlock;
-
-export const CONTAINER_KINDS: BlockKind[] = ['all', 'random', 'sequence', 'switch'];
-export const MODIFIER_KINDS: BlockKind[] = ['chance', 'toggle'];
 
 // ---- Effects + presets + buses (branch 1) -----------------------------------
 
