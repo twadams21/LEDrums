@@ -30,13 +30,12 @@
   } from '../../../ws/protocol-types';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import StatusPill from '../../../ui/StatusPill.svelte';
-  import StatusDot from '../../../ui/StatusDot.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import ReadRow from './ReadRow.svelte';
+  import AdoptByIpRow from './AdoptByIpRow.svelte';
+  import UniverseRxTable from './UniverseRxTable.svelte';
   import {
     controllerHeadline,
-    universeRxTone,
-    universeProtocolLabel,
     formatTempC,
     formatFrameRate,
     formatBankVolts,
@@ -107,17 +106,10 @@
     !!controller && !!outputHost && controller.host !== outputHost,
   );
 
-  // --- Adopt-by-IP + subnet recommendation ----------------------------------
-  // A manual host entry (adopt across subnets / when discovery misses it) plus a copy button for the
-  // recommended controller IP. The common flow: read the recommended IP, set the box to it, then
-  // type it here (the input placeholder pre-fills that value) and Adopt.
-  let adoptHost = $state('');
+  // --- Subnet recommendation copy -------------------------------------------
+  // A copy button for the recommended controller IP. The common flow: read the recommended IP, set
+  // the box to it, then adopt it via the AdoptByIpRow below (its placeholder pre-fills that value).
   let copied = $state(false);
-
-  function submitAdopt(): void {
-    const h = adoptHost.trim();
-    if (h) onAdopt?.(h);
-  }
 
   async function copyRecommendedIp(): Promise<void> {
     const ip = recommendation?.recommendedIp;
@@ -210,26 +202,7 @@
      different subnet, across a router, or simply missed). Seeds its placeholder from the recommended
      IP so the "set the box, then adopt it" flow is one glance. -->
 {#snippet adoptByIp()}
-  <div class="adopt-ip">
-    <span class="adopt-label">Adopt by IP</span>
-    <div class="adopt-row">
-      <input
-        class="adopt-input"
-        type="text"
-        inputmode="decimal"
-        bind:value={adoptHost}
-        placeholder={recommendation?.recommendedIp ?? '192.168.0.50'}
-        disabled={!canEdit}
-        aria-label="Controller IP to adopt"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') submitAdopt();
-        }}
-      />
-      <button type="button" class="action" disabled={!canEdit || !adoptHost.trim()} onclick={submitAdopt}>
-        Adopt
-      </button>
-    </div>
-  </div>
+  <AdoptByIpRow recommendedIp={recommendation?.recommendedIp} {canEdit} {onAdopt} />
 {/snippet}
 
 <section class="controller" aria-label="Controller status">
@@ -302,23 +275,7 @@
       <ReadRow label="Eth link" value={formatEthLinks(controller.health.ethLinkUp)} />
     </div>
 
-    {#if controller.universes.length}
-      <div class="universes">
-        <span class="uni-head">Universes</span>
-        {#each controller.universes as u (u.protocol + ':' + u.uniNum)}
-          <div class="uni-row" class:bad={!u.receiving}>
-            <StatusDot tone={universeRxTone(u.receiving)} pulse={!u.receiving} />
-            <span class="uni-num">U{u.uniNum}</span>
-            <span class="uni-proto">{universeProtocolLabel(u.protocol)}</span>
-            <span class="uni-counts">
-              <span class="good">{u.inGood.toLocaleString('en-US')}</span
-              ><span class="sep">/</span><span class="bad-count">{u.inBadSeq.toLocaleString('en-US')}</span>
-              {#if u.priority != null}<span class="pri">p{u.priority}</span>{/if}
-            </span>
-          </div>
-        {/each}
-      </div>
-    {/if}
+    <UniverseRxTable universes={controller.universes} />
 
     <!-- Admin password (R29): authenticated controllers need it for every management call. The field
          holds no stored value (we keep only the server-side hash), so it reads empty and clears after
@@ -585,77 +542,6 @@
     }
   }
 
-  /* Per-universe rx — the row-level "not receiving" signal. A dead universe tints its whole row in
-     the live family so a single bad one stands out at a glance. */
-  .universes {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    margin-top: var(--space-1);
-  }
-  .uni-head {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    color: var(--text-faint);
-    margin-bottom: 2px;
-  }
-  .uni-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-1);
-    font-size: var(--text-xs);
-    color: var(--text);
-    transition: background-color var(--dur-150) ease;
-  }
-  .uni-row.bad {
-    background: var(--live-soft);
-    color: var(--live-bright);
-  }
-  .uni-num {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    min-width: 2.5em;
-  }
-  .uni-proto {
-    font-size: var(--text-2xs);
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-  }
-  .uni-row.bad .uni-proto {
-    color: color-mix(in oklch, var(--live-bright) 70%, transparent);
-  }
-  .uni-counts {
-    margin-left: auto;
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--text-2xs);
-    display: inline-flex;
-    align-items: baseline;
-    gap: 3px;
-  }
-  .uni-counts .good {
-    color: var(--ok);
-  }
-  .uni-row.bad .uni-counts .good {
-    color: inherit;
-  }
-  .uni-counts .sep,
-  .uni-counts .bad-count {
-    color: var(--text-faint);
-  }
-  .uni-counts .bad-count {
-    color: var(--warn);
-  }
-  .uni-counts .pri {
-    color: var(--text-faint);
-    margin-left: 3px;
-  }
-
   /* Admin password (R29) — a quiet config field under the readouts. Reuses the CommitInput primitive;
      the label + hint sit above/below it so the credential reads as deliberate device config, not a
      status readout. `.needs` warms the label when the device demands a password we don't yet have. */
@@ -904,55 +790,6 @@
     color: var(--text-muted);
     line-height: var(--leading-snug);
     overflow-wrap: anywhere;
-  }
-
-  /* Manual adopt-by-IP — a labelled IP input + Adopt, reusing the .action button vocabulary. Lets an
-     operator connect to a known controller even when Discover can't see it. */
-  .adopt-ip {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-  .adopt-label {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
-    color: var(--text-faint);
-  }
-  .adopt-row {
-    display: flex;
-    gap: var(--space-2);
-  }
-  .adopt-input {
-    flex: 1;
-    min-width: 0;
-    min-height: 30px;
-    padding: var(--space-1) var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--text-sm);
-    color: var(--ink);
-    transition: border-color var(--dur-120) ease;
-  }
-  .adopt-input::placeholder {
-    color: var(--text-disabled);
-  }
-  .adopt-input:focus {
-    outline: none;
-    border-color: var(--border-strong);
-  }
-  .adopt-input:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .adopt-row .action {
-    flex: none;
-    width: auto;
-    padding-inline: var(--space-3);
   }
 
   .hint {
