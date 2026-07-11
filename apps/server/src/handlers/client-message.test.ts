@@ -557,6 +557,44 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
     expect(viewer.sent.some((m) => m.t === 'state')).toBe(false);
     expect(autosaver.markDirty).not.toHaveBeenCalled();
   });
+
+  // S07: the gate now also runs core routing-integrity — these payloads PASS the schema
+  // (well-formed shape) but are referentially/structurally invalid against the live kit
+  // (defaultProject: kick has 4 hoops). Same reply/monitor contract, zero state.
+  const integrityCases: Array<[string, unknown]> = [
+    // A segment referencing a drum the kit doesn't define.
+    ['dangling drum ref', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] }]],
+    // hoopEnd 9 with a 4-hoop kick — schema-valid (nonnegative ints), routing-invalid.
+    ['out-of-range hoop', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 9 }] }] }]],
+    // kick hoop 0 driven by two data lines — a fan-out buildDmxMap would silently overwrite.
+    ['hoop fan-out across data lines', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] }, { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] }] }]],
+  ];
+
+  it.each(integrityCases)('rejects %s (schema-valid, routing-invalid) with a user-visible error and zero apply', (_label, outputs) => {
+    const { handle, join, autosaver, monitor } = harness();
+    const editor = join();
+
+    handle({ t: 'setKitOutputs', outputs } as unknown as ClientMessage, editor);
+
+    const err = editor.sent.find((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
+    expect(err?.message).toMatch(/Invalid outputs/);
+    expect(editor.sent.some((m) => m.t === 'state')).toBe(false); // no broadcast
+    expect(autosaver.markDirty).not.toHaveBeenCalled(); // not persisted
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Outputs rejected (invalid)' }));
+  });
+
+  it('never touches voice-host routing on a routing-invalid (but schema-valid) payload', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    const spy = vi.spyOn(voiceHost, 'setKitOutputs');
+
+    const danglingRef = [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] }];
+    handle({ t: 'setKitOutputs', outputs: danglingRef } as unknown as ClientMessage, editor);
+    expect(spy).not.toHaveBeenCalled(); // last-known-good routing stays live
+
+    handle({ t: 'setKitOutputs', outputs: validOutputs }, editor);
+    expect(spy).toHaveBeenCalledWith(validOutputs); // valid → propagated to the host
+  });
 });
 
 describe('tunnel control message (item 4): editor-gated AND refused for tunnel-riding clients', () => {

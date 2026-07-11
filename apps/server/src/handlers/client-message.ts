@@ -1,4 +1,4 @@
-import { kitSchema, projectPatchSchema } from '@ledrums/core';
+import { checkRoutingIntegrity, kitSchema, projectPatchSchema } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
@@ -357,6 +357,25 @@ export function createClientMessageHandler<S extends HandlerSocket>(
           destination: 'project',
           label: 'Outputs rejected (invalid)',
           detail: `${where}: ${issue?.message ?? 'validation failed'}`,
+        });
+        return;
+      }
+      // S07: schema-valid but referentially/structurally invalid routing — a dangling drum ref,
+      // an out-of-range hoop, or a hoop fan-out across data lines — is still rejected against the
+      // CURRENT kit's drums, same reply/monitor contract as the schema gate, ZERO state touched.
+      // buildDmxMap would either throw (→ silent flat-map degradation) or silently overwrite a
+      // fanned-out pixel; catching it here keeps the last-known-good routing live instead.
+      const routingIssues = checkRoutingIntegrity(host.engine.getProject().kit, parsed.data);
+      if (routingIssues.length) {
+        const first = routingIssues[0]!;
+        ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Outputs rejected (invalid)',
+          detail: first.message,
         });
         return;
       }
