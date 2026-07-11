@@ -1,4 +1,4 @@
-import { projectPatchSchema } from '@ledrums/core';
+import { kitSchema, projectPatchSchema } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
@@ -8,6 +8,13 @@ import { encodeServer, type ClientMessage, type ControllerTestPattern, type Netw
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
+
+/**
+ * The physical-output topology array exactly as it lives on `kitSchema` (S01). Reused to
+ * gate the granular `setKitOutputs` message the same way `projectPatchSchema` gates the
+ * whole `setProject` patch — one source of truth, no new/looser validation shape.
+ */
+const kitOutputsSchema = kitSchema.shape.outputs;
 
 // ---------------------------------------------------------------------------
 // Read-only gating policy (S2)
@@ -329,6 +336,30 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       broadcastJson(stateMessage());
       autosaver.markDirty();
       return;
+    }
+
+    // S01: gate `setKitOutputs` against the kit output schema BEFORE any state is touched —
+    // the granular sibling of the `setProject` gate above. An invalid outputs payload (e.g.
+    // channelsPerPixel 0, negative hoop range, empty dataLines) is a user-visible `error`
+    // reply to the sender with ZERO state applied, so the last-known-good routing stays live.
+    // Valid payloads fall through to the existing apply path unchanged. Direct fix for the
+    // patch-corruption incident.
+    if (msg.t === 'setKitOutputs') {
+      const parsed = kitOutputsSchema.safeParse(msg.outputs);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        const where = issue?.path.join('.') || 'outputs';
+        ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${where} — ${issue?.message ?? 'validation failed'}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Outputs rejected (invalid)',
+          detail: `${where}: ${issue?.message ?? 'validation failed'}`,
+        });
+        return;
+      }
     }
 
     // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the voice-only
