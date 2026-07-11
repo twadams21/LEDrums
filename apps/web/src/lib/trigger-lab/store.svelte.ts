@@ -55,6 +55,7 @@ import type { BlendMode, InputMap, OutputConfig, Project, CanvasScene, PlayType 
 import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
 import { voice, listModifiers, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
+import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
@@ -385,6 +386,14 @@ function pasteSuccessMessage(res: RemapResult): string {
     case 'song':
       return 'Pasted song.';
   }
+}
+
+/** One undo checkpoint: the authored show slice plus a separate snapshot of the authoritative
+    project slice (routing/geometry/IO), which is server-owned and NOT part of `AuthoredState`.
+    Keeping both in one stack entry preserves ordering across mixed trigger/patch edits. */
+interface UndoEntry {
+  authored: AuthoredState;
+  project: Project | null;
 }
 
 export class TriggerLab {
@@ -728,7 +737,7 @@ export class TriggerLab {
   /** Server-authoritative SONG-library controller — the sibling of {@link libSync}. */
   private readonly songSync = new SongLibrarySync();
   private readonly undoLimit = 10000;
-  private undoStack: AuthoredState[] = [];
+  private undoStack: UndoEntry[] = [];
   private restoringUndo = false;
   /** When true, {@link pushUndoSnapshot} is a no-op so a follow-on mutation folds into the
       caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
@@ -1125,7 +1134,12 @@ export class TriggerLab {
 
   private pushUndoSnapshot(): void {
     if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
-    this.undoStack.push(structuredClone(this.toAuthored()));
+    this.undoStack.push({
+      authored: structuredClone(this.toAuthored()),
+      // The project is server-owned and lives outside AuthoredState, so it snapshots separately
+      // ($state.snapshot strips the rune proxy before the clone, same as toAuthored).
+      project: this.project ? (structuredClone($state.snapshot(this.project)) as Project) : null,
+    });
     if (this.undoStack.length > this.undoLimit) {
       this.undoStack.splice(0, this.undoStack.length - this.undoLimit);
     }
@@ -1155,10 +1169,18 @@ export class TriggerLab {
     if (!prev) return false;
     this.restoringUndo = true;
     this.resetAuthoredToSeed();
-    this.applyAuthored(prev);
+    this.applyAuthored(prev.authored);
     this.normalizeGraphs();
     this.sim = new Sim(this.buses, this.effects, this.presets);
     this.sim.clearPendingFires();
+    // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
+    // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the
+    // project untouched and sends nothing.
+    const resync = projectResyncMessages(this.project, prev.project);
+    if (resync.length > 0) {
+      this.project = prev.project;
+      for (const msg of resync) this.client.send(msg);
+    }
     this.snapshot();
     this.restoringUndo = false;
     return true;
@@ -2037,7 +2059,10 @@ export class TriggerLab {
   /** Edit a drum's transform (origin/rotation/spin/start-angle/literal pixel count). */
   setDrumTransform(drumId: string, partial: routing.DrumTransformPartial): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (this.project) this.project = routing.applyDrumTransform(this.project, drumId, partial);
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyDrumTransform(this.project, drumId, partial);
+    }
     this.client.send({ t: 'setKitTransform', drumId, ...partial });
   }
 
@@ -2045,21 +2070,30 @@ export class TriggerLab {
    * not per-drum — applies live to the whole model and persists with the project. */
   setKitMirror(mirror: 'none' | 'x' | 'y'): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (this.project) this.project = routing.applyKitGlobal(this.project, { mirror });
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyKitGlobal(this.project, { mirror });
+    }
     this.client.send({ t: 'setKitGlobal', mirror });
   }
 
   /** Replace the physical-output topology (a Patch graph rewire → PixLite patch order). */
   setRouting(outputs: OutputConfig[]): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (this.project) this.project = routing.applyRouting(this.project, outputs);
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyRouting(this.project, outputs);
+    }
     this.client.send({ t: 'setKitOutputs', outputs });
   }
 
   /** Replace the input map (zone-node MIDI note / OSC address routing). */
   setInputMap(inputMap: InputMap): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (this.project) this.project = routing.applyInputMap(this.project, inputMap);
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyInputMap(this.project, inputMap);
+    }
     this.client.send({ t: 'setInputMap', inputMap });
   }
 
@@ -2104,7 +2138,10 @@ export class TriggerLab {
   /** Apply a partial output-settings change (controller node: protocol/host/rgb/fps/…). */
   setOutput(partial: routing.OutputPartial): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (this.project) this.project = routing.applyOutput(this.project, partial);
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyOutput(this.project, partial);
+    }
     this.client.send({ t: 'setOutput', ...partial });
   }
 

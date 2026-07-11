@@ -133,6 +133,63 @@ describe('setPatchLabel (the Patch node rename override the node face + Inspecto
   });
 });
 
+describe('undo restores the project slice and resyncs the engine (S3)', () => {
+  it('undoes a routing edit — restores kit.outputs and re-sends setKitOutputs with the prior topology', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    const drumId = store.project!.kit.drums[0]!.id;
+    const seedOutputs = structuredClone(store.project!.kit.outputs);
+    const outputs: OutputConfig[] = [
+      { id: '1', channelsPerPixel: 3, dataLines: [{ id: '1:dl0', segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] }] },
+    ];
+    store.setRouting(outputs);
+    expect(store.project!.kit.outputs).toBe(outputs);
+
+    sent.length = 0; // ignore the edit's own send; watch only what undo emits
+    expect(store.undo()).toBe(true);
+    expect(store.project!.kit.outputs).toEqual(seedOutputs);
+    expect(sent).toContainEqual({ t: 'setKitOutputs', outputs: seedOutputs });
+  });
+
+  it('undoes a drum-transform edit — restores the drum and re-sends setKitTransform', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    const drumId = store.project!.kit.drums[0]!.id;
+    const before = store.project!.kit.drums.find((d) => d.id === drumId)!.pixelsPerHoop;
+    store.setDrumTransform(drumId, { pixelsPerHoop: 77 });
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.pixelsPerHoop).toBe(77);
+
+    sent.length = 0;
+    expect(store.undo()).toBe(true);
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.pixelsPerHoop).toBe(before);
+    expect(sent.some((m) => m.t === 'setKitTransform' && m.drumId === drumId)).toBe(true);
+  });
+
+  it('undoes a mirror edit — restores kit.global.mirror and re-sends setKitGlobal', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setKitMirror('x');
+    expect(store.project!.kit.global.mirror).toBe('x');
+
+    sent.length = 0;
+    expect(store.undo()).toBe(true);
+    expect(store.project!.kit.global.mirror).toBe('none');
+    expect(sent).toContainEqual({ t: 'setKitGlobal', mirror: 'none' });
+  });
+
+  it('interleaves cleanly — undo peels the last edit first regardless of trigger/patch kind', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setKitMirror('x');
+    store.setOutput({ fps: 33 });
+    expect(store.undo()).toBe(true); // peels the fps edit
+    expect(store.project!.output.fps).not.toBe(33);
+    expect(store.project!.kit.global.mirror).toBe('x'); // the mirror edit still stands
+    expect(store.undo()).toBe(true); // peels the mirror edit
+    expect(store.project!.kit.global.mirror).toBe('none');
+  });
+});
+
 describe('offline (project null)', () => {
   it('still sends, writes nothing, and never throws', () => {
     const sent: ClientMessage[] = [];
