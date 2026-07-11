@@ -12,7 +12,6 @@ import {
   CANVAS_PARAM_SPEC,
   canvasEffectId,
   canvasSceneIdOf,
-  collectionMeta,
   type CanvasScene,
   type PlayType,
 } from '@ledrums/core';
@@ -138,9 +137,4 @@ export function parseCanvasSceneJson(id: string, text: string): SceneJsonResult 
   if (!Array.isArray(scene.elements)) return { ok: false, message: 'Scene elements must be an array.' };
   if (!scene.sampler || typeof scene.sampler !== 'object') return { ok: false, message: 'Scene sampler is required.' };
   return { ok: true, scene: scene as CanvasScene };
-}
-
-/** The gallery/palette label for a play type. */
-export function collectionLabel(type: PlayType): string {
-  return collectionMeta(type).label;
 }
