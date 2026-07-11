@@ -192,6 +192,48 @@ export function buildOutputHalf(
   return { nodes, edges };
 }
 
+/** True for the two output-half stages the graph re-derives; the input half + controller
+    sink are authored once at mount and never rebuilt. */
+function isOutputHalfStage(stage: PatchStage): boolean {
+  return stage === 'dataline' || stage === 'output';
+}
+
+/**
+ * Re-derive ONLY the output half (dataline → output + their edges) from an authoritative
+ * `routing`, splicing it back onto the CURRENT input half + controller sink. Drops every
+ * existing dataline/output node and any edge touching one, then appends a freshly built
+ * output half — so a half-applied local mutation (a partial rewire that threw mid-handler)
+ * is replaced wholesale by the canonical derivation, never left on the canvas. The position
+ * of any surviving output node (same id) is preserved so a forced rebuild doesn't fight a
+ * layout the user nudged.
+ *
+ * Pure: the view (`PatchGraphView.svelte`) is the only stateful consumer — it feeds its
+ * live `{ nodes, edges }` in and assigns the result back (adopting an external change, or
+ * self-healing after a guarded fault). Returned edges are plain (no `type` / hover class);
+ * the view re-stamps `type: 'wire'` and re-decorates uniformly.
+ */
+export function rebuildOutputHalf(
+  routing: PatchRouting,
+  current: { nodes: ReadonlyArray<PatchFlowNode>; edges: ReadonlyArray<PatchFlowEdge> },
+  layout: OutputHalfLayout,
+): { nodes: PatchFlowNode[]; edges: PatchFlowEdge[] } {
+  const rebuilt = buildOutputHalf(routing, layout);
+  const outHalfNodes = current.nodes.filter((n) => isOutputHalfStage(n.data.stage));
+  const posById = new Map(outHalfNodes.map((n) => [n.id, n.position]));
+  const oldOutIds = new Set(outHalfNodes.map((n) => n.id));
+  const outNodes = rebuilt.nodes.map((n) => {
+    const prev = posById.get(n.id);
+    return prev ? { ...n, position: prev } : n;
+  });
+  return {
+    nodes: [...current.nodes.filter((n) => !isOutputHalfStage(n.data.stage)), ...outNodes],
+    edges: [
+      ...current.edges.filter((e) => !oldOutIds.has(e.source) && !oldOutIds.has(e.target)),
+      ...rebuilt.edges,
+    ],
+  };
+}
+
 // --- graph → routing (the rewire read-back) ----------------------------------------
 
 /** Per-output transport scalars the graph does NOT author (channels + an optional
