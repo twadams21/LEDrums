@@ -12,7 +12,6 @@
 import {
   Sim,
   defaultParams,
-  defaultEnvelope,
   defaultAdsr,
   adsrToPoints,
   type AdsrShape,
@@ -53,7 +52,7 @@ import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smooth
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 import type { BlendMode, InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
 import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
-import { voice, listModifiers, canvasEffectId } from '@ledrums/core';
+import { voice, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
@@ -108,6 +107,8 @@ import {
   type WireRejection,
 } from './store/graph-wiring';
 import * as vsw from './store/value-switch';
+import * as penv from './store/param-envelope';
+import * as mg from './store/mod-graph';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
 import * as showsLib from './store/shows';
@@ -3585,7 +3586,7 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
-    node.params = { ...node.params, [key]: value };
+    node.params = penv.setParamValue(node.params, key, value);
   }
 
   /** Set the modifier a modifier node applies (its `modifierId`), seeding the new
@@ -3620,41 +3621,29 @@ export class TriggerLab {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
-    if (kind === 'none') delete node.env[key];
-    else node.env[key] = defaultEnvelope(kind);
+    node.env = penv.setEnvKind(node.env, key, kind);
   }
   setEnvAmount(node: GraphNode, key: string, amount: number): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!nodeHasParams(node)) return;
-    const e = node.env[key];
-    if (e) {
-      this.pushUndoSnapshot();
-      e.amount = amount;
-    }
+    if (!node.env[key]) return;
+    this.pushUndoSnapshot();
+    node.env = penv.setEnvAmount(node.env, key, amount);
   }
   /** Replace the curve breakpoints (marks the envelope as hand-edited / custom). */
   setEnvPoints(node: GraphNode, key: string, points: EnvPoint[]): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!nodeHasParams(node)) return;
-    const e = node.env[key];
-    if (!e) return;
+    if (!node.env[key]) return;
     this.pushUndoSnapshot();
-    e.points = points;
-    e.kind = 'custom';
+    node.env = penv.setEnvPoints(node.env, key, points);
   }
   /** Set the ADSR shape on a param's envelope (regenerates the render curve). */
   setEnvAdsr(node: GraphNode, key: string, adsr: AdsrShape): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
-    let e = node.env[key];
-    if (!e) {
-      e = { kind: 'custom', amount: 1, points: [] };
-      node.env[key] = e;
-    }
-    e.adsr = { ...adsr };
-    e.points = adsrToPoints(adsr);
-    e.kind = 'custom';
+    node.env = penv.setEnvAdsr(node.env, key, adsr);
   }
 
   // --- modulation graph layer (doc 10, S34) --------------------------------
@@ -3663,58 +3652,43 @@ export class TriggerLab {
       `{ key, label, min, max }` — effect params for play nodes, modifier params for modifier
       nodes (which use the core `type` spec field). Non-number params are excluded. */
   modTargetSpecs(node: GraphNode): { key: string; label: string; min?: number; max?: number }[] {
-    if (isEffectNode(node)) {
-      const eff = this.effectOf(node);
-      return (eff?.params ?? [])
-        .filter((s) => s.kind === 'number')
-        .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
-    }
-    if (node.kind === 'modifier') {
-      const def = listModifiers().find((m) => m.id === node.modifierId);
-      return (def?.paramSpec ?? [])
-        .filter((s) => s.type === 'number')
-        .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
-    }
-    return [];
+    return mg.modTargetSpecs(node, this.effectOf(node));
   }
 
   /** The ordered exposed modulation-target rows on a node. */
   modInputsOf(node: GraphNode): { param: string }[] {
-    return node.modInputs ?? [];
+    return mg.modInputsOf(node);
   }
 
   /** Numeric params not yet exposed — the "Add parameter" picker options. */
   availableModParams(node: GraphNode): { key: string; label: string }[] {
-    const exposed = new Set((node.modInputs ?? []).map((m) => m.param));
-    return this.modTargetSpecs(node)
-      .filter((s) => !exposed.has(s.key))
-      .map((s) => ({ key: s.key, label: s.label }));
+    return mg.availableModParams(node, this.effectOf(node));
   }
 
   /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
   addModInput(node: GraphNode, param: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!isEffectNode(node) && node.kind !== 'modifier') return;
-    if (!node.modInputs) node.modInputs = [];
-    if (node.modInputs.some((m) => m.param === param)) return;
+    const next = mg.addModInput(node.modInputs, param);
+    if (!next) return;
     this.pushUndoSnapshot();
-    node.modInputs.push({ param });
+    node.modInputs = next;
   }
 
   /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */
   removeModInput(node: GraphNode, param: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     this.pushUndoSnapshot();
-    node.modInputs = (node.modInputs ?? []).filter((m) => m.param !== param);
+    node.modInputs = mg.removeModInput(node.modInputs, param);
     const g = this.selectedGraph;
-    if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort === `param:${param}`));
+    if (g) g.edges = mg.edgesWithoutParamWires(g.edges, node.id, param);
   }
 
   /** The incoming mapping edges for a node's exposed param — one per wire, each editable. */
   mappingsFor(node: GraphNode, param: string): GraphEdge[] {
     const g = this.selectedGraph;
     if (!g) return [];
-    return g.edges.filter((e) => e.to === node.id && e.toPort === `param:${param}`);
+    return mg.mappingsFor(g.edges, node.id, param);
   }
 
   /** The resolved modulation SOURCES wired into an exposed param row, each with its edge's
@@ -3723,16 +3697,7 @@ export class TriggerLab {
   modSourcesFor(node: GraphNode, param: string): { source: voice.ModSource; invert: boolean }[] {
     const g = this.selectedGraph;
     if (!g) return [];
-    const out: { source: voice.ModSource; invert: boolean }[] = [];
-    for (const e of g.edges) {
-      if (e.to !== node.id || e.toPort !== `param:${param}`) continue;
-      const src = g.nodes.find((n) => n.id === e.from);
-      if (!src) continue;
-      const source = voice.nodeModSource(src);
-      if (!source) continue;
-      out.push({ source, invert: e.invert === true });
-    }
-    return out;
+    return mg.modSourcesFor(g.nodes, g.edges, node.id, param);
   }
 
   /** A `cc` source node's current live 0..1 level, read from the sim's CC table — or, when the
