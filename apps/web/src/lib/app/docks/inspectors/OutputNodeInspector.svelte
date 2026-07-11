@@ -72,7 +72,7 @@
         value={node.targetId ?? ''}
         options={targetOptions}
         onChange={(v) => store.setTargetId(node, v || undefined)}
-        placeholder="Auto (firing drum)"
+        placeholder="Auto (triggering drum)"
         ariaLabel="Output target"
       />
     </Field>
