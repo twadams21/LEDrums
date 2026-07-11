@@ -6,6 +6,7 @@ import {
   assertRoutingIntegrity,
   checkRoutingIntegrity,
   RoutingIntegrityError,
+  validateRouting,
 } from './routing-integrity';
 
 /** Build a kit with literal per-hoop counts + a topology, mirroring dmx-map.test.ts. */
@@ -125,6 +126,50 @@ describe('checkRoutingIntegrity', () => {
     const badHoop = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 4 }], [out('o1', [dl('o1:dl0', [seg('A', 0, 9)])])]);
     expect(checkRoutingIntegrity(badHoop)[0]!.code).toBe('hoop-out-of-range');
     expect(() => buildDmxMap(badHoop, buildPixelModel(badHoop))).toThrow(/invalid hoop range/);
+  });
+});
+
+describe('validateRouting (schema + integrity over raw input)', () => {
+  const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 4 }]);
+
+  it('passes a well-formed, resolvable topology', () => {
+    expect(validateRouting(k, [out('o1', [dl('o1:dl0', [seg('A', 0, 3)])])])).toEqual([]);
+  });
+
+  it('reports malformed shape as a distinct schema issue (channelsPerPixel 0)', () => {
+    const bad = [{ id: 'o1', channelsPerPixel: 0, dataLines: [{ id: 'd', segments: [seg('A')] }] }];
+    const issues = validateRouting(k, bad);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.code).toBe('schema');
+    expect(issues[0]!.path).toMatch(/channelsPerPixel/);
+  });
+
+  it('reports empty dataLines as a schema issue', () => {
+    const issues = validateRouting(k, [{ id: 'o1', channelsPerPixel: 3, dataLines: [] }]);
+    expect(issues[0]!.code).toBe('schema');
+  });
+
+  it('reports a negative hoop range as a schema issue (nonnegative-int shape)', () => {
+    const bad = [{ id: 'o1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'A', hoopStart: -1, hoopEnd: 2 }] }] }];
+    expect(validateRouting(k, bad)[0]!.code).toBe('schema');
+  });
+
+  it('falls through to integrity once the shape is valid (dangling ref, out-of-range hoop, fan-out)', () => {
+    expect(validateRouting(k, [out('o1', [dl('d', [seg('ghost')])])])[0]!.code).toBe('unknown-drum');
+    expect(validateRouting(k, [out('o1', [dl('d', [seg('A', 0, 9)])])])[0]!.code).toBe('hoop-out-of-range');
+    expect(
+      validateRouting(k, [out('o1', [dl('d0', [seg('A', 0, 0)]), dl('d1', [seg('A', 0, 0)])])])[0]!.code,
+    ).toBe('hoop-fan-out');
+  });
+
+  it('all four corruption classes carry a distinct code', () => {
+    const codes = new Set([
+      validateRouting(k, [{ id: 'o1', channelsPerPixel: 0, dataLines: [{ id: 'd', segments: [seg('A')] }] }])[0]!.code,
+      validateRouting(k, [out('o1', [dl('d', [seg('ghost')])])])[0]!.code,
+      validateRouting(k, [out('o1', [dl('d', [seg('A', 0, 9)])])])[0]!.code,
+      validateRouting(k, [out('o1', [dl('d0', [seg('A', 0, 0)]), dl('d1', [seg('A', 0, 0)])])])[0]!.code,
+    ]);
+    expect(codes).toEqual(new Set(['schema', 'unknown-drum', 'hoop-out-of-range', 'hoop-fan-out']));
   });
 });
 

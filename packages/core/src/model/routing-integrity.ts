@@ -18,21 +18,33 @@
  * (last write wins, earlier pixels lost), a corruption that "succeeds" into a wrong map.
  */
 
-import { drumHoopCount, type KitConfig, type OutputConfig } from '../geometry/kit-schema';
+import { drumHoopCount, kitSchema, type KitConfig, type OutputConfig } from '../geometry/kit-schema';
 import { kitDrumIds } from './integrity';
 
-/** The distinct routing-corruption classes a topology can carry. */
-export type RoutingIssueCode = 'unknown-drum' | 'hoop-out-of-range' | 'hoop-fan-out';
+/**
+ * The distinct routing-corruption classes a topology can carry:
+ * - `schema` — malformed shape (fails the kit output schema); located by {@link RoutingIssue.path}.
+ * - `unknown-drum` / `hoop-out-of-range` / `hoop-fan-out` — referential + structural, located by
+ *   the output/data-line/drum ids.
+ */
+export type RoutingIssueCode = 'schema' | 'unknown-drum' | 'hoop-out-of-range' | 'hoop-fan-out';
 
-/** One named routing problem, located to the offending output/data-line/segment. */
+/** One named routing problem. Locators are populated by class: a `schema` issue carries {@link path}
+ *  (the zod dot-path into the payload); the referential/structural classes carry the id triple. */
 export interface RoutingIssue {
   code: RoutingIssueCode;
   /** Human-readable, names the offending reference (mirrors buildDmxMap's throw text). */
   message: string;
-  outputId: string;
-  dataLineId: string;
-  drumId: string;
+  /** Dot-path into the outputs payload — present for `schema` issues. */
+  path?: string;
+  outputId?: string;
+  dataLineId?: string;
+  drumId?: string;
 }
+
+/** The schema that defines a well-formed output topology — reused from the kit schema so
+ *  "valid shape" has ONE definition across parse, gate, and this module. */
+const outputsSchema = kitSchema.shape.outputs;
 
 /** Thrown by {@link assertRoutingIntegrity}; carries every {@link RoutingIssue} found. */
 export class RoutingIntegrityError extends Error {
@@ -107,6 +119,24 @@ export function checkRoutingIntegrity(
   }
 
   return issues;
+}
+
+/**
+ * The full "define valid routing" entry: validate a RAW (untrusted) outputs payload — schema
+ * FIRST (malformed shape → `schema` issues, named by their zod path), and only if it is
+ * well-formed, the referential + structural checks against `kit`. Returns every named issue in
+ * one array (empty = valid). This is the single call the web patch editor (S11) and the server
+ * write-gate use so all four corruption classes surface through one module.
+ */
+export function validateRouting(kit: KitConfig, rawOutputs: unknown): RoutingIssue[] {
+  const parsed = outputsSchema.safeParse(rawOutputs);
+  if (!parsed.success) {
+    return parsed.error.issues.map((iss) => {
+      const path = iss.path.join('.') || 'outputs';
+      return { code: 'schema' as const, message: `${path} — ${iss.message}`, path };
+    });
+  }
+  return checkRoutingIntegrity(kit, parsed.data);
 }
 
 /**
