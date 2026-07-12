@@ -91,6 +91,31 @@ describe('buildOutputHalf', () => {
     expect(edges).toContainEqual(expect.objectContaining({ source: 'output:1', target: 'controller' }));
   });
 
+  it('never emits duplicate node/edge keys from a corrupt routing (each_key_duplicate guard)', () => {
+    // A shape-valid-but-integrity-invalid routing (reachable via paste / setProject bypass):
+    // the same hoop repeated within one data line, and two outputs sharing an id. Either would
+    // mint a duplicate flow key and crash SvelteFlow's keyed each — the builder must not.
+    const routing: PatchRouting = {
+      outputs: [
+        {
+          id: '1',
+          channelsPerPixel: 3,
+          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'a', hoop: 0 }] }],
+        },
+        { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'y', hoops: [{ drumId: 'b', hoop: 0 }] }] },
+      ],
+    };
+    const { nodes, edges } = buildOutputHalf(routing, LAYOUT);
+    expect(new Set(nodes.map((n) => n.id)).size).toBe(nodes.length); // all node ids unique
+    expect(new Set(edges.map((e) => e.id)).size).toBe(edges.length); // all edge ids unique
+    // the repeated hoop collapses to a single hoop→line edge, and the label counts it once
+    const dl = nodes.find((n) => n.data.stage === 'dataline')!;
+    expect(edges.filter((e) => e.source === 'hoop:a:1' && e.target === dl.id)).toHaveLength(1);
+    expect(dl.data.sub).toBe('1 hoops');
+    // the duplicate output id keeps only the first output node
+    expect(nodes.filter((n) => n.id === 'output:1')).toHaveLength(1);
+  });
+
   it('skips hoop→dataline edges for hoops with no node (hasHoop guard)', () => {
     const routing: PatchRouting = {
       outputs: [
@@ -133,6 +158,24 @@ describe('routingFromGraph', () => {
     const r = routingFromGraph(nodes, [edge('hoop:a:1', 'output:1')]);
     // default scalars are dense — no startUniverse emitted.
     expect(r.outputs).toEqual([{ id: '1', channelsPerPixel: 3, dataLines: [] }]);
+  });
+
+  it('collapses parallel hoop→line edges so a line never commits the same hoop twice', () => {
+    // Two edges from one hoop into the same data line (a transiently-corrupt graph). The
+    // read-back must list the hoop once — else it commits a routing that crashes the next
+    // buildOutputHalf and drives a wrong pixel map into the engine.
+    const nodes: PatchFlowNode[] = [
+      node('hoop:a:1', 'hoop', 0, 0),
+      node('dataline:1', 'dataline', 0, 1000),
+      node('output:1', 'output', 0, 1200),
+    ];
+    const edges = [
+      edge('hoop:a:1', 'dataline:1'),
+      { id: 'e:hoop:a:1->dataline:1:dup', source: 'hoop:a:1', target: 'dataline:1' },
+      edge('dataline:1', 'output:1'),
+    ];
+    const r = routingFromGraph(nodes, edges);
+    expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([{ drumId: 'a', hoop: 0 }]);
   });
 
   it('reads per-output scalars via getScalars (default = dense, no startUniverse)', () => {

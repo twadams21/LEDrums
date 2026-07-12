@@ -154,8 +154,15 @@ export function buildOutputHalf(
   const lines: Array<{ nodeId: string; ownerNodeId: string; hoops: HoopRef[] }> = [];
   const outputs: Array<{ nodeId: string; lineNodeIds: string[] }> = [];
   let lineCounter = 0;
+  const seenOutputNodeIds = new Set<string>();
   for (const output of routing.outputs) {
     const oNodeId = outputNodeId(output.id);
+    // Two outputs sharing an id would mint the same output node id (and `output→controller`
+    // edge id) twice → SvelteFlow's keyed each throws `each_key_duplicate` and the whole
+    // canvas dies. A shape-valid-but-integrity-invalid routing (pasted / setProject-bypassed)
+    // can carry a duplicate id, so keep the FIRST and skip the rest here rather than crash.
+    if (seenOutputNodeIds.has(oNodeId)) continue;
+    seenOutputNodeIds.add(oNodeId);
     const lineNodeIds: string[] = [];
     for (const dl of output.dataLines) {
       const nodeId = dataLineNodeId(String(++lineCounter));
@@ -172,9 +179,20 @@ export function buildOutputHalf(
   // dataline nodes + their incoming hoop edges
   lines.forEach((l, i) => {
     const y = lineYs[i]!;
-    nodes.push(flowNode(l.nodeId, 'dataline', `Data Line ${i + 1}`, `${l.hoops.length} hoops`, layout.colDataline, y));
+    // A hoop can only sit on a line once. Dedupe before emitting so a corrupt routing (the
+    // same hoop repeated within one data line — reachable via a shape-valid-but-integrity-
+    // invalid paste / setProject) can't emit two edges with the identical `hoop->line` id and
+    // crash SvelteFlow's keyed each (`each_key_duplicate`). Count reflects the deduped set.
+    const hoopIds: string[] = [];
+    const seenHoopIds = new Set<string>();
     for (const ref of l.hoops) {
       const hId = hoopNodeId(ref);
+      if (seenHoopIds.has(hId)) continue;
+      seenHoopIds.add(hId);
+      hoopIds.push(hId);
+    }
+    nodes.push(flowNode(l.nodeId, 'dataline', `Data Line ${i + 1}`, `${hoopIds.length} hoops`, layout.colDataline, y));
+    for (const hId of hoopIds) {
       if (layout.hasHoop && !layout.hasHoop(hId)) continue;
       edges.push(flowEdge(hId, l.nodeId));
     }
@@ -284,7 +302,13 @@ export function routingFromGraph(
     const id = parseOutputNodeId(oNodeId) ?? oNodeId;
     const dataLines: DataLine[] = sourcesInto(oNodeId, 'dataline').map((lineId, lineIndex) => {
       const hoops: HoopRef[] = [];
+      const seenHoopIds = new Set<string>();
       for (const hId of sourcesInto(lineId, 'hoop')) {
+        // A hoop feeds a line once — collapse any parallel hoop→line edges so the read-back
+        // never commits a routing that lists the same hoop twice on a line (which would then
+        // crash the render on the next buildOutputHalf, and drives wrong pixel maps downstream).
+        if (seenHoopIds.has(hId)) continue;
+        seenHoopIds.add(hId);
         const ref = parseHoopNodeId(hId);
         if (ref) hoops.push(ref);
       }
