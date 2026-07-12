@@ -245,9 +245,13 @@
     stroke-width: 3;
     filter: drop-shadow(0 0 4px color-mix(in oklch, var(--accent) 60%, transparent));
   }
-  /* the modulation input handle keeps the modulation role colour so the param port reads by
-     role; the trigger / effect / mod flow handles stay the neutral grey handle below. */
-  .gcanvas :global(.svelte-flow__handle.param-handle) {
+  /* the modulation ports keep the modulation role colour so they read by role: the param
+     INPUT (`param-handle`) and the modulation-source OUTPUT (`mod-source-handle`). Both carry
+     the `.svelte-flow__handle` + role class, so this two-class selector outweighs the neutral
+     grey base rule below (which the source handle's own scoped rule only tied on specificity).
+     The trigger / effect / mod flow handles stay the neutral grey handle below. */
+  .gcanvas :global(.svelte-flow__handle.param-handle),
+  .gcanvas :global(.svelte-flow__handle.mod-source-handle) {
     background: color-mix(in oklch, var(--role-modulation) 30%, var(--surface-2));
     border-color: var(--role-modulation);
   }

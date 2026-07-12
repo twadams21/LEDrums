@@ -242,7 +242,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 34%' : 'top: 50%'} />
+    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 35%' : 'top: 50%'} />
   {/if}
   {#if nodeHasModInput(kind)}
     <Handle
@@ -251,7 +251,7 @@
       position={Position.Left}
       class="mod-handle"
       aria-label="Modifier chain in"
-      style={nodeHasInput(kind) ? 'top: 72%' : 'top: 50%'}
+      style={nodeHasInput(kind) ? 'top: 65%' : 'top: 50%'}
     />
   {/if}
   {#if nodeHasOutput(kind)}
@@ -458,10 +458,12 @@
   border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
 }
 
+/* the modulation OUTPUT handle mirrors the param INPUT handle's -12px role offset and sits at
+   the node's vertical centre (a mod-source node has no other handle to share the face with).
+   Its role colour is owned by GraphCanvas (`.mod-source-handle`) so it beats the grey base. */
 .tnode :global(.mod-source-handle) {
   right: -12px;
-  background: var(--role-modulation);
-  border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
+  top: 50%;
 }
 
 .mixrow :global(.mix-handle) {
