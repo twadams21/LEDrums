@@ -472,6 +472,36 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid)' }));
   });
 
+  it('rejects a schema-valid but routing-invalid patch (hoop fan-out) with zero apply (F1)', () => {
+    const { handle, join, host, autosaver, monitor } = harness();
+    const editor = join();
+    const before = host.engine.getProject();
+
+    // A shape-valid ClipDoc whose kit.outputs fans kick hoop 0 across two data lines — the exact
+    // corruption setKitOutputs already rejects, now gated on the bulk re-rig path too. Validated
+    // against the patch's OWN kit drums (default kick = 4 hoops).
+    const fanOut = [
+      {
+        id: 'out1',
+        channelsPerPixel: 3,
+        dataLines: [
+          { id: 'd0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] },
+          { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] },
+        ],
+      },
+    ];
+    const patch = { name: 'Rig B', kit: { ...before.kit, outputs: fanOut }, inputMap: before.inputMap, output: before.output };
+
+    handle({ t: 'setProject', patch } as unknown as ClientMessage, editor);
+
+    const err = editor.sent.find((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
+    expect(err?.message).toMatch(/Invalid patch outputs/);
+    expect(editor.sent.some((m) => m.t === 'state')).toBe(false); // no broadcast
+    expect(autosaver.markDirty).not.toHaveBeenCalled(); // not persisted
+    expect(host.engine.getProject()).toEqual(before); // zero apply
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid routing)' }));
+  });
+
   it('bulk-adopts the same slices into the voice host (single kit reload)', () => {
     const { handle, join, host, voiceHost } = voiceHarness();
     const editor = join();

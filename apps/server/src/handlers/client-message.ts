@@ -308,6 +308,28 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         return;
       }
       const patch = parsed.data;
+      // F1: schema shape is not enough. Gate the patch's OWN routing through the same core
+      // validator `setKitOutputs` uses — against the patch's NEW kit drums, since a bulk re-rig
+      // replaces the kit wholesale. Without this, a pasted ClipDoc carrying a hoop fan-out (or a
+      // dangling drum ref) is applied, broadcast, and autosaved with no error and — for fan-out —
+      // no degradation event either (buildDmxMap silently overwrites), leaving the server
+      // disagreeing with itself across its two write paths. Reject with the same reply/monitor
+      // contract and ZERO state touched. (The editor also rejects fan-out at connect time; this
+      // renders the resulting corrupt routing crash-proof regardless — see patch-graph dedupe.)
+      const routingIssues = validateRouting(patch.kit, patch.kit.outputs);
+      if (routingIssues.length) {
+        const first = routingIssues[0]!;
+        ws.send(encodeServer({ t: 'error', message: `Invalid patch outputs: ${first.message}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Patch rejected (invalid routing)',
+          detail: first.message,
+        });
+        return;
+      }
       const cur = host.engine.getProject();
       host.engine.setProject({
         ...cur,
