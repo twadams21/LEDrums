@@ -16,7 +16,6 @@ import {
   type ParamSpec,
   type PlayMode,
   type Preset,
-  type Scope,
   type Section,
 } from './sim';
 
@@ -45,9 +44,6 @@ const bandsP = (def: number): ParamSpec => ({ key: 'bands', label: 'Bands', kind
 const angleP: ParamSpec = { key: 'angle', label: 'Angle', kind: 'number', min: 0, max: 360, step: 5, unit: '°', default: 0, envable: true };
 const widthP: ParamSpec = { key: 'width', label: 'Width', kind: 'number', min: 0.04, max: 0.4, step: 0.01, default: 0.13, envable: true };
 const densityP: ParamSpec = { key: 'density', label: 'Density', kind: 'number', min: 0.05, max: 1, step: 0.05, default: 0.3, envable: true };
-
-/** Common parameters the effect creator offers to include on a new effect. */
-export const PARAM_LIBRARY: ParamSpec[] = [hueP(200), briP, speedP, syncP, bandsP(3), angleP, widthP, densityP];
 
 // The 10 hand-rolled per-pixel pattern effects were RETIRED in U3 (Effects Library v2):
 // each was aliased onto its generator equivalent (core `aliases.ts`) and the whole legacy
@@ -146,10 +142,6 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
 export const EFFECTS: EffectDef[] = [...GENERATOR_EFFECTS];
 
 const effectById = new Map(EFFECTS.map((e) => [e.id, e] as const));
-
-export function effectScope(effectId: string): Scope {
-  return effectById.get(effectId)?.scope ?? 'drum';
-}
 
 // ---- presets ----------------------------------------------------------------
 const slug = (s: string) => s.toLowerCase().replace(/\s+/g, '-');

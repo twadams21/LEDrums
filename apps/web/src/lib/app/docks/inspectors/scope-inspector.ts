@@ -22,15 +22,12 @@ export function hoopLabel(index: number): string {
 }
 
 export function parseHoopTarget(targetId: string | undefined, fallbackDrumId: string): { drumId: string; hoops: number[] } {
-  if (!targetId || !targetId.includes('#')) return { drumId: fallbackDrumId, hoops: [0] };
-  const sep = targetId.indexOf('#');
-  const drumId = targetId.slice(0, sep) || fallbackDrumId;
-  const hoops = targetId
-    .slice(sep + 1)
-    .split(',')
-    .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v >= 0);
-  return { drumId, hoops: [...new Set(hoops)].sort((a, b) => a - b) };
+  const { drumId, hoopIndices } = voice.parseHoopTarget(targetId, fallbackDrumId, {
+    sourceDrumOnNoHash: true,
+    emptyFallback: 'none',
+    sort: true,
+  });
+  return { drumId: drumId ?? fallbackDrumId, hoops: hoopIndices };
 }
 
 export function encodeHoopTarget(drumId: string, hoops: readonly number[]): string {

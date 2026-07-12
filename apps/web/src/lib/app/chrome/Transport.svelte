@@ -62,7 +62,7 @@
     </label>
   {/if}
 
-  <button class="panic" type="button" onclick={() => store.panic()} title="Release every voice">
+  <button class="panic" type="button" onclick={() => store.panic()} title="Stop all playback">
     <Square size={11} aria-hidden="true" /> Stop all
   </button>
 </div>

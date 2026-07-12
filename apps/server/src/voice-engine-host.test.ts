@@ -218,6 +218,82 @@ describe('VoiceEngineHost', () => {
     expect(after).not.toBe(before);
   });
 
+  // --- S07: routing degradation is reported, not silent ---
+  /** A schema-typed output topology whose segment references a drum the kit lacks — buildDmxMap
+   * throws on it, so buildMapSafe must degrade to a flat map AND name the offending reference. */
+  const danglingOutputs = [
+    { id: 'out0', channelsPerPixel: 3, dataLines: [{ id: 'out0:dl0', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] },
+  ];
+
+  it('reports a routing degradation as a named Monitor error before falling back to a flat map', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+
+    // A corrupt topology set live: buildDmxMap throws → buildMapSafe degrades, now loudly.
+    host.setKitOutputs(danglingOutputs);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        direction: 'local',
+        source: 'server/voice',
+        destination: 'routing',
+        label: 'Routing topology invalid — degraded to flat map',
+        detail: expect.stringContaining('unknown drum "ghost"'),
+      }),
+    );
+    // Still usable: the flat fallback patches every pixel exactly once.
+    expect(host.getDmxMap().perPixel.filter(Boolean)).toHaveLength(host.getModel().pixelCount);
+  });
+
+  it('buffers a construction-time degradation and flushes it when a monitor connects (boot path)', () => {
+    // A persisted project whose kit carries a corrupt topology degrades in the constructor —
+    // before any monitor sink exists. The diagnostic must survive until setMonitor wires one.
+    const p = defaultProject();
+    p.kit.outputs = danglingOutputs;
+    const host = new VoiceEngineHost(p);
+
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event)); // connects AFTER construction
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        destination: 'routing',
+        detail: expect.stringContaining('unknown drum "ghost"'),
+      }),
+    );
+  });
+
+  it('does not report a degradation when routing is valid, and clears a prior one on recovery', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+
+    // Valid outputs → no degradation event.
+    const model = host.getModel();
+    const validOutputs = [
+      {
+        id: 'out0',
+        channelsPerPixel: 3,
+        dataLines: [
+          {
+            id: 'out0:dl0',
+            segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 0, hoopEnd: d.hoopCount - 1 })),
+          },
+        ],
+      },
+    ];
+    host.setKitOutputs(validOutputs);
+    expect(events.filter((e) => (e as { destination?: string }).destination === 'routing')).toHaveLength(0);
+
+    // Degrade, then recover — a second valid set must not re-emit the stale diagnostic.
+    host.setKitOutputs(danglingOutputs);
+    host.setKitOutputs(validOutputs);
+    expect(events.filter((e) => (e as { destination?: string }).destination === 'routing')).toHaveLength(1);
+  });
+
   // --- U3: trigger-source routing (zone-map precedence + direct bindings) ---
   // A play-on-`busId` graph whose trigger carries `source`; the bus that lights tells us
   // which graph fired. defaultProject maps note 36 → kick/center and OSC /sp/* → pads, so

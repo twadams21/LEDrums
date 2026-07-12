@@ -64,7 +64,7 @@ describe('system-action toasts on load', () => {
     new TriggerLab(fakeClient);
 
     expect(toastStore.items).toHaveLength(1);
-    expect(toastStore.items[0]!.message).toContain('updated to the Gen3 schema');
+    expect(toastStore.items[0]!.message).toContain('Graph updated');
     expect(toastStore.items[0]!.message).toContain('wired up to the Output anchor');
   });
 
@@ -75,7 +75,7 @@ describe('system-action toasts on load', () => {
 
     expect(toastStore.items).toHaveLength(1);
     expect(toastStore.items[0]!.message).toBe(
-      '3 graphs updated to the Gen3 schema. 3 nodes were wired up to the Output anchor.',
+      '3 graphs updated. 3 nodes were wired up to the Output anchor.',
     );
   });
 

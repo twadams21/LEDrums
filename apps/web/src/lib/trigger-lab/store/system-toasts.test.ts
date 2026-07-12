@@ -16,19 +16,19 @@ describe('describeSystemActions', () => {
 
   it('announces a single migration + auto-wire in plain language', () => {
     expect(describeSystemActions({ migratedGraphs: 1, autoWiredNodes: 1 })).toBe(
-      'Graph updated to the Gen3 schema. A node was wired up to the Output anchor.',
+      'Graph updated. A node was wired up to the Output anchor.',
     );
   });
 
   it('pluralises and batches several graphs into one sentence', () => {
     expect(describeSystemActions({ migratedGraphs: 3, autoWiredNodes: 5 })).toBe(
-      '3 graphs updated to the Gen3 schema. 5 nodes were wired up to the Output anchor.',
+      '3 graphs updated. 5 nodes were wired up to the Output anchor.',
     );
   });
 
   it('announces migration alone when nothing needed auto-wiring', () => {
     expect(describeSystemActions({ migratedGraphs: 2, autoWiredNodes: 0 })).toBe(
-      '2 graphs updated to the Gen3 schema.',
+      '2 graphs updated.',
     );
   });
 });
@@ -40,7 +40,7 @@ describe('announceSystemActions', () => {
     expect(toastStore.items).toHaveLength(1);
     expect(toastStore.items[0]).toMatchObject({
       tone: 'info',
-      message: '2 graphs updated to the Gen3 schema. A node was wired up to the Output anchor.',
+      message: '2 graphs updated. A node was wired up to the Output anchor.',
     });
   });
 

@@ -1,4 +1,4 @@
-import { projectPatchSchema } from '@ledrums/core';
+import { projectPatchSchema, validateRouting } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
@@ -329,6 +329,31 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       broadcastJson(stateMessage());
       autosaver.markDirty();
       return;
+    }
+
+    // S01+S07: gate `setKitOutputs` through the core routing validator BEFORE any state is
+    // touched — the granular sibling of the `setProject` gate above. `validateRouting` covers
+    // ALL corruption classes in one pass: malformed shape (schema — channelsPerPixel 0, empty
+    // dataLines, negative hoop range), plus routing integrity against the CURRENT kit's drums
+    // (dangling drum ref, out-of-range hoop, hoop fan-out across data lines). Any issue is a
+    // user-visible `error` reply with ZERO state applied, so the last-known-good routing stays
+    // live; valid payloads fall through to the existing apply path unchanged. buildDmxMap would
+    // otherwise throw (→ silent flat-map) or silently overwrite a fanned-out pixel.
+    if (msg.t === 'setKitOutputs') {
+      const issues = validateRouting(host.engine.getProject().kit, msg.outputs);
+      if (issues.length) {
+        const first = issues[0]!;
+        ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Outputs rejected (invalid)',
+          detail: first.message,
+        });
+        return;
+      }
     }
 
     // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the voice-only

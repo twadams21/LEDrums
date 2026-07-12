@@ -17,6 +17,8 @@
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
   import ControllerStatusPanel from '../../app/docks/inspectors/ControllerStatusPanel.svelte';
+  import AdoptByIpRow from '../../app/docks/inspectors/AdoptByIpRow.svelte';
+  import UniverseRxTable from '../../app/docks/inspectors/UniverseRxTable.svelte';
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
@@ -361,6 +363,27 @@
     </DemoCard>
 
     <DemoCard
+      title="Adopt-by-IP row"
+      src="lib/app/docks/inspectors/AdoptByIpRow"
+      note="Extracted from the controller panel: a labelled IP input + Adopt, for connecting to a known controller Discover can't see. The placeholder seeds from the recommended IP so the 'set the box, then adopt it' flow reads in one glance; the Adopt button stays disabled until a host is typed. Pure — draft in, host out via onAdopt."
+    >
+      <div class="adopt-demo">
+        <AdoptByIpRow recommendedIp={ctrlRecommendation.recommendedIp} onAdopt={noop} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Universe rx table"
+      src={['lib/app/docks/inspectors/UniverseRxTable', 'lib/app/docks/inspectors/output-status']}
+      note="Extracted from the controller panel: per-universe receive status — number, protocol, and grouped good/bad packet counts (+ priority). A dead universe tints its whole row in the live family so a single bad one is unmissable. Pure — the universe list in, nothing out; renders nothing when empty."
+    >
+      <div class="uni-demo">
+        <UniverseRxTable universes={ctrlReceiving.universes} />
+        <UniverseRxTable universes={ctrlNotReceiving.universes} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Inspector control rows"
       src={['lib/app/docks/inspectors/ReadRow', 'lib/app/docks/inspectors/RenameField']}
       note="The per-node editor vocabulary: RenameField (label override), Field-wrapped controls, ReadRow read-outs (mono, right-aligned, tabular)."
@@ -470,6 +493,15 @@
   .readrows {
     display: flex;
     flex-direction: column;
+  }
+  .adopt-demo {
+    max-width: 300px;
+  }
+  .uni-demo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-width: 300px;
   }
   .monitor-demo {
     height: 260px;

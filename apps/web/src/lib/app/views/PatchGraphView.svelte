@@ -35,15 +35,17 @@
     type PatchFlowNode,
     type PatchStage,
   } from '../patch-topology';
-  import { outputsToPatch, patchToOutputs } from '../patch-routing';
+  import { hasHoopFanOut, outputsToPatch, patchToOutputs } from '../patch-routing';
   import {
     buildOutputHalf,
     defaultRouting,
     outputsSignature,
+    rebuildOutputHalf,
     routingFromGraph,
     routingSignature,
     type OutputScalars,
   } from '../patch-graph';
+  import type { PatchRouting } from '../patch-routing';
   import PatchNode from './PatchNode.svelte';
   import PatchClipboardToolbar from './PatchClipboardToolbar.svelte';
 import PatchMirrorControl from './PatchMirrorControl.svelte';
@@ -59,6 +61,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   import { guardFlowCallback } from './flow-guard';
   import { nodeIdAtEvent } from './flow-dom';
   import PanelHeader from '../../ui/PanelHeader.svelte';
+  import { pushToast } from '../../ui/toast.svelte';
   import Cable from '@lucide/svelte/icons/cable';
   import Plug from '@lucide/svelte/icons/plug';
 
@@ -103,7 +106,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       position: pos,
       initialWidth: NODE_W,
       initialHeight: NODE_H,
-      data: { label, sub: 'new — wire it up', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
+      data: { label, sub: 'Connect this device', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
     };
     nodes = [...nodes, node];
   }
@@ -121,7 +124,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       key: 'devices',
       label: 'Devices',
       items: [
-        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'pixel run' },
+        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'LED run' },
         { id: 'output', name: 'Output', icon: Plug, tint: DEVICE_ROLE.output, hint: 'controller port' },
       ],
     },
@@ -135,22 +138,58 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     addDevice(id as 'dataline' | 'output', c.x, c.y);
   }
 
-  /** Reject self-loops and exact duplicate wires; otherwise accept (xyflow applies
-      the default `wire` type so the new edge is reconnectable). */
+  /** Plain-language reason for a refused fan-out wire — states what's wrong, no jargon
+      (mirrors the Trigger graph's wire-toast copy conventions: one toast, one event). */
+  const FANOUT_REJECTION_MESSAGE =
+    "That hoop is already on a data line — a hoop can only drive one. Move its wire instead of adding a second.";
+
+  /** Does the given PROSPECTIVE edge set drive any hoop from two data lines? Reads it back
+      to a routing and asks S07's core rule (`hasHoopFanOut`) — one rule definition shared with
+      the server backstop, never restated here. The live routing is kept fan-out-free (the two
+      connect guards below + the backstop), so a prospective fan-out is always the pending
+      mutation. Both the add path (`wouldFanOut`) and the re-point path (`onReconnect`) feed
+      their candidate edge set through here so a connect gesture the engine would refuse is
+      refused editor-side first. `kit` falls back to `DEFAULT_KIT` when the project is offline. */
+  function edgesFanOut(prospective: PatchFlowEdge[]): boolean {
+    const routing = routingFromGraph(nodes, prospective, scalarsFor, lineUniverseFor);
+    return hasHoopFanOut(store.project?.kit ?? DEFAULT_KIT, routing);
+  }
+
+  /** Would ADDING the wire `c` fan a hoop onto a second data line? Probes the edge set with `c`
+      appended (a NEW connect). The re-point path has its own guard in {@link onReconnect}. */
+  function wouldFanOut(c: Connection): boolean {
+    if (!c.source || !c.target) return false;
+    const probe: PatchFlowEdge = { id: 'probe:fanout', source: c.source, target: c.target };
+    return edgesFanOut([...edges, probe]);
+  }
+
+  /** Reject self-loops, exact duplicate wires, and fan-outs (a hoop wired to a second data
+      line — S07's rule, enforced editor-side); otherwise accept (xyflow applies the default
+      `wire` type so the new edge is reconnectable). A fan-out is the one rejection the user
+      might not expect, so it surfaces the established error wire-toast; the structural
+      self/dup rejects stay silent (they can't be produced by a deliberate gesture). */
   function onBeforeConnect(c: Connection): Connection | false {
     if (!c.source || !c.target || c.source === c.target) return false;
     if (edges.some((e) => e.source === c.source && e.target === c.target)) return false;
+    if (wouldFanOut(c)) {
+      pushToast(FANOUT_REJECTION_MESSAGE, { tone: 'error' });
+      return false;
+    }
     return c;
   }
 
   /** Group-A flow-guard hardening extended to the Patch graph (phase-2 item 1c): a throw
       inside an xyflow event callback becomes a reported fault (console + Monitor error
-      event) instead of propagating into xyflow's internals and freezing the canvas. */
+      event) AND a self-healing rebuild — mirroring TriggerGraphView's guard — instead of
+      propagating into xyflow's internals and freezing the canvas with a half-applied local
+      mutation on screen (S02). The rebuild re-derives the output half from the authoritative
+      project outputs; the input half + controller sink are untouched. */
   function guard<A extends unknown[]>(where: string, fn: (...args: A) => void): (...args: A) => void {
     return guardFlowCallback(where, fn, (w, err) => {
       const detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
       console.error(`[patch-graph] ${w} failed`, err);
       store.reportError('patch-graph', w, detail);
+      forceRebuild();
     });
   }
 
@@ -183,8 +222,14 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     commitRouting();
   }
 
-  /** Re-point an existing wire (a reconnect-anchor drag). Rejects self / controller-as-
-      source / input-as-target, then updates the ephemeral edge in place + recompiles. */
+  /** Re-point an existing wire (a reconnect-anchor drag re-points EITHER end). Rejects self /
+      controller-as-source / input-as-target, an exact duplicate of another wire, and a fan-out:
+      dragging the HOOP end onto a hoop that already drives a data line puts that hoop on TWO
+      lines — a connect-gesture fan-out (S07's rule) the server would refuse, and the local
+      project + canvas would durably hold the refused edit (the adopt $effect sees local ==
+      lastSig, no snap-back). So the re-point runs the SAME fan-out guard as a new connect. On
+      any rejection, snap the anchor back to the unchanged wire and do not recompile; otherwise
+      update the ephemeral edge in place + recompile. */
   function onReconnect(oldEdge: { id: string }, conn: Connection): void {
     if (!conn.source || !conn.target || conn.source === conn.target) {
       edges = hover.decorate([...edges]); // snap the anchor back to the unchanged wire
@@ -194,9 +239,20 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       edges = hover.decorate([...edges]);
       return;
     }
-    edges = hover.decorate(
-      edges.map((e) => (e.id === oldEdge.id ? { ...e, source: conn.source!, target: conn.target! } : e)),
+    // An exact duplicate of a DIFFERENT existing wire — snap back (a no-op re-point).
+    if (edges.some((e) => e.id !== oldEdge.id && e.source === conn.source && e.target === conn.target)) {
+      edges = hover.decorate([...edges]);
+      return;
+    }
+    const prospective = edges.map((e) =>
+      e.id === oldEdge.id ? { ...e, source: conn.source!, target: conn.target! } : e,
     );
+    if (edgesFanOut(prospective)) {
+      pushToast(FANOUT_REJECTION_MESSAGE, { tone: 'error' });
+      edges = hover.decorate([...edges]); // snap back — the engine would refuse this re-point
+      return;
+    }
+    edges = hover.decorate(prospective);
     commitRouting();
   }
 
@@ -298,30 +354,39 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   // nodes/edges change: add, wire, reorder-by-drag, delete).
   const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor));
 
-  const isOutHalf = (s: PatchStage): boolean => s === 'dataline' || s === 'output';
-  /** Rebuild ONLY the output half (dataline → output → controller) from an authoritative
-      `OutputConfig[]`, leaving the input half + controller sink and their edges intact. The
-      position of any surviving output-half node (same id) is preserved so adopting an external
-      change doesn't fight a layout the user has nudged (memory: locked graph UX). */
-  function adoptOutputs(outputs: OutputConfig[]): void {
-    const rebuilt = buildOutputHalf(outputsToPatch(outputs), {
+  /** Splice a freshly-derived output half onto the live input half, re-stamping the wire
+      type and re-decorating uniformly. The node/edge splice math is the pure, unit-tested
+      `rebuildOutputHalf`; this binds it to the view's reactive `nodes`/`edges` + hover. */
+  function applyOutputHalf(routing: PatchRouting): void {
+    const rebuilt = rebuildOutputHalf(routing, { nodes, edges }, {
       colDataline,
       colOutput,
       controllerId: CONTROLLER_ID,
       midY,
       hasHoop: (id) => hoopIds.has(id),
     });
-    const posById = new Map(nodes.filter((n) => isOutHalf(n.data.stage)).map((n) => [n.id, n.position]));
-    const oldOutIds = new Set(nodes.filter((n) => isOutHalf(n.data.stage)).map((n) => n.id));
-    const outNodes = rebuilt.nodes.map((n) => {
-      const prev = posById.get(n.id);
-      return prev ? { ...n, position: prev } : n;
-    });
-    nodes = [...nodes.filter((n) => !isOutHalf(n.data.stage)), ...outNodes];
-    edges = hover.decorate([
-      ...edges.filter((e) => !oldOutIds.has(e.source) && !oldOutIds.has(e.target)),
-      ...rebuilt.edges.map((e) => ({ ...e, type: 'wire' as const })),
-    ]);
+    nodes = rebuilt.nodes;
+    edges = hover.decorate(rebuilt.edges.map((e) => ({ ...e, type: 'wire' as const })));
+  }
+
+  /** Rebuild ONLY the output half (dataline → output → controller) from an authoritative
+      `OutputConfig[]`, leaving the input half + controller sink and their edges intact
+      (positions of surviving output nodes preserved so an external change doesn't fight a
+      layout the user has nudged — memory: locked graph UX). */
+  function adoptOutputs(outputs: OutputConfig[]): void {
+    applyOutputHalf(outputsToPatch(outputs));
+  }
+
+  /** Self-heal after a guarded fault: drop any half-applied local mutation by re-deriving the
+      output half from the authoritative project outputs (or the default chunk when the project
+      declares none), so a thrown handler heals in place instead of leaving a stale/blank canvas
+      until a page refresh (S02, mirrors TriggerGraphView.forceRebuild). `lastSig` is synced to
+      the rebuilt routing so the cold-load adopt $effect sees no divergence and stays quiet. */
+  function forceRebuild(): void {
+    const outputs = store.project?.kit.outputs ?? [];
+    const routing = outputs.length ? outputsToPatch(outputs) : defaultRouting(topoDrums);
+    applyOutputHalf(routing);
+    lastSig = routingSignature(routing);
   }
 
   // COLD-LOAD ADOPT: the output half is seeded ONCE at mount from `untrack`ed outputs — null on

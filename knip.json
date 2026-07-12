@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "apps/web/src/design-system.ts",
+    "apps/web/src/lib/app/shot-seam.ts",
+    "apps/desktop/shell/main.js",
+    "scripts/pixlite-probe.mjs",
+    "apps/web/scripts/contrast-check.mjs"
+  ]
+}
