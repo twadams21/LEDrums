@@ -1,6 +1,6 @@
 {
   "name": "ledrums",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "description": "LEDrums — real-time generative lighting engine and content authoring app for a 3D LED-pixel drum kit.",
   "type": "module",
