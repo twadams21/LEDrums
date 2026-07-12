@@ -1,6 +1,6 @@
 {
   "name": "@ledrums/desktop",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "type": "module",
   "description": "LEDrums desktop shell (Tauri 2): bundles the server as a sidecar + the web UI, surfaces the share URL/PIN natively.",
