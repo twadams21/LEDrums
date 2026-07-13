@@ -23,8 +23,16 @@ export const STORAGE_KEY = 'ledrums:authored:v1';
 
 /** Payload schema version. Bump only on an INCOMPATIBLE change to an existing
     field; additive fields are tolerated by deserialize without a bump. Older
-    payloads then fail the version gate and are ignored (boot falls back to seed). */
-export const VERSION = 1;
+    payloads then fail the version gate and are ignored (boot falls back to seed) —
+    EXCEPT the migratable prior version {@link AUTHORED_PRIOR_VERSION}, which is
+    accepted and upgraded in place rather than discarded.
+    v2 (B6/A1): hoop-scoped effect targetIds moved 0-based → 1-based. A v1 blob is
+    accepted and its hoop targetIds shifted +1 on load (see {@link migrateAuthoredHoopTargets}). */
+export const VERSION = 2;
+
+/** The one prior version {@link deserializeAuthored} still accepts, upgrading it on load instead
+    of discarding it (protects a returning user's authored dev shows across the A1 1-based cutover). */
+export const AUTHORED_PRIOR_VERSION = 1;
 
 /** The persisted slice of the store — AUTHORED content only (never transient
     voice/frame/link/transport-playing state). */
@@ -88,9 +96,12 @@ const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Num
  */
 export function deserializeAuthored(raw: unknown): Partial<AuthoredState> | null {
   if (!isObject(raw)) return null;
-  if (raw.version !== VERSION) return null;
+  if (raw.version !== VERSION && raw.version !== AUTHORED_PRIOR_VERSION) return null;
   if (!isObject(raw.data)) return null;
-  return coerceAuthored(raw.data);
+  const coerced = coerceAuthored(raw.data);
+  // v1 → v2: shift 0-based hoop targetIds +1 (A1 1-based cutover). Version-gated so a v2 blob is
+  // never re-shifted — the store re-saves at VERSION after load, making a subsequent boot a no-op.
+  return raw.version === AUTHORED_PRIOR_VERSION ? migrateAuthoredHoopTargets(coerced) : coerced;
 }
 
 /**
@@ -140,6 +151,65 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   if (isFiniteNumber(data.beatsPerBar)) out.beatsPerBar = data.beatsPerBar;
 
   return out;
+}
+
+// ---- B6 back-compat: 0-based hoop targetIds → 1-based (A1 cutover) -----------
+
+/* A1 made hoop indexing 1-based in the model + resolver (parseHoopTarget now keeps only index
+   >= 1). Persisted AUTHORED effect-scope targetIds of the form "<drumId>#<hoop>[,<hoop>]" were
+   authored 0-based, so a pre-A1 hoop-scoped clip ("kick#0") now resolves to nothing. These four
+   helpers shift every hoop-scoped node's targetId +1 so the SAME physical hoop lights after A1.
+   They are pure + version-gated by the envelope loaders (only a v1 blob is migrated), which is
+   what makes the migration idempotent — a v2 blob is never touched, and the store re-saves at the
+   current VERSION after load. Only clips whose scope === 'hoop' with an explicit "#index" are
+   changed; drum/kit scopes (targetId is a bare drumId or absent) and index-less targets pass
+   through untouched. */
+
+/** Shift one hoop-scoped targetId's indices +1 (0-based → 1-based). A targetId with no `#`
+    (drum/kit scope, or index-less) is returned verbatim; non-integer index tokens are dropped —
+    they were never valid pixel refs (parseHoopTarget already discards them). */
+export function shiftHoopTargetTo1Based(targetId: string): string {
+  const sep = targetId.indexOf('#');
+  if (sep === -1) return targetId;
+  const drumId = targetId.slice(0, sep);
+  const shifted = targetId
+    .slice(sep + 1)
+    .split(',')
+    .map((token) => Number(token.trim()))
+    .filter((n) => Number.isInteger(n))
+    .map((n) => n + 1);
+  return `${drumId}#${shifted.join(',')}`;
+}
+
+/** Return a graph with every hoop-scoped node's targetId shifted +1 (see {@link
+    shiftHoopTargetTo1Based}). Identity-stable: the same graph reference is returned when nothing
+    changed, and `version`/`edges`/all non-hoop nodes are preserved. */
+export function migrateGraphHoopTargets(graph: TriggerGraph): TriggerGraph {
+  let changed = false;
+  const nodes = graph.nodes.map((node) => {
+    if (node.scope !== 'hoop' || typeof node.targetId !== 'string' || !node.targetId.includes('#')) return node;
+    const next = shiftHoopTargetTo1Based(node.targetId);
+    if (next === node.targetId) return node;
+    changed = true;
+    return { ...node, targetId: next };
+  });
+  return changed ? { ...graph, nodes } : graph;
+}
+
+/** Map {@link migrateGraphHoopTargets} across a keyed graph record (the AuthoredState.graphs shape
+    and the ClipDoc deps.graphs shape). */
+export function migrateGraphsHoopTargets(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  const out: Record<string, TriggerGraph> = {};
+  for (const [key, graph] of Object.entries(graphs)) out[key] = migrateGraphHoopTargets(graph);
+  return out;
+}
+
+/** Migrate an authored slice's hoop targetIds (its `graphs` are the only carrier — song sections
+    reference graph keys, not inline node data; effects/presets carry no targetId). Returns the
+    slice unchanged when it has no graphs. */
+export function migrateAuthoredHoopTargets(state: Partial<AuthoredState>): Partial<AuthoredState> {
+  if (!state.graphs) return state;
+  return { ...state, graphs: migrateGraphsHoopTargets(state.graphs) };
 }
 
 // ---- U4 back-compat: per-pad slots → flat graph list ------------------------
@@ -243,8 +313,14 @@ export const SHOWS_STORAGE_KEY = 'ledrums:shows:v1';
 
 /** Library schema version (independent of {@link VERSION}; same bump-only-on-incompatible
     rule). The per-show `authored` payload is validated field-by-field via {@link
-    coerceAuthored}, so an additive authored field never needs a library bump. */
-export const SHOWS_VERSION = 1;
+    coerceAuthored}, so an additive authored field never needs a library bump.
+    v2 (B6/A1): each show's hoop targetIds moved 0-based → 1-based; a v1 library is accepted and
+    every show migrated on load (see {@link SHOWS_PRIOR_VERSION} / {@link migrateAuthoredHoopTargets}). */
+export const SHOWS_VERSION = 2;
+
+/** The one prior library version {@link deserializeShowLibrary} still accepts, upgrading every
+    show's hoop targetIds on load rather than discarding the whole library. */
+export const SHOWS_PRIOR_VERSION = 1;
 
 /** A named show — the authored document given identity. `authored` is the SAME shape the
     single-blob path persists (reused, never duplicated). */
@@ -281,10 +357,13 @@ export function serializeShowLibrary(lib: ShowLibrary): PersistedShowLibrary {
  */
 export function deserializeShowLibrary(raw: unknown): ShowLibrary | null {
   if (!isObject(raw)) return null;
-  if (raw.version !== SHOWS_VERSION) return null;
+  if (raw.version !== SHOWS_VERSION && raw.version !== SHOWS_PRIOR_VERSION) return null;
   const data = raw.data;
   if (!isObject(data) || !isObject(data.shows)) return null;
 
+  // v1 → v2: shift each show's 0-based hoop targetIds +1 (A1 1-based cutover). Version-gated so a
+  // v2 library is never re-shifted; the store re-saves at SHOWS_VERSION after load (idempotent).
+  const migrateHoops = raw.version === SHOWS_PRIOR_VERSION;
   const shows: Record<string, Show> = {};
   for (const [id, rawShow] of Object.entries(data.shows)) {
     if (!isObject(rawShow)) continue;
@@ -292,7 +371,8 @@ export function deserializeShowLibrary(raw: unknown): ShowLibrary | null {
     const name = typeof rawShow.name === 'string' && rawShow.name ? rawShow.name : 'Untitled Show';
     // The store applies this over its seed defaults, so a partial (defensively-coerced)
     // authored slice is fine — the AuthoredState cast mirrors deserializeAuthored's contract.
-    const authored = coerceAuthored(rawShow.authored) as AuthoredState;
+    const coerced = coerceAuthored(rawShow.authored);
+    const authored = (migrateHoops ? migrateAuthoredHoopTargets(coerced) : coerced) as AuthoredState;
     shows[showId] = { id: showId, name, authored };
   }
   if (Object.keys(shows).length === 0) return null; // all shows malformed → fall back
