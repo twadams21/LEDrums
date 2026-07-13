@@ -19,6 +19,7 @@ export * from './color/blend';
 export * from './model/project-schema';
 export * from './model/integrity';
 export * from './model/routing-integrity';
+export * from './model/chain-wiring';
 export * from './model/defaults';
 
 // Canvas (D4) — scene documents sampled through kit geometry; hosted through the ONE

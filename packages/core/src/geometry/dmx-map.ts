@@ -56,17 +56,17 @@ function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
 /**
  * Build the pixel → global-channel map from the kit's physical-output topology
  * (the PixLite chain). The chain is walked in transmit order —
- * **outputs → dataLines → segments → hoops → pixelIds** (each segment expanded
- * `hoopStart..hoopEnd` ASCENDING) — and pixels are packed CHANNEL-DENSE from a single
- * global cursor: pixel *i* occupies global channels `[cursor, cursor + cpp)`, then the
+ * **outputs → segments → hoops → pixelIds** (each output = one data run; each segment
+ * expanded `hoopStart..hoopEnd` ASCENDING) — and pixels are packed CHANNEL-DENSE from a
+ * single global cursor: pixel *i* occupies global channels `[cursor, cursor + cpp)`, then the
  * cursor advances by `cpp`. A pixel's channels MAY straddle a 512-channel universe
  * boundary (the controller owns universe mapping; the app only authors order + density).
  *
- * Optional universe jumps: when an output OR a data line declares a `startUniverse`, the
- * cursor snaps to that universe's channel 0 on entry (a deliberate boundary/gap). Absent
- * → the cursor stays dense/contiguous (output 1 dl1 → output 1 dl2 → output 2 dl1 …, no
- * reset). The base starts at universe 0, channel 0. There is NO hardcoded pixel cap — the
- * controller enforces its own; `maxPixelsPerOutput` is advisory only.
+ * Optional universe jumps: when an output declares a `startUniverse`, the cursor snaps to that
+ * universe's channel 0 on entry (a deliberate boundary/gap). Absent → the cursor stays
+ * dense/contiguous (output 1 → output 2 …, no reset). The base starts at universe 0, channel 0.
+ * There is NO hardcoded pixel cap — the controller enforces its own; `maxPixelsPerOutput` is
+ * advisory only.
  *
  * When the kit declares no outputs, a single flat output over all pixels is derived
  * (visualizer / loopback target).
@@ -93,36 +93,32 @@ export function buildDmxMap(kit: KitConfig, model: PixelModel): DmxMap {
     const cpp = output.channelsPerPixel;
     if (output.startUniverse !== undefined) cursor = output.startUniverse * CHANNELS_PER_UNIVERSE;
 
-    for (const dl of output.dataLines) {
-      if (dl.startUniverse !== undefined) cursor = dl.startUniverse * CHANNELS_PER_UNIVERSE;
-
-      for (const seg of dl.segments) {
-        const drum = model.drumById.get(seg.drumId);
-        if (!drum) {
-          throw new Error(`Output "${output.id}" references unknown drum "${seg.drumId}".`);
-        }
-        if (seg.hoopStart < 1 || seg.hoopEnd > drum.hoopCount || seg.hoopStart > seg.hoopEnd) {
-          throw new Error(
-            `Output "${output.id}" segment for "${seg.drumId}" has invalid hoop range ` +
-              `${seg.hoopStart}..${seg.hoopEnd} (drum has ${drum.hoopCount} hoops).`,
-          );
-        }
-        for (let h = seg.hoopStart; h <= seg.hoopEnd; h++) {
-          for (const pid of hoopPixelIds(drum, h)) {
-            const start = cursor;
-            perPixel[pid] = { channel: start };
-            // Register the pixel into every universe its `cpp` channels touch (straddle).
-            const firstU = Math.floor(start / CHANNELS_PER_UNIVERSE);
-            const lastU = Math.floor((start + cpp - 1) / CHANNELS_PER_UNIVERSE);
-            for (let u = firstU; u <= lastU; u++) {
-              const patch = universeFor(u);
-              patch.pixels.push({ id: pid, channel: start, channelsPerPixel: cpp, rgbOrder: output.rgbOrder });
-              // Channels this pixel uses within universe u, clipped to its [0,512) window.
-              const localEnd = Math.min(CHANNELS_PER_UNIVERSE, start + cpp - u * CHANNELS_PER_UNIVERSE);
-              if (localEnd > patch.channelCount) patch.channelCount = localEnd;
-            }
-            cursor += cpp;
+    for (const seg of output.segments) {
+      const drum = model.drumById.get(seg.drumId);
+      if (!drum) {
+        throw new Error(`Output "${output.id}" references unknown drum "${seg.drumId}".`);
+      }
+      if (seg.hoopStart < 1 || seg.hoopEnd > drum.hoopCount || seg.hoopStart > seg.hoopEnd) {
+        throw new Error(
+          `Output "${output.id}" segment for "${seg.drumId}" has invalid hoop range ` +
+            `${seg.hoopStart}..${seg.hoopEnd} (drum has ${drum.hoopCount} hoops).`,
+        );
+      }
+      for (let h = seg.hoopStart; h <= seg.hoopEnd; h++) {
+        for (const pid of hoopPixelIds(drum, h)) {
+          const start = cursor;
+          perPixel[pid] = { channel: start };
+          // Register the pixel into every universe its `cpp` channels touch (straddle).
+          const firstU = Math.floor(start / CHANNELS_PER_UNIVERSE);
+          const lastU = Math.floor((start + cpp - 1) / CHANNELS_PER_UNIVERSE);
+          for (let u = firstU; u <= lastU; u++) {
+            const patch = universeFor(u);
+            patch.pixels.push({ id: pid, channel: start, channelsPerPixel: cpp, rgbOrder: output.rgbOrder });
+            // Channels this pixel uses within universe u, clipped to its [0,512) window.
+            const localEnd = Math.min(CHANNELS_PER_UNIVERSE, start + cpp - u * CHANNELS_PER_UNIVERSE);
+            if (localEnd > patch.channelCount) patch.channelCount = localEnd;
           }
+          cursor += cpp;
         }
       }
     }
@@ -132,23 +128,18 @@ export function buildDmxMap(kit: KitConfig, model: PixelModel): DmxMap {
   return { perPixel, universes };
 }
 
-/** Derive a single flat output (one implicit data line) covering every pixel, in
- *  pixel-id order — dense from universe 0. */
+/** Derive a single flat output (one data run) covering every pixel, in pixel-id order —
+ *  dense from universe 0. */
 function deriveFlatOutputs(model: PixelModel): OutputConfig[] {
   return [
     {
       id: 'flat',
       channelsPerPixel: 3,
-      dataLines: [
-        {
-          id: 'flat:dl0',
-          segments: model.drums.map((d) => ({
-            drumId: d.drumId,
-            hoopStart: 1,
-            hoopEnd: d.hoopCount,
-          })),
-        },
-      ],
+      segments: model.drums.map((d) => ({
+        drumId: d.drumId,
+        hoopStart: 1,
+        hoopEnd: d.hoopCount,
+      })),
     },
   ];
 }

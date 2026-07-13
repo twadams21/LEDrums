@@ -61,26 +61,18 @@ export const drumSchema = z.object({
   rotation: vec3Schema,
 });
 
-/** An ordered run of hoops on a drum, carried on a single data line, in patch order.
+/** A maximal run of *consecutive* hoops on one drum within an output's chain, in chain
+ *  (transmit) order — the RANGE-COMPRESSED form of the explicit `Output → Hoop → Hoop …`
+ *  daisy-chain (D1): a run extends while the next wired hoop is the same drum's very next
+ *  hoop, and breaks (new segment) on any drum change or non-`+1` step. So `segments` in
+ *  order, each expanded `hoopStart..hoopEnd` ASCENDING, reconstitutes the exact wired chain.
  *  Hoop indices are **1-based** (A1): the first hoop of a drum is hoop 1. Pre-A1 project
  *  files stored 0-based ranges and are shifted +1 by {@link migrateKit} on load. */
 export const outputSegmentSchema = z.object({
   drumId: z.string().min(1),
-  /** Inclusive hoop range carried on this segment (1-based), in patch order. */
+  /** Inclusive hoop range carried on this segment (1-based), in chain order. */
   hoopStart: z.number().int().positive(),
   hoopEnd: z.number().int().positive(),
-});
-
-/**
- * One physical data line out of a controller port (e.g. a PixLite output drives two
- * data lines — Data + repurposed Clock). An ordered run of hoop segments; pixels pack
- * channel-dense within it. An optional `startUniverse` snaps this line to that
- * universe's channel 0 — a deliberate gap; absent → it continues dense from the cursor.
- */
-export const dataLineSchema = z.object({
-  id: z.string().min(1),
-  startUniverse: z.number().int().nonnegative().optional(),
-  segments: z.array(outputSegmentSchema).min(1),
 });
 
 /**
@@ -91,9 +83,11 @@ export const dataLineSchema = z.object({
 export const rgbOrderSchema = z.enum(['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR']);
 export type RgbOrder = z.infer<typeof rgbOrderSchema>;
 
-/** Inner object schema for a physical controller output (one PixLite port): ordered
-    data lines. `startUniverse` (optional) snaps the whole port to a universe boundary;
-    absent → it packs dense/contiguous with the preceding output. */
+/** Inner object schema for a physical controller output = **exactly one data run** (D1: the
+    intermediate Data Line was removed — an Output now carries its hoop chain directly as an
+    ordered `segments` list, the range-compressed `Output → Hoop → Hoop …` wire chain).
+    `startUniverse` (optional) snaps this run to a universe boundary; absent → it packs
+    dense/contiguous with the preceding output. */
 const outputObjectSchema = z.object({
   id: z.string().min(1),
   startUniverse: z.number().int().nonnegative().optional(),
@@ -103,25 +97,34 @@ const outputObjectSchema = z.object({
    * control). Moved off the controller so different data runs may differ; the v<6 project
    * migrator seeds each existing output with the controller-level order it inherited. */
   rgbOrder: rgbOrderSchema.optional(),
-  dataLines: z.array(dataLineSchema).min(1),
+  /** The output's ordered hoop chain, range-compressed (D1). Min 1 — an output with no chain
+   *  is not persisted (it is inert / awaiting wiring, dropped by the editor at commit). */
+  segments: z.array(outputSegmentSchema).min(1),
 });
 
 /**
- * A physical controller output. Back-compat: a legacy output carrying bare `segments`
- * (the pre-data-line shape that live persistence may have written) is transparently
- * wrapped as a single implicit data line `${id}:dl0` so old saved projects never crash.
+ * A physical controller output. Back-compat: a legacy output carrying the pre-D1
+ * `dataLines: [{ segments }]` shape (that reached the schema un-migrated) is transparently
+ * flattened — its data lines' segments concatenated in order into one `segments` chain — so
+ * old saved payloads never crash. (The real v6→7 migration in {@link migrateKit} SPLITS a
+ * multi-line output into one output per line, preserving output count; this preprocess is the
+ * defensive single-output fallback for any stray un-migrated payload.)
  */
 export const outputSchema = z.preprocess((raw) => {
   if (
     raw &&
     typeof raw === 'object' &&
     !Array.isArray(raw) &&
-    !('dataLines' in raw) &&
-    'segments' in raw
+    !('segments' in raw) &&
+    Array.isArray((raw as { dataLines?: unknown }).dataLines)
   ) {
-    const { segments, ...rest } = raw as Record<string, unknown>;
-    const id = typeof (rest as { id?: unknown }).id === 'string' ? (rest as { id: string }).id : 'output';
-    return { ...rest, dataLines: [{ id: `${id}:dl0`, segments }] };
+    const { dataLines, ...rest } = raw as Record<string, unknown>;
+    const segments = (dataLines as unknown[]).flatMap((dl) =>
+      dl && typeof dl === 'object' && Array.isArray((dl as { segments?: unknown }).segments)
+        ? ((dl as { segments: unknown[] }).segments)
+        : [],
+    );
+    return { ...rest, segments };
   }
   return raw;
 }, outputObjectSchema);
@@ -168,8 +171,30 @@ export const kitGlobalSchema = z.object({
  *    output happens at the PROJECT layer ({@link migrateProjectKit}), because the controller order
  *    lives on `project.output` — a field the kit alone (this migrator) cannot see. Here the bump is
  *    purely the schema gaining an optional `OutputConfig.rgbOrder`; no kit-only data transform.
+ *  - 6 → 7 (D1): the intermediate **Data Line was removed** — an Output now carries its hoop chain
+ *    directly (`OutputConfig.segments`) instead of `dataLines[].segments`, so **Output = exactly one
+ *    data run**. A kit predating this (v < 7) has each output SPLIT into one output per data line
+ *    ({@link splitOutputDataLines}) — expanded mode's 4 outputs × 2 lines become 8 outputs, matching
+ *    the v2 patch graph's 8 Output nodes. The split lifts each line's `startUniverse` (first line
+ *    inherits the output's) so the DMX byte stream is **identical** (the compile cursor was already a
+ *    single monotonic walk over lines; splitting the wrapper changes nothing it packs).
  */
-export const CURRENT_KIT_VERSION = 6;
+export const CURRENT_KIT_VERSION = 7;
+
+/** A 2D point in patch-graph canvas space (px). */
+export const vec2Schema = z.object({ x: z.number(), y: z.number() });
+
+/**
+ * Manual patch-graph node layout (D1): a canonical `nodeId → {x,y}` arrangement of the graph
+ * canvas, a property of the PHYSICAL kit graph (server-authoritative, one arrangement stable
+ * across shows + synced across clients). Auto-layout was dropped — the graph never re-flows on
+ * its own; positions are user-controlled and persisted here. Optional/sparse: a node absent from
+ * the map gets a one-time DETERMINISTIC seed position from the editor, then is frozen (written
+ * back here). Keyed by patch-graph node id (`output:*`, `hoop:*`, `drum:*`, `trigger:*`, zone
+ * container ids) — a superset of the kit's own ids, so it lives on the kit (travels with a patch)
+ * rather than in per-show authored state. Absent is always valid (no migrator transform needed).
+ */
+export const nodeLayoutSchema = z.record(z.string(), vec2Schema);
 
 export const kitSchema = z.object({
   version: z.number().int().default(CURRENT_KIT_VERSION),
@@ -178,13 +203,16 @@ export const kitSchema = z.object({
   drums: z.array(drumSchema).min(1),
   /** Physical-output topology. Optional: when absent, a flat single-output map is derived. */
   outputs: z.array(outputSchema).default([]),
+  /** Manual patch-graph canvas layout (D1) — see {@link nodeLayoutSchema}. Optional; sparse. */
+  nodeLayout: nodeLayoutSchema.optional(),
 });
 
 export type Vec3Config = z.infer<typeof vec3Schema>;
+export type Vec2Config = z.infer<typeof vec2Schema>;
+export type NodeLayout = z.infer<typeof nodeLayoutSchema>;
 export type HoopConfig = z.infer<typeof hoopConfigSchema>;
 export type DrumConfig = z.infer<typeof drumSchema>;
 export type OutputConfig = z.infer<typeof outputSchema>;
-export type DataLineConfig = z.infer<typeof dataLineSchema>;
 export type OutputSegment = z.infer<typeof outputSegmentSchema>;
 export type KitGlobalConfig = z.infer<typeof kitGlobalSchema>;
 export type KitConfig = z.infer<typeof kitSchema>;
@@ -218,6 +246,47 @@ function shiftOutputHoops(output: unknown): unknown {
   }
   if (Array.isArray(o.segments)) next.segments = o.segments.map(bumpSeg); // legacy bare-segments shape
   return next;
+}
+
+/**
+ * D1 (v6 → v7): SPLIT one raw output's `dataLines[]` into an array of new outputs — one per
+ * data line — each carrying that line's `segments` directly (the intermediate Data Line is
+ * gone; Output = exactly one data run). An output already in the new shape (bare `segments`,
+ * no `dataLines`) passes through as a single-element array; a foreign/malformed output passes
+ * through untouched (schema then reports it).
+ *
+ * **DMX parity by construction:** `buildDmxMap` already walked outputs → dataLines → segments
+ * with ONE monotonic channel cursor, snapping on `output.startUniverse` then `dataLine.startUniverse`.
+ * Splitting preserves that walk exactly if each new output inherits `channelsPerPixel`/`rgbOrder`
+ * and takes the effective start-universe the old walk would have snapped to at that line's entry:
+ *   - the FIRST line inherits `dataLine.startUniverse ?? output.startUniverse` (the old walk
+ *     applied the output snap, then the line snap overrode it);
+ *   - later lines take only their own `dataLine.startUniverse` (the output snap fired once, before
+ *     line 0 — it must NOT re-apply between lines).
+ * So the split emits byte-identical channels. New output id = the data line's id (unique + stable);
+ * a line without its own id falls back to `${outputId}:${index}`.
+ */
+function splitOutputDataLines(output: unknown): unknown[] {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return [output];
+  const o = output as Record<string, unknown>;
+  if (!Array.isArray(o.dataLines)) return [output]; // already chain-shaped (bare segments) or foreign
+  const { dataLines, startUniverse: outputStartUniverse, ...rest } = o;
+  const baseId = typeof o.id === 'string' ? o.id : 'output';
+  return (dataLines as unknown[]).map((dl, i) => {
+    if (!dl || typeof dl !== 'object' || Array.isArray(dl)) return dl;
+    const line = dl as Record<string, unknown>;
+    const lineUniverse = line.startUniverse;
+    // First line inherits the output-level snap; later lines only their own (see doc above).
+    const startUniverse =
+      lineUniverse !== undefined ? lineUniverse : i === 0 ? outputStartUniverse : undefined;
+    const next: Record<string, unknown> = {
+      ...rest,
+      id: typeof line.id === 'string' ? line.id : `${baseId}:${i}`,
+      segments: line.segments,
+    };
+    if (startUniverse !== undefined) next.startUniverse = startUniverse;
+    return next;
+  });
 }
 
 /** True when `v` is a plain `{x,y,z}` number triple (a raw pre-parse Vec3). */
@@ -298,6 +367,9 @@ function shiftDrumToHoops(drum: unknown, globalHoopCount: number): unknown {
  *    gained an optional `OutputConfig.rgbOrder`); the seed of the controller-level order onto each
  *    output is a project-scoped step ({@link migrateProjectKit}) since the source field lives on
  *    `project.output`, outside the kit. The version bump alone marks the kit as v6-shaped.
+ *  - **< 7 (D1):** the intermediate Data Line is removed — each output's `dataLines[]` is SPLIT
+ *    into one output per line ({@link splitOutputDataLines}), carrying `segments` directly, so
+ *    Output = exactly one data run. Runs on the already-A1-shifted outputs; DMX byte-identical.
  * The version is stamped to {@link CURRENT_KIT_VERSION} last. Idempotent — a kit already at the
  * current version is returned untouched (same reference). Runs BEFORE the schema parse, so
  * pre-migration files still load.
@@ -349,6 +421,13 @@ export function migrateKit(raw: unknown): unknown {
     migrated.drums = (migrated.drums as unknown[]).map((drum) =>
       shiftDrumToHoops(drum, globalHoopCount),
     );
+  }
+
+  // v6 → v7 (D1): remove the intermediate Data Line — split each output's `dataLines[]` into one
+  // output per line, carrying `segments` directly (Output = exactly one data run). Runs on the
+  // already-migrated outputs (composes with the A1 hoop shift above); DMX byte-identical.
+  if (version < 7 && Array.isArray(migrated.outputs)) {
+    migrated.outputs = (migrated.outputs as unknown[]).flatMap(splitOutputDataLines);
   }
 
   migrated.version = CURRENT_KIT_VERSION;
