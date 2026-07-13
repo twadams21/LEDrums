@@ -50,6 +50,7 @@
   import WireEdge from './WireEdge.svelte';
   import RefEdge from './RefEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
+  import type { FlowApi } from './FlowHandle.svelte';
   import Inspector from '../docks/Inspector.svelte';
   import { GraphHover } from './graph-hover.svelte';
   import { guardFlowCallback } from './flow-guard';
@@ -69,6 +70,7 @@
   const nodeTypes: NodeTypes = { patch: PatchNode, zone: PatchZoneNode };
   const edgeTypes: EdgeTypes = { wire: WireEdge, ref: RefEdge };
   const hover = new GraphHover();
+  let flowApi = $state<FlowApi | null>(null);
 
   // ---- static kit-derived shape (drums, triggers) — read once at mount ----------
   /** Physical sensor zones for a drum (union of canonical + authored) — for the trigger sub. */
@@ -237,6 +239,10 @@
   // Seed-freeze: on mount, write the full (seed ⊕ stored) layout back once so a fresh kit's
   // deterministic seed is frozen into `nodeLayout` (idempotent for an already-seeded kit).
   onMount(() => {
+    // Re-fit once the zone containers have measured (they gate the graph's true bounds) so the
+    // whole rig lands centred, not the pre-measurement subset.
+    requestAnimationFrame(() => requestAnimationFrame(() => flowApi?.fitView({ padding: 0.16 })));
+
     if (!store.project || !store.canEdit) return;
     const stored = store.project.kit.nodeLayout ?? {};
     const live = leafPositions();
@@ -281,8 +287,9 @@
         {nodeTypes}
         {edgeTypes}
         defaultEdgeOptions={{ type: 'wire' }}
-        fitPadding={0.15}
+        fitPadding={0.16}
         minimap
+        onFlow={(f) => (flowApi = f)}
         {onBeforeConnect}
         onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
         onPaneClick={() => shell.clearSelection()}
