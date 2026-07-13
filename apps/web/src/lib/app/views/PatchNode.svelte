@@ -15,7 +15,6 @@
   import Target from '@lucide/svelte/icons/target';
   import Disc3 from '@lucide/svelte/icons/disc-3';
   import Circle from '@lucide/svelte/icons/circle';
-  import Cable from '@lucide/svelte/icons/cable';
   import Plug from '@lucide/svelte/icons/plug';
   import Cpu from '@lucide/svelte/icons/cpu';
 
@@ -34,7 +33,6 @@
     zone: Target,
     drum: Disc3,
     hoop: Circle,
-    dataline: Cable,
     output: Plug,
     controller: Cpu,
   };

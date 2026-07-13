@@ -11,7 +11,7 @@
 import { drumDensity, type DrumConfig, type InputMap, type KitConfig } from '@ledrums/core';
 import { ZONE_LABELS } from '../../trigger-lab/fixtures';
 import { parseHoopNodeId, parseOutputNodeId } from '../patch-graph';
-import type { DataLine, HoopRef, PatchOutput, PatchRouting, PixelSpan } from '../patch-routing';
+import type { HoopRef, PatchRouting, PixelSpan } from '../patch-routing';
 
 const MM_PER_INCH = 25.4;
 
@@ -22,8 +22,7 @@ export type PatchEditor =
   | { kind: 'trigger'; drumId: string }
   | { kind: 'zone'; drumId: string; zone: string; slot: number }
   | { kind: 'drum'; drumId: string }
-  | { kind: 'hoop'; drumId: string; hoop: number } // 0-based core hoop index
-  | { kind: 'dataline'; index: number | null } // 1-based transmit position; null when opaque (palette node)
+  | { kind: 'hoop'; drumId: string; hoop: number } // 1-based hoop index (A1)
   | { kind: 'output'; outputId: string }
   | { kind: 'controller' }
   | { kind: 'unknown'; id: string };
@@ -63,10 +62,6 @@ export function patchEditorFor(id: string): PatchEditor {
     }
     case 'drum':
       return parts.slice(1).join(':') ? { kind: 'drum', drumId: parts.slice(1).join(':') } : { kind: 'unknown', id };
-    case 'dataline': {
-      const n = Number(parts.slice(1).join(':'));
-      return { kind: 'dataline', index: Number.isInteger(n) && n > 0 ? n : null };
-    }
     default:
       return { kind: 'unknown', id };
   }
@@ -83,8 +78,8 @@ export function pixelsPerHoopForDrum(drum: DrumConfig, kit: KitConfig): number {
 }
 
 /** First/last GLOBAL pixel index a single hoop covers, sweeping the routing in transmit
-    order (outputs → datalines → hoops) — the same walk as S2 `pixelRanges`. null when the
-    hoop is wired into no output, or carries no pixels. */
+    order (outputs → hoops) — the same walk as S2 `pixelRanges`. null when the hoop is wired
+    into no output, or carries no pixels. */
 export function hoopPixelSpan(
   routing: PatchRouting,
   target: HoopRef,
@@ -92,39 +87,16 @@ export function hoopPixelSpan(
 ): PixelSpan | null {
   let cursor = 0;
   for (const output of routing.outputs) {
-    for (const dl of output.dataLines) {
-      for (const h of dl.hoops) {
-        const count = pixelsForHoop(h);
-        if (count <= 0) continue;
-        if (h.drumId === target.drumId && h.hoop === target.hoop) {
-          return { first: cursor, last: cursor + count - 1 };
-        }
-        cursor += count;
+    for (const h of output.hoops) {
+      const count = pixelsForHoop(h);
+      if (count <= 0) continue;
+      if (h.drumId === target.drumId && h.hoop === target.hoop) {
+        return { first: cursor, last: cursor + count - 1 };
       }
+      cursor += count;
     }
   }
   return null;
-}
-
-/** A data line tagged with its owning output and 1-based transmit position. */
-export interface OrderedDataLine {
-  line: DataLine;
-  output: PatchOutput;
-  pos: number;
-}
-
-/** Every data line flattened in transmit order, each tagged with its owning output and
-    1-based position — so a `dataline:<k>` flow node (minted 1..N by buildOutputHalf in the
-    same order) maps to the routing's k-th line for its read-out. */
-export function orderedDataLines(routing: PatchRouting): OrderedDataLine[] {
-  const out: OrderedDataLine[] = [];
-  let pos = 0;
-  for (const output of routing.outputs) {
-    for (const line of output.dataLines) {
-      out.push({ line, output, pos: ++pos });
-    }
-  }
-  return out;
 }
 
 // --- input-map editing (zone node MIDI / OSC) ----------------------------------------

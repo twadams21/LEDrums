@@ -79,19 +79,15 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   // wire = the reconnectable custom edge (its ends are drag anchors)
   const edgeTypes: EdgeTypes = { wire: WireEdge };
 
-  // Signal-flow role colour for the two device kinds the palette can add (kept in
-  // step with patch-topology's STAGE_ROLE — only these two are user-addable).
-  const DEVICE_ROLE: Record<'dataline' | 'output', string> = {
-    dataline: 'var(--role-effect)',
-    output: 'var(--role-output)',
-  };
+  // Signal-flow role colour for the Output device (D1: the Data Line device is gone —
+  // Output = one data run). Kept in step with patch-topology's STAGE_ROLE.
+  const OUTPUT_ROLE = 'var(--role-output)';
   let deviceSeq = 0;
-  /** Drop a new device node (Data Line / Output) at a flow-space centre. It carries no
-      hoops until wired, so it contributes nothing to the routing on its own; the first
-      wire into/out of it is what materializes it (a new Output id) via commitRouting. */
-  function addDevice(stage: 'dataline' | 'output', cx: number, cy: number): void {
+  /** Drop a new Output node at a flow-space centre. It carries no hoops until wired, so it
+      contributes nothing to the routing on its own; the first wire out of it materializes it
+      (a new Output id) via commitRouting. */
+  function addDevice(cx: number, cy: number): void {
     const n = ++deviceSeq;
-    const label = stage === 'dataline' ? `Data Line ${n}` : `Output ${n}`;
     // spawn on a free spot near the viewport centre — repeated adds fan out (item 1.5)
     const rects = nodes.map((nd) => ({
       x: nd.position.x,
@@ -101,20 +97,19 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     }));
     const pos = findFreePosition(rects, cx - NODE_W / 2, cy - NODE_H / 2, NODE_W, NODE_H);
     const node: PatchFlowNode = {
-      id: `${stage}:new-${n}`,
+      id: `output:new-${n}`,
       type: 'patch',
       position: pos,
       initialWidth: NODE_W,
       initialHeight: NODE_H,
-      data: { label, sub: 'Connect this device', stage: stage as PatchStage, role: DEVICE_ROLE[stage] },
+      data: { label: `Output ${n}`, sub: 'Connect this device', stage: 'output', role: OUTPUT_ROLE },
     };
     nodes = [...nodes, node];
   }
 
   // ---- Node Editor drawer (wave-3 shell): device palette + Inspector --------
-  // The two user-addable device kinds; a new device is local until its first wire
-  // materializes it into the committed routing. Selecting a device flips the
-  // drawer to its Inspector tab.
+  // A new Output is local until its first wire materializes it into the committed routing.
+  // Selecting a device flips the drawer to its Inspector tab.
   let neTab = $state<NodeEditorTab>('add');
   $effect(() => {
     if (shell.selection?.kind === 'patch') neTab = 'inspector';
@@ -123,19 +118,16 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     {
       key: 'devices',
       label: 'Devices',
-      items: [
-        { id: 'dataline', name: 'Data Line', icon: Cable, tint: DEVICE_ROLE.dataline, hint: 'LED run' },
-        { id: 'output', name: 'Output', icon: Plug, tint: DEVICE_ROLE.output, hint: 'controller port' },
-      ],
+      items: [{ id: 'output', name: 'Output', icon: Plug, tint: OUTPUT_ROLE, hint: 'physical data run' }],
     },
   ];
   let flowApi = $state<FlowApi | null>(null);
   let canvasWrap = $state<HTMLElement | null>(null);
-  function handleAdd(id: string): void {
+  function handleAdd(_id: string): void {
     const r = canvasWrap?.getBoundingClientRect();
     if (!flowApi) return;
     const c = flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
-    addDevice(id as 'dataline' | 'output', c.x, c.y);
+    addDevice(c.x, c.y);
   }
 
   /** Plain-language reason for a refused fan-out wire — states what's wrong, no jargon
@@ -151,7 +143,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
       their candidate edge set through here so a connect gesture the engine would refuse is
       refused editor-side first. `kit` falls back to `DEFAULT_KIT` when the project is offline. */
   function edgesFanOut(prospective: PatchFlowEdge[]): boolean {
-    const routing = routingFromGraph(nodes, prospective, scalarsFor, lineUniverseFor);
+    const routing = routingFromGraph(nodes, prospective, scalarsFor);
     return hasHoopFanOut(store.project?.kit ?? DEFAULT_KIT, routing);
   }
 
@@ -290,18 +282,21 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   const ctrlIdx = STAGE_ORDER.indexOf('controller');
   const midY = controllerNode?.position.y ?? 0;
   const colW = controllerNode && ctrlIdx > 0 ? controllerNode.position.x / ctrlIdx : 240;
-  const colDataline = STAGE_ORDER.indexOf('dataline') * colW;
   const colOutput = STAGE_ORDER.indexOf('output') * colW;
 
   // Keep the input half (input→trigger→zone→drum→hoop) + the controller sink; drop the
-  // topology's DEFAULT chunked output half — the authoritative one replaces it below.
-  const keepStages = new Set<PatchStage>(['input', 'trigger', 'zone', 'drum', 'hoop', 'controller']);
-  const inputNodes = full.nodes.filter((n) => keepStages.has(n.data.stage));
+  // topology's DEFAULT output half — the authoritative one replaces it below. That means the
+  // Output nodes AND every physical chain edge (output→hoop / output→controller / hoop→hoop);
+  // the input-half wiring (input→trigger→zone→drum→hoop) is what survives.
+  const stageById = new Map(full.nodes.map((n) => [n.id, n.data.stage]));
+  const isChainEdge = (e: PatchFlowEdge): boolean => {
+    const s = stageById.get(e.source);
+    if (s === 'output') return true;
+    return s === 'hoop' && stageById.get(e.target) === 'hoop';
+  };
+  const inputNodes = full.nodes.filter((n) => n.data.stage !== 'output');
   const hoopIds = new Set(inputNodes.filter((n) => n.data.stage === 'hoop').map((n) => n.id));
-  const dropIds = new Set(
-    full.nodes.filter((n) => n.data.stage === 'dataline' || n.data.stage === 'output').map((n) => n.id),
-  );
-  const inputEdges = full.edges.filter((e) => !dropIds.has(e.source) && !dropIds.has(e.target));
+  const inputEdges = full.edges.filter((e) => !isChainEdge(e));
 
   // Output half DERIVED from the authoritative project outputs (S2 compiler), or a
   // default chunk when the project declares none yet (offline / fresh project). Read
@@ -309,7 +304,6 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   const initialOutputs = untrack(() => store.project?.kit.outputs) ?? [];
   const initialRouting = initialOutputs.length ? outputsToPatch(initialOutputs) : defaultRouting(topoDrums);
   const outHalf = buildOutputHalf(initialRouting, {
-    colDataline,
     colOutput,
     controllerId: CONTROLLER_ID,
     midY,
@@ -324,19 +318,13 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
 
   /** Per-output transport scalars the graph doesn't author — read from the authoritative
       project so a rewire preserves them (S4's Output inspector edits them via setRouting).
-      `startUniverse` is optional: a project output without one packs dense. */
+      `startUniverse`/`rgbOrder` are optional: a project output without one packs dense / uses
+      the packer's default order. */
   function scalarsFor(outputId: string): OutputScalars {
     const o = store.project?.kit.outputs.find((x) => x.id === outputId);
-    return o ? { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel } : { channelsPerPixel: 3 };
-  }
-
-  /** A data line's optional `startUniverse` snap — recovered from the authoritative project so a
-      set boundary survives a rewire. D1 flattened core data lines into outputs (Output = one run),
-      so the snap now lives on the core OUTPUT: the first line of an output recovers it; later lines
-      (only from the synthesized default, which sets no universes) pack dense. Absent → dense. */
-  function lineUniverseFor(outputId: string, lineIndex: number): number | undefined {
-    if (lineIndex !== 0) return undefined;
-    return store.project?.kit.outputs.find((x) => x.id === outputId)?.startUniverse;
+    return o
+      ? { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel, rgbOrder: o.rgbOrder }
+      : { channelsPerPixel: 3 };
   }
 
   // Read the output half back into a routing, recompile to OutputConfig[], and push it —
@@ -345,7 +333,7 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
   // adopt $effect below compares it against the project's outputs to skip our own echo.
   let lastSig = routingSignature(initialRouting);
   function commitRouting(): void {
-    const routing = routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor);
+    const routing = routingFromGraph(nodes, edges, scalarsFor);
     const sig = routingSignature(routing);
     if (sig === lastSig) return;
     lastSig = sig;
@@ -354,14 +342,13 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
 
   // The LIVE routing, datalines/outputs keyed by their graph NODE id (recomputed whenever
   // nodes/edges change: add, wire, reorder-by-drag, delete).
-  const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor, lineUniverseFor));
+  const liveRouting = $derived(routingFromGraph(nodes, edges, scalarsFor));
 
   /** Splice a freshly-derived output half onto the live input half, re-stamping the wire
       type and re-decorating uniformly. The node/edge splice math is the pure, unit-tested
       `rebuildOutputHalf`; this binds it to the view's reactive `nodes`/`edges` + hover. */
   function applyOutputHalf(routing: PatchRouting): void {
     const rebuilt = rebuildOutputHalf(routing, { nodes, edges }, {
-      colDataline,
       colOutput,
       controllerId: CONTROLLER_ID,
       midY,

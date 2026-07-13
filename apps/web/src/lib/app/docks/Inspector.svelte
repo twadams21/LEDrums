@@ -41,7 +41,6 @@
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
-  import PatchDataLineInspector from './inspectors/PatchDataLineInspector.svelte';
   import PatchOutputInspector from './inspectors/PatchOutputInspector.svelte';
   import PatchControllerInspector from './inspectors/PatchControllerInspector.svelte';
 
@@ -170,8 +169,6 @@
           <PatchDrumInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'hoop'}
           <PatchHoopInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
-        {:else if editor.kind === 'dataline'}
-          <PatchDataLineInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'output'}
           <PatchOutputInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'controller'}
