@@ -114,6 +114,33 @@ describe('Engine', () => {
     expect(radiusOf()).toBeCloseTo((16 * 25.4) / 2, 6); // rebuilt: doubled diameter -> doubled radius
   });
 
+  it('setKitGlobal applies the widened kit-global fields (expanded + the Advatek/kit config)', () => {
+    const e = new Engine(defaultProject());
+    e.setKitGlobal({ expanded: true, ledDensityPxPerM: 80, hoopCount: 5, defaultHoopSpacingMm: 44, maxPixelsPerOutput: 320 });
+    expect(e.getProject().kit.global).toMatchObject({
+      expanded: true, ledDensityPxPerM: 80, hoopCount: 5, defaultHoopSpacingMm: 44, maxPixelsPerOutput: 320,
+    });
+  });
+
+  it('setHoopConfig changes ONE hoop\'s pixel count on the rebuilt model (B4 per-hoop, 1-based)', () => {
+    const e = new Engine(defaultProject());
+    const before = e.getModel().pixels.length;
+    const kick = e.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    const target = kick.hoops![0]!.pixelCount + 8;
+    e.setHoopConfig('kick', 1, { pixelCount: target, reverse: true });
+    const hoop0 = e.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
+    expect(e.getModel().pixels.length).toBe(before + 8); // only hoop 1 grew → +8 pixels total
+  });
+
+  it('setHoopConfig no-ops for an unknown drum / out-of-range hoop (never throws)', () => {
+    const e = new Engine(defaultProject());
+    const before = e.getModel().pixels.length;
+    e.setHoopConfig('nope', 1, { pixelCount: 5 });
+    e.setHoopConfig('kick', 999, { pixelCount: 5 });
+    expect(e.getModel().pixels.length).toBe(before);
+  });
+
   it('renders the full default kit within frame budget', () => {
     const e = new Engine(defaultProject());
     // warm up

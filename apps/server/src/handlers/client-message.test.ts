@@ -754,3 +754,53 @@ describe('identifyHoop message (E1)', () => {
     expect(host.getIdentifyRange()).toBeNull();
   });
 });
+
+describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end parity)', () => {
+  it('setKitGlobal applies the Advatek/kit-global fields to the live engine kit + re-broadcasts state', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    editor.sent.length = 0; // ignore the admit-time state
+    handle({ t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 }, editor);
+    expect(host.engine.getProject().kit.global).toMatchObject({
+      expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300,
+    });
+    expect(editor.has('state')).toBe(true); // geometry/patch change → fresh state to every client
+  });
+
+  it('setKitTransform color applies to the drum on the live engine kit', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'setKitTransform', drumId: 'kick', color: '#ff8800' }, editor);
+    expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.color).toBe('#ff8800');
+  });
+
+  it('setHoopConfig writes drum.hoops[hoopIndex-1] (1-based) on the live engine kit + re-broadcasts', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    editor.sent.length = 0;
+    const kickBefore = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    expect(kickBefore.hoops).toBeDefined();
+    const target = kickBefore.hoops![0]!.pixelCount + 10;
+    handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: target, reverse: true }, editor);
+    const hoop0 = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
+    expect(editor.has('state')).toBe(true);
+  });
+
+  it('setHoopConfig applies to the voice host too (live-render parity)', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    const target = voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount + 7;
+    handle({ t: 'setHoopConfig', drumId: 'snare', hoopIndex: 2, pixelCount: target }, editor);
+    expect(voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
+  });
+
+  it('a viewer cannot mutate the kit (setHoopConfig is editor-gated, deny-by-default)', () => {
+    const { handle, join, host } = harness();
+    join(); // editor
+    const viewer = join();
+    const before = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount;
+    handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: before + 50 }, viewer);
+    expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount).toBe(before);
+  });
+});

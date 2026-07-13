@@ -78,6 +78,12 @@ export const showSchema = z.custom<voice.Show>((v) => showBusesShape.safeParse(v
 const blendModeSchema = z.enum(BLEND_MODES);
 const outputProtocolSchema = outputSettingsSchema.shape.protocol;
 const mirrorSchema = kitGlobalSchema.shape.mirror;
+// The setKitGlobal message carries kit-global fields as an OPTIONAL partial (only the edited
+// field is sent), so each is the core field's constraint with its schema DEFAULT stripped —
+// `.removeDefault()` keeps single-sourcing (int/positive bounds) while `.optional()` means an
+// absent field decodes to `undefined` (not the default), preserving the "forward when defined"
+// contract the server + store partials rely on.
+const kitGlobalShape = kitGlobalSchema.shape;
 
 // ---------------------------------------------------------------------------
 // Client → Server
@@ -113,8 +119,32 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     hoopSpacingMm: z.number().optional(),
     diameterIn: z.number().optional(),
     flip: z.boolean().optional(),
+    // Per-drum swatch (`DrumConfig.color`, hex) — the drum inspector's Color control (C3).
+    color: z.string().optional(),
   }).strict(),
-  z.object({ t: z.literal('setKitGlobal'), mirror: mirrorSchema.optional() }).strict(),
+  // Kit-global geometry/hardware edit (partial): `mirror` (world reflection) plus the four
+  // Advatek/kit config fields the kit inspector edits (C1/C2) — `expanded` output mode (B2),
+  // LED density, hoop count, default hoop spacing, and the per-output pixel cap. All optional;
+  // only the edited field is present.
+  z.object({
+    t: z.literal('setKitGlobal'),
+    mirror: mirrorSchema.optional(),
+    expanded: kitGlobalShape.expanded.removeDefault().optional(),
+    ledDensityPxPerM: kitGlobalShape.ledDensityPxPerM.removeDefault().optional(),
+    hoopCount: kitGlobalShape.hoopCount.removeDefault().optional(),
+    defaultHoopSpacingMm: kitGlobalShape.defaultHoopSpacingMm.removeDefault().optional(),
+    maxPixelsPerOutput: kitGlobalShape.maxPixelsPerOutput.removeDefault().optional(),
+  }).strict(),
+  // Per-hoop edit (C5): writes `drum.hoops[hoopIndex-1]` (B4 first-class hoops[]). `hoopIndex`
+  // is 1-based (A1). `pixelCount`/`reverse` are optional; only the edited field is present. The
+  // constraints mirror core's hoopConfigSchema (pixelCount: positive int; reverse: boolean).
+  z.object({
+    t: z.literal('setHoopConfig'),
+    drumId: z.string(),
+    hoopIndex: z.number().int().positive(),
+    pixelCount: z.number().int().positive().optional(),
+    reverse: z.boolean().optional(),
+  }).strict(),
   z.object({ t: z.literal('setKitOutputs'), outputs: z.array(outputSchema) }).strict(),
   z.object({ t: z.literal('setKitNodeLayout'), nodeLayout: nodeLayoutSchema }).strict(),
   z.object({

@@ -2078,6 +2078,30 @@ export class TriggerLab {
     this.client.send({ t: 'setKitGlobal', mirror });
   }
 
+  /** Edit any kit-global field (C1/C2): expanded output mode, LED density, hoop count, default
+   * hoop spacing, max pixels/output — and mirror. Kit-wide; optimistic-writes kit.global and
+   * forwards only the edited fields over WS. (setKitMirror is the mirror-only convenience form.) */
+  setKitGlobal(partial: routing.KitGlobalPartial): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyKitGlobal(this.project, partial);
+    }
+    this.client.send({ t: 'setKitGlobal', ...partial });
+  }
+
+  /** Edit one hoop's pixel count / reverse flag (C5, B4 first-class hoops[]). `hoopIndex` is
+   * 1-based (A1). Optimistic-writes drum.hoops[hoopIndex-1] and forwards over WS; a no-op write
+   * locally when the drum/hoop is unknown (the server-apply backstop rejects the same). */
+  setHoopConfig(drumId: string, hoopIndex: number, partial: routing.HoopConfigPartial): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (this.project) {
+      this.pushUndoSnapshot();
+      this.project = routing.applyHoopConfig(this.project, drumId, hoopIndex, partial);
+    }
+    this.client.send({ t: 'setHoopConfig', drumId, hoopIndex, ...partial });
+  }
+
   /** Replace the physical-output topology (a Patch graph rewire → PixLite patch order). */
   setRouting(outputs: OutputConfig[]): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
@@ -2193,6 +2217,15 @@ export class TriggerLab {
 
   identifyController(durationS = 5): void {
     this.monitor.identify(durationS);
+  }
+
+  /** Flash one hoop's LEDs full-on for `durationS` (E1 hoop identify) — the C5 Identify button.
+   * `hoop` is 1-based (A1). Editor-gated (drives real hardware), like identifyController;
+   * `durationS <= 0` clears any active identify. The WS protocol message + server handler
+   * already exist — this is the missing client send. */
+  identifyHoop(drumId: string, hoop: number, durationS = 5): void {
+    if (this.isViewer) return; // read-only viewer (S2): device flash is editor-only
+    this.client.send({ t: 'identifyHoop', drumId, hoop, durationS });
   }
 
   setControllerTestData(pattern: ControllerTestPattern): void {

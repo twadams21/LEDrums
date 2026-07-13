@@ -408,8 +408,16 @@ export function createClientMessageHandler<S extends HandlerSocket>(
 
     // Output settings or geometry changed → re-apply output + send fresh state. (setKitOutputs has
     // no legacy reducer case, so it never sets result.structural; mark dirty here so the output-
-    // topology reorder is persisted too.)
-    if (msg.t === 'setOutput' || msg.t === 'setKitTransform' || msg.t === 'setKitOutputs') {
+    // topology reorder is persisted too.) setKitGlobal (expanded/density/hoopCount) and
+    // setHoopConfig (per-hoop pixel count) both change the pixel model AND the DMX patch, so they
+    // need reloadOutputSettings — the OutputManager must re-allocate universes off the new dmxMap.
+    if (
+      msg.t === 'setOutput' ||
+      msg.t === 'setKitTransform' ||
+      msg.t === 'setKitOutputs' ||
+      msg.t === 'setKitGlobal' ||
+      msg.t === 'setHoopConfig'
+    ) {
       host.reloadOutputSettings();
       broadcastJson(stateMessage());
       autosaver.markDirty();

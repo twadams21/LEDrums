@@ -55,8 +55,9 @@ const clientSamples: ClientMessage[] = [
   { t: 'addClip', layerId: 'base', clip },
   { t: 'removeClip', layerId: 'base', clipId: 'c1' },
   { t: 'setTransport', bpm: 128, playing: false, beatsPerBar: 4 },
-  { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true },
-  { t: 'setKitGlobal', mirror: 'x' },
+  { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true, color: '#ff8800' },
+  { t: 'setKitGlobal', mirror: 'x', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 },
+  { t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: 196, reverse: true },
   { t: 'setKitOutputs', outputs: [output] },
   { t: 'setKitNodeLayout', nodeLayout: { 'output:1': { x: 40, y: 120 }, 'hoop:kick:1': { x: 360, y: 120 } } },
   { t: 'setOutput', state: 'armed', protocol: 'sacn', host: '10.0.0.5', rgbOrder: 'GRB', fps: 44, broadcast: true, priority: 100, port: 6454, iface: 'en0' },
@@ -142,6 +143,9 @@ describe('clientMessageSchema', () => {
     expect(clientMessageSchema.safeParse({ t: 'midi', note: 'x', velocity: 1, on: true }).success).toBe(false); // wrong type
     expect(clientMessageSchema.safeParse({ t: 'takeover', extra: 1 }).success).toBe(false); // strict envelope
     expect(clientMessageSchema.safeParse({ t: 'adoptController' }).success).toBe(false); // missing host
+    expect(clientMessageSchema.safeParse({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 0 }).success).toBe(false); // hoopIndex must be 1-based positive
+    expect(clientMessageSchema.safeParse({ t: 'setHoopConfig', hoopIndex: 1 }).success).toBe(false); // missing drumId
+    expect(clientMessageSchema.safeParse({ t: 'setKitGlobal', hoopCount: 4.5 }).success).toBe(false); // hoopCount must be an integer
     expect(clientMessageSchema.safeParse('not an object').success).toBe(false);
   });
 });

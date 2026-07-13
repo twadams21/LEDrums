@@ -411,6 +411,28 @@ describe('VoiceEngineHost', () => {
     expect(host.getModel().pixelCount).toBe(before + 10 * after.hoopCount);
   });
 
+  it('setHoopConfig changes ONE hoop\'s pixel count on the live model (B4 per-hoop, 1-based)', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const before = host.getModel().pixelCount;
+    const kick = host.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    const target = kick.hoops![0]!.pixelCount + 12;
+
+    host.setHoopConfig('kick', 1, { pixelCount: target, reverse: true });
+
+    const hoop0 = host.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
+    // Only hoop 1 grew → the whole model gains exactly the +12 delta (siblings unchanged).
+    expect(host.getModel().pixelCount).toBe(before + 12);
+  });
+
+  it('setHoopConfig no-ops for an unknown drum / out-of-range hoop (never throws)', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const before = host.getModel().pixelCount;
+    host.setHoopConfig('nope', 1, { pixelCount: 999 });
+    host.setHoopConfig('kick', 999, { pixelCount: 999 });
+    expect(host.getModel().pixelCount).toBe(before);
+  });
+
   it('emits server-authoritative graph monitor events for fired graphs', () => {
     const { host } = makeHost();
     const events: unknown[] = [];

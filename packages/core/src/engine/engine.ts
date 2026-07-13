@@ -1,6 +1,6 @@
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
-import type { DrumConfig, KitGlobalConfig, NodeLayout } from '../geometry/kit-schema';
+import type { DrumConfig, HoopConfig, KitGlobalConfig, NodeLayout } from '../geometry/kit-schema';
 import type {
   Clip,
   InputMap,
@@ -294,8 +294,9 @@ export class Engine {
     this.clipStates.delete(`${layerId}:${clipId}`);
   }
 
-  /** Update a drum's transform and rebuild geometry (KitEditor live calibration). */
-  setKitTransform(drumId: string, partial: Partial<Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip'>>): void {
+  /** Update a drum's transform and rebuild geometry (KitEditor live calibration). `color` is a
+   * cosmetic swatch (no geometry impact) but rides the same per-drum carrier (C3). */
+  setKitTransform(drumId: string, partial: Partial<Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip' | 'color'>>): void {
     const drum = this.project.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
@@ -308,10 +309,22 @@ export class Engine {
     this.rebuild();
   }
 
-  /** Update a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry. Unlike
-   * setKitTransform (per-drum carrier), this targets kit.global — the whole model reflects. */
-  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+  /** Update KIT-GLOBAL fields (mirror + the Advatek/kit config: expanded output mode, LED
+   * density, hoop count, default hoop spacing, per-output pixel cap) and rebuild geometry.
+   * Unlike setKitTransform (per-drum carrier), this targets kit.global — the whole model
+   * reflects (density/hoopCount/expanded change the pixel model AND the DMX patch). */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.project.kit.global, partial);
+    this.rebuild();
+  }
+
+  /** Edit one hoop's pixel count / reverse flag (C5, B4 first-class hoops[]) and rebuild
+   * geometry. `hoopIndex` is 1-based (A1). No-op when the drum/hoop is unknown or the drum has
+   * no first-class `hoops[]` (a density-resolved drum has no per-hoop objects to write). */
+  setHoopConfig(drumId: string, hoopIndex: number, partial: Partial<Pick<HoopConfig, 'pixelCount' | 'reverse'>>): void {
+    const drum = this.project.kit.drums.find((d) => d.id === drumId);
+    if (!drum?.hoops || hoopIndex < 1 || hoopIndex > drum.hoops.length) return;
+    Object.assign(drum.hoops[hoopIndex - 1]!, partial);
     this.rebuild();
   }
 

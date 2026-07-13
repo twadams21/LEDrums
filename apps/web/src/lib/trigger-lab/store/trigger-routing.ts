@@ -18,12 +18,32 @@ export interface DrumTransformPartial {
   diameterIn?: number;
   /** Physically flip the drum (geometry-only reflection; DMX bytes unchanged). */
   flip?: boolean;
+  /** Per-drum swatch (`DrumConfig.color`, hex) — the C3 drum-inspector Color control. */
+  color?: string;
 }
 
-/** Partial kit-global geometry change (S11): mirror is kit-wide, not per-drum. */
+/** Partial kit-global change (S11 mirror + C1/C2 kit config): all kit-wide, not per-drum. */
 export interface KitGlobalPartial {
   /** Kit-wide mirror mode (geometry-only world reflection; DMX bytes unchanged). */
   mirror?: 'none' | 'x' | 'y';
+  /** Advatek expanded output mode (B2) — lives at kit.global.expanded. */
+  expanded?: boolean;
+  /** Global LED density (px/m). */
+  ledDensityPxPerM?: number;
+  /** Global hoops-per-drum count. */
+  hoopCount?: number;
+  /** Default vertical gap between hoops (mm). */
+  defaultHoopSpacingMm?: number;
+  /** Max pixels a single physical output may carry (Advatek PixLite). */
+  maxPixelsPerOutput?: number;
+}
+
+/** Partial per-hoop edit (B4 first-class hoops[]) — pixel count and/or reverse flag. */
+export interface HoopConfigPartial {
+  /** Literal LED count for this hoop. */
+  pixelCount?: number;
+  /** Reverse the pixel index→position mapping within this hoop (wired-backwards strip). */
+  reverse?: boolean;
 }
 
 /** Partial output-settings change (controller node: protocol/host/rgb/fps/transport fields). */
@@ -47,9 +67,31 @@ export function applyDrumTransform(project: Project, drumId: string, partial: Dr
   };
 }
 
-/** Kit-global geometry change (S11 mirror): merge onto project.kit.global (immutable). */
+/** Kit-global change (S11 mirror + C1/C2 config): merge onto project.kit.global (immutable). */
 export function applyKitGlobal(project: Project, partial: KitGlobalPartial): Project {
   return { ...project, kit: { ...project.kit, global: { ...project.kit.global, ...partial } } };
+}
+
+/** Per-hoop edit (B4): merge a partial onto `drum.hoops[hoopIndex-1]` (immutable). `hoopIndex`
+    is 1-based (A1). Safe no-op when the drum is unknown, has no first-class `hoops[]`, or the
+    index is out of range — matching the server-apply backstop (an out-of-range hoop is not a
+    valid write target). Preserves the drum/hoop refs it doesn't touch. */
+export function applyHoopConfig(
+  project: Project,
+  drumId: string,
+  hoopIndex: number,
+  partial: HoopConfigPartial,
+): Project {
+  return {
+    ...project,
+    kit: {
+      ...project.kit,
+      drums: project.kit.drums.map((d) => {
+        if (d.id !== drumId || !d.hoops || hoopIndex < 1 || hoopIndex > d.hoops.length) return d;
+        return { ...d, hoops: d.hoops.map((h, i) => (i === hoopIndex - 1 ? { ...h, ...partial } : h)) };
+      }),
+    },
+  };
 }
 
 /** Replace the physical-output topology (a Patch rewire → PixLite patch order). Keeps the

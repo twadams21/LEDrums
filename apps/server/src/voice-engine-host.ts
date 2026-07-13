@@ -9,6 +9,7 @@ import {
   voice,
   type DmxMap,
   type DrumConfig,
+  type HoopConfig,
   type InputMap,
   type KitConfig,
   type KitGlobalConfig,
@@ -201,7 +202,7 @@ export class VoiceEngineHost {
   setKitTransform(
     drumId: string,
     partial: Partial<
-      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip'>
+      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip' | 'color'>
     >,
   ): void {
     const drum = this.kit.drums.find((d) => d.id === drumId);
@@ -216,10 +217,22 @@ export class VoiceEngineHost {
     this.reloadKit();
   }
 
-  /** Edit a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry live. Kit-global,
-   * not per-drum — the whole model reflects. Rebuilds the model (not just dmxMap). */
-  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+  /** Edit KIT-GLOBAL fields (mirror + Advatek/kit config: expanded, LED density, hoop count,
+   * default hoop spacing, per-output pixel cap) and rebuild geometry live. Kit-global, not
+   * per-drum — the whole model reflects; density/hoopCount/expanded change the DMX patch too,
+   * so reloadKit rebuilds the model AND dmxMap AND re-applies output. */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.kit.global, partial);
+    this.reloadKit();
+  }
+
+  /** Edit one hoop's pixel count / reverse flag (C5, B4 first-class hoops[]) and rebuild
+   * geometry live. `hoopIndex` is 1-based (A1). No-op for an unknown drum/hoop or a
+   * density-resolved drum (no first-class `hoops[]`). Mirrors Engine.setHoopConfig. */
+  setHoopConfig(drumId: string, hoopIndex: number, partial: Partial<Pick<HoopConfig, 'pixelCount' | 'reverse'>>): void {
+    const drum = this.kit.drums.find((d) => d.id === drumId);
+    if (!drum?.hoops || hoopIndex < 1 || hoopIndex > drum.hoops.length) return;
+    Object.assign(drum.hoops[hoopIndex - 1]!, partial);
     this.reloadKit();
   }
 
