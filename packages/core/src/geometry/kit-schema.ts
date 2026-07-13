@@ -361,9 +361,13 @@ export function parseKit(raw: unknown): KitConfig {
   return kitSchema.parse(migrateKit(raw));
 }
 
-/** Resolve the effective hoop count for a drum (per-drum override or global). */
+/** Resolve the effective hoop count for a drum. When `hoops[]` is present it is AUTHORITATIVE
+ *  (B4 — `hoops.length` is the count the pixel model builds and `buildDmxMap` range-checks), so it
+ *  wins over `hoopCount`/global; otherwise fall back to the per-drum override, then the kit global.
+ *  Keeping this aligned with `buildPixelModel` is what makes routing-integrity's "a routing that
+ *  passes here never throws in buildDmxMap" contract hold for first-class (divergent) drums. */
 export function drumHoopCount(kit: KitConfig, drum: DrumConfig): number {
-  return drum.hoopCount ?? kit.global.hoopCount;
+  return drum.hoops?.length ?? drum.hoopCount ?? kit.global.hoopCount;
 }
 
 /** Resolve the effective LED density for a drum (per-drum override or global). */

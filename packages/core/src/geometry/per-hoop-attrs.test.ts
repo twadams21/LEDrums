@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CURRENT_KIT_VERSION,
+  drumHoopCount,
   migrateKit,
   parseKit,
   type HoopConfig,
@@ -215,5 +216,31 @@ describe('B4 — parity: reverse:false hoops[] === the legacy uniform path (byte
     expect(model.pixelCount).toBe(32);
     const map = buildDmxMap(migrated, model);
     for (let id = 0; id < 32; id++) expect(map.perPixel[id]).toEqual({ channel: id * 3 });
+  });
+});
+
+/* Track-review regression (2026-07-13): `drumHoopCount` MUST honour B4's authoritative
+   `hoops.length`, so the routing accept/reject gate + coverage warning agree with the pixel model
+   / buildDmxMap for a first-class drum whose hoops[] diverges from hoopCount/global. Before the
+   fix the helper returned `hoopCount ?? global`, so the gate accepted a routing buildDmxMap threw
+   on (and falsely rejected a valid one). */
+describe('drumHoopCount — hoops[] is authoritative (track-review regression)', () => {
+  it('returns hoops.length when it diverges from global (fewer hoops)', () => {
+    const k = kit({ hoops: [hoop(30), hoop(30), hoop(30)] }, { hoopCount: 4 });
+    expect(drumHoopCount(k, k.drums[0]!)).toBe(3);
+    // and it agrees with the pixel model, which is the authority buildDmxMap range-checks.
+    expect(buildPixelModel(k).drumById.get('kick')!.hoopCount).toBe(3);
+  });
+
+  it('returns hoops.length when it diverges (more hoops than global)', () => {
+    const k = kit({ hoops: [hoop(10), hoop(10), hoop(10), hoop(10), hoop(10)] }, { hoopCount: 4 });
+    expect(drumHoopCount(k, k.drums[0]!)).toBe(5);
+    expect(buildPixelModel(k).drumById.get('kick')!.hoopCount).toBe(5);
+  });
+
+  it('falls back to hoopCount/global when hoops[] is absent (unchanged legacy behaviour)', () => {
+    const k = kit({ pixelsPerHoop: 8 }, { hoopCount: 4 });
+    expect(k.drums[0]!.hoops).toBeUndefined();
+    expect(drumHoopCount(k, k.drums[0]!)).toBe(4);
   });
 });
