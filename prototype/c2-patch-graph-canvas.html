@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Patch Graph v2 — Canvas design direction (C2 prototype)</title>
+<style>
+  /* ================================================================
+     LEDrums design tokens (subset, copied verbatim from
+     apps/web/src/styles/tokens.css — Resend-dark, phosphor-lime accent).
+     Self-contained: no external fonts/CSS/JS. System + mono fallbacks.
+     ================================================================ */
+  :root {
+    color-scheme: dark;
+    --bg: oklch(0.124 0.011 256);
+    --bg-inset: oklch(0.108 0.010 256);
+    --surface: oklch(0.152 0.012 256);
+    --surface-2: oklch(0.184 0.013 256);
+    --surface-3: oklch(0.224 0.014 256);
+    --surface-inset: oklch(0.108 0.010 256);
+
+    --border-faint: oklch(0.240 0.012 256);
+    --border: oklch(0.300 0.015 256);
+    --border-strong: oklch(0.430 0.022 256);
+
+    --ink: oklch(0.967 0.004 256);
+    --text: oklch(0.905 0.005 256);
+    --text-muted: oklch(0.770 0.009 256);
+    --text-faint: oklch(0.668 0.011 256);
+    --text-disabled: oklch(0.560 0.009 256);
+
+    --accent: oklch(0.845 0.190 128);
+    --accent-bright: oklch(0.900 0.195 128);
+    --accent-dim: oklch(0.560 0.120 130);
+    --accent-soft: oklch(0.845 0.190 128 / 0.15);
+    --on-accent: oklch(0.210 0.05 130);
+
+    --live: oklch(0.630 0.224 25);
+    --ok: oklch(0.760 0.150 150);
+    --warn: oklch(0.810 0.150 80);
+
+    /* signal-flow role colours (STAGE_ROLE from patch-topology.ts) */
+    --role-input: oklch(0.720 0.130 245);    /* trigger  */
+    --role-content: oklch(0.700 0.165 300);  /* hoop     */
+    --role-layer: oklch(0.745 0.150 152);    /* drum     */
+    --role-output: oklch(0.720 0.120 205);   /* output   */
+    --role-mod: oklch(0.760 0.130 330);
+
+    /* wires stay GREY — Trent de-coloured them deliberately */
+    --wire: oklch(0.560 0.012 256);
+    --wire-ref: oklch(0.430 0.012 256);
+
+    --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+    --text-lg: 1.125rem;
+    --tracking-label: 0.04em;
+
+    --space-1: 4px; --space-1_5: 6px; --space-2: 8px; --space-3: 12px;
+    --space-4: 16px; --space-5: 24px; --space-6: 32px;
+
+    --radius-1: 3px; --radius-2: 5px; --radius-3: 8px; --radius-pill: 999px;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.40);
+    --shadow-2: 0 6px 20px rgb(0 0 0 / 0.45);
+    --shadow-3: 0 18px 48px rgb(0 0 0 / 0.55);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); font-size: var(--text-base);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ---- Top chrome: tabbed-header title treatment (reference) ---- */
+  header.topbar {
+    display: flex; align-items: center; gap: var(--space-4);
+    height: 46px; padding: 0 var(--space-4);
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  .brand { display: flex; align-items: center; gap: var(--space-2); font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 10px var(--accent-soft); }
+  .tabs { display: flex; align-items: stretch; height: 100%; margin-left: var(--space-2); }
+  .tab {
+    display: flex; align-items: center; padding: 0 var(--space-3); height: 100%;
+    color: var(--text-faint); font-size: var(--text-sm); font-weight: 600;
+    border-bottom: 2px solid transparent; cursor: pointer; user-select: none;
+  }
+  .tab:hover { color: var(--text); }           /* instant, no transition */
+  .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .topbar-spacer { flex: 1; }
+  .pill-hint {
+    font-size: var(--text-2xs); color: var(--text-faint); font-family: var(--font-mono);
+    border: 1px solid var(--border-faint); border-radius: var(--radius-pill);
+    padding: 3px 10px;
+  }
+
+  /* ---- Body: canvas + inspector dock ---- */
+  .layout { flex: 1; display: flex; min-height: 0; }
+  .canvas-wrap { flex: 1; position: relative; overflow: auto; background:
+      radial-gradient(circle at 1px 1px, oklch(0.240 0.012 256) 1px, transparent 0) 0 0 / 22px 22px,
+      var(--bg); }
+  .canvas { position: relative; width: 1300px; height: 740px; }
+
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  path.wire { fill: none; stroke: var(--wire); stroke-width: 2; }
+  path.wire-ref { fill: none; stroke: var(--wire-ref); stroke-width: 1.5; stroke-dasharray: 3 5; }
+  path.wire-live { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 5; opacity: 0.9; }
+
+  /* ---- Zones (labelled holder containers) ---- */
+  .zone {
+    position: absolute; border: 1px dashed var(--border); border-radius: var(--radius-3);
+    background: color-mix(in oklch, var(--surface) 40%, transparent);
+    cursor: pointer;
+  }
+  .zone:hover { border-color: var(--border-strong); }       /* instant */
+  .zone.sel { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+  .zone > .zone-label {
+    position: absolute; top: -1px; left: -1px;
+    display: inline-flex; align-items: center; gap: var(--space-1_5);
+    padding: 4px 10px 4px 8px;
+    font-size: var(--text-2xs); font-weight: 700; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--text-muted);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-3) 0 var(--radius-3) 0;
+  }
+  .zone > .zone-label .zi { width: 13px; height: 13px; color: var(--zone-tint, var(--text-muted)); }
+  .zone.sub {
+    border-style: solid; border-color: var(--border-faint);
+    background: color-mix(in oklch, var(--surface-2) 45%, transparent);
+  }
+  .zone.sub:hover { border-color: var(--border-strong); }
+  .zone.sub.sel { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ---- Node card (verbatim structure from NodeCard.svelte) ---- */
+  .node {
+    position: absolute; width: 176px; text-align: left;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-3); box-shadow: var(--shadow-1);
+    cursor: grab; user-select: none;
+  }
+  .node:active { cursor: grabbing; }
+  .node:hover { border-color: var(--accent-bright); }       /* INSTANT — no transition */
+  .node.sel { border-color: var(--accent); }
+  .node.drop { border-color: var(--accent); border-style: dashed; }
+  .node.dim { opacity: 0.4; }
+  .card-head {
+    position: relative; display: grid;
+    grid-template-columns: auto minmax(0,1fr);
+    grid-template-areas: 'icon title' 'icon sub';
+    align-items: center; column-gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  }
+  .chip {
+    grid-area: icon; display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: var(--radius-2);
+    background: color-mix(in oklch, var(--tint) 14%, transparent);
+    border: 1px solid color-mix(in oklch, var(--tint) 42%, transparent);
+    color: var(--tint);
+  }
+  .chip svg { width: 16px; height: 16px; }
+  .title {
+    grid-area: title; font-size: var(--text-sm); font-weight: 700; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sub {
+    grid-area: sub; font-size: var(--text-2xs); color: var(--text-faint);
+    font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .badge {
+    position: absolute; top: -7px; right: -7px;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: var(--radius-pill);
+    color: var(--accent); background: var(--surface-3); border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-1); line-height: 0;
+  }
+  .badge svg { width: 11px; height: 11px; }
+
+  /* connection handles — small nubs; the WHOLE card is a drop target */
+  .handle {
+    position: absolute; top: 50%; width: 11px; height: 11px; margin-top: -5.5px;
+    border-radius: var(--radius-pill); background: var(--surface-3);
+    border: 1.5px solid var(--border-strong); z-index: 2;
+  }
+  .handle.src { right: -6px; cursor: crosshair; }
+  .handle.tgt { left: -6px; }
+  .handle.src:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ---- Inspector dock ---- */
+  .inspector {
+    flex: 0 0 320px; background: var(--surface); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .insp-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border);
+  }
+  .insp-head .chip { width: 26px; height: 26px; }
+  .insp-head .chip svg { width: 14px; height: 14px; }
+  .insp-title { font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
+  .insp-kind {
+    margin-left: auto; font-size: var(--text-2xs); font-family: var(--font-mono);
+    color: var(--text-faint); text-transform: uppercase; letter-spacing: var(--tracking-label);
+  }
+  .insp-body { padding: var(--space-4); overflow: auto; }
+  .insp-section-label {
+    font-size: var(--text-2xs); font-weight: 700; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--text-faint); margin: 0 0 var(--space-2);
+  }
+  .insp-section-label:not(:first-child) { margin-top: var(--space-5); }
+  .field { display: grid; grid-template-columns: 6.5rem 1fr; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .field > label { font-size: var(--text-xs); color: var(--text-muted); }
+  .control {
+    height: 26px; display: flex; align-items: center; padding: 0 var(--space-2);
+    background: var(--surface-inset); border: 1px solid var(--border); border-radius: var(--radius-2);
+    font-size: var(--text-xs); color: var(--text); font-family: var(--font-mono);
+  }
+  .control.ro { background: transparent; border-color: transparent; color: var(--text-muted); padding-left: 0; }
+  .control.select::after { content: '▾'; margin-left: auto; color: var(--text-faint); }
+  .toggle {
+    width: 34px; height: 20px; border-radius: var(--radius-pill); background: var(--surface-3);
+    border: 1px solid var(--border); position: relative; cursor: pointer;
+  }
+  .toggle::after { content: ''; position: absolute; top: 1px; left: 1px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-faint); }
+  .toggle.on { background: var(--accent-soft); border-color: var(--accent); }
+  .toggle.on::after { left: 15px; background: var(--accent); }
+  .btn {
+    height: 26px; padding: 0 var(--space-3); display: inline-flex; align-items: center; gap: var(--space-1_5);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-2);
+    font-size: var(--text-xs); color: var(--text); cursor: pointer;
+  }
+  .btn:hover { border-color: var(--border-strong); }
+  .btn svg { width: 13px; height: 13px; }
+  .pxtable { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: var(--text-2xs); }
+  .pxtable th, .pxtable td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--border-faint); color: var(--text-muted); }
+  .pxtable th { color: var(--text-faint); font-weight: 600; text-transform: uppercase; letter-spacing: var(--tracking-label); }
+  .pxtable td:first-child, .pxtable th:first-child { text-align: left; }
+  .hint { font-size: var(--text-2xs); color: var(--text-faint); line-height: 1.45; margin: var(--space-2) 0 0; }
+  .chainpill {
+    display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); color: var(--text-muted); background: var(--surface-inset);
+    border: 1px solid var(--border-faint); border-radius: var(--radius-pill); padding: 2px 8px;
+  }
+
+  /* ---- Legend (bottom-left, floating) ---- */
+  .legend {
+    position: absolute; left: var(--space-4); bottom: var(--space-4); z-index: 5;
+    display: flex; flex-direction: column; gap: 6px;
+    background: color-mix(in oklch, var(--surface) 88%, transparent);
+    border: 1px solid var(--border); border-radius: var(--radius-3);
+    padding: var(--space-2) var(--space-3); backdrop-filter: blur(6px);
+    font-size: var(--text-2xs); color: var(--text-muted);
+  }
+  .legend .row { display: flex; align-items: center; gap: var(--space-2); }
+  .legend svg { width: 34px; height: 10px; }
+
+  /* ---- Toast (wiring rejection feedback → classifyChainConnection) ---- */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+    background: var(--surface-3); color: var(--ink);
+    border: 1px solid var(--live); border-left: 3px solid var(--live);
+    border-radius: var(--radius-2); padding: 8px 14px; font-size: var(--text-xs);
+    box-shadow: var(--shadow-3); z-index: 90; display: none; max-width: 420px;
+  }
+  .toast.ok { border-color: var(--ok); border-left-color: var(--ok); }
+  .toast code { font-family: var(--font-mono); color: var(--text-faint); font-size: var(--text-2xs); }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span> LEDrums</div>
+    <nav class="tabs">
+      <div class="tab">Perform</div>
+      <div class="tab active">Patch</div>
+      <div class="tab">Play</div>
+      <div class="tab">Kit</div>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="pill-hint">prototype · design direction only</div>
+  </header>
+
+  <div class="layout">
+    <div class="canvas-wrap">
+      <div class="canvas" id="canvas">
+        <svg class="wires" id="wires"></svg>
+        <div class="legend">
+          <div class="row"><svg viewBox="0 0 34 10"><path class="wire" d="M1 5 C 12 5, 22 5, 33 5"/></svg> Output → Hoop → Hoop (physical data run)</div>
+          <div class="row"><svg viewBox="0 0 34 10"><path class="wire-ref" d="M1 5 C 12 5, 22 5, 33 5"/></svg> Trigger → Drum (reference, non-interactive)</div>
+        </div>
+      </div>
+    </div>
+    <aside class="inspector">
+      <div class="insp-head">
+        <span class="chip" id="inspChip" style="--tint:var(--role-output)"></span>
+        <span class="insp-title" id="inspTitle">Controller</span>
+        <span class="insp-kind" id="inspKind">zone</span>
+      </div>
+      <div class="insp-body" id="inspBody"></div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================================
+   C2 Patch Graph Canvas — throwaway design-direction prototype.
+   Conveys the v2 model: 3 holder zones, Output→Hoop→Hoop physical chains,
+   selection→inspector routing, grey static wires, instant hover, drop-anywhere
+   wiring with classifyChainConnection-style rejection. NOT the real slice.
+   ============================================================================ */
+
+/* ---- inline lucide-style icons (match the app's icon set) ---- */
+const ICON = {
+  cpu:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>',
+  plug:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>',
+  disc:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M6 12a6 6 0 0 1 1.8-4.2"/><circle cx="12" cy="12" r="2.2"/><path d="M18 12a6 6 0 0 1-1.8 4.2"/></svg>',
+  circle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg>',
+  zap:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>',
+  layers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 2.2a2 2 0 0 0-1.6 0L2.6 6.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0l8.6-3.9a1 1 0 0 0 0-1.8Z"/><path d="m22 12.5-9.2 4.2a2 2 0 0 1-1.6 0L2 12.5"/></svg>',
+  link:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg>',
+  sun:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+};
+
+const ROLE = {
+  output:  'var(--role-output)',
+  hoop:    'var(--role-content)',
+  drum:    'var(--role-layer)',
+  trigger: 'var(--role-input)',
+  controller:'var(--role-output)',
+  kit:     'var(--role-layer)',
+  triggers:'var(--role-input)',
+};
+
+/* ---- mock kit: 4 drums, 8 hoops, 4 outputs, 2 triggers ---- */
+/* pixel-per-hoop counts are illustrative (Kick heavier than toms/snare). */
+const NODES = [
+  // Controller zone → Output nodes
+  { id:'o1', type:'output', label:'Output 1', sub:'univ 0 · RGB',  x:44,  y:120 },
+  { id:'o2', type:'output', label:'Output 2', sub:'univ 2 · RGB',  x:44,  y:214 },
+  { id:'o3', type:'output', label:'Output 3', sub:'univ 4 · GRB',  x:44,  y:308 },
+  { id:'o4', type:'output', label:'Output 4', sub:'unwired',       x:44,  y:402 },
+
+  // Drum Kit → Kick
+  { id:'k1', type:'hoop', drum:'kick', label:'Kick · Hoop 1', sub:'196 px', x:340, y:126 },
+  { id:'k2', type:'hoop', drum:'kick', label:'Kick · Hoop 2', sub:'196 px', x:552, y:126 },
+  // Snare
+  { id:'s1', type:'hoop', drum:'snare', label:'Snare · Hoop 1', sub:'108 px', x:340, y:278 },
+  { id:'s2', type:'hoop', drum:'snare', label:'Snare · Hoop 2', sub:'108 px', x:552, y:278 },
+  // Tom 1
+  { id:'t1a', type:'hoop', drum:'tom1', label:'Tom 1 · Hoop 1', sub:'108 px', x:340, y:430 },
+  { id:'t1b', type:'hoop', drum:'tom1', label:'Tom 1 · Hoop 2', sub:'108 px', x:552, y:430 },
+  // Tom 2
+  { id:'t2a', type:'hoop', drum:'tom2', label:'Tom 2 · Hoop 1', sub:'136 px', x:340, y:582 },
+  { id:'t2b', type:'hoop', drum:'tom2', label:'Tom 2 · Hoop 2', sub:'136 px', x:552, y:582 },
+
+  // Drum Triggers zone
+  { id:'trKick',  type:'trigger', drum:'kick',  label:'Kick Trigger',  sub:'2 zones', x:1068, y:126 },
+  { id:'trSnare', type:'trigger', drum:'snare', label:'Snare Trigger', sub:'1 zone',  x:1068, y:278 },
+];
+
+/* zones: top-level holders + drum sub-zones (visual containers) */
+const ZONES = [
+  { id:'zctl',  kind:'controller', label:'Controller',    x:24,   y:64,  w:216, h:396 },
+  { id:'zkit',  kind:'kit',        label:'Drum Kit',      x:288,  y:40,  w:712, h:648 },
+  { id:'ztrg',  kind:'triggers',   label:'Drum Triggers', x:1048, y:64,  w:216, h:396 },
+];
+const SUBZONES = [
+  { id:'kick',  kind:'drum', label:'Kick',  x:308, y:84,  w:672, h:132 },
+  { id:'snare', kind:'drum', label:'Snare', x:308, y:236, w:672, h:132 },
+  { id:'tom1',  kind:'drum', label:'Tom 1', x:308, y:388, w:672, h:132 },
+  { id:'tom2',  kind:'drum', label:'Tom 2', x:308, y:540, w:672, h:132 },
+];
+
+/* physical wires: Output→Hoop and Hoop→Hoop only. o3 chain crosses Tom1→Tom2. */
+let EDGES = [
+  { from:'o1', to:'k1' }, { from:'k1', to:'k2' },
+  { from:'o2', to:'s1' }, { from:'s1', to:'s2' },
+  { from:'o3', to:'t1a' }, { from:'t1a', to:'t1b' }, { from:'t1b', to:'t2a' }, { from:'t2a', to:'t2b' },
+];
+/* trigger→drum reference wires (greyed, dotted, NON-interactive) */
+const REF_EDGES = [ { from:'trKick', to:'kick' }, { from:'trSnare', to:'snare' } ];
+
+const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+const subById = Object.fromEntries(SUBZONES.map(z => [z.id, z]));
+const ICON_FOR = { output:'plug', hoop:'circle', drum:'disc', trigger:'zap', controller:'cpu', kit:'layers', triggers:'zap' };
+
+const canvas = document.getElementById('canvas');
+const wiresSvg = document.getElementById('wires');
+let selected = { kind:'zone', id:'zctl' };
+
+/* ============================ RENDER ============================ */
+function render() {
+  // zones (behind), then sub-zones, then wires (svg already in DOM), then nodes
+  canvas.querySelectorAll('.zone, .node').forEach(el => el.remove());
+
+  for (const z of ZONES) canvas.appendChild(zoneEl(z, false));
+  for (const z of SUBZONES) canvas.appendChild(zoneEl(z, true));
+  for (const n of NODES) canvas.appendChild(nodeEl(n));
+
+  renderWires();
+  renderInspector();
+}
+
+function zoneEl(z, isSub) {
+  const el = document.createElement('div');
+  el.className = 'zone' + (isSub ? ' sub' : '');
+  el.style.left = z.x + 'px'; el.style.top = z.y + 'px';
+  el.style.width = z.w + 'px'; el.style.height = z.h + 'px';
+  el.style.setProperty('--zone-tint', ROLE[z.kind] || 'var(--text-muted)');
+  el.dataset.zone = z.id; el.dataset.kind = z.kind;
+  const isSel = (selected.kind === (isSub ? 'subzone' : 'zone')) && selected.id === z.id;
+  if (isSel) el.classList.add('sel');
+  el.innerHTML = `<span class="zone-label"><span class="zi">${ICON[ICON_FOR[z.kind]]}</span>${z.label}</span>`;
+  el.addEventListener('pointerdown', (e) => {
+    // clicking empty zone area selects the zone (nodes stop propagation)
+    if (e.target === el || e.target.closest('.zone-label')) {
+      e.stopPropagation();
+      selected = { kind: isSub ? 'subzone' : 'zone', id: z.id };
+      render();
+    }
+  });
+  return el;
+}
+
+function nodeEl(n) {
+  const el = document.createElement('div');
+  el.className = 'node';
+  el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+  el.style.setProperty('--tint', ROLE[n.type]);
+  el.dataset.id = n.id;
+  if (selected.kind === 'node' && selected.id === n.id) el.classList.add('sel');
+
+  const badge = n.type === 'trigger'
+    ? `<span class="badge" title="bound to its drum by identity">${ICON.link}</span>` : '';
+  const tgt = (n.type === 'hoop') ? `<span class="handle tgt"></span>` : '';
+  const src = (n.type === 'output' || n.type === 'hoop') ? `<span class="handle src" data-src="${n.id}"></span>` : '';
+  el.innerHTML = `
+    ${tgt}${src}
+    <div class="card-head">
+      <span class="chip">${ICON[ICON_FOR[n.type]]}</span>
+      <span class="title">${n.label}</span>
+      <span class="sub">${n.sub}</span>
+    </div>${badge}`;
+
+  attachNodeInteractions(el, n);
+  return el;
+}
+
+/* ============================ WIRES ============================ */
+function portPoint(nodeId, side) {
+  const el = canvas.querySelector(`.node[data-id="${nodeId}"]`);
+  if (!el) return { x:0, y:0 };
+  const x = el.offsetLeft, y = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
+  return side === 'src' ? { x: x + w, y: y + h/2 } : { x, y: y + h/2 };
+}
+function subRightMid(subId) {
+  const z = subById[subId];
+  return { x: z.x + z.w, y: z.y + z.h/2 };
+}
+function bezier(s, t) {
+  const dx = Math.max(40, Math.abs(t.x - s.x) * 0.5);
+  return `M ${s.x} ${s.y} C ${s.x + dx} ${s.y}, ${t.x - dx} ${t.y}, ${t.x} ${t.y}`;
+}
+function renderWires(extra) {
+  let out = '';
+  for (const e of REF_EDGES) {
+    const s = portPoint(e.from, 'tgt');        // trigger left handle side
+    const sLeft = { x: s.x, y: s.y };
+    const t = subRightMid(e.to);
+    out += `<path class="wire-ref" d="${bezier(t, sLeft)}"/>`; // draw drum→trigger visually
+  }
+  for (const e of EDGES) {
+    out += `<path class="wire" d="${bezier(portPoint(e.from,'src'), portPoint(e.to,'tgt'))}"/>`;
+  }
+  if (extra) out += extra;
+  wiresSvg.innerHTML = out;
+}
+
+/* ==================== INTERACTIONS: move + wire ==================== */
+function attachNodeInteractions(el, n) {
+  const srcHandle = el.querySelector('.handle.src');
+  if (srcHandle) srcHandle.addEventListener('pointerdown', (e) => startWire(e, n));
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.handle.src')) return; // handled by startWire
+    e.stopPropagation();
+    // select
+    selected = { kind:'node', id:n.id };
+    render();
+    startMove(e, n);
+  });
+}
+
+function startMove(e, n) {
+  const el = canvas.querySelector(`.node[data-id="${n.id}"]`);
+  const startX = e.clientX, startY = e.clientY, ox = n.x, oy = n.y;
+  let moved = false;
+  function mv(ev) {
+    const dx = ev.clientX - startX, dy = ev.clientY - startY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+    n.x = Math.max(0, ox + dx); n.y = Math.max(0, oy + dy);
+    el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+    renderWires();
+  }
+  function up() {
+    window.removeEventListener('pointermove', mv);
+    window.removeEventListener('pointerup', up);
+  }
+  window.addEventListener('pointermove', mv);
+  window.addEventListener('pointerup', up);
+}
+
+/* live wire drag — drop ANYWHERE on a node connects to its input */
+function startWire(e, srcNode) {
+  e.stopPropagation();
+  const start = portPoint(srcNode.id, 'src');
+  let hoverEl = null;
+  function mv(ev) {
+    const pt = toCanvas(ev);
+    const live = `<path class="wire-live" d="${bezier(start, pt)}"/>`;
+    renderWires(live);
+    // highlight drop target (whole card)
+    const over = document.elementFromPoint(ev.clientX, ev.clientY);
+    const card = over && over.closest && over.closest('.node');
+    if (card !== hoverEl) {
+      if (hoverEl) hoverEl.classList.remove('drop');
+      hoverEl = card;
+      if (hoverEl && hoverEl.dataset.id !== srcNode.id) hoverEl.classList.add('drop');
+    }
+  }
+  function up(ev) {
+    window.removeEventListener('pointermove', mv);
+    window.removeEventListener('pointerup', up);
+    if (hoverEl) hoverEl.classList.remove('drop');
+    const over = document.elementFromPoint(ev.clientX, ev.clientY);
+    const card = over && over.closest && over.closest('.node');
+    if (card) tryConnect(srcNode.id, card.dataset.id);
+    renderWires();
+  }
+  window.addEventListener('pointermove', mv);
+  window.addEventListener('pointerup', up);
+}
+function toCanvas(ev) {
+  const r = canvas.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+
+/* ---- classifyChainConnection (mirrors core/model/chain-wiring.ts codes) ---- */
+function classify(fromId, toId) {
+  if (fromId === toId) return { ok:false, code:'self', message:'A node cannot wire to itself.' };
+  const from = byId[fromId], to = byId[toId];
+  if (to.type !== 'hoop') return { ok:false, code:'target-not-hoop', message:'Only a Hoop can receive a wire (drop onto a hoop).' };
+  if (from.type === 'output' && EDGES.some(e => e.from === fromId))
+    return { ok:false, code:'output-already-wired', message:'This Output already starts a chain (1 Output → exactly 1 Hoop).' };
+  if (from.type === 'hoop' && EDGES.some(e => e.from === fromId))
+    return { ok:false, code:'source-has-downstream', message:'This Hoop already feeds a downstream hoop (1 downstream max).' };
+  if (EDGES.some(e => e.to === toId))
+    return { ok:false, code:'hoop-has-upstream', message:'That Hoop already has an upstream (1 upstream max).' };
+  // cycle: does walking upstream from `from` reach `to`?
+  let cur = fromId, guard = 0;
+  while (cur && guard++ < 100) {
+    if (cur === toId) return { ok:false, code:'cycle', message:'That would create a cycle in the chain.' };
+    const up = EDGES.find(e => e.to === cur);
+    cur = up ? up.from : null;
+  }
+  return { ok:true };
+}
+function tryConnect(fromId, toId) {
+  const v = classify(fromId, toId);
+  if (!v.ok) { toast(v.message, v.code, false); return; }
+  EDGES.push({ from:fromId, to:toId });
+  // refresh subs (unwired label on outputs, etc.)
+  const o = byId[fromId]; if (o.type === 'output' && o.sub === 'unwired') o.sub = 'wired';
+  render();
+  toast('Wired ' + byId[fromId].label + ' → ' + byId[toId].label, 'ok', true);
+}
+
+let toastTimer = null;
+function toast(msg, code, ok) {
+  const t = document.getElementById('toast');
+  t.className = 'toast' + (ok ? ' ok' : '');
+  t.innerHTML = msg + (code && !ok ? ` <code>${code}</code>` : '');
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 2600);
+}
+
+/* ============================ INSPECTOR ============================ */
+function renderInspector() {
+  const chip = document.getElementById('inspChip');
+  const title = document.getElementById('inspTitle');
+  const kind = document.getElementById('inspKind');
+  const body = document.getElementById('inspBody');
+  let tint, iconKey, name, kindLabel, html;
+
+  if (selected.kind === 'node') {
+    const n = byId[selected.id];
+    tint = ROLE[n.type]; iconKey = ICON_FOR[n.type]; name = n.label; kindLabel = n.type;
+    html = INSPECTORS[n.type](n);
+  } else if (selected.kind === 'subzone') {
+    const z = subById[selected.id];
+    tint = ROLE.drum; iconKey = 'disc'; name = z.label; kindLabel = 'drum';
+    html = INSPECTORS.drumZone(z);
+  } else {
+    const z = ZONES.find(zz => zz.id === selected.id);
+    tint = ROLE[z.kind]; iconKey = ICON_FOR[z.kind]; name = z.label; kindLabel = z.kind + ' zone';
+    html = INSPECTORS[z.kind + 'Zone'](z);
+  }
+  chip.style.setProperty('--tint', tint);
+  chip.innerHTML = ICON[iconKey];
+  title.textContent = name;
+  kind.textContent = kindLabel;
+  body.innerHTML = html;
+  // wire up placeholder toggles
+  body.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
+}
+
+const roField = (l, v) => `<div class="field"><label>${l}</label><span class="control ro">${v}</span></div>`;
+const inField = (l, v) => `<div class="field"><label>${l}</label><span class="control">${v}</span></div>`;
+const selField = (l, v) => `<div class="field"><label>${l}</label><span class="control select">${v}</span></div>`;
+const tglField = (l, on) => `<div class="field"><label>${l}</label><span class="toggle${on?' on':''}"></span></div>`;
+
+const chainOf = (rootId) => {
+  const seq = [byId[rootId].label.replace('Output ','O')];
+  let cur = rootId; let g = 0;
+  while (g++ < 20) { const e = EDGES.find(x => x.from === cur); if (!e) break; seq.push(byId[e.to].label.split(' · ')[1] || byId[e.to].label); cur = e.to; }
+  return seq;
+};
+
+const INSPECTORS = {
+  /* ---- zones ---- */
+  controllerZone: () => `
+    <p class="insp-section-label">Device</p>
+    ${inField('Nickname','PixLite A4')}
+    ${selField('Protocol','Art-Net')}
+    ${inField('Host / IP','10.0.0.42')}
+    ${inField('Port','6454')}
+    ${tglField('Expanded mode', true)}
+    <p class="hint">Expanded on = <b>8 outputs</b> (Advatek: physical port n carries logical 2n-1 &amp; 2n). Off = 4 outputs. Migrations default on; new files off.</p>
+    ${tglField('Broadcast', false)}
+    ${selField('State','armed')}
+    <p class="insp-section-label">Pixel output table</p>
+    <table class="pxtable">
+      <tr><th>Out</th><th>Univ</th><th>Chan</th><th>Px</th></tr>
+      <tr><td>1</td><td>0</td><td>1</td><td>392</td></tr>
+      <tr><td>2</td><td>3</td><td>1</td><td>216</td></tr>
+      <tr><td>3</td><td>5</td><td>1</td><td>488</td></tr>
+      <tr><td>4</td><td>—</td><td>—</td><td>0</td></tr>
+    </table>
+    <p class="hint">Read-only — tells you how to configure the PixLite (mirrors its v1.7 config).</p>`,
+
+  kitZone: () => `
+    <p class="insp-section-label">Kit globals</p>
+    ${inField('LED density','60 px/m')}
+    ${inField('Hoops / drum','2')}
+    ${inField('Hoop spacing','35 mm')}
+    ${inField('Max px / output','680')}
+    ${roField('Total pixels','1,096')}
+    <p class="insp-section-label">Preview</p>
+    ${tglField('Highlight Hoop 1 · Px 1', true)}
+    <p class="hint">Kit-global geometry defaults. Mirror is a coordinate transform about each drum's centre (rotation only — world position holds).</p>`,
+
+  triggersZone: () => `
+    <p class="insp-section-label">Drum Triggers</p>
+    <p class="hint">Trigger nodes bind to their drum <b>by identity</b>, not by wire. The greyed dotted line is a non-interactive reference only.</p>
+    ${roField('Triggers','2')}
+    ${roField('Bound drums','Kick, Snare')}
+    <div style="margin-top:12px"><button class="btn">${ICON.zap} Add trigger</button></div>`,
+
+  drumZone: (z) => `
+    <p class="insp-section-label">Drum</p>
+    ${inField('Label', z.label)}
+    ${inField('Diameter','22 in')}
+    ${inField('Origin','0, 0, 0 mm')}
+    ${inField('Rotation','0, 0, 0°')}
+    ${inField('Start angle','0°')}
+    ${roField('Bound trigger', z.id==='kick'?'Kick Trigger':(z.id==='snare'?'Snare Trigger':'— none —'))}
+    <p class="hint">Origin is the drum's geometric centre — flip/mirror rotates it in place (world position holds). Bound trigger is set on the Trigger node.</p>`,
+
+  /* ---- nodes ---- */
+  output: (n) => {
+    const wired = EDGES.some(e => e.from === n.id);
+    const chain = wired ? chainOf(n.id) : null;
+    return `
+    <p class="insp-section-label">Physical data run</p>
+    ${inField('Start universe', n.sub.includes('univ') ? n.sub.split('·')[0].replace('univ','').trim() : '—')}
+    ${inField('Chan / pixel','3')}
+    ${selField('RGB order', n.sub.includes('GRB') ? 'GRB' : 'RGB')}
+    <p class="hint">RGB order lives per-Output run (relocated off the controller).</p>
+    <p class="insp-section-label">Chain</p>
+    ${wired
+      ? `<div class="chainpill">${chain.join(' → ')}</div><p class="hint">Pixel index order = walk this chain in wire order. Hoop 1 of the run is index 0.</p>`
+      : `<p class="hint">Unwired. Drag from this output's handle onto a hoop to start its chain.</p>`}`;
+  },
+
+  hoop: (n) => {
+    const up = EDGES.find(e => e.to === n.id);
+    const down = EDGES.find(e => e.from === n.id);
+    const drum = subById[n.drum];
+    return `
+    <p class="insp-section-label">Hoop</p>
+    ${roField('Drum', drum.label)}
+    ${inField('Pixels', n.sub)}
+    ${tglField('Reverse winding', false)}
+    <div class="field"><label>Identify</label><button class="btn">${ICON.sun} All on</button></div>
+    <p class="insp-section-label">Chain position</p>
+    ${roField('Upstream', up ? byId[up.from].label : '⚠ none (orphan)')}
+    ${roField('Downstream', down ? byId[down.to].label : '— chain end —')}
+    <p class="hint">Every hoop needs exactly one upstream (Output or hoop) and at most one downstream. Pixels &amp; reverse live per-hoop.</p>`;
+  },
+
+  trigger: (n) => `
+    <p class="insp-section-label">Trigger</p>
+    ${roField('Bound drum', subById[n.drum].label)}
+    <p class="hint">Bound by identity — not wired. Drop a wire? Not here; triggers only reference their drum.</p>
+    <p class="insp-section-label">Zones</p>
+    ${n.id==='trKick'
+      ? `${selField('Centre','MIDI 36')}${selField('Rim','MIDI 37')}`
+      : `${selField('Centre','MIDI 38')}`}
+    <div style="margin-top:10px"><button class="btn">${ICON.zap} Add zone</button></div>
+    <p class="hint">Each zone's name is a fixed sensor slot; the dropdown excludes slots already used on this trigger.</p>`,
+};
+
+/* deselect on empty canvas click */
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.target === canvas || e.target === wiresSvg) {
+    selected = { kind:'zone', id:'zctl' };
+    render();
+  }
+});
+
+render();
+window.addEventListener('resize', renderWires);
+</script>
+</body>
+</html>
