@@ -1,5 +1,6 @@
 import {
   advanceTransport,
+  blockingRoutingIssues,
   buildDmxMap,
   buildPixelModel,
   checkRoutingIntegrity,
@@ -137,8 +138,10 @@ export class VoiceEngineHost {
     } catch (err) {
       // Name WHICH reference broke routing (dangling drum ref / out-of-range hoop — exactly what
       // buildDmxMap throws on) before falling back. checkRoutingIntegrity re-derives it structurally;
-      // fall back to the raw throw text only if it somehow finds nothing.
-      const issues = checkRoutingIntegrity(kit);
+      // fall back to the raw throw text only if it somehow finds nothing. Only BLOCKING (error) issues
+      // caused this throw — filter out `hoop-uncovered` warnings so they don't pollute the degradation
+      // message (an uncovered hoop never degrades the map; buildDmxMap only threw on a real corruption).
+      const issues = blockingRoutingIssues(checkRoutingIntegrity(kit));
       this.pendingRoutingDegradation = issues.length
         ? issues.map((i) => i.message).join('; ')
         : err instanceof Error
