@@ -43,8 +43,9 @@ const hoopPixels = (pixels: Pixel[], hoop: number): Pixel[] =>
 const hoop = (pixelCount: number, reverse = false): HoopConfig => ({ pixelCount, reverse });
 
 // One physical output covering every hoop of `kick`, dense from universe 0 (3 ch/pixel).
+// D1: an output carries its `segments` chain directly (no data-line wrapper).
 const outputFor = (hoopEnd: number) => [
-  { id: 'o1', channelsPerPixel: 3, dataLines: [{ id: 'o1:dl0', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd }] }] },
+  { id: 'o1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd }] },
 ];
 
 describe('B4 — per-hoop pixel counts (hoops within a drum may differ)', () => {
@@ -166,7 +167,7 @@ describe('B4 — migration expands uniform pixelsPerHoop into first-class hoops[
     const parsed = parseKit(v1);
     expect(parsed.version).toBe(CURRENT_KIT_VERSION);
     expect(parsed.global.expanded).toBe(true); // B2
-    expect(parsed.outputs[0]!.dataLines[0]!.segments[0]).toMatchObject({ hoopStart: 1, hoopEnd: 4 }); // A1
+    expect(parsed.outputs[0]!.segments[0]).toMatchObject({ hoopStart: 1, hoopEnd: 4 }); // A1 (D1: segments on output)
     expect(parsed.drums[0]!.hoops).toHaveLength(4); // B4
     expect(parsed.drums[0]!.hoops!.every((h) => h.pixelCount === 9 && h.reverse === false)).toBe(true);
   });

@@ -330,11 +330,13 @@ import PatchMirrorControl from './PatchMirrorControl.svelte';
     return o ? { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel } : { channelsPerPixel: 3 };
   }
 
-  /** A data line's optional `startUniverse` snap — recovered from the authoritative project
-      by its owning output id + index within that output (the S6 data-line Inspector edits it
-      via setRouting), so a set boundary survives a rewire. Absent → the line packs dense. */
+  /** A data line's optional `startUniverse` snap — recovered from the authoritative project so a
+      set boundary survives a rewire. D1 flattened core data lines into outputs (Output = one run),
+      so the snap now lives on the core OUTPUT: the first line of an output recovers it; later lines
+      (only from the synthesized default, which sets no universes) pack dense. Absent → dense. */
   function lineUniverseFor(outputId: string, lineIndex: number): number | undefined {
-    return store.project?.kit.outputs.find((x) => x.id === outputId)?.dataLines[lineIndex]?.startUniverse;
+    if (lineIndex !== 0) return undefined;
+    return store.project?.kit.outputs.find((x) => x.id === outputId)?.startUniverse;
   }
 
   // Read the output half back into a routing, recompile to OutputConfig[], and push it —

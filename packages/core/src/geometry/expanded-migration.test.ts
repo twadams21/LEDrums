@@ -50,8 +50,8 @@ describe('B2 expanded flag — migration (existing → ON)', () => {
     const kit = parseKit(v1Raw);
     expect(kit.version).toBe(CURRENT_KIT_VERSION);
     expect(kit.global.expanded).toBe(true);
-    // A1 step still ran: the 0-based [0..3] range became 1-based [1..4].
-    expect(kit.outputs[0]!.dataLines[0]!.segments[0]).toEqual({ drumId: 'A', hoopStart: 1, hoopEnd: 4 });
+    // A1 step still ran: the 0-based [0..3] range became 1-based [1..4] (D1: segments on the output).
+    expect(kit.outputs[0]!.segments[0]).toEqual({ drumId: 'A', hoopStart: 1, hoopEnd: 4 });
   });
 
   it('respects an explicit expanded value on a pre-B2 kit (does not force ON)', () => {
@@ -67,11 +67,13 @@ describe('B2 expanded flag — migration (existing → ON)', () => {
     expect(round.global.expanded).toBe(true);
   });
 
-  it('migration is a pure relabel — geometry (drums/outputs) is untouched', () => {
-    const before = JSON.parse(JSON.stringify(v2Raw));
+  it('migration preserves the wiring — drums untouched, outputs reshaped (D1 split) but equivalent', () => {
     const kit = parseKit(v2Raw);
-    // outputs + drums survive the migration byte-for-byte (only version + expanded change).
-    expect(kit.outputs).toEqual(before.outputs);
+    // D1 (v6→7) flattens the data line into the output: id becomes the data line's, segments
+    // carried directly — same hoops, same order (the DMX map is byte-identical, see hoop-migration).
+    expect(kit.outputs).toEqual([
+      { id: 'o1:dl0', channelsPerPixel: 3, segments: [{ drumId: 'A', hoopStart: 1, hoopEnd: 4 }] },
+    ]);
     expect(kit.drums.map((d: KitConfig['drums'][number]) => d.id)).toEqual(['A']);
   });
 });

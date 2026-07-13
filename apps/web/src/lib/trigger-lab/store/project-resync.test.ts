@@ -21,7 +21,7 @@ describe('projectResyncMessages', () => {
     const restored = defaultProject();
     const drumId = restored.kit.drums[0]!.id;
     const outputs: OutputConfig[] = [
-      { id: '1', channelsPerPixel: 3, dataLines: [{ id: '1:dl0', segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] }] },
+      { id: '1', channelsPerPixel: 3, segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] },
     ];
     restored.kit.outputs = outputs;
     const live = defaultProject(); // live still has the seed outputs

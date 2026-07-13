@@ -31,7 +31,7 @@ const song = songSchema.parse({ id: 's1' });
 const section = sectionSchema.parse({ id: 'sec1' });
 const binding = triggerBindingSchema.parse({ drumId: 'kick', slot: 0, layerId: 'l1', clipId: 'c1' });
 const inputMap = inputMapSchema.parse({});
-const output = outputSchema.parse({ id: 'o1', dataLines: [{ id: 'dl1', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] }] }); // 1-based hoops (A1)
+const output = outputSchema.parse({ id: 'o1', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] }); // D1: segments on the output; 1-based hoops (A1)
 const patch = projectPatchSchema.parse({ kit: minimalKit });
 const project = projectSchema.parse({ name: 'P', kit: minimalKit });
 

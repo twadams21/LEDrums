@@ -200,16 +200,11 @@ describe('VoiceEngineHost', () => {
       {
         id: 'out0',
         channelsPerPixel: 3,
-        dataLines: [
-          {
-            id: 'out0:dl0',
-            segments: reversed.map((drumId) => ({
-              drumId,
-              hoopStart: 1, // hoops are 1-based (A1)
-              hoopEnd: model.drumById.get(drumId)!.hoopCount,
-            })),
-          },
-        ],
+        segments: reversed.map((drumId) => ({
+          drumId,
+          hoopStart: 1, // hoops are 1-based (A1)
+          hoopEnd: model.drumById.get(drumId)!.hoopCount,
+        })),
       },
     ]);
 
@@ -222,7 +217,7 @@ describe('VoiceEngineHost', () => {
   /** A schema-typed output topology whose segment references a drum the kit lacks — buildDmxMap
    * throws on it, so buildMapSafe must degrade to a flat map AND name the offending reference. */
   const danglingOutputs = [
-    { id: 'out0', channelsPerPixel: 3, dataLines: [{ id: 'out0:dl0', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] },
+    { id: 'out0', channelsPerPixel: 3, segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] },
   ];
 
   it('reports a routing degradation as a named Monitor error before falling back to a flat map', () => {
@@ -277,12 +272,7 @@ describe('VoiceEngineHost', () => {
       {
         id: 'out0',
         channelsPerPixel: 3,
-        dataLines: [
-          {
-            id: 'out0:dl0',
-            segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 1, hoopEnd: d.hoopCount })), // 1-based (A1)
-          },
-        ],
+        segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 1, hoopEnd: d.hoopCount })), // 1-based (A1)
       },
     ];
     host.setKitOutputs(validOutputs);

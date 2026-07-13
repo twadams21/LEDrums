@@ -14,8 +14,12 @@
  * The referential rules mirror {@link buildDmxMap}'s own throws EXACTLY (unknown drum,
  * out-of-range/backwards hoop range), so a routing that passes here never throws there —
  * "valid routings pass untouched". The structural fan-out rule catches what buildDmxMap does
- * NOT: the same physical hoop assigned on two data lines silently OVERWRITES its channel there
- * (last write wins, earlier pixels lost), a corruption that "succeeds" into a wrong map.
+ * NOT: the same physical hoop assigned on two outputs (D1: one output = one data run) silently
+ * OVERWRITES its channel there (last write wins, earlier pixels lost), a corruption that
+ * "succeeds" into a wrong map. In the D1 chain model a hoop has AT MOST ONE upstream — this rule
+ * is that invariant, checked on the linearized topology (the client wiring guard prevents the
+ * fan-in/fan-out/cycle edges that can't linearize; the server backstop catches a double-claim
+ * that reaches it in a posted `outputs`).
  *
  * Those are all `error`-severity — they BLOCK the write. B1 adds one `warning`-severity class,
  * `hoop-uncovered`: a structurally-valid topology that simply doesn't route every kit hoop. That
@@ -30,8 +34,8 @@ import { kitDrumIds } from './integrity';
  * The distinct routing problem classes a topology can carry:
  * - `schema` — malformed shape (fails the kit output schema); located by {@link RoutingIssue.path}.
  * - `unknown-drum` / `hoop-out-of-range` / `hoop-fan-out` — referential + structural, located by
- *   the output/data-line/drum ids.
- * - `hoop-uncovered` — a kit hoop carried on NO data line (a warning, B1; see {@link RoutingIssueSeverity}).
+ *   the output/drum ids.
+ * - `hoop-uncovered` — a kit hoop carried on NO output chain (a warning, B1; see {@link RoutingIssueSeverity}).
  */
 export type RoutingIssueCode = 'schema' | 'unknown-drum' | 'hoop-out-of-range' | 'hoop-fan-out' | 'hoop-uncovered';
 
@@ -56,7 +60,6 @@ export interface RoutingIssue {
   /** Dot-path into the outputs payload — present for `schema` issues. */
   path?: string;
   outputId?: string;
-  dataLineId?: string;
   drumId?: string;
 }
 
@@ -91,56 +94,54 @@ export function checkRoutingIntegrity(
   const hoopCountOf = new Map(kit.drums.map((d) => [d.id, drumHoopCount(kit, d)]));
   const issues: RoutingIssue[] = [];
 
-  // First data line to claim each (drum, hoop) — a second claim is a fan-out.
-  const claimedBy = new Map<string, { outputId: string; dataLineId: string }>();
+  // First output to claim each (drum, hoop) — a second claim is a fan-out (hoop with >1 upstream).
+  const claimedBy = new Map<string, { outputId: string }>();
 
   for (const output of outputs) {
-    for (const dl of output.dataLines) {
-      for (const seg of dl.segments) {
-        const where = { outputId: output.id, dataLineId: dl.id, drumId: seg.drumId };
-        if (!ids.has(seg.drumId)) {
+    for (const seg of output.segments) {
+      const where = { outputId: output.id, drumId: seg.drumId };
+      if (!ids.has(seg.drumId)) {
+        issues.push({
+          code: 'unknown-drum',
+          severity: 'error',
+          message: `output "${output.id}" segment → unknown drum "${seg.drumId}"`,
+          ...where,
+        });
+        continue; // no hoops to range-check or claim against a phantom drum
+      }
+      const hoopCount = hoopCountOf.get(seg.drumId)!;
+      if (seg.hoopStart < 1 || seg.hoopEnd > hoopCount || seg.hoopStart > seg.hoopEnd) {
+        issues.push({
+          code: 'hoop-out-of-range',
+          severity: 'error',
+          message:
+            `output "${output.id}" segment for "${seg.drumId}" has invalid hoop range ` +
+            `${seg.hoopStart}..${seg.hoopEnd} (drum has ${hoopCount} hoops)`,
+          ...where,
+        });
+        continue; // range is nonsensical — don't expand it for fan-out
+      }
+      for (let h = seg.hoopStart; h <= seg.hoopEnd; h++) {
+        const key = `${seg.drumId}#${h}`;
+        const prev = claimedBy.get(key);
+        if (prev) {
           issues.push({
-            code: 'unknown-drum',
-            severity: 'error',
-            message: `output "${output.id}" / dataLine "${dl.id}" segment → unknown drum "${seg.drumId}"`,
-            ...where,
-          });
-          continue; // no hoops to range-check or claim against a phantom drum
-        }
-        const hoopCount = hoopCountOf.get(seg.drumId)!;
-        if (seg.hoopStart < 1 || seg.hoopEnd > hoopCount || seg.hoopStart > seg.hoopEnd) {
-          issues.push({
-            code: 'hoop-out-of-range',
+            code: 'hoop-fan-out',
             severity: 'error',
             message:
-              `output "${output.id}" / dataLine "${dl.id}" segment for "${seg.drumId}" has invalid hoop range ` +
-              `${seg.hoopStart}..${seg.hoopEnd} (drum has ${hoopCount} hoops)`,
+              `hoop ${h} of drum "${seg.drumId}" is driven by more than one output ` +
+              `(output "${prev.outputId}" and output "${output.id}")`,
             ...where,
           });
-          continue; // range is nonsensical — don't expand it for fan-out
+          continue; // report the collision once; keep the first claim
         }
-        for (let h = seg.hoopStart; h <= seg.hoopEnd; h++) {
-          const key = `${seg.drumId}#${h}`;
-          const prev = claimedBy.get(key);
-          if (prev) {
-            issues.push({
-              code: 'hoop-fan-out',
-              severity: 'error',
-              message:
-                `hoop ${h} of drum "${seg.drumId}" is driven by more than one data line ` +
-                `(output "${prev.outputId}" / dataLine "${prev.dataLineId}" and output "${output.id}" / dataLine "${dl.id}")`,
-              ...where,
-            });
-            continue; // report the collision once; keep the first claim
-          }
-          claimedBy.set(key, { outputId: output.id, dataLineId: dl.id });
-        }
+        claimedBy.set(key, { outputId: output.id });
       }
     }
   }
 
   // Completeness (WARNING, B1): once the topology is structurally sound and NON-EMPTY, every
-  // physical hoop of the kit should be carried on exactly one line. An uncovered hoop is not a
+  // physical hoop of the kit should be carried on exactly one output chain. An uncovered hoop is not a
   // corruption — buildDmxMap simply leaves it dark — so it's a `warning` the server ACCEPTS and the
   // editor surfaces as an indicator ("indicators, not restrictions"), never a hard reject. Skipped
   // when the topology is empty (the flat-map default already covers every pixel) and when any error
@@ -154,7 +155,7 @@ export function checkRoutingIntegrity(
           issues.push({
             code: 'hoop-uncovered',
             severity: 'warning',
-            message: `hoop ${h} of drum "${drum.id}" is not carried on any data line (unrouted — it will stay dark)`,
+            message: `hoop ${h} of drum "${drum.id}" is not carried on any output chain (unrouted — it will stay dark)`,
             drumId: drum.id,
           });
         }
