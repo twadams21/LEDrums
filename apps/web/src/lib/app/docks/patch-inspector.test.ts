@@ -68,7 +68,7 @@ describe('zoneSlot', () => {
 const kit = (drumOverrides: Partial<KitConfig['drums'][number]> = {}): KitConfig => ({
   version: 1,
   units: 'mm',
-  global: { ledDensityPxPerM: 60, hoopCount: 4, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 304, mirror: 'none' },
+  global: { ledDensityPxPerM: 60, hoopCount: 4, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 304, mirror: 'none', expanded: false },
   drums: [
     {
       id: 'kick',

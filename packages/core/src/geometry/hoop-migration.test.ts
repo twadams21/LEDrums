@@ -26,7 +26,7 @@ const v1Raw = {
   ],
 };
 
-/** The same physical wiring authored natively 1-based at the current version. */
+/** The same physical wiring authored natively 1-based at version 2 (post-A1, pre-B2). */
 const v2Raw = {
   version: 2,
   global,
@@ -39,6 +39,10 @@ const v2Raw = {
   ],
 };
 
+/** A kit already at the CURRENT version (no migration owed) — used for the by-reference
+ *  idempotence check, which must survive future version bumps. */
+const currentRaw = { ...v2Raw, version: CURRENT_KIT_VERSION, global: { ...global, expanded: false } };
+
 describe('migrateKit — 0-based → 1-based hoop indexing (A1)', () => {
   it('shifts every segment +1 and stamps the current version', () => {
     const migrated = migrateKit(v1Raw) as typeof v2Raw;
@@ -50,7 +54,7 @@ describe('migrateKit — 0-based → 1-based hoop indexing (A1)', () => {
   });
 
   it('is idempotent — a current-version kit is returned untouched', () => {
-    expect(migrateKit(v2Raw)).toBe(v2Raw);
+    expect(migrateKit(currentRaw)).toBe(currentRaw);
     // and migrating an already-migrated kit does not shift again
     const once = migrateKit(v1Raw);
     expect(migrateKit(once)).toEqual(once);
