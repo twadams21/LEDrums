@@ -59,6 +59,20 @@ export const drumSchema = z.object({
    * {@link buildPixelModel} — it is NOT this point. */
   origin: vec3Schema,
   rotation: vec3Schema,
+}).superRefine((drum, ctx) => {
+  // (b) hoops[] is the authoritative hoop count (see {@link drumHoopCount}). When a drum ALSO
+  // carries the legacy `hoopCount`, the two must AGREE — a divergent pair is a latent stored
+  // inconsistency (resolution is unambiguous, `hoops.length` wins, but the data lies). This is
+  // VALIDATION ONLY: it never resizes `hoops[]` nor rewrites `hoopCount`. The *editing* rule
+  // (does changing `hoopCount` resize `hoops[]`?) is a separate decision made where the mutation
+  // happens, NOT here. A drum with only one of the two (or neither) is always accepted.
+  if (drum.hoops && drum.hoopCount !== undefined && drum.hoopCount !== drum.hoops.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['hoopCount'],
+      message: `hoopCount (${drum.hoopCount}) must equal hoops.length (${drum.hoops.length}) when both are set`,
+    });
+  }
 });
 
 /** A maximal run of *consecutive* hoops on one drum within an output's chain, in chain
