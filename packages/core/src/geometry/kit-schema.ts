@@ -96,14 +96,25 @@ export const kitGlobalSchema = z.object({
    * world Y, 'none' is identity. Drums keep their identities — only coordinates reflect.
    * Pixel index order + DMX bytes are unchanged; a mirror never re-patches hardware. */
   mirror: z.enum(['none', 'x', 'y']).default('none'),
+  /** Advatek PixLite **expanded output mode** (B2). OFF = normal: the {@link
+   * PIXLITE_PHYSICAL_OUTPUTS} physical ports ARE the logical outputs. ON = expanded: each
+   * physical port n exposes two logical outputs (2n-1 and 2n), for double the count — see
+   * {@link logicalOutputCount} / {@link logicalOutputsForPhysical}. Purely hardware config,
+   * so it lives beside {@link kitGlobalSchema.maxPixelsPerOutput} (also Advatek), NOT on the
+   * network-adoption `controller` record. New kits default OFF; kits predating this flag
+   * (version < 3) migrate to ON so an established rig keeps its expanded wiring. */
+  expanded: z.boolean().default(false),
 });
 
 /**
- * Current kit schema version. Bumped 1 → 2 by A1 when hoop indexing became 1-based:
- * a version-1 (or version-absent) kit stores 0-based hoop ranges and is shifted +1 by
- * {@link migrateKit} before parse. New kits are written at this version.
+ * Current kit schema version. History:
+ *  - 1 → 2 (A1): hoop indexing became 1-based; a v1/version-absent kit stores 0-based hoop
+ *    ranges and is shifted +1 by {@link migrateKit} before parse.
+ *  - 2 → 3 (B2): the Advatek `expanded` output flag was added; a kit predating it (v < 3)
+ *    is an established rig and migrates to `expanded: true`. New kits are written at this
+ *    version with `expanded: false`.
  */
-export const CURRENT_KIT_VERSION = 2;
+export const CURRENT_KIT_VERSION = 3;
 
 export const kitSchema = z.object({
   version: z.number().int().default(CURRENT_KIT_VERSION),
@@ -154,20 +165,42 @@ function shiftOutputHoops(output: unknown): unknown {
 }
 
 /**
- * Migrate a RAW (pre-parse) kit object across schema versions. Currently the only step is
- * the A1 hoop-index canonicalization: a kit at version < 2 (or with no version) stores
- * **0-based** hoop ranges, so every `OutputSegment.hoopStart/hoopEnd` is shifted **+1** to
- * the new 1-based convention and the version stamped to {@link CURRENT_KIT_VERSION}.
- * Idempotent — a kit already at the current version is returned untouched. Runs BEFORE the
- * schema parse (which now requires 1-based `positive()` ranges), so pre-A1 files still load.
+ * Migrate a RAW (pre-parse) kit object across schema versions. Steps are CUMULATIVE — a kit
+ * enters at its stored version and every later step runs in order:
+ *  - **< 2 (A1):** 0-based hoop ranges are shifted **+1** to the 1-based convention (every
+ *    `OutputSegment.hoopStart/hoopEnd`, in both the current and legacy bare-`segments` shape).
+ *  - **< 3 (B2):** the kit predates the Advatek `expanded` flag → it's an established rig, so
+ *    `global.expanded` defaults **ON** (an explicit value is respected). New kits, written at
+ *    v3, carry `expanded: false`.
+ * The version is stamped to {@link CURRENT_KIT_VERSION} last. Idempotent — a kit already at the
+ * current version is returned untouched (same reference). Runs BEFORE the schema parse, so
+ * pre-migration files still load.
  */
 export function migrateKit(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
   const kit = raw as Record<string, unknown>;
   const version = typeof kit.version === 'number' ? kit.version : 1;
   if (version >= CURRENT_KIT_VERSION) return raw;
-  const migrated: Record<string, unknown> = { ...kit, version: CURRENT_KIT_VERSION };
-  if (Array.isArray(kit.outputs)) migrated.outputs = kit.outputs.map(shiftOutputHoops);
+  const migrated: Record<string, unknown> = { ...kit };
+
+  // v1 → v2 (A1): shift 0-based hoop ranges to 1-based.
+  if (version < 2 && Array.isArray(kit.outputs)) {
+    migrated.outputs = kit.outputs.map(shiftOutputHoops);
+  }
+
+  // v2 → v3 (B2): an established rig defaults to Advatek expanded mode ON. Only injected into
+  // an existing `global` object (a kit missing `global` stays invalid, as before).
+  if (
+    version < 3 &&
+    migrated.global &&
+    typeof migrated.global === 'object' &&
+    !Array.isArray(migrated.global)
+  ) {
+    const global = migrated.global as Record<string, unknown>;
+    if (global.expanded === undefined) migrated.global = { ...global, expanded: true };
+  }
+
+  migrated.version = CURRENT_KIT_VERSION;
   return migrated;
 }
 
@@ -185,4 +218,29 @@ export function drumHoopCount(kit: KitConfig, drum: DrumConfig): number {
 /** Resolve the effective LED density for a drum (per-drum override or global). */
 export function drumDensity(kit: KitConfig, drum: DrumConfig): number {
   return drum.ledDensityPxPerM ?? kit.global.ledDensityPxPerM;
+}
+
+/**
+ * Advatek PixLite A4 physical output ports. In normal mode these ARE the logical outputs; in
+ * expanded mode each physical port n exposes two logical outputs (2n-1 and 2n) — see
+ * {@link kitGlobalSchema.expanded}.
+ */
+export const PIXLITE_PHYSICAL_OUTPUTS = 4;
+
+/**
+ * How many logical outputs a controller exposes for this kit: {@link PIXLITE_PHYSICAL_OUTPUTS}
+ * × 2 (= 8) when expanded, else the physical count (4). This is the Advatek device's port
+ * ceiling, independent of how many `kit.outputs` are actually authored.
+ */
+export function logicalOutputCount(kit: KitConfig): number {
+  return kit.global.expanded ? PIXLITE_PHYSICAL_OUTPUTS * 2 : PIXLITE_PHYSICAL_OUTPUTS;
+}
+
+/**
+ * The logical output number(s) a **1-based** physical port maps to. Expanded (Advatek): port
+ * n → `[2n-1, 2n]`; normal: port n → `[n]`. Pure — the canonical mapping for downstream
+ * consumers (C1 inspector, routing) without embedding the rule at each call site.
+ */
+export function logicalOutputsForPhysical(physicalPort: number, expanded: boolean): number[] {
+  return expanded ? [physicalPort * 2 - 1, physicalPort * 2] : [physicalPort];
 }

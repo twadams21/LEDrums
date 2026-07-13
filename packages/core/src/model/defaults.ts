@@ -34,7 +34,7 @@ const drum = (
  * (The full hardware topology ships separately as `apps/server/projects/default.json`.)
  */
 export const DEFAULT_KIT: KitConfig = parseKit({
-  version: 2, // 1-based hoop indexing (A1)
+  version: 3, // A1 1-based hoop indexing + B2 expanded flag; a NEW kit → expanded defaults OFF
   units: 'mm',
   global: { ledDensityPxPerM: 30, hoopCount: 4, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096 },
   drums: [

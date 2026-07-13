@@ -12,7 +12,8 @@ import {
 import { DEFAULT_KIT } from './defaults';
 
 // Hoop indices are 1-based (A1): hoop 1 is the first hoop. Fixtures below build a
-// version-2 kit (already 1-based) so parseKit does not re-migrate them.
+// version-2 kit (already 1-based) so parseKit does not re-shift their hoop ranges. (Parse
+// still runs the B2 expanded default-ON step, which is irrelevant to routing integrity.)
 
 /** Build a kit with literal per-hoop counts + a topology, mirroring dmx-map.test.ts. */
 function kit(
