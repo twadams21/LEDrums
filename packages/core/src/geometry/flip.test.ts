@@ -80,17 +80,20 @@ describe('flip — geometry-only reflection (S10)', () => {
     expect(mapF.universes).toEqual(mapN.universes);
   });
 
-  it('swaps skins: the hoop stack reflects along local Z (hoop N-1 flips sign, stack inverts)', () => {
+  it('swaps skins: the centred hoop stack reflects along local Z (each hoop flips sign)', () => {
     const n = normal();
     const f = flipped();
     const hoopZ = (m: ReturnType<typeof buildPixelModel>, h: number) =>
       m.pixels.find((p) => p.hoopIndex === h)!.local.z;
     const bottom = 1; // first hoop (1-based, A1)
     const top = 4; // hoopCount
-    // Normal: hoop 1 at the origin plane, top hoop up at +150mm.
-    expect(hoopZ(n, bottom)).toBe(0);
-    expect(hoopZ(n, top)).toBe(150);
-    // Flipped: the top skin reflects to -150mm — the stack now runs the other way.
+    // B3: the stack is centred on the origin. hoopCount 4 × 50mm → halfStack 75mm, so hoop 1
+    // sits at -75mm (skin side) and the top hoop at +75mm — symmetric about the drum centre.
+    expect(hoopZ(n, bottom)).toBe(-75);
+    expect(hoopZ(n, top)).toBe(75);
+    // Flipped: the stack reflects about the centre — every hoop's local Z negates, so the skin
+    // (hoop 1) swaps to +75mm and the top hoop to -75mm. The footprint is unchanged (in place).
+    expect(hoopZ(f, bottom)).toBe(-hoopZ(n, bottom));
     expect(hoopZ(f, top)).toBe(-hoopZ(n, top));
     expect(hoopZ(f, top)).toBeLessThan(hoopZ(f, bottom));
   });

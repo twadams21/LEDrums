@@ -80,7 +80,6 @@ const kit = (drumOverrides: Partial<KitConfig['drums'][number]> = {}): KitConfig
       startAngleDeg: 0,
       origin: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0 },
-      effectOriginLocal: { x: 0, y: 0, z: 0 },
       ...drumOverrides,
     },
   ],

@@ -90,8 +90,9 @@ function pixelsPerHoop(kit: KitConfig, drum: DrumConfig): number {
  *
  * Pixels are emitted grouped by drum, then hoop, then angular index — a stable
  * order the frame buffer and DMX map both rely on. Hoops are circles in the drum's
- * local XY plane stacked along local +Z; world position applies the drum's intrinsic
- * XYZ rotation then its origin translation.
+ * local XY plane stacked along local Z, CENTRED on the origin (B3): the stack spans
+ * [−halfStack, +halfStack] so the drum's `origin` is its geometric centre. World position
+ * applies the drum's intrinsic XYZ rotation then its origin translation.
  */
 export function buildPixelModel(kit: KitConfig): PixelModel {
   const pixels: Pixel[] = [];
@@ -108,14 +109,20 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
     const perHoop = pixelsPerHoop(kit, drum);
     const radiusMm = (drum.diameterIn * MM_PER_INCH) / 2;
     const spacing = drum.hoopSpacingMm;
+    // Half the hoop-stack height along local Z. The stack is centred on the origin (B3), so
+    // hoop h sits at `h*spacing - halfStack` — hoop 1 at −halfStack, the last hoop at +halfStack.
+    const halfStack = ((hoopCount - 1) * spacing) / 2;
     const pixelStart = id;
 
     for (let h = 0; h < hoopCount; h++) {
-      // Flip is a GEOMETRY-ONLY transform: it mirrors the hoop stack along local Z (skins
-      // swap) and negates the intrinsic angular sweep (chase/wind direction) BELOW, but
-      // leaves hoop indices and pixel INDEX order untouched — so the frame buffer and DMX
-      // map stay byte-identical with flip on/off; a flip never re-patches hardware.
-      const localZ = drum.flip ? -(h * spacing) : h * spacing;
+      // Flip is a GEOMETRY-ONLY transform that ROTATES the drum in place about its centre: it
+      // reflects the centred hoop stack along local Z (skins swap) and negates the intrinsic
+      // angular sweep (chase/wind direction) BELOW. Because the stack is centred, the drum's
+      // world footprint (and its origin) is invariant to flip — only orientation changes. Hoop
+      // indices and pixel INDEX order are untouched, so the frame buffer and DMX map stay
+      // byte-identical with flip on/off; a flip never re-patches hardware.
+      const baseZ = h * spacing - halfStack;
+      const localZ = drum.flip ? -baseZ : baseZ;
       const normHoop = hoopCount > 1 ? h / (hoopCount - 1) : 0;
       const zone = classifyZone(normHoop);
       const segLen = (Math.PI * 2 * radiusMm) / perHoop;
@@ -174,10 +181,16 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
       pixelsPerHoop: perHoop,
       hoopCount,
       radiusMm,
-      // Reflect the effect origin identically — it's a world coordinate that radial/3D effects
-      // sample distance from against the (mirrored) pixel world positions, so it must mirror too.
+      // Effect/hit origin = the CENTRE OF THE FIRST HOOP (the skin) — where radial/3D effects
+      // emanate from (B3). In the centred local frame the first hoop sits at local z = −halfStack
+      // (flip: +halfStack), so the skin follows the drum when it's flipped. Reflected identically
+      // to the pixel world positions so it stays consistent under the kit mirror.
       effectOriginWorld: reflectWorld(
-        localToWorld(drum.effectOriginLocal, drum.rotation, drum.origin),
+        localToWorld(
+          { x: 0, y: 0, z: drum.flip ? halfStack : -halfStack },
+          drum.rotation,
+          drum.origin,
+        ),
         mirror,
       ),
     };

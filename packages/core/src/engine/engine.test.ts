@@ -92,12 +92,14 @@ describe('Engine', () => {
 
   it('setKitTransform({ hoopSpacingMm }) rebuilds geometry with the new hoop gap', () => {
     const e = new Engine(velocityMeterProject());
-    // local.z of a hoop = (hoopIndex - 1) * hoopSpacingMm (1-based hoops, A1; independent of origin/rotation).
+    // local.z of a hoop = (hoopIndex - 1) * hoopSpacingMm - halfStack, where the stack is centred
+    // on the origin (B3): halfStack = (hoopCount - 1) * spacing / 2, hoopCount 4 here. The GAP
+    // between adjacent hoops still equals the spacing — only the whole stack is offset to centre it.
     const zOf = (hoop: number): number => e.getModel().pixels.find((p) => p.hoopIndex === hoop)!.local.z;
-    expect(zOf(2)).toBeCloseTo(50, 6); // initial spacing 50mm (hoop 2 = second hoop)
+    expect(zOf(2)).toBeCloseTo(-25, 6); // spacing 50mm → halfStack 75mm; hoop 2 at 50 - 75
     e.setKitTransform('d', { hoopSpacingMm: 120 });
-    expect(zOf(2)).toBeCloseTo(120, 6); // rebuilt with the new gap
-    expect(zOf(3)).toBeCloseTo(240, 6);
+    expect(zOf(2)).toBeCloseTo(-60, 6); // rebuilt: spacing 120 → halfStack 180; hoop 2 at 120 - 180
+    expect(zOf(3)).toBeCloseTo(60, 6); //  hoop 3 at 240 - 180
   });
 
   it('setKitTransform({ diameterIn }) rebuilds geometry with the new ring radius', () => {

@@ -41,13 +41,16 @@ describe('buildPixelModel', () => {
     expect(model.pixelCount).toBe(50 * 2); // hoopCount 2
   });
 
-  it('hoop-0 pixels lie on a circle of the drum radius in local space', () => {
+  it('first-hoop pixels lie on a circle of the drum radius, at the centred stack base (B3)', () => {
     const model = buildPixelModel(oneDrumKit());
     const radius = (12 * 25.4) / 2;
-    for (const p of model.pixels.filter((px) => px.hoopIndex === 0)) {
+    // hoopCount 2 × 50mm spacing → halfStack 25mm; the first hoop (1-based, A1) sits at -25mm.
+    const firstHoop = model.pixels.filter((px) => px.hoopIndex === 1);
+    expect(firstHoop.length).toBeGreaterThan(0);
+    for (const p of firstHoop) {
       const r = Math.hypot(p.local.x, p.local.y);
       expect(r).toBeCloseTo(radius, 6);
-      expect(p.local.z).toBe(0);
+      expect(p.local.z).toBe(-25);
     }
   });
 
@@ -71,10 +74,11 @@ describe('buildPixelModel', () => {
     expect(model.pixels[1]!.angleDeg).toBeCloseTo(step, 6);
   });
 
-  it('assigns one zone per pixel and stacks hoops along local +Z', () => {
+  it('assigns one zone per pixel and stacks hoops along local +Z (centred on origin, B3)', () => {
     const model = buildPixelModel(oneDrumKit());
     expect(model.pixels.every((p) => ['center', 'edge', 'rim', 'shell'].includes(p.zone))).toBe(true);
     const hoop2 = model.pixels.find((p) => p.hoopIndex === 2)!; // hoop 2 = second hoop (1-based, A1)
-    expect(hoop2.local.z).toBe(50);
+    // Centred stack (halfStack 25mm): hoop 1 at -25mm, hoop 2 at +25mm — 50mm above hoop 1.
+    expect(hoop2.local.z).toBe(25);
   });
 });
