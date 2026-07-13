@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { eulerXYZApply } from './euler';
 
 /** A 3D vector in millimetres (kit space). */
 export const vec3Schema = z.object({
@@ -27,10 +28,14 @@ export const drumSchema = z.object({
    * with the angular sweep negated so chase/wind direction reads correctly. Pixel index
    * order + DMX bytes are unchanged — flip never re-patches hardware (see buildPixelModel). */
   flip: z.boolean().optional(),
+  /** Drum position in world space (mm): the drum's GEOMETRIC CENTRE — the midpoint of the
+   * hoop stack (B3). Flip rotates the drum about this point in place, so `origin` (hence the
+   * drum's world position) is invariant to flip; only orientation changes. Pre-B3 kits stored
+   * `origin` at the first hoop and are shifted to this convention by {@link migrateKit}. The
+   * radial/3D effect (hit) origin is derived separately as the first-hoop centre in
+   * {@link buildPixelModel} — it is NOT this point. */
   origin: vec3Schema,
   rotation: vec3Schema,
-  /** Origin (local mm) used by radial/3D effects; defaults to drum centre. */
-  effectOriginLocal: vec3Schema.default({ x: 0, y: 0, z: 0 }),
 });
 
 /** An ordered run of hoops on a drum, carried on a single data line, in patch order.
@@ -113,8 +118,12 @@ export const kitGlobalSchema = z.object({
  *  - 2 → 3 (B2): the Advatek `expanded` output flag was added; a kit predating it (v < 3)
  *    is an established rig and migrates to `expanded: true`. New kits are written at this
  *    version with `expanded: false`.
+ *  - 3 → 4 (B3): `DrumConfig.origin` became the drum's GEOMETRIC CENTRE (midpoint of the hoop
+ *    stack) instead of the first hoop. A kit predating this (v < 4) has each drum's stored
+ *    `origin` shifted along its local Z by half the hoop-stack height so the drum does NOT move
+ *    on screen — the origin convention changes, not the geometry (migrate the data, not the drums).
  */
-export const CURRENT_KIT_VERSION = 3;
+export const CURRENT_KIT_VERSION = 4;
 
 export const kitSchema = z.object({
   version: z.number().int().default(CURRENT_KIT_VERSION),
@@ -164,6 +173,46 @@ function shiftOutputHoops(output: unknown): unknown {
   return next;
 }
 
+/** True when `v` is a plain `{x,y,z}` number triple (a raw pre-parse Vec3). */
+function isRawVec3(v: unknown): v is { x: number; y: number; z: number } {
+  return (
+    !!v &&
+    typeof v === 'object' &&
+    !Array.isArray(v) &&
+    typeof (v as { x?: unknown }).x === 'number' &&
+    typeof (v as { y?: unknown }).y === 'number' &&
+    typeof (v as { z?: unknown }).z === 'number'
+  );
+}
+
+/**
+ * B3 (v3 → v4): shift ONE raw drum's stored `origin` from the first-hoop convention to the
+ * geometric-centre convention, keeping the drum's world position unchanged.
+ *
+ * The stack's half-height along local Z is `halfStack = (hoopCount - 1) * hoopSpacingMm / 2`.
+ * Pre-B3, hoop 1 sat at the origin (local z = 0) and the stack extended +Z (flip: −Z); B3
+ * re-centres the stack on the origin, so hoop 1 moves to local z = −halfStack (flip: +halfStack).
+ * To keep every pixel's world position fixed, the origin must move by the world delta of that
+ * re-centring: `+R·(0,0,halfStack)` unflipped, `−R·(0,0,halfStack)` flipped (R = the drum's
+ * intrinsic-XYZ rotation). `hoopCount` falls back to the kit global (default 4) and rotation to
+ * identity, exactly as the schema resolves them. A drum whose stack height isn't derivable
+ * (no numeric `hoopSpacingMm`/`origin`) is returned untouched — schema validation then reports it.
+ */
+function shiftDrumOriginToCentre(drum: unknown, globalHoopCount: number): unknown {
+  if (!drum || typeof drum !== 'object' || Array.isArray(drum)) return drum;
+  const d = drum as Record<string, unknown>;
+  if (!isRawVec3(d.origin) || typeof d.hoopSpacingMm !== 'number') return drum;
+  const hoopCount = typeof d.hoopCount === 'number' ? d.hoopCount : globalHoopCount;
+  const halfStack = ((hoopCount - 1) * d.hoopSpacingMm) / 2;
+  const rotation = isRawVec3(d.rotation) ? d.rotation : { x: 0, y: 0, z: 0 };
+  const sign = d.flip === true ? -1 : 1;
+  const shift = eulerXYZApply({ x: 0, y: 0, z: sign * halfStack }, rotation);
+  return {
+    ...d,
+    origin: { x: d.origin.x + shift.x, y: d.origin.y + shift.y, z: d.origin.z + shift.z },
+  };
+}
+
 /**
  * Migrate a RAW (pre-parse) kit object across schema versions. Steps are CUMULATIVE — a kit
  * enters at its stored version and every later step runs in order:
@@ -172,6 +221,9 @@ function shiftOutputHoops(output: unknown): unknown {
  *  - **< 3 (B2):** the kit predates the Advatek `expanded` flag → it's an established rig, so
  *    `global.expanded` defaults **ON** (an explicit value is respected). New kits, written at
  *    v3, carry `expanded: false`.
+ *  - **< 4 (B3):** each drum's stored `origin` is shifted from the first-hoop convention to the
+ *    geometric-centre convention ({@link shiftDrumOriginToCentre}) so the drum does **not** move on
+ *    screen — only the origin's meaning changes.
  * The version is stamped to {@link CURRENT_KIT_VERSION} last. Idempotent — a kit already at the
  * current version is returned untouched (same reference). Runs BEFORE the schema parse, so
  * pre-migration files still load.
@@ -198,6 +250,18 @@ export function migrateKit(raw: unknown): unknown {
   ) {
     const global = migrated.global as Record<string, unknown>;
     if (global.expanded === undefined) migrated.global = { ...global, expanded: true };
+  }
+
+  // v3 → v4 (B3): re-anchor each drum's `origin` from the first hoop to the geometric centre,
+  // preserving world position (migrate the data, not the drums). Global hoop-count fallback
+  // matches the schema default so per-drum stack height resolves exactly as at parse time.
+  if (version < 4 && Array.isArray(kit.drums)) {
+    const g = migrated.global;
+    const globalHoopCount =
+      g && typeof g === 'object' && !Array.isArray(g) && typeof (g as Record<string, unknown>).hoopCount === 'number'
+        ? ((g as Record<string, unknown>).hoopCount as number)
+        : 4;
+    migrated.drums = kit.drums.map((drum) => shiftDrumOriginToCentre(drum, globalHoopCount));
   }
 
   migrated.version = CURRENT_KIT_VERSION;
