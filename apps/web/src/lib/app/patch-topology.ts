@@ -262,6 +262,9 @@ export function describePatchNode(
   const labelOf = (drumId: string): string => drums.find((d) => d.id === drumId)?.label ?? drumId;
   if (id === INPUT_ID) return { stage: 'input', title: 'Sensory Percussion', sub: 'trigger input' };
   if (id === CONTROLLER_ID) return { stage: 'controller', title: 'Controller', sub: 'Art-Net / sACN pixel controller' };
+  // D1 holder zones (patch-graph v2 container nodes)
+  if (id === 'kit') return { stage: 'drum', title: 'Drum Kit', sub: 'kit globals' };
+  if (id === 'triggers') return { stage: 'trigger', title: 'Drum Triggers', sub: 'trigger inputs' };
 
   const [kind, a, b] = id.split(':');
   switch (kind) {

@@ -12,6 +12,7 @@ import {
   type InputMap,
   type KitConfig,
   type KitGlobalConfig,
+  type NodeLayout,
   type OutputConfig,
   type OutputSettings,
   type Project,
@@ -228,6 +229,12 @@ export class VoiceEngineHost {
     this.kit.outputs = outputs;
     this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
+  }
+
+  /** Persist the patch-graph canvas layout (D1: `kit.nodeLayout`). Geometry-only editor state —
+   * it never affects the pixel model or DMX map, so no rebuild. */
+  setKitNodeLayout(nodeLayout: NodeLayout): void {
+    this.kit.nodeLayout = nodeLayout;
   }
 
   /** Bulk-adopt a validated project PATCH (kit incl. outputs, input map, output settings) in ONE

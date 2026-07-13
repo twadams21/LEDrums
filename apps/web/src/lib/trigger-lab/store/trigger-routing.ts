@@ -5,7 +5,7 @@
    inputMap) so an identity-checking consumer still sees the same object. Extracted from
    store.svelte.ts unchanged in behaviour. */
 
-import type { InputMap, OutputConfig, Project } from '@ledrums/core';
+import type { InputMap, NodeLayout, OutputConfig, Project } from '@ledrums/core';
 
 /** Partial drum transform — origin/rotation/spin/start-angle/literal pixel geometry. */
 export interface DrumTransformPartial {
@@ -61,6 +61,12 @@ export function applyRouting(project: Project, outputs: OutputConfig[]): Project
 /** Replace the input map (zone-node MIDI note / OSC address routing). Keeps the `inputMap` ref. */
 export function applyInputMap(project: Project, inputMap: InputMap): Project {
   return { ...project, inputMap };
+}
+
+/** Replace the patch-graph canvas layout (D1: `kit.nodeLayout`, a manual per-node arrangement).
+    Keeps the passed `nodeLayout` ref; a geometry-only field — no DMX / render impact. */
+export function applyNodeLayout(project: Project, nodeLayout: NodeLayout): Project {
+  return { ...project, kit: { ...project.kit, nodeLayout } };
 }
 
 /** Merge a partial output-settings change. */

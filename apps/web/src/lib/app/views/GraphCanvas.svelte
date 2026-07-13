@@ -201,6 +201,31 @@
     color: inherit;
     font-family: inherit;
   }
+  /* zone container nodes paint their own dashed holder — strip xyflow chrome but KEEP the sized
+     box (width/height come from the node), and never let a zone intercept a leaf's pointer events
+     except on its own visible chrome. */
+  .gcanvas :global(.svelte-flow__node-zone) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font-family: inherit;
+  }
+  .gcanvas :global(.svelte-flow__node-zone.selected) {
+    box-shadow: none;
+  }
+  /* the greyed, dotted, non-interactive Trigger → Drum reference wire (D1) — stays grey (never
+     lights on hover/selection: it is decoration, not a signal wire). */
+  .gcanvas :global(.svelte-flow__edge.edge-ref .svelte-flow__edge-path) {
+    stroke: var(--wire-ref, var(--border));
+    stroke-width: 1.5;
+    stroke-dasharray: 3 5;
+  }
+  .gcanvas :global(.svelte-flow__edge.edge-ref) {
+    pointer-events: none;
+  }
   /* the selection ring is drawn by the node card itself (NodeCard .card.sel) */
   .gcanvas :global(.svelte-flow__node-patch.selected),
   .gcanvas :global(.svelte-flow__node-trigger.selected) {

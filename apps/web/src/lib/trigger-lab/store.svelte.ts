@@ -50,7 +50,7 @@ import type { ClientMessage, ControllerStatus, ControllerTestPattern, Discovered
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { BlendMode, InputMap, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
+import type { BlendMode, InputMap, NodeLayout, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
 import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
 import { voice, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
@@ -2086,6 +2086,14 @@ export class TriggerLab {
       this.project = routing.applyRouting(this.project, outputs);
     }
     this.client.send({ t: 'setKitOutputs', outputs });
+  }
+
+  /** Persist the patch-graph canvas layout (D1: `kit.nodeLayout`) — a manual, server-authoritative
+      per-node arrangement, synced across clients. Geometry-only (no DMX / render impact). */
+  setNodeLayout(nodeLayout: NodeLayout): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (this.project) this.project = routing.applyNodeLayout(this.project, nodeLayout);
+    this.client.send({ t: 'setKitNodeLayout', nodeLayout });
   }
 
   /** Replace the input map (zone-node MIDI note / OSC address routing). */

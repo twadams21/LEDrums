@@ -1,6 +1,6 @@
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
-import type { DrumConfig, KitGlobalConfig } from '../geometry/kit-schema';
+import type { DrumConfig, KitGlobalConfig, NodeLayout } from '../geometry/kit-schema';
 import type {
   Clip,
   InputMap,
@@ -313,6 +313,12 @@ export class Engine {
   setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
     Object.assign(this.project.kit.global, partial);
     this.rebuild();
+  }
+
+  /** Persist the patch-graph canvas layout (D1: `kit.nodeLayout`). Geometry-only editor state —
+   * it never touches the pixel model or DMX map, so NO rebuild (the render is unaffected). */
+  setKitNodeLayout(nodeLayout: NodeLayout): void {
+    this.project.kit.nodeLayout = nodeLayout;
   }
 
   private findClip(layerId: string, clipId: string): Clip | undefined {

@@ -20,8 +20,10 @@ const MM_PER_INCH = 25.4;
 export type PatchEditor =
   | { kind: 'input' }
   | { kind: 'trigger'; drumId: string }
+  | { kind: 'triggers' } // the Drum Triggers holder zone (D1)
   | { kind: 'zone'; drumId: string; zone: string; slot: number }
   | { kind: 'drum'; drumId: string }
+  | { kind: 'kit' } // the Drum Kit holder zone (D1)
   | { kind: 'hoop'; drumId: string; hoop: number } // 1-based hoop index (A1)
   | { kind: 'output'; outputId: string }
   | { kind: 'controller' }
@@ -39,6 +41,8 @@ export function zoneSlot(zone: string): number {
 export function patchEditorFor(id: string): PatchEditor {
   if (id === 'input') return { kind: 'input' };
   if (id === 'controller') return { kind: 'controller' };
+  if (id === 'kit') return { kind: 'kit' }; // Drum Kit holder zone (D1)
+  if (id === 'triggers') return { kind: 'triggers' }; // Drum Triggers holder zone (D1)
 
   const hoop = parseHoopNodeId(id);
   if (hoop) return { kind: 'hoop', drumId: hoop.drumId, hoop: hoop.hoop };
