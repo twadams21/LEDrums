@@ -8,6 +8,7 @@ import {
   type OutputSettings,
 } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
+import { getHoopPixelRange } from '@ledrums/core';
 import { applyRgbOrder, frameToUniverseBytes, OutputManager } from './output-manager';
 import type { MonitorEvent } from './ws-protocol';
 
@@ -132,6 +133,80 @@ describe('OutputManager state machine', () => {
     m.applySettings({ ...base, priority: 200 }, dmxMap); // priority change → new transport
     m.applySettings({ ...base, priority: 200, iface: '10.0.0.5' }, dmxMap); // iface change → new transport
     expect(builds).toBe(3);
+  });
+});
+
+describe('OutputManager hoop identify (E1)', () => {
+  /** A 2-hoop drum so a single hoop is a strict sub-range of the pixel stream (all in universe 0). */
+  function identifyFixture() {
+    const kit = parseKit({
+      global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 },
+      drums: [{ id: 'd', diameterIn: 4, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
+    });
+    const model = buildPixelModel(kit);
+    const fb = new Framebuffer(model.pixelCount);
+    return { dmxMap: buildDmxMap(kit, model), fb, model };
+  }
+
+  it('drives the identified hoop full-on and leaves other pixels on the live frame', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake, { now: () => 0 });
+    const { dmxMap, fb, model } = identifyFixture();
+    const hoop1 = getHoopPixelRange(model, 'd', 1)!;
+    m.applySettings(settings('armed'), dmxMap);
+
+    m.setIdentify(hoop1, 500);
+    expect(m.identifyRange()).toEqual(hoop1);
+    m.sendFrame(fb.rgba, dmxMap);
+
+    const bytes = fake.sends[0]!.bytes; // universe 0: channel-dense RGB
+    // Hoop-1 pixels forced full-on white.
+    for (let p = hoop1.start; p < hoop1.end; p++) {
+      expect(bytes[p * 3]).toBe(255);
+      expect(bytes[p * 3 + 1]).toBe(255);
+      expect(bytes[p * 3 + 2]).toBe(255);
+    }
+    // Hoop-2 pixels untouched (live frame is all-zero here).
+    const hoop2 = getHoopPixelRange(model, 'd', 2)!;
+    expect(bytes[hoop2.start * 3]).toBe(0);
+  });
+
+  it('clears on expiry (bounded) and reverts to the live frame', () => {
+    let now = 0;
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake, { now: () => now });
+    const { dmxMap, fb, model } = identifyFixture();
+    const hoop1 = getHoopPixelRange(model, 'd', 1)!;
+    m.applySettings(settings('armed'), dmxMap);
+
+    m.setIdentify(hoop1, 500);
+    now = 600; // past expiry
+    expect(m.identifyRange()).toBeNull();
+    m.sendFrame(fb.rgba, dmxMap);
+    expect(fake.sends[0]!.bytes[hoop1.start * 3]).toBe(0); // reverted to frame
+  });
+
+  it('an explicit clear (null / non-positive duration) disarms identify', () => {
+    const m = new OutputManager(() => new FakeOutput(), { now: () => 0 });
+    const { model } = identifyFixture();
+    const hoop1 = getHoopPixelRange(model, 'd', 1)!;
+    m.setIdentify(hoop1, 500);
+    expect(m.identifyRange()).toEqual(hoop1);
+    m.setIdentify(hoop1, 0); // duration <= 0 clears
+    expect(m.identifyRange()).toBeNull();
+    m.setIdentify(hoop1, 500);
+    m.setIdentify(null, 500); // null range clears
+    expect(m.identifyRange()).toBeNull();
+  });
+
+  it('does not mutate the caller frame buffer', () => {
+    const m = new OutputManager(() => new FakeOutput(), { now: () => 0 });
+    const { dmxMap, fb, model } = identifyFixture();
+    const hoop1 = getHoopPixelRange(model, 'd', 1)!;
+    m.applySettings(settings('armed'), dmxMap);
+    m.setIdentify(hoop1, 500);
+    m.sendFrame(fb.rgba, dmxMap);
+    expect(fb.rgba[hoop1.start * 4]).toBe(0); // engine framebuffer untouched
   });
 });
 

@@ -152,6 +152,10 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('adoptController'), host: z.string() }).strict(),
   z.object({ t: z.literal('setControllerAuth'), password: z.string() }).strict(),
   z.object({ t: z.literal('identifyController'), durationS: z.number() }).strict(),
+  // Hoop identify (E1): light ALL LEDs of one hoop full-on for `durationS` (fire-and-forget,
+  // self-clearing on the server clock). `hoop` is 1-based (A1). `durationS <= 0` clears any
+  // active identify. Editor-gated by deny-by-default (flashes real hardware), like identifyController.
+  z.object({ t: z.literal('identifyHoop'), drumId: z.string(), hoop: z.number(), durationS: z.number() }).strict(),
   z.object({ t: z.literal('controllerTestData'), pattern: controllerTestPatternSchema() }).strict(),
   z.object({ t: z.literal('controllerBackToLive') }).strict(),
   z.object({ t: z.literal('watchController'), watching: z.boolean() }).strict(),

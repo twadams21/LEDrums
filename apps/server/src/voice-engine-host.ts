@@ -3,6 +3,7 @@ import {
   buildDmxMap,
   buildPixelModel,
   checkRoutingIntegrity,
+  getHoopPixelRange,
   SLOT_LABELS,
   voice,
   type DmxMap,
@@ -349,6 +350,23 @@ export class VoiceEngineHost {
   /** Replace the input map the note/OSC resolvers read (zone-node MIDI/OSC editing). */
   setInputMap(map: InputMap): void {
     this.project.inputMap = map;
+  }
+
+  // --- hoop identify (E1) --------------------------------------------------
+
+  /**
+   * Fire-and-forget hoop identify (E1): drive one hoop's pixels full-on for `durationMs`,
+   * composited over the live frame by the OutputManager (never blocks the render loop). `hoop`
+   * is 1-based (A1). Unknown drum/hoop or `durationMs <= 0` clears any active identify.
+   */
+  identifyHoop(drumId: string, hoop: number, durationMs: number): void {
+    const range = getHoopPixelRange(this.model, drumId, hoop);
+    this.output.setIdentify(range, durationMs);
+  }
+
+  /** The active hoop-identify pixel range, or `null` when none is armed (E1 observability). */
+  getIdentifyRange(): { start: number; end: number } | null {
+    return this.output.identifyRange();
   }
 
   // --- output settings -----------------------------------------------------
