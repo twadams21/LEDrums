@@ -1,20 +1,37 @@
 /* Patch Graph v2 zone model (D1) — the PURE builder for the zone-based canvas: three holder
-   zones (Controller / Drum Kit / Drum Triggers), the Drum Kit nesting drum sub-zones that hold
-   hoop nodes, and the physical `Output → Hoop → Hoop …` chain wiring. No Svelte / DOM here so
-   the geometry + wire-rule adapter are unit-testable; `PatchGraphView.svelte` is a thin consumer.
+   zones (Controller / Drum Kit / Drum Triggers) as TRUE xyflow `parentId` containers, the Drum
+   Kit nesting drum sub-zones that hold hoop nodes, and the physical `Output → Hoop → Hoop …`
+   chain wiring. No Svelte / DOM here so the geometry + wire-rule adapter are unit-testable;
+   `PatchGraphView.svelte` is a thin consumer.
 
-   LAYOUT IS MANUAL + PERSISTED, NOT AUTO. Leaf nodes (Output / Hoop / Trigger) carry ABSOLUTE
-   canvas positions, seeded ONCE deterministically from the kit then frozen into `kit.nodeLayout`
-   (a node absent from the map gets its seed; a present node uses the stored position). The graph
-   never re-flows on its own. The three holder zones + drum sub-zones are NOT stored — they
-   AUTO-FIT the bounding box of their member leaves (+padding), recomputed live so moving a hoop
-   reflows its drum zone (mirrors the design-direction prototype). The Kit zone wraps ALL hoops
-   with a larger pad so it encloses the drum sub-zones nested inside it.
+   NESTING (2 real levels — nodes emitted ANCESTORS-FIRST, xyflow's requirement):
+     controller (zone, no parent)  → Output leaves    (parentId = controller)
+     kit        (zone, no parent)  → drum sub-zones   (parentId = kit)
+       drum:<id> (zone, parent=kit) → Hoop leaves      (parentId = drum:<id>)
+     triggers   (zone, no parent)  → Trigger leaves   (parentId = triggers)
+   A parent drag moves its whole subtree (native xyflow); cascade + grouping come for free.
+
+   COORDINATES ARE PARENT-RELATIVE. A leaf's `position` is relative to its immediate parent
+   zone's origin (a hoop rel to its drum sub-zone, a drum sub-zone rel to kit, an output rel to
+   controller, a trigger rel to triggers). The three top holders carry ABSOLUTE canvas positions.
+
+   LAYOUT IS MANUAL + PERSISTED, NOT AUTO. Positions are seeded ONCE deterministically then
+   frozen into `kit.nodeLayout` (a node absent from the map gets its seed; a present node uses
+   the stored value). `kit.nodeLayout` stores each node's xyflow `position` — PARENT-RELATIVE for
+   a child, absolute for a top holder (same `Record<string,{x,y}>` schema; only the frame of
+   reference is relative now). The graph never re-flows on its own.
+
+   AUTO-FIT WITH parentId ({@link autoFitContainers}). xyflow does NOT grow a parent to its
+   children — we compute it, bottom-up, in each parent's local frame: size the container to its
+   direct children's bounding box (+pad), then RE-NORMALIZE (shift the container's position by the
+   children's min corner and subtract that from every child so they stay put visually and the box
+   origin hugs them). This keeps the drag-reflow feel — drag a hoop → its drum zone grows/follows
+   → the kit follows — WITHOUT a hard `extent:'parent'` clamp (which would fight the auto-grow).
 
    WIRING RULES LIVE IN CORE. Only `Output → Hoop` and `Hoop → Hoop` wires are legal; the per-wire
    structural guard is core's {@link classifyChainConnection} (mutation-parity by construction —
-   the same rule the server backstop runs). This module only ADAPTS the graph's node ids / edges
-   to core's `ChainEdge` vocabulary; it never restates a rule. */
+   the same rule the server backstop runs). This module only ADAPTS graph node ids / edges to
+   core's `ChainEdge` vocabulary; it never restates a rule. */
 
 import type { Node } from '@xyflow/svelte';
 import { classifyChainConnection, type ChainConnectionVerdict, type ChainEdge, type HoopRef } from '@ledrums/core';
@@ -35,7 +52,7 @@ export const triggerNodeId = (drumId: string): string => `trigger:${drumId}`;
 /** The kind of holder/sub zone (drives the icon, tint, and Inspector routing). */
 export type PatchZoneKind = 'controller' | 'kit' | 'drum' | 'triggers';
 
-/** Data carried on a `zone`-type flow node (an auto-fitting labelled container). */
+/** Data carried on a `zone`-type flow node (a labelled, auto-fitting container). */
 export type PatchZoneData = {
   kind: PatchZoneKind;
   label: string;
@@ -55,21 +72,8 @@ const ZONE_ROLE: Record<PatchZoneKind, string> = {
   triggers: 'var(--role-input)',
 };
 
-// --- deterministic seed layout -----------------------------------------------------
-
-/** A 2D canvas position. */
+/** A 2D position (canvas px for a top holder, parent-relative px for a child). */
 export type XY = { x: number; y: number };
-
-/** Seed geometry constants — a clean, readable first arrangement (frozen into `nodeLayout`). */
-const SEED = {
-  topY: 120, // first row's y
-  ctrlX: 60, // controller output column
-  kitX: 380, // first hoop column of the kit
-  colGap: 40, // horizontal gap between hoops in a drum's row
-  rowGap: 92, // vertical gap between drum rows (leaves room for a drum sub-zone)
-  outGap: 28, // vertical gap between stacked outputs
-  trgGap: 140, // gap from the last hoop column to the trigger column
-};
 
 /** A drum as the zone builder needs it: identity + label + hoop count. */
 export interface ZoneDrum {
@@ -93,153 +97,198 @@ export interface ZoneGraphInput {
   triggers: ZoneTrigger[];
 }
 
-/**
- * Deterministic seed position for EVERY leaf node id (outputs, hoops, triggers) — the one-time
- * arrangement used when a node is absent from `kit.nodeLayout`. Outputs stack in the controller
- * column; each drum's hoops lay out in a horizontal row; triggers sit to the right of the kit,
- * aligned to their drum's row. Pure + total (a stable function of the kit structure).
- */
-export function seedLeafPositions(input: ZoneGraphInput): Record<string, XY> {
-  const seed: Record<string, XY> = {};
+// --- padding + seed geometry -------------------------------------------------------
 
-  // Controller: outputs stacked vertically.
-  input.routing.outputs.forEach((o, i) => {
-    seed[outputNodeId(o.id)] = { x: SEED.ctrlX, y: SEED.topY + i * (NODE_H + SEED.outGap) };
-  });
-
-  // Drum Kit: one horizontal row of hoops per drum; drums stacked top→bottom.
-  const maxHoops = Math.max(1, ...input.drums.map((d) => d.hoopCount));
-  input.drums.forEach((d, di) => {
-    const rowY = SEED.topY + di * (NODE_H + SEED.rowGap);
-    for (let h = 1; h <= d.hoopCount; h++) {
-      seed[hoopNodeId({ drumId: d.id, hoop: h })] = { x: SEED.kitX + (h - 1) * (NODE_W + SEED.colGap), y: rowY };
-    }
-  });
-
-  // Drum Triggers: to the right of the widest hoop row, aligned to each trigger's drum row.
-  const trgX = SEED.kitX + maxHoops * (NODE_W + SEED.colGap) + SEED.trgGap;
-  for (const t of input.triggers) {
-    const di = input.drums.findIndex((d) => d.id === t.drumId);
-    seed[triggerNodeId(t.drumId)] = { x: trgX, y: SEED.topY + (di < 0 ? 0 : di) * (NODE_H + SEED.rowGap) };
-  }
-
-  return seed;
-}
-
-/** Resolve a leaf's position: the persisted `nodeLayout` entry wins, else the deterministic seed. */
-function positionFor(id: string, seed: Record<string, XY>, layout: Record<string, XY> | undefined): XY {
-  return layout?.[id] ?? seed[id] ?? { x: 0, y: 0 };
-}
-
-// --- leaf nodes --------------------------------------------------------------------
-
-/** Build the leaf flow nodes (Output / Hoop / Trigger) at their resolved absolute positions. */
-export function buildLeafNodes(input: ZoneGraphInput, layout: Record<string, XY> | undefined): PatchFlowNode[] {
-  const seed = seedLeafPositions(input);
-  const nodes: PatchFlowNode[] = [];
-  const leaf = (id: string, stage: 'output' | 'hoop' | 'trigger', label: string, sub: string): void => {
-    nodes.push({
-      id,
-      type: 'patch',
-      position: positionFor(id, seed, layout),
-      initialWidth: NODE_W,
-      initialHeight: NODE_H,
-      data: { label, sub, stage, role: ZONE_ROLE[stage === 'trigger' ? 'triggers' : stage === 'output' ? 'controller' : 'kit'] },
-    });
-  };
-
-  input.routing.outputs.forEach((o, i) => {
-    const n = o.hoops.length;
-    leaf(outputNodeId(o.id), 'output', `Output ${i + 1}`, n === 0 ? 'unwired' : `${n} hoop${n === 1 ? '' : 's'}`);
-  });
-  for (const d of input.drums) {
-    for (let h = 1; h <= d.hoopCount; h++) {
-      leaf(hoopNodeId({ drumId: d.id, hoop: h }), 'hoop', `${d.label} · Hoop ${h}`, 'LED hoop');
-    }
-  }
-  for (const t of input.triggers) leaf(triggerNodeId(t.drumId), 'trigger', t.label, t.sub);
-
-  return nodes;
-}
-
-// --- auto-fit zone nodes -----------------------------------------------------------
-
-/** Padding around a zone's member leaves. The Kit zone uses a larger pad so it ENCLOSES the drum
-    sub-zones nested inside it; a sub-zone hugs its hoops; the two flat holders sit between. */
-const PAD = {
-  sub: { x: 16, top: 30, bottom: 16 },
-  holder: { x: 22, top: 34, bottom: 20 },
-  kit: { x: 40, top: 54, bottom: 38 },
+/** Inner padding around a zone's children (x sides, top leaves room for the label, bottom). The
+    Kit zone's larger pad wraps the nested drum sub-zones; a sub-zone hugs its hoops. */
+const PAD: Record<PatchZoneKind, { x: number; top: number; bottom: number }> = {
+  drum: { x: 16, top: 30, bottom: 16 },
+  controller: { x: 22, top: 34, bottom: 20 },
+  triggers: { x: 22, top: 34, bottom: 20 },
+  kit: { x: 24, top: 40, bottom: 24 },
 };
 
-type Rect = { x: number; y: number; w: number; h: number };
+const SEED = {
+  x0: 40, // controller's canvas x
+  y0: 120, // top zones' canvas y
+  zoneGap: 80, // horizontal gap between the three top holders
+  colGap: 40, // gap between hoops in a drum's row
+  rowGap: 40, // gap between drum sub-zones stacked in the kit
+  stackGap: 24, // gap between stacked outputs / triggers
+};
 
-/** Bounding box of the given leaf ids (using each leaf's measured or seeded size), expanded by
-    `pad`; null when no member is present. */
-function boundsOf(ids: string[], posById: Map<string, XY>, sizeById: Map<string, { w: number; h: number }>, pad: { x: number; top: number; bottom: number }): Rect | null {
-  const rs = ids
-    .map((id) => {
-      const p = posById.get(id);
-      if (!p) return null;
-      const s = sizeById.get(id) ?? { w: NODE_W, h: NODE_H };
-      return { x: p.x, y: p.y, w: s.w, h: s.h };
-    })
-    .filter((r): r is Rect => r !== null);
-  if (!rs.length) return null;
-  const minX = Math.min(...rs.map((r) => r.x));
-  const minY = Math.min(...rs.map((r) => r.y));
-  const maxX = Math.max(...rs.map((r) => r.x + r.w));
-  const maxY = Math.max(...rs.map((r) => r.y + r.h));
-  return { x: minX - pad.x, y: minY - pad.top, w: maxX - minX + pad.x * 2, h: maxY - minY + pad.top + pad.bottom };
+const zIndexFor = (kind: PatchZoneKind): number => (kind === 'drum' ? 1 : 0);
+const LEAF_Z = 10;
+
+function leafRole(stage: 'output' | 'hoop' | 'trigger'): string {
+  return ZONE_ROLE[stage === 'trigger' ? 'triggers' : stage === 'output' ? 'controller' : 'kit'];
+}
+
+function leafNode(id: string, parentId: string, position: XY, stage: 'output' | 'hoop' | 'trigger', label: string, sub: string): PatchFlowNode {
+  return {
+    id,
+    type: 'patch',
+    parentId,
+    position,
+    initialWidth: NODE_W,
+    initialHeight: NODE_H,
+    zIndex: LEAF_Z,
+    data: { label, sub, stage, role: leafRole(stage) },
+  };
+}
+
+function zoneNode(id: string, kind: PatchZoneKind, label: string, position: XY, size: { w: number; h: number }, parentId?: string): PatchZoneNode {
+  return {
+    id,
+    type: 'zone',
+    ...(parentId ? { parentId } : {}),
+    position,
+    width: size.w,
+    height: size.h,
+    selectable: true,
+    draggable: true, // a parent drag moves its whole subtree (the point of parentId)
+    connectable: false,
+    zIndex: zIndexFor(kind),
+    data: { kind, label, role: ZONE_ROLE[kind], sub: kind === 'drum' },
+  };
 }
 
 /**
- * Compute the AUTO-FIT zone nodes (three holders + one sub-zone per drum) from the CURRENT leaf
- * node positions/sizes — the bounding box of each zone's member leaves. Recompute this whenever
- * a leaf moves (a drag) so the zones reflow to contain their members. A zone with no members is
- * omitted. Zones sort BEFORE leaves in the returned array and carry a low `zIndex` so they render
- * behind the leaves (and never intercept a leaf click).
+ * Seed the full node tree deterministically (ancestors-first), in the parent-relative model:
+ * the three top holders at absolute canvas positions, drum sub-zones relative to the kit, and
+ * leaves relative to their holder/sub-zone. Container sizes are computed to hug their children,
+ * so a fresh seed is already canonical ({@link autoFitContainers} is a no-op on it).
  */
-export function computeZoneNodes(leafNodes: ReadonlyArray<PatchFlowNode>, drums: ReadonlyArray<ZoneDrum>): PatchZoneNode[] {
-  const posById = new Map<string, XY>(leafNodes.map((n) => [n.id, n.position]));
-  const sizeById = new Map<string, { w: number; h: number }>(
-    leafNodes.map((n) => [n.id, { w: n.measured?.width ?? n.initialWidth ?? NODE_W, h: n.measured?.height ?? n.initialHeight ?? NODE_H }]),
-  );
-  const stageOf = (id: string): string | undefined => leafNodes.find((n) => n.id === id)?.data.stage;
-  const idsByStage = (stage: string): string[] => leafNodes.filter((n) => n.data.stage === stage).map((n) => n.id);
+function seedTree(input: ZoneGraphInput): Node[] {
+  const topZones: PatchZoneNode[] = [];
+  const drumZones: PatchZoneNode[] = [];
+  const leaves: PatchFlowNode[] = [];
 
-  const zones: PatchZoneNode[] = [];
-  const push = (id: string, kind: PatchZoneKind, label: string, sub: boolean, rect: Rect | null): void => {
-    if (!rect) return;
-    zones.push({
-      id,
-      type: 'zone',
-      position: { x: rect.x, y: rect.y },
-      width: rect.w,
-      height: rect.h,
-      selectable: true,
-      draggable: false,
-      connectable: false,
-      zIndex: sub ? 1 : 0,
-      data: { kind, label, role: ZONE_ROLE[kind], sub },
-    });
-  };
+  // --- Drum Kit: size each drum sub-zone from its hoops, then stack them in the kit ---
+  const drumH = PAD.drum.top + NODE_H + PAD.drum.bottom;
+  let ky = PAD.kit.top;
+  let kitInnerW = 0;
+  for (const d of input.drums) {
+    const drumW = PAD.drum.x * 2 + Math.max(1, d.hoopCount) * NODE_W + Math.max(0, d.hoopCount - 1) * SEED.colGap;
+    for (let h = 1; h <= d.hoopCount; h++) {
+      leaves.push(leafNode(hoopNodeId({ drumId: d.id, hoop: h }), drumZoneId(d.id), { x: PAD.drum.x + (h - 1) * (NODE_W + SEED.colGap), y: PAD.drum.top }, 'hoop', `${d.label} · Hoop ${h}`, 'LED hoop'));
+    }
+    drumZones.push(zoneNode(drumZoneId(d.id), 'drum', d.label, { x: PAD.kit.x, y: ky }, { w: drumW, h: drumH }, KIT_ZONE_ID));
+    ky += drumH + SEED.rowGap;
+    kitInnerW = Math.max(kitInnerW, drumW);
+  }
+  const kitW = PAD.kit.x * 2 + kitInnerW;
+  const kitH = (input.drums.length ? ky - SEED.rowGap : PAD.kit.top) + PAD.kit.bottom;
 
-  const hoopIds = idsByStage('hoop');
-  void stageOf; // (kept for clarity; membership below is by stage/drum)
+  // --- Controller: stack the outputs ---
+  input.routing.outputs.forEach((o, i) => {
+    const n = o.hoops.length;
+    leaves.push(leafNode(outputNodeId(o.id), CONTROLLER_ZONE_ID, { x: PAD.controller.x, y: PAD.controller.top + i * (NODE_H + SEED.stackGap) }, 'output', `Output ${i + 1}`, n === 0 ? 'unwired' : `${n} hoop${n === 1 ? '' : 's'}`));
+  });
+  const nOut = input.routing.outputs.length;
+  const ctrlW = PAD.controller.x * 2 + NODE_W;
+  const ctrlH = PAD.controller.top + Math.max(1, nOut) * NODE_H + Math.max(0, nOut - 1) * SEED.stackGap + PAD.controller.bottom;
 
-  // Controller holder wraps the outputs; Triggers holder wraps the triggers.
-  push(CONTROLLER_ZONE_ID, 'controller', 'Controller', false, boundsOf(idsByStage('output'), posById, sizeById, PAD.holder));
-  push(TRIGGERS_ZONE_ID, 'triggers', 'Drum Triggers', false, boundsOf(idsByStage('trigger'), posById, sizeById, PAD.holder));
-  // Kit holder wraps ALL hoops with a larger pad so it encloses the drum sub-zones.
-  push(KIT_ZONE_ID, 'kit', 'Drum Kit', false, boundsOf(hoopIds, posById, sizeById, PAD.kit));
-  // A drum sub-zone hugs that drum's hoops.
-  for (const d of drums) {
-    const ids = leafNodes.filter((n) => n.data.stage === 'hoop' && n.id.startsWith(`hoop:${d.id}:`)).map((n) => n.id);
-    push(drumZoneId(d.id), 'drum', d.label, true, boundsOf(ids, posById, sizeById, PAD.sub));
+  // --- Drum Triggers: stack the triggers ---
+  input.triggers.forEach((t, i) => {
+    leaves.push(leafNode(triggerNodeId(t.drumId), TRIGGERS_ZONE_ID, { x: PAD.triggers.x, y: PAD.triggers.top + i * (NODE_H + SEED.stackGap) }, 'trigger', t.label, t.sub));
+  });
+  const nTrg = input.triggers.length;
+  const trgW = PAD.triggers.x * 2 + NODE_W;
+  const trgH = PAD.triggers.top + Math.max(1, nTrg) * NODE_H + Math.max(0, nTrg - 1) * SEED.stackGap + PAD.triggers.bottom;
+
+  // --- Top holders at absolute positions, left→right ---
+  const ctrlX = SEED.x0;
+  const kitX = ctrlX + ctrlW + SEED.zoneGap;
+  const trgX = kitX + kitW + SEED.zoneGap;
+  topZones.push(zoneNode(CONTROLLER_ZONE_ID, 'controller', 'Controller', { x: ctrlX, y: SEED.y0 }, { w: ctrlW, h: ctrlH }));
+  topZones.push(zoneNode(KIT_ZONE_ID, 'kit', 'Drum Kit', { x: kitX, y: SEED.y0 }, { w: kitW, h: kitH }));
+  topZones.push(zoneNode(TRIGGERS_ZONE_ID, 'triggers', 'Drum Triggers', { x: trgX, y: SEED.y0 }, { w: trgW, h: trgH }));
+
+  // Ancestors-first: top holders, then drum sub-zones, then all leaves.
+  return [...topZones, ...drumZones, ...leaves];
+}
+
+// --- auto-fit (bottom-up size + re-normalize) --------------------------------------
+
+/** Direct-child size in its parent's frame: a leaf's measured/seed card size, or a zone's own
+    computed width/height (set earlier this pass, since we go bottom-up). */
+function sizeOf(n: Node): { w: number; h: number } {
+  if (n.type === 'zone') return { w: n.width ?? NODE_W, h: n.height ?? NODE_H };
+  return { w: n.measured?.width ?? n.initialWidth ?? NODE_W, h: n.measured?.height ?? n.initialHeight ?? NODE_H };
+}
+
+/** Depth of a node in the parentId tree (0 = a top holder). */
+function depthOf(n: Node, byId: Map<string, Node>): number {
+  let d = 0;
+  let p = n.parentId;
+  while (p) {
+    d++;
+    p = byId.get(p)?.parentId;
+  }
+  return d;
+}
+
+/**
+ * Recompute every container's size to hug its direct children and RE-NORMALIZE so a child dragged
+ * toward the top-left grows the box instead of clipping. Processes containers DEEPEST-FIRST (drum
+ * sub-zones before the kit) so nested frames stay consistent. Pure: returns a new nodes array
+ * (positions/sizes cloned); the input is untouched. An empty container is left as-is.
+ */
+export function autoFitContainers(nodes: ReadonlyArray<Node>): Node[] {
+  const clone: Node[] = nodes.map((n) => ({ ...n, position: { ...n.position } }));
+  const byId = new Map(clone.map((n) => [n.id, n]));
+  const childrenOf = new Map<string, Node[]>();
+  for (const n of clone) {
+    if (n.parentId) {
+      const arr = childrenOf.get(n.parentId) ?? [];
+      arr.push(n);
+      childrenOf.set(n.parentId, arr);
+    }
   }
 
-  return zones;
+  const containers = clone.filter((n) => n.type === 'zone').sort((a, b) => depthOf(b, byId) - depthOf(a, byId));
+  for (const c of containers) {
+    const kids = childrenOf.get(c.id) ?? [];
+    if (!kids.length) continue;
+    const pad = PAD[(c.data as PatchZoneData).kind];
+    const rects = kids.map((k) => {
+      const s = sizeOf(k);
+      return { x: k.position.x, y: k.position.y, w: s.w, h: s.h };
+    });
+    const minX = Math.min(...rects.map((r) => r.x));
+    const minY = Math.min(...rects.map((r) => r.y));
+    const maxX = Math.max(...rects.map((r) => r.x + r.w));
+    const maxY = Math.max(...rects.map((r) => r.y + r.h));
+    const offX = minX - pad.x;
+    const offY = minY - pad.top;
+    // Shift the container to hug its children; compensate the children so they stay put visually.
+    c.position.x += offX;
+    c.position.y += offY;
+    for (const k of kids) {
+      k.position.x -= offX;
+      k.position.y -= offY;
+    }
+    c.width = maxX - minX + pad.x * 2;
+    c.height = maxY - minY + pad.top + pad.bottom;
+  }
+  return clone;
+}
+
+// --- build the full graph ----------------------------------------------------------
+
+/**
+ * Build the full ancestors-first node tree (top holders → drum sub-zones → leaves) with parentId
+ * wiring and parent-relative positions, applying persisted `kit.nodeLayout` overrides then
+ * auto-fitting every container. `layout` values are in the SAME relative/absolute frame as the
+ * nodes (a child's stored value is parent-relative; a top holder's is absolute).
+ */
+export function buildZoneGraph(input: ZoneGraphInput, layout: Record<string, XY> | undefined): Node[] {
+  const seeded = seedTree(input);
+  const overridden = layout
+    ? seeded.map((n) => (layout[n.id] ? { ...n, position: { ...layout[n.id]! } } : n))
+    : seeded;
+  return autoFitContainers(overridden);
 }
 
 // --- physical chain + reference edges ----------------------------------------------

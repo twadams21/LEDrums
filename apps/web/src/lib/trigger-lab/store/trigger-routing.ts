@@ -64,7 +64,9 @@ export function applyInputMap(project: Project, inputMap: InputMap): Project {
 }
 
 /** Replace the patch-graph canvas layout (D1: `kit.nodeLayout`, a manual per-node arrangement).
-    Keeps the passed `nodeLayout` ref; a geometry-only field — no DMX / render impact. */
+    Values are each node's xyflow `position` — PARENT-RELATIVE for a child (leaf/drum sub-zone),
+    absolute for a top holder zone (the parentId nesting frame). Keeps the passed `nodeLayout` ref;
+    a geometry-only field — no DMX / render impact. */
 export function applyNodeLayout(project: Project, nodeLayout: NodeLayout): Project {
   return { ...project, kit: { ...project.kit, nodeLayout } };
 }

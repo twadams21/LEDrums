@@ -6,17 +6,19 @@
        └────────────┘   │ └──────┘                    │   └───────────────┘
                         └────────────────────────────┘
 
-     The Controller holds the physical Outputs; the Drum Kit nests a drum SUB-zone per drum,
-     each holding that drum's Hoop nodes; the Drum Triggers hold the per-drum Trigger nodes.
-     Wiring is the physical data run `Output → Hoop → Hoop …` (grey, static); the per-wire rule
-     is core's `classifyChainConnection` (shared with the server backstop). A greyed dotted,
-     non-interactive Trigger → Drum wire shows the identity binding (no routing).
+     The zones are TRUE xyflow `parentId` containers: outputs parent to Controller, drum sub-zones
+     to the Drum Kit, hoops to their drum sub-zone, triggers to Drum Triggers — so dragging a
+     parent moves its whole subtree. Wiring is the physical data run `Output → Hoop → Hoop …`
+     (grey, static); the per-wire rule is core's `classifyChainConnection` (shared with the server
+     backstop). A greyed dotted, non-interactive Trigger → Drum wire shows the identity binding.
 
-     LAYOUT IS MANUAL + PERSISTED. Leaf positions are seeded ONCE deterministically then frozen
-     into `kit.nodeLayout` (server-authoritative, synced); the graph never auto-flows. The zones
-     AUTO-FIT their members (a drag reflows them). The output half is DERIVED from the project's
-     `kit.outputs` and a rewire is read back (`routingFromGraph`), recompiled (`patchToOutputs`),
-     and pushed via `store.setRouting`; a drag is persisted via `store.setNodeLayout`. */
+     LAYOUT IS MANUAL + PERSISTED. Positions (parent-relative for children, absolute for the top
+     holders) are seeded ONCE deterministically then frozen into `kit.nodeLayout` (server-
+     authoritative, synced); the graph never auto-flows. The containers AUTO-FIT their children
+     (`autoFitContainers` — a drag reflows them, bottom-up, without a hard `extent` clamp). The
+     output half is DERIVED from the project's `kit.outputs` and a rewire is read back
+     (`routingFromGraph`), recompiled (`patchToOutputs`), and pushed via `store.setRouting`; a
+     drag is persisted via `store.setNodeLayout`. */
   import { onDestroy, onMount, setContext, untrack } from 'svelte';
   import type { Connection, EdgeTypes, Node, NodeTypes } from '@xyflow/svelte';
   import { DEFAULT_KIT } from '@ledrums/core';
@@ -33,11 +35,11 @@
     type RoutingDrum,
   } from '../patch-graph';
   import {
+    autoFitContainers,
     buildChainEdges,
-    buildLeafNodes,
     buildRefEdges,
+    buildZoneGraph,
     classifyGraphConnection,
-    computeZoneNodes,
     type XY,
     type ZoneDrum,
     type ZoneGraphInput,
@@ -99,35 +101,35 @@
 
   function buildGraph(routing: PatchRouting, layout: Record<string, XY> | undefined): { nodes: Node[]; edges: PatchFlowEdge[] } {
     const input: ZoneGraphInput = { drums, routing, triggers };
-    const leaves: PatchFlowNode[] = buildLeafNodes(input, layout).map((n) => ({ ...n, zIndex: 10 }));
-    const leafIds = new Set(leaves.map((n) => n.id));
-    const zones = computeZoneNodes(leaves, drums);
+    const graphNodes = buildZoneGraph(input, layout);
+    const leafIds = new Set(graphNodes.filter((n) => n.type === 'patch').map((n) => n.id));
     const drumIds = new Set(drums.map((d) => d.id));
     const chain = buildChainEdges(routing, (id) => leafIds.has(id));
     const refs = buildRefEdges(triggers, (id) => drumIds.has(id));
-    return { nodes: [...zones, ...leaves], edges: decorate([...chain, ...refs]) };
+    return { nodes: graphNodes, edges: decorate([...chain, ...refs]) };
   }
 
   const initial = untrack(() => buildGraph(initialRouting, store.project?.kit.nodeLayout));
   let nodes = $state.raw<Node[]>(initial.nodes);
   let edges = $state.raw<PatchFlowEdge[]>(initial.edges);
 
-  /** The leaf (patch) nodes only — zones are derived, never wired/read as routing. */
+  /** The leaf (patch) nodes only — zones are the containers, never wired/read as routing. */
   function patchLeaves(): PatchFlowNode[] {
     return nodes.filter((n) => n.type === 'patch') as PatchFlowNode[];
   }
 
-  /** The live leaf positions (patch nodes only), keyed by node id. */
-  function leafPositions(): Record<string, XY> {
+  /** Every node's live position, keyed by id — PARENT-RELATIVE for a child leaf/sub-zone, absolute
+      for a top holder. This is exactly what `kit.nodeLayout` persists (same relative frame). */
+  function allPositions(): Record<string, XY> {
     const map: Record<string, XY> = {};
-    for (const n of patchLeaves()) map[n.id] = n.position;
+    for (const n of nodes) map[n.id] = n.position;
     return map;
   }
 
-  /** Recompute the auto-fit zone rects from the current leaf positions (after a drag reflows). */
+  /** Re-fit the auto-sizing containers to their children after a drag (bottom-up size +
+      re-normalize) so the zones reflow to hug their members. */
   function resyncZones(): void {
-    const leaves = patchLeaves();
-    nodes = [...computeZoneNodes(leaves, drums), ...leaves];
+    nodes = autoFitContainers(nodes);
   }
 
   // ---- per-output transport scalars the graph doesn't author --------------------
@@ -155,7 +157,7 @@
 
   /** Rebuild the whole graph from an authoritative routing, preserving current leaf positions. */
   function rebuild(routing: PatchRouting): void {
-    const rebuilt = buildGraph(routing, leafPositions());
+    const rebuilt = buildGraph(routing, allPositions());
     nodes = rebuilt.nodes;
     edges = rebuilt.edges;
   }
@@ -233,7 +235,7 @@
   // ---- layout persistence (seed-freeze + drag write-back) -----------------------
   /** Persist the current leaf positions to the server-authoritative `kit.nodeLayout`. */
   function persistLayout(): void {
-    store.setNodeLayout(leafPositions());
+    store.setNodeLayout(allPositions());
   }
 
   // Seed-freeze: on mount, write the full (seed ⊕ stored) layout back once so a fresh kit's
@@ -245,7 +247,7 @@
 
     if (!store.project || !store.canEdit) return;
     const stored = store.project.kit.nodeLayout ?? {};
-    const live = leafPositions();
+    const live = allPositions();
     const missing = Object.keys(live).some((id) => stored[id] === undefined);
     if (missing) persistLayout();
   });
