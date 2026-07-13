@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultProject, SLOT_LABELS, voice } from '@ledrums/core';
+import { defaultProject, getHoopPixelRange, SLOT_LABELS, voice } from '@ledrums/core';
 import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
@@ -706,5 +706,47 @@ describe('listNetworkAdapters (subnet-guidance read)', () => {
     handle({ t: 'listNetworkAdapters' }, s);
     const reply = s.sent.find((m): m is Extract<ServerMessage, { t: 'networkAdapters' }> => m.t === 'networkAdapters');
     expect(reply?.adapters).toEqual([]);
+  });
+});
+
+describe('identifyHoop message (E1)', () => {
+  it('maps (drumId, 1-based hoop) to the correct pixel range on the live host', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'snare', hoop: 2, durationS: 0.5 }, editor);
+    const expected = getHoopPixelRange(host.engine.getModel(), 'snare', 2);
+    expect(host.getIdentifyRange()).toEqual(expected);
+  });
+
+  it('routes to the voice host when one is running', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'tom1', hoop: 1, durationS: 0.5 }, editor);
+    const expected = getHoopPixelRange(voiceHost.getModel(), 'tom1', 1);
+    expect(voiceHost.getIdentifyRange()).toEqual(expected);
+  });
+
+  it('durationS <= 0 clears any active identify', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0.5 }, editor);
+    expect(host.getIdentifyRange()).not.toBeNull();
+    handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0 }, editor);
+    expect(host.getIdentifyRange()).toBeNull();
+  });
+
+  it('an unknown drum/hoop is a no-op (clears, never throws)', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'nope', hoop: 99, durationS: 0.5 }, editor);
+    expect(host.getIdentifyRange()).toBeNull();
+  });
+
+  it('is editor-gated — a viewer cannot identify (deny-by-default)', () => {
+    const { handle, join, host } = harness();
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0.5 }, viewer);
+    expect(host.getIdentifyRange()).toBeNull();
   });
 });

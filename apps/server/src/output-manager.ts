@@ -80,6 +80,10 @@ export class OutputManager {
   private settingsMonitorSignature = '';
   private readonly now: () => number;
   private readonly outputDiag: ReturnType<typeof createOutputMonitorCoalescer>;
+  /** Active hoop-identify override (E1): pixels [start,end) are forced full-on until `expiresAt`
+   * (ms on this manager's clock). Composited over the live frame in {@link sendFrame} — a bounded,
+   * fire-and-forget override that NEVER blocks or mutates the engine's frame buffer. */
+  private identify: { start: number; end: number; expiresAt: number } | null = null;
   onMonitor?: OutputMonitorSink;
 
   constructor(
@@ -125,6 +129,54 @@ export class OutputManager {
     }
   }
 
+  /**
+   * Arm/refresh a fire-and-forget hoop identify (E1): force pixels `[range.start, range.end)`
+   * full-on for `durationMs`, composited over the live frame. `null` range or `durationMs <= 0`
+   * clears any active identify. Bounded by construction (self-clears at `expiresAt`); the render
+   * loop is never blocked — the override is applied per-frame in {@link sendFrame} on a scratch copy.
+   */
+  setIdentify(range: { start: number; end: number } | null, durationMs: number): void {
+    if (!range || durationMs <= 0 || range.end <= range.start) {
+      this.identify = null;
+      return;
+    }
+    this.identify = { start: range.start, end: range.end, expiresAt: this.now() + durationMs };
+  }
+
+  /** The active (non-expired) identify pixel range, or `null` when none is armed. Lets callers
+   * (and tests) observe what the next frame will override, without touching the transmit path. */
+  identifyRange(): { start: number; end: number } | null {
+    const id = this.identify;
+    if (!id) return null;
+    if (this.now() >= id.expiresAt) {
+      this.identify = null;
+      return null;
+    }
+    return { start: id.start, end: id.end };
+  }
+
+  /** Return the frame to transmit: `rgba` untouched when no identify is armed (zero hot-path cost),
+   * or a scratch COPY with the identify range forced full-on white. Never mutates the caller's
+   * buffer (the engine's live framebuffer). Expiry clears the override lazily here. */
+  private withIdentify(rgba: Float32Array): Float32Array {
+    const id = this.identify;
+    if (!id) return rgba;
+    if (this.now() >= id.expiresAt) {
+      this.identify = null;
+      return rgba;
+    }
+    const out = rgba.slice();
+    const end = Math.min(id.end, Math.floor(out.length / 4));
+    for (let p = Math.max(0, id.start); p < end; p++) {
+      const j = p * 4;
+      out[j] = 1;
+      out[j + 1] = 1;
+      out[j + 2] = 1;
+      out[j + 3] = 1;
+    }
+    return out;
+  }
+
   /** Send a rendered frame according to the current state. */
   sendFrame(rgba: Float32Array, dmxMap: DmxMap): void {
     const s = this.settings;
@@ -141,13 +193,16 @@ export class OutputManager {
       return;
     }
     if (!this.output) return;
+    // Composite the hoop-identify override (E1) onto a scratch copy — full-on for the identified
+    // hoop, live frame everywhere else. No-op (same buffer) when nothing is armed.
+    const frame = this.withIdentify(rgba);
     try {
       this.output.nextFrame();
       let packets = 0;
       let byteCount = 0;
       const universes: number[] = [];
       for (const patch of dmxMap.universes) {
-        const bytes = frameToUniverseBytes(rgba, patch, s.rgbOrder);
+        const bytes = frameToUniverseBytes(frame, patch, s.rgbOrder);
         this.output.send(patch.universe, bytes);
         this.packetsSent++;
         packets++;

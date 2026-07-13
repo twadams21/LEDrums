@@ -84,6 +84,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'adoptController', host: '192.168.1.50' },
   { t: 'setControllerAuth', password: 'pw' },
   { t: 'identifyController', durationS: 5 },
+  { t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 2 },
   { t: 'controllerTestData', pattern: { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 } },
   { t: 'controllerBackToLive' },
   { t: 'watchController', watching: true },

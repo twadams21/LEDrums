@@ -229,6 +229,17 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
 
+    // Hoop identify (E1): light ALL LEDs of one hoop full-on, bounded (`durationS`), so the C5
+    // inspector Identify button has a capability to call. Editor-gated above (deny-by-default —
+    // it flashes real hardware, like identifyController). Routes to the LIVE render host (voice
+    // when running, else legacy); the OutputManager composites the override fire-and-forget, so
+    // the render loop is never blocked. `hoop` is 1-based (A1); `durationS <= 0` clears.
+    if (msg.t === 'identifyHoop') {
+      const durationMs = Math.max(0, msg.durationS) * 1000;
+      (voiceHost ?? host).identifyHoop(msg.drumId, msg.hoop, durationMs);
+      return;
+    }
+
     // Network-adapter enumeration (the "different IP addresses" guide). A pure read, ungated above:
     // reply to the requesting client only with the server machine's NICs + per-adapter recommended
     // controller IP. Absent wiring → empty list (the panel just shows no recommendation).
