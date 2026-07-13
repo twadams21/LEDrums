@@ -127,6 +127,34 @@ describe('checkRoutingIntegrity', () => {
     expect(() => buildDmxMap(k, buildPixelModel(k))).not.toThrow();
   });
 
+  it('rejects (hoop-out-of-range) a segment past a first-class hoops[] length — B4 authoritative, not hoopCount/global', () => {
+    // The drum's count comes SOLELY from hoops[] (length 2); global.hoopCount is 4 and there is no
+    // per-drum hoopCount. Routing hoop 3 exceeds hoops.length → REJECT (not silently degraded). If
+    // the check used global/hoopCount instead of hoops.length, hoop 3 would wrongly pass.
+    const k = parseKit({
+      version: 7,
+      global: { ledDensityPxPerM: 100, hoopCount: 4, defaultHoopSpacingMm: 50 },
+      drums: [
+        {
+          id: 'A',
+          diameterIn: 6,
+          hoopSpacingMm: 50,
+          hoops: [{ pixelCount: 10, reverse: false }, { pixelCount: 10, reverse: false }],
+          origin: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0 },
+        },
+      ],
+      outputs: [out('A-out', [seg('A', 1, 3)])],
+    });
+    expect(drumHoopCount(k, k.drums[0]!)).toBe(2); // hoops[] wins over global (4)
+    const issues = checkRoutingIntegrity(k);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.code).toBe('hoop-out-of-range');
+    expect(issues[0]!.message).toMatch(/invalid hoop range 1\.\.3 \(drum has 2 hoops\)/);
+    // REJECT, not degrade: buildDmxMap agrees and throws on the very same over-range segment.
+    expect(() => buildDmxMap(k, buildPixelModel(k))).toThrow(/invalid hoop range/);
+  });
+
   it('agrees with buildDmxMap: what it flags (unknown drum / bad hoop), buildDmxMap throws on', () => {
     const badDrum = kit([{ id: 'A', pixelsPerHoop: 10 }], [out('o1', [seg('zzz')])]);
     expect(checkRoutingIntegrity(badDrum)[0]!.code).toBe('unknown-drum');
