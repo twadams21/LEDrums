@@ -187,6 +187,9 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
       });
       return { structural: true };
+    case 'setKitNodeLayout':
+      engine.setKitNodeLayout(msg.nodeLayout);
+      return { structural: true };
     case 'setOutput':
       engine.setOutput({
         ...(msg.state !== undefined ? { state: msg.state } : {}),

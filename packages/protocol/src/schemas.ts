@@ -15,6 +15,7 @@ import {
   inputMapSchema,
   kitGlobalSchema,
   layerSchema,
+  nodeLayoutSchema,
   outputSchema,
   outputSettingsSchema,
   outputStateSchema,
@@ -115,6 +116,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   }).strict(),
   z.object({ t: z.literal('setKitGlobal'), mirror: mirrorSchema.optional() }).strict(),
   z.object({ t: z.literal('setKitOutputs'), outputs: z.array(outputSchema) }).strict(),
+  z.object({ t: z.literal('setKitNodeLayout'), nodeLayout: nodeLayoutSchema }).strict(),
   z.object({
     t: z.literal('setOutput'),
     state: outputStateSchema.optional(),

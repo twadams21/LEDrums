@@ -153,6 +153,9 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
     case 'setKitOutputs':
       voiceHost.setKitOutputs(msg.outputs);
       break;
+    case 'setKitNodeLayout':
+      voiceHost.setKitNodeLayout(msg.nodeLayout);
+      break;
     case 'setOutput':
       voiceHost.setOutput({
         ...(msg.state !== undefined ? { state: msg.state } : {}),

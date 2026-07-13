@@ -41,7 +41,7 @@
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
-  import PatchDataLineInspector from './inspectors/PatchDataLineInspector.svelte';
+  import PatchKitInspector from './inspectors/PatchKitInspector.svelte';
   import PatchOutputInspector from './inspectors/PatchOutputInspector.svelte';
   import PatchControllerInspector from './inspectors/PatchControllerInspector.svelte';
 
@@ -150,12 +150,18 @@
       </div>
     </header>
 
-    {#if editor.kind === 'input' || editor.kind === 'trigger' || editor.kind === 'unknown'}
+    {#if editor.kind === 'input' || editor.kind === 'trigger' || editor.kind === 'triggers' || editor.kind === 'unknown'}
       <div class="nodeinfo">
         <p class="hint">
-          {editor.kind === 'trigger'
-            ? 'The drum’s trigger input. What each hit plays is wired in the Trigger graph; the editable device settings live on its zone, drum and hoop nodes.'
-            : 'The performance input source. What each hit plays is wired in the Trigger graph.'}
+          {#if editor.kind === 'trigger'}
+            The drum’s trigger input, bound to its drum by identity. What each hit plays is wired in
+            the Trigger graph; the editable device settings live on its drum and hoop nodes.
+          {:else if editor.kind === 'triggers'}
+            The Drum Triggers holder. Each trigger binds to its drum by identity (the dotted reference
+            wire) — it carries no routing.
+          {:else}
+            The performance input source. What each hit plays is wired in the Trigger graph.
+          {/if}
         </p>
       </div>
     {:else}
@@ -166,12 +172,12 @@
 
         {#if editor.kind === 'zone'}
           <PatchZoneInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'kit'}
+          <PatchKitInspector {store} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'drum'}
           <PatchDrumInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'hoop'}
           <PatchHoopInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
-        {:else if editor.kind === 'dataline'}
-          <PatchDataLineInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'output'}
           <PatchOutputInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'controller'}

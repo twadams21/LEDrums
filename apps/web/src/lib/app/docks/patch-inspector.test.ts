@@ -3,7 +3,6 @@ import type { InputMap, KitConfig } from '@ledrums/core';
 import type { PatchRouting } from '../patch-routing';
 import {
   hoopPixelSpan,
-  orderedDataLines,
   patchEditorFor,
   pixelsPerHoopForDrum,
   setZoneMidiNote,
@@ -40,11 +39,6 @@ describe('patchEditorFor', () => {
   it('decodes an output node carrying its OutputConfig id', () => {
     expect(patchEditorFor('output:2')).toEqual({ kind: 'output', outputId: '2' });
     expect(patchEditorFor('output:new-3')).toEqual({ kind: 'output', outputId: 'new-3' });
-  });
-
-  it('decodes a data line to a 1-based transmit position, null when opaque', () => {
-    expect(patchEditorFor('dataline:3')).toEqual({ kind: 'dataline', index: 3 });
-    expect(patchEditorFor('dataline:new-1')).toEqual({ kind: 'dataline', index: null });
   });
 
   it('falls back to unknown for unrecognised ids', () => {
@@ -106,17 +100,14 @@ describe('pixelsPerHoopForDrum', () => {
   });
 });
 
-// A → hoops 0,1 @ 50px ; B → hoop 0 @ 30px, all on one output, two datalines.
+// A → hoops 0,1 @ 50px ; B → hoop 0 @ 30px, all one output's flat chain.
 const routing: PatchRouting = {
   outputs: [
     {
       id: '1',
       startUniverse: 0,
       channelsPerPixel: 3,
-      dataLines: [
-        { id: '1:dl0', hoops: [{ drumId: 'A', hoop: 0 }, { drumId: 'A', hoop: 1 }] },
-        { id: '1:dl1', hoops: [{ drumId: 'B', hoop: 0 }] },
-      ],
+      hoops: [{ drumId: 'A', hoop: 0 }, { drumId: 'A', hoop: 1 }, { drumId: 'B', hoop: 0 }],
     },
   ],
 };
@@ -131,15 +122,6 @@ describe('hoopPixelSpan', () => {
 
   it('returns null for a hoop wired into no output', () => {
     expect(hoopPixelSpan(routing, { drumId: 'Z', hoop: 0 }, px)).toBeNull();
-  });
-});
-
-describe('orderedDataLines', () => {
-  it('flattens datalines across outputs in transmit order with 1-based positions', () => {
-    const ordered = orderedDataLines(routing);
-    expect(ordered.map((o) => o.pos)).toEqual([1, 2]);
-    expect(ordered.map((o) => o.line.id)).toEqual(['1:dl0', '1:dl1']);
-    expect(ordered.every((o) => o.output.id === '1')).toBe(true);
   });
 });
 

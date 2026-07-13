@@ -58,6 +58,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true },
   { t: 'setKitGlobal', mirror: 'x' },
   { t: 'setKitOutputs', outputs: [output] },
+  { t: 'setKitNodeLayout', nodeLayout: { 'output:1': { x: 40, y: 120 }, 'hoop:kick:1': { x: 360, y: 120 } } },
   { t: 'setOutput', state: 'armed', protocol: 'sacn', host: '10.0.0.5', rgbOrder: 'GRB', fps: 44, broadcast: true, priority: 100, port: 6454, iface: 'en0' },
   { t: 'setActiveSection', songId: 's1', sectionId: 'sec1' },
   { t: 'setBinding', sectionId: 'sec1', binding },
