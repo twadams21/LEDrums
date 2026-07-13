@@ -1,4 +1,4 @@
-import { projectPatchSchema, validateRouting } from '@ledrums/core';
+import { blockingRoutingIssues, projectPatchSchema, validateRouting } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
@@ -316,7 +316,9 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       // disagreeing with itself across its two write paths. Reject with the same reply/monitor
       // contract and ZERO state touched. (The editor also rejects fan-out at connect time; this
       // renders the resulting corrupt routing crash-proof regardless — see patch-graph dedupe.)
-      const routingIssues = validateRouting(patch.kit, patch.kit.outputs);
+      // Only BLOCKING (error) issues reject; `hoop-uncovered` warnings (a valid but incomplete
+      // routing) are ACCEPTED — the editor surfaces them as an indicator, not a wall (B1).
+      const routingIssues = blockingRoutingIssues(validateRouting(patch.kit, patch.kit.outputs));
       if (routingIssues.length) {
         const first = routingIssues[0]!;
         ws.send(encodeServer({ t: 'error', message: `Invalid patch outputs: ${first.message}` }));
@@ -362,7 +364,9 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // live; valid payloads fall through to the existing apply path unchanged. buildDmxMap would
     // otherwise throw (→ silent flat-map) or silently overwrite a fanned-out pixel.
     if (msg.t === 'setKitOutputs') {
-      const issues = validateRouting(host.engine.getProject().kit, msg.outputs);
+      // Blocking (error) issues reject with ZERO state applied; `hoop-uncovered` warnings pass
+      // through and apply (the editor indicates incomplete coverage, it doesn't block it) (B1).
+      const issues = blockingRoutingIssues(validateRouting(host.engine.getProject().kit, msg.outputs));
       if (issues.length) {
         const first = issues[0]!;
         ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));

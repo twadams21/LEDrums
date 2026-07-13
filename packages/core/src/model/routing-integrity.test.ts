@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { parseKit } from '../geometry/kit-schema';
+import { parseKit, drumHoopCount, type OutputConfig } from '../geometry/kit-schema';
 import { buildPixelModel } from '../geometry/pixel-model';
 import { buildDmxMap } from '../geometry/dmx-map';
 import {
   assertRoutingIntegrity,
+  blockingRoutingIssues,
   checkRoutingIntegrity,
   RoutingIntegrityError,
   validateRouting,
 } from './routing-integrity';
+import { DEFAULT_KIT } from './defaults';
 
 // Hoop indices are 1-based (A1): hoop 1 is the first hoop. Fixtures below build a
 // version-2 kit (already 1-based) so parseKit does not re-migrate them.
@@ -193,5 +195,124 @@ describe('assertRoutingIntegrity', () => {
       expect((err as RoutingIntegrityError).issues).toHaveLength(1);
       expect((err as RoutingIntegrityError).issues[0]!.code).toBe('unknown-drum');
     }
+  });
+
+  it('does NOT throw for an incomplete-but-valid topology (warnings only, B1)', () => {
+    // A#2/A#3 unrouted → hoop-uncovered warnings, but no error → assert stays silent (accept-on-warning).
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 3 }], [out('o1', [dl('o1:dl0', [seg('A', 1, 1)])])]);
+    expect(checkRoutingIntegrity(k).every((i) => i.severity === 'warning')).toBe(true);
+    expect(() => assertRoutingIntegrity(k)).not.toThrow();
+  });
+});
+
+describe('hoop-uncovered completeness (WARNING, B1)', () => {
+  it('a NON-EMPTY topology covering every kit hoop has no issue', () => {
+    const k = kit(
+      [{ id: 'A', pixelsPerHoop: 10, hoopCount: 3 }, { id: 'B', pixelsPerHoop: 10, hoopCount: 2 }],
+      [out('o1', [dl('o1:dl0', [seg('A', 1, 3)]), dl('o1:dl1', [seg('B', 1, 2)])])],
+    );
+    expect(checkRoutingIntegrity(k)).toEqual([]);
+  });
+
+  it('flags a kit hoop carried on no data line, as a warning (not an error)', () => {
+    // B has 2 hoops but only B#1 is routed → B#2 is unrouted.
+    const k = kit(
+      [{ id: 'A', pixelsPerHoop: 10, hoopCount: 2 }, { id: 'B', pixelsPerHoop: 10, hoopCount: 2 }],
+      [out('o1', [dl('o1:dl0', [seg('A', 1, 2)]), dl('o1:dl1', [seg('B', 1, 1)])])],
+    );
+    const issues = checkRoutingIntegrity(k);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ code: 'hoop-uncovered', severity: 'warning', drumId: 'B' });
+    expect(issues[0]!.message).toMatch(/hoop 2 of drum "B" is not carried on any data line/);
+  });
+
+  it('reports every uncovered hoop, in drum → hoop walk order', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 3 }], [out('o1', [dl('o1:dl0', [seg('A', 1, 1)])])]);
+    const issues = checkRoutingIntegrity(k);
+    expect(issues.map((i) => ({ code: i.code, severity: i.severity, drumId: i.drumId }))).toEqual([
+      { code: 'hoop-uncovered', severity: 'warning', drumId: 'A' },
+      { code: 'hoop-uncovered', severity: 'warning', drumId: 'A' },
+    ]);
+    expect(issues[0]!.message).toMatch(/hoop 2 of drum "A"/);
+    expect(issues[1]!.message).toMatch(/hoop 3 of drum "A"/);
+  });
+
+  it('does NOT flag an empty topology — the flat-map default covers every pixel', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 3 }]); // outputs: []
+    expect(checkRoutingIntegrity(k)).toEqual([]);
+  });
+
+  it('is suppressed when an ERROR is present — a broken routing is not also nagged about coverage', () => {
+    // A#1/A#2 uncovered AND a dangling drum ref → only the error surfaces, no coverage warnings.
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 2 }], [out('o1', [dl('o1:dl0', [seg('ghost')])])]);
+    expect(checkRoutingIntegrity(k).map((i) => i.code)).toEqual(['unknown-drum']);
+  });
+
+  it('an uncovered hoop is NOT a corruption — buildDmxMap patches it without throwing', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 3 }], [out('o1', [dl('o1:dl0', [seg('A', 1, 1)])])]);
+    expect(checkRoutingIntegrity(k).every((i) => i.code === 'hoop-uncovered')).toBe(true);
+    expect(() => buildDmxMap(k, buildPixelModel(k))).not.toThrow();
+  });
+
+  it('validateRouting surfaces the warning but it is NOT blocking (server accepts)', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 2 }]);
+    const incomplete = [out('o1', [dl('o1:dl0', [seg('A', 1, 1)])])]; // A#2 unrouted
+    const issues = validateRouting(k, incomplete as never);
+    expect(issues.map((i) => i.code)).toEqual(['hoop-uncovered']);
+    expect(blockingRoutingIssues(issues)).toEqual([]); // ← the server would apply this routing
+  });
+});
+
+describe('blockingRoutingIssues — the ONE accept/reject split (parity across both write-gates)', () => {
+  it('drops warnings (incomplete coverage is accepted)', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 3 }], [out('o1', [dl('o1:dl0', [seg('A', 1, 1)])])]);
+    const all = checkRoutingIntegrity(k);
+    expect(all).toHaveLength(2); // two uncovered warnings
+    expect(blockingRoutingIssues(all)).toEqual([]);
+  });
+
+  it('keeps error-severity issues (real corruption still rejects)', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 2 }], [out('o1', [dl('o1:dl0', [seg('ghost')])])]);
+    expect(blockingRoutingIssues(checkRoutingIntegrity(k)).map((i) => i.code)).toEqual(['unknown-drum']);
+  });
+
+  it('every referential/structural/schema class is error-severity (only hoop-uncovered is a warning)', () => {
+    const k = kit([{ id: 'A', pixelsPerHoop: 10, hoopCount: 4 }]);
+    const errorCodes = [
+      validateRouting(k, [{ id: 'o1', channelsPerPixel: 0, dataLines: [{ id: 'd', segments: [seg('A')] }] }]),
+      validateRouting(k, [out('o1', [dl('d', [seg('ghost')])])]),
+      validateRouting(k, [out('o1', [dl('d', [seg('A', 1, 10)])])]),
+      validateRouting(k, [out('o1', [dl('d0', [seg('A', 1, 1)]), dl('d1', [seg('A', 1, 1)])])]),
+    ];
+    for (const issues of errorCodes) expect(issues[0]!.severity).toBe('error');
+  });
+});
+
+describe('DMX parity (guards A1 + B1): the default kit compiles to an identical DMX map', () => {
+  it('a full-coverage authored topology == the no-outputs flat-map default, byte-for-byte', () => {
+    // outputs: [] → buildDmxMap derives the flat single-output map over every pixel, in kit order.
+    const flat = buildDmxMap(DEFAULT_KIT, buildPixelModel(DEFAULT_KIT));
+
+    // The SAME order made explicit: one dense line carrying every drum's hoops 1..N in kit order.
+    const authored: OutputConfig[] = [
+      {
+        id: 'full',
+        channelsPerPixel: 3,
+        dataLines: [
+          {
+            id: 'full:dl0',
+            segments: DEFAULT_KIT.drums.map((d) => ({ drumId: d.id, hoopStart: 1, hoopEnd: drumHoopCount(DEFAULT_KIT, d) })),
+          },
+        ],
+      },
+    ];
+    const withOutputs = { ...DEFAULT_KIT, outputs: authored };
+
+    // Complete + valid → no issues at all (also a completeness accept-case on the real kit).
+    expect(checkRoutingIntegrity(withOutputs)).toEqual([]);
+
+    const explicit = buildDmxMap(withOutputs, buildPixelModel(withOutputs));
+    expect(explicit.perPixel).toEqual(flat.perPixel);
+    expect(explicit.universes).toEqual(flat.universes);
   });
 });
