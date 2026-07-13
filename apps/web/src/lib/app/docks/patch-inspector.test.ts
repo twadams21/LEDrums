@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import type { InputMap, KitConfig } from '@ledrums/core';
-import type { PatchRouting } from '../patch-routing';
+import type { InputMap, KitConfig, voice } from '@ledrums/core';
+import type { HoopRef, PatchRouting } from '../patch-routing';
+import { makeNode } from '../../trigger-lab/sim.graph-compilation';
 import {
+  availableSlots,
+  boundTriggerFor,
+  buildPixelOutputTable,
   hoopPixelSpan,
   patchEditorFor,
+  perHoopPixelCount,
+  physicalPortLine,
   pixelsPerHoopForDrum,
   setZoneMidiNote,
   setZoneOscAddress,
+  totalKitPixelCount,
   zoneMidiNote,
   zoneOscAddress,
   zoneSlot,
@@ -159,5 +166,130 @@ describe('input-map zone editing', () => {
     expect(zoneOscAddress(set, 'kick', 0)).toBe('/snare/edge');
     const cleared = setZoneOscAddress(set, 'kick', 0, '   ');
     expect(zoneOscAddress(cleared, 'kick', 0)).toBeNull();
+  });
+});
+
+describe('perHoopPixelCount', () => {
+  it('reads the first-class hoops[] count (B4), 1-based', () => {
+    const k = kit({ hoops: [{ pixelCount: 10, reverse: false }, { pixelCount: 20, reverse: false }] });
+    expect(perHoopPixelCount(k.drums[0]!, k, 1)).toBe(10);
+    expect(perHoopPixelCount(k.drums[0]!, k, 2)).toBe(20);
+  });
+
+  it('falls back to the drum uniform count when hoops[] is absent', () => {
+    const k = kit({ pixelsPerHoop: 42 });
+    expect(perHoopPixelCount(k.drums[0]!, k, 1)).toBe(42);
+    expect(perHoopPixelCount(k.drums[0]!, k, 3)).toBe(42);
+  });
+
+  it('falls back to the uniform count for an out-of-range hoop index', () => {
+    const k = kit({ pixelsPerHoop: 42, hoops: [{ pixelCount: 10, reverse: false }] });
+    expect(perHoopPixelCount(k.drums[0]!, k, 5)).toBe(42);
+  });
+});
+
+describe('totalKitPixelCount', () => {
+  it('sums mixed per-hoop counts from hoops[] (its length is the hoop count)', () => {
+    const k = kit({ hoops: [{ pixelCount: 10, reverse: false }, { pixelCount: 20, reverse: false }, { pixelCount: 5, reverse: false }] });
+    expect(totalKitPixelCount(k)).toBe(35);
+  });
+
+  it('uses the global hoop count × uniform when no hoops[] / hoopCount override', () => {
+    const k = kit({ pixelsPerHoop: 25 }); // global hoopCount = 4
+    expect(totalKitPixelCount(k)).toBe(100);
+  });
+
+  it('honours a per-drum hoopCount override (no hoops[])', () => {
+    const k = kit({ pixelsPerHoop: 25, hoopCount: 2 });
+    expect(totalKitPixelCount(k)).toBe(50);
+  });
+});
+
+describe('physicalPortLine', () => {
+  it('maps expanded logical outputs onto 4 ports × 2 lines (0-based index in)', () => {
+    expect(physicalPortLine(0, true)).toEqual({ port: 1, line: 1 });
+    expect(physicalPortLine(1, true)).toEqual({ port: 1, line: 2 });
+    expect(physicalPortLine(2, true)).toEqual({ port: 2, line: 1 });
+    expect(physicalPortLine(7, true)).toEqual({ port: 4, line: 2 });
+  });
+
+  it('maps each logical output to its own port on line 1 in normal mode', () => {
+    expect(physicalPortLine(0, false)).toEqual({ port: 1, line: 1 });
+    expect(physicalPortLine(3, false)).toEqual({ port: 4, line: 1 });
+  });
+});
+
+describe('buildPixelOutputTable', () => {
+  const pxForHoop = (h: HoopRef): number => (h.drumId === 'A' ? 50 : 30);
+
+  it('walks outputs in transmit order with a dense channel cursor, snapping on startUniverse', () => {
+    const r: PatchRouting = {
+      outputs: [
+        { id: 'o1', channelsPerPixel: 3, hoops: [{ drumId: 'A', hoop: 1 }, { drumId: 'A', hoop: 2 }] }, // 100px → 300ch
+        { id: 'o2', channelsPerPixel: 3, hoops: [{ drumId: 'B', hoop: 1 }] }, // 30px, dense from ch300
+        { id: 'o3', channelsPerPixel: 3, hoops: [] }, // unwired
+        { id: 'o4', startUniverse: 2, channelsPerPixel: 3, hoops: [{ drumId: 'A', hoop: 1 }] }, // snaps to ch1024
+      ],
+    };
+    expect(buildPixelOutputTable(r, kit(), pxForHoop)).toEqual([
+      { outputId: 'o1', index: 0, startUniverse: 0, startChannel: 0, pixelCount: 100 },
+      { outputId: 'o2', index: 1, startUniverse: 0, startChannel: 300, pixelCount: 30 },
+      { outputId: 'o3', index: 2, startUniverse: null, startChannel: 390, pixelCount: 0 },
+      { outputId: 'o4', index: 3, startUniverse: 2, startChannel: 1024, pixelCount: 50 },
+    ]);
+  });
+
+  it('reports the universe a run crosses into once its start channel passes 512', () => {
+    const r: PatchRouting = {
+      outputs: [
+        { id: 'big', channelsPerPixel: 3, hoops: [{ drumId: 'A', hoop: 1 }, { drumId: 'A', hoop: 2 }, { drumId: 'A', hoop: 3 }, { drumId: 'A', hoop: 4 }] }, // 200px → 600ch
+        { id: 'next', channelsPerPixel: 3, hoops: [{ drumId: 'B', hoop: 1 }] }, // dense from ch600 → universe 1
+      ],
+    };
+    const rows = buildPixelOutputTable(r, kit(), pxForHoop);
+    expect(rows[1]).toEqual({ outputId: 'next', index: 1, startUniverse: 1, startChannel: 600, pixelCount: 30 });
+  });
+});
+
+describe('boundTriggerFor', () => {
+  const drumGraph = (drumId: string, zone: string): voice.TriggerGraph => ({
+    nodes: [makeNode('trigger', 'trigger', 0, 0, { source: { kind: 'drum', drumId, zone } })],
+    edges: [],
+  });
+  const midiGraph = (): voice.TriggerGraph => ({
+    nodes: [makeNode('trigger', 'trigger', 0, 0, { source: { kind: 'midi', note: 60 } })],
+    edges: [],
+  });
+
+  it('finds the first graph bound to the drum by identity, labelled drumId:zone', () => {
+    const graphs = { 'graph-1': midiGraph(), 'kick:center': drumGraph('kick', 'center') };
+    expect(boundTriggerFor('kick', graphs)).toEqual({ graphKey: 'kick:center', label: 'kick:center' });
+  });
+
+  it('returns null when no graph carries a matching drum source', () => {
+    expect(boundTriggerFor('snare', { 'graph-1': midiGraph(), 'kick:center': drumGraph('kick', 'center') })).toBeNull();
+  });
+});
+
+describe('availableSlots', () => {
+  const empty: InputMap = { midiChannel: null, midiNotes: [], oscMap: [], volumeOscAddress: '/vol' };
+
+  it('returns all 8 slot labels when nothing is used', () => {
+    expect(availableSlots(empty, 'kick', [])).toEqual(['center', 'edge', 'rim-tip', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2']);
+  });
+
+  it('excludes slots passed in usedSlots', () => {
+    expect(availableSlots(empty, 'kick', [0, 2])).toEqual(['edge', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2']);
+  });
+
+  it('also excludes slots already mapped for this drum in the input map', () => {
+    const map: InputMap = {
+      midiChannel: null,
+      midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }, { note: 40, drumId: 'snare', slot: 3 }],
+      oscMap: [{ address: '/kick/shell', drumId: 'kick', slot: 4 }],
+      volumeOscAddress: '/vol',
+    };
+    // kick slots 1 (midi) + 4 (osc) excluded; snare's slot 3 is untouched (different drum)
+    expect(availableSlots(map, 'kick', [0])).toEqual(['rim-tip', 'rim-shoulder', 'cross-stick', 'aux-1', 'aux-2']);
   });
 });
