@@ -1,4 +1,4 @@
-import type { KitConfig, OutputConfig } from './kit-schema';
+import type { KitConfig, OutputConfig, RgbOrder } from './kit-schema';
 import { drumHoopPixelRange, type DrumInfo, type PixelModel } from './pixel-model';
 
 /** Where a pixel's channels land in the global, DENSE DMX stream. A pixel occupies
@@ -9,14 +9,18 @@ export interface PixelDmx {
   channel: number;
 }
 
-/** One pixel's contribution to a universe: its id, its GLOBAL first channel, and its
- *  channels-per-pixel (carried per-pixel so a universe spanning two outputs of
- *  different `channelsPerPixel` is still byte-exact). */
+/** One pixel's contribution to a universe: its id, its GLOBAL first channel, its
+ *  channels-per-pixel, and its owning output's RGB wiring order — all carried per-pixel so a
+ *  universe spanning two outputs of different `channelsPerPixel` OR different `rgbOrder` (B5)
+ *  is still byte-exact. `rgbOrder` is `undefined` when the owning output declared none; the
+ *  packer then falls back to a default (see {@link frameToUniverseBytes}). */
 export interface UniversePixel {
   id: number;
   /** Global channel index of this pixel's first channel (universe = floor/512). */
   channel: number;
   channelsPerPixel: number;
+  /** Wiring RGB order of the output that carries this pixel (B5); undefined → packer default. */
+  rgbOrder?: RgbOrder;
 }
 
 /** One active DMX universe. Pixels are in transmit order; a pixel whose channels
@@ -112,7 +116,7 @@ export function buildDmxMap(kit: KitConfig, model: PixelModel): DmxMap {
             const lastU = Math.floor((start + cpp - 1) / CHANNELS_PER_UNIVERSE);
             for (let u = firstU; u <= lastU; u++) {
               const patch = universeFor(u);
-              patch.pixels.push({ id: pid, channel: start, channelsPerPixel: cpp });
+              patch.pixels.push({ id: pid, channel: start, channelsPerPixel: cpp, rgbOrder: output.rgbOrder });
               // Channels this pixel uses within universe u, clipped to its [0,512) window.
               const localEnd = Math.min(CHANNELS_PER_UNIVERSE, start + cpp - u * CHANNELS_PER_UNIVERSE);
               if (localEnd > patch.channelCount) patch.channelCount = localEnd;

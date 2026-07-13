@@ -22,15 +22,17 @@ export function applyRgbOrder(order: RgbOrder, r: number, g: number, b: number):
  * global stream (see core `buildDmxMap`), so each pixel writes its `channelsPerPixel`
  * channels at their GLOBAL positions, clipped to this universe's `[U*512, U*512+512)`
  * window — a pixel straddling the boundary writes part here and the rest in the next
- * universe. RGB ordering is applied; any channels beyond R/G/B (e.g. the W of RGBW)
- * stay zero.
+ * universe. RGB ordering is applied PER-PIXEL from its owning output's `rgbOrder` (B5),
+ * so a universe spanning two outputs of different orders is byte-exact; a pixel whose
+ * output declared no order uses `fallbackOrder`. Any channels beyond R/G/B (e.g. the W of
+ * RGBW) stay zero.
  */
-export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, rgbOrder: RgbOrder): Uint8Array {
+export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, fallbackOrder: RgbOrder): Uint8Array {
   const base = patch.universe * CHANNELS_PER_UNIVERSE;
   const out = new Uint8Array(patch.channelCount);
   for (const px of patch.pixels) {
     const j = px.id * 4;
-    const [r, g, b] = applyRgbOrder(rgbOrder, toByte(rgba[j]!), toByte(rgba[j + 1]!), toByte(rgba[j + 2]!));
+    const [r, g, b] = applyRgbOrder(px.rgbOrder ?? fallbackOrder, toByte(rgba[j]!), toByte(rgba[j + 1]!), toByte(rgba[j + 2]!));
     for (let n = 0; n < px.channelsPerPixel; n++) {
       const local = px.channel + n - base; // channel position within this universe
       if (local < 0 || local >= patch.channelCount) continue; // belongs to an adjacent universe
@@ -202,6 +204,9 @@ export class OutputManager {
       let byteCount = 0;
       const universes: number[] = [];
       for (const patch of dmxMap.universes) {
+        // Per-pixel RGB order (B5) comes from each pixel's owning output; the controller-level
+        // `s.rgbOrder` is only the fallback for pixels whose output declared none (parity with
+        // pre-B5 single-order behaviour).
         const bytes = frameToUniverseBytes(frame, patch, s.rgbOrder);
         this.output.send(patch.universe, bytes);
         this.packetsSent++;

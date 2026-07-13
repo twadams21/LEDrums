@@ -83,6 +83,14 @@ export const dataLineSchema = z.object({
   segments: z.array(outputSegmentSchema).min(1),
 });
 
+/**
+ * Wiring order of the R/G/B channels for a strip (e.g. `GRB` for WS2812). The SINGLE SOURCE
+ * OF TRUTH for these six permutations (project-schema re-imports this). Lives in the geometry
+ * layer because it is now a PER-OUTPUT attribute (B5) carried on {@link outputObjectSchema}.
+ */
+export const rgbOrderSchema = z.enum(['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR']);
+export type RgbOrder = z.infer<typeof rgbOrderSchema>;
+
 /** Inner object schema for a physical controller output (one PixLite port): ordered
     data lines. `startUniverse` (optional) snaps the whole port to a universe boundary;
     absent → it packs dense/contiguous with the preceding output. */
@@ -90,6 +98,11 @@ const outputObjectSchema = z.object({
   id: z.string().min(1),
   startUniverse: z.number().int().nonnegative().optional(),
   channelsPerPixel: z.number().int().positive().default(3),
+  /** Wiring RGB order for THIS output's strips (B5). Optional: absent → the packer falls back
+   * to a sensible default (the controller-level order today, until C4 makes it a per-output
+   * control). Moved off the controller so different data runs may differ; the v<6 project
+   * migrator seeds each existing output with the controller-level order it inherited. */
+  rgbOrder: rgbOrderSchema.optional(),
   dataLines: z.array(dataLineSchema).min(1),
 });
 
@@ -150,8 +163,13 @@ export const kitGlobalSchema = z.object({
  *    ({@link shiftDrumToHoops}) expanded into an explicit `hoops[]` of that length, every hoop
  *    `reverse: false` — byte-identical output (a drum with no derivable uniform count keeps `hoops`
  *    absent and resolves via density, unchanged).
+ *  - 5 → 6 (B5): RGB wiring order became a PER-OUTPUT attribute ({@link outputObjectSchema.rgbOrder})
+ *    instead of a single controller-level value. The seed of the existing controller order onto each
+ *    output happens at the PROJECT layer ({@link migrateProjectKit}), because the controller order
+ *    lives on `project.output` — a field the kit alone (this migrator) cannot see. Here the bump is
+ *    purely the schema gaining an optional `OutputConfig.rgbOrder`; no kit-only data transform.
  */
-export const CURRENT_KIT_VERSION = 5;
+export const CURRENT_KIT_VERSION = 6;
 
 export const kitSchema = z.object({
   version: z.number().int().default(CURRENT_KIT_VERSION),
@@ -276,6 +294,10 @@ function shiftDrumToHoops(drum: unknown, globalHoopCount: number): unknown {
  *    screen — only the origin's meaning changes.
  *  - **< 5 (B4):** each drum's uniform per-hoop count is expanded into a first-class `hoops[]`
  *    array ({@link shiftDrumToHoops}), every hoop `reverse: false` — byte-identical output.
+ *  - **< 6 (B5):** RGB order moved to per-output. No kit-only transform here (the schema simply
+ *    gained an optional `OutputConfig.rgbOrder`); the seed of the controller-level order onto each
+ *    output is a project-scoped step ({@link migrateProjectKit}) since the source field lives on
+ *    `project.output`, outside the kit. The version bump alone marks the kit as v6-shaped.
  * The version is stamped to {@link CURRENT_KIT_VERSION} last. Idempotent — a kit already at the
  * current version is returned untouched (same reference). Runs BEFORE the schema parse, so
  * pre-migration files still load.
