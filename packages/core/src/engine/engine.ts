@@ -299,6 +299,12 @@ export class Engine {
     const drum = this.project.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
+    // B4: `hoops[]` is the authoritative per-hoop count, so a legacy UNIFORM `pixelsPerHoop` edit
+    // (KitEditor calibration) must flow into it or it would be a silent no-op — rewrite every hoop
+    // to the new count, preserving each hoop's `reverse`. Per-hoop count editing is C5's surface.
+    if (partial.pixelsPerHoop !== undefined && drum.hoops) {
+      drum.hoops = drum.hoops.map((h) => ({ ...h, pixelCount: partial.pixelsPerHoop! }));
+    }
     this.rebuild();
   }
 

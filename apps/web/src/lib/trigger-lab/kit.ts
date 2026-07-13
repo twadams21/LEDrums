@@ -133,6 +133,7 @@ export function buildThumbPixelModel(): PixelModel {
     pixelStart: 0,
     pixelCount: N,
     pixelsPerHoop: COLS,
+    hoopPixelCounts: Array.from({ length: ROWS }, () => COLS), // uniform lab grid (B4 field)
     hoopCount: ROWS,
     radiusMm: RADIUS,
     effectOriginWorld: { x: 0, y: 0, z: halfZ },

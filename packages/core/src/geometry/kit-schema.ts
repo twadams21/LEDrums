@@ -8,6 +8,18 @@ export const vec3Schema = z.object({
   z: z.number(),
 });
 
+/**
+ * One hoop on a drum, FIRST-CLASS (B4): its own literal pixel count and a `reverse` flag.
+ * `pixelCount` is authoritative for that hoop (hoops within a drum MAY differ). `reverse` flips
+ * the pixel INDEX→angular-position mapping WITHIN this hoop only — the correction for a strip
+ * wired backwards (data enters the far end); pixel ids/DMX order are untouched, only which
+ * physical position each emitted pixel occupies (see buildPixelModel). Defaults `reverse: false`.
+ */
+export const hoopConfigSchema = z.object({
+  pixelCount: z.number().int().positive(),
+  reverse: z.boolean().default(false),
+});
+
 export const drumSchema = z.object({
   id: z.string().min(1),
   label: z.string().default(''),
@@ -15,11 +27,22 @@ export const drumSchema = z.object({
   diameterIn: z.number().positive(),
   /** Vertical gap between adjacent hoops, mm. */
   hoopSpacingMm: z.number().positive(),
-  /** Per-drum override of the global hoop count. */
+  /**
+   * Per-hoop configuration (B4) — the SINGLE SOURCE OF TRUTH per hoop when present: each entry
+   * carries its own {@link hoopConfigSchema.pixelCount} + `reverse`, and the array length IS the
+   * drum's hoop count (overriding `hoopCount`/density resolution). Every hoop is a first-class
+   * object (matching the v2 patch graph where a hoop is a selectable node) — NOT a sparse
+   * override map. Optional for back-compat: a drum without `hoops` resolves the legacy uniform
+   * way (`pixelsPerHoop`/density × `hoopCount`). The v<5 migrator expands legacy drums into an
+   * explicit `hoops[]`. */
+  hoops: z.array(hoopConfigSchema).min(1).optional(),
+  /** Per-drum override of the global hoop count. Ignored when `hoops` is set (its length wins). */
   hoopCount: z.number().int().positive().optional(),
-  /** Per-drum override of the global LED density (px/m). */
+  /** Per-drum override of the global LED density (px/m). Ignored when `hoops` is set. */
   ledDensityPxPerM: z.number().positive().optional(),
-  /** Literal pixels per hoop. When set, overrides the density computation entirely. */
+  /** Legacy uniform pixels-per-hoop. When set (and `hoops` absent), overrides the density
+   *  computation entirely. Superseded by per-hoop `hoops[].pixelCount`; kept for back-compat +
+   *  as the migrator's input. */
   pixelsPerHoop: z.number().int().positive().optional(),
   /** Rotates where pixel index 0 sits around the hoop. */
   localSpinDeg: z.number().default(0),
@@ -122,8 +145,13 @@ export const kitGlobalSchema = z.object({
  *    stack) instead of the first hoop. A kit predating this (v < 4) has each drum's stored
  *    `origin` shifted along its local Z by half the hoop-stack height so the drum does NOT move
  *    on screen — the origin convention changes, not the geometry (migrate the data, not the drums).
+ *  - 4 → 5 (B4): hoops became FIRST-CLASS — each drum gains an explicit `hoops[]` array (per-hoop
+ *    `pixelCount` + `reverse`). A kit predating this (v < 5) has each drum's uniform per-hoop count
+ *    ({@link shiftDrumToHoops}) expanded into an explicit `hoops[]` of that length, every hoop
+ *    `reverse: false` — byte-identical output (a drum with no derivable uniform count keeps `hoops`
+ *    absent and resolves via density, unchanged).
  */
-export const CURRENT_KIT_VERSION = 4;
+export const CURRENT_KIT_VERSION = 5;
 
 export const kitSchema = z.object({
   version: z.number().int().default(CURRENT_KIT_VERSION),
@@ -135,6 +163,7 @@ export const kitSchema = z.object({
 });
 
 export type Vec3Config = z.infer<typeof vec3Schema>;
+export type HoopConfig = z.infer<typeof hoopConfigSchema>;
 export type DrumConfig = z.infer<typeof drumSchema>;
 export type OutputConfig = z.infer<typeof outputSchema>;
 export type DataLineConfig = z.infer<typeof dataLineSchema>;
@@ -214,6 +243,27 @@ function shiftDrumOriginToCentre(drum: unknown, globalHoopCount: number): unknow
 }
 
 /**
+ * B4 (v4 → v5): expand ONE raw drum's uniform per-hoop count into an explicit first-class
+ * `hoops[]` array. Each entry is `{ pixelCount, reverse: false }`, so output is byte-identical —
+ * the count that {@link buildPixelModel} resolved uniformly becomes the same count, per hoop.
+ *
+ * The hoop count is the drum's own `hoopCount` else the kit global (default 4), matching schema
+ * resolution. The uniform pixel count comes ONLY from a stored literal `pixelsPerHoop`: a drum
+ * whose count was density-derived (no literal) has no stored uniform value to bake in, so it is
+ * left untouched and continues to resolve via density — expanding it would freeze a value that
+ * should still track density. A drum that already carries `hoops` is returned untouched (idempotent).
+ */
+function shiftDrumToHoops(drum: unknown, globalHoopCount: number): unknown {
+  if (!drum || typeof drum !== 'object' || Array.isArray(drum)) return drum;
+  const d = drum as Record<string, unknown>;
+  if (Array.isArray(d.hoops)) return drum; // already first-class
+  if (typeof d.pixelsPerHoop !== 'number') return drum; // density-derived → keep resolving via density
+  const hoopCount = typeof d.hoopCount === 'number' ? d.hoopCount : globalHoopCount;
+  const hoops = Array.from({ length: hoopCount }, () => ({ pixelCount: d.pixelsPerHoop, reverse: false }));
+  return { ...d, hoops };
+}
+
+/**
  * Migrate a RAW (pre-parse) kit object across schema versions. Steps are CUMULATIVE — a kit
  * enters at its stored version and every later step runs in order:
  *  - **< 2 (A1):** 0-based hoop ranges are shifted **+1** to the 1-based convention (every
@@ -224,6 +274,8 @@ function shiftDrumOriginToCentre(drum: unknown, globalHoopCount: number): unknow
  *  - **< 4 (B3):** each drum's stored `origin` is shifted from the first-hoop convention to the
  *    geometric-centre convention ({@link shiftDrumOriginToCentre}) so the drum does **not** move on
  *    screen — only the origin's meaning changes.
+ *  - **< 5 (B4):** each drum's uniform per-hoop count is expanded into a first-class `hoops[]`
+ *    array ({@link shiftDrumToHoops}), every hoop `reverse: false` — byte-identical output.
  * The version is stamped to {@link CURRENT_KIT_VERSION} last. Idempotent — a kit already at the
  * current version is returned untouched (same reference). Runs BEFORE the schema parse, so
  * pre-migration files still load.
@@ -252,16 +304,29 @@ export function migrateKit(raw: unknown): unknown {
     if (global.expanded === undefined) migrated.global = { ...global, expanded: true };
   }
 
+  // Global hoop-count fallback for the per-drum steps below; matches the schema default so
+  // per-drum stack height / hoop-count resolves exactly as at parse time.
+  const g = migrated.global;
+  const globalHoopCount =
+    g && typeof g === 'object' && !Array.isArray(g) && typeof (g as Record<string, unknown>).hoopCount === 'number'
+      ? ((g as Record<string, unknown>).hoopCount as number)
+      : 4;
+
   // v3 → v4 (B3): re-anchor each drum's `origin` from the first hoop to the geometric centre,
-  // preserving world position (migrate the data, not the drums). Global hoop-count fallback
-  // matches the schema default so per-drum stack height resolves exactly as at parse time.
-  if (version < 4 && Array.isArray(kit.drums)) {
-    const g = migrated.global;
-    const globalHoopCount =
-      g && typeof g === 'object' && !Array.isArray(g) && typeof (g as Record<string, unknown>).hoopCount === 'number'
-        ? ((g as Record<string, unknown>).hoopCount as number)
-        : 4;
-    migrated.drums = kit.drums.map((drum) => shiftDrumOriginToCentre(drum, globalHoopCount));
+  // preserving world position (migrate the data, not the drums).
+  if (version < 4 && Array.isArray(migrated.drums)) {
+    migrated.drums = (migrated.drums as unknown[]).map((drum) =>
+      shiftDrumOriginToCentre(drum, globalHoopCount),
+    );
+  }
+
+  // v4 → v5 (B4): make hoops first-class — expand each drum's uniform per-hoop count into an
+  // explicit `hoops[]` array (reverse:false). Runs on the already-migrated drums so it composes
+  // cumulatively with the B3 origin shift above.
+  if (version < 5 && Array.isArray(migrated.drums)) {
+    migrated.drums = (migrated.drums as unknown[]).map((drum) =>
+      shiftDrumToHoops(drum, globalHoopCount),
+    );
   }
 
   migrated.version = CURRENT_KIT_VERSION;
