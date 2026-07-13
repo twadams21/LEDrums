@@ -180,11 +180,23 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
         ...(msg.diameterIn !== undefined ? { diameterIn: msg.diameterIn } : {}),
         ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
+        ...(msg.color !== undefined ? { color: msg.color } : {}),
       });
       return { structural: true };
     case 'setKitGlobal':
       engine.setKitGlobal({
         ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
+        ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
+        ...(msg.ledDensityPxPerM !== undefined ? { ledDensityPxPerM: msg.ledDensityPxPerM } : {}),
+        ...(msg.hoopCount !== undefined ? { hoopCount: msg.hoopCount } : {}),
+        ...(msg.defaultHoopSpacingMm !== undefined ? { defaultHoopSpacingMm: msg.defaultHoopSpacingMm } : {}),
+        ...(msg.maxPixelsPerOutput !== undefined ? { maxPixelsPerOutput: msg.maxPixelsPerOutput } : {}),
+      });
+      return { structural: true };
+    case 'setHoopConfig':
+      engine.setHoopConfig(msg.drumId, msg.hoopIndex, {
+        ...(msg.pixelCount !== undefined ? { pixelCount: msg.pixelCount } : {}),
+        ...(msg.reverse !== undefined ? { reverse: msg.reverse } : {}),
       });
       return { structural: true };
     case 'setKitNodeLayout':
