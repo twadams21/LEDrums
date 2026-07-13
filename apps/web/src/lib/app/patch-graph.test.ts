@@ -252,13 +252,13 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
       const o = routing.outputs.find((x) => x.id === id)!;
       return { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel };
     });
-    // buildOutputHalf re-mints data-line node ids, so compare modulo the cosmetic line id:
-    // the load-bearing invariant is the per-output, per-line SEGMENT stream + line count/order.
-    const norm = (cfgs: ReturnType<typeof patchToOutputs>) =>
-      cfgs.map((c) => ({ ...c, dataLines: c.dataLines.map((d, i) => ({ ...d, id: i })) }));
+    // D1: each data line is now its OWN core Output; buildOutputHalf re-mints line node ids, so
+    // compare modulo the cosmetic Output id — the load-bearing invariant is the per-run SEGMENT
+    // stream + run count/order.
+    const norm = (cfgs: ReturnType<typeof patchToOutputs>) => cfgs.map((c, i) => ({ ...c, id: i }));
     expect(norm(patchToOutputs(readBack))).toEqual(norm(patchToOutputs(routing)));
-    // ...and the data-line count is preserved 1:1 (wire-in-N-stays-N).
-    expect(patchToOutputs(readBack).flatMap((c) => c.dataLines)).toHaveLength(3);
+    // ...and the run count is preserved 1:1 (wire-in-N-stays-N — 3 lines → 3 Outputs).
+    expect(patchToOutputs(readBack)).toHaveLength(3);
   });
 });
 
@@ -297,11 +297,11 @@ describe('routingSignature / outputsSignature (the cold-load adopt discriminator
 
   it('is insensitive to OutputConfig key order (same wiring → same signature)', () => {
     const canonical: OutputConfig[] = [
-      { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] }] },
+      { id: '1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] },
     ];
     // same wiring, keys inserted in a different order (as a re-serializing server might)
     const reordered: OutputConfig[] = [
-      { dataLines: [{ segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }], id: 'a' }], channelsPerPixel: 3, id: '1' },
+      { segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }], channelsPerPixel: 3, id: '1' },
     ];
     expect(outputsSignature(reordered)).toBe(outputsSignature(canonical));
   });
@@ -362,11 +362,12 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
   const sig = (g: { nodes: ReadonlyArray<PatchFlowNode>; edges: ReadonlyArray<PatchFlowEdge> }): string =>
     routingSignature(routingFromGraph(g.nodes, g.edges));
 
-  /** Segment stream modulo the cosmetic data-line id (buildOutputHalf re-mints those; the
-      load-bearing invariant is the per-output segment stream — as the round-trip test above). */
+  /** Segment stream modulo the cosmetic Output id (D1: each line is its own Output; buildOutputHalf
+      re-mints line node ids → those Output ids; the load-bearing invariant is the per-run segment
+      stream + order — as the round-trip test above). */
   const normLineIds = (s: string): string => {
     const cfgs = JSON.parse(s) as OutputConfig[];
-    return JSON.stringify(cfgs.map((c) => ({ ...c, dataLines: c.dataLines.map((d, i) => ({ ...d, id: i })) })));
+    return JSON.stringify(cfgs.map((c, i) => ({ ...c, id: i })));
   };
 
   it('re-derives canvas state equal to a fresh derivation, discarding a half-applied mutation', () => {

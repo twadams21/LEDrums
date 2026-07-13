@@ -136,13 +136,18 @@ describe('topoDrumsFromKit (#11: input half follows the project kit, not DEFAULT
   const drumList = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
   const oneZone = (): string[] => ['center'];
 
-  /** A kit whose per-drum + global hoop counts all differ from DEFAULT_KIT's. */
+  /** A kit whose per-drum + global hoop counts all differ from DEFAULT_KIT's. `hoops` is dropped
+   *  so the count resolves via the override/global path this suite exercises — with B4's
+   *  first-class `hoops[]` present it would be authoritative (drumHoopCount = hoops.length),
+   *  which the per-hoop-attrs suite covers; here we test the hoopCount/global fallback. */
   function nonDefaultKit(): KitConfig {
     return {
       ...DEFAULT_KIT,
       global: { ...DEFAULT_KIT.global, hoopCount: DEFAULT_KIT.global.hoopCount + 5 },
       drums: DEFAULT_KIT.drums.map((d) =>
-        d.id === 'snare' ? { ...d, hoopCount: 9 } : { ...d, hoopCount: undefined },
+        d.id === 'snare'
+          ? { ...d, hoops: undefined, hoopCount: 9 }
+          : { ...d, hoops: undefined, hoopCount: undefined },
       ),
     };
   }
