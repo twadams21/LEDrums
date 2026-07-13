@@ -132,7 +132,7 @@ describe('parse — defensive, never throws', () => {
     ['a JSON primitive', '"hello"', 'not-object'],
     ['a JSON array', '[1,2,3]', 'not-object'],
     ['foreign app payload', JSON.stringify({ app: 'other', v: 1, kind: 'song', payload: {} }), 'foreign'],
-    ['a future version', JSON.stringify({ app: 'ledrums', v: 2, kind: 'song', payload: {} }), 'unsupported-version'],
+    ['a future version', JSON.stringify({ app: 'ledrums', v: 3, kind: 'song', payload: {} }), 'unsupported-version'],
     ['an unknown kind', JSON.stringify({ app: 'ledrums', v: 1, kind: 'banana', payload: {} }), 'unknown-kind'],
     ['a missing payload', JSON.stringify({ app: 'ledrums', v: 1, kind: 'song' }), 'malformed'],
     ['a malformed graph payload', JSON.stringify({ app: 'ledrums', v: 1, kind: 'graph', payload: { key: 'g' } }), 'malformed'],
