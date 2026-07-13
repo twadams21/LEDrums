@@ -147,8 +147,10 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
         pixels.push({
           id,
           drumId: drum.id,
-          hoopIndex: h,
-          indexInHoop: i,
+          // Hoop + pixel-within-hoop labels are 1-based (A1): first hoop = 1, first pixel = 1.
+          // The loop vars h/i stay 0-based offsets above so geometry is byte-identical.
+          hoopIndex: h + 1,
+          indexInHoop: i + 1,
           angleDeg: wrappedAngle,
           normHoop,
           zone,
@@ -197,7 +199,7 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
  * drum/hoop doesn't exist in the model (dangling targetId → caller renders nothing).
  *
  * Range is half-open: `[start, end)` — the same convention the compositor uses.
- * Hoops are zero-indexed in build order (same as {@link buildPixelModel}'s inner loop).
+ * `hoopIndex` is **1-based** (A1): hoop 1 is the first hoop, matching {@link Pixel.hoopIndex}.
  */
 export function getHoopPixelRange(
   model: PixelModel,
@@ -206,8 +208,8 @@ export function getHoopPixelRange(
 ): { start: number; end: number } | null {
   const drum = model.drumById.get(drumId);
   if (!drum) return null;
-  if (hoopIndex < 0 || hoopIndex >= drum.hoopCount) return null;
-  const start = drum.pixelStart + hoopIndex * drum.pixelsPerHoop;
+  if (hoopIndex < 1 || hoopIndex > drum.hoopCount) return null;
+  const start = drum.pixelStart + (hoopIndex - 1) * drum.pixelsPerHoop;
   return { start, end: start + drum.pixelsPerHoop };
 }
 

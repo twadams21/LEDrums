@@ -16,11 +16,11 @@ const drums = [
 ];
 
 describe('scope inspector helpers', () => {
-  it('uses 1-indexed hoop labels while preserving zero-based ids', () => {
-    expect(hoopLabel(0)).toBe('Hoop 1');
-    expect(hoopLabel(3)).toBe('Hoop 4');
-    expect(encodeHoopTarget('snare', [3, 0, 3])).toBe('snare#0,3');
-    expect(parseHoopTarget('snare#0,3', 'kick')).toEqual({ drumId: 'snare', hoops: [0, 3] });
+  it('uses 1-based hoop labels and ids (A1)', () => {
+    expect(hoopLabel(1)).toBe('Hoop 1');
+    expect(hoopLabel(4)).toBe('Hoop 4');
+    expect(encodeHoopTarget('snare', [3, 1, 3])).toBe('snare#1,3'); // dedup + drop <1, sort
+    expect(parseHoopTarget('snare#1,3', 'kick')).toEqual({ drumId: 'snare', hoops: [1, 3] });
   });
 
   it('derives whole-kit, whole-drum, and multi-hoop selections from node scope', () => {
@@ -29,10 +29,10 @@ describe('scope inspector helpers', () => {
       kind: 'drum',
       drumId: 'snare',
     });
-    expect(selectionFromNode(makeNode('scope', 's', 0, 0, { scope: 'hoop', targetId: 'snare#0,2' }), drums)).toEqual({
+    expect(selectionFromNode(makeNode('scope', 's', 0, 0, { scope: 'hoop', targetId: 'snare#1,3' }), drums)).toEqual({
       kind: 'hoops',
       drumId: 'snare',
-      hoops: [0, 2],
+      hoops: [1, 3],
     });
   });
 
@@ -46,7 +46,7 @@ describe('scope inspector helpers', () => {
     expect(describeSelection({ kind: 'kit' }, drums)).toMatchObject({ label: 'Whole kit', detail: 'No filter', noOp: true });
     expect(describeSelection({ kind: 'drum', drumId: 'snare' }, drums)).toMatchObject({ label: 'Snare', detail: 'Whole drum' });
     expect(describeSelection({ kind: 'hoops', drumId: 'snare', hoops: [] }, drums)).toMatchObject({ detail: 'None', empty: true });
-    expect(describeSelection({ kind: 'hoops', drumId: 'snare', hoops: [0, 2] }, drums)).toMatchObject({
+    expect(describeSelection({ kind: 'hoops', drumId: 'snare', hoops: [1, 3] }, drums)).toMatchObject({
       label: 'Snare',
       detail: 'Hoop 1, Hoop 3',
     });

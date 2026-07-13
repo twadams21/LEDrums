@@ -236,27 +236,28 @@ describe('hasHoopFanOut — S07 fan-out rule, editor-side (S11)', () => {
   });
 
   it('is false for a clean routing — every hoop on exactly one line', () => {
-    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 1)], [h('B', 0)]])] };
+    // Hoops are 1-based (A1): A hoops 1..2, B hoop 1.
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 1), h('A', 2)], [h('B', 1)]])] };
     expect(hasHoopFanOut(kit, routing)).toBe(false);
   });
 
   it('is true when a hoop is driven by two data lines (same output)', () => {
-    // A#0 sits on BOTH lines of o1 → the fan-out S07 flags.
-    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 0), h('A', 1)], [h('A', 0)]])] };
+    // A#1 sits on BOTH lines of o1 → the fan-out S07 flags.
+    const routing: PatchRouting = { outputs: [output('o1', [[h('A', 1), h('A', 2)], [h('A', 1)]])] };
     expect(hasHoopFanOut(kit, routing)).toBe(true);
   });
 
   it('is true when a hoop is driven across two outputs', () => {
     const routing: PatchRouting = {
-      outputs: [output('o1', [[h('A', 0)]]), output('o2', [[h('A', 0)]])],
+      outputs: [output('o1', [[h('A', 1)]]), output('o2', [[h('A', 1)]])],
     };
     expect(hasHoopFanOut(kit, routing)).toBe(true);
   });
 
   it('a re-home (hoop MOVED to another line) stays clean — reconnect is not a fan-out', () => {
-    // Before: A#0 on line 0. After the move: A#0 on line 1 only. One line throughout → no fan-out.
-    const before: PatchRouting = { outputs: [output('o1', [[h('A', 0)], [h('B', 0)]])] };
-    const afterMove: PatchRouting = { outputs: [output('o1', [[], [h('B', 0), h('A', 0)]])] };
+    // Before: A#1 on line 0. After the move: A#1 on line 1 only. One line throughout → no fan-out.
+    const before: PatchRouting = { outputs: [output('o1', [[h('A', 1)], [h('B', 1)]])] };
+    const afterMove: PatchRouting = { outputs: [output('o1', [[], [h('B', 1), h('A', 1)]])] };
     expect(hasHoopFanOut(kit, before)).toBe(false);
     expect(hasHoopFanOut(kit, afterMove)).toBe(false);
   });

@@ -85,13 +85,14 @@ describe('flip — geometry-only reflection (S10)', () => {
     const f = flipped();
     const hoopZ = (m: ReturnType<typeof buildPixelModel>, h: number) =>
       m.pixels.find((p) => p.hoopIndex === h)!.local.z;
-    const top = 3; // hoopCount - 1
-    // Normal: hoop 0 at the origin plane, top hoop up at +150mm.
-    expect(hoopZ(n, 0)).toBe(0);
+    const bottom = 1; // first hoop (1-based, A1)
+    const top = 4; // hoopCount
+    // Normal: hoop 1 at the origin plane, top hoop up at +150mm.
+    expect(hoopZ(n, bottom)).toBe(0);
     expect(hoopZ(n, top)).toBe(150);
     // Flipped: the top skin reflects to -150mm — the stack now runs the other way.
     expect(hoopZ(f, top)).toBe(-hoopZ(n, top));
-    expect(hoopZ(f, top)).toBeLessThan(hoopZ(f, 0));
+    expect(hoopZ(f, top)).toBeLessThan(hoopZ(f, bottom));
   });
 
   it('reverses wind direction: the angular sweep between consecutive pixels flips sign', () => {

@@ -33,12 +33,14 @@ export const drumSchema = z.object({
   effectOriginLocal: vec3Schema.default({ x: 0, y: 0, z: 0 }),
 });
 
-/** An ordered run of hoops on a drum, carried on a single data line, in patch order. */
+/** An ordered run of hoops on a drum, carried on a single data line, in patch order.
+ *  Hoop indices are **1-based** (A1): the first hoop of a drum is hoop 1. Pre-A1 project
+ *  files stored 0-based ranges and are shifted +1 by {@link migrateKit} on load. */
 export const outputSegmentSchema = z.object({
   drumId: z.string().min(1),
-  /** Inclusive hoop range carried on this segment, in patch order. */
-  hoopStart: z.number().int().nonnegative(),
-  hoopEnd: z.number().int().nonnegative(),
+  /** Inclusive hoop range carried on this segment (1-based), in patch order. */
+  hoopStart: z.number().int().positive(),
+  hoopEnd: z.number().int().positive(),
 });
 
 /**
@@ -96,8 +98,15 @@ export const kitGlobalSchema = z.object({
   mirror: z.enum(['none', 'x', 'y']).default('none'),
 });
 
+/**
+ * Current kit schema version. Bumped 1 → 2 by A1 when hoop indexing became 1-based:
+ * a version-1 (or version-absent) kit stores 0-based hoop ranges and is shifted +1 by
+ * {@link migrateKit} before parse. New kits are written at this version.
+ */
+export const CURRENT_KIT_VERSION = 2;
+
 export const kitSchema = z.object({
-  version: z.number().int().default(1),
+  version: z.number().int().default(CURRENT_KIT_VERSION),
   units: z.literal('mm').default('mm'),
   global: kitGlobalSchema,
   drums: z.array(drumSchema).min(1),
@@ -113,9 +122,59 @@ export type OutputSegment = z.infer<typeof outputSegmentSchema>;
 export type KitGlobalConfig = z.infer<typeof kitGlobalSchema>;
 export type KitConfig = z.infer<typeof kitSchema>;
 
-/** Parse + validate raw kit JSON, applying defaults. Throws ZodError on invalid input. */
+/**
+ * Shift one raw output object's hoop ranges +1, handling BOTH the current
+ * (`dataLines[].segments[]`) and the legacy (`segments[]`) shapes. Pure on a shallow
+ * clone; unknown/foreign shapes pass through untouched so a malformed file still reaches
+ * the schema (which reports it) rather than throwing here.
+ */
+function shiftOutputHoops(output: unknown): unknown {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return output;
+  const bumpSeg = (seg: unknown): unknown => {
+    if (!seg || typeof seg !== 'object' || Array.isArray(seg)) return seg;
+    const s = seg as Record<string, unknown>;
+    const next = { ...s };
+    if (typeof s.hoopStart === 'number') next.hoopStart = s.hoopStart + 1;
+    if (typeof s.hoopEnd === 'number') next.hoopEnd = s.hoopEnd + 1;
+    return next;
+  };
+  const o = output as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...o };
+  if (Array.isArray(o.dataLines)) {
+    next.dataLines = o.dataLines.map((dl) => {
+      if (!dl || typeof dl !== 'object' || Array.isArray(dl)) return dl;
+      const line = dl as Record<string, unknown>;
+      return Array.isArray(line.segments)
+        ? { ...line, segments: line.segments.map(bumpSeg) }
+        : line;
+    });
+  }
+  if (Array.isArray(o.segments)) next.segments = o.segments.map(bumpSeg); // legacy bare-segments shape
+  return next;
+}
+
+/**
+ * Migrate a RAW (pre-parse) kit object across schema versions. Currently the only step is
+ * the A1 hoop-index canonicalization: a kit at version < 2 (or with no version) stores
+ * **0-based** hoop ranges, so every `OutputSegment.hoopStart/hoopEnd` is shifted **+1** to
+ * the new 1-based convention and the version stamped to {@link CURRENT_KIT_VERSION}.
+ * Idempotent — a kit already at the current version is returned untouched. Runs BEFORE the
+ * schema parse (which now requires 1-based `positive()` ranges), so pre-A1 files still load.
+ */
+export function migrateKit(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const kit = raw as Record<string, unknown>;
+  const version = typeof kit.version === 'number' ? kit.version : 1;
+  if (version >= CURRENT_KIT_VERSION) return raw;
+  const migrated: Record<string, unknown> = { ...kit, version: CURRENT_KIT_VERSION };
+  if (Array.isArray(kit.outputs)) migrated.outputs = kit.outputs.map(shiftOutputHoops);
+  return migrated;
+}
+
+/** Parse + validate raw kit JSON, applying version migrations + defaults. Throws ZodError
+ *  on invalid input. */
 export function parseKit(raw: unknown): KitConfig {
-  return kitSchema.parse(raw);
+  return kitSchema.parse(migrateKit(raw));
 }
 
 /** Resolve the effective hoop count for a drum (per-drum override or global). */

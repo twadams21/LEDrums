@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BLEND_MODES } from '../color/blend';
-import { kitSchema } from '../geometry/kit-schema';
+import { kitSchema, migrateKit } from '../geometry/kit-schema';
 
 /** A control source feeds a live value (0..1 conceptually) into a parameter. */
 export const controlSourceSchema = z.discriminatedUnion('type', [
@@ -218,14 +218,23 @@ export type Controller = z.infer<typeof controllerSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectPatch = z.infer<typeof projectPatchSchema>;
 
-/** Parse + validate a project JSON, applying defaults. Throws ZodError on invalid input. */
+/** Replace a raw project/patch object's `kit` with its version-migrated form (A1 hoop
+ *  indexing), leaving every other slice untouched. Foreign shapes pass through. */
+function migrateProjectKit(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !('kit' in raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  return { ...obj, kit: migrateKit(obj.kit) };
+}
+
+/** Parse + validate a project JSON, applying kit version migrations + defaults. Throws
+ *  ZodError on invalid input. */
 export function parseProject(raw: unknown): Project {
-  return projectSchema.parse(raw);
+  return projectSchema.parse(migrateProjectKit(raw));
 }
 
 /** Parse + validate a project PATCH (kit + inputMap + output slices), applying defaults.
  * Throws ZodError on invalid input; server callers use `projectPatchSchema.safeParse` so a
  * bad payload becomes a user-visible error rather than an apply. */
 export function parseProjectPatch(raw: unknown): ProjectPatch {
-  return projectPatchSchema.parse(raw);
+  return projectPatchSchema.parse(migrateProjectKit(raw));
 }

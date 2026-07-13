@@ -289,20 +289,20 @@ describe('Compositor — hosted legacy-generator bridge', () => {
 //   hoop 0: [58, 82)  hoop 1: [82, 106)
 
 describe('Compositor — scope + targetId masking', () => {
-  it('scope:hoop masks to one hoop\'s pixel range (kick hoop 0)', () => {
-    const { frame, model } = renderPatt('hoop', 'kick', 'kick#0');
+  it('scope:hoop masks to one hoop\'s pixel range (kick hoop 1)', () => {
+    const { frame, model } = renderPatt('hoop', 'kick', 'kick#1'); // hoop 1 = first hoop (1-based, A1)
     const kick = model.drumById.get('kick')!;
     const hoopSize = kick.pixelsPerHoop; // 29
     const lit = litPixels(frame, model.pixelCount);
     expect(lit.length).toBeGreaterThan(0);
     expect(lit.length).toBeLessThanOrEqual(hoopSize);
     for (const id of lit) {
-      expect(id).toBeGreaterThanOrEqual(0); // hoop 0 start
-      expect(id).toBeLessThan(hoopSize);    // hoop 0 end
+      expect(id).toBeGreaterThanOrEqual(0); // hoop 1 start
+      expect(id).toBeLessThan(hoopSize);    // hoop 1 end
     }
   });
 
-  it('scope:hoop with no targetId defaults to source drum hoop 0', () => {
+  it('scope:hoop with no targetId defaults to source drum hoop 1', () => {
     const { frame, model } = renderPatt('hoop', 'snare');
     const snare = model.drumById.get('snare')!;
     const h0start = snare.pixelStart;
@@ -349,7 +349,7 @@ describe('Compositor — scope + targetId masking', () => {
 
   it('scope:hoop with dangling targetId renders nothing (no throw)', () => {
     expect(() => {
-      const { frame, model } = renderPatt('hoop', 'kick', 'does-not-exist#0');
+      const { frame, model } = renderPatt('hoop', 'kick', 'does-not-exist#1');
       expect(litPixels(frame, model.pixelCount).length).toBe(0);
     }).not.toThrow();
   });
@@ -380,8 +380,8 @@ describe('Compositor — scope + targetId masking', () => {
   });
 
   it('generator-backed effect respects hoop scope', () => {
-    // Plasma with hoop scope → only kick hoop 0 pixels lit.
-    const { frame, model } = renderGenTargeted('plasma', 'hoop', 'kick', 'kick#0');
+    // Plasma with hoop scope → only kick hoop 1 (first hoop, 1-based A1) pixels lit.
+    const { frame, model } = renderGenTargeted('plasma', 'hoop', 'kick', 'kick#1');
     const kick = model.drumById.get('kick')!;
     const h0end = kick.pixelStart + kick.pixelsPerHoop;
     const lit = litPixels(frame, model.pixelCount);
@@ -467,17 +467,17 @@ function litHoopSet(f: Readonly<Float32Array>, m: PixelModel): number[] {
 describe('Compositor — voice timebase / restart-on-trigger (S25)', () => {
   const m = chaseModel(); // deterministic layout — for interpreting hoop positions
 
-  it('chase starts at hoop 0 on the hit (age 0 → beat 0 → step 0)', () => {
-    expect(litHoopSet(chaseAtAge(0), m)).toEqual([0]);
+  it('chase starts at hoop 1 on the hit (age 0 → beat 0 → step 0)', () => {
+    expect(litHoopSet(chaseAtAge(0), m)).toEqual([1]); // hoop labels are 1-based (A1)
   });
 
   it('chase advances on the voice clock, not frozen (ages 0/200/800 → distinct hoops)', () => {
     // voice-local beat = age×bpm/60000; subdivision 4 → step = floor(beat × 4).
-    // age 0 → beat 0 → step 0 (hoop 0); age 200 → beat 0.4 → step 1 (hoop 1);
-    // age 800 → beat 1.6 → step 6 (hoop 6).
-    expect(litHoopSet(chaseAtAge(0), m)).toEqual([0]);
-    expect(litHoopSet(chaseAtAge(200), m)).toEqual([1]);
-    expect(litHoopSet(chaseAtAge(800), m)).toEqual([6]);
+    // age 0 → beat 0 → step 0 (hoop 1); age 200 → beat 0.4 → step 1 (hoop 2);
+    // age 800 → beat 1.6 → step 6 (hoop 7). Hoop labels are 1-based (A1).
+    expect(litHoopSet(chaseAtAge(0), m)).toEqual([1]);
+    expect(litHoopSet(chaseAtAge(200), m)).toEqual([2]);
+    expect(litHoopSet(chaseAtAge(800), m)).toEqual([7]);
   });
 
   it('chase goldens are identical across separate runs (deterministic)', () => {

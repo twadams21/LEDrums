@@ -92,12 +92,12 @@ describe('Engine', () => {
 
   it('setKitTransform({ hoopSpacingMm }) rebuilds geometry with the new hoop gap', () => {
     const e = new Engine(velocityMeterProject());
-    // local.z of a hoop = hoopIndex * hoopSpacingMm (independent of origin/rotation).
+    // local.z of a hoop = (hoopIndex - 1) * hoopSpacingMm (1-based hoops, A1; independent of origin/rotation).
     const zOf = (hoop: number): number => e.getModel().pixels.find((p) => p.hoopIndex === hoop)!.local.z;
-    expect(zOf(1)).toBeCloseTo(50, 6); // initial spacing 50mm
+    expect(zOf(2)).toBeCloseTo(50, 6); // initial spacing 50mm (hoop 2 = second hoop)
     e.setKitTransform('d', { hoopSpacingMm: 120 });
-    expect(zOf(1)).toBeCloseTo(120, 6); // rebuilt with the new gap
-    expect(zOf(2)).toBeCloseTo(240, 6);
+    expect(zOf(2)).toBeCloseTo(120, 6); // rebuilt with the new gap
+    expect(zOf(3)).toBeCloseTo(240, 6);
   });
 
   it('setKitTransform({ diameterIn }) rebuilds geometry with the new ring radius', () => {

@@ -39,8 +39,9 @@ export interface DmxMap {
 /** Channels in a single DMX universe. */
 export const CHANNELS_PER_UNIVERSE = 512;
 
+/** Global pixel ids for one hoop. `hoop` is **1-based** (A1) — hoop 1 is the first hoop. */
 function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
-  const start = drum.pixelStart + hoop * drum.pixelsPerHoop;
+  const start = drum.pixelStart + (hoop - 1) * drum.pixelsPerHoop;
   const ids: number[] = [];
   for (let i = 0; i < drum.pixelsPerHoop; i++) ids.push(start + i);
   return ids;
@@ -94,7 +95,7 @@ export function buildDmxMap(kit: KitConfig, model: PixelModel): DmxMap {
         if (!drum) {
           throw new Error(`Output "${output.id}" references unknown drum "${seg.drumId}".`);
         }
-        if (seg.hoopStart < 0 || seg.hoopEnd >= drum.hoopCount || seg.hoopStart > seg.hoopEnd) {
+        if (seg.hoopStart < 1 || seg.hoopEnd > drum.hoopCount || seg.hoopStart > seg.hoopEnd) {
           throw new Error(
             `Output "${output.id}" segment for "${seg.drumId}" has invalid hoop range ` +
               `${seg.hoopStart}..${seg.hoopEnd} (drum has ${drum.hoopCount} hoops).`,
@@ -137,8 +138,8 @@ function deriveFlatOutputs(model: PixelModel): OutputConfig[] {
           id: 'flat:dl0',
           segments: model.drums.map((d) => ({
             drumId: d.drumId,
-            hoopStart: 0,
-            hoopEnd: d.hoopCount - 1,
+            hoopStart: 1,
+            hoopEnd: d.hoopCount,
           })),
         },
       ],

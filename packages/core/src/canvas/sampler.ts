@@ -103,7 +103,7 @@ export function buildSamplerTable(model: PixelModel, config: SamplerConfig): Sam
       for (const d of model.drums) {
         for (let i = d.pixelStart; i < d.pixelStart + d.pixelCount; i++) {
           const p = model.pixels[i]!;
-          const g = hoopBase + p.hoopIndex;
+          const g = hoopBase + (p.hoopIndex - 1); // hoopIndex is 1-based (A1); g stays a 0-based global hoop index
           const placed = config.placements?.[g];
           const cx = placed ? placed.cx : (g % cols) * cellW + cellW / 2;
           const cy = placed ? placed.cy : Math.floor(g / cols) * cellH + cellH / 2;

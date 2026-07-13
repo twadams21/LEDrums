@@ -205,8 +205,8 @@ describe('VoiceEngineHost', () => {
             id: 'out0:dl0',
             segments: reversed.map((drumId) => ({
               drumId,
-              hoopStart: 0,
-              hoopEnd: model.drumById.get(drumId)!.hoopCount - 1,
+              hoopStart: 1, // hoops are 1-based (A1)
+              hoopEnd: model.drumById.get(drumId)!.hoopCount,
             })),
           },
         ],
@@ -280,7 +280,7 @@ describe('VoiceEngineHost', () => {
         dataLines: [
           {
             id: 'out0:dl0',
-            segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 0, hoopEnd: d.hoopCount - 1 })),
+            segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 1, hoopEnd: d.hoopCount })), // 1-based (A1)
           },
         ],
       },

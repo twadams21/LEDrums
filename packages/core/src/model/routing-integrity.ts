@@ -89,7 +89,7 @@ export function checkRoutingIntegrity(
           continue; // no hoops to range-check or claim against a phantom drum
         }
         const hoopCount = hoopCountOf.get(seg.drumId)!;
-        if (seg.hoopStart < 0 || seg.hoopEnd >= hoopCount || seg.hoopStart > seg.hoopEnd) {
+        if (seg.hoopStart < 1 || seg.hoopEnd > hoopCount || seg.hoopStart > seg.hoopEnd) {
           issues.push({
             code: 'hoop-out-of-range',
             message:

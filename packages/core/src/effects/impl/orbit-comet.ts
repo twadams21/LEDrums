@@ -69,7 +69,7 @@ export const orbitComet: EffectGenerator<OrbitCometState> = {
       const end = drum.pixelStart + drum.pixelCount;
       for (let i = drum.pixelStart; i < end; i++) {
         const p = ctx.model.pixels[i]!;
-        const localHead = headDeg + riseDeg * p.hoopIndex;
+        const localHead = headDeg + riseDeg * (p.hoopIndex - 1); // hoopIndex is 1-based (A1)
         const behind = wrap(localHead - p.angleDeg, 360);
         if (behind > tailDeg) continue;
         const tail = 1 - behind / tailDeg;

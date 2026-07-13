@@ -31,8 +31,8 @@
     if (node.scope === 'hoop') {
       return infos.flatMap((d) =>
         Array.from({ length: d.hoopCount }, (_, i) => ({
-          value: `${d.id}#${i}`,
-          label: `${d.label} · Hoop ${i}`,
+          value: `${d.id}#${i + 1}`,
+          label: `${d.label} · Hoop ${i + 1}`,
         })),
       );
     }

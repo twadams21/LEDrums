@@ -16,10 +16,10 @@
    are ordered top→bottom. Dragging a node up/down therefore reorders transmit order —
    the intuitive read of a left→right signal-flow graph.
 
-   HOOP INDEX BASE. The topology's hoop NODE ids are 1-based (`hoop:<drum>:1..N`, see
-   `patch-topology.ts`), while core's `OutputSegment` / S2 `HoopRef.hoop` are 0-based
-   (`dmx-map.ts` validates `0..hoopCount-1`). The id helpers below bridge that seam so
-   the two never leak into each other. */
+   HOOP INDEX BASE. Hoop indices are **1-based everywhere** since A1: the topology's hoop
+   NODE ids (`hoop:<drum>:1..N`, see `patch-topology.ts`), core's `OutputSegment`, and
+   `HoopRef.hoop` all agree (`dmx-map.ts` validates `1..hoopCount`). The id helpers below no
+   longer shift the base — they just format/parse the shared 1-based number. */
 
 import type { OutputConfig } from '@ledrums/core';
 import {
@@ -47,12 +47,12 @@ import {
 const OUTPUT_PREFIX = 'output:';
 const DATALINE_PREFIX = 'dataline:';
 
-/** Flow-node id for a hoop ref (0-based core hoop → 1-based topology node). */
+/** Flow-node id for a hoop ref. Both `HoopRef.hoop` and the topology node id are 1-based (A1). */
 export function hoopNodeId(ref: HoopRef): string {
-  return hoopId(ref.drumId, ref.hoop + 1);
+  return hoopId(ref.drumId, ref.hoop);
 }
 
-/** Decode a hoop flow-node id back to a 0-based {@link HoopRef}; null if not a hoop.
+/** Decode a hoop flow-node id back to a 1-based {@link HoopRef}; null if not a hoop.
     Drum ids never contain ':' today, but rejoin the middle defensively anyway. */
 export function parseHoopNodeId(id: string): HoopRef | null {
   const parts = id.split(':');
@@ -61,7 +61,7 @@ export function parseHoopNodeId(id: string): HoopRef | null {
   if (!Number.isFinite(n)) return null;
   const drumId = parts.slice(1, -1).join(':');
   if (!drumId) return null;
-  return { drumId, hoop: n - 1 };
+  return { drumId, hoop: n };
 }
 
 /** Flow-node id for a physical output, carrying its `OutputConfig.id` for round-trip. */
@@ -356,7 +356,7 @@ export interface RoutingDrum {
 /**
  * Synthesize a default `PatchRouting` from the kit when the project declares no
  * `outputs` (the common first-boot case — core derives a flat map, but the graph needs
- * something to draw + rewire). Walks the drum-ordered hoop chain (0-based hoops) and
+ * something to draw + rewire). Walks the drum-ordered hoop chain (1-based hoops, A1) and
  * chunks it into data lines of `hoopsPerDataLine`, one output per line — reproducing the
  * Patch view's prior visual default, now as a real routing that round-trips on the first
  * rewire. Output ids are stable ("1", "2", …) so they survive a remount.
@@ -368,7 +368,7 @@ export function defaultRouting(
   const size = Math.max(1, Math.floor(opts?.hoopsPerDataLine ?? DEFAULT_HOOPS_PER_DATALINE));
   const chain: HoopRef[] = [];
   for (const d of drums) {
-    for (let h = 0; h < d.hoopCount; h++) chain.push({ drumId: d.id, hoop: h });
+    for (let h = 1; h <= d.hoopCount; h++) chain.push({ drumId: d.id, hoop: h }); // hoops 1-based (A1)
   }
   const outputs: PatchOutput[] = [];
   for (let i = 0, n = 0; i < chain.length; i += size, n++) {

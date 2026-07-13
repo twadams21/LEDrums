@@ -74,7 +74,7 @@ describe('buildPixelModel', () => {
   it('assigns one zone per pixel and stacks hoops along local +Z', () => {
     const model = buildPixelModel(oneDrumKit());
     expect(model.pixels.every((p) => ['center', 'edge', 'rim', 'shell'].includes(p.zone))).toBe(true);
-    const hoop1 = model.pixels.find((p) => p.hoopIndex === 1)!;
-    expect(hoop1.local.z).toBe(50);
+    const hoop2 = model.pixels.find((p) => p.hoopIndex === 2)!; // hoop 2 = second hoop (1-based, A1)
+    expect(hoop2.local.z).toBe(50);
   });
 });

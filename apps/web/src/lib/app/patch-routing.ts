@@ -22,7 +22,8 @@
 
 import { checkRoutingIntegrity, type DataLineConfig, type KitConfig, type OutputConfig, type OutputSegment } from '@ledrums/core';
 
-/** A single hoop on a drum, addressed by drum id + hoop index within that drum. */
+/** A single hoop on a drum, addressed by drum id + **1-based** hoop index within that drum
+    (A1) — matches core `OutputSegment.hoopStart/End` and the `hoop:<drum>:N` node id. */
 export type HoopRef = { drumId: string; hoop: number };
 
 /** One data line: an ordered run of hoops cross-wired onto a single physical line. An

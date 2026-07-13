@@ -29,10 +29,11 @@ import type { MixInput, ParamValues, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
-/** Never render nothing: a hash-less id falls back to the source drum's hoop 0, and a
-    `#`-qualified id with no valid indices falls back to `[0]`. Indices keep authoring order. */
+/** Never render nothing: a hash-less id falls back to the source drum's hoop 1, and a
+    `#`-qualified id with no valid indices falls back to `[1]` (hoops are 1-based, A1).
+    Indices keep authoring order. */
 function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): HoopTarget {
-  return parseScopeTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'zero', sort: false });
+  return parseScopeTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'first', sort: false });
 }
 
 /**
@@ -269,7 +270,7 @@ export function createDefaultCompositor(): Compositor {
           start = d.pixelStart;
           end = d.pixelStart + d.pixelCount;
         } else if (v.scope === 'hoop') {
-          // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]"; absent → source drum hoop 0.
+          // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]" (1-based); absent → source drum hoop 1.
           const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
           if (drumId == null) continue;
           const modCtx = modCtxFor(v, frameCtx);

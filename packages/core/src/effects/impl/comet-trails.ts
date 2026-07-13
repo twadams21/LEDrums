@@ -106,7 +106,9 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
       const cometHue = hue + comet.hueOffset;
       // A hoop is a contiguous slice of the drum's range — iterate just that hoop
       // instead of filtering every drum pixel.
-      const range = getHoopPixelRange(ctx.model, comet.drumId, comet.hoopIndex);
+      // comet.hoopIndex is this effect's own 0-based seeded key; getHoopPixelRange takes a
+      // 1-based hoop (A1), so shift +1 at the boundary (seeding stays 0-based → byte-identical).
+      const range = getHoopPixelRange(ctx.model, comet.drumId, comet.hoopIndex + 1);
       if (!range) continue;
       for (let p = range.start; p < range.end; p++) {
         const pix = ctx.model.pixels[p]!;

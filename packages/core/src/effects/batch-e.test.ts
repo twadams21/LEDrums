@@ -131,10 +131,10 @@ describe('chase-bands', () => {
     const fb = render(chaseBands, m, ctx(m, { dt: 0, triggers }), { lifeBeats: 8 }, state);
     const lit = litIds(fb);
     expect(lit.length).toBeGreaterThan(0);
-    // Collect lit pixel head-relative angles on hoop 0; two bands ⇒ angles spread > one band width.
+    // Collect lit pixel head-relative angles on hoop 1 (first hoop, 1-based A1); two bands ⇒ angles spread > one band width.
     const angles = lit
       .map((id) => m.pixels[id]!)
-      .filter((p) => p.hoopIndex === 0)
+      .filter((p) => p.hoopIndex === 1)
       .map((p) => p.angleDeg)
       .sort((a, b) => a - b);
     expect(angles.length).toBeGreaterThan(0);

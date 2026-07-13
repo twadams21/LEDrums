@@ -66,7 +66,7 @@ export const chaseBands: EffectGenerator<ChaseBandsState> = {
         const p = ctx.model.pixels[i]!;
         // Positive angular distance BEHIND the head (comet tail); helical twist
         // offsets each hoop so the band corkscrews up the shell.
-        const behind = wrap(headDeg - (p.angleDeg + twist * p.hoopIndex), 360);
+        const behind = wrap(headDeg - (p.angleDeg + twist * (p.hoopIndex - 1)), 360); // hoopIndex 1-based (A1)
         if (behind > bandDeg) continue;
         const v = clamp01(level * (1 - behind / bandDeg));
         if (v < 0.004) continue;

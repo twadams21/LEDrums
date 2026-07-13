@@ -485,8 +485,9 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
         id: 'out1',
         channelsPerPixel: 3,
         dataLines: [
-          { id: 'd0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] },
-          { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] },
+          // kick hoop 1 (1-based, A1) driven by both lines → schema-valid, routing-invalid (fan-out).
+          { id: 'd0', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] },
+          { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] },
         ],
       },
     ];
@@ -530,11 +531,11 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
 describe('setKitOutputs — schema gate (S01): validate before any state, no partial apply', () => {
   /** A minimal valid output topology (one PixLite port, one data line, one hoop segment). */
   const validOutputs = [
-    { id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'out1:dl0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 3 }] }] },
+    { id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'out1:dl0', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] }] }, // 1-based (A1)
   ];
 
   /** The incident's corruption shapes — each fails `outputSchema` on a different field. */
-  const channelsPerPixelZero: unknown = [{ id: 'out1', channelsPerPixel: 0, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 3 }] }] }];
+  const channelsPerPixelZero: unknown = [{ id: 'out1', channelsPerPixel: 0, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] }] }];
   const invalidCases: Array<[string, unknown]> = [
     ['channelsPerPixel: 0', channelsPerPixelZero],
     ['empty dataLines', [{ id: 'out1', channelsPerPixel: 3, dataLines: [] }]],
@@ -592,12 +593,12 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
   // (well-formed shape) but are referentially/structurally invalid against the live kit
   // (defaultProject: kick has 4 hoops). Same reply/monitor contract, zero state.
   const integrityCases: Array<[string, unknown]> = [
-    // A segment referencing a drum the kit doesn't define.
-    ['dangling drum ref', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] }]],
-    // hoopEnd 9 with a 4-hoop kick — schema-valid (nonnegative ints), routing-invalid.
-    ['out-of-range hoop', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 9 }] }] }]],
-    // kick hoop 0 driven by two data lines — a fan-out buildDmxMap would silently overwrite.
-    ['hoop fan-out across data lines', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] }, { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] }] }]],
+    // A segment referencing a drum the kit doesn't define (hoops 1-based, A1).
+    ['dangling drum ref', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 1, hoopEnd: 1 }] }] }]],
+    // hoopEnd 10 with a 4-hoop kick — schema-valid (positive ints), routing-invalid.
+    ['out-of-range hoop', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 10 }] }] }]],
+    // kick hoop 1 driven by two data lines — a fan-out buildDmxMap would silently overwrite.
+    ['hoop fan-out across data lines', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd0', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] }, { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] }] }]],
   ];
 
   it.each(integrityCases)('rejects %s (schema-valid, routing-invalid) with a user-visible error and zero apply', (_label, outputs) => {
@@ -618,7 +619,7 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
     const editor = join();
     const spy = vi.spyOn(voiceHost, 'setKitOutputs');
 
-    const danglingRef = [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] }];
+    const danglingRef = [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 1, hoopEnd: 1 }] }] }];
     handle({ t: 'setKitOutputs', outputs: danglingRef } as unknown as ClientMessage, editor);
     expect(spy).not.toHaveBeenCalled(); // last-known-good routing stays live
 

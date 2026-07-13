@@ -18,8 +18,8 @@ import { hasHoopFanOut, outputsToPatch, patchToOutputs, pixelRanges, type PatchR
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
 import { guardFlowCallback } from './views/flow-guard';
 
-/* The pure Patch-graph ⇄ routing seam (S3). Covers the 0-based-core ⇄ 1-based-node hoop
-   bridge, the fallback chunker, the output-half builder, and — the load-bearing one —
+/* The pure Patch-graph ⇄ routing seam (S3). Covers the (now uniformly 1-based, A1) hoop
+   node-id grammar, the fallback chunker, the output-half builder, and — the load-bearing one —
    the rewire round-trip: draw a routing into flow nodes/edges, read it back by vertical
    order, and recompile to the SAME OutputConfig[] (so a rewire never drifts pixel order). */
 
@@ -31,12 +31,12 @@ const edge = (source: string, target: string): PatchFlowEdge => ({ id: `${source
 
 const LAYOUT: OutputHalfLayout = { colDataline: 1000, colOutput: 1200, controllerId: 'controller', midY: 0 };
 
-describe('hoop node id ⇄ HoopRef (0-based core ⇄ 1-based node)', () => {
-  it('bridges the index base in both directions', () => {
-    expect(hoopNodeId({ drumId: 'snare', hoop: 0 })).toBe('hoop:snare:1');
-    expect(hoopNodeId({ drumId: 'tom1', hoop: 3 })).toBe('hoop:tom1:4');
-    expect(parseHoopNodeId('hoop:snare:1')).toEqual({ drumId: 'snare', hoop: 0 });
-    expect(parseHoopNodeId('hoop:tom1:4')).toEqual({ drumId: 'tom1', hoop: 3 });
+describe('hoop node id ⇄ HoopRef (both 1-based, A1)', () => {
+  it('round-trips the shared 1-based hoop number in both directions', () => {
+    expect(hoopNodeId({ drumId: 'snare', hoop: 1 })).toBe('hoop:snare:1');
+    expect(hoopNodeId({ drumId: 'tom1', hoop: 4})).toBe('hoop:tom1:4');
+    expect(parseHoopNodeId('hoop:snare:1')).toEqual({ drumId: 'snare', hoop: 1 });
+    expect(parseHoopNodeId('hoop:tom1:4')).toEqual({ drumId: 'tom1', hoop: 4});
   });
   it('rejects non-hoop / malformed ids', () => {
     expect(parseHoopNodeId('output:1')).toBeNull();
@@ -58,10 +58,10 @@ describe('defaultRouting (fallback when the project declares no outputs)', () =>
     const r = defaultRouting([{ id: 'a', hoopCount: 2 }, { id: 'b', hoopCount: 1 }], { hoopsPerDataLine: 2 });
     expect(r.outputs.map((o) => o.id)).toEqual(['1', '2']);
     expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([
-      { drumId: 'a', hoop: 0 },
       { drumId: 'a', hoop: 1 },
+      { drumId: 'a', hoop: 2 },
     ]);
-    expect(r.outputs[1]!.dataLines[0]!.hoops).toEqual([{ drumId: 'b', hoop: 0 }]);
+    expect(r.outputs[1]!.dataLines[0]!.hoops).toEqual([{ drumId: 'b', hoop: 1 }]);
   });
   it('is empty for no drums', () => {
     expect(defaultRouting([]).outputs).toEqual([]);
@@ -76,7 +76,7 @@ describe('buildOutputHalf', () => {
           id: '1',
           startUniverse: 0,
           channelsPerPixel: 3,
-          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'a', hoop: 1 }] }],
+          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 1 }, { drumId: 'a', hoop: 2 }] }],
         },
       ],
     };
@@ -100,9 +100,9 @@ describe('buildOutputHalf', () => {
         {
           id: '1',
           channelsPerPixel: 3,
-          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'a', hoop: 0 }] }],
+          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 1 }, { drumId: 'a', hoop: 1 }] }],
         },
-        { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'y', hoops: [{ drumId: 'b', hoop: 0 }] }] },
+        { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'y', hoops: [{ drumId: 'b', hoop: 1 }] }] },
       ],
     };
     const { nodes, edges } = buildOutputHalf(routing, LAYOUT);
@@ -123,20 +123,20 @@ describe('buildOutputHalf', () => {
           id: '1',
           startUniverse: 0,
           channelsPerPixel: 3,
-          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'ghost', hoop: 9 }] }],
+          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 1 }, { drumId: 'ghost', hoop: 9 }] }],
         },
       ],
     };
     const { edges } = buildOutputHalf(routing, { ...LAYOUT, hasHoop: (id) => id === 'hoop:a:1' });
     expect(edges.some((e) => e.source === 'hoop:a:1')).toBe(true);
-    expect(edges.some((e) => e.source === 'hoop:ghost:10')).toBe(false);
+    expect(edges.some((e) => e.source === 'hoop:ghost:9')).toBe(false);
   });
 });
 
 describe('routingFromGraph', () => {
   it('orders outputs / datalines / hoops by vertical (y) position, not array/id order', () => {
     const nodes: PatchFlowNode[] = [
-      node('hoop:a:1', 'hoop', 30, 0), // a:1 (hoop 0) sits BELOW a:2 (hoop 1)
+      node('hoop:a:1', 'hoop', 30, 0), // a:1 (hoop 1) sits BELOW a:2 (hoop 2)
       node('hoop:a:2', 'hoop', 10, 0),
       node('dataline:1', 'dataline', 20, 1000),
       node('output:1', 'output', 20, 1200),
@@ -144,8 +144,8 @@ describe('routingFromGraph', () => {
     const edges = [edge('hoop:a:1', 'dataline:1'), edge('hoop:a:2', 'dataline:1'), edge('dataline:1', 'output:1')];
     const r = routingFromGraph(nodes, edges);
     expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([
-      { drumId: 'a', hoop: 1 }, // y=10 first
-      { drumId: 'a', hoop: 0 }, // y=30 second
+      { drumId: 'a', hoop: 2 }, // y=10 first
+      { drumId: 'a', hoop: 1 }, // y=30 second
     ]);
   });
 
@@ -175,7 +175,7 @@ describe('routingFromGraph', () => {
       edge('dataline:1', 'output:1'),
     ];
     const r = routingFromGraph(nodes, edges);
-    expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([{ drumId: 'a', hoop: 0 }]);
+    expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([{ drumId: 'a', hoop: 1 }]);
   });
 
   it('reads per-output scalars via getScalars (default = dense, no startUniverse)', () => {
@@ -235,15 +235,15 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
           startUniverse: 0,
           channelsPerPixel: 3,
           dataLines: [
-            { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
-            { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
+            { id: 'a', hoops: [{ drumId: 'kick', hoop: 1 }, { drumId: 'kick', hoop: 2 }] },
+            { id: 'b', hoops: [{ drumId: 'snare', hoop: 1 }] },
           ],
         },
         {
           id: '2',
           startUniverse: 10,
           channelsPerPixel: 4,
-          dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 1 }, { drumId: 'tom1', hoop: 0 }] }],
+          dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 2 }, { drumId: 'tom1', hoop: 1 }] }],
         },
       ],
     };
@@ -272,15 +272,15 @@ describe('routingSignature / outputsSignature (the cold-load adopt discriminator
         id: '1',
         channelsPerPixel: 3,
         dataLines: [
-          { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
-          { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
+          { id: 'a', hoops: [{ drumId: 'kick', hoop: 1 }, { drumId: 'kick', hoop: 2 }] },
+          { id: 'b', hoops: [{ drumId: 'snare', hoop: 1 }] },
         ],
       },
       {
         id: '2',
         startUniverse: 4,
         channelsPerPixel: 4,
-        dataLines: [{ id: 'c', startUniverse: 5, hoops: [{ drumId: 'tom1', hoop: 0 }] }],
+        dataLines: [{ id: 'c', startUniverse: 5, hoops: [{ drumId: 'tom1', hoop: 1 }] }],
       },
     ],
   };
@@ -297,18 +297,18 @@ describe('routingSignature / outputsSignature (the cold-load adopt discriminator
 
   it('is insensitive to OutputConfig key order (same wiring → same signature)', () => {
     const canonical: OutputConfig[] = [
-      { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 1 }] }] },
+      { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] }] },
     ];
     // same wiring, keys inserted in a different order (as a re-serializing server might)
     const reordered: OutputConfig[] = [
-      { dataLines: [{ segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 1 }], id: 'a' }], channelsPerPixel: 3, id: '1' },
+      { dataLines: [{ segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }], id: 'a' }], channelsPerPixel: 3, id: '1' },
     ];
     expect(outputsSignature(reordered)).toBe(outputsSignature(canonical));
   });
 
   it('a genuine external change yields a different signature (so adopt fires)', () => {
     const external: PatchRouting = {
-      outputs: [{ id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }] }] }],
+      outputs: [{ id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', hoops: [{ drumId: 'kick', hoop: 1 }] }] }],
     };
     expect(routingSignature(external)).not.toBe(routingSignature(routing));
   });
@@ -327,11 +327,11 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
         id: '1',
         channelsPerPixel: 3,
         dataLines: [
-          { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
-          { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
+          { id: 'a', hoops: [{ drumId: 'kick', hoop: 1 }, { drumId: 'kick', hoop: 2 }] },
+          { id: 'b', hoops: [{ drumId: 'snare', hoop: 1 }] },
         ],
       },
-      { id: '2', channelsPerPixel: 3, dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 1 }] }] },
+      { id: '2', channelsPerPixel: 3, dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 2 }] }] },
     ],
   };
 

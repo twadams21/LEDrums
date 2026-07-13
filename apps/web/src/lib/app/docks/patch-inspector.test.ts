@@ -32,9 +32,9 @@ describe('patchEditorFor', () => {
     expect(patchEditorFor('drum:tom1')).toEqual({ kind: 'drum', drumId: 'tom1' });
   });
 
-  it('decodes a hoop node to a 0-based core hoop (topology id is 1-based)', () => {
-    expect(patchEditorFor('hoop:snare:1')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 0 });
-    expect(patchEditorFor('hoop:snare:4')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 3 });
+  it('decodes a hoop node to a 1-based core hoop (topology id + HoopRef both 1-based, A1)', () => {
+    expect(patchEditorFor('hoop:snare:1')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 1 });
+    expect(patchEditorFor('hoop:snare:4')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 4 });
   });
 
   it('decodes an output node carrying its OutputConfig id', () => {
