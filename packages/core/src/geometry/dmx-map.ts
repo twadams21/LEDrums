@@ -1,5 +1,5 @@
 import type { KitConfig, OutputConfig } from './kit-schema';
-import type { DrumInfo, PixelModel } from './pixel-model';
+import { drumHoopPixelRange, type DrumInfo, type PixelModel } from './pixel-model';
 
 /** Where a pixel's channels land in the global, DENSE DMX stream. A pixel occupies
  *  `channelsPerPixel` consecutive global channels starting at {@link channel}; those
@@ -39,11 +39,13 @@ export interface DmxMap {
 /** Channels in a single DMX universe. */
 export const CHANNELS_PER_UNIVERSE = 512;
 
-/** Global pixel ids for one hoop. `hoop` is **1-based** (A1) — hoop 1 is the first hoop. */
+/** Global pixel ids for one hoop, in id order. `hoop` is **1-based** (A1). Uses the model's
+ *  prefix-sum hoop range so mixed per-hoop counts (B4) pack correctly, not just uniform drums. */
 function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
-  const start = drum.pixelStart + (hoop - 1) * drum.pixelsPerHoop;
+  const range = drumHoopPixelRange(drum, hoop);
+  if (!range) return [];
   const ids: number[] = [];
-  for (let i = 0; i < drum.pixelsPerHoop; i++) ids.push(start + i);
+  for (let pid = range.start; pid < range.end; pid++) ids.push(pid);
   return ids;
 }
 
