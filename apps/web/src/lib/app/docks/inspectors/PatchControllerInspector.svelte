@@ -1,10 +1,11 @@
 <script lang="ts">
   /* Patch controller node — the Art-Net / sACN transport: protocol, host, port, interface,
-     RGB order, FPS, broadcast/multicast, and sACN priority. Writes through store.setOutput.
+     FPS, broadcast/multicast, and sACN priority, plus the kit-wide Advatek expanded-output
+     mode. Transport writes through store.setOutput; expanded through store.setKitGlobal.
+     RGB order is now per-output (edited on the Output inspector), not here.
      Offline-safe (controls disabled, rename still works). */
   import { onMount } from 'svelte';
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
-  import type { RgbOrder } from '@ledrums/core';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -13,12 +14,15 @@
   import Separator from '../../../ui/Separator.svelte';
   import OutputStatusPanel from './OutputStatusPanel.svelte';
   import { onNum } from './forms';
-  import { PROTOCOL_OPTS, RGB_OPTS } from '../../views/node-options';
+  import { PROTOCOL_OPTS } from '../../views/node-options';
 
   let { store, nodeId, title }: { store: TriggerLab; nodeId: string; title: string } = $props();
 
   const project = $derived(store.project);
   const out = $derived(project?.output ?? null);
+  // Advatek expanded output mode (B2) — a kit-global, not a transport field: ON splits each of the
+  // 4 physical ports into 2 data lines → 8 logical outputs. Edited via P1's setKitGlobal.
+  const expanded = $derived(project?.kit.global.expanded ?? false);
 
   // Interface options = the server's enumerated NICs (so the operator picks the adapter the PixLite
   // is plugged into) + a "Default (auto)" no-bind. A persisted iface that isn't among the current
@@ -110,15 +114,6 @@
       ariaLabel="Source interface (network adapter)"
     />
   </Field>
-  <Field layout="row" label="RGB order">
-    <Select
-      value={out.rgbOrder}
-      options={RGB_OPTS}
-      disabled={!project}
-      onChange={(v) => store.setOutput({ rgbOrder: v as RgbOrder })}
-      ariaLabel="RGB order"
-    />
-  </Field>
   <Field layout="row" label="FPS" hint="≤ 120">
     <CommitInput
       type="number"
@@ -153,6 +148,20 @@
       />
     </Field>
   {/if}
+  <Separator />
+  <p class="grouphint">
+    Advatek expanded output — on, each of the 4 physical ports drives 2 data lines (8 logical
+    outputs); off, the 4 ports are the outputs.
+  </p>
+  <label class="checkrow">
+    <Toggle
+      pressed={expanded}
+      disabled={!project}
+      onChange={(v) => store.setKitGlobal({ expanded: v })}
+      ariaLabel="Expanded output mode"
+    />
+    <span>Expanded output mode</span>
+  </label>
   <RenameField {store} {nodeId} fallback={title} />
 {/if}
 
