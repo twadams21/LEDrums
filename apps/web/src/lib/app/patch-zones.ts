@@ -275,6 +275,30 @@ export function autoFitContainers(nodes: ReadonlyArray<Node>): Node[] {
   return clone;
 }
 
+// --- FU1: live cross-client nodeLayout sync ----------------------------------------
+
+/** A stable signature of a persisted layout map (id→position, rounded to integer px). Dedupes a
+    client's OWN `kit.nodeLayout` persist echo from a genuine peer change — the layout analogue of
+    the routing adopt's `outputsSignature`. Order-independent (ids sorted); px rounding absorbs the
+    sub-pixel jitter an autoFit re-normalization can introduce, so an own-echo never reads as new. */
+export function layoutSignature(map: Record<string, XY> | undefined): string {
+  if (!map) return '';
+  return Object.keys(map)
+    .sort()
+    .map((id) => `${id}:${Math.round(map[id]!.x)},${Math.round(map[id]!.y)}`)
+    .join('|');
+}
+
+/** FU1 — adopt an externally-authored layout (a peer's drag, echoed by the server) onto the live
+    nodes: reposition every node the map names, then re-fit the auto-sizing containers so the zones
+    reflow to hug their moved members (same reposition→autoFit path as {@link buildZoneGraph}).
+    Positions only — routing/edges are untouched and the caller NEVER persists from here, so there
+    is no feedback loop. Idempotent: adopting a layout that already matches the nodes' positions is
+    a fixed point (autoFitContainers is), so re-adopting our own echo can't drift the canvas. */
+export function adoptLayoutNodes(nodes: ReadonlyArray<Node>, layout: Record<string, XY>): Node[] {
+  return autoFitContainers(nodes.map((n) => (layout[n.id] ? { ...n, position: { ...layout[n.id]! } } : n)));
+}
+
 // --- build the full graph ----------------------------------------------------------
 
 /**

@@ -35,11 +35,13 @@
     type RoutingDrum,
   } from '../patch-graph';
   import {
+    adoptLayoutNodes,
     autoFitContainers,
     buildChainEdges,
     buildRefEdges,
     buildZoneGraph,
     classifyGraphConnection,
+    layoutSignature,
     type XY,
     type ZoneDrum,
     type ZoneGraphInput,
@@ -162,6 +164,14 @@
     edges = rebuilt.edges;
   }
 
+  // ---- FU1: live cross-client layout adopt --------------------------------------
+  /** Signature of the layout we last drew — dedupes our own persist echo from a peer's drag. */
+  let lastLayoutSig = untrack(() => layoutSignature(allPositions()));
+  /** Adopt a peer's echoed `nodeLayout` onto the live nodes (positions only; never persists). */
+  function adoptLayout(layout: Record<string, XY>): void {
+    nodes = adoptLayoutNodes(nodes, layout);
+  }
+
   function forceRebuild(): void {
     const outputs = store.project?.kit.outputs ?? [];
     const routing = outputs.length ? outputsToPatch(outputs) : defaultRouting(routingDrums);
@@ -266,6 +276,27 @@
       }
       rebuild(outputsToPatch(outputs));
       lastSig = incomingSig;
+    });
+  });
+
+  // ---- FU1 LIVE nodeLayout ADOPT: `kit.nodeLayout` is server-authoritative but was read only ONCE
+  // at mount (untrack). A drag on another client persists it and the server echoes the whole project
+  // (onState → store.project), so adopt an incoming layout that DIVERGES from what we drew — a drag
+  // on client A then appears on client B without a reload. This mirrors the routing adopt above:
+  // suppress our own persist echo by signature, and NEVER persist from here (positions only) so
+  // there's no feedback loop (the drag→persist→echo→adopt cycle can't re-fire a persist).
+  $effect(() => {
+    const layout = store.project?.kit.nodeLayout;
+    if (!layout) return;
+    const incomingSig = layoutSignature(layout);
+    if (incomingSig === lastLayoutSig) return; // unchanged / our own echo already reconciled
+    untrack(() => {
+      if (incomingSig === layoutSignature(allPositions())) {
+        lastLayoutSig = incomingSig; // already matches what's on screen (our edit's echo) — no reflow
+        return;
+      }
+      adoptLayout(layout);
+      lastLayoutSig = incomingSig;
     });
   });
 
