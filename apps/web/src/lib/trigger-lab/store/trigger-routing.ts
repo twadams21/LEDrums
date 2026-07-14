@@ -5,7 +5,7 @@
    inputMap) so an identity-checking consumer still sees the same object. Extracted from
    store.svelte.ts unchanged in behaviour. */
 
-import type { InputMap, NodeLayout, OutputConfig, Project } from '@ledrums/core';
+import { materializeHoops, type InputMap, type NodeLayout, type OutputConfig, type Project } from '@ledrums/core';
 
 /** Partial drum transform — origin/rotation/spin/start-angle/literal pixel geometry. */
 export interface DrumTransformPartial {
@@ -73,9 +73,14 @@ export function applyKitGlobal(project: Project, partial: KitGlobalPartial): Pro
 }
 
 /** Per-hoop edit (B4): merge a partial onto `drum.hoops[hoopIndex-1]` (immutable). `hoopIndex`
-    is 1-based (A1). Safe no-op when the drum is unknown, has no first-class `hoops[]`, or the
-    index is out of range — matching the server-apply backstop (an out-of-range hoop is not a
-    valid write target). Preserves the drum/hoop refs it doesn't touch. */
+    is 1-based (A1). SF1: a drum with no first-class `hoops[]` (a density-resolved drum, e.g. a
+    fresh project from `DEFAULT_KIT`) is lazily MATERIALIZED via {@link materializeHoops} before the
+    write — the resolved counts are byte-identical to what the renderer already built, so per-hoop
+    editing works on ANY reachable drum shape without changing the pixel model. Idempotent for a
+    drum that already carries `hoops[]`. Safe no-op when the drum is unknown or `hoopIndex` is out
+    of range (not a valid write target) — no spurious materialization in that case. This mirrors the
+    server backstop EXACTLY (`Engine.setHoopConfig` / `VoiceEngineHost.setHoopConfig`) via the same
+    core helper (mutation parity). Preserves the drum/hoop refs it doesn't touch. */
 export function applyHoopConfig(
   project: Project,
   drumId: string,
@@ -87,8 +92,10 @@ export function applyHoopConfig(
     kit: {
       ...project.kit,
       drums: project.kit.drums.map((d) => {
-        if (d.id !== drumId || !d.hoops || hoopIndex < 1 || hoopIndex > d.hoops.length) return d;
-        return { ...d, hoops: d.hoops.map((h, i) => (i === hoopIndex - 1 ? { ...h, ...partial } : h)) };
+        if (d.id !== drumId) return d;
+        const hoops = d.hoops && d.hoops.length > 0 ? d.hoops : materializeHoops(project.kit, d);
+        if (hoopIndex < 1 || hoopIndex > hoops.length) return d;
+        return { ...d, hoops: hoops.map((h, i) => (i === hoopIndex - 1 ? { ...h, ...partial } : h)) };
       }),
     },
   };

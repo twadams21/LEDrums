@@ -4,6 +4,7 @@ import {
   drumDensity,
   drumHoopCount,
   type DrumConfig,
+  type HoopConfig,
   type KitConfig,
 } from './kit-schema';
 
@@ -109,6 +110,23 @@ function resolveDrumHoops(kit: KitConfig, drum: DrumConfig): ResolvedHoop[] {
   }
   const perHoop = pixelsPerHoop(kit, drum);
   return Array.from({ length: drumHoopCount(kit, drum) }, () => ({ pixelCount: perHoop, reverse: false }));
+}
+
+/**
+ * SF1: materialize a drum's `hoops[]` as first-class {@link HoopConfig} objects, using the EXACT
+ * per-hoop counts + reverse flags {@link buildPixelModel} already resolves via {@link resolveDrumHoops}
+ * (the single render seam). A density-resolved drum (no stored `hoops[]`) yields `drumHoopCount`
+ * hoops, each `{ pixelCount: pixelsPerHoop(kit,drum), reverse: false }` — identical to what the
+ * renderer built, so stamping it onto the drum keeps the pixel model + DMX map BYTE-IDENTICAL. A
+ * drum that already carries a non-empty `hoops[]` yields those hoops verbatim (idempotent).
+ *
+ * This is the shared helper the per-hoop write paths (client optimistic `applyHoopConfig`, server
+ * `Engine.setHoopConfig` + `VoiceEngineHost.setHoopConfig`) lazily materialize through, so per-hoop
+ * editing works on ANY reachable drum shape and all three paths materialize identically (mutation
+ * parity — no client/server divergence).
+ */
+export function materializeHoops(kit: KitConfig, drum: DrumConfig): HoopConfig[] {
+  return resolveDrumHoops(kit, drum);
 }
 
 /**

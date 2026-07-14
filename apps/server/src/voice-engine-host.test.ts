@@ -433,6 +433,29 @@ describe('VoiceEngineHost', () => {
     expect(host.getModel().pixelCount).toBe(before);
   });
 
+  it('SF1: setHoopConfig MATERIALIZES hoops[] on a density-resolved drum (server parity w/ engine + client)', () => {
+    // Make `kick` density-derived: strip its literal pixelsPerHoop AND hoops[] so it resolves via
+    // density — the reachable dead-control shape the C5 hoop inspector wrote to as a no-op pre-SF1.
+    const fake = new FakeOutput();
+    const project = defaultProject();
+    const kick = project.kit.drums.find((d) => d.id === 'kick')!;
+    delete (kick as { pixelsPerHoop?: number }).pixelsPerHoop;
+    delete (kick as { hoops?: unknown }).hoops;
+    const host = new VoiceEngineHost(project, voice.createNullEngine(), new OutputManager(() => fake));
+
+    expect(host.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops).toBeUndefined();
+    const resolved = host.getModel().drumById.get('kick')!.pixelsPerHoop; // density-resolved count
+    const before = host.getModel().pixelCount;
+
+    host.setHoopConfig('kick', 2, { pixelCount: resolved + 7, reverse: true });
+
+    const after = host.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    expect(after.hoops).toHaveLength(4); // global hoopCount → materialized identically to engine/client
+    expect(after.hoops![0]).toMatchObject({ pixelCount: resolved, reverse: false }); // sibling untouched
+    expect(after.hoops![1]).toMatchObject({ pixelCount: resolved + 7, reverse: true }); // hoop 2 (1-based)
+    expect(host.getModel().pixelCount).toBe(before + 7); // only hoop 2 grew
+  });
+
   it('emits server-authoritative graph monitor events for fired graphs', () => {
     const { host } = makeHost();
     const events: unknown[] = [];

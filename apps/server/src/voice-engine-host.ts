@@ -5,6 +5,7 @@ import {
   buildPixelModel,
   checkRoutingIntegrity,
   getHoopPixelRange,
+  materializeHoops,
   SLOT_LABELS,
   voice,
   type DmxMap,
@@ -227,11 +228,17 @@ export class VoiceEngineHost {
   }
 
   /** Edit one hoop's pixel count / reverse flag (C5, B4 first-class hoops[]) and rebuild
-   * geometry live. `hoopIndex` is 1-based (A1). No-op for an unknown drum/hoop or a
-   * density-resolved drum (no first-class `hoops[]`). Mirrors Engine.setHoopConfig. */
+   * geometry live. `hoopIndex` is 1-based (A1). SF1: a density-resolved drum with no first-class
+   * `hoops[]` is lazily MATERIALIZED via {@link materializeHoops} (byte-identical resolved counts)
+   * before the write, so per-hoop editing works on ANY drum shape. Idempotent for a drum already
+   * carrying `hoops[]`. No-op for an unknown drum or an out-of-range `hoopIndex`. Mirrors
+   * Engine.setHoopConfig + the client `applyHoopConfig` via the same core helper (mutation parity). */
   setHoopConfig(drumId: string, hoopIndex: number, partial: Partial<Pick<HoopConfig, 'pixelCount' | 'reverse'>>): void {
     const drum = this.kit.drums.find((d) => d.id === drumId);
-    if (!drum?.hoops || hoopIndex < 1 || hoopIndex > drum.hoops.length) return;
+    if (!drum) return;
+    const hoops = drum.hoops && drum.hoops.length > 0 ? drum.hoops : materializeHoops(this.kit, drum);
+    if (hoopIndex < 1 || hoopIndex > hoops.length) return;
+    drum.hoops = hoops;
     Object.assign(drum.hoops[hoopIndex - 1]!, partial);
     this.reloadKit();
   }
