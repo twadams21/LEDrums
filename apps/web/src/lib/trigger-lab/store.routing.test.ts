@@ -161,6 +161,29 @@ describe('setHoopConfig (C5 per-hoop pixelCount / reverse — B4 hoops[])', () =
     store.setHoopConfig(drumId, 1, { pixelCount: 200 });
     expect(sent).toEqual([]);
   });
+
+  it('SF1: materializes hoops[] on a density-resolved drum, then writes + forwards (dead control fixed)', () => {
+    // A density-derived drum (no literal pixelsPerHoop, no hoops[]) is the reachable shape whose
+    // per-hoop write silently discarded input pre-SF1. It must now lazily materialize hoops[] (the
+    // renderer-resolved counts) then apply the edit — mirroring the server backstop exactly.
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    const project = defaultProject();
+    const drum = project.kit.drums[0]!;
+    delete (drum as { pixelsPerHoop?: number }).pixelsPerHoop;
+    delete (drum as { hoops?: unknown }).hoops;
+    store.project = project;
+    const drumId = drum.id;
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.hoops).toBeUndefined();
+
+    store.setHoopConfig(drumId, 2, { pixelCount: 77, reverse: true });
+
+    const after = store.project!.kit.drums.find((d) => d.id === drumId)!;
+    expect(after.hoops).toHaveLength(4); // materialized to global hoopCount
+    expect(after.hoops![1]).toMatchObject({ pixelCount: 77, reverse: true }); // hoop 2 (1-based) written
+    expect(after.hoops![0]!.reverse).toBe(false); // sibling hoop materialized, untouched
+    expect(sent).toContainEqual({ t: 'setHoopConfig', drumId, hoopIndex: 2, pixelCount: 77, reverse: true });
+  });
 });
 
 describe('identifyHoop (C5 Identify — E1 hoop flash)', () => {

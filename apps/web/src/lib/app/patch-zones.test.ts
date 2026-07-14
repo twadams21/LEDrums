@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import type { Node } from '@xyflow/svelte';
 import {
+  adoptLayoutNodes,
   autoFitContainers,
   buildChainEdges,
   buildRefEdges,
   buildZoneGraph,
   classifyGraphConnection,
   graphChainEdges,
+  layoutSignature,
   CONTROLLER_ZONE_ID,
   KIT_ZONE_ID,
   TRIGGERS_ZONE_ID,
   drumZoneId,
   triggerNodeId,
+  type XY,
   type ZoneGraphInput,
 } from './patch-zones';
 import type { PatchFlowEdge } from './patch-topology';
@@ -235,5 +238,48 @@ describe('classifyGraphConnection — the connect-time guard (core rules)', () =
 
   it('rejects a wire that would form a cycle / is otherwise illegal', () => {
     expect(classifyGraphConnection(wired, 'hoop:kick:2', 'hoop:kick:1').ok).toBe(false);
+  });
+});
+
+/* FU1 — live cross-client nodeLayout sync. A drag on client A persists `kit.nodeLayout`; the server
+   echoes the whole project so client B must ADOPT the new positions without a reload. These cover
+   the two pure pieces the PatchGraphView adopt `$effect` composes: the own-echo dedupe signature
+   and the reposition→auto-fit adoption (no persist, no drift). */
+describe('FU1 — live layout sync helpers', () => {
+  const allPositions = (nodes: ReadonlyArray<Node>): Record<string, XY> => {
+    const map: Record<string, XY> = {};
+    for (const n of nodes) map[n.id] = { ...n.position };
+    return map;
+  };
+
+  it('layoutSignature is order-independent, integer-px rounded, and change-sensitive', () => {
+    const a = { z: { x: 10.4, y: 20.6 }, a: { x: 1, y: 2 } };
+    const b = { a: { x: 1, y: 2 }, z: { x: 10, y: 21 } }; // reordered + within px rounding of `a`
+    expect(layoutSignature(a)).toBe(layoutSignature(b)); // own-echo jitter absorbed
+    expect(layoutSignature(undefined)).toBe('');
+    expect(layoutSignature({ a: { x: 1, y: 2 } })).not.toBe(layoutSignature({ a: { x: 9, y: 2 } }));
+  });
+
+  it('adopting the current layout is a fixed point — no position drift (safe own-echo re-adopt)', () => {
+    const nodes = buildZoneGraph(INPUT, undefined);
+    const readopted = adoptLayoutNodes(nodes, allPositions(nodes));
+    // Every node's ABSOLUTE canvas position is byte-identical after re-adopting what's on screen.
+    for (const n of nodes) {
+      expect(absPos(readopted, n.id)).toEqual(absPos(nodes, n.id));
+    }
+    // Signature is stable, so the adopt `$effect` early-returns on our own echo.
+    expect(layoutSignature(allPositions(readopted))).toBe(layoutSignature(allPositions(nodes)));
+  });
+
+  it("adopts a peer's move: the dragged leaf shifts, other containers are untouched", () => {
+    const nodes = buildZoneGraph(INPUT, undefined);
+    const before = allPositions(nodes);
+    // Simulate client A dragging hoop:kick:1 far away; persist echoes the whole layout to us.
+    const peerLayout: Record<string, XY> = { ...before, 'hoop:kick:1': { x: before['hoop:kick:1']!.x + 400, y: before['hoop:kick:1']!.y + 120 } };
+    const after = adoptLayoutNodes(nodes, peerLayout);
+    // The dragged leaf actually moved on canvas...
+    expect(absPos(after, 'hoop:kick:1')).not.toEqual(absPos(nodes, 'hoop:kick:1'));
+    // ...while a node in a DIFFERENT container (a trigger) stays exactly put.
+    expect(absPos(after, triggerNodeId('snare'))).toEqual(absPos(nodes, triggerNodeId('snare')));
   });
 });

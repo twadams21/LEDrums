@@ -141,6 +141,37 @@ describe('Engine', () => {
     expect(e.getModel().pixels.length).toBe(before);
   });
 
+  it('SF1: setHoopConfig MATERIALIZES hoops[] on a density-resolved drum, then writes (no dead control)', () => {
+    // `velocityMeterProject`'s drum `d` is density-derived (no literal pixelsPerHoop, no hoops[]) —
+    // pre-SF1 the C5 write silently no-op'd. It must now materialize the renderer-resolved counts
+    // then apply the edit, so per-hoop editing works on ANY reachable drum shape.
+    const e = new Engine(velocityMeterProject());
+    const drum = e.getProject().kit.drums.find((d) => d.id === 'd')!;
+    expect(drum.hoops).toBeUndefined(); // the reachable dead-control shape
+    const resolved = e.getModel().drumById.get('d')!.pixelsPerHoop; // what density resolved to
+    const before = e.getModel().pixels.length;
+
+    e.setHoopConfig('d', 2, { pixelCount: resolved + 5, reverse: true });
+
+    const after = e.getProject().kit.drums.find((d) => d.id === 'd')!;
+    expect(after.hoops).toHaveLength(4); // global hoopCount 4 → materialized
+    // untouched hoops keep the resolved count; only hoop 2 (1-based) changed.
+    expect(after.hoops![0]).toMatchObject({ pixelCount: resolved, reverse: false });
+    expect(after.hoops![1]).toMatchObject({ pixelCount: resolved + 5, reverse: true });
+    expect(e.getModel().pixels.length).toBe(before + 5); // only hoop 2 grew → +5 pixels
+  });
+
+  it('SF1: setHoopConfig with an in-range no-op-value write keeps the model byte-identical (materialize only)', () => {
+    const e = new Engine(velocityMeterProject());
+    const resolved = e.getModel().drumById.get('d')!.pixelsPerHoop;
+    const before = Array.from(e.getFrame().rgba);
+    // Stamp the SAME resolved count → materialization must not change what the renderer builds.
+    e.setHoopConfig('d', 1, { pixelCount: resolved });
+    e.tick(0);
+    expect(e.getModel().pixels.length).toBe(before.length / 4);
+    expect(e.getProject().kit.drums.find((d) => d.id === 'd')!.hoops).toHaveLength(4);
+  });
+
   it('renders the full default kit within frame budget', () => {
     const e = new Engine(defaultProject());
     // warm up
