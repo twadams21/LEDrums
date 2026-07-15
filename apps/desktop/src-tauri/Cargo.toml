@@ -1,6 +1,6 @@
 [package]
 name = "ledrums-desktop"
-version = "0.2.7"
+version = "0.2.8"
 description = "LEDrums desktop shell"
 authors = ["LEDrums"]
 edition = "2021"
