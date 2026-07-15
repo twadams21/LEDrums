@@ -38,6 +38,7 @@
   import NoteNodeInspector from './inspectors/NoteNodeInspector.svelte';
   import OscNodeInspector from './inspectors/OscNodeInspector.svelte';
   import RandomModNodeInspector from './inspectors/RandomModNodeInspector.svelte';
+  import PatchTriggerInspector from './inspectors/PatchTriggerInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
@@ -150,13 +151,10 @@
       </div>
     </header>
 
-    {#if editor.kind === 'input' || editor.kind === 'trigger' || editor.kind === 'triggers' || editor.kind === 'unknown'}
+    {#if editor.kind === 'input' || editor.kind === 'triggers' || editor.kind === 'unknown'}
       <div class="nodeinfo">
         <p class="hint">
-          {#if editor.kind === 'trigger'}
-            The drum’s trigger input, bound to its drum by identity. What each hit plays is wired in
-            the Trigger graph; the editable device settings live on its drum and hoop nodes.
-          {:else if editor.kind === 'triggers'}
+          {#if editor.kind === 'triggers'}
             The Drum Triggers holder. Each trigger binds to its drum by identity (the dotted reference
             wire) — it carries no routing.
           {:else}
@@ -170,7 +168,9 @@
           <p class="offline">Offline — connect to the engine to edit device settings. Renaming still works.</p>
         {/if}
 
-        {#if editor.kind === 'zone'}
+        {#if editor.kind === 'trigger'}
+          <PatchTriggerInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'zone'}
           <PatchZoneInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'kit'}
           <PatchKitInspector {store} nodeId={sel.nodeId} title={d.title} />

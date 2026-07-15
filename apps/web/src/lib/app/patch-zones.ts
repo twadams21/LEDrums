@@ -97,24 +97,41 @@ export interface ZoneGraphInput {
   triggers: ZoneTrigger[];
 }
 
+// --- grid ---------------------------------------------------------------------------
+
+/** The snap grid (px). The canvas snaps dragged nodes to it, the background dots sit on it, and
+    {@link autoFitContainers} quantises every container's origin + size to it — so a container's
+    EDGES land on grid lines and the gap to its children is a whole number of cells (the "grid
+    gives the padding"). All seed geometry below is grid-aligned so a fresh graph is already
+    canonical (autoFit is a no-op on it). Exported for the view (snapGrid + background gap). */
+export const GRID = 20;
+
+/** Round to the nearest grid line (for positions — matches the canvas's own snap-to-grid). */
+const snapGrid = (v: number): number => Math.round(v / GRID) * GRID;
+/** Round UP to a grid line (for sizes + paddings — guarantees the far edge clears the children). */
+const ceilGrid = (v: number): number => Math.ceil(v / GRID) * GRID;
+
 // --- padding + seed geometry -------------------------------------------------------
 
-/** Inner padding around a zone's children (x sides, top leaves room for the label, bottom). The
-    Kit zone's larger pad wraps the nested drum sub-zones; a sub-zone hugs its hoops. */
+/** Inner padding around a zone's children (x sides, top leaves room for the label, bottom).
+    Grid-aligned so a container's edges land on grid lines. The Kit zone's larger pad wraps the
+    nested drum sub-zones; a sub-zone hugs its hoops. */
 const PAD: Record<PatchZoneKind, { x: number; top: number; bottom: number }> = {
-  drum: { x: 16, top: 30, bottom: 16 },
-  controller: { x: 22, top: 34, bottom: 20 },
-  triggers: { x: 22, top: 34, bottom: 20 },
-  kit: { x: 24, top: 40, bottom: 24 },
+  drum: { x: 20, top: 40, bottom: 20 },
+  controller: { x: 20, top: 40, bottom: 20 },
+  triggers: { x: 20, top: 40, bottom: 20 },
+  kit: { x: 20, top: 40, bottom: 40 },
 };
 
+// Gaps chosen so each stride (node + gap) is a whole number of grid cells, keeping every seeded
+// node on the grid: 176+24=200, 48+32=80 (both multiples of GRID=20).
 const SEED = {
-  x0: 40, // controller's canvas x
-  y0: 120, // top zones' canvas y
+  x0: 40, // controller's canvas x (grid-aligned)
+  y0: 120, // top zones' canvas y (grid-aligned)
   zoneGap: 80, // horizontal gap between the three top holders
-  colGap: 40, // gap between hoops in a drum's row
-  rowGap: 40, // gap between drum sub-zones stacked in the kit
-  stackGap: 24, // gap between stacked outputs / triggers
+  colGap: 24, // gap between hoops in a drum's row (176+24 = 200)
+  rowGap: 32, // gap between drum sub-zones stacked in the kit (drumH 108 + 32 = 140)
+  stackGap: 32, // gap between stacked outputs / triggers (48+32 = 80)
 };
 
 const zIndexFor = (kind: PatchZoneKind): number => (kind === 'drum' ? 1 : 0);
@@ -124,7 +141,7 @@ function leafRole(stage: 'output' | 'hoop' | 'trigger'): string {
   return ZONE_ROLE[stage === 'trigger' ? 'triggers' : stage === 'output' ? 'controller' : 'kit'];
 }
 
-function leafNode(id: string, parentId: string, position: XY, stage: 'output' | 'hoop' | 'trigger', label: string, sub: string): PatchFlowNode {
+function leafNode(id: string, parentId: string, position: XY, stage: 'output' | 'hoop' | 'trigger', label: string, sub: string, terminal?: boolean): PatchFlowNode {
   return {
     id,
     type: 'patch',
@@ -133,7 +150,7 @@ function leafNode(id: string, parentId: string, position: XY, stage: 'output' | 
     initialWidth: NODE_W,
     initialHeight: NODE_H,
     zIndex: LEAF_Z,
-    data: { label, sub, stage, role: leafRole(stage) },
+    data: { label, sub, stage, role: leafRole(stage), ...(terminal === undefined ? {} : { terminal }) },
   };
 }
 
@@ -164,6 +181,14 @@ function seedTree(input: ZoneGraphInput): Node[] {
   const drumZones: PatchZoneNode[] = [];
   const leaves: PatchFlowNode[] = [];
 
+  // A hoop is TERMINAL unless the routing wires a downstream hoop after it — i.e. every hoop
+  // except the LAST of each output's run has a source handle (it feeds the next hoop). Unwired
+  // hoops (in no run) are terminal too. Drives the per-hoop source-handle gate in PatchNode.
+  const nonTerminalHoops = new Set<string>();
+  for (const output of input.routing.outputs) {
+    for (let i = 0; i < output.hoops.length - 1; i++) nonTerminalHoops.add(hoopNodeId(output.hoops[i]!));
+  }
+
   // --- Drum Kit: size each drum sub-zone from its hoops, then stack them in the kit ---
   const drumH = PAD.drum.top + NODE_H + PAD.drum.bottom;
   let ky = PAD.kit.top;
@@ -171,7 +196,8 @@ function seedTree(input: ZoneGraphInput): Node[] {
   for (const d of input.drums) {
     const drumW = PAD.drum.x * 2 + Math.max(1, d.hoopCount) * NODE_W + Math.max(0, d.hoopCount - 1) * SEED.colGap;
     for (let h = 1; h <= d.hoopCount; h++) {
-      leaves.push(leafNode(hoopNodeId({ drumId: d.id, hoop: h }), drumZoneId(d.id), { x: PAD.drum.x + (h - 1) * (NODE_W + SEED.colGap), y: PAD.drum.top }, 'hoop', `${d.label} · Hoop ${h}`, 'LED hoop'));
+      const hId = hoopNodeId({ drumId: d.id, hoop: h });
+      leaves.push(leafNode(hId, drumZoneId(d.id), { x: PAD.drum.x + (h - 1) * (NODE_W + SEED.colGap), y: PAD.drum.top }, 'hoop', `${d.label} · Hoop ${h}`, 'LED hoop', !nonTerminalHoops.has(hId)));
     }
     drumZones.push(zoneNode(drumZoneId(d.id), 'drum', d.label, { x: PAD.kit.x, y: ky }, { w: drumW, h: drumH }, KIT_ZONE_ID));
     ky += drumH + SEED.rowGap;
@@ -197,10 +223,11 @@ function seedTree(input: ZoneGraphInput): Node[] {
   const trgW = PAD.triggers.x * 2 + NODE_W;
   const trgH = PAD.triggers.top + Math.max(1, nTrg) * NODE_H + Math.max(0, nTrg - 1) * SEED.stackGap + PAD.triggers.bottom;
 
-  // --- Top holders at absolute positions, left→right ---
-  const ctrlX = SEED.x0;
-  const kitX = ctrlX + ctrlW + SEED.zoneGap;
-  const trgX = kitX + kitW + SEED.zoneGap;
+  // --- Top holders at absolute positions, left→right (grid-snapped so their edges land on the
+  //     grid — their widths are ceilGrid'd by autoFit, so left+right both sit on grid lines). ---
+  const ctrlX = snapGrid(SEED.x0);
+  const kitX = snapGrid(ctrlX + ctrlW + SEED.zoneGap);
+  const trgX = snapGrid(kitX + kitW + SEED.zoneGap);
   topZones.push(zoneNode(CONTROLLER_ZONE_ID, 'controller', 'Controller', { x: ctrlX, y: SEED.y0 }, { w: ctrlW, h: ctrlH }));
   topZones.push(zoneNode(KIT_ZONE_ID, 'kit', 'Drum Kit', { x: kitX, y: SEED.y0 }, { w: kitW, h: kitH }));
   topZones.push(zoneNode(TRIGGERS_ZONE_ID, 'triggers', 'Drum Triggers', { x: trgX, y: SEED.y0 }, { w: trgW, h: trgH }));
@@ -252,6 +279,11 @@ export function autoFitContainers(nodes: ReadonlyArray<Node>): Node[] {
     const kids = childrenOf.get(c.id) ?? [];
     if (!kids.length) continue;
     const pad = PAD[(c.data as PatchZoneData).kind];
+    // Paddings are quantised to the grid so the gap from a container edge to its children is a
+    // whole number of cells (grid-provided padding).
+    const padL = ceilGrid(pad.x);
+    const padT = ceilGrid(pad.top);
+    const padB = ceilGrid(pad.bottom);
     const rects = kids.map((k) => {
       const s = sizeOf(k);
       return { x: k.position.x, y: k.position.y, w: s.w, h: s.h };
@@ -260,17 +292,22 @@ export function autoFitContainers(nodes: ReadonlyArray<Node>): Node[] {
     const minY = Math.min(...rects.map((r) => r.y));
     const maxX = Math.max(...rects.map((r) => r.x + r.w));
     const maxY = Math.max(...rects.map((r) => r.y + r.h));
-    const offX = minX - pad.x;
-    const offY = minY - pad.top;
-    // Shift the container to hug its children; compensate the children so they stay put visually.
+    // Shift the container so its topmost/leftmost child sits exactly at the (grid-aligned) pad,
+    // compensating the children so they stay put visually. When the child min corner and the
+    // container's own origin are already grid-aligned (seeds are; drags snap to grid), this offset
+    // is a whole number of cells, so the container's origin stays on the grid — and because a fresh
+    // seed already satisfies min == pad the whole pass is a no-op on it (idempotent).
+    const offX = minX - padL;
+    const offY = minY - padT;
     c.position.x += offX;
     c.position.y += offY;
     for (const k of kids) {
       k.position.x -= offX;
       k.position.y -= offY;
     }
-    c.width = maxX - minX + pad.x * 2;
-    c.height = maxY - minY + pad.top + pad.bottom;
+    // Size ceils to the grid so the FAR edge also lands on a grid line (≥ children + pad).
+    c.width = ceilGrid(maxX - offX + padL);
+    c.height = ceilGrid(maxY - offY + padB);
   }
   return clone;
 }

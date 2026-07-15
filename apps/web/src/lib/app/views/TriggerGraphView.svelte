@@ -46,6 +46,8 @@
   import TriggerNode from './TriggerNode.svelte';
   import WireEdge from './WireEdge.svelte';
   import GraphCanvas from './GraphCanvas.svelte';
+  import AlignGuides from './AlignGuides.svelte';
+  import { computeAlignment, type AlignRect, type GuideLine } from './align-guides';
   import type { FlowApi } from './FlowHandle.svelte';
   import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
   import AddPalette, { type AddGroup } from './AddPalette.svelte';
@@ -187,6 +189,9 @@
 
   // ---- xyflow projection of the store graph ---------------------------------
   let nodes = $state.raw<TriggerFlowNode[]>([]);
+  // Alignment guide lines drawn while a single node is dragged (snap-to-neighbour-edges). Cleared
+  // on drop. Lives here (not the store) — it's pure drag-time canvas decoration.
+  let alignGuides = $state<GuideLine[]>([]);
   let edges = $state.raw<TriggerFlowEdge[]>([]);
 
   /** Authoritative graph signatures — drive reactive rebuilds. Positions are included so
@@ -447,8 +452,15 @@
     rebuildEdges();
   }
   function onDragStop(detail: { nodes: TriggerFlowNode[] }): void {
-    // Commit the drag position FIRST — this is its own undo checkpoint (moveNode).
-    for (const n of detail.nodes) syncPos(n);
+    alignGuides = [];
+    // Commit the drag position FIRST — this is its own undo checkpoint (moveNode). For a single-node
+    // drag, commit the alignment-SNAPPED position (so the node lands exactly on the guide it locked
+    // to), recomputed from the final drop location.
+    const single = detail.nodes.length === 1;
+    for (const n of detail.nodes) {
+      const pos = single ? snapAligned(n) : n.position;
+      syncPos({ id: n.id, position: pos });
+    }
     // Then, if a splice was armed, wire it as a SEPARATE checkpoint recorded AFTER the position
     // commit (R08): one Ctrl/Z pops the splice wiring while the node stays where it was dropped.
     const armed = armedSpliceEdgeId;
@@ -457,8 +469,34 @@
       rebuildEdges();
     }
   }
+  /** AlignRect for a flow node (measured size, else the placement fallback). */
+  function alignRectOf(n: TriggerFlowNode): AlignRect {
+    return { id: n.id, x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? PLACE_H };
+  }
+  /** The dragged node's position snapped to its neighbours' edges/centres (align-guides). */
+  function snapAligned(n: TriggerFlowNode): { x: number; y: number } {
+    const others = nodes.filter((o) => o.id !== n.id).map(alignRectOf);
+    const { x, y } = computeAlignment(alignRectOf(n), others);
+    return { x, y };
+  }
   function onDrag(detail: { targetNode: TriggerFlowNode | null; nodes: TriggerFlowNode[] }): void {
     const moving = detail.targetNode ? [detail.targetNode] : detail.nodes;
+    // Single-node drag: snap to neighbours' edges live (guides show WHERE it locks); multi-drag
+    // just moves. The snapped position drives the live node, the splice hit-test, and the guides.
+    if (moving.length === 1) {
+      const dragged = moving[0]!;
+      const others = nodes.filter((o) => o.id !== dragged.id).map(alignRectOf);
+      const res = computeAlignment(alignRectOf(dragged), others);
+      alignGuides = res.guides;
+      const snapped = { ...dragged, position: { x: res.x, y: res.y } } as TriggerFlowNode;
+      if (res.x !== dragged.position.x || res.y !== dragged.position.y) {
+        nodes = nodes.map((n) => (n.id === dragged.id ? snapped : n));
+      }
+      store.setLiveNodePosition(dragged.id, res.x, res.y);
+      updateSpliceArming([snapped]);
+      return;
+    }
+    alignGuides = [];
     for (const n of moving) store.setLiveNodePosition(n.id, n.position.x, n.position.y);
     updateSpliceArming(moving);
   }
@@ -601,6 +639,9 @@
       validateDrag={validateDrop}
       {wirePreview}
     >
+      {#snippet overlay()}
+        <AlignGuides guides={alignGuides} />
+      {/snippet}
       {#snippet empty()}
         <p class="thint">Select a graph from the section to edit it.</p>
       {/snippet}

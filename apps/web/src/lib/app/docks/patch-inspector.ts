@@ -252,13 +252,50 @@ export function boundTriggerFor(
   return null;
 }
 
+/** The zone slots a drum HAS — every distinct slot declared (`zones`) OR bound (a MIDI note / OSC
+    address) for `drumId`, sorted ascending. The single definition of "a zone" on a drum, shared by
+    the trigger-node face's zone count and the Inspector's zones list — so the node's "N zones" and
+    the Inspector's rows never disagree. A declared-but-unbound zone counts (it persists in `zones`). */
+export function zoneSlotsForDrum(map: InputMap, drumId: string): number[] {
+  const slots = new Set<number>();
+  for (const z of map.zones ?? []) if (z.drumId === drumId) slots.add(z.slot);
+  for (const n of map.midiNotes) if (n.drumId === drumId) slots.add(n.slot);
+  for (const o of map.oscMap) if (o.drumId === drumId) slots.add(o.slot);
+  return [...slots].sort((a, b) => a - b);
+}
+
+/** Declare a zone slot on a drum (immutably) — persists an added zone before it carries any MIDI/OSC
+    binding. Idempotent: a slot already declared (or already bound, hence already a zone) is a no-op. */
+export function addDeclaredZone(map: InputMap, drumId: string, slot: number): InputMap {
+  const zones = map.zones ?? [];
+  if (zones.some((z) => z.drumId === drumId && z.slot === slot)) return map;
+  return { ...map, zones: [...zones, { drumId, slot }] };
+}
+
+/** Remove a zone from a drum ENTIRELY — drops its declaration and any MIDI-note / OSC binding, so
+    the slot is no longer a zone. The inverse of {@link addDeclaredZone} + the per-binding setters. */
+export function removeZone(map: InputMap, drumId: string, slot: number): InputMap {
+  const cleared = setZoneOscAddress(setZoneMidiNote(map, drumId, slot, null), drumId, slot, null);
+  return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === drumId && z.slot === slot)) };
+}
+
+/** Move a zone (declaration + MIDI/OSC bindings) from `oldSlot` to `newSlot` — a re-label. */
+export function moveZoneSlot(map: InputMap, drumId: string, oldSlot: number, newSlot: number): InputMap {
+  if (oldSlot === newSlot) return map;
+  const note = zoneMidiNote(map, drumId, oldSlot);
+  const addr = zoneOscAddress(map, drumId, oldSlot);
+  let m = removeZone(map, drumId, oldSlot);
+  m = addDeclaredZone(m, drumId, newSlot);
+  m = setZoneMidiNote(m, drumId, newSlot, note);
+  m = setZoneOscAddress(m, drumId, newSlot, addr);
+  return m;
+}
+
 /** The zone slot LABELS ({@link SLOT_LABELS}) still AVAILABLE on a drum's trigger — those whose
     0-based slot index is neither in `usedSlots` (slots the caller has already assigned in the
     editor) nor already mapped for this drum in `inputMap` (MIDI note or OSC address). For the C6
     trigger zones list (the per-zone slot dropdown, used slots excluded). */
 export function availableSlots(inputMap: InputMap, drumId: string, usedSlots: number[]): string[] {
-  const used = new Set(usedSlots);
-  for (const n of inputMap.midiNotes) if (n.drumId === drumId) used.add(n.slot);
-  for (const o of inputMap.oscMap) if (o.drumId === drumId) used.add(o.slot);
+  const used = new Set([...usedSlots, ...zoneSlotsForDrum(inputMap, drumId)]);
   return SLOT_LABELS.filter((_, slot) => !used.has(slot));
 }

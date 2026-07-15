@@ -40,6 +40,9 @@ export type PatchNodeData = {
   stage: PatchStage;
   /** CSS custom-property reference for this stage's signal-flow role colour. */
   role: string;
+  /** Hoop nodes only: true when the hoop ends its run (no downstream hoop wired). A terminal
+      hoop hides its source (output) handle — there's nothing further along the chain to feed. */
+  terminal?: boolean;
 };
 
 export type PatchFlowNode = Node<PatchNodeData>;

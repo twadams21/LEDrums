@@ -3,20 +3,24 @@ import type { InputMap, KitConfig, voice } from '@ledrums/core';
 import type { HoopRef, PatchRouting } from '../patch-routing';
 import { makeNode } from '../../trigger-lab/sim.graph-compilation';
 import {
+  addDeclaredZone,
   availableSlots,
   boundTriggerFor,
   buildPixelOutputTable,
   hoopPixelSpan,
+  moveZoneSlot,
   patchEditorFor,
   perHoopPixelCount,
   physicalPortLine,
   pixelsPerHoopForDrum,
+  removeZone,
   setZoneMidiNote,
   setZoneOscAddress,
   totalKitPixelCount,
   zoneMidiNote,
   zoneOscAddress,
   zoneSlot,
+  zoneSlotsForDrum,
 } from './patch-inspector';
 
 describe('patchEditorFor', () => {
@@ -133,7 +137,7 @@ describe('hoopPixelSpan', () => {
 });
 
 describe('input-map zone editing', () => {
-  const base: InputMap = { midiChannel: null, midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
+  const base: InputMap = { midiChannel: null, zones: [], midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
 
   it('reads the note / address for a (drumId, slot)', () => {
     expect(zoneMidiNote(base, 'kick', 0)).toBe(36);
@@ -272,7 +276,7 @@ describe('boundTriggerFor', () => {
 });
 
 describe('availableSlots', () => {
-  const empty: InputMap = { midiChannel: null, midiNotes: [], oscMap: [], volumeOscAddress: '/vol' };
+  const empty: InputMap = { midiChannel: null, zones: [], midiNotes: [], oscMap: [], volumeOscAddress: '/vol' };
 
   it('returns all 8 slot labels when nothing is used', () => {
     expect(availableSlots(empty, 'kick', [])).toEqual(['center', 'edge', 'rim-tip', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2']);
@@ -285,11 +289,59 @@ describe('availableSlots', () => {
   it('also excludes slots already mapped for this drum in the input map', () => {
     const map: InputMap = {
       midiChannel: null,
+      zones: [],
       midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }, { note: 40, drumId: 'snare', slot: 3 }],
       oscMap: [{ address: '/kick/shell', drumId: 'kick', slot: 4 }],
       volumeOscAddress: '/vol',
     };
     // kick slots 1 (midi) + 4 (osc) excluded; snare's slot 3 is untouched (different drum)
     expect(availableSlots(map, 'kick', [0])).toEqual(['rim-tip', 'rim-shoulder', 'cross-stick', 'aux-1', 'aux-2']);
+  });
+
+  it('excludes DECLARED (unbound) zone slots too', () => {
+    const map: InputMap = { midiChannel: null, zones: [{ drumId: 'kick', slot: 2 }], midiNotes: [], oscMap: [] };
+    expect(availableSlots(map, 'kick', [])).not.toContain('rim-tip'); // slot 2
+  });
+});
+
+describe('declared zones (add / remove / relabel + effective set)', () => {
+  const empty: InputMap = { midiChannel: null, zones: [], midiNotes: [], oscMap: [] };
+
+  it('addDeclaredZone persists a slot with no binding (idempotent)', () => {
+    const m = addDeclaredZone(empty, 'kick', 2);
+    expect(m.zones).toEqual([{ drumId: 'kick', slot: 2 }]);
+    expect(addDeclaredZone(m, 'kick', 2)).toBe(m); // no-op when already declared
+    expect(zoneSlotsForDrum(m, 'kick')).toEqual([2]);
+  });
+
+  it('zoneSlotsForDrum unions declared + bound slots, deduped and sorted', () => {
+    const m: InputMap = {
+      midiChannel: null,
+      zones: [{ drumId: 'kick', slot: 5 }],
+      midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
+      oscMap: [{ address: '/k', drumId: 'kick', slot: 0 }, { address: '/x', drumId: 'snare', slot: 1 }],
+    };
+    expect(zoneSlotsForDrum(m, 'kick')).toEqual([0, 5]); // slot 0 counted once; snare excluded
+  });
+
+  it('removeZone drops the declaration AND every binding for the slot', () => {
+    const m: InputMap = {
+      midiChannel: null,
+      zones: [{ drumId: 'kick', slot: 1 }],
+      midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }],
+      oscMap: [{ address: '/k', drumId: 'kick', slot: 1 }],
+    };
+    const out = removeZone(m, 'kick', 1);
+    expect(zoneSlotsForDrum(out, 'kick')).toEqual([]);
+    expect(out.midiNotes).toEqual([]);
+    expect(out.oscMap).toEqual([]);
+  });
+
+  it('moveZoneSlot carries the declaration + note + address to the new slot', () => {
+    const m = addDeclaredZone(setZoneMidiNote(empty, 'kick', 0, 42), 'kick', 0);
+    const out = moveZoneSlot(m, 'kick', 0, 3);
+    expect(zoneSlotsForDrum(out, 'kick')).toEqual([3]);
+    expect(zoneMidiNote(out, 'kick', 3)).toBe(42);
+    expect(zoneMidiNote(out, 'kick', 0)).toBeNull();
   });
 });

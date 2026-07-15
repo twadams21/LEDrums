@@ -41,6 +41,7 @@
     buildRefEdges,
     buildZoneGraph,
     classifyGraphConnection,
+    GRID,
     layoutSignature,
     type XY,
     type ZoneDrum,
@@ -242,6 +243,18 @@
     commitRouting();
   }
 
+  /** Delete wires as a CHAIN, not one edge. xyflow's two-way edge writeback can lag this handler,
+      so first drop the deleted wires from our own edge state. commitRouting then reads the cut
+      back: a severed `output → hoop` (or `hoop → hoop`) leaves everything DOWNSTREAM unreachable
+      from any output, so `routingFromGraph` drops the whole dangling tail and the rebuild redraws
+      only the wires still rooted at an output — cutting one wire collapses the run past the cut,
+      never leaving an orphaned `hoop → hoop` chain floating. (Re-pointing a wire stays a reconnect.) */
+  function onDelete(detail: { edges: ReadonlyArray<{ id: string }> }): void {
+    const removed = new Set(detail.edges.map((e) => e.id));
+    if (removed.size) edges = hover.decorate(edges.filter((e) => !removed.has(e.id)));
+    commitRouting();
+  }
+
   // ---- layout persistence (seed-freeze + drag write-back) -----------------------
   /** Persist the current leaf positions to the server-authoritative `kit.nodeLayout`. */
   function persistLayout(): void {
@@ -321,7 +334,7 @@
         {edgeTypes}
         defaultEdgeOptions={{ type: 'wire' }}
         fitPadding={0.16}
-        minimap
+        snapGrid={[GRID, GRID]}
         onFlow={(f) => (flowApi = f)}
         {onBeforeConnect}
         onNodeClick={(id) => shell.select({ kind: 'patch', nodeId: id })}
@@ -330,7 +343,7 @@
         onNodeLeave={onLeave}
         onConnect={guard('connect', () => commitRouting())}
         onReconnect={guard('reconnect', onReconnect)}
-        onDelete={guard('delete', () => commitRouting())}
+        onDelete={guard('delete', onDelete)}
         onNodeDragStop={guard('drag', () => {
           resyncZones();
           persistLayout();

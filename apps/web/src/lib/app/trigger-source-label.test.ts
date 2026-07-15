@@ -68,6 +68,7 @@ describe('describeTriggerSource', () => {
 /** An input map mapping note 38 → snare · center (slot 0) and OSC /kick → kick · center. */
 const MAP: InputMap = {
   midiChannel: null,
+  zones: [],
   midiNotes: [{ note: 38, drumId: 'snare', slot: 0 }],
   oscMap: [{ address: '/kick', drumId: 'kick', slot: 0 }],
 };

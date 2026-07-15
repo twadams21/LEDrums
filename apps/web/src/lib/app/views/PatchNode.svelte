@@ -12,6 +12,7 @@
   import { getContext, type Component } from 'svelte';
   import type { PatchNodeData, PatchStage } from '../patch-topology';
   import { PATCH_STORE_KEY, type PatchStoreContext } from './patch-context';
+  import { boundTriggerFor, zoneSlotsForDrum } from '../docks/patch-inspector';
   import NodeCard from './NodeCard.svelte';
   import Activity from '@lucide/svelte/icons/activity';
   import Zap from '@lucide/svelte/icons/zap';
@@ -41,6 +42,23 @@
     controller: Cpu,
   };
   const Icon = $derived(STAGE_ICON[d.stage]);
+
+  // A Trigger node earns its link badge only when its drum actually has an authored Trigger graph
+  // bound by identity (the same lookup the Drum inspector's bound-trigger read-out uses) — the
+  // dotted Trigger → Drum wire already shows the always-true drum binding, so an unconditional
+  // badge is just noise. Unbound triggers show none.
+  const triggerBound = $derived(
+    d.stage === 'trigger' ? boundTriggerFor(id.replace(/^trigger:/, ''), store.graphs) !== null : false,
+  );
+
+  // The trigger face's "N zones" must match the Inspector's zones list — both count the drum's
+  // WIRED zones (inputMap slots), not the physical sensor-zone total the seed sub was built from.
+  // Live: wiring a zone in the Inspector reflows the count here. Falls back to the seed sub offline.
+  const sub = $derived.by(() => {
+    if (d.stage !== 'trigger' || !store.project) return d.sub;
+    const n = zoneSlotsForDrum(store.project.inputMap, id.replace(/^trigger:/, '')).length;
+    return `${n} zone${n === 1 ? '' : 's'}`;
+  });
 </script>
 
 {#if d.stage === 'hoop'}
@@ -51,14 +69,21 @@
   <Handle type="source" position={Position.Left} isConnectable={false} />
 {/if}
 
-<NodeCard icon={Icon} title={label} sub={d.sub} tint={d.role} selected={!!selected}>
-  {#snippet badge()}
-    {#if d.stage === 'trigger'}
-      <LinkIcon size={11} aria-hidden="true" />
-    {/if}
-  {/snippet}
-</NodeCard>
+{#snippet linkBadge()}
+  <LinkIcon size={11} aria-hidden="true" />
+{/snippet}
 
-{#if d.stage === 'output' || d.stage === 'hoop'}
+<NodeCard
+  icon={Icon}
+  title={label}
+  {sub}
+  tint={d.role}
+  selected={!!selected}
+  badge={triggerBound ? linkBadge : undefined}
+/>
+
+<!-- Output always sources its run; a hoop sources the NEXT hoop only while it feeds one — a
+     terminal hoop (end of the run / unwired) hides the handle, there's nothing downstream. -->
+{#if d.stage === 'output' || (d.stage === 'hoop' && !d.terminal)}
   <Handle type="source" position={Position.Right} />
 {/if}

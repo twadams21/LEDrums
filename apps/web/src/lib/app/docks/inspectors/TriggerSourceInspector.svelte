@@ -22,8 +22,6 @@
   import Link2 from '@lucide/svelte/icons/link-2';
   import Radio from '@lucide/svelte/icons/radio';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
-  import Plus from '@lucide/svelte/icons/plus';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
@@ -33,17 +31,12 @@
   import IconButton from '../../../ui/IconButton.svelte';
   import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import ReadRow from './ReadRow.svelte';
+  import DrumZonesList from './DrumZonesList.svelte';
   import { onNum } from './forms';
   import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
   import { bindingFromSource } from '../../../trigger-lab/input-activity';
-  import { SLOT_LABELS } from '@ledrums/core';
-  import { availableSlots, setZoneMidiNote, setZoneOscAddress, zoneMidiNote, zoneOscAddress } from '../patch-inspector';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
-
-  // Widened view of the canonical slot labels for label→index lookups (indexOf on the
-  // `as const` tuple rejects a plain string).
-  const SLOTS: readonly string[] = SLOT_LABELS;
 
   const src = $derived(node.source);
   // Last-heard confirmation for the active MIDI-note / OSC field (null for drum/CC/empty).
@@ -105,99 +98,13 @@
 
   // --- Zones (the drum's zone→MIDI/OSC input wiring) ---------------------------------------
   // Anchored to the drum this trigger fires from — its `drum` source, else the selected pad's
-  // drum. A MIDI/OSC trigger with no pad has no drum context and hides the list.
-  const project = $derived(store.project);
+  // drum. A MIDI/OSC trigger with no pad has no drum context and hides the list. The list itself
+  // (add/remove/relabel + MIDI/OSC + learn) is the shared DrumZonesList — one mutation path with
+  // the Patch-graph Trigger node inspector.
   const zonesDrumId = $derived<string | null>(src?.kind === 'drum' ? src.drumId : store.selectedPad?.drumId ?? null);
   const zonesDrumLabel = $derived(
     zonesDrumId ? store.drums.find((d) => d.id === zonesDrumId)?.label ?? zonesDrumId : null,
   );
-
-  // "Add" mints a zone with no note/OSC yet — the inputMap can't represent an empty zone, so a
-  // freshly-added slot lives here (tagged by drum) until the first note/address commits it. A
-  // realized draft is pruned; a switched drum's drafts simply fall out of the filter.
-  let drafts = $state<Array<{ drumId: string; slot: number }>>([]);
-  const draftSlots = $derived(zonesDrumId ? drafts.filter((d) => d.drumId === zonesDrumId).map((d) => d.slot) : []);
-
-  // The slots this drum wires: every slot carrying a note or OSC address, plus pending drafts.
-  const zoneSlots = $derived.by<number[]>(() => {
-    if (!project || !zonesDrumId) return [];
-    const set = new Set<number>(draftSlots);
-    for (const n of project.inputMap.midiNotes) if (n.drumId === zonesDrumId) set.add(n.slot);
-    for (const o of project.inputMap.oscMap) if (o.drumId === zonesDrumId) set.add(o.slot);
-    return [...set].sort((a, b) => a - b);
-  });
-
-  // Slots with no MIDI/OSC on this drum AND not already drafted — what a new/renamed zone may take.
-  const freeSlots = $derived(project && zonesDrumId ? availableSlots(project.inputMap, zonesDrumId, draftSlots) : []);
-  const canAdd = $derived(freeSlots.length > 0);
-
-  /** Slot dropdown options for a zone at `slot`: its own label plus every still-free slot,
-      in canonical slot order. Value is the slot index (stringified). */
-  function slotOptionsFor(slot: number): Array<{ value: string; label: string }> {
-    const labels = [SLOT_LABELS[slot]!, ...freeSlots.filter((l) => l !== SLOT_LABELS[slot])];
-    return labels
-      .map((l) => ({ value: String(SLOTS.indexOf(l)), label: l }))
-      .sort((a, b) => Number(a.value) - Number(b.value));
-  }
-
-  function pruneDraft(slot: number): void {
-    drafts = drafts.filter((d) => !(d.drumId === zonesDrumId && d.slot === slot));
-  }
-
-  function addZone(): void {
-    if (!project || !zonesDrumId || freeSlots.length === 0) return;
-    drafts = [...drafts, { drumId: zonesDrumId, slot: SLOTS.indexOf(freeSlots[0]!) }];
-  }
-
-  function removeZone(slot: number): void {
-    if (project && zonesDrumId) {
-      let m = project.inputMap;
-      m = setZoneMidiNote(m, zonesDrumId, slot, null);
-      m = setZoneOscAddress(m, zonesDrumId, slot, null);
-      store.setInputMap(m);
-    }
-    pruneDraft(slot);
-  }
-
-  /** Move a zone's note + address from `oldSlot` to the chosen slot (a re-label). */
-  function changeSlot(oldSlot: number, v: string): void {
-    const newSlot = Number(v);
-    if (!project || !zonesDrumId || newSlot === oldSlot) return;
-    const note = zoneMidiNote(project.inputMap, zonesDrumId, oldSlot);
-    const addr = zoneOscAddress(project.inputMap, zonesDrumId, oldSlot);
-    let m = project.inputMap;
-    m = setZoneMidiNote(m, zonesDrumId, oldSlot, null);
-    m = setZoneOscAddress(m, zonesDrumId, oldSlot, null);
-    m = setZoneMidiNote(m, zonesDrumId, newSlot, note);
-    m = setZoneOscAddress(m, zonesDrumId, newSlot, addr);
-    store.setInputMap(m);
-    drafts = drafts.map((d) => (d.drumId === zonesDrumId && d.slot === oldSlot ? { ...d, slot: newSlot } : d));
-  }
-
-  function commitZoneNote(slot: number, v: string): void {
-    if (!project || !zonesDrumId) return;
-    if (v === '') {
-      store.setInputMap(setZoneMidiNote(project.inputMap, zonesDrumId, slot, null));
-      return;
-    }
-    const parsed = parseMidiNote(v);
-    if (parsed !== null) {
-      store.setInputMap(setZoneMidiNote(project.inputMap, zonesDrumId, slot, parsed));
-      pruneDraft(slot);
-    }
-  }
-
-  function commitZoneOsc(slot: number, v: string): void {
-    if (!project || !zonesDrumId) return;
-    const trimmed = v.trim();
-    store.setInputMap(setZoneOscAddress(project.inputMap, zonesDrumId, slot, trimmed ? v : null));
-    if (trimmed) pruneDraft(slot);
-  }
-
-  function zoneLearning(slot: number): boolean {
-    const t = store.midiLearnTarget;
-    return t?.kind === 'zone' && t.drumId === zonesDrumId && t.slot === slot;
-  }
 </script>
 
 <header class="ihead">
@@ -336,82 +243,13 @@
   {/if}
 
   <!-- Zones: the drum's zone→MIDI/OSC input wiring (project.inputMap), distinct from the
-       graph binding above. Shared by every graph on this drum. -->
-  <div class="zones">
-    <div class="sectionhead">
-      <span class="seclabel">Zones{#if zonesDrumLabel}<span class="secdrum"> · {zonesDrumLabel}</span>{/if}</span>
-      {#if zonesDrumId}
-        <IconButton icon={Plus} label="Add zone" variant="soft" size={14} disabled={!canAdd} onclick={addZone} />
-      {/if}
-    </div>
-
+       graph binding above. Shared by every graph on this drum (and with the Patch trigger node). -->
+  <div class="zonesection">
     {#if !zonesDrumId}
+      <div class="sectionhead"><span class="seclabel">Zones</span></div>
       <p class="hint">Bind this trigger to a drum to wire its zones to MIDI / OSC input.</p>
-    {:else if zoneSlots.length === 0}
-      <p class="hint">No zones wired yet — <b>Add</b> one to map a slot to a MIDI note or OSC address.</p>
     {:else}
-      <div class="zonelist">
-        {#each zoneSlots as slot (slot)}
-          {@const note = project ? zoneMidiNote(project.inputMap, zonesDrumId, slot) : null}
-          {@const addr = project ? zoneOscAddress(project.inputMap, zonesDrumId, slot) : null}
-          {@const heardNote = store.inputBadge(note !== null ? { kind: 'midi', note } : null)}
-          {@const heardOsc = store.inputBadge(addr ? { kind: 'osc', address: addr } : null)}
-          {@const armed = zoneLearning(slot)}
-          <div class="zone">
-            <div class="zhead">
-              <Select
-                value={String(slot)}
-                options={slotOptionsFor(slot)}
-                onChange={(v) => changeSlot(slot, v)}
-                ariaLabel="Zone slot"
-              />
-              <IconButton icon={Trash2} label="Remove zone" variant="soft" size={13} onclick={() => removeZone(slot)} />
-            </div>
-            <Field layout="row" label="Note" hint={note === null ? 'C-1 - G9' : String(note)}>
-              <div class="note-row">
-                <CommitInput
-                  value={note === null ? '' : formatMidiNote(note)}
-                  placeholder="none"
-                  autofocus={false}
-                  mono
-                  allowEmpty
-                  ariaLabel="Zone MIDI note"
-                  onCommit={(v) => commitZoneNote(slot, v)}
-                />
-                <button
-                  type="button"
-                  class="learn"
-                  class:active={armed}
-                  onclick={(e) => {
-                    e.preventDefault();
-                    armed ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'zone', drumId: zonesDrumId, slot });
-                  }}
-                >
-                  <Radio size={13} aria-hidden="true" />
-                  {armed ? 'Listening' : 'Learn'}
-                </button>
-              </div>
-            </Field>
-            {#if heardNote}
-              <div class="heard"><InputActivityBadge {...heardNote} /></div>
-            {/if}
-            <Field layout="row" label="OSC" hint="Sensory Percussion / Ableton">
-              <CommitInput
-                value={addr ?? ''}
-                mono
-                autofocus={false}
-                allowEmpty
-                placeholder="/drum/zone"
-                ariaLabel="Zone OSC address"
-                onCommit={(v) => commitZoneOsc(slot, v)}
-              />
-            </Field>
-            {#if heardOsc}
-              <div class="heard"><InputActivityBadge {...heardOsc} /></div>
-            {/if}
-          </div>
-        {/each}
-      </div>
+      <DrumZonesList {store} drumId={zonesDrumId} drumLabel={zonesDrumLabel ?? undefined} />
     {/if}
   </div>
 </div>
@@ -484,10 +322,6 @@
     line-height: var(--leading-normal);
     text-wrap: pretty;
   }
-  .hint b {
-    color: var(--text);
-    font-weight: 600;
-  }
   /* Last-heard confirmation, tucked just under its field. */
   .heard {
     margin-top: calc(-1 * var(--space-1));
@@ -506,7 +340,7 @@
     flex: none;
   }
   /* --- Zones section (drum input wiring) — divided from the graph binding above --- */
-  .zones {
+  .zonesection {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -530,31 +364,5 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .secdrum {
-    font-weight: 500;
-    text-transform: none;
-    letter-spacing: 0;
-    color: var(--text-muted);
-  }
-  .zonelist {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .zone {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-2);
-    background: var(--surface-2);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-  }
-  .zhead {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-2);
-    align-items: center;
   }
 </style>

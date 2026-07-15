@@ -205,7 +205,7 @@ describe('setInputMap / setOutput', () => {
   it('setInputMap writes locally and sends', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
-    const inputMap = { midiChannel: null, midiNotes: [{ note: 60, drumId: store.project!.kit.drums[0]!.id, slot: 0 }], oscMap: [] };
+    const inputMap = { midiChannel: null, zones: [], midiNotes: [{ note: 60, drumId: store.project!.kit.drums[0]!.id, slot: 0 }], oscMap: [] };
     store.setInputMap(inputMap);
     expect(store.project!.inputMap).toBe(inputMap);
     expect(sent).toContainEqual({ t: 'setInputMap', inputMap });

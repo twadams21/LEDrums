@@ -91,7 +91,7 @@
           {#if hk}<span class="khot">{hk}</span>{/if}
           {#if thumb}
             <svg class="gthumb" viewBox="0 0 172 104" aria-hidden="true">
-              {#each thumb.paths as d (d)}<path {d} />{/each}
+              {#each thumb.paths as d, pi (pi)}<path {d} />{/each}
               {#each thumb.dots as p, di (di)}<circle cx={p.x} cy={p.y} r="3.5" />{/each}
             </svg>
           {/if}
