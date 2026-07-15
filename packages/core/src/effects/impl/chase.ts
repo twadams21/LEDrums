@@ -32,7 +32,7 @@ export const chase: EffectGenerator = {
       const drum = ctx.model.drumById.get(p.drumId);
       if (!drum) continue;
       const active = ((step % drum.hoopCount) + drum.hoopCount) % drum.hoopCount;
-      if (p.hoopIndex === active) fb.set(p.id, rgb.r, rgb.g, rgb.b, 1);
+      if (p.hoopIndex - 1 === active) fb.set(p.id, rgb.r, rgb.g, rgb.b, 1); // hoopIndex is 1-based (A1)
     }
   },
 };

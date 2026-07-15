@@ -8,10 +8,12 @@
    the S3 store mutators — so each Patch node becomes the editor of the device setting it
    represents. */
 
-import { drumDensity, type DrumConfig, type InputMap, type KitConfig } from '@ledrums/core';
+import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice } from '@ledrums/core';
 import { ZONE_LABELS } from '../../trigger-lab/fixtures';
 import { parseHoopNodeId, parseOutputNodeId } from '../patch-graph';
-import type { DataLine, HoopRef, PatchOutput, PatchRouting, PixelSpan } from '../patch-routing';
+import type { HoopRef, PatchRouting, PixelSpan } from '../patch-routing';
+
+const CHANNELS_PER_UNIVERSE = 512;
 
 const MM_PER_INCH = 25.4;
 
@@ -20,10 +22,11 @@ const MM_PER_INCH = 25.4;
 export type PatchEditor =
   | { kind: 'input' }
   | { kind: 'trigger'; drumId: string }
+  | { kind: 'triggers' } // the Drum Triggers holder zone (D1)
   | { kind: 'zone'; drumId: string; zone: string; slot: number }
   | { kind: 'drum'; drumId: string }
-  | { kind: 'hoop'; drumId: string; hoop: number } // 0-based core hoop index
-  | { kind: 'dataline'; index: number | null } // 1-based transmit position; null when opaque (palette node)
+  | { kind: 'kit' } // the Drum Kit holder zone (D1)
+  | { kind: 'hoop'; drumId: string; hoop: number } // 1-based hoop index (A1)
   | { kind: 'output'; outputId: string }
   | { kind: 'controller' }
   | { kind: 'unknown'; id: string };
@@ -40,6 +43,8 @@ export function zoneSlot(zone: string): number {
 export function patchEditorFor(id: string): PatchEditor {
   if (id === 'input') return { kind: 'input' };
   if (id === 'controller') return { kind: 'controller' };
+  if (id === 'kit') return { kind: 'kit' }; // Drum Kit holder zone (D1)
+  if (id === 'triggers') return { kind: 'triggers' }; // Drum Triggers holder zone (D1)
 
   const hoop = parseHoopNodeId(id);
   if (hoop) return { kind: 'hoop', drumId: hoop.drumId, hoop: hoop.hoop };
@@ -63,10 +68,6 @@ export function patchEditorFor(id: string): PatchEditor {
     }
     case 'drum':
       return parts.slice(1).join(':') ? { kind: 'drum', drumId: parts.slice(1).join(':') } : { kind: 'unknown', id };
-    case 'dataline': {
-      const n = Number(parts.slice(1).join(':'));
-      return { kind: 'dataline', index: Number.isInteger(n) && n > 0 ? n : null };
-    }
     default:
       return { kind: 'unknown', id };
   }
@@ -83,8 +84,8 @@ export function pixelsPerHoopForDrum(drum: DrumConfig, kit: KitConfig): number {
 }
 
 /** First/last GLOBAL pixel index a single hoop covers, sweeping the routing in transmit
-    order (outputs → datalines → hoops) — the same walk as S2 `pixelRanges`. null when the
-    hoop is wired into no output, or carries no pixels. */
+    order (outputs → hoops) — the same walk as S2 `pixelRanges`. null when the hoop is wired
+    into no output, or carries no pixels. */
 export function hoopPixelSpan(
   routing: PatchRouting,
   target: HoopRef,
@@ -92,39 +93,16 @@ export function hoopPixelSpan(
 ): PixelSpan | null {
   let cursor = 0;
   for (const output of routing.outputs) {
-    for (const dl of output.dataLines) {
-      for (const h of dl.hoops) {
-        const count = pixelsForHoop(h);
-        if (count <= 0) continue;
-        if (h.drumId === target.drumId && h.hoop === target.hoop) {
-          return { first: cursor, last: cursor + count - 1 };
-        }
-        cursor += count;
+    for (const h of output.hoops) {
+      const count = pixelsForHoop(h);
+      if (count <= 0) continue;
+      if (h.drumId === target.drumId && h.hoop === target.hoop) {
+        return { first: cursor, last: cursor + count - 1 };
       }
+      cursor += count;
     }
   }
   return null;
-}
-
-/** A data line tagged with its owning output and 1-based transmit position. */
-export interface OrderedDataLine {
-  line: DataLine;
-  output: PatchOutput;
-  pos: number;
-}
-
-/** Every data line flattened in transmit order, each tagged with its owning output and
-    1-based position — so a `dataline:<k>` flow node (minted 1..N by buildOutputHalf in the
-    same order) maps to the routing's k-th line for its read-out. */
-export function orderedDataLines(routing: PatchRouting): OrderedDataLine[] {
-  const out: OrderedDataLine[] = [];
-  let pos = 0;
-  for (const output of routing.outputs) {
-    for (const line of output.dataLines) {
-      out.push({ line, output, pos: ++pos });
-    }
-  }
-  return out;
 }
 
 // --- input-map editing (zone node MIDI / OSC) ----------------------------------------
@@ -152,4 +130,172 @@ export function setZoneOscAddress(map: InputMap, drumId: string, slot: number, a
   const rest = map.oscMap.filter((o) => !(o.drumId === drumId && o.slot === slot));
   const trimmed = address?.trim();
   return { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId, slot }] : rest };
+}
+
+// --- pixel-count read-outs (C2 kit, C5 hoop) -----------------------------------------
+// Per-hoop counts honour first-class `hoops[]` (B4) when present, else the drum's uniform
+// density-derived count. Mirrors core's own per-hoop resolution (geometry/pixel-model.ts).
+
+/** Effective hoop count for a drum: an explicit `hoops[]` (B4) wins (its length IS the
+    count), else a per-drum `hoopCount` override, else the kit global. Matches core's
+    hoop-count resolution so read-outs agree with the compiled pixel model. */
+function hoopCountForDrum(drum: DrumConfig, kit: KitConfig): number {
+  return drum.hoops?.length ?? drum.hoopCount ?? kit.global.hoopCount;
+}
+
+/** Pixel count for ONE hoop (1-based `hoopIndex`): the first-class `hoops[hoopIndex-1].pixelCount`
+    (B4) when present, else the drum's uniform {@link pixelsPerHoopForDrum}. Out-of-range indices
+    (or a drum with no `hoops[]`) fall back to the uniform count. For the C5 hoop read-out. */
+export function perHoopPixelCount(drum: DrumConfig, kit: KitConfig, hoopIndex: number): number {
+  return drum.hoops?.[hoopIndex - 1]?.pixelCount ?? pixelsPerHoopForDrum(drum, kit);
+}
+
+/** Total pixels across the WHOLE kit: sum of every hoop's {@link perHoopPixelCount} over every
+    drum (honouring mixed per-hoop counts). For the C2 kit read-out. */
+export function totalKitPixelCount(kit: KitConfig): number {
+  let total = 0;
+  for (const drum of kit.drums) {
+    const n = hoopCountForDrum(drum, kit);
+    for (let hoop = 1; hoop <= n; hoop++) total += perHoopPixelCount(drum, kit, hoop);
+  }
+  return total;
+}
+
+// --- physical output mapping (C4 output) ---------------------------------------------
+
+/** The physical Advatek port + data line a **0-based** logical output index drives. The inverse
+    of core's {@link logicalOutputsForPhysical}: in EXPANDED mode (B2/B5) the 8 logical outputs map
+    onto 4 physical ports × 2 data lines — logical n (1-based) → port `ceil(n/2)`, line `((n-1)%2)+1`;
+    in normal mode each logical output IS its own port on line 1. Both `port` and `line` are 1-based
+    (device convention). For the C4 output read-out. */
+export function physicalPortLine(outputIndex: number, expanded: boolean): { port: number; line: number } {
+  const n = outputIndex + 1; // 1-based logical output number
+  if (!expanded) return { port: n, line: 1 };
+  return { port: Math.ceil(n / 2), line: ((n - 1) % 2) + 1 };
+}
+
+/** One row of the C4 Pixel Output Table: an output's transmit-order position, where its first
+    pixel lands in the dense DMX stream, and how many pixels it carries.
+
+    Channel math MIRRORS core's {@link buildDmxMap} exactly: a single global channel cursor starts
+    at 0, snaps to `output.startUniverse * 512` when that output declares one (blank = dense/auto),
+    and advances `channelsPerPixel` per pixel. So `startChannel` is the GLOBAL, 0-based DMX channel
+    of the output's first pixel (core's `PixelDmx.channel`), and `startUniverse` is its 0-based
+    universe (`floor(startChannel / 512)`), `null` for an unwired output (no pixels, no start).
+
+    The C4 view derives the PixLite device columns from these: device `startUni = startUniverse + 1`
+    and `startCh = startChannel % 512 + 1` (the API models both from 1 — see PixLite Mk3 API v1.7
+    `pixPort.startUni` / `startCh`). */
+export type PixelOutputRow = {
+  outputId: string;
+  index: number;
+  startUniverse: number | null;
+  startChannel: number;
+  pixelCount: number;
+};
+
+/** Build the C4 Pixel Output Table: one {@link PixelOutputRow} per output in transmit order,
+    mirroring core's dense-channel packing so the read-out is byte-truthful. `pixelsForHoop`
+    supplies each hoop's literal count (per-hoop B4 aware). An unwired output (no hoops / zero
+    pixels) still occupies a row (`pixelCount: 0`, `startUniverse: null`) and still applies its
+    own `startUniverse` snap to the shared cursor — matching core. */
+export function buildPixelOutputTable(
+  routing: PatchRouting,
+  _kit: KitConfig,
+  pixelsForHoop: (h: HoopRef) => number,
+): PixelOutputRow[] {
+  const rows: PixelOutputRow[] = [];
+  let cursor = 0; // next global DMX channel to assign
+
+  routing.outputs.forEach((output, index) => {
+    if (output.startUniverse !== undefined) cursor = output.startUniverse * CHANNELS_PER_UNIVERSE;
+    const startChannel = cursor;
+
+    let pixelCount = 0;
+    for (const hoop of output.hoops) {
+      const count = pixelsForHoop(hoop);
+      if (count <= 0) continue;
+      pixelCount += count;
+      cursor += count * output.channelsPerPixel;
+    }
+
+    rows.push({
+      outputId: output.id,
+      index,
+      startUniverse: pixelCount > 0 ? Math.floor(startChannel / CHANNELS_PER_UNIVERSE) : null,
+      startChannel,
+      pixelCount,
+    });
+  });
+
+  return rows;
+}
+
+// --- trigger bindings (C3 drum, C6 trigger) ------------------------------------------
+
+/** The trigger graph bound to a drum by IDENTITY — the first graph whose `trigger` node carries a
+    `drum` source ({@link voice.TriggerSource}) for `drumId`. Read-only lookup over the graphs map
+    (`store.graphs` shape, `Record<graphKey, TriggerGraph>`); returns the graph key plus a
+    `drumId:zone` binding label, or `null` when no graph is bound. A `voice.TriggerGraph` carries no
+    human name (that lives in the store's separate `graphNames`), so the C3 view MAY upgrade `label`
+    via `store.graphLabel(graphKey)`; the returned label is a self-contained fallback. */
+export function boundTriggerFor(
+  drumId: string,
+  graphs: Record<string, voice.TriggerGraph>,
+): { graphKey: string; label: string } | null {
+  for (const [graphKey, graph] of Object.entries(graphs)) {
+    const source = graph.nodes.find((n) => n.kind === 'trigger')?.source;
+    if (source?.kind === 'drum' && source.drumId === drumId) {
+      return { graphKey, label: `${source.drumId}:${source.zone}` };
+    }
+  }
+  return null;
+}
+
+/** The zone slots a drum HAS — every distinct slot declared (`zones`) OR bound (a MIDI note / OSC
+    address) for `drumId`, sorted ascending. The single definition of "a zone" on a drum, shared by
+    the trigger-node face's zone count and the Inspector's zones list — so the node's "N zones" and
+    the Inspector's rows never disagree. A declared-but-unbound zone counts (it persists in `zones`). */
+export function zoneSlotsForDrum(map: InputMap, drumId: string): number[] {
+  const slots = new Set<number>();
+  for (const z of map.zones ?? []) if (z.drumId === drumId) slots.add(z.slot);
+  for (const n of map.midiNotes) if (n.drumId === drumId) slots.add(n.slot);
+  for (const o of map.oscMap) if (o.drumId === drumId) slots.add(o.slot);
+  return [...slots].sort((a, b) => a - b);
+}
+
+/** Declare a zone slot on a drum (immutably) — persists an added zone before it carries any MIDI/OSC
+    binding. Idempotent: a slot already declared (or already bound, hence already a zone) is a no-op. */
+export function addDeclaredZone(map: InputMap, drumId: string, slot: number): InputMap {
+  const zones = map.zones ?? [];
+  if (zones.some((z) => z.drumId === drumId && z.slot === slot)) return map;
+  return { ...map, zones: [...zones, { drumId, slot }] };
+}
+
+/** Remove a zone from a drum ENTIRELY — drops its declaration and any MIDI-note / OSC binding, so
+    the slot is no longer a zone. The inverse of {@link addDeclaredZone} + the per-binding setters. */
+export function removeZone(map: InputMap, drumId: string, slot: number): InputMap {
+  const cleared = setZoneOscAddress(setZoneMidiNote(map, drumId, slot, null), drumId, slot, null);
+  return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === drumId && z.slot === slot)) };
+}
+
+/** Move a zone (declaration + MIDI/OSC bindings) from `oldSlot` to `newSlot` — a re-label. */
+export function moveZoneSlot(map: InputMap, drumId: string, oldSlot: number, newSlot: number): InputMap {
+  if (oldSlot === newSlot) return map;
+  const note = zoneMidiNote(map, drumId, oldSlot);
+  const addr = zoneOscAddress(map, drumId, oldSlot);
+  let m = removeZone(map, drumId, oldSlot);
+  m = addDeclaredZone(m, drumId, newSlot);
+  m = setZoneMidiNote(m, drumId, newSlot, note);
+  m = setZoneOscAddress(m, drumId, newSlot, addr);
+  return m;
+}
+
+/** The zone slot LABELS ({@link SLOT_LABELS}) still AVAILABLE on a drum's trigger — those whose
+    0-based slot index is neither in `usedSlots` (slots the caller has already assigned in the
+    editor) nor already mapped for this drum in `inputMap` (MIDI note or OSC address). For the C6
+    trigger zones list (the per-zone slot dropdown, used slots excluded). */
+export function availableSlots(inputMap: InputMap, drumId: string, usedSlots: number[]): string[] {
+  const used = new Set([...usedSlots, ...zoneSlotsForDrum(inputMap, drumId)]);
+  return SLOT_LABELS.filter((_, slot) => !used.has(slot));
 }

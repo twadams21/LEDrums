@@ -38,10 +38,11 @@
   import NoteNodeInspector from './inspectors/NoteNodeInspector.svelte';
   import OscNodeInspector from './inspectors/OscNodeInspector.svelte';
   import RandomModNodeInspector from './inspectors/RandomModNodeInspector.svelte';
+  import PatchTriggerInspector from './inspectors/PatchTriggerInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
-  import PatchDataLineInspector from './inspectors/PatchDataLineInspector.svelte';
+  import PatchKitInspector from './inspectors/PatchKitInspector.svelte';
   import PatchOutputInspector from './inspectors/PatchOutputInspector.svelte';
   import PatchControllerInspector from './inspectors/PatchControllerInspector.svelte';
 
@@ -150,12 +151,15 @@
       </div>
     </header>
 
-    {#if editor.kind === 'input' || editor.kind === 'trigger' || editor.kind === 'unknown'}
+    {#if editor.kind === 'input' || editor.kind === 'triggers' || editor.kind === 'unknown'}
       <div class="nodeinfo">
         <p class="hint">
-          {editor.kind === 'trigger'
-            ? 'The drum’s trigger input. What each hit plays is wired in the Trigger graph; the editable device settings live on its zone, drum and hoop nodes.'
-            : 'The performance input source. What each hit plays is wired in the Trigger graph.'}
+          {#if editor.kind === 'triggers'}
+            The Drum Triggers holder. Each trigger binds to its drum by identity (the dotted reference
+            wire) — it carries no routing.
+          {:else}
+            The performance input source. What each hit plays is wired in the Trigger graph.
+          {/if}
         </p>
       </div>
     {:else}
@@ -164,14 +168,16 @@
           <p class="offline">Offline — connect to the engine to edit device settings. Renaming still works.</p>
         {/if}
 
-        {#if editor.kind === 'zone'}
+        {#if editor.kind === 'trigger'}
+          <PatchTriggerInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'zone'}
           <PatchZoneInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
+        {:else if editor.kind === 'kit'}
+          <PatchKitInspector {store} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'drum'}
           <PatchDrumInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'hoop'}
           <PatchHoopInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
-        {:else if editor.kind === 'dataline'}
-          <PatchDataLineInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'output'}
           <PatchOutputInspector {store} {shell} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'controller'}

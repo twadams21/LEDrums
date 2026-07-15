@@ -84,7 +84,7 @@ function projectDrum(a: number, cx: number, cy: number, dim: number): DotTable {
 
   for (const p of pm.pixels) {
     const i = p.id;
-    const t = rows1 > 0 ? p.hoopIndex / rows1 : 0; // 0 = bottom hoop, 1 = top hoop
+    const t = rows1 > 0 ? (p.hoopIndex - 1) / rows1 : 0; // 0 = bottom hoop, 1 = top hoop (hoopIndex 1-based, A1)
     const rad = a * (1 - PERSP * (1 - t)); // slight vertical perspective
     const aRad = (p.angleDeg * Math.PI) / 180;
     const cos = Math.cos(aRad);

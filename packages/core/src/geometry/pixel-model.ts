@@ -4,8 +4,15 @@ import {
   drumDensity,
   drumHoopCount,
   type DrumConfig,
+  type HoopConfig,
   type KitConfig,
 } from './kit-schema';
+
+/** One hoop's resolved render attributes: its pixel count and whether the strip is reversed. */
+interface ResolvedHoop {
+  pixelCount: number;
+  reverse: boolean;
+}
 import { classifyZone, type Zone } from './zones';
 
 const MM_PER_INCH = 25.4;
@@ -54,7 +61,13 @@ export interface DrumInfo {
   color: string;
   pixelStart: number;
   pixelCount: number;
+  /** Pixels in the FIRST hoop — equals the uniform per-hoop count when all hoops match (B4:
+   *  hoops MAY differ, so this is lossy for a mixed drum; use {@link hoopPixelCounts} for the
+   *  authoritative per-hoop counts). Kept for back-compat with uniform-count consumers. */
   pixelsPerHoop: number;
+  /** Authoritative per-hoop pixel counts (B4), one entry per hoop, length = {@link hoopCount}.
+   *  Hoop ranges are the running prefix sum from {@link pixelStart} — see {@link drumHoopPixelRange}. */
+  hoopPixelCounts: number[];
   hoopCount: number;
   radiusMm: number;
   /** Drum effect origin in world space (radial/3D effects sample distance from here). */
@@ -86,12 +99,44 @@ function pixelsPerHoop(kit: KitConfig, drum: DrumConfig): number {
 }
 
 /**
+ * Resolve a drum's hoops (B4). First-class `hoops[]` is authoritative when present — each hoop
+ * carries its own `pixelCount` + `reverse`, and the array length IS the hoop count. Otherwise
+ * fall back to the legacy UNIFORM resolution: `drumHoopCount` hoops, each `pixelsPerHoop(kit,drum)`
+ * pixels, none reversed. This is the single seam every count/reverse decision flows through.
+ */
+function resolveDrumHoops(kit: KitConfig, drum: DrumConfig): ResolvedHoop[] {
+  if (drum.hoops && drum.hoops.length > 0) {
+    return drum.hoops.map((h) => ({ pixelCount: h.pixelCount, reverse: h.reverse }));
+  }
+  const perHoop = pixelsPerHoop(kit, drum);
+  return Array.from({ length: drumHoopCount(kit, drum) }, () => ({ pixelCount: perHoop, reverse: false }));
+}
+
+/**
+ * SF1: materialize a drum's `hoops[]` as first-class {@link HoopConfig} objects, using the EXACT
+ * per-hoop counts + reverse flags {@link buildPixelModel} already resolves via {@link resolveDrumHoops}
+ * (the single render seam). A density-resolved drum (no stored `hoops[]`) yields `drumHoopCount`
+ * hoops, each `{ pixelCount: pixelsPerHoop(kit,drum), reverse: false }` — identical to what the
+ * renderer built, so stamping it onto the drum keeps the pixel model + DMX map BYTE-IDENTICAL. A
+ * drum that already carries a non-empty `hoops[]` yields those hoops verbatim (idempotent).
+ *
+ * This is the shared helper the per-hoop write paths (client optimistic `applyHoopConfig`, server
+ * `Engine.setHoopConfig` + `VoiceEngineHost.setHoopConfig`) lazily materialize through, so per-hoop
+ * editing works on ANY reachable drum shape and all three paths materialize identically (mutation
+ * parity — no client/server divergence).
+ */
+export function materializeHoops(kit: KitConfig, drum: DrumConfig): HoopConfig[] {
+  return resolveDrumHoops(kit, drum);
+}
+
+/**
  * Build the full 3D pixel model from a validated kit config (plan U2).
  *
  * Pixels are emitted grouped by drum, then hoop, then angular index — a stable
  * order the frame buffer and DMX map both rely on. Hoops are circles in the drum's
- * local XY plane stacked along local +Z; world position applies the drum's intrinsic
- * XYZ rotation then its origin translation.
+ * local XY plane stacked along local Z, CENTRED on the origin (B3): the stack spans
+ * [−halfStack, +halfStack] so the drum's `origin` is its geometric centre. World position
+ * applies the drum's intrinsic XYZ rotation then its origin translation.
  */
 export function buildPixelModel(kit: KitConfig): PixelModel {
   const pixels: Pixel[] = [];
@@ -104,25 +149,39 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
 
   let id = 0;
   for (const drum of kit.drums) {
-    const hoopCount = drumHoopCount(kit, drum);
-    const perHoop = pixelsPerHoop(kit, drum);
+    const hoops = resolveDrumHoops(kit, drum);
+    const hoopCount = hoops.length;
     const radiusMm = (drum.diameterIn * MM_PER_INCH) / 2;
     const spacing = drum.hoopSpacingMm;
+    // Half the hoop-stack height along local Z. The stack is centred on the origin (B3), so
+    // hoop h sits at `h*spacing - halfStack` — hoop 1 at −halfStack, the last hoop at +halfStack.
+    const halfStack = ((hoopCount - 1) * spacing) / 2;
     const pixelStart = id;
 
     for (let h = 0; h < hoopCount; h++) {
-      // Flip is a GEOMETRY-ONLY transform: it mirrors the hoop stack along local Z (skins
-      // swap) and negates the intrinsic angular sweep (chase/wind direction) BELOW, but
-      // leaves hoop indices and pixel INDEX order untouched — so the frame buffer and DMX
-      // map stay byte-identical with flip on/off; a flip never re-patches hardware.
-      const localZ = drum.flip ? -(h * spacing) : h * spacing;
+      const perHoop = hoops[h]!.pixelCount;
+      const reverse = hoops[h]!.reverse;
+      // Flip is a GEOMETRY-ONLY transform that ROTATES the drum in place about its centre: it
+      // reflects the centred hoop stack along local Z (skins swap) and negates the intrinsic
+      // angular sweep (chase/wind direction) BELOW. Because the stack is centred, the drum's
+      // world footprint (and its origin) is invariant to flip — only orientation changes. Hoop
+      // indices and pixel INDEX order are untouched, so the frame buffer and DMX map stay
+      // byte-identical with flip on/off; a flip never re-patches hardware.
+      const baseZ = h * spacing - halfStack;
+      const localZ = drum.flip ? -baseZ : baseZ;
       const normHoop = hoopCount > 1 ? h / (hoopCount - 1) : 0;
       const zone = classifyZone(normHoop);
       const segLen = (Math.PI * 2 * radiusMm) / perHoop;
       for (let i = 0; i < perHoop; i++) {
+        // Per-hoop reverse (B4): a backward-wired strip enters data at the FAR end, so emission
+        // slot i (its id / indexInHoop, and hence its DMX byte position) maps to the angular
+        // position of slot (perHoop-1-i). Only the index→position mapping flips — ids stay
+        // contiguous, so DMX packing and hoop ranges are untouched. reverse:false ⇒ slot === i
+        // ⇒ byte-identical output (parity). Independent of `flip` (which negates winding sense).
+        const slot = reverse ? perHoop - 1 - i : i;
         // Negate the angular sweep BEFORE the start/spin offsets so a physically-flipped
         // drum winds the opposite way while pixel 0 stays put.
-        const sweepDeg = (360 * i) / perHoop;
+        const sweepDeg = (360 * slot) / perHoop;
         const angleDeg =
           drum.startAngleDeg + drum.localSpinDeg + (drum.flip ? -sweepDeg : sweepDeg);
         const a = angleDeg * DEG2RAD;
@@ -147,8 +206,10 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
         pixels.push({
           id,
           drumId: drum.id,
-          hoopIndex: h,
-          indexInHoop: i,
+          // Hoop + pixel-within-hoop labels are 1-based (A1): first hoop = 1, first pixel = 1.
+          // The loop vars h/i stay 0-based offsets above so geometry is byte-identical.
+          hoopIndex: h + 1,
+          indexInHoop: i + 1,
           angleDeg: wrappedAngle,
           normHoop,
           zone,
@@ -163,19 +224,29 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
       }
     }
 
+    const hoopPixelCounts = hoops.map((h) => h.pixelCount);
     const info: DrumInfo = {
       drumId: drum.id,
       label: drum.label,
       color: drum.color,
       pixelStart,
       pixelCount: id - pixelStart,
-      pixelsPerHoop: perHoop,
+      // First hoop's count — the uniform value when all hoops match; authoritative per-hoop
+      // counts live in `hoopPixelCounts` (B4). Empty drum can't occur (hoops.min(1)).
+      pixelsPerHoop: hoopPixelCounts[0] ?? 0,
+      hoopPixelCounts,
       hoopCount,
       radiusMm,
-      // Reflect the effect origin identically — it's a world coordinate that radial/3D effects
-      // sample distance from against the (mirrored) pixel world positions, so it must mirror too.
+      // Effect/hit origin = the CENTRE OF THE FIRST HOOP (the skin) — where radial/3D effects
+      // emanate from (B3). In the centred local frame the first hoop sits at local z = −halfStack
+      // (flip: +halfStack), so the skin follows the drum when it's flipped. Reflected identically
+      // to the pixel world positions so it stays consistent under the kit mirror.
       effectOriginWorld: reflectWorld(
-        localToWorld(drum.effectOriginLocal, drum.rotation, drum.origin),
+        localToWorld(
+          { x: 0, y: 0, z: drum.flip ? halfStack : -halfStack },
+          drum.rotation,
+          drum.origin,
+        ),
         mirror,
       ),
     };
@@ -193,11 +264,27 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
 }
 
 /**
+ * Half-open `[start, end)` pixel-id range for one hoop on a drum, or `null` when the hoop is
+ * out of range. Ranges are the running PREFIX SUM of {@link DrumInfo.hoopPixelCounts} from
+ * `pixelStart` — correct for mixed per-hoop counts (B4), not just uniform drums. `hoopIndex` is
+ * **1-based** (A1). The seam both {@link getHoopPixelRange} and the DMX map compute offsets from.
+ */
+export function drumHoopPixelRange(
+  drum: DrumInfo,
+  hoopIndex: number,
+): { start: number; end: number } | null {
+  if (hoopIndex < 1 || hoopIndex > drum.hoopCount) return null;
+  let start = drum.pixelStart;
+  for (let h = 0; h < hoopIndex - 1; h++) start += drum.hoopPixelCounts[h]!;
+  return { start, end: start + drum.hoopPixelCounts[hoopIndex - 1]! };
+}
+
+/**
  * Return the contiguous pixel range for one hoop on a drum, or `null` when the
  * drum/hoop doesn't exist in the model (dangling targetId → caller renders nothing).
  *
  * Range is half-open: `[start, end)` — the same convention the compositor uses.
- * Hoops are zero-indexed in build order (same as {@link buildPixelModel}'s inner loop).
+ * `hoopIndex` is **1-based** (A1): hoop 1 is the first hoop, matching {@link Pixel.hoopIndex}.
  */
 export function getHoopPixelRange(
   model: PixelModel,
@@ -206,9 +293,7 @@ export function getHoopPixelRange(
 ): { start: number; end: number } | null {
   const drum = model.drumById.get(drumId);
   if (!drum) return null;
-  if (hoopIndex < 0 || hoopIndex >= drum.hoopCount) return null;
-  const start = drum.pixelStart + hoopIndex * drum.pixelsPerHoop;
-  return { start, end: start + drum.pixelsPerHoop };
+  return drumHoopPixelRange(drum, hoopIndex);
 }
 
 function computeBounds(pixels: Pixel[]): Bounds {

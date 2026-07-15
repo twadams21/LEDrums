@@ -11,14 +11,14 @@ type PixelSet =
   | { kind: 'hoop'; drumId: string; hoopIndices: number[] };
 
 /** Hoop list to use for a `#`-qualified target id that yields no valid indices:
-    `'zero'` → `[0]` (never render nothing), `'sentinel'` → `[-1]` (an unmatchable
-    index, so an invalid hoop ref intersects to nothing), `'none'` → `[]`. */
-export type EmptyHoopFallback = 'zero' | 'sentinel' | 'none';
+    `'first'` → `[1]` (never render nothing — hoops are 1-based, A1), `'sentinel'` → `[-1]`
+    (an unmatchable index, so an invalid hoop ref intersects to nothing), `'none'` → `[]`. */
+export type EmptyHoopFallback = 'first' | 'sentinel' | 'none';
 
 export interface ParseHoopTargetOptions {
-  /** No `#` in the target id → source drum, hoop `[0]` (the never-render-nothing
-      default the compositor and inspector use). When `false`, the drum id is parsed
-      from the raw string and an absent hoop list uses {@link emptyFallback}. */
+  /** No `#` in the target id → source drum, hoop `[1]` (the never-render-nothing
+      default the compositor and inspector use; hoops are 1-based per A1). When `false`,
+      the drum id is parsed from the raw string and an absent hoop list uses {@link emptyFallback}. */
   sourceDrumOnNoHash: boolean;
   /** Hoop list for a `#`-qualified id whose index portion parses to nothing. */
   emptyFallback: EmptyHoopFallback;
@@ -45,17 +45,17 @@ export function parseHoopTarget(
 ): HoopTarget {
   const { sourceDrumOnNoHash, emptyFallback, sort } = options;
   if (!targetId || (sourceDrumOnNoHash && !targetId.includes('#'))) {
-    return { drumId: sourceDrumId, hoopIndices: [0] };
+    return { drumId: sourceDrumId, hoopIndices: [1] };
   }
   const sep = targetId.indexOf('#');
   const drumId = sep === -1 ? targetId : targetId.slice(0, sep);
   const parsed = (sep === -1 ? '' : targetId.slice(sep + 1))
     .split(',')
     .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v >= 0);
+    .filter((v) => Number.isInteger(v) && v >= 1); // hoops are 1-based (A1)
   const deduped = [...new Set(parsed)];
   const indices = sort ? deduped.sort((a, b) => a - b) : deduped;
-  const fallback = emptyFallback === 'zero' ? [0] : emptyFallback === 'sentinel' ? [-1] : [];
+  const fallback = emptyFallback === 'first' ? [1] : emptyFallback === 'sentinel' ? [-1] : [];
   return { drumId: drumId || sourceDrumId, hoopIndices: indices.length ? indices : fallback };
 }
 

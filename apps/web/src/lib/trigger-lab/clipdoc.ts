@@ -30,13 +30,21 @@ import type { SetlistSection, Song } from '../app/setlist';
 import type { Project, CanvasScene } from '@ledrums/core';
 import { canvasEffectId, canvasSceneIdOf } from '@ledrums/core';
 import { extractSongClosure, songNamespace, type ClosureSources } from './store/song-library';
+import { migrateGraphHoopTargets, migrateGraphsHoopTargets } from './persistence';
 import { freshEffectId } from './store/objects';
 import { freshId, nid } from './store/ids';
 
 // ---- envelope ---------------------------------------------------------------
 
 export const CLIPDOC_APP = 'ledrums';
-export const CLIPDOC_VERSION = 1;
+/** Envelope version. v2 (B6/A1): hoop-scoped node targetIds moved 0-based → 1-based. A v1 doc is
+    still accepted on {@link parse} and its hoop targetIds shifted +1 (see {@link CLIPDOC_PRIOR_VERSION});
+    a foreign/newer version is rejected. {@link serialize} always stamps the current version. */
+export const CLIPDOC_VERSION = 2;
+
+/** The one prior envelope version {@link parse} still accepts, upgrading a pasted v1 doc's hoop
+    targetIds in place (0-based → 1-based) rather than rejecting it as unsupported. */
+export const CLIPDOC_PRIOR_VERSION = 1;
 
 export type ClipDocKind = 'graph' | 'section' | 'song' | 'patch';
 
@@ -295,22 +303,47 @@ export function parse(text: string): ClipDoc | ClipParseError {
   }
   if (!isObject(raw)) return err('not-object', 'Clipboard JSON was not an object.');
   if (raw.app !== CLIPDOC_APP) return err('foreign', 'Not a LEDrums clipboard payload.');
-  if (raw.v !== CLIPDOC_VERSION) return err('unsupported-version', `Unsupported ClipDoc version: ${String(raw.v)}.`);
+  if (raw.v !== CLIPDOC_VERSION && raw.v !== CLIPDOC_PRIOR_VERSION)
+    return err('unsupported-version', `Unsupported ClipDoc version: ${String(raw.v)}.`);
   if (!isObject(raw.payload)) return err('malformed', 'ClipDoc payload missing.');
 
   const metaOut = coerceMeta(raw.meta);
-  switch (raw.kind) {
+  const doc = coerceKind(raw.kind, raw.payload, raw.deps, metaOut);
+  if (isClipParseError(doc)) return doc;
+  // v1 → v2: a pasted doc authored before A1 carries 0-based hoop targetIds; shift them +1 so the
+  // pasted clip lights the SAME physical hoop. Version-gated (v2 docs are already 1-based → no
+  // double shift); serialize re-stamps CLIPDOC_VERSION so a re-copied clip is v2.
+  return raw.v === CLIPDOC_PRIOR_VERSION ? migrateClipDocHoopTargets(doc) : doc;
+}
+
+function coerceKind(kind: unknown, payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): ClipDoc | ClipParseError {
+  switch (kind) {
     case 'graph':
-      return coerceGraphDoc(raw.payload, raw.deps, metaOut);
+      return coerceGraphDoc(payload, deps, m);
     case 'section':
-      return coerceSectionDoc(raw.payload, raw.deps, metaOut);
+      return coerceSectionDoc(payload, deps, m);
     case 'song':
-      return coerceSongDoc(raw.payload, raw.deps, metaOut);
+      return coerceSongDoc(payload, deps, m);
     case 'patch':
-      return coercePatchDoc(raw.payload, metaOut);
+      return coercePatchDoc(payload, m);
     default:
-      return err('unknown-kind', `Unknown ClipDoc kind: ${String(raw.kind)}.`);
+      return err('unknown-kind', `Unknown ClipDoc kind: ${String(kind)}.`);
   }
+}
+
+/** Shift a parsed doc's hoop targetIds 0-based → 1-based (B6/A1). Graph node data lives only in a
+    graph payload and in `deps.graphs` (section/song payloads reference graph keys, not inline
+    nodes); a patch doc carries no trigger graphs. Reuses the persistence-layer graph walker so the
+    show-schema and clipboard migrations can never drift. */
+function migrateClipDocHoopTargets(doc: ClipDoc): ClipDoc {
+  if (doc.kind === 'patch') return doc;
+  const deps: ClipDocDeps = doc.deps.graphs
+    ? { ...doc.deps, graphs: migrateGraphsHoopTargets(doc.deps.graphs) }
+    : doc.deps;
+  if (doc.kind === 'graph') {
+    return { ...doc, payload: { ...doc.payload, graph: migrateGraphHoopTargets(doc.payload.graph) }, deps };
+  }
+  return { ...doc, deps };
 }
 
 function coerceMeta(raw: unknown): ClipDocMeta {

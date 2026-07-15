@@ -1,41 +1,42 @@
 /* Patch routing compiler — a PURE, order-preserving translation between the Patch
-   graph's output half (output → dataline → hoop) and core's physical-output topology
-   (`OutputConfig[]`). No xyflow / Svelte / DOM here so the wiring math is trivially
-   unit-testable and shares core's pure-module discipline (S2/S6 of the "Patch Graph
-   authoritative" mission).
+   graph's output half (Output → Hoop → Hoop … physical data run) and core's
+   physical-output topology (`OutputConfig[]`). No xyflow / Svelte / DOM here so the
+   wiring math is trivially unit-testable and shares core's pure-module discipline
+   (S2/S6 of the "Patch Graph authoritative" mission).
 
-   DATA LINES ARE FIRST-CLASS (S6). Core's `OutputConfig` now carries ordered
-   `dataLines[]` (each an id + optional `startUniverse` + coalesced hoop `segments`),
-   so the compiler maps data lines **1:1** — a `PatchOutput.dataLines[i]` ↔
-   `OutputConfig.dataLines[i]`. No flatten, no re-chunk: wiring 8 data lines round-trips
-   as 8 (the wire-in-8-stays-8 acceptance).
+   D1: core's `OutputConfig` is now FLAT — an Output carries its hoop chain directly as
+   range-compressed `segments` (Output = exactly one data run). The web layer mirrors
+   that 1:1: a `PatchOutput` carries its `hoops` list directly (no intermediate Data
+   Line). `patchToOutputs` coalesces each output's hoops → `segments`; `outputsToPatch`
+   expands each Output's segments back into its hoops — a straight, level-for-level map.
 
    The Patch graph authors PIXEL TRANSMIT ORDER, not universes — the controller owns
-   universe/channel offsets, packing pixels channel-dense in transmit order: first hoop
-   on the first dataline on the first output → next hoop on that dataline → next dataline
-   → next output. An optional per-output / per-dataline `startUniverse` snaps that line to
-   a universe boundary (blank = dense/auto). `patchToOutputs` coalesces each data line's
-   own hoops into ascending-contiguous `OutputSegment` runs (core expands each segment
-   ascending, so non-ascending runs must not be merged). The inverse, `outputsToPatch`,
-   expands each line's segments back to hoops 1:1. `pixelRanges` derives the Inspector's
-   first/last global pixel read-outs by sweeping the same transmit order. */
+   universe/channel offsets, packing pixels channel-dense in transmit order. An optional
+   per-output `startUniverse` snaps a run to a universe boundary (blank = dense/auto).
+   `patchToOutputs` coalesces each output's hoops into ascending-contiguous
+   `OutputSegment` runs (core expands each segment ascending, so non-ascending runs must
+   not be merged). `outputsToPatch` expands each Output's segments back to hoops.
+   `pixelRanges` derives the Inspector's first/last global pixel read-outs by sweeping the
+   same transmit order. */
 
-import { checkRoutingIntegrity, type DataLineConfig, type KitConfig, type OutputConfig, type OutputSegment } from '@ledrums/core';
+import { checkRoutingIntegrity, type HoopRef, type KitConfig, type OutputConfig, type OutputSegment, type RgbOrder } from '@ledrums/core';
 
-/** A single hoop on a drum, addressed by drum id + hoop index within that drum. */
-export type HoopRef = { drumId: string; hoop: number };
+/** A single hoop on a drum, addressed by drum id + **1-based** hoop index within that drum
+    (A1) — matches core `OutputSegment.hoopStart/End`, core's own `HoopRef`, and the
+    `hoop:<drum>:N` node id. Re-exported from core so the web bridge and the core wiring
+    rules share ONE definition. */
+export type { HoopRef };
 
-/** One data line: an ordered run of hoops cross-wired onto a single physical line. An
-    optional `startUniverse` snaps it to a universe boundary (blank = dense/auto). */
-export type DataLine = { id: string; startUniverse?: number; hoops: HoopRef[] };
-
-/** One physical controller output (a PixLite port): ordered data lines + transport. An
-    optional `startUniverse` snaps the port to a universe boundary (blank = dense/auto). */
+/** One physical controller output = **exactly one data run** (D1: the intermediate Data
+    Line was removed). An ordered `hoops` chain + transport. An optional `startUniverse`
+    snaps the run to a universe boundary (blank = dense/auto); `rgbOrder` is the per-output
+    strip wiring order (blank = the packer's default). */
 export type PatchOutput = {
   id: string;
   startUniverse?: number;
   channelsPerPixel: number;
-  dataLines: DataLine[];
+  rgbOrder?: RgbOrder;
+  hoops: HoopRef[];
 };
 
 /** The full output-half routing: physical outputs in transmit order. */
@@ -44,10 +45,10 @@ export type PatchRouting = { outputs: PatchOutput[] };
 /** A first/last global pixel-index span (inclusive). */
 export type PixelSpan = { first: number; last: number };
 
-/** Default hoops-per-dataline used by `defaultRouting` (patch-graph.ts) when synthesizing
-    a fresh routing from a kit with no authored outputs. A tidy display default, not a
-    wiring constraint. */
-export const DEFAULT_HOOPS_PER_DATALINE = 6;
+/** Default hoops-per-output used by `defaultRouting` (patch-graph.ts) when synthesizing a
+    fresh routing from a kit with no authored outputs. A tidy display default, not a wiring
+    constraint. */
+export const DEFAULT_HOOPS_PER_OUTPUT = 6;
 
 /** Coalesce an ordered hoop list into `OutputSegment` runs: a run extends while the next
     hoop is the SAME drum and exactly one greater than the previous (ascending-contiguous).
@@ -75,35 +76,26 @@ function expandSegment(seg: OutputSegment): HoopRef[] {
 }
 
 /**
- * Compile a `PatchRouting` into core's `OutputConfig[]`, mapping data lines 1:1.
+ * Compile a `PatchRouting` into core's `OutputConfig[]` (D1: Output = one data run).
  *
- * Each output's data lines are emitted in order; each line's hoops are coalesced into
- * its own `OutputSegment` runs. A line's optional `startUniverse` carries through (omitted
- * when blank → dense). Data lines that carry no hoops are SKIPPED (core's `dataLineSchema`
- * requires `segments.min(1)`); an output left with no non-empty data lines is SKIPPED too
- * (core's `outputSchema` requires `dataLines.min(1)`). The output order follows
- * `routing.outputs`.
+ * Each web `PatchOutput` maps directly to ONE core Output: its hoops coalesce into that
+ * Output's `segments`, and it carries its own transport (`startUniverse`, `channelsPerPixel`,
+ * `rgbOrder`). An output with NO hoops coalesces to zero segments — core requires
+ * `segments.min(1)`, so an inert/unwired output is SKIPPED (it is not persisted until wired,
+ * matching the schema's "no chain ⇒ not persisted" rule). Output order follows `routing.outputs`.
  */
 export function patchToOutputs(routing: PatchRouting): OutputConfig[] {
   const configs: OutputConfig[] = [];
 
   for (const output of routing.outputs) {
-    const dataLines: DataLineConfig[] = [];
-    for (const line of output.dataLines) {
-      const segments = coalesceHoops(line.hoops);
-      if (segments.length === 0) continue; // empty line → emit nothing for it
-      dataLines.push({
-        id: line.id,
-        ...(line.startUniverse !== undefined ? { startUniverse: line.startUniverse } : {}),
-        segments,
-      });
-    }
-    if (dataLines.length === 0) continue; // empty port → emit nothing
+    const segments = coalesceHoops(output.hoops);
+    if (segments.length === 0) continue; // inert output — nothing to persist until wired
     configs.push({
       id: output.id,
       ...(output.startUniverse !== undefined ? { startUniverse: output.startUniverse } : {}),
       channelsPerPixel: output.channelsPerPixel,
-      dataLines,
+      ...(output.rgbOrder !== undefined ? { rgbOrder: output.rgbOrder } : {}),
+      segments,
     });
   }
 
@@ -111,29 +103,27 @@ export function patchToOutputs(routing: PatchRouting): OutputConfig[] {
 }
 
 /**
- * Inverse of `patchToOutputs`: expand `OutputConfig[]` back into a `PatchRouting`, 1:1.
+ * Inverse of `patchToOutputs`: expand `OutputConfig[]` back into a `PatchRouting`.
  *
- * Each output's data lines map straight across; each line's segments expand back into its
- * `hoops` (ascending). Both per-output and per-dataline `startUniverse` carry through. No
- * re-chunking — data-line identity + count are preserved (8 stays 8).
+ * Each core Output = one data run → one web `PatchOutput` (1:1). The output's `segments`
+ * expand back into its `hoops` (ascending); its transport (`startUniverse`, `channelsPerPixel`,
+ * `rgbOrder`) carries straight across. The core Output id is reused so a web→core→web round-trip
+ * is STABLE (the echo-signature guard compares canonical forms).
  */
 export function outputsToPatch(outputs: OutputConfig[]): PatchRouting {
   const patchOutputs: PatchOutput[] = outputs.map((output) => ({
     id: output.id,
     ...(output.startUniverse !== undefined ? { startUniverse: output.startUniverse } : {}),
     channelsPerPixel: output.channelsPerPixel,
-    dataLines: output.dataLines.map((dl) => ({
-      id: dl.id,
-      ...(dl.startUniverse !== undefined ? { startUniverse: dl.startUniverse } : {}),
-      hoops: dl.segments.flatMap(expandSegment),
-    })),
+    ...(output.rgbOrder !== undefined ? { rgbOrder: output.rgbOrder } : {}),
+    hoops: output.segments.flatMap(expandSegment),
   }));
 
   return { outputs: patchOutputs };
 }
 
 /**
- * True when `routing` would drive a single physical hoop from more than one data line —
+ * True when `routing` would drive a single physical hoop from more than one OUTPUT —
  * the "fan-out" corruption (that hoop's pixels get silently overwritten, last write wins).
  *
  * This does NOT restate the rule: it compiles the routing to core's `OutputConfig[]` and
@@ -148,20 +138,19 @@ export function hasHoopFanOut(kit: KitConfig, routing: PatchRouting): boolean {
 }
 
 /**
- * Derive the first/last GLOBAL pixel index covered by each data line and each output,
- * sweeping the routing in transmit order (outputs → datalines → hoops) and accumulating a
- * running global pixel cursor. `pixelsForHoop` supplies each hoop's literal pixel count.
- * Feeds the Inspector's "first & last pixel" read-outs.
+ * Derive the first/last GLOBAL pixel index covered by each output, sweeping the routing in
+ * transmit order (outputs → hoops) and accumulating a running global pixel cursor.
+ * `pixelsForHoop` supplies each hoop's literal pixel count. Feeds the Inspector's "first &
+ * last pixel" read-outs.
  *
  * NOTE the cursor is a pure transmit-order accumulator; it ignores `startUniverse` jumps
- * (those re-map universes, not pixel transmit order). Groups that carry zero pixels (empty
- * datalines / outputs) are OMITTED from the returned records rather than reported as a span.
+ * (those re-map universes, not pixel transmit order). Outputs that carry zero pixels are
+ * OMITTED from the returned record rather than reported as a span.
  */
 export function pixelRanges(
   routing: PatchRouting,
   pixelsForHoop: (h: HoopRef) => number,
-): { byDataLine: Record<string, PixelSpan>; byOutput: Record<string, PixelSpan> } {
-  const byDataLine: Record<string, PixelSpan> = {};
+): { byOutput: Record<string, PixelSpan> } {
   const byOutput: Record<string, PixelSpan> = {};
   let cursor = 0; // next global pixel index to assign
 
@@ -169,21 +158,11 @@ export function pixelRanges(
     const outputStart = cursor;
     let outputCovered = false;
 
-    for (const dl of output.dataLines) {
-      const lineStart = cursor;
-      let lineCovered = false;
-
-      for (const hoop of dl.hoops) {
-        const count = pixelsForHoop(hoop);
-        if (count <= 0) continue;
-        cursor += count;
-        lineCovered = true;
-        outputCovered = true;
-      }
-
-      if (lineCovered) {
-        byDataLine[dl.id] = { first: lineStart, last: cursor - 1 };
-      }
+    for (const hoop of output.hoops) {
+      const count = pixelsForHoop(hoop);
+      if (count <= 0) continue;
+      cursor += count;
+      outputCovered = true;
     }
 
     if (outputCovered) {
@@ -191,5 +170,5 @@ export function pixelRanges(
     }
   }
 
-  return { byDataLine, byOutput };
+  return { byOutput };
 }

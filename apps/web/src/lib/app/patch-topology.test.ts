@@ -26,26 +26,44 @@ const inDeg = (edges: { target: string }[], id: string): number => edges.filter(
 const byStage = (nodes: { id: string; data: { stage: string } }[], stage: string) =>
   nodes.filter((n) => n.data.stage === stage);
 
+/** Map each hoop node → the OUTPUT node that roots its chain (walk chain edges upstream). */
+function outputOfHoopMap(nodes: { id: string; data: { stage: string } }[], edges: { source: string; target: string }[]) {
+  const stageById = new Map(nodes.map((n) => [n.id, n.data.stage]));
+  const upstream = new Map<string, string>();
+  for (const e of edges) {
+    const s = stageById.get(e.source);
+    if (stageById.get(e.target) === 'hoop' && (s === 'output' || s === 'hoop')) upstream.set(e.target, e.source);
+  }
+  return (hoopId: string): string => {
+    let cur = hoopId;
+    const seen = new Set<string>();
+    while (upstream.has(cur) && !seen.has(cur)) {
+      seen.add(cur);
+      cur = upstream.get(cur)!;
+    }
+    return cur; // an output node id
+  };
+}
+
 describe('buildPatchTopology', () => {
-  it('emits one node per stage entry across all eight columns', () => {
-    const { nodes } = buildPatchTopology(KIT); // default hoopsPerDataLine = 6 → 3 lines
+  it('emits one node per stage entry across all seven columns', () => {
+    const { nodes } = buildPatchTopology(KIT); // default hoopsPerOutput = 6 → 3 outputs
     expect(byStage(nodes, 'input')).toHaveLength(1);
     expect(byStage(nodes, 'trigger')).toHaveLength(KIT.length);
     expect(byStage(nodes, 'zone')).toHaveLength(ZONES);
     expect(byStage(nodes, 'drum')).toHaveLength(KIT.length);
     expect(byStage(nodes, 'hoop')).toHaveLength(HOOPS);
-    expect(byStage(nodes, 'dataline')).toHaveLength(3);
     expect(byStage(nodes, 'output')).toHaveLength(3);
     expect(byStage(nodes, 'controller')).toHaveLength(1);
-    // 1 + 4 + 14 + 4 + 16 + 3 + 3 + 1
-    expect(nodes).toHaveLength(46);
+    // 1 + 4 + 14 + 4 + 16 + 3 + 1
+    expect(nodes).toHaveLength(43);
   });
 
   it('wires the full path with the expected edge count', () => {
     const { edges } = buildPatchTopology(KIT);
     // input→trigger 4 · trigger→zone 14 · zone→drum 14 · drum→hoop 16
-    // · hoop→dataline 16 · dataline→output 3 · output→controller 3
-    expect(edges).toHaveLength(4 + ZONES + ZONES + HOOPS + HOOPS + 3 + 3);
+    // · chain (output→hoop / hoop→hoop) 16 (one per hoop) · output→controller 3
+    expect(edges).toHaveLength(4 + ZONES + ZONES + HOOPS + HOOPS + 3);
   });
 
   it('fans the single input out to every drum trigger', () => {
@@ -68,34 +86,22 @@ describe('buildPatchTopology', () => {
     expect(outDeg(edges, CONTROLLER_ID)).toBe(0); // it is the sink
   });
 
-  it('cross-wires hoops: a drum splits across data lines AND a line carries >1 drum', () => {
-    const { nodes, edges } = buildPatchTopology(KIT); // 16 hoops / 6 → lines [6,6,4]
-    const dataLineIds = new Set(byStage(nodes, 'dataline').map((n) => n.id));
+  it('cross-wires hoops: a drum splits across outputs AND an output carries >1 drum', () => {
+    const { nodes, edges } = buildPatchTopology(KIT); // 16 hoops / 6 → outputs [6,6,4]
+    const outputOfHoop = outputOfHoopMap(nodes, edges);
 
-    // For each drum, which data lines do its hoops land on?
-    const linesPerDrum = new Map<string, Set<string>>();
-    for (const e of edges) {
-      const m = /^hoop:([^:]+):\d+$/.exec(e.source);
-      if (m && dataLineIds.has(e.target)) {
-        const set = linesPerDrum.get(m[1]!) ?? new Set<string>();
-        set.add(e.target);
-        linesPerDrum.set(m[1]!, set);
-      }
+    const outputsPerDrum = new Map<string, Set<string>>();
+    const drumsPerOutput = new Map<string, Set<string>>();
+    for (const n of byStage(nodes, 'hoop')) {
+      const m = /^hoop:([^:]+):\d+$/.exec(n.id)!;
+      const o = outputOfHoop(n.id);
+      (outputsPerDrum.get(m[1]!) ?? outputsPerDrum.set(m[1]!, new Set()).get(m[1]!)!).add(o);
+      (drumsPerOutput.get(o) ?? drumsPerOutput.set(o, new Set()).get(o)!).add(m[1]!);
     }
-    // snare's four hoops straddle two lines (idx 4-7 vs the 0-5 / 6-11 split)
-    expect(linesPerDrum.get('snare')!.size).toBe(2);
-
-    // At least one data line carries hoops from more than one drum.
-    const drumsPerLine = new Map<string, Set<string>>();
-    for (const e of edges) {
-      const m = /^hoop:([^:]+):\d+$/.exec(e.source);
-      if (m && dataLineIds.has(e.target)) {
-        const set = drumsPerLine.get(e.target) ?? new Set<string>();
-        set.add(m[1]!);
-        drumsPerLine.set(e.target, set);
-      }
-    }
-    expect([...drumsPerLine.values()].some((s) => s.size > 1)).toBe(true);
+    // snare's four hoops straddle two outputs (idx 4-7 vs the 0-5 / 6-11 split)
+    expect(outputsPerDrum.get('snare')!.size).toBe(2);
+    // At least one output carries hoops from more than one drum.
+    expect([...drumsPerOutput.values()].some((s) => s.size > 1)).toBe(true);
   });
 
   it('keeps node ids unique and every edge endpoint resolvable', () => {
@@ -117,18 +123,18 @@ describe('buildPatchTopology', () => {
     }
   });
 
-  it('honours hoopsPerDataLine — a single fat line when capacity covers the chain', () => {
-    const { nodes } = buildPatchTopology(KIT, { hoopsPerDataLine: 100 });
-    expect(byStage(nodes, 'dataline')).toHaveLength(1);
+  it('honours hoopsPerOutput — a single fat output when capacity covers the chain', () => {
+    const { nodes } = buildPatchTopology(KIT, { hoopsPerOutput: 100 });
     expect(byStage(nodes, 'output')).toHaveLength(1);
   });
 
   it('survives a degenerate single-drum kit', () => {
     const one: TopologyDrum[] = [{ id: 'kick', label: 'Kick', zones: ['center'], hoopCount: 1 }];
     const { nodes, edges } = buildPatchTopology(one);
-    // input, trigger, zone, drum, hoop, dataline, output, controller
-    expect(nodes).toHaveLength(8);
-    expect(edges).toHaveLength(7);
+    // input, trigger, zone, drum, hoop, output, controller
+    expect(nodes).toHaveLength(7);
+    // input→trigger · trigger→zone · zone→drum · drum→hoop · output→hoop · output→controller
+    expect(edges).toHaveLength(6);
   });
 });
 
@@ -136,13 +142,18 @@ describe('topoDrumsFromKit (#11: input half follows the project kit, not DEFAULT
   const drumList = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
   const oneZone = (): string[] => ['center'];
 
-  /** A kit whose per-drum + global hoop counts all differ from DEFAULT_KIT's. */
+  /** A kit whose per-drum + global hoop counts all differ from DEFAULT_KIT's. `hoops` is dropped
+   *  so the count resolves via the override/global path this suite exercises — with B4's
+   *  first-class `hoops[]` present it would be authoritative (drumHoopCount = hoops.length),
+   *  which the per-hoop-attrs suite covers; here we test the hoopCount/global fallback. */
   function nonDefaultKit(): KitConfig {
     return {
       ...DEFAULT_KIT,
       global: { ...DEFAULT_KIT.global, hoopCount: DEFAULT_KIT.global.hoopCount + 5 },
       drums: DEFAULT_KIT.drums.map((d) =>
-        d.id === 'snare' ? { ...d, hoopCount: 9 } : { ...d, hoopCount: undefined },
+        d.id === 'snare'
+          ? { ...d, hoops: undefined, hoopCount: 9 }
+          : { ...d, hoops: undefined, hoopCount: undefined },
       ),
     };
   }
@@ -185,7 +196,6 @@ describe('describePatchNode', () => {
     expect(describePatchNode('zone:tom1:edge', KIT).title).toBe('Tom 1 · edge');
     expect(describePatchNode('drum:snare', KIT).title).toBe('Snare Drum');
     expect(describePatchNode('hoop:kick:2', KIT).title).toBe('Kick Hoop 2');
-    expect(describePatchNode('dataline:2').title).toBe('Data Line 2');
     expect(describePatchNode('output:1').title).toBe('Output 1');
   });
 

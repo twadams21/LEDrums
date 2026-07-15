@@ -200,16 +200,11 @@ describe('VoiceEngineHost', () => {
       {
         id: 'out0',
         channelsPerPixel: 3,
-        dataLines: [
-          {
-            id: 'out0:dl0',
-            segments: reversed.map((drumId) => ({
-              drumId,
-              hoopStart: 0,
-              hoopEnd: model.drumById.get(drumId)!.hoopCount - 1,
-            })),
-          },
-        ],
+        segments: reversed.map((drumId) => ({
+          drumId,
+          hoopStart: 1, // hoops are 1-based (A1)
+          hoopEnd: model.drumById.get(drumId)!.hoopCount,
+        })),
       },
     ]);
 
@@ -222,7 +217,7 @@ describe('VoiceEngineHost', () => {
   /** A schema-typed output topology whose segment references a drum the kit lacks — buildDmxMap
    * throws on it, so buildMapSafe must degrade to a flat map AND name the offending reference. */
   const danglingOutputs = [
-    { id: 'out0', channelsPerPixel: 3, dataLines: [{ id: 'out0:dl0', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] },
+    { id: 'out0', channelsPerPixel: 3, segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] },
   ];
 
   it('reports a routing degradation as a named Monitor error before falling back to a flat map', () => {
@@ -277,12 +272,7 @@ describe('VoiceEngineHost', () => {
       {
         id: 'out0',
         channelsPerPixel: 3,
-        dataLines: [
-          {
-            id: 'out0:dl0',
-            segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 0, hoopEnd: d.hoopCount - 1 })),
-          },
-        ],
+        segments: model.drums.map((d) => ({ drumId: d.drumId, hoopStart: 1, hoopEnd: d.hoopCount })), // 1-based (A1)
       },
     ];
     host.setKitOutputs(validOutputs);
@@ -419,6 +409,51 @@ describe('VoiceEngineHost', () => {
     expect(after.pixelsPerHoop).toBe(target);
     // 4-hoop kick → +10 px/hoop adds exactly 40 pixels to the whole model.
     expect(host.getModel().pixelCount).toBe(before + 10 * after.hoopCount);
+  });
+
+  it('setHoopConfig changes ONE hoop\'s pixel count on the live model (B4 per-hoop, 1-based)', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const before = host.getModel().pixelCount;
+    const kick = host.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    const target = kick.hoops![0]!.pixelCount + 12;
+
+    host.setHoopConfig('kick', 1, { pixelCount: target, reverse: true });
+
+    const hoop0 = host.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
+    // Only hoop 1 grew → the whole model gains exactly the +12 delta (siblings unchanged).
+    expect(host.getModel().pixelCount).toBe(before + 12);
+  });
+
+  it('setHoopConfig no-ops for an unknown drum / out-of-range hoop (never throws)', () => {
+    const { host } = makeHost(voice.createNullEngine());
+    const before = host.getModel().pixelCount;
+    host.setHoopConfig('nope', 1, { pixelCount: 999 });
+    host.setHoopConfig('kick', 999, { pixelCount: 999 });
+    expect(host.getModel().pixelCount).toBe(before);
+  });
+
+  it('SF1: setHoopConfig MATERIALIZES hoops[] on a density-resolved drum (server parity w/ engine + client)', () => {
+    // Make `kick` density-derived: strip its literal pixelsPerHoop AND hoops[] so it resolves via
+    // density — the reachable dead-control shape the C5 hoop inspector wrote to as a no-op pre-SF1.
+    const fake = new FakeOutput();
+    const project = defaultProject();
+    const kick = project.kit.drums.find((d) => d.id === 'kick')!;
+    delete (kick as { pixelsPerHoop?: number }).pixelsPerHoop;
+    delete (kick as { hoops?: unknown }).hoops;
+    const host = new VoiceEngineHost(project, voice.createNullEngine(), new OutputManager(() => fake));
+
+    expect(host.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops).toBeUndefined();
+    const resolved = host.getModel().drumById.get('kick')!.pixelsPerHoop; // density-resolved count
+    const before = host.getModel().pixelCount;
+
+    host.setHoopConfig('kick', 2, { pixelCount: resolved + 7, reverse: true });
+
+    const after = host.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    expect(after.hoops).toHaveLength(4); // global hoopCount → materialized identically to engine/client
+    expect(after.hoops![0]).toMatchObject({ pixelCount: resolved, reverse: false }); // sibling untouched
+    expect(after.hoops![1]).toMatchObject({ pixelCount: resolved + 7, reverse: true }); // hoop 2 (1-based)
+    expect(host.getModel().pixelCount).toBe(before + 7); // only hoop 2 grew
   });
 
   it('emits server-authoritative graph monitor events for fired graphs', () => {

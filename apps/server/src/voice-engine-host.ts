@@ -1,15 +1,20 @@
 import {
   advanceTransport,
+  blockingRoutingIssues,
   buildDmxMap,
   buildPixelModel,
   checkRoutingIntegrity,
+  getHoopPixelRange,
+  materializeHoops,
   SLOT_LABELS,
   voice,
   type DmxMap,
   type DrumConfig,
+  type HoopConfig,
   type InputMap,
   type KitConfig,
   type KitGlobalConfig,
+  type NodeLayout,
   type OutputConfig,
   type OutputSettings,
   type Project,
@@ -136,8 +141,10 @@ export class VoiceEngineHost {
     } catch (err) {
       // Name WHICH reference broke routing (dangling drum ref / out-of-range hoop — exactly what
       // buildDmxMap throws on) before falling back. checkRoutingIntegrity re-derives it structurally;
-      // fall back to the raw throw text only if it somehow finds nothing.
-      const issues = checkRoutingIntegrity(kit);
+      // fall back to the raw throw text only if it somehow finds nothing. Only BLOCKING (error) issues
+      // caused this throw — filter out `hoop-uncovered` warnings so they don't pollute the degradation
+      // message (an uncovered hoop never degrades the map; buildDmxMap only threw on a real corruption).
+      const issues = blockingRoutingIssues(checkRoutingIntegrity(kit));
       this.pendingRoutingDegradation = issues.length
         ? issues.map((i) => i.message).join('; ')
         : err instanceof Error
@@ -196,19 +203,43 @@ export class VoiceEngineHost {
   setKitTransform(
     drumId: string,
     partial: Partial<
-      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip'>
+      Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip' | 'color'>
     >,
   ): void {
     const drum = this.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
+    // B4: `hoops[]` is the authoritative per-hoop count, so a legacy UNIFORM `pixelsPerHoop` edit
+    // must flow into it or it would be a silent no-op — rewrite every hoop to the new count,
+    // preserving each hoop's `reverse`. Mirrors Engine.setKitTransform; per-hoop editing is C5.
+    if (partial.pixelsPerHoop !== undefined && drum.hoops) {
+      drum.hoops = drum.hoops.map((h) => ({ ...h, pixelCount: partial.pixelsPerHoop! }));
+    }
     this.reloadKit();
   }
 
-  /** Edit a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry live. Kit-global,
-   * not per-drum — the whole model reflects. Rebuilds the model (not just dmxMap). */
-  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+  /** Edit KIT-GLOBAL fields (mirror + Advatek/kit config: expanded, LED density, hoop count,
+   * default hoop spacing, per-output pixel cap) and rebuild geometry live. Kit-global, not
+   * per-drum — the whole model reflects; density/hoopCount/expanded change the DMX patch too,
+   * so reloadKit rebuilds the model AND dmxMap AND re-applies output. */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.kit.global, partial);
+    this.reloadKit();
+  }
+
+  /** Edit one hoop's pixel count / reverse flag (C5, B4 first-class hoops[]) and rebuild
+   * geometry live. `hoopIndex` is 1-based (A1). SF1: a density-resolved drum with no first-class
+   * `hoops[]` is lazily MATERIALIZED via {@link materializeHoops} (byte-identical resolved counts)
+   * before the write, so per-hoop editing works on ANY drum shape. Idempotent for a drum already
+   * carrying `hoops[]`. No-op for an unknown drum or an out-of-range `hoopIndex`. Mirrors
+   * Engine.setHoopConfig + the client `applyHoopConfig` via the same core helper (mutation parity). */
+  setHoopConfig(drumId: string, hoopIndex: number, partial: Partial<Pick<HoopConfig, 'pixelCount' | 'reverse'>>): void {
+    const drum = this.kit.drums.find((d) => d.id === drumId);
+    if (!drum) return;
+    const hoops = drum.hoops && drum.hoops.length > 0 ? drum.hoops : materializeHoops(this.kit, drum);
+    if (hoopIndex < 1 || hoopIndex > hoops.length) return;
+    drum.hoops = hoops;
+    Object.assign(drum.hoops[hoopIndex - 1]!, partial);
     this.reloadKit();
   }
 
@@ -218,6 +249,12 @@ export class VoiceEngineHost {
     this.kit.outputs = outputs;
     this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
+  }
+
+  /** Persist the patch-graph canvas layout (D1: `kit.nodeLayout`). Geometry-only editor state —
+   * it never affects the pixel model or DMX map, so no rebuild. */
+  setKitNodeLayout(nodeLayout: NodeLayout): void {
+    this.kit.nodeLayout = nodeLayout;
   }
 
   /** Bulk-adopt a validated project PATCH (kit incl. outputs, input map, output settings) in ONE
@@ -349,6 +386,23 @@ export class VoiceEngineHost {
   /** Replace the input map the note/OSC resolvers read (zone-node MIDI/OSC editing). */
   setInputMap(map: InputMap): void {
     this.project.inputMap = map;
+  }
+
+  // --- hoop identify (E1) --------------------------------------------------
+
+  /**
+   * Fire-and-forget hoop identify (E1): drive one hoop's pixels full-on for `durationMs`,
+   * composited over the live frame by the OutputManager (never blocks the render loop). `hoop`
+   * is 1-based (A1). Unknown drum/hoop or `durationMs <= 0` clears any active identify.
+   */
+  identifyHoop(drumId: string, hoop: number, durationMs: number): void {
+    const range = getHoopPixelRange(this.model, drumId, hoop);
+    this.output.setIdentify(range, durationMs);
+  }
+
+  /** The active hoop-identify pixel range, or `null` when none is armed (E1 observability). */
+  getIdentifyRange(): { start: number; end: number } | null {
+    return this.output.identifyRange();
   }
 
   // --- output settings -----------------------------------------------------

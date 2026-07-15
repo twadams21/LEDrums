@@ -18,7 +18,7 @@ export type ScopeReadout = {
 type FlowEdge = { from: string; to: string; toPort?: string | null };
 
 export function hoopLabel(index: number): string {
-  return `Hoop ${index + 1}`;
+  return `Hoop ${index}`; // hoop indices are 1-based (A1)
 }
 
 export function parseHoopTarget(targetId: string | undefined, fallbackDrumId: string): { drumId: string; hoops: number[] } {
@@ -31,7 +31,7 @@ export function parseHoopTarget(targetId: string | undefined, fallbackDrumId: st
 }
 
 export function encodeHoopTarget(drumId: string, hoops: readonly number[]): string {
-  const normalized = [...new Set(hoops)].filter((v) => Number.isInteger(v) && v >= 0).sort((a, b) => a - b);
+  const normalized = [...new Set(hoops)].filter((v) => Number.isInteger(v) && v >= 1).sort((a, b) => a - b); // 1-based (A1)
   return `${drumId}#${normalized.join(',')}`;
 }
 
@@ -39,7 +39,7 @@ export function selectionFromNode(node: Pick<GraphNode, 'scope' | 'targetId'>, d
   if (node.scope === 'kit') return { kind: 'kit' };
   if (node.scope === 'drum') return { kind: 'drum', drumId: node.targetId || fallbackDrumId };
   const parsed = parseHoopTarget(node.targetId, fallbackDrumId);
-  return { kind: 'hoops', drumId: parsed.drumId, hoops: parsed.hoops.length ? parsed.hoops : [0] };
+  return { kind: 'hoops', drumId: parsed.drumId, hoops: parsed.hoops.length ? parsed.hoops : [1] }; // 1-based (A1)
 }
 
 export function commitSelection(node: GraphNode, selection: ScopeSelection, setScope: (node: GraphNode, scope: Scope) => void, setTargetId: (node: GraphNode, targetId: string | undefined) => void): void {

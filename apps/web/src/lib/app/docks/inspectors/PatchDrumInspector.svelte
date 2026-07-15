@@ -1,15 +1,18 @@
 <script lang="ts">
-  /* Patch drum node — the drum's geometry (origin / rotation / angles / pixels / spacing /
-     diameter), written through the authoritative store mutators. No-op-safe while offline. */
+  /* Patch drum node — the drum's geometry (origin / rotation / angles / spacing / diameter /
+     flip) and swatch, written through the authoritative store mutators. No-op-safe while
+     offline. Per-hoop pixel count now lives in the HOOP inspector (drum.hoops[] is authoritative);
+     this view no longer edits pixels-per-hoop. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
-  import type { KitConfig } from '@ledrums/core';
+  import { hexToHsv, hsvToHex, type Hsv, type KitConfig } from '@ledrums/core';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import RenameField from './RenameField.svelte';
+  import ReadRow from './ReadRow.svelte';
   import { onNum } from './forms';
-  import { pixelsPerHoopForDrum, type PatchEditor } from '../patch-inspector';
-  import type { HoopRef } from '../../patch-routing';
+  import { boundTriggerFor, type PatchEditor } from '../patch-inspector';
 
   let { store, editor, nodeId, title }: {
     store: TriggerLab;
@@ -22,10 +25,14 @@
   const kit = $derived<KitConfig | null>(project?.kit ?? null);
   const drum = $derived(kit?.drums.find((x) => x.id === editor.drumId) ?? null);
 
-  function pixelsForHoop(h: HoopRef): number {
-    const d = kit?.drums.find((x) => x.id === h.drumId);
-    return d && kit ? pixelsPerHoopForDrum(d, kit) : 0;
-  }
+  // The drum's persisted hex swatch, surfaced through the HSV-based ColorSwatch primitive.
+  // hsvToHex round-trips hexToHsv (see core/color), so read + write stay lossless.
+  const swatch = $derived<Hsv>(hexToHsv(drum?.color ?? '#ffffff'));
+
+  // Read-only: the trigger graph bound to this drum by identity, human-labelled when named.
+  const bound = $derived(drum ? boundTriggerFor(drum.id, store.graphs) : null);
+  const boundLabel = $derived(bound ? store.graphLabel(bound.graphKey) : null);
+
   function setAxis(drumId: string, field: 'origin' | 'rotation', axis: 'x' | 'y' | 'z', n: number): void {
     const d = kit?.drums.find((x) => x.id === drumId);
     if (d) store.setDrumTransform(drumId, { [field]: { ...d[field], [axis]: n } });
@@ -63,6 +70,16 @@
       {/each}
     </div>
   </div>
+  <Field layout="row" label="Colour" hint="drum swatch">
+    <ColorSwatch
+      hue={swatch.h}
+      saturation={swatch.s}
+      brightness={swatch.v}
+      disabled={!project}
+      ariaLabel="Drum colour"
+      onChange={(hsv) => store.setDrumTransform(drum.id, { color: hsvToHex(hsv.h, hsv.s, hsv.v) })}
+    />
+  </Field>
   <Field layout="row" label="Starting angle" hint="all 4 hoops">
     <CommitInput
       type="number"
@@ -81,17 +98,6 @@
       suffix="°"
       ariaLabel="Spin"
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { localSpinDeg: n }))}
-    />
-  </Field>
-  <Field layout="row" label="Pixels per hoop" hint="literal LED count">
-    <CommitInput
-      type="number"
-      min={1}
-      value={pixelsForHoop({ drumId: drum.id, hoop: 0 })}
-      disabled={!project}
-      suffix="px"
-      ariaLabel="Pixels per hoop"
-      onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { pixelsPerHoop: n }))}
     />
   </Field>
   <Field layout="row" label="Hoop spacing" hint="vertical gap between hoops">
@@ -116,7 +122,7 @@
       onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { diameterIn: n }))}
     />
   </Field>
-  <Field layout="row" label="Flip drum" hint="mirror skins + reverse chase">
+  <Field layout="row" label="Flip drum" hint="rotate in place — mirror skins + reverse chase">
     <Toggle
       pressed={drum.flip ?? false}
       disabled={!project}
@@ -126,6 +132,7 @@
       onChange={(v) => store.setDrumTransform(drum.id, { flip: v })}
     />
   </Field>
+  <ReadRow label="Bound trigger" value={boundLabel ?? bound?.label ?? '—'} />
   <RenameField {store} {nodeId} fallback={title} />
 {/if}
 

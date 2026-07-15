@@ -34,6 +34,13 @@ describe('legacy engine path — applyClientMessage(setKitTransform)', () => {
     expect('flip' in partial).toBe(false);
     expect('pixelsPerHoop' in partial).toBe(false);
   });
+
+  it('forwards color (C3 drum swatch) to engine.setKitTransform', () => {
+    const setKitTransform = vi.fn();
+    const engine = { setKitTransform } as unknown as Engine;
+    applyClientMessage(engine, msg({ color: '#ff8800' }), 0);
+    expect(setKitTransform).toHaveBeenCalledWith('kick', { color: '#ff8800' });
+  });
 });
 
 describe('voice host path — propagateToVoiceHost(setKitTransform)', () => {
@@ -49,5 +56,12 @@ describe('voice host path — propagateToVoiceHost(setKitTransform)', () => {
     const host = { setKitTransform } as unknown as VoiceEngineHost;
     propagateToVoiceHost(host, msg({ flip: false }));
     expect(setKitTransform).toHaveBeenCalledWith('kick', { flip: false });
+  });
+
+  it('forwards color (C3 drum swatch) to the live voice host', () => {
+    const setKitTransform = vi.fn();
+    const host = { setKitTransform } as unknown as VoiceEngineHost;
+    propagateToVoiceHost(host, msg({ color: '#72d572' }));
+    expect(setKitTransform).toHaveBeenCalledWith('kick', { color: '#72d572' });
   });
 });

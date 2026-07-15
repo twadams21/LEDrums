@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BLEND_MODES } from '../color/blend';
-import { kitSchema } from '../geometry/kit-schema';
+import { kitSchema, migrateKit, rgbOrderSchema } from '../geometry/kit-schema';
 
 /** A control source feeds a live value (0..1 conceptually) into a parameter. */
 export const controlSourceSchema = z.discriminatedUnion('type', [
@@ -83,12 +83,23 @@ export const oscMapSchema = z.object({
   slot: slotSchema.default(0),
 });
 
+/** A zone slot DECLARED on a drum but not (yet) bound to any MIDI note or OSC address — so an
+    added-but-unbound zone persists (the note/osc arrays only represent BOUND slots). A bound slot
+    is a zone too and need not be listed here; the effective zone set is the union of this list and
+    the bound slots. */
+export const declaredZoneSchema = z.object({
+  drumId: z.string(),
+  slot: slotSchema.default(0),
+});
+
 export const inputMapSchema = z.object({
   midiNotes: z.array(midiNoteMapSchema).default([]),
   /** Global MIDI channel filter. null = accept all channels; otherwise 1..16. */
   midiChannel: z.number().int().min(1).max(16).nullable().default(null),
   /** OSC addresses that fire a drum/slot trigger. */
   oscMap: z.array(oscMapSchema).default([]),
+  /** Zone slots declared with no binding yet (see {@link declaredZoneSchema}). */
+  zones: z.array(declaredZoneSchema).default([]),
   /** OSC address that drives the master `volume` control. */
   volumeOscAddress: z.string().optional(),
 });
@@ -132,7 +143,6 @@ export const setlistSchema = z.object({
 });
 
 export const outputStateSchema = z.enum(['disabled', 'dry-run', 'armed']);
-export const rgbOrderSchema = z.enum(['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR']);
 
 export const outputSettingsSchema = z.object({
   state: outputStateSchema.default('disabled'),
@@ -205,6 +215,7 @@ export type Transport = z.infer<typeof transportSchema>;
 export type Composition = z.infer<typeof compositionSchema>;
 export type MidiNoteMap = z.infer<typeof midiNoteMapSchema>;
 export type OscMap = z.infer<typeof oscMapSchema>;
+export type DeclaredZone = z.infer<typeof declaredZoneSchema>;
 export type InputMap = z.infer<typeof inputMapSchema>;
 export type TriggerBinding = z.infer<typeof triggerBindingSchema>;
 export type SectionLayerClip = z.infer<typeof sectionLayerClipSchema>;
@@ -212,20 +223,65 @@ export type Section = z.infer<typeof sectionSchema>;
 export type Song = z.infer<typeof songSchema>;
 export type Setlist = z.infer<typeof setlistSchema>;
 export type OutputState = z.infer<typeof outputStateSchema>;
-export type RgbOrder = z.infer<typeof rgbOrderSchema>;
 export type OutputSettings = z.infer<typeof outputSettingsSchema>;
 export type Controller = z.infer<typeof controllerSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectPatch = z.infer<typeof projectPatchSchema>;
 
-/** Parse + validate a project JSON, applying defaults. Throws ZodError on invalid input. */
+/**
+ * B5 (kit v < 6): seed the project's controller-level RGB order onto each kit output that lacks
+ * its own. RGB order moved from the single controller value to per-output (per data run); an
+ * established project's one order becomes every output's order, so nothing changes on the wire.
+ * The controller field itself stays for now (removed by C1). This is a PROJECT-scoped step —
+ * unlike the other kit migrations it needs `project.output`, a field {@link migrateKit} can't see.
+ * Operates on the (already kit-migrated) raw kit; outputs of foreign shape pass through untouched.
+ */
+function seedOutputRgbOrder(rawKit: unknown, controllerOrder: string): unknown {
+  if (!rawKit || typeof rawKit !== 'object' || Array.isArray(rawKit)) return rawKit;
+  const kit = rawKit as Record<string, unknown>;
+  if (!Array.isArray(kit.outputs)) return rawKit;
+  return {
+    ...kit,
+    outputs: kit.outputs.map((o) => {
+      if (!o || typeof o !== 'object' || Array.isArray(o)) return o;
+      const out = o as Record<string, unknown>;
+      return out.rgbOrder === undefined ? { ...out, rgbOrder: controllerOrder } : out;
+    }),
+  };
+}
+
+/** Replace a raw project/patch object's `kit` with its version-migrated form (A1 hoop indexing,
+ *  … B5 per-output RGB order), leaving every other slice untouched. Foreign shapes pass through. */
+function migrateProjectKit(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !('kit' in raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  const rawKit = obj.kit;
+  // The kit's ORIGINAL version gates the per-output-order seed (migrateKit will bump it to current).
+  const kitVersion =
+    rawKit && typeof rawKit === 'object' && !Array.isArray(rawKit) && typeof (rawKit as Record<string, unknown>).version === 'number'
+      ? ((rawKit as Record<string, unknown>).version as number)
+      : 1;
+  let kit = migrateKit(rawKit);
+  if (kitVersion < 6) {
+    const out = obj.output;
+    const controllerOrder =
+      out && typeof out === 'object' && !Array.isArray(out) && typeof (out as Record<string, unknown>).rgbOrder === 'string'
+        ? ((out as Record<string, unknown>).rgbOrder as string)
+        : 'RGB'; // outputSettingsSchema default
+    kit = seedOutputRgbOrder(kit, controllerOrder);
+  }
+  return { ...obj, kit };
+}
+
+/** Parse + validate a project JSON, applying kit version migrations + defaults. Throws
+ *  ZodError on invalid input. */
 export function parseProject(raw: unknown): Project {
-  return projectSchema.parse(raw);
+  return projectSchema.parse(migrateProjectKit(raw));
 }
 
 /** Parse + validate a project PATCH (kit + inputMap + output slices), applying defaults.
  * Throws ZodError on invalid input; server callers use `projectPatchSchema.safeParse` so a
  * bad payload becomes a user-visible error rather than an apply. */
 export function parseProjectPatch(raw: unknown): ProjectPatch {
-  return projectPatchSchema.parse(raw);
+  return projectPatchSchema.parse(migrateProjectKit(raw));
 }

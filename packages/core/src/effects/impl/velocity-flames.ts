@@ -45,7 +45,7 @@ export const velocityFlames: EffectGenerator = {
       if (flameHeight === undefined || flameHeight < 0.004) continue;
 
       // Flicker the effective height a little, varied per pixel angle/hoop.
-      const flick = 1 + flicker * 0.4 * Math.sin(t * 11 + p.angleDeg * 0.15 + p.hoopIndex * 1.3);
+      const flick = 1 + flicker * 0.4 * Math.sin(t * 11 + p.angleDeg * 0.15 + (p.hoopIndex - 1) * 1.3); // hoopIndex 1-based (A1)
       const effHeight = clamp01(flameHeight * flick);
       if (p.normHoop > effHeight) continue;
 

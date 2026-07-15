@@ -1,6 +1,6 @@
-import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
+import { buildPixelModel, materializeHoops, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
-import type { DrumConfig, KitGlobalConfig } from '../geometry/kit-schema';
+import type { DrumConfig, HoopConfig, KitGlobalConfig, NodeLayout } from '../geometry/kit-schema';
 import type {
   Clip,
   InputMap,
@@ -294,19 +294,51 @@ export class Engine {
     this.clipStates.delete(`${layerId}:${clipId}`);
   }
 
-  /** Update a drum's transform and rebuild geometry (KitEditor live calibration). */
-  setKitTransform(drumId: string, partial: Partial<Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip'>>): void {
+  /** Update a drum's transform and rebuild geometry (KitEditor live calibration). `color` is a
+   * cosmetic swatch (no geometry impact) but rides the same per-drum carrier (C3). */
+  setKitTransform(drumId: string, partial: Partial<Pick<DrumConfig, 'origin' | 'rotation' | 'localSpinDeg' | 'startAngleDeg' | 'pixelsPerHoop' | 'hoopSpacingMm' | 'diameterIn' | 'flip' | 'color'>>): void {
     const drum = this.project.kit.drums.find((d) => d.id === drumId);
     if (!drum) return;
     Object.assign(drum, partial);
+    // B4: `hoops[]` is the authoritative per-hoop count, so a legacy UNIFORM `pixelsPerHoop` edit
+    // (KitEditor calibration) must flow into it or it would be a silent no-op — rewrite every hoop
+    // to the new count, preserving each hoop's `reverse`. Per-hoop count editing is C5's surface.
+    if (partial.pixelsPerHoop !== undefined && drum.hoops) {
+      drum.hoops = drum.hoops.map((h) => ({ ...h, pixelCount: partial.pixelsPerHoop! }));
+    }
     this.rebuild();
   }
 
-  /** Update a KIT-GLOBAL geometry field (e.g. mirror) and rebuild geometry. Unlike
-   * setKitTransform (per-drum carrier), this targets kit.global — the whole model reflects. */
-  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror'>>): void {
+  /** Update KIT-GLOBAL fields (mirror + the Advatek/kit config: expanded output mode, LED
+   * density, hoop count, default hoop spacing, per-output pixel cap) and rebuild geometry.
+   * Unlike setKitTransform (per-drum carrier), this targets kit.global — the whole model
+   * reflects (density/hoopCount/expanded change the pixel model AND the DMX patch). */
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.project.kit.global, partial);
     this.rebuild();
+  }
+
+  /** Edit one hoop's pixel count / reverse flag (C5, B4 first-class hoops[]) and rebuild
+   * geometry. `hoopIndex` is 1-based (A1). SF1: a density-resolved drum with no first-class
+   * `hoops[]` is lazily MATERIALIZED via {@link materializeHoops} (byte-identical resolved counts)
+   * before the write, so per-hoop editing works on ANY drum shape. Idempotent for a drum already
+   * carrying `hoops[]`. No-op for an unknown drum or an out-of-range `hoopIndex` — no spurious
+   * materialization there. Mirrors the client (`applyHoopConfig`) + `VoiceEngineHost.setHoopConfig`
+   * via the same core helper (mutation parity). */
+  setHoopConfig(drumId: string, hoopIndex: number, partial: Partial<Pick<HoopConfig, 'pixelCount' | 'reverse'>>): void {
+    const drum = this.project.kit.drums.find((d) => d.id === drumId);
+    if (!drum) return;
+    const hoops = drum.hoops && drum.hoops.length > 0 ? drum.hoops : materializeHoops(this.project.kit, drum);
+    if (hoopIndex < 1 || hoopIndex > hoops.length) return;
+    drum.hoops = hoops;
+    Object.assign(drum.hoops[hoopIndex - 1]!, partial);
+    this.rebuild();
+  }
+
+  /** Persist the patch-graph canvas layout (D1: `kit.nodeLayout`). Geometry-only editor state —
+   * it never touches the pixel model or DMX map, so NO rebuild (the render is unaffected). */
+  setKitNodeLayout(nodeLayout: NodeLayout): void {
+    this.project.kit.nodeLayout = nodeLayout;
   }
 
   private findClip(layerId: string, clipId: string): Clip | undefined {

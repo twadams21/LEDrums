@@ -30,6 +30,20 @@ describe('legacy engine path — applyClientMessage(setKitGlobal)', () => {
     applyClientMessage(engine, msg({}), 0);
     expect(setKitGlobal).toHaveBeenCalledWith({});
   });
+
+  it('forwards the C1/C2 kit-global fields (expanded + the four Advatek/kit globals)', () => {
+    const setKitGlobal = vi.fn();
+    const engine = { setKitGlobal } as unknown as Engine;
+    applyClientMessage(engine, msg({ expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 }), 0);
+    expect(setKitGlobal).toHaveBeenCalledWith({ expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 });
+  });
+
+  it('forwards expanded:false explicitly (turning off expanded mode is a real edit)', () => {
+    const setKitGlobal = vi.fn();
+    const engine = { setKitGlobal } as unknown as Engine;
+    applyClientMessage(engine, msg({ expanded: false }), 0);
+    expect(setKitGlobal).toHaveBeenCalledWith({ expanded: false });
+  });
 });
 
 describe('voice host path — propagateToVoiceHost(setKitGlobal)', () => {
@@ -45,5 +59,12 @@ describe('voice host path — propagateToVoiceHost(setKitGlobal)', () => {
     const host = { setKitGlobal } as unknown as VoiceEngineHost;
     propagateToVoiceHost(host, msg({ mirror: 'none' }));
     expect(setKitGlobal).toHaveBeenCalledWith({ mirror: 'none' });
+  });
+
+  it('forwards the C1/C2 kit-global fields to the live voice host', () => {
+    const setKitGlobal = vi.fn();
+    const host = { setKitGlobal } as unknown as VoiceEngineHost;
+    propagateToVoiceHost(host, msg({ expanded: true, ledDensityPxPerM: 96, hoopCount: 6, defaultHoopSpacingMm: 40, maxPixelsPerOutput: 340 }));
+    expect(setKitGlobal).toHaveBeenCalledWith({ expanded: true, ledDensityPxPerM: 96, hoopCount: 6, defaultHoopSpacingMm: 40, maxPixelsPerOutput: 340 });
   });
 });

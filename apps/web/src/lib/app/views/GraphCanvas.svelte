@@ -47,6 +47,7 @@
     minimap = false,
     swapping = false,
     ready = true,
+    snapGrid,
     defaultEdgeOptions,
     onBeforeConnect,
     onNodeClick,
@@ -62,6 +63,7 @@
     onFlow,
     validateDrag,
     wirePreview,
+    overlay,
     empty,
   }: {
     nodes: NodeType[];
@@ -79,6 +81,9 @@
     swapping?: boolean;
     /** When false, render the `empty` snippet instead of the flow. */
     ready?: boolean;
+    /** Snap dragged nodes to a grid (px). When set, the background dots align to the same grid so
+        the snap targets are visible. Omitted → free positioning (the Trigger graph). */
+    snapGrid?: [number, number];
     defaultEdgeOptions?: Record<string, unknown>;
     onBeforeConnect?: (c: Connection) => Connection | false;
     onNodeClick?: (id: string) => void;
@@ -100,6 +105,9 @@
     /** Dev/ui-shot only: pin a static invalid-wire line (canvas-local px) so the otherwise
         drag-only red/dotted/dull state can be screenshotted. Inert in production. */
     wirePreview?: { x1: number; y1: number; x2: number; y2: number } | null;
+    /** Extra content rendered INSIDE the flow (has flow/viewport context) — e.g. the alignment
+        guide overlay drawn in flow coordinates via ViewportPortal. */
+    overlay?: Snippet;
     empty?: Snippet;
   } = $props();
 
@@ -119,6 +127,7 @@
       fitViewOptions={{ padding: fitPadding }}
       nodesConnectable
       elevateNodesOnSelect={false}
+      {snapGrid}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
       deleteKey={['Delete', 'Backspace']}
@@ -139,9 +148,10 @@
       {#if validateDrag}
         <WireDragValidity validate={validateDrag} onChange={(v) => (dragInvalid = v)} />
       {/if}
-      <Background variant={BackgroundVariant.Dots} />
+      <Background variant={BackgroundVariant.Dots} gap={snapGrid ?? 20} />
       <Controls />
       {#if minimap}<MiniMap />{/if}
+      {@render overlay?.()}
     </SvelteFlow>
     {#if wirePreview}
       <!-- ui-shot only: a static stand-in for the drag-only connection line, wearing the same
@@ -201,6 +211,31 @@
     color: inherit;
     font-family: inherit;
   }
+  /* zone container nodes paint their own dashed holder — strip xyflow chrome but KEEP the sized
+     box (width/height come from the node), and never let a zone intercept a leaf's pointer events
+     except on its own visible chrome. */
+  .gcanvas :global(.svelte-flow__node-zone) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font-family: inherit;
+  }
+  .gcanvas :global(.svelte-flow__node-zone.selected) {
+    box-shadow: none;
+  }
+  /* the greyed, dotted, non-interactive Trigger → Drum reference wire (D1) — stays grey (never
+     lights on hover/selection: it is decoration, not a signal wire). */
+  .gcanvas :global(.svelte-flow__edge.edge-ref .svelte-flow__edge-path) {
+    stroke: var(--wire-ref, var(--border));
+    stroke-width: 1.5;
+    stroke-dasharray: 3 5;
+  }
+  .gcanvas :global(.svelte-flow__edge.edge-ref) {
+    pointer-events: none;
+  }
   /* the selection ring is drawn by the node card itself (NodeCard .card.sel) */
   .gcanvas :global(.svelte-flow__node-patch.selected),
   .gcanvas :global(.svelte-flow__node-trigger.selected) {
@@ -236,6 +271,32 @@
   .gcanvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
   .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
     stroke: var(--accent);
+  }
+  /* Reconnect grab dots. The reconnect anchor (and this dot) render in xyflow's `edge-labels`
+     PORTAL — NOT inside `.svelte-flow__edge` — so they can't key off edge hover/selection. Show
+     them ALWAYS as a subtle affordance at each wire end (a small grey dot marking "grab here to
+     re-point"), brightening to accent when the 25px anchor itself is hovered. Centred in the
+     anchor hit-box; the anchor stays grabbable regardless. No motion (locked graph contract). */
+  .gcanvas :global(.svelte-flow__edgeupdater) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+  }
+  .gcanvas :global(.reconnect-dot) {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    border: 2px solid var(--border-strong);
+    box-shadow: var(--shadow-1);
+    opacity: 0.6;
+  }
+  .gcanvas :global(.svelte-flow__edgeupdater:hover .reconnect-dot) {
+    opacity: 1;
+    border-color: var(--accent);
+    background: color-mix(in oklch, var(--accent) 25%, var(--surface-2));
   }
   /* R08: a wire ARMED for a splice (a node is dragged over it) lights accent, thickens, and
      glows — the pending insert reads clearly BEFORE release. Instant, no motion (the locked

@@ -92,12 +92,14 @@ describe('Engine', () => {
 
   it('setKitTransform({ hoopSpacingMm }) rebuilds geometry with the new hoop gap', () => {
     const e = new Engine(velocityMeterProject());
-    // local.z of a hoop = hoopIndex * hoopSpacingMm (independent of origin/rotation).
+    // local.z of a hoop = (hoopIndex - 1) * hoopSpacingMm - halfStack, where the stack is centred
+    // on the origin (B3): halfStack = (hoopCount - 1) * spacing / 2, hoopCount 4 here. The GAP
+    // between adjacent hoops still equals the spacing — only the whole stack is offset to centre it.
     const zOf = (hoop: number): number => e.getModel().pixels.find((p) => p.hoopIndex === hoop)!.local.z;
-    expect(zOf(1)).toBeCloseTo(50, 6); // initial spacing 50mm
+    expect(zOf(2)).toBeCloseTo(-25, 6); // spacing 50mm → halfStack 75mm; hoop 2 at 50 - 75
     e.setKitTransform('d', { hoopSpacingMm: 120 });
-    expect(zOf(1)).toBeCloseTo(120, 6); // rebuilt with the new gap
-    expect(zOf(2)).toBeCloseTo(240, 6);
+    expect(zOf(2)).toBeCloseTo(-60, 6); // rebuilt: spacing 120 → halfStack 180; hoop 2 at 120 - 180
+    expect(zOf(3)).toBeCloseTo(60, 6); //  hoop 3 at 240 - 180
   });
 
   it('setKitTransform({ diameterIn }) rebuilds geometry with the new ring radius', () => {
@@ -110,6 +112,64 @@ describe('Engine', () => {
     expect(radiusOf()).toBeCloseTo((8 * 25.4) / 2, 6); // initial diameter 8in -> 101.6mm radius
     e.setKitTransform('d', { diameterIn: 16 });
     expect(radiusOf()).toBeCloseTo((16 * 25.4) / 2, 6); // rebuilt: doubled diameter -> doubled radius
+  });
+
+  it('setKitGlobal applies the widened kit-global fields (expanded + the Advatek/kit config)', () => {
+    const e = new Engine(defaultProject());
+    e.setKitGlobal({ expanded: true, ledDensityPxPerM: 80, hoopCount: 5, defaultHoopSpacingMm: 44, maxPixelsPerOutput: 320 });
+    expect(e.getProject().kit.global).toMatchObject({
+      expanded: true, ledDensityPxPerM: 80, hoopCount: 5, defaultHoopSpacingMm: 44, maxPixelsPerOutput: 320,
+    });
+  });
+
+  it('setHoopConfig changes ONE hoop\'s pixel count on the rebuilt model (B4 per-hoop, 1-based)', () => {
+    const e = new Engine(defaultProject());
+    const before = e.getModel().pixels.length;
+    const kick = e.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    const target = kick.hoops![0]!.pixelCount + 8;
+    e.setHoopConfig('kick', 1, { pixelCount: target, reverse: true });
+    const hoop0 = e.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
+    expect(e.getModel().pixels.length).toBe(before + 8); // only hoop 1 grew → +8 pixels total
+  });
+
+  it('setHoopConfig no-ops for an unknown drum / out-of-range hoop (never throws)', () => {
+    const e = new Engine(defaultProject());
+    const before = e.getModel().pixels.length;
+    e.setHoopConfig('nope', 1, { pixelCount: 5 });
+    e.setHoopConfig('kick', 999, { pixelCount: 5 });
+    expect(e.getModel().pixels.length).toBe(before);
+  });
+
+  it('SF1: setHoopConfig MATERIALIZES hoops[] on a density-resolved drum, then writes (no dead control)', () => {
+    // `velocityMeterProject`'s drum `d` is density-derived (no literal pixelsPerHoop, no hoops[]) —
+    // pre-SF1 the C5 write silently no-op'd. It must now materialize the renderer-resolved counts
+    // then apply the edit, so per-hoop editing works on ANY reachable drum shape.
+    const e = new Engine(velocityMeterProject());
+    const drum = e.getProject().kit.drums.find((d) => d.id === 'd')!;
+    expect(drum.hoops).toBeUndefined(); // the reachable dead-control shape
+    const resolved = e.getModel().drumById.get('d')!.pixelsPerHoop; // what density resolved to
+    const before = e.getModel().pixels.length;
+
+    e.setHoopConfig('d', 2, { pixelCount: resolved + 5, reverse: true });
+
+    const after = e.getProject().kit.drums.find((d) => d.id === 'd')!;
+    expect(after.hoops).toHaveLength(4); // global hoopCount 4 → materialized
+    // untouched hoops keep the resolved count; only hoop 2 (1-based) changed.
+    expect(after.hoops![0]).toMatchObject({ pixelCount: resolved, reverse: false });
+    expect(after.hoops![1]).toMatchObject({ pixelCount: resolved + 5, reverse: true });
+    expect(e.getModel().pixels.length).toBe(before + 5); // only hoop 2 grew → +5 pixels
+  });
+
+  it('SF1: setHoopConfig with an in-range no-op-value write keeps the model byte-identical (materialize only)', () => {
+    const e = new Engine(velocityMeterProject());
+    const resolved = e.getModel().drumById.get('d')!.pixelsPerHoop;
+    const before = Array.from(e.getFrame().rgba);
+    // Stamp the SAME resolved count → materialization must not change what the renderer builds.
+    e.setHoopConfig('d', 1, { pixelCount: resolved });
+    e.tick(0);
+    expect(e.getModel().pixels.length).toBe(before.length / 4);
+    expect(e.getProject().kit.drums.find((d) => d.id === 'd')!.hoops).toHaveLength(4);
   });
 
   it('renders the full default kit within frame budget', () => {

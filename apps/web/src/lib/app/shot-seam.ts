@@ -397,6 +397,12 @@ class ShotSeamImpl implements ShotSeam {
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : arg === 'discover' ? 'discover' : 'auth');
         break;
+      case 'patch':
+        // Select a Patch-graph node/zone by id (e.g. `patch:kit`, `patch:hoop:kick:1`) → its
+        // inspector. `arg` already carries the full id (everything after the first ':').
+        this.shell.setView('patch');
+        if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
+        break;
       case 'mix-layers':
         this.mixWithLayers();
         break;

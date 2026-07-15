@@ -117,11 +117,12 @@ describe('chase', () => {
     const at = (beat: number) => render(chase, m, ctx(m, { transport: transport(beat) }), { subdivision: 4 });
     const hoopOf = (fb: Framebuffer) =>
       new Set(m.pixels.filter((p) => fb.rgba[p.id * 4]! > 0.004 || fb.rgba[p.id * 4 + 2]! > 0.004 || fb.rgba[p.id * 4 + 1]! > 0.004).map((p) => p.hoopIndex));
-    expect(hoopOf(at(0))).toEqual(new Set([0]));
-    expect(hoopOf(at(0.25))).toEqual(new Set([1]));
-    expect(hoopOf(at(0.5))).toEqual(new Set([2]));
+    // hoop labels are 1-based (A1); chase still lights the same physical hoops in order.
+    expect(hoopOf(at(0))).toEqual(new Set([1]));
+    expect(hoopOf(at(0.25))).toEqual(new Set([2]));
+    expect(hoopOf(at(0.5))).toEqual(new Set([3]));
     // wraps after the last hoop
-    expect(hoopOf(at(1.0))).toEqual(new Set([0]));
+    expect(hoopOf(at(1.0))).toEqual(new Set([1]));
   });
 });
 
@@ -143,16 +144,16 @@ describe('whole-drum vs whole-kit', () => {
 });
 
 describe('follow-hoop', () => {
-  it('lights hoop 0 immediately and hoop 1 only after the delay', () => {
+  it('lights hoop 1 immediately and hoop 2 only after the delay', () => {
     const m = model(1, 4);
     const params = { delayMs: 100, decayMs: 2000 };
     const now = render(followHoop, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 0)] }), params);
     const later = render(followHoop, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 100)] }), params);
     const hoopLit = (fb: Framebuffer, hoop: number) =>
       m.pixels.filter((p) => p.hoopIndex === hoop).some((p) => fb.rgba[p.id * 4 + 1]! > 0.004 || fb.rgba[p.id * 4]! > 0.004 || fb.rgba[p.id * 4 + 2]! > 0.004);
-    expect(hoopLit(now, 0)).toBe(true);
-    expect(hoopLit(now, 1)).toBe(false);
-    expect(hoopLit(later, 1)).toBe(true);
+    expect(hoopLit(now, 1)).toBe(true); // hoop 1 = first hoop (1-based, A1), fires immediately
+    expect(hoopLit(now, 2)).toBe(false);
+    expect(hoopLit(later, 2)).toBe(true);
   });
 });
 

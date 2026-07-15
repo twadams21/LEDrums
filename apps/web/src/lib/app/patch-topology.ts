@@ -4,11 +4,13 @@
    into the left→right node graph the user patches:
 
      Sensory Percussion → Trigger(per drum) → Zone(per sensor zone) → Drum
-        → Hoop(×hoopCount) → Data Line(cross-wired) → Output(port) → Controller
+        → Hoop(×hoopCount)     Output(port) → Hoop → Hoop …     → Controller
 
-   The first four stages are the INPUT mapping (what a hit means); the last five are
-   the physical OUTPUT wiring (where the pixels live). The Drum node is the pivot
-   the two halves share — every zone converges into it, every hoop fans out of it.
+   The first four stages are the INPUT mapping (what a hit means); the Output nodes
+   root the physical OUTPUT wiring — each Output is one data run that daisy-chains
+   through hoops (`Output → Hoop → Hoop …`, D1: the intermediate Data Line is gone).
+   The Drum node is the pivot the two halves share — every zone converges into it,
+   every hoop fans out of it.
 
    Node ids are stage-prefixed strings (see the id helpers) so a selection can name
    any node without a lookup table, and `describePatchNode` decodes one back into a
@@ -17,14 +19,13 @@
 import type { Edge, Node } from '@xyflow/svelte';
 import { drumHoopCount, type KitConfig } from '@ledrums/core';
 
-/** The eight left→right stages of the device-routing topology. */
+/** The left→right stages of the device-routing topology (D1: no Data Line stage). */
 export type PatchStage =
   | 'input'
   | 'trigger'
   | 'zone'
   | 'drum'
   | 'hoop'
-  | 'dataline'
   | 'output'
   | 'controller';
 
@@ -32,13 +33,16 @@ export type PatchStage =
     interface, so it satisfies xyflow's `Record<string, unknown>` data constraint
     (object type-literals get an implicit index signature; interfaces do not). */
 export type PatchNodeData = {
-  /** Primary label, e.g. "Snare Trigger", "Tom 1 · edge", "Data Line 2". */
+  /** Primary label, e.g. "Snare Trigger", "Tom 1 · edge", "Output 2". */
   label: string;
   /** Secondary mono line, e.g. "4 zones", "kick · snare", "port 1". */
   sub: string;
   stage: PatchStage;
   /** CSS custom-property reference for this stage's signal-flow role colour. */
   role: string;
+  /** Hoop nodes only: true when the hoop ends its run (no downstream hoop wired). A terminal
+      hoop hides its source (output) handle — there's nothing further along the chain to feed. */
+  terminal?: boolean;
 };
 
 export type PatchFlowNode = Node<PatchNodeData>;
@@ -60,10 +64,10 @@ export interface TopologyDrum {
 }
 
 export interface TopologyOptions {
-  /** Max hoops carried on a single physical data line. The drum-ordered hoop chain
+  /** Max hoops carried on a single physical output run. The drum-ordered hoop chain
       is chunked by this capacity, which is what makes a drum's hoops split across
-      lines and a line carry hoops from more than one drum (the real cross-wiring). */
-  hoopsPerDataLine?: number;
+      runs and a run carry hoops from more than one drum (the real cross-wiring). */
+  hoopsPerOutput?: number;
   /** Column stride (px) between stages. */
   colW?: number;
   /** Vertical pitch (px) between stacked nodes within a drum lane. */
@@ -87,7 +91,6 @@ export const STAGE_ORDER: readonly PatchStage[] = [
   'zone',
   'drum',
   'hoop',
-  'dataline',
   'output',
   'controller',
 ];
@@ -99,7 +102,6 @@ const STAGE_ROLE: Record<PatchStage, string> = {
   zone: 'var(--role-mod)',
   drum: 'var(--role-layer)',
   hoop: 'var(--role-content)',
-  dataline: 'var(--role-effect)',
   output: 'var(--role-output)',
   controller: 'var(--role-output)',
 };
@@ -112,7 +114,6 @@ export const triggerId = (drumId: string): string => `trigger:${drumId}`;
 export const zoneNodeId = (drumId: string, zone: string): string => `zone:${drumId}:${zone}`;
 export const drumNodeId = (drumId: string): string => `drum:${drumId}`;
 export const hoopId = (drumId: string, hoop: number): string => `hoop:${drumId}:${hoop}`;
-export const dataLineId = (index: number): string => `dataline:${index}`;
 export const outputId = (index: number): string => `output:${index}`;
 
 /** Stack `count` rows centred on `centerY` with the given pitch. */
@@ -125,11 +126,11 @@ function stackY(count: number, centerY: number, pitch: number): number[] {
 /**
  * Build the full device-routing topology from the kit's drums. Pure: deterministic
  * column-based x/y placement (one vertical lane per drum) so ~50 nodes lay out
- * cleanly without a layout pass. The hoop→dataline chunking is the only "default"
+ * cleanly without a layout pass. The hoop→output chunking is the only "default"
  * — the true mapping lives in the server's DMX map (see the view's flag).
  */
 export function buildPatchTopology(drums: TopologyDrum[], opts: TopologyOptions = {}): PatchTopology {
-  const hoopsPerDataLine = Math.max(1, opts.hoopsPerDataLine ?? 6);
+  const hoopsPerOutput = Math.max(1, opts.hoopsPerOutput ?? 6);
   const COL_W = opts.colW ?? 240;
   const ROW_H = opts.rowH ?? 72;
   const LANE_GAP = opts.laneGap ?? 40;
@@ -201,25 +202,29 @@ export function buildPatchTopology(drums: TopologyDrum[], opts: TopologyOptions 
     }
   }
 
-  // hoop → data line → output → controller. Data lines chunk the hoop chain by
-  // capacity (the cross-wiring); each line terminates at one controller port.
-  const lineCount = Math.max(1, Math.ceil(hoopChain.length / hoopsPerDataLine));
-  const lineYs = stackY(lineCount, midY, ROW_H * 1.6);
-  for (let li = 0; li < lineCount; li++) {
-    const slice = hoopChain.slice(li * hoopsPerDataLine, (li + 1) * hoopsPerDataLine);
+  // Output → Hoop → Hoop … → Controller. Each Output roots one physical data run: the
+  // drum-ordered hoop chain is chunked by capacity (the cross-wiring), and the output
+  // daisy-chains its chunk's hoops in order (`output → firstHoop`, then `hoop → nextHoop`).
+  // Every output terminates at the single controller sink.
+  const runCount = Math.max(1, Math.ceil(hoopChain.length / hoopsPerOutput));
+  const runYs = stackY(runCount, midY, ROW_H * 1.6);
+  for (let ri = 0; ri < runCount; ri++) {
+    const slice = hoopChain.slice(ri * hoopsPerOutput, (ri + 1) * hoopsPerOutput);
     if (slice.length === 0) continue;
-    const index = li + 1;
-    const y = lineYs[li]!;
-
-    const dlId = dataLineId(index);
-    const drumsOnLine = [...new Set(slice.map((h) => h.drumLabel))];
-    addNode(dlId, 'dataline', `Data Line ${index}`, drumsOnLine.join(' · '), colX('dataline'), y);
-    for (const h of slice) addEdge(h.id, dlId);
+    const index = ri + 1;
+    const y = runYs[ri]!;
 
     const oId = outputId(index);
-    addNode(oId, 'output', `Output ${index}`, `port ${index}`, colX('output'), y);
-    addEdge(dlId, oId);
+    const drumsOnRun = [...new Set(slice.map((h) => h.drumLabel))];
+    addNode(oId, 'output', `Output ${index}`, drumsOnRun.join(' · '), colX('output'), y);
     addEdge(oId, CONTROLLER_ID);
+
+    // daisy-chain: output → first hoop, then hoop → next hoop along the run
+    let prev = oId;
+    for (const h of slice) {
+      addEdge(prev, h.id);
+      prev = h.id;
+    }
   }
 
   return { nodes, edges };
@@ -260,6 +265,9 @@ export function describePatchNode(
   const labelOf = (drumId: string): string => drums.find((d) => d.id === drumId)?.label ?? drumId;
   if (id === INPUT_ID) return { stage: 'input', title: 'Sensory Percussion', sub: 'trigger input' };
   if (id === CONTROLLER_ID) return { stage: 'controller', title: 'Controller', sub: 'Art-Net / sACN pixel controller' };
+  // D1 holder zones (patch-graph v2 container nodes)
+  if (id === 'kit') return { stage: 'drum', title: 'Drum Kit', sub: 'kit globals' };
+  if (id === 'triggers') return { stage: 'trigger', title: 'Drum Triggers', sub: 'trigger inputs' };
 
   const [kind, a, b] = id.split(':');
   switch (kind) {
@@ -271,10 +279,8 @@ export function describePatchNode(
       return { stage: 'drum', title: `${labelOf(a ?? '')} Drum`, sub: 'zones converge → hoops' };
     case 'hoop':
       return { stage: 'hoop', title: `${labelOf(a ?? '')} Hoop ${b ?? ''}`, sub: 'LED hoop' };
-    case 'dataline':
-      return { stage: 'dataline', title: `Data Line ${a ?? ''}`, sub: 'physical cable run' };
     case 'output':
-      return { stage: 'output', title: `Output ${a ?? ''}`, sub: 'controller port' };
+      return { stage: 'output', title: `Output ${a ?? ''}`, sub: 'physical data run' };
     default:
       return { stage: 'input', title: id, sub: 'patch node' };
   }

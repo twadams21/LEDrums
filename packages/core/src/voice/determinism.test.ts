@@ -185,8 +185,8 @@ describe('hoop scope — geometry-only difference', () => {
         graphOf([node('play', 'p1', { effectId: 'fx', scope: 'hoop', targetId: `kick#${hoop}` })]),
         [effect('fx', { scope: 'hoop' })],
       );
-    const a = run(mk(0), script);
-    const b = run(mk(1), script);
+    const a = run(mk(1), script); // hoop 1 = first hoop (1-based, A1)
+    const b = run(mk(2), script); // hoop 2 = second hoop
     const m = testModel();
     const kick = m.drums.find((d) => d.drumId === 'kick')!;
     const per = kick.pixelsPerHoop;
@@ -195,7 +195,7 @@ describe('hoop scope — geometry-only difference', () => {
     for (let i = 0; i < a.length; i++) {
       const fa = a[i]!;
       const fb = b[i]!;
-      // hoop-1 render is hoop-0's, shifted by one hoop range (breathing-kit is geometry-uniform)
+      // hoop-2 render is hoop-1's, shifted by one hoop range (breathing-kit is geometry-uniform)
       for (let p = 0; p < per; p++) {
         for (let c = 0; c < 4; c++) {
           expect(fb[(h1 + p) * 4 + c]).toBe(fa[(h0 + p) * 4 + c]);

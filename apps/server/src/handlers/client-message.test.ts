@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultProject, SLOT_LABELS, voice } from '@ledrums/core';
+import { defaultProject, getHoopPixelRange, SLOT_LABELS, voice } from '@ledrums/core';
 import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
@@ -485,8 +485,9 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
         id: 'out1',
         channelsPerPixel: 3,
         dataLines: [
-          { id: 'd0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] },
-          { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] },
+          // kick hoop 1 (1-based, A1) driven by both lines → schema-valid, routing-invalid (fan-out).
+          { id: 'd0', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] },
+          { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] },
         ],
       },
     ];
@@ -528,17 +529,18 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
 });
 
 describe('setKitOutputs — schema gate (S01): validate before any state, no partial apply', () => {
-  /** A minimal valid output topology (one PixLite port, one data line, one hoop segment). */
+  /** A minimal valid output topology (one PixLite run carrying one hoop segment). D1: an Output
+   *  carries its `segments` chain directly (no data-line wrapper). */
   const validOutputs = [
-    { id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'out1:dl0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 3 }] }] },
+    { id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] }, // 1-based (A1)
   ];
 
   /** The incident's corruption shapes — each fails `outputSchema` on a different field. */
-  const channelsPerPixelZero: unknown = [{ id: 'out1', channelsPerPixel: 0, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 3 }] }] }];
+  const channelsPerPixelZero: unknown = [{ id: 'out1', channelsPerPixel: 0, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] }];
   const invalidCases: Array<[string, unknown]> = [
     ['channelsPerPixel: 0', channelsPerPixelZero],
-    ['empty dataLines', [{ id: 'out1', channelsPerPixel: 3, dataLines: [] }]],
-    ['negative hoop range', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: -1, hoopEnd: 3 }] }] }]],
+    ['empty segments', [{ id: 'out1', channelsPerPixel: 3, segments: [] }]],
+    ['negative hoop range', [{ id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: -1, hoopEnd: 3 }] }]],
   ];
 
   it('applies a valid outputs payload (fresh state broadcast + persisted, no error)', () => {
@@ -592,12 +594,15 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
   // (well-formed shape) but are referentially/structurally invalid against the live kit
   // (defaultProject: kick has 4 hoops). Same reply/monitor contract, zero state.
   const integrityCases: Array<[string, unknown]> = [
-    // A segment referencing a drum the kit doesn't define.
-    ['dangling drum ref', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] }]],
-    // hoopEnd 9 with a 4-hoop kick — schema-valid (nonnegative ints), routing-invalid.
-    ['out-of-range hoop', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 9 }] }] }]],
-    // kick hoop 0 driven by two data lines — a fan-out buildDmxMap would silently overwrite.
-    ['hoop fan-out across data lines', [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] }, { id: 'd1', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 0 }] }] }]],
+    // A segment referencing a drum the kit doesn't define (hoops 1-based, A1).
+    ['dangling drum ref', [{ id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'ghost', hoopStart: 1, hoopEnd: 1 }] }]],
+    // hoopEnd 10 with a 4-hoop kick — schema-valid (positive ints), routing-invalid.
+    ['out-of-range hoop', [{ id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 10 }] }]],
+    // kick hoop 1 driven by two OUTPUTS (D1: Output = one run) — a fan-out buildDmxMap would silently overwrite.
+    ['hoop fan-out across outputs', [
+      { id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] },
+      { id: 'out2', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 1 }] },
+    ]],
   ];
 
   it.each(integrityCases)('rejects %s (schema-valid, routing-invalid) with a user-visible error and zero apply', (_label, outputs) => {
@@ -618,7 +623,7 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
     const editor = join();
     const spy = vi.spyOn(voiceHost, 'setKitOutputs');
 
-    const danglingRef = [{ id: 'out1', channelsPerPixel: 3, dataLines: [{ id: 'd', segments: [{ drumId: 'ghost', hoopStart: 0, hoopEnd: 0 }] }] }];
+    const danglingRef = [{ id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'ghost', hoopStart: 1, hoopEnd: 1 }] }];
     handle({ t: 'setKitOutputs', outputs: danglingRef } as unknown as ClientMessage, editor);
     expect(spy).not.toHaveBeenCalled(); // last-known-good routing stays live
 
@@ -705,5 +710,97 @@ describe('listNetworkAdapters (subnet-guidance read)', () => {
     handle({ t: 'listNetworkAdapters' }, s);
     const reply = s.sent.find((m): m is Extract<ServerMessage, { t: 'networkAdapters' }> => m.t === 'networkAdapters');
     expect(reply?.adapters).toEqual([]);
+  });
+});
+
+describe('identifyHoop message (E1)', () => {
+  it('maps (drumId, 1-based hoop) to the correct pixel range on the live host', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'snare', hoop: 2, durationS: 0.5 }, editor);
+    const expected = getHoopPixelRange(host.engine.getModel(), 'snare', 2);
+    expect(host.getIdentifyRange()).toEqual(expected);
+  });
+
+  it('routes to the voice host when one is running', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'tom1', hoop: 1, durationS: 0.5 }, editor);
+    const expected = getHoopPixelRange(voiceHost.getModel(), 'tom1', 1);
+    expect(voiceHost.getIdentifyRange()).toEqual(expected);
+  });
+
+  it('durationS <= 0 clears any active identify', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0.5 }, editor);
+    expect(host.getIdentifyRange()).not.toBeNull();
+    handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0 }, editor);
+    expect(host.getIdentifyRange()).toBeNull();
+  });
+
+  it('an unknown drum/hoop is a no-op (clears, never throws)', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'nope', hoop: 99, durationS: 0.5 }, editor);
+    expect(host.getIdentifyRange()).toBeNull();
+  });
+
+  it('is editor-gated — a viewer cannot identify (deny-by-default)', () => {
+    const { handle, join, host } = harness();
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0.5 }, viewer);
+    expect(host.getIdentifyRange()).toBeNull();
+  });
+});
+
+describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end parity)', () => {
+  it('setKitGlobal applies the Advatek/kit-global fields to the live engine kit + re-broadcasts state', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    editor.sent.length = 0; // ignore the admit-time state
+    handle({ t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 }, editor);
+    expect(host.engine.getProject().kit.global).toMatchObject({
+      expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300,
+    });
+    expect(editor.has('state')).toBe(true); // geometry/patch change → fresh state to every client
+  });
+
+  it('setKitTransform color applies to the drum on the live engine kit', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    handle({ t: 'setKitTransform', drumId: 'kick', color: '#ff8800' }, editor);
+    expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.color).toBe('#ff8800');
+  });
+
+  it('setHoopConfig writes drum.hoops[hoopIndex-1] (1-based) on the live engine kit + re-broadcasts', () => {
+    const { handle, join, host } = harness();
+    const editor = join();
+    editor.sent.length = 0;
+    const kickBefore = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    expect(kickBefore.hoops).toBeDefined();
+    const target = kickBefore.hoops![0]!.pixelCount + 10;
+    handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: target, reverse: true }, editor);
+    const hoop0 = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
+    expect(editor.has('state')).toBe(true);
+  });
+
+  it('setHoopConfig applies to the voice host too (live-render parity)', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    const target = voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount + 7;
+    handle({ t: 'setHoopConfig', drumId: 'snare', hoopIndex: 2, pixelCount: target }, editor);
+    expect(voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
+  });
+
+  it('a viewer cannot mutate the kit (setHoopConfig is editor-gated, deny-by-default)', () => {
+    const { handle, join, host } = harness();
+    join(); // editor
+    const viewer = join();
+    const before = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount;
+    handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: before + 50 }, viewer);
+    expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount).toBe(before);
   });
 });

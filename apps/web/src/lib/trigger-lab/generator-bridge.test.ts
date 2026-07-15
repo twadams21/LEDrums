@@ -109,21 +109,21 @@ describe('generator bridge — voice timebase / restart-on-trigger (S25)', () =>
   // (chase) animates on a hit-relative clock, so it starts at its start position on the hit —
   // independent of where the absolute transport happens to be. This is the sim side of the
   // sim/engine parity criterion (the core engine asserts the same in compositor.test.ts).
-  it('chase starts at hoop 0 on the hit regardless of the transport clock', () => {
+  it('chase starts at hoop 1 on the hit regardless of the transport clock', () => {
     const lab = buildLabModel();
     const sim = freshSim();
     sim.tick(5000); // run the absolute transport far ahead (sim.beat ≈ 10) BEFORE firing
     sim.triggerGraph('test', treeToGraph(play('gen:chase', 'oneshot')), ctx('kick'));
-    sim.tick(100); // chase voice age 100ms → voice-local beat 0.2 → step 0 → hoop 0
+    sim.tick(100); // chase voice age 100ms → voice-local beat 0.2 → step 0 → hoop 1 (1-based, A1)
     const buf = new Uint8Array(lab.model.count * 3);
     renderFrame(buf, sim, lab);
 
     const lit = litPixelIds(buf, lab.model.count);
     expect(lit.length).toBeGreaterThan(0);
-    // Voice timebase: the onset lands on hoop 0. Under the old absolute clock the same frame
-    // would light a mid-cycle hoop (step from sim.beat ≈ 10), so this pins the conversion.
+    // Voice timebase: the onset lands on hoop 1 (first hoop). Under the old absolute clock the
+    // same frame would light a mid-cycle hoop (step from sim.beat ≈ 10), so this pins the conversion.
     for (const id of lit) {
-      expect(lab.pm.pixels[id]!.hoopIndex, `pixel ${id} hoop`).toBe(0);
+      expect(lab.pm.pixels[id]!.hoopIndex, `pixel ${id} hoop`).toBe(1);
     }
   });
 });

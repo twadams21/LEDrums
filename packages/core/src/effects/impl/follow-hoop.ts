@@ -37,7 +37,7 @@ export const followHoop: EffectGenerator = {
       const end = drum.pixelStart + drum.pixelCount;
       for (let i = drum.pixelStart; i < end; i++) {
         const p = ctx.model.pixels[i]!;
-        const localAge = trig.ageMs - p.hoopIndex * delay;
+        const localAge = trig.ageMs - (p.hoopIndex - 1) * delay; // hoopIndex 1-based (A1): hoop 1 fires at 0ms
         if (localAge < 0) continue;
         const intensity = trig.velocity * Math.exp(-localAge / decay);
         if (intensity < 0.004) continue;

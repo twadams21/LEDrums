@@ -60,7 +60,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
 
     const angle = (ctx.timeMs / 1000) * speed; // degrees travelled by the hogs
     for (const drum of ctx.model.drums) {
-      const topHoop = drum.hoopCount - 1;
+      const topHoop = drum.hoopCount; // hoopIndex is 1-based (A1): top hoop = hoopCount
       // Re-seed a couple of sparkles per drum each frame (deterministic via state.rng).
       const twinkles = 2;
       for (let k = 0; k < twinkles; k++) {
@@ -81,7 +81,7 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
           fb.max(p, rgb.r, rgb.g, rgb.b, v);
         } else {
           // Lower hoops carry circling hogs. Spread hogs evenly, offset per hoop.
-          const hoopOffset = pix.hoopIndex * 37; // stagger hoops so they don't align
+          const hoopOffset = (pix.hoopIndex - 1) * 37; // stagger hoops so they don't align (hoopIndex 1-based, A1)
           let best = 0;
           for (let n = 0; n < hogsPerHoop; n++) {
             const hogAngle = angle + hoopOffset + (360 * n) / hogsPerHoop;

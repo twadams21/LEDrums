@@ -143,15 +143,30 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
         ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
         ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
+        ...(msg.color !== undefined ? { color: msg.color } : {}),
       });
       break;
     case 'setKitGlobal':
       voiceHost.setKitGlobal({
         ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
+        ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
+        ...(msg.ledDensityPxPerM !== undefined ? { ledDensityPxPerM: msg.ledDensityPxPerM } : {}),
+        ...(msg.hoopCount !== undefined ? { hoopCount: msg.hoopCount } : {}),
+        ...(msg.defaultHoopSpacingMm !== undefined ? { defaultHoopSpacingMm: msg.defaultHoopSpacingMm } : {}),
+        ...(msg.maxPixelsPerOutput !== undefined ? { maxPixelsPerOutput: msg.maxPixelsPerOutput } : {}),
+      });
+      break;
+    case 'setHoopConfig':
+      voiceHost.setHoopConfig(msg.drumId, msg.hoopIndex, {
+        ...(msg.pixelCount !== undefined ? { pixelCount: msg.pixelCount } : {}),
+        ...(msg.reverse !== undefined ? { reverse: msg.reverse } : {}),
       });
       break;
     case 'setKitOutputs':
       voiceHost.setKitOutputs(msg.outputs);
+      break;
+    case 'setKitNodeLayout':
+      voiceHost.setKitNodeLayout(msg.nodeLayout);
       break;
     case 'setOutput':
       voiceHost.setOutput({

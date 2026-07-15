@@ -53,7 +53,7 @@ describe('setRouting', () => {
     const store = connected(sent);
     const drumId = store.project!.kit.drums[0]!.id;
     const outputs: OutputConfig[] = [
-      { id: '1', channelsPerPixel: 3, dataLines: [{ id: '1:dl0', segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] }] },
+      { id: '1', channelsPerPixel: 3, segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] },
     ];
     store.setRouting(outputs);
     expect(store.project!.kit.outputs).toBe(outputs);
@@ -91,11 +91,121 @@ describe('setKitMirror', () => {
   });
 });
 
+describe('setKitGlobal (C1/C2 kit-global config — expanded / density / hoopCount / spacing / cap)', () => {
+  it('optimistically writes kit.global and forwards only the edited fields', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setKitGlobal({ expanded: true, ledDensityPxPerM: 72, maxPixelsPerOutput: 300 });
+    expect(store.project!.kit.global).toMatchObject({ expanded: true, ledDensityPxPerM: 72, maxPixelsPerOutput: 300 });
+    expect(sent).toContainEqual({ t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, maxPixelsPerOutput: 300 });
+  });
+
+  it('carries hoopCount + defaultHoopSpacingMm and leaves mirror untouched', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.setKitGlobal({ hoopCount: 5, defaultHoopSpacingMm: 45 });
+    expect(store.project!.kit.global.hoopCount).toBe(5);
+    expect(store.project!.kit.global.defaultHoopSpacingMm).toBe(45);
+    expect(store.project!.kit.global.mirror).toBe('none'); // unrelated field preserved
+    expect(sent).toContainEqual({ t: 'setKitGlobal', hoopCount: 5, defaultHoopSpacingMm: 45 });
+  });
+
+  it('no-ops for a viewer', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    store.setKitGlobal({ expanded: true });
+    expect(store.project!.kit.global.expanded).toBe(false);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe('setDrumTransform color (C3 drum swatch)', () => {
+  it('writes DrumConfig.color locally and forwards it on setKitTransform', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    const drumId = store.project!.kit.drums[0]!.id;
+    store.setDrumTransform(drumId, { color: '#ff8800' });
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.color).toBe('#ff8800');
+    expect(sent).toContainEqual({ t: 'setKitTransform', drumId, color: '#ff8800' });
+  });
+});
+
+describe('setHoopConfig (C5 per-hoop pixelCount / reverse — B4 hoops[])', () => {
+  it('writes drum.hoops[hoopIndex-1] (1-based) locally and forwards over WS', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    const drumId = store.project!.kit.drums[0]!.id;
+    expect(store.project!.kit.drums[0]!.hoops).toBeDefined(); // migrator expanded legacy → hoops[]
+    store.setHoopConfig(drumId, 1, { pixelCount: 200, reverse: true });
+    const hoop0 = store.project!.kit.drums.find((d) => d.id === drumId)!.hoops![0]!;
+    expect(hoop0).toMatchObject({ pixelCount: 200, reverse: true });
+    expect(sent).toContainEqual({ t: 'setHoopConfig', drumId, hoopIndex: 1, pixelCount: 200, reverse: true });
+  });
+
+  it('safely no-ops the local write for an out-of-range hoop but still forwards (server backstop rejects)', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    const drumId = store.project!.kit.drums[0]!.id;
+    const before = structuredClone(store.project!.kit.drums.find((d) => d.id === drumId)!.hoops);
+    store.setHoopConfig(drumId, 999, { pixelCount: 5 });
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.hoops).toEqual(before);
+    expect(sent).toContainEqual({ t: 'setHoopConfig', drumId, hoopIndex: 999, pixelCount: 5 });
+  });
+
+  it('no-ops entirely for a viewer', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    const drumId = store.project!.kit.drums[0]!.id;
+    store.setHoopConfig(drumId, 1, { pixelCount: 200 });
+    expect(sent).toEqual([]);
+  });
+
+  it('SF1: materializes hoops[] on a density-resolved drum, then writes + forwards (dead control fixed)', () => {
+    // A density-derived drum (no literal pixelsPerHoop, no hoops[]) is the reachable shape whose
+    // per-hoop write silently discarded input pre-SF1. It must now lazily materialize hoops[] (the
+    // renderer-resolved counts) then apply the edit — mirroring the server backstop exactly.
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    const project = defaultProject();
+    const drum = project.kit.drums[0]!;
+    delete (drum as { pixelsPerHoop?: number }).pixelsPerHoop;
+    delete (drum as { hoops?: unknown }).hoops;
+    store.project = project;
+    const drumId = drum.id;
+    expect(store.project!.kit.drums.find((d) => d.id === drumId)!.hoops).toBeUndefined();
+
+    store.setHoopConfig(drumId, 2, { pixelCount: 77, reverse: true });
+
+    const after = store.project!.kit.drums.find((d) => d.id === drumId)!;
+    expect(after.hoops).toHaveLength(4); // materialized to global hoopCount
+    expect(after.hoops![1]).toMatchObject({ pixelCount: 77, reverse: true }); // hoop 2 (1-based) written
+    expect(after.hoops![0]!.reverse).toBe(false); // sibling hoop materialized, untouched
+    expect(sent).toContainEqual({ t: 'setHoopConfig', drumId, hoopIndex: 2, pixelCount: 77, reverse: true });
+  });
+});
+
+describe('identifyHoop (C5 Identify — E1 hoop flash)', () => {
+  it('sends the flash for an editor (default 5s) and no-ops for a viewer', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.identifyHoop('kick', 1);
+    expect(sent).toContainEqual({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 5 });
+
+    const viewerSent: ClientMessage[] = [];
+    const viewer = connected(viewerSent);
+    viewer.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
+    viewer.identifyHoop('kick', 1, 2);
+    expect(viewerSent).toEqual([]);
+  });
+});
+
 describe('setInputMap / setOutput', () => {
   it('setInputMap writes locally and sends', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
-    const inputMap = { midiChannel: null, midiNotes: [{ note: 60, drumId: store.project!.kit.drums[0]!.id, slot: 0 }], oscMap: [] };
+    const inputMap = { midiChannel: null, zones: [], midiNotes: [{ note: 60, drumId: store.project!.kit.drums[0]!.id, slot: 0 }], oscMap: [] };
     store.setInputMap(inputMap);
     expect(store.project!.inputMap).toBe(inputMap);
     expect(sent).toContainEqual({ t: 'setInputMap', inputMap });
@@ -140,7 +250,7 @@ describe('undo restores the project slice and resyncs the engine (S3)', () => {
     const drumId = store.project!.kit.drums[0]!.id;
     const seedOutputs = structuredClone(store.project!.kit.outputs);
     const outputs: OutputConfig[] = [
-      { id: '1', channelsPerPixel: 3, dataLines: [{ id: '1:dl0', segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] }] },
+      { id: '1', channelsPerPixel: 3, segments: [{ drumId, hoopStart: 0, hoopEnd: 1 }] },
     ];
     store.setRouting(outputs);
     expect(store.project!.kit.outputs).toBe(outputs);

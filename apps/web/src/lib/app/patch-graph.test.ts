@@ -18,10 +18,11 @@ import { hasHoopFanOut, outputsToPatch, patchToOutputs, pixelRanges, type PatchR
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
 import { guardFlowCallback } from './views/flow-guard';
 
-/* The pure Patch-graph ⇄ routing seam (S3). Covers the 0-based-core ⇄ 1-based-node hoop
-   bridge, the fallback chunker, the output-half builder, and — the load-bearing one —
-   the rewire round-trip: draw a routing into flow nodes/edges, read it back by vertical
-   order, and recompile to the SAME OutputConfig[] (so a rewire never drifts pixel order). */
+/* The pure Patch-graph ⇄ routing seam (S3). Covers the (uniformly 1-based, A1) hoop node-id
+   grammar, the fallback chunker, the output-half builder, and — the load-bearing one — the
+   rewire round-trip: draw a routing into flow nodes/edges, read it back by WALKING THE WIRE
+   CHAIN (Output→Hoop→Hoop, D1: not y-position), and recompile to the SAME OutputConfig[] (so a
+   rewire never drifts pixel order). */
 
 // --- tiny flow-node/edge factories -------------------------------------------------
 function node(id: string, stage: PatchStage, y: number, x: number): PatchFlowNode {
@@ -29,14 +30,14 @@ function node(id: string, stage: PatchStage, y: number, x: number): PatchFlowNod
 }
 const edge = (source: string, target: string): PatchFlowEdge => ({ id: `${source}->${target}`, source, target });
 
-const LAYOUT: OutputHalfLayout = { colDataline: 1000, colOutput: 1200, controllerId: 'controller', midY: 0 };
+const LAYOUT: OutputHalfLayout = { colOutput: 1200, controllerId: 'controller', midY: 0 };
 
-describe('hoop node id ⇄ HoopRef (0-based core ⇄ 1-based node)', () => {
-  it('bridges the index base in both directions', () => {
-    expect(hoopNodeId({ drumId: 'snare', hoop: 0 })).toBe('hoop:snare:1');
-    expect(hoopNodeId({ drumId: 'tom1', hoop: 3 })).toBe('hoop:tom1:4');
-    expect(parseHoopNodeId('hoop:snare:1')).toEqual({ drumId: 'snare', hoop: 0 });
-    expect(parseHoopNodeId('hoop:tom1:4')).toEqual({ drumId: 'tom1', hoop: 3 });
+describe('hoop node id ⇄ HoopRef (both 1-based, A1)', () => {
+  it('round-trips the shared 1-based hoop number in both directions', () => {
+    expect(hoopNodeId({ drumId: 'snare', hoop: 1 })).toBe('hoop:snare:1');
+    expect(hoopNodeId({ drumId: 'tom1', hoop: 4 })).toBe('hoop:tom1:4');
+    expect(parseHoopNodeId('hoop:snare:1')).toEqual({ drumId: 'snare', hoop: 1 });
+    expect(parseHoopNodeId('hoop:tom1:4')).toEqual({ drumId: 'tom1', hoop: 4 });
   });
   it('rejects non-hoop / malformed ids', () => {
     expect(parseHoopNodeId('output:1')).toBeNull();
@@ -49,19 +50,19 @@ describe('output node id ⇄ OutputConfig.id', () => {
   it('round-trips and rejects non-output ids', () => {
     expect(outputNodeId('2')).toBe('output:2');
     expect(parseOutputNodeId('output:2')).toBe('2');
-    expect(parseOutputNodeId('dataline:1')).toBeNull();
+    expect(parseOutputNodeId('hoop:a:1')).toBeNull();
   });
 });
 
 describe('defaultRouting (fallback when the project declares no outputs)', () => {
-  it('chunks the drum-ordered hoop chain into datalines, one output per chunk', () => {
-    const r = defaultRouting([{ id: 'a', hoopCount: 2 }, { id: 'b', hoopCount: 1 }], { hoopsPerDataLine: 2 });
+  it('chunks the drum-ordered hoop chain into outputs, one per chunk (Output = one run)', () => {
+    const r = defaultRouting([{ id: 'a', hoopCount: 2 }, { id: 'b', hoopCount: 1 }], { hoopsPerOutput: 2 });
     expect(r.outputs.map((o) => o.id)).toEqual(['1', '2']);
-    expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([
-      { drumId: 'a', hoop: 0 },
+    expect(r.outputs[0]!.hoops).toEqual([
       { drumId: 'a', hoop: 1 },
+      { drumId: 'a', hoop: 2 },
     ]);
-    expect(r.outputs[1]!.dataLines[0]!.hoops).toEqual([{ drumId: 'b', hoop: 0 }]);
+    expect(r.outputs[1]!.hoops).toEqual([{ drumId: 'b', hoop: 1 }]);
   });
   it('is empty for no drums', () => {
     expect(defaultRouting([]).outputs).toEqual([]);
@@ -69,182 +70,124 @@ describe('defaultRouting (fallback when the project declares no outputs)', () =>
 });
 
 describe('buildOutputHalf', () => {
-  it('emits dataline + output nodes and the hoop→dataline→output→controller edges', () => {
+  it('emits an Output node and the Output→Hoop→Hoop chain + output→controller edges', () => {
     const routing: PatchRouting = {
-      outputs: [
-        {
-          id: '1',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'a', hoop: 1 }] }],
-        },
-      ],
+      outputs: [{ id: '1', startUniverse: 0, channelsPerPixel: 3, hoops: [{ drumId: 'a', hoop: 1 }, { drumId: 'a', hoop: 2 }] }],
     };
     const { nodes, edges } = buildOutputHalf(routing, LAYOUT);
-    expect(nodes.filter((n) => n.data.stage === 'dataline')).toHaveLength(1);
+    expect(nodes.filter((n) => n.data.stage === 'output')).toHaveLength(1);
     const out = nodes.find((n) => n.data.stage === 'output')!;
-    const dl = nodes.find((n) => n.data.stage === 'dataline')!;
     expect(out.id).toBe('output:1');
-    expect(edges).toContainEqual(expect.objectContaining({ source: 'hoop:a:1', target: dl.id }));
-    expect(edges).toContainEqual(expect.objectContaining({ source: 'hoop:a:2', target: dl.id }));
-    expect(edges).toContainEqual(expect.objectContaining({ source: dl.id, target: 'output:1' }));
+    expect(edges).toContainEqual(expect.objectContaining({ source: 'output:1', target: 'hoop:a:1' }));
+    expect(edges).toContainEqual(expect.objectContaining({ source: 'hoop:a:1', target: 'hoop:a:2' }));
     expect(edges).toContainEqual(expect.objectContaining({ source: 'output:1', target: 'controller' }));
   });
 
   it('never emits duplicate node/edge keys from a corrupt routing (each_key_duplicate guard)', () => {
     // A shape-valid-but-integrity-invalid routing (reachable via paste / setProject bypass):
-    // the same hoop repeated within one data line, and two outputs sharing an id. Either would
-    // mint a duplicate flow key and crash SvelteFlow's keyed each — the builder must not.
+    // the same hoop repeated within one output's chain, and two outputs sharing an id. Either
+    // would mint a duplicate flow key and crash SvelteFlow's keyed each — the builder must not.
     const routing: PatchRouting = {
       outputs: [
-        {
-          id: '1',
-          channelsPerPixel: 3,
-          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'a', hoop: 0 }] }],
-        },
-        { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'y', hoops: [{ drumId: 'b', hoop: 0 }] }] },
+        { id: '1', channelsPerPixel: 3, hoops: [{ drumId: 'a', hoop: 1 }, { drumId: 'a', hoop: 1 }] },
+        { id: '1', channelsPerPixel: 3, hoops: [{ drumId: 'b', hoop: 1 }] },
       ],
     };
     const { nodes, edges } = buildOutputHalf(routing, LAYOUT);
     expect(new Set(nodes.map((n) => n.id)).size).toBe(nodes.length); // all node ids unique
     expect(new Set(edges.map((e) => e.id)).size).toBe(edges.length); // all edge ids unique
-    // the repeated hoop collapses to a single hoop→line edge, and the label counts it once
-    const dl = nodes.find((n) => n.data.stage === 'dataline')!;
-    expect(edges.filter((e) => e.source === 'hoop:a:1' && e.target === dl.id)).toHaveLength(1);
-    expect(dl.data.sub).toBe('1 hoops');
+    // the repeated hoop collapses to a single output→hoop edge
+    expect(edges.filter((e) => e.source === 'output:1' && e.target === 'hoop:a:1')).toHaveLength(1);
     // the duplicate output id keeps only the first output node
     expect(nodes.filter((n) => n.id === 'output:1')).toHaveLength(1);
   });
 
-  it('skips hoop→dataline edges for hoops with no node (hasHoop guard)', () => {
+  it('skips chain edges onto hoops with no node (hasHoop guard)', () => {
     const routing: PatchRouting = {
-      outputs: [
-        {
-          id: '1',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [{ id: 'x', hoops: [{ drumId: 'a', hoop: 0 }, { drumId: 'ghost', hoop: 9 }] }],
-        },
-      ],
+      outputs: [{ id: '1', startUniverse: 0, channelsPerPixel: 3, hoops: [{ drumId: 'a', hoop: 1 }, { drumId: 'ghost', hoop: 9 }] }],
     };
     const { edges } = buildOutputHalf(routing, { ...LAYOUT, hasHoop: (id) => id === 'hoop:a:1' });
-    expect(edges.some((e) => e.source === 'hoop:a:1')).toBe(true);
-    expect(edges.some((e) => e.source === 'hoop:ghost:10')).toBe(false);
+    expect(edges).toContainEqual(expect.objectContaining({ source: 'output:1', target: 'hoop:a:1' }));
+    expect(edges.some((e) => e.source === 'hoop:ghost:9' || e.target === 'hoop:ghost:9')).toBe(false);
   });
 });
 
 describe('routingFromGraph', () => {
-  it('orders outputs / datalines / hoops by vertical (y) position, not array/id order', () => {
+  it('orders each run by WALKING THE WIRE CHAIN, not by y-position', () => {
+    // Chain is output→a:1→a:2, but a:1 sits BELOW a:2 (larger y). A y-sort would give [a:2, a:1];
+    // the wire walk gives [a:1, a:2] — proving order comes from the chain, not geometry.
     const nodes: PatchFlowNode[] = [
-      node('hoop:a:1', 'hoop', 30, 0), // a:1 (hoop 0) sits BELOW a:2 (hoop 1)
-      node('hoop:a:2', 'hoop', 10, 0),
-      node('dataline:1', 'dataline', 20, 1000),
-      node('output:1', 'output', 20, 1200),
+      node('output:1', 'output', 0, 1200),
+      node('hoop:a:1', 'hoop', 100, 0), // first in the chain, but lowest on screen
+      node('hoop:a:2', 'hoop', 0, 0),
     ];
-    const edges = [edge('hoop:a:1', 'dataline:1'), edge('hoop:a:2', 'dataline:1'), edge('dataline:1', 'output:1')];
+    const edges = [edge('output:1', 'hoop:a:1'), edge('hoop:a:1', 'hoop:a:2')];
     const r = routingFromGraph(nodes, edges);
-    expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([
-      { drumId: 'a', hoop: 1 }, // y=10 first
-      { drumId: 'a', hoop: 0 }, // y=30 second
+    expect(r.outputs[0]!.hoops).toEqual([
+      { drumId: 'a', hoop: 1 },
+      { drumId: 'a', hoop: 2 },
     ]);
   });
 
-  it('ignores mis-staged / stray wires (a hoop wired straight to an output)', () => {
-    const nodes: PatchFlowNode[] = [
-      node('hoop:a:1', 'hoop', 0, 0),
-      node('output:1', 'output', 0, 1200),
-    ];
-    // hoop→output skips the dataline stage → not a valid routing edge → dropped
+  it('leaves an output with no output→hoop wire as an empty run', () => {
+    const nodes: PatchFlowNode[] = [node('hoop:a:1', 'hoop', 0, 0), node('output:1', 'output', 0, 1200)];
+    // a hoop→output wire is not a chain root (only output→hoop is) → ignored → empty run.
     const r = routingFromGraph(nodes, [edge('hoop:a:1', 'output:1')]);
-    // default scalars are dense — no startUniverse emitted.
-    expect(r.outputs).toEqual([{ id: '1', channelsPerPixel: 3, dataLines: [] }]);
+    expect(r.outputs).toEqual([{ id: '1', channelsPerPixel: 3, hoops: [] }]);
   });
 
-  it('collapses parallel hoop→line edges so a line never commits the same hoop twice', () => {
-    // Two edges from one hoop into the same data line (a transiently-corrupt graph). The
-    // read-back must list the hoop once — else it commits a routing that crashes the next
-    // buildOutputHalf and drives a wrong pixel map into the engine.
-    const nodes: PatchFlowNode[] = [
-      node('hoop:a:1', 'hoop', 0, 0),
-      node('dataline:1', 'dataline', 0, 1000),
-      node('output:1', 'output', 0, 1200),
-    ];
+  it('is cycle-safe and collapses parallel output→hoop edges (never spins / double-lists)', () => {
+    // Two edges from the output into the same hoop (a transiently-corrupt graph); the walk takes
+    // the topmost and the seen-guard stops it listing the hoop twice or looping forever.
+    const nodes: PatchFlowNode[] = [node('hoop:a:1', 'hoop', 0, 0), node('output:1', 'output', 0, 1200)];
     const edges = [
-      edge('hoop:a:1', 'dataline:1'),
-      { id: 'e:hoop:a:1->dataline:1:dup', source: 'hoop:a:1', target: 'dataline:1' },
-      edge('dataline:1', 'output:1'),
+      edge('output:1', 'hoop:a:1'),
+      { id: 'output:1->hoop:a:1:dup', source: 'output:1', target: 'hoop:a:1' },
     ];
     const r = routingFromGraph(nodes, edges);
-    expect(r.outputs[0]!.dataLines[0]!.hoops).toEqual([{ drumId: 'a', hoop: 0 }]);
+    expect(r.outputs[0]!.hoops).toEqual([{ drumId: 'a', hoop: 1 }]);
   });
 
   it('reads per-output scalars via getScalars (default = dense, no startUniverse)', () => {
     const nodes = [node('output:7', 'output', 0, 1200)];
     const r = routingFromGraph(nodes, [], (id) =>
-      id === '7' ? { startUniverse: 5, channelsPerPixel: 4 } : { channelsPerPixel: 3 },
+      id === '7' ? { startUniverse: 5, channelsPerPixel: 4, rgbOrder: 'GRB' } : { channelsPerPixel: 3 },
     );
-    expect(r.outputs[0]).toMatchObject({ id: '7', startUniverse: 5, channelsPerPixel: 4 });
+    expect(r.outputs[0]).toMatchObject({ id: '7', startUniverse: 5, channelsPerPixel: 4, rgbOrder: 'GRB' });
   });
 
-  it('recovers a data line startUniverse via getLineUniverse (by output id + line index)', () => {
+  it('orders OUTPUTS themselves top→bottom for a stable output list', () => {
     const nodes: PatchFlowNode[] = [
-      node('hoop:a:1', 'hoop', 0, 0),
-      node('hoop:a:2', 'hoop', 20, 0),
-      node('dataline:1', 'dataline', 0, 1000), // index 0 within output:1
-      node('dataline:2', 'dataline', 20, 1000), // index 1 within output:1
-      node('output:1', 'output', 10, 1200),
+      node('output:2', 'output', 30, 1200), // below
+      node('output:1', 'output', 10, 1200), // above
     ];
-    const edges = [
-      edge('hoop:a:1', 'dataline:1'),
-      edge('hoop:a:2', 'dataline:2'),
-      edge('dataline:1', 'output:1'),
-      edge('dataline:2', 'output:1'),
-    ];
-    // only the second line (index 1) carries a snap.
-    const r = routingFromGraph(nodes, edges, undefined, (outputId, i) =>
-      outputId === '1' && i === 1 ? 7 : undefined,
-    );
-    expect(r.outputs[0]!.dataLines[0]!.startUniverse).toBeUndefined();
-    expect(r.outputs[0]!.dataLines[1]!.startUniverse).toBe(7);
+    const r = routingFromGraph(nodes, []);
+    expect(r.outputs.map((o) => o.id)).toEqual(['1', '2']);
   });
 });
 
 describe('rewire round-trip: routing → graph → routing preserves transmit order', () => {
-  /** Hoop nodes in transmit order with ASCENDING y, so the read-back reproduces order. */
+  /** Hoop nodes for a routing (ascending y — position is cosmetic; the chain edges carry order). */
   function hoopNodes(routing: PatchRouting): PatchFlowNode[] {
     const seen = new Set<string>();
     const out: PatchFlowNode[] = [];
     let y = 0;
     for (const o of routing.outputs)
-      for (const dl of o.dataLines)
-        for (const h of dl.hoops) {
-          const id = hoopNodeId(h);
-          if (seen.has(id)) continue;
-          seen.add(id);
-          out.push(node(id, 'hoop', y, 0));
-          y += 10;
-        }
+      for (const h of o.hoops) {
+        const id = hoopNodeId(h);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(node(id, 'hoop', y, 0));
+        y += 10;
+      }
     return out;
   }
 
-  it('recompiles to the identical OutputConfig[] (data lines 1:1, drum-boundary, multi-output)', () => {
+  it('recompiles to the identical OutputConfig[] (1:1 outputs, drum-boundary, multi-output)', () => {
     const routing: PatchRouting = {
       outputs: [
-        {
-          id: '1',
-          startUniverse: 0,
-          channelsPerPixel: 3,
-          dataLines: [
-            { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
-            { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
-          ],
-        },
-        {
-          id: '2',
-          startUniverse: 10,
-          channelsPerPixel: 4,
-          dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 1 }, { drumId: 'tom1', hoop: 0 }] }],
-        },
+        { id: '1', startUniverse: 0, channelsPerPixel: 3, hoops: [{ drumId: 'kick', hoop: 1 }, { drumId: 'kick', hoop: 2 }, { drumId: 'snare', hoop: 1 }] },
+        { id: '2', startUniverse: 10, channelsPerPixel: 4, hoops: [{ drumId: 'snare', hoop: 2 }, { drumId: 'tom1', hoop: 1 }] },
       ],
     };
     const oh = buildOutputHalf(routing, LAYOUT);
@@ -252,13 +195,9 @@ describe('rewire round-trip: routing → graph → routing preserves transmit or
       const o = routing.outputs.find((x) => x.id === id)!;
       return { startUniverse: o.startUniverse, channelsPerPixel: o.channelsPerPixel };
     });
-    // buildOutputHalf re-mints data-line node ids, so compare modulo the cosmetic line id:
-    // the load-bearing invariant is the per-output, per-line SEGMENT stream + line count/order.
-    const norm = (cfgs: ReturnType<typeof patchToOutputs>) =>
-      cfgs.map((c) => ({ ...c, dataLines: c.dataLines.map((d, i) => ({ ...d, id: i })) }));
-    expect(norm(patchToOutputs(readBack))).toEqual(norm(patchToOutputs(routing)));
-    // ...and the data-line count is preserved 1:1 (wire-in-N-stays-N).
-    expect(patchToOutputs(readBack).flatMap((c) => c.dataLines)).toHaveLength(3);
+    // Output ids are preserved 1:1 (node id ⇄ output id), so the recompile is byte-identical.
+    expect(patchToOutputs(readBack)).toEqual(patchToOutputs(routing));
+    expect(patchToOutputs(readBack)).toHaveLength(2);
   });
 });
 
@@ -268,20 +207,8 @@ describe('routingSignature / outputsSignature (the cold-load adopt discriminator
      share one signature (else the echo of the user's own rewire would snap the graph back). */
   const routing: PatchRouting = {
     outputs: [
-      {
-        id: '1',
-        channelsPerPixel: 3,
-        dataLines: [
-          { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
-          { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
-        ],
-      },
-      {
-        id: '2',
-        startUniverse: 4,
-        channelsPerPixel: 4,
-        dataLines: [{ id: 'c', startUniverse: 5, hoops: [{ drumId: 'tom1', hoop: 0 }] }],
-      },
+      { id: '1', channelsPerPixel: 3, hoops: [{ drumId: 'kick', hoop: 1 }, { drumId: 'kick', hoop: 2 }, { drumId: 'snare', hoop: 1 }] },
+      { id: '2', startUniverse: 4, channelsPerPixel: 4, hoops: [{ drumId: 'tom1', hoop: 1 }] },
     ],
   };
 
@@ -297,18 +224,18 @@ describe('routingSignature / outputsSignature (the cold-load adopt discriminator
 
   it('is insensitive to OutputConfig key order (same wiring → same signature)', () => {
     const canonical: OutputConfig[] = [
-      { id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 1 }] }] },
+      { id: '1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] },
     ];
     // same wiring, keys inserted in a different order (as a re-serializing server might)
     const reordered: OutputConfig[] = [
-      { dataLines: [{ segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 1 }], id: 'a' }], channelsPerPixel: 3, id: '1' },
+      { segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }], channelsPerPixel: 3, id: '1' },
     ];
     expect(outputsSignature(reordered)).toBe(outputsSignature(canonical));
   });
 
   it('a genuine external change yields a different signature (so adopt fires)', () => {
     const external: PatchRouting = {
-      outputs: [{ id: '1', channelsPerPixel: 3, dataLines: [{ id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }] }] }],
+      outputs: [{ id: '1', channelsPerPixel: 3, hoops: [{ drumId: 'kick', hoop: 1 }] }],
     };
     expect(routingSignature(external)).not.toBe(routingSignature(routing));
   });
@@ -323,15 +250,8 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
   /** Authoritative routing (dense scalars, so routingFromGraph's defaults compare 1:1). */
   const auth: PatchRouting = {
     outputs: [
-      {
-        id: '1',
-        channelsPerPixel: 3,
-        dataLines: [
-          { id: 'a', hoops: [{ drumId: 'kick', hoop: 0 }, { drumId: 'kick', hoop: 1 }] },
-          { id: 'b', hoops: [{ drumId: 'snare', hoop: 0 }] },
-        ],
-      },
-      { id: '2', channelsPerPixel: 3, dataLines: [{ id: 'c', hoops: [{ drumId: 'snare', hoop: 1 }] }] },
+      { id: '1', channelsPerPixel: 3, hoops: [{ drumId: 'kick', hoop: 1 }, { drumId: 'kick', hoop: 2 }, { drumId: 'snare', hoop: 1 }] },
+      { id: '2', channelsPerPixel: 3, hoops: [{ drumId: 'snare', hoop: 2 }] },
     ],
   };
 
@@ -346,14 +266,13 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
     const hoopNodes: PatchFlowNode[] = [];
     let y = 0;
     for (const o of routing.outputs)
-      for (const dl of o.dataLines)
-        for (const h of dl.hoops) {
-          const id = hoopNodeId(h);
-          if (hoopIds.has(id)) continue;
-          hoopIds.add(id);
-          hoopNodes.push(node(id, 'hoop', y, 0));
-          y += 10;
-        }
+      for (const h of o.hoops) {
+        const id = hoopNodeId(h);
+        if (hoopIds.has(id)) continue;
+        hoopIds.add(id);
+        hoopNodes.push(node(id, 'hoop', y, 0));
+        y += 10;
+      }
     const layout: OutputHalfLayout = { ...LAYOUT, hasHoop: (id) => hoopIds.has(id) };
     const oh = buildOutputHalf(routing, layout);
     return { nodes: [...hoopNodes, node('controller', 'controller', 0, 1400), ...oh.nodes], edges: oh.edges, layout };
@@ -362,26 +281,19 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
   const sig = (g: { nodes: ReadonlyArray<PatchFlowNode>; edges: ReadonlyArray<PatchFlowEdge> }): string =>
     routingSignature(routingFromGraph(g.nodes, g.edges));
 
-  /** Segment stream modulo the cosmetic data-line id (buildOutputHalf re-mints those; the
-      load-bearing invariant is the per-output segment stream — as the round-trip test above). */
-  const normLineIds = (s: string): string => {
-    const cfgs = JSON.parse(s) as OutputConfig[];
-    return JSON.stringify(cfgs.map((c) => ({ ...c, dataLines: c.dataLines.map((d, i) => ({ ...d, id: i })) })));
-  };
-
   it('re-derives canvas state equal to a fresh derivation, discarding a half-applied mutation', () => {
     const clean = fullGraph(auth);
     const cleanSig = sig(clean);
     // "Derived fresh from store.project.kit.outputs" == the authoritative segment stream.
-    expect(normLineIds(cleanSig)).toBe(normLineIds(outputsSignature(patchToOutputs(auth))));
+    expect(cleanSig).toBe(outputsSignature(patchToOutputs(auth)));
 
-    // Half-applied mutation: a stray misrouted output node + edge, and a dropped line→output
-    // edge (as a throw mid-handler could leave). The read-back now diverges from authoritative.
+    // Half-applied mutation: a stray misrouted output node + a chain edge dropped and re-pointed
+    // (as a throw mid-handler could leave). The read-back now diverges from authoritative.
     const corrupted = {
       nodes: [...clean.nodes, node('output:99', 'output', 500, 1200)],
       edges: [
-        ...clean.edges.filter((e) => e.target !== 'output:1'), // dropped a data line's wire
-        edge('dataline:1', 'output:99'), // stray wire to the ghost output
+        ...clean.edges.filter((e) => e.source !== 'output:1'), // dropped output:1's chain root
+        edge('output:99', 'hoop:kick:1'), // stray wire from the ghost output
       ],
     };
     expect(sig(corrupted)).not.toBe(cleanSig); // genuinely corrupt
@@ -389,7 +301,6 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
     const healed = rebuildOutputHalf(auth, corrupted, clean.layout);
     // Re-derived state === state derived fresh from the authoritative routing.
     expect(sig(healed)).toBe(cleanSig);
-    expect(normLineIds(sig(healed))).toBe(normLineIds(outputsSignature(patchToOutputs(auth))));
     // The ghost output node is gone; no stray output-half nodes survive.
     expect(healed.nodes.some((n) => n.id === 'output:99')).toBe(false);
   });
@@ -427,7 +338,7 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
     const badHandler = guardFlowCallback(
       'reconnect',
       () => {
-        graph.edges = [...graph.edges.filter((e) => e.target !== 'output:1'), edge('dataline:1', 'output:99')];
+        graph.edges = [...graph.edges.filter((e) => e.source !== 'output:1'), edge('output:99', 'hoop:kick:1')];
         graph.nodes = [...graph.nodes, node('output:99', 'output', 500, 1200)];
         throw new Error('boom');
       },
@@ -438,67 +349,56 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
 
     expect(reportError).toHaveBeenCalledWith('patch-graph', 'reconnect', expect.stringContaining('boom'));
     // healed to the authoritative segment stream, not left half-mutated
-    expect(normLineIds(sig(graph))).toBe(normLineIds(outputsSignature(patchToOutputs(auth))));
+    expect(sig(graph)).toBe(outputsSignature(patchToOutputs(auth)));
     expect(graph.nodes.some((n) => n.id === 'output:99')).toBe(false);
   });
 });
 
-describe('live read-out (S5b): pixelRanges over routingFromGraph keys spans by graph node id', () => {
-  /* The Inspector's first/last-pixel read-out derives from the LIVE graph routing, not from
-     a re-chunked snapshot of committed outputs. routingFromGraph keeps each DataLine.id and
-     each output id equal to the selected node's id (a dataline node verbatim, an output via
-     parseOutputNodeId), so pixelRanges' byDataLine/byOutput resolve for a just-added palette
-     line ('dataline:new-N') and stay correct after an un-remounted drag-reorder — exactly the
-     cases the old '${outputId}:dl${n}' snapshot ids could never match. */
+describe('live read-out (S5b): pixelRanges over routingFromGraph keys spans by output node id', () => {
+  /* The Inspector's first/last-pixel read-out derives from the LIVE graph routing, not from a
+     re-chunked snapshot of committed outputs. routingFromGraph keeps each output id equal to the
+     selected node's id (via parseOutputNodeId), so pixelRanges' byOutput resolves for a
+     just-added palette output ('output:new-N') and stays correct after an un-remounted drag. */
   const px = (): number => 10; // every hoop = 10px
 
-  it('resolves a span for a palette data line by its node id', () => {
+  it('resolves a span for a palette output by its node id', () => {
     const nodes: PatchFlowNode[] = [
       node('hoop:a:1', 'hoop', 0, 0),
       node('hoop:a:2', 'hoop', 10, 0),
-      node('dataline:new-1', 'dataline', 5, 1000), // palette-added id — never matches a re-chunked id
       node('output:new-1', 'output', 5, 1200),
       node('controller', 'controller', 5, 1400),
     ];
     const edges = [
-      edge('hoop:a:1', 'dataline:new-1'),
-      edge('hoop:a:2', 'dataline:new-1'),
-      edge('dataline:new-1', 'output:new-1'),
+      edge('output:new-1', 'hoop:a:1'),
+      edge('hoop:a:1', 'hoop:a:2'),
       edge('output:new-1', 'controller'),
     ];
-    const { byDataLine, byOutput } = pixelRanges(routingFromGraph(nodes, edges), px);
-    expect(byDataLine['dataline:new-1']).toEqual({ first: 0, last: 19 });
+    const { byOutput } = pixelRanges(routingFromGraph(nodes, edges), px);
     expect(byOutput['new-1']).toEqual({ first: 0, last: 19 }); // output id = parseOutputNodeId('output:new-1')
   });
 
-  it('updates a data line span after a drag-reorder without a remount (y-order swap)', () => {
-    // Two data lines feeding one output; each carries one hoop. Reordering them by vertical
-    // position swaps their transmit order — and therefore their pixel spans — with no remount.
-    const graph = (dl1Y: number, dl2Y: number): { nodes: PatchFlowNode[]; edges: PatchFlowEdge[] } => ({
+  it('updates output spans after a drag-reorder of the OUTPUTS (y-order swap, no remount)', () => {
+    // Two outputs, one hoop each. Output transmit order is top→bottom, so swapping their y swaps
+    // their global pixel spans with no remount.
+    const graph = (o1Y: number, o2Y: number): { nodes: PatchFlowNode[]; edges: PatchFlowEdge[] } => ({
       nodes: [
-        node('hoop:a:1', 'hoop', dl1Y, 0),
-        node('hoop:b:1', 'hoop', dl2Y, 0),
-        node('dataline:1', 'dataline', dl1Y, 1000),
-        node('dataline:2', 'dataline', dl2Y, 1000),
-        node('output:1', 'output', (dl1Y + dl2Y) / 2, 1200),
+        node('hoop:a:1', 'hoop', 0, 0),
+        node('hoop:b:1', 'hoop', 40, 0),
+        node('output:1', 'output', o1Y, 1200),
+        node('output:2', 'output', o2Y, 1200),
       ],
-      edges: [
-        edge('hoop:a:1', 'dataline:1'),
-        edge('hoop:b:1', 'dataline:2'),
-        edge('dataline:1', 'output:1'),
-        edge('dataline:2', 'output:1'),
-      ],
+      edges: [edge('output:1', 'hoop:a:1'), edge('output:2', 'hoop:b:1')],
     });
 
-    const before = graph(0, 20); // dataline:1 above dataline:2 → transmits first
+    const before = graph(0, 20); // output:1 above output:2 → transmits first
     const r1 = pixelRanges(routingFromGraph(before.nodes, before.edges), px);
-    expect(r1.byDataLine['dataline:1']).toEqual({ first: 0, last: 9 });
-    expect(r1.byDataLine['dataline:2']).toEqual({ first: 10, last: 19 });
+    expect(r1.byOutput['1']).toEqual({ first: 0, last: 9 });
+    expect(r1.byOutput['2']).toEqual({ first: 10, last: 19 });
 
-    const after = graph(20, 0); // drag dataline:2 ABOVE dataline:1 → it now transmits first
+    const after = graph(20, 0); // drag output:2 ABOVE output:1 → it now transmits first
     const r2 = pixelRanges(routingFromGraph(after.nodes, after.edges), px);
-    expect(r2.byDataLine['dataline:2']).toEqual({ first: 0, last: 9 });
-    expect(r2.byDataLine['dataline:1']).toEqual({ first: 10, last: 19 });
+    expect(r2.byOutput['2']).toEqual({ first: 0, last: 9 });
+    expect(r2.byOutput['1']).toEqual({ first: 10, last: 19 });
   });
 });
 
@@ -513,60 +413,28 @@ describe('connect-time fan-out guard (S11) — routingFromGraph ∘ hasHoopFanOu
     outputs: [],
   });
 
-  // snare#0 (node `hoop:snare:1`) currently drives dataline:1; two lines both feed output:o1.
+  // snare#1 (node `hoop:snare:1`) currently rooted by output:o1; output:o2 is unwired.
   const baseNodes: PatchFlowNode[] = [
     node('hoop:snare:1', 'hoop', 0, 800),
-    node('dataline:1', 'dataline', 0, 1000),
-    node('dataline:2', 'dataline', 40, 1000),
-    node('output:o1', 'output', 20, 1200),
+    node('hoop:snare:2', 'hoop', 40, 800),
+    node('output:o1', 'output', 0, 1200),
+    node('output:o2', 'output', 40, 1200),
   ];
-  const baseEdges: PatchFlowEdge[] = [
-    edge('hoop:snare:1', 'dataline:1'),
-    edge('dataline:1', 'output:o1'),
-    edge('dataline:2', 'output:o1'),
-  ];
-
-  it('a NEW wire to a second data line is flagged (would be rejected)', () => {
-    const probe = edge('hoop:snare:1', 'dataline:2'); // fan snare#0 onto line 2
-    const prospective = routingFromGraph(baseNodes, [...baseEdges, probe]);
-    expect(hasHoopFanOut(kit, prospective)).toBe(true);
-  });
+  const baseEdges: PatchFlowEdge[] = [edge('output:o1', 'hoop:snare:1')];
 
   it('the live routing (no candidate wire) is clean — the guard never false-positives', () => {
     expect(hasHoopFanOut(kit, routingFromGraph(baseNodes, baseEdges))).toBe(false);
   });
 
-  it('a RE-HOME (move the one wire to line 2) is clean — reconnect is not a fan-out', () => {
-    // onReconnect updates the edge in place: hoop:snare:1 → dataline:2 REPLACES → dataline:1.
-    const moved = baseEdges.map((e) =>
-      e.source === 'hoop:snare:1' ? edge('hoop:snare:1', 'dataline:2') : e,
-    );
-    expect(hasHoopFanOut(kit, routingFromGraph(baseNodes, moved))).toBe(false);
+  it('a NEW wire driving the same hoop from a second output is flagged (would be rejected)', () => {
+    const probe = edge('output:o2', 'hoop:snare:1'); // snare#1 now driven by o1 AND o2 → fan-out
+    const prospective = routingFromGraph(baseNodes, [...baseEdges, probe]);
+    expect(hasHoopFanOut(kit, prospective)).toBe(true);
   });
 
-  it('a HOOP-END re-point onto an already-patched hoop IS a fan-out (B1) — guarded', () => {
-    // snare#0 (hoop:snare:1) → dataline:1; snare#1 (hoop:snare:2) → dataline:2. Both lines feed o1.
-    const nodes: PatchFlowNode[] = [
-      node('hoop:snare:1', 'hoop', 0, 800),
-      node('hoop:snare:2', 'hoop', 40, 800),
-      node('dataline:1', 'dataline', 0, 1000),
-      node('dataline:2', 'dataline', 40, 1000),
-      node('output:o1', 'output', 20, 1200),
-    ];
-    const es: PatchFlowEdge[] = [
-      edge('hoop:snare:1', 'dataline:1'),
-      edge('hoop:snare:2', 'dataline:2'),
-      edge('dataline:1', 'output:o1'),
-      edge('dataline:2', 'output:o1'),
-    ];
-    expect(hasHoopFanOut(kit, routingFromGraph(nodes, es))).toBe(false); // clean before
-    // Drag the HOOP end of the dataline:1 wire from snare#0 onto snare#1 (which already has
-    // dataline:2). onReconnect's prospective set: re-point that edge's source. snare#1 now on
-    // BOTH lines → fan-out the editor must refuse (server would too).
-    const old = edge('hoop:snare:1', 'dataline:1');
-    const prospective = es.map((e) =>
-      e.id === old.id ? { ...e, source: 'hoop:snare:2', target: 'dataline:1' } : e,
-    );
-    expect(hasHoopFanOut(kit, routingFromGraph(nodes, prospective))).toBe(true);
+  it('a RE-HOME (move the one root wire to the other output) is clean — reconnect is not a fan-out', () => {
+    // onReconnect updates the edge in place: output:o1→snare#1 REPLACED by output:o2→snare#1.
+    const moved = baseEdges.map((e) => (e.source === 'output:o1' ? edge('output:o2', 'hoop:snare:1') : e));
+    expect(hasHoopFanOut(kit, routingFromGraph(baseNodes, moved))).toBe(false);
   });
 });

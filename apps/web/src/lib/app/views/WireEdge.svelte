@@ -28,5 +28,13 @@
 <!-- interactionWidth widens the invisible hit-path so thin wires select reliably; the
      stroke paint that makes it hit-testable at all is applied in GraphCanvas's CSS. -->
 <BaseEdge {id} {path} {markerStart} {markerEnd} {style} interactionWidth={24} />
-<EdgeReconnectAnchor type="source" position={{ x: sourceX, y: sourceY }} />
-<EdgeReconnectAnchor type="target" position={{ x: targetX, y: targetY }} />
+<!-- The two ends are reconnect anchors (re-point a wire to another node). Each carries a small
+     grab dot — hidden at rest, revealed when the wire is hovered/selected (GraphCanvas CSS) — so
+     it reads as a draggable endpoint, and it hides itself mid-drag (anchor renders children only
+     while `!reconnecting`). -->
+<EdgeReconnectAnchor type="source" position={{ x: sourceX, y: sourceY }}>
+  <span class="reconnect-dot" aria-hidden="true"></span>
+</EdgeReconnectAnchor>
+<EdgeReconnectAnchor type="target" position={{ x: targetX, y: targetY }}>
+  <span class="reconnect-dot" aria-hidden="true"></span>
+</EdgeReconnectAnchor>

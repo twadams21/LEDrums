@@ -1,14 +1,27 @@
 <script lang="ts">
-  /* Trigger-node source editor (U2). The trigger node (graph root) declares what input
-     fires its graph — a drum zone, a raw MIDI note/CC, or an OSC address (U1's
-     TriggerSource). Writes go through store.setTriggerSource(<graph key>, source); the
-     readout + node sub-line resolve via the pure describeTriggerSource helper. The graph
-     key is store.selectedPadKey. */
+  /* Trigger-node source editor (U2 → C6). Two ORTHOGONAL concerns live here, kept visibly
+     distinct:
+
+     1. Trigger binding (`node.source`) — what fires THIS graph: a drum zone, a raw MIDI
+        note/CC, or an OSC address (U1's TriggerSource). Writes via store.setTriggerSource.
+        The graph key is store.selectedPadKey.
+
+     2. Zones (the drum's zone→input wiring) — the (drumId, slot) MIDI-note / OSC entries in
+        the authoritative `project.inputMap`, shared by EVERY graph on that drum. Edited via
+        the pure setZoneMidiNote / setZoneOscAddress helpers through store.setInputMap. This
+        mirrors PatchZoneInspector's per-zone editor, listed for the whole drum with add/remove.
+
+     The zones list anchors to the drum this trigger fires from (its `drum` source, else the
+     selected pad's drum); a MIDI/OSC-bound trigger with no pad shows no drum to wire. Per-zone
+     CC is intentionally absent — the inputMap has no CC dimension (only midiNotes/oscMap), and
+     CC binding already lives on `node.source` above. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, TriggerSource } from '../../../trigger-lab/sim';
   import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
   import Link2 from '@lucide/svelte/icons/link-2';
+  import Radio from '@lucide/svelte/icons/radio';
+  import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
@@ -17,9 +30,8 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
-  import CopyPlus from '@lucide/svelte/icons/copy-plus';
-  import Radio from '@lucide/svelte/icons/radio';
   import ReadRow from './ReadRow.svelte';
+  import DrumZonesList from './DrumZonesList.svelte';
   import { onNum } from './forms';
   import { formatMidiNote, parseMidiNote } from '../../../midi/midi-note';
   import { bindingFromSource } from '../../../trigger-lab/input-activity';
@@ -83,6 +95,16 @@
     const parsed = parseMidiNote(v);
     if (parsed !== null) store.setTriggerSource(g, { kind: 'midi', note: parsed });
   }
+
+  // --- Zones (the drum's zone→MIDI/OSC input wiring) ---------------------------------------
+  // Anchored to the drum this trigger fires from — its `drum` source, else the selected pad's
+  // drum. A MIDI/OSC trigger with no pad has no drum context and hides the list. The list itself
+  // (add/remove/relabel + MIDI/OSC + learn) is the shared DrumZonesList — one mutation path with
+  // the Patch-graph Trigger node inspector.
+  const zonesDrumId = $derived<string | null>(src?.kind === 'drum' ? src.drumId : store.selectedPad?.drumId ?? null);
+  const zonesDrumLabel = $derived(
+    zonesDrumId ? store.drums.find((d) => d.id === zonesDrumId)?.label ?? zonesDrumId : null,
+  );
 </script>
 
 <header class="ihead">
@@ -219,6 +241,17 @@
       />
     </Field>
   {/if}
+
+  <!-- Zones: the drum's zone→MIDI/OSC input wiring (project.inputMap), distinct from the
+       graph binding above. Shared by every graph on this drum (and with the Patch trigger node). -->
+  <div class="zonesection">
+    {#if !zonesDrumId}
+      <div class="sectionhead"><span class="seclabel">Zones</span></div>
+      <p class="hint">Bind this trigger to a drum to wire its zones to MIDI / OSC input.</p>
+    {:else}
+      <DrumZonesList {store} drumId={zonesDrumId} drumLabel={zonesDrumLabel ?? undefined} />
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -287,6 +320,7 @@
     font-size: var(--text-xs);
     color: var(--text-muted);
     line-height: var(--leading-normal);
+    text-wrap: pretty;
   }
   /* Last-heard confirmation, tucked just under its field. */
   .heard {
@@ -304,5 +338,31 @@
   .linkhint :global(svg) {
     color: var(--accent);
     flex: none;
+  }
+  /* --- Zones section (drum input wiring) — divided from the graph binding above --- */
+  .zonesection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-faint);
+  }
+  .sectionhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 24px;
+  }
+  .seclabel {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

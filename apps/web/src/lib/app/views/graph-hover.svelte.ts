@@ -16,7 +16,7 @@ interface FlowEdgeLike {
   source: string;
   target: string;
   class?: unknown;
-  data?: { mod?: boolean; modulation?: boolean; effect?: boolean };
+  data?: { mod?: boolean; modulation?: boolean; effect?: boolean; ref?: boolean };
 }
 
 export class GraphHover {
@@ -35,6 +35,9 @@ export class GraphHover {
       hover accent (`edge-hot`, later in the CSS cascade) still wins its stroke on a mod wire. */
   decorate<E extends FlowEdgeLike>(edges: E[]): E[] {
     return edges.map((e) => {
+      // The Trigger → Drum reference wire (D1) is pure decoration — always grey/dotted, never
+      // lit by hover. Keep its class fixed and skip the hover-highlight logic entirely.
+      if (e.data?.ref) return { ...e, class: 'edge-ref' };
       const cls = [
         e.data?.mod ? 'edge-mod' : null,
         e.data?.modulation ? 'edge-modulation' : null,

@@ -18,7 +18,7 @@
   let hovered = $state<number | null>(null);
 
   const visibleHoops = $derived(Math.min(Math.max(hoopCount, 0), THUMB_ROWS));
-  const active = $derived(new Set(selectedHoops.filter((h) => h >= 0 && h < visibleHoops)));
+  const active = $derived(new Set(selectedHoops.filter((h) => h >= 1 && h <= visibleHoops))); // hoops 1-based (A1)
   const cssProjection = $derived(getThumbProjection(w, h, false));
   const rowBands = $derived.by(() => {
     const bands: Array<{ top: number; height: number }> = [];
@@ -93,8 +93,9 @@
 
     ctx.globalCompositeOperation = 'lighter';
     for (let row = 0; row < count; row++) {
-      const rowOn = whole || selected.has(row);
-      const rowHover = hover === row;
+      // row is a 0-based geometry index; selected/hover carry 1-based hoop numbers (A1).
+      const rowOn = whole || selected.has(row + 1);
+      const rowHover = hover === row + 1;
       if (!rowOn && !rowHover) continue;
       const intensity = rowOn ? 1 : 0.44;
       for (let col = 0; col < THUMB_COLS; col++) {
@@ -112,8 +113,8 @@
 <div class="scope-thumb" aria-label={`${label} hoop selector`}>
   <canvas bind:this={canvas} style="width:{w}px; aspect-ratio:{w} / {h};"></canvas>
   <div class="hit-layer" aria-hidden="false">
-    {#each Array.from({ length: visibleHoops }, (_, i) => i) as hoop (hoop)}
-      {@const band = rowBands[hoop] ?? { top: 0, height: 25 }}
+    {#each Array.from({ length: visibleHoops }, (_, i) => i + 1) as hoop (hoop)}
+      {@const band = rowBands[hoop - 1] ?? { top: 0, height: 25 }}
       <button
         type="button"
         class:selected={isOn(hoop)}
@@ -124,7 +125,7 @@
         onpointerleave={() => (hovered = null)}
         onclick={(event) => onSelectHoop(event, hoop)}
       >
-        <span>{hoop + 1}</span>
+        <span>{hoop}</span>
       </button>
     {/each}
   </div>

@@ -108,8 +108,9 @@ export function buildThumbPixelModel(): PixelModel {
       pixels.push({
         id: r * COLS + c,
         drumId: 'thumb',
-        hoopIndex: r,
-        indexInHoop: c,
+        // 1-based labels (A1) to match core buildPixelModel; r/c stay 0-based offsets elsewhere.
+        hoopIndex: r + 1,
+        indexInHoop: c + 1,
         angleDeg,
         normHoop,
         zone,
@@ -132,6 +133,7 @@ export function buildThumbPixelModel(): PixelModel {
     pixelStart: 0,
     pixelCount: N,
     pixelsPerHoop: COLS,
+    hoopPixelCounts: Array.from({ length: ROWS }, () => COLS), // uniform lab grid (B4 field)
     hoopCount: ROWS,
     radiusMm: RADIUS,
     effectOriginWorld: { x: 0, y: 0, z: halfZ },

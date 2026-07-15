@@ -121,7 +121,9 @@ export const collisions: EffectGenerator<CollisionsState> = {
       if (!drum) continue;
       for (let p = drum.pixelStart; p < drum.pixelStart + drum.pixelCount; p++) {
         const pix = ctx.model.pixels[p]!;
-        if (pix.hoopIndex !== hoop.hoopIndex) continue;
+        // `hoop.hoopIndex` is this effect's own 0-based hoop key (seeds the RNG); Pixel.hoopIndex
+        // is 1-based (A1). Compare in 0-based space so the seeded state stays byte-identical.
+        if (pix.hoopIndex - 1 !== hoop.hoopIndex) continue;
 
         // Flash overlay (localized, brighter, different hue) takes priority.
         if (hoop.flashLevel > 0.004) {

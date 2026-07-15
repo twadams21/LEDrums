@@ -27,7 +27,7 @@ import type { LabModel } from './kit';
 const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
 function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): { drumId: string | null; hoopIndices: number[] } {
-  return voice.parseHoopTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'zero', sort: false });
+  return voice.parseHoopTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'first', sort: false });
 }
 
 /** Resolve a voice's params for this frame: apply modulation mappings + tempo sync. */
@@ -65,9 +65,9 @@ function pixelRangesFor(v: Voice, lab: LabModel): Array<{ start: number; end: nu
     const d = drumId ? lab.pm.drumById.get(drumId) : undefined;
     if (!d) return [];
     return hoopIndices
-      .filter((hoopIndex) => hoopIndex >= 0 && hoopIndex < d.hoopCount)
+      .filter((hoopIndex) => hoopIndex >= 1 && hoopIndex <= d.hoopCount) // hoops 1-based (A1)
       .map((hoopIndex) => {
-        const start = d.pixelStart + hoopIndex * d.pixelsPerHoop;
+        const start = d.pixelStart + (hoopIndex - 1) * d.pixelsPerHoop;
         return { start, end: start + d.pixelsPerHoop };
       });
   }
@@ -156,14 +156,14 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
       start = d.pixelStart;
       end = d.pixelStart + d.pixelCount;
     } else if (v.scope === 'hoop') {
-      // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]"; absent → source drum hoop 0.
+      // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]" (1-based); absent → source drum hoop 1.
       const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
       if (drumId == null) continue;
       const d = lab.pm.drumById.get(drumId);
       if (!d) continue;
       for (const hoopIndex of hoopIndices) {
-        if (hoopIndex < 0 || hoopIndex >= d.hoopCount) continue;
-        start = d.pixelStart + hoopIndex * d.pixelsPerHoop;
+        if (hoopIndex < 1 || hoopIndex > d.hoopCount) continue; // hoops 1-based (A1)
+        start = d.pixelStart + (hoopIndex - 1) * d.pixelsPerHoop;
         end = start + d.pixelsPerHoop;
         if (v.generatorId) renderGeneratorVoice(buf, v, level, sim, lab, start, end);
       }
