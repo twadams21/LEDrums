@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { hostname, platform, release } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import {
   defaultProject,
   WS_PATH,
@@ -15,7 +18,7 @@ import {
   oscRecall,
   parseSectionRecallAddress,
 } from './input-router';
-import { listProjects, loadProject, projectExists, projectFilePath, saveProjectAsync } from './projects';
+import { listProjects, loadProject, projectExists, projectFilePath, resolveProjectsDir, saveProjectAsync } from './projects';
 import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
@@ -41,6 +44,10 @@ import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
 import { createMonitorBus } from './monitor';
 import { installProcessErrorCapture } from './process-errors';
+import { createShipQueue } from './telemetry/ship-queue';
+import { createHttpTransport } from './telemetry/transport';
+import { createReporter, type Reporter } from './telemetry/reporter';
+import { isTelemetryEnabled, type ReportRecord } from './telemetry/envelope';
 import {
   decodeClient,
   effectSpecs,
@@ -218,15 +225,89 @@ function broadcastJson(msg: ServerMessage): void {
 }
 
 const monitorBus = createMonitorBus(broadcastJson);
+// The error Reporter (#122) subscribes to EVERY Monitor event: non-error events become breadcrumbs,
+// error events become deduplicated, shipped reports. Created below iff telemetry is enabled + wired.
+let reporter: Reporter | null = null;
 function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
-  monitorBus.emit(event);
+  const full = monitorBus.emit(event);
+  reporter?.observe(full);
 }
 
 // Server process fault capture (#122): uncaught exceptions + unhandled rejections land on the same
-// Monitor bus as an `error` event. `onFatal` (a synchronous Reporter flush before exit) is wired in
-// below once the Reporter exists, so a crash report reaches disk before the process dies.
+// Monitor bus as an `error` event. `onFatal` runs the Reporter's synchronous queue flush before the
+// process exits, so a crash report reaches disk (and ships on the next boot) even on a hard fault.
 let flushReportsSync: () => void = () => {};
 installProcessErrorCapture({ monitor, onFatal: () => flushReportsSync() });
+
+// --- Remote error reporting (#122) ------------------------------------------
+// On when the server serves the built web root (packaged/prod), off under the dev proxy;
+// `LEDRUMS_TELEMETRY=on|off` overrides. Shipping additionally needs an ingest endpoint + token
+// (baked in at build time via env); absent those, capture still feeds the local Monitor but nothing
+// leaves the machine. The queue/ship machinery is generic (reused by the backups spec #123).
+function appVersion(): string {
+  // Desktop config is the version source of truth (passed as env); package.json is the plain-dev
+  // fallback so a dev report still carries a version.
+  const fromEnv = process.env.LEDRUMS_APP_VERSION?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version?: string;
+    };
+    return pkg.version ?? '0.0.0-dev';
+  } catch {
+    return '0.0.0-dev';
+  }
+}
+
+if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
+  const endpoint = process.env.LEDRUMS_TELEMETRY_ENDPOINT?.trim();
+  const token = process.env.LEDRUMS_TELEMETRY_TOKEN?.trim();
+  if (endpoint && token) {
+    // Identity resolved once at boot (uptime is read per report). Session id distinguishes runs.
+    const session = randomUUID();
+    const machine = hostname();
+    const osPlatform = platform();
+    const osRelease = release();
+    const version = appVersion();
+    const queue = createShipQueue<ReportRecord>({
+      path: join(resolveProjectsDir(process.env), 'error-reports.jsonl'),
+      transport: createHttpTransport<ReportRecord>({ endpoint, token }),
+    });
+    reporter = createReporter({
+      queue,
+      now: () => Date.now(),
+      envelope: (origin) => ({
+        machine,
+        version,
+        engineMode: VOICE_MODE ? 'voice' : 'legacy',
+        platform: osPlatform,
+        osRelease,
+        session,
+        uptimeMs: Math.round(process.uptime() * 1000),
+        origin,
+      }),
+    });
+    flushReportsSync = () => reporter?.persistSync();
+    // Clean shutdown (boot calls process.exit) + any exit path: flush the queue durably.
+    process.on('exit', () => reporter?.persistSync());
+    monitor({
+      type: 'system',
+      direction: 'local',
+      source: 'server',
+      destination: 'telemetry',
+      label: 'Remote error reporting enabled',
+      detail: `endpoint=${endpoint}`,
+    });
+  } else {
+    monitor({
+      type: 'system',
+      direction: 'local',
+      source: 'server',
+      destination: 'telemetry',
+      label: 'Remote error reporting: capturing to Monitor only (ingest endpoint/token unset)',
+    });
+  }
+}
 
 for (const event of startupDiagnostics({
   voiceMode: VOICE_MODE,
