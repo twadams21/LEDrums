@@ -1,0 +1,14 @@
+# Cloudflare Worker: LEDrums error-report ingest (#122). Deployed MANUALLY via wrangler — see
+# README.md. Secrets (TELEMETRY_TOKEN, DISCORD_WEBHOOK_URL) are set with `wrangler secret put`, never
+# committed. Replace `database_id` with the real D1 id printed by `wrangler d1 create`.
+name = "ledrums-error-ingest"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ledrums-errors"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
