@@ -40,6 +40,7 @@ import { createUpdateStatusHandler } from './http/update-status';
 import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
 import { createMonitorBus } from './monitor';
+import { installProcessErrorCapture } from './process-errors';
 import {
   decodeClient,
   effectSpecs,
@@ -220,6 +221,12 @@ const monitorBus = createMonitorBus(broadcastJson);
 function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
   monitorBus.emit(event);
 }
+
+// Server process fault capture (#122): uncaught exceptions + unhandled rejections land on the same
+// Monitor bus as an `error` event. `onFatal` (a synchronous Reporter flush before exit) is wired in
+// below once the Reporter exists, so a crash report reaches disk before the process dies.
+let flushReportsSync: () => void = () => {};
+installProcessErrorCapture({ monitor, onFatal: () => flushReportsSync() });
 
 for (const event of startupDiagnostics({
   voiceMode: VOICE_MODE,
