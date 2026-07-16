@@ -273,30 +273,58 @@
     stroke: var(--accent);
   }
   /* Reconnect grab dots. The reconnect anchor (and this dot) render in xyflow's `edge-labels`
-     PORTAL — NOT inside `.svelte-flow__edge` — so they can't key off edge hover/selection. Show
-     them ALWAYS as a subtle affordance at each wire end (a small grey dot marking "grab here to
-     re-point"), brightening to accent when the 25px anchor itself is hovered. Centred in the
-     anchor hit-box; the anchor stays grabbable regardless. No motion (locked graph contract). */
+     PORTAL — NOT inside `.svelte-flow__edge` — so they can't key off edge hover/selection in
+     CSS. WireEdge pushes the state down instead: hovering the wire's hit-path (or selecting
+     the wire) stamps `.show` on both end dots, so the affordance appears exactly when the wire
+     has your attention and a dense graph carries zero dot noise at rest. The 25px anchor stays
+     grabbable regardless. All state changes are instant (locked graph contract). */
   .gcanvas :global(.svelte-flow__edgeupdater) {
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: grab;
   }
-  .gcanvas :global(.reconnect-dot) {
-    display: block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--surface-2);
-    border: 2px solid var(--border-strong);
-    box-shadow: var(--shadow-1);
-    opacity: 0.6;
+  .gcanvas :global(.svelte-flow__edgeupdater:active) {
+    cursor: grabbing;
   }
+  .gcanvas :global(.reconnect-dot) {
+    display: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    /* canvas-coloured fill + halo punch the dot out of the wire beneath it */
+    background: var(--bg-perform);
+    box-shadow: 0 0 0 2px var(--bg-perform);
+  }
+  .gcanvas :global(.reconnect-dot.show) {
+    display: block;
+  }
+  /* direction reads from the pair: the source end is a hollow ring, the target end filled */
+  .gcanvas :global(.svelte-flow__edgeupdater-target .reconnect-dot) {
+    background: var(--border-strong);
+  }
+  /* Entering the 25px hit-box is "grab range": the dot steps up and lights accent the moment
+     the cursor can actually grab — the hit-box/visual gap is made legible rather than closed.
+     `display:block` here also reveals a dot approached directly, before any wire hover. */
   .gcanvas :global(.svelte-flow__edgeupdater:hover .reconnect-dot) {
-    opacity: 1;
+    display: block;
+    width: 13px;
+    height: 13px;
     border-color: var(--accent);
-    background: color-mix(in oklch, var(--accent) 25%, var(--surface-2));
+  }
+  .gcanvas :global(.svelte-flow__edgeupdater-target:hover .reconnect-dot) {
+    background: var(--accent);
+  }
+  /* WireEdge stamps these on the edge path: `wire-grab` while an anchor is hovered (the wire
+     lights up to confirm WHICH run the grab would re-point — ends can sit close together);
+     `wire-reconnecting` mid-drag (the old run dims while the accent connection line previews
+     the new one). Placed after the hover/selection rules so they win the cascade. */
+  .gcanvas :global(.svelte-flow__edge-path.wire-grab) {
+    stroke: var(--accent);
+  }
+  .gcanvas :global(.svelte-flow__edge-path.wire-reconnecting) {
+    stroke-opacity: 0.35;
   }
   /* R08: a wire ARMED for a splice (a node is dragged over it) lights accent, thickens, and
      glows — the pending insert reads clearly BEFORE release. Instant, no motion (the locked
