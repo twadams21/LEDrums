@@ -553,8 +553,9 @@ export class TriggerLab {
       unchanged. */
   presence = $state<{ editorId: string | null; youAreEditor: boolean; clientCount: number } | null>(null);
   /** Local project backups (#123), newest-first — the server's reply to `listBackups`, rendered by
-      the Backups dialog. Populated on demand via {@link refreshBackups}; empty until then. */
-  private _backups = $state<BackupSnapshotMeta[]>([]);
+      the Backups dialog. Populated on demand via {@link refreshBackups}; empty until then. Public +
+      settable like {@link presence}/{@link controllerStatus} so the dev shot-seam can seed it. */
+  backups = $state<BackupSnapshotMeta[]>([]);
   /** latest binary RGB frame from the server engine (null until one arrives) —
       the kit preview shows this instead of the local composite when connected. */
   serverFrame = $state<Uint8Array | null>(null);
@@ -1558,7 +1559,7 @@ export class TriggerLab {
       },
       onBackups: (items) => {
         // Reply to listBackups (#123) — the local snapshot listing the Backups dialog renders.
-        this._backups = items;
+        this.backups = items;
       },
       onAuthError: () => {
         // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
@@ -2212,12 +2213,6 @@ export class TriggerLab {
   }
 
   // --- project backups (#123) ----------------------------------------------
-
-  /** Local project backups (newest-first), the last `listBackups` reply. The Backups dialog reads
-      this; call {@link refreshBackups} on open to populate it. */
-  get backups(): BackupSnapshotMeta[] {
-    return this._backups;
-  }
 
   /** Ask the server for the current snapshot list (a pure read — a viewer may refresh too). No-op
       when the link is down; the reply lands on {@link backups} via the `onBackups` callback. */
