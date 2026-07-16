@@ -56,6 +56,21 @@ export interface SongLibraryBlob {
   data: unknown;
 }
 
+/** Why a backup snapshot was taken (#123) — mirrors the server SnapshotStore's `SnapshotReason`.
+ * The Backups dialog renders it beside the relative time so the drummer can find "the state before
+ * it broke": `boot` (session start), `cadence` (periodic), `pre-risk` (just before a risky op). */
+export type BackupReason = 'boot' | 'cadence' | 'pre-risk';
+
+/** One local snapshot as listed to the client (#123): identity + when + why. The full bundle stays
+ * server-side; the dialog lists these and restores one by `id`. Newest-first on the wire. */
+export interface BackupSnapshotMeta {
+  /** Stable snapshot id (`<createdAt>-<reason>`) — what `restoreBackup` takes. */
+  id: string;
+  /** Epoch ms the snapshot was taken — the dialog renders it as a relative time. */
+  createdAt: number;
+  reason: BackupReason;
+}
+
 export interface SerializedDrum {
   id: string;
   label: string;
