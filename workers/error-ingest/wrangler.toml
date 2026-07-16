@@ -12,3 +12,10 @@ enabled = true
 binding = "DB"
 database_name = "ledrums-errors"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Project backups (#123): snapshot bundles stored under `backups/<machine>/<timestamp>-<reason>`.
+# Remote retention is a bucket LIFECYCLE RULE (90-day expiry), set on the bucket — not code. Create
+# the bucket + rule once: see README ("Project backups"). No database_id equivalent for R2.
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "ledrums-backups"

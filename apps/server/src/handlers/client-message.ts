@@ -4,7 +4,7 @@ import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
-import { encodeServer, type ClientMessage, type ControllerTestPattern, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
+import { encodeServer, type BackupSnapshotMeta, type ClientMessage, type ControllerTestPattern, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
 import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
@@ -44,7 +44,7 @@ function acceptsMidiChannel(msg: ClientMessage, channel: number | null): boolean
  * shared authored state, so they bypass the editor gate — a VIEWER watching the controller panel
  * must keep live status flowing (discover/adopt/identify stay editor-gated by deny-by-default).
  */
-const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover', 'watchController', 'listNetworkAdapters']);
+const UNGATED_NON_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['listProjects', 'takeover', 'watchController', 'listNetworkAdapters', 'listBackups']);
 
 /**
  * Whether `t` is an AUTHORING mutation that only the editor may apply (S2 read-only policy).
@@ -115,6 +115,17 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
    * panel uses them to guide the operator to put the PixLite on the adapter's subnet + recommend an
    * IP. Absent when the wiring provides none (the message then replies with an empty list). */
   listNetworkAdapters?: () => NetworkAdapter[];
+  /** Project backups (#123). `list` backs the `listBackups` read (the Backups dialog). `restore`
+   * runs the server-side restore — pre-risk snapshot of current state, atomic replace of all three
+   * blobs, engine/client cold-load reload — and returns false for an unknown id (a user-visible
+   * `error` reply). `snapshotPreRisk` is the append-only pre-risk trigger the risky-op seams call
+   * BEFORE mutating (a bulk `setProject`/`loadProject` also migrates the schema on parse). Absent
+   * when the wiring runs without backups (snapshotting disabled): the reads reply empty + no-op. */
+  backups?: {
+    list(): BackupSnapshotMeta[];
+    restore(id: string): boolean;
+    snapshotPreRisk(): void;
+  };
   /** PixLite controller monitor (S47), or absent when the wiring runs without one (the controller
    * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
    * that client's interest. `adopt` resolves to a result the handler turns into an `error` reply on
@@ -272,8 +283,42 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
 
+    // Project backups (#123). `listBackups` is a pure read (ungated) — reply to the requester with
+    // the local snapshot list (newest-first). `restoreBackup` is editor-gated above: the store takes
+    // a pre-risk snapshot of current state, atomically replaces all three blobs, and reloads the
+    // engine + every client like a cold load (all inside `backups.restore`). An unknown id is a
+    // user-visible `error` reply with nothing touched.
+    if (msg.t === 'listBackups') {
+      ws.send(encodeServer({ t: 'backups', items: deps.backups?.list() ?? [] }));
+      return;
+    }
+    if (msg.t === 'restoreBackup') {
+      const ok = deps.backups?.restore(msg.id) ?? false;
+      if (!ok) {
+        ws.send(encodeServer({ t: 'error', message: `Unknown backup: ${msg.id}` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'backups',
+          label: 'Restore rejected (unknown backup)',
+          detail: msg.id,
+        });
+        return;
+      }
+      monitor?.({
+        type: 'persistence',
+        direction: 'local',
+        source: 'server',
+        destination: 'backups',
+        label: 'Backup restored',
+        detail: msg.id,
+      });
+      return;
+    }
+
     // Project IO (load/save/list) is handled here, not by the reducer.
-    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState })) return;
+    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups?.snapshotPreRisk() })) return;
 
     // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
     // legacy reducer so every MIDI input adapter obeys the same setting.
@@ -367,6 +412,10 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         });
         return;
       }
+      // Pre-risk snapshot (#123): a bulk re-rig rewrites the whole kit/output/input-map at once (and
+      // parse migrated the patch's schema) — capture current state BEFORE the mutation, so a bad
+      // paste still has a clean state behind it. Fail-closed: the snapshot precedes any state touch.
+      deps.backups?.snapshotPreRisk();
       const cur = host.engine.getProject();
       host.engine.setProject({
         ...cur,

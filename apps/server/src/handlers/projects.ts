@@ -16,6 +16,9 @@ export interface ProjectHandlerDeps {
   autosaver: Autosaver;
   /** Broadcast the full `state` message to all clients (`broadcastJson(stateMessage())`). */
   broadcastState(): void;
+  /** Pre-risk backup trigger (#123): take a snapshot BEFORE `loadProject` replaces the live project
+   * (a bulk apply that also migrates the loaded file's schema on parse). Absent = backups disabled. */
+  snapshotPreRisk?(): void;
 }
 
 /**
@@ -26,6 +29,9 @@ export interface ProjectHandlerDeps {
 export function handleProjectMessage(msg: ClientMessage, ws: JsonSink, deps: ProjectHandlerDeps): boolean {
   if (msg.t === 'loadProject') {
     const loaded = loadProject(msg.name);
+    // Pre-risk snapshot (#123) — capture current state before the loaded project (schema-migrated on
+    // parse) replaces it, so a load that turns out wrong still has a clean state behind it.
+    deps.snapshotPreRisk?.();
     deps.host.engine.setProject(loaded);
     deps.host.reloadOutputSettings();
     deps.broadcastState();
