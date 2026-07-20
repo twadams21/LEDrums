@@ -539,7 +539,6 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
   const channelsPerPixelZero: unknown = [{ id: 'out1', channelsPerPixel: 0, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] }];
   const invalidCases: Array<[string, unknown]> = [
     ['channelsPerPixel: 0', channelsPerPixelZero],
-    ['empty segments', [{ id: 'out1', channelsPerPixel: 3, segments: [] }]],
     ['negative hoop range', [{ id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: -1, hoopEnd: 3 }] }]],
   ];
 
@@ -548,6 +547,19 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
     const editor = join();
 
     handle({ t: 'setKitOutputs', outputs: validOutputs }, editor);
+
+    expect(editor.sent.some((m) => m.t === 'error')).toBe(false);
+    expect(editor.sent.filter((m) => m.t === 'state')).toHaveLength(1);
+    expect(autosaver.markDirty).toHaveBeenCalledTimes(1);
+  });
+
+  // #112: outputs are a fixed port set (4/8); an unwired port carries no segments and is now
+  // VALID (advisory hoop-uncovered only, never blocking). The gate applies it, no error.
+  it('accepts an empty-segment (unwired) output — applied, not rejected', () => {
+    const { handle, join, autosaver } = harness();
+    const editor = join();
+
+    handle({ t: 'setKitOutputs', outputs: [{ id: 'out1', channelsPerPixel: 3, segments: [] }] }, editor);
 
     expect(editor.sent.some((m) => m.t === 'error')).toBe(false);
     expect(editor.sent.filter((m) => m.t === 'state')).toHaveLength(1);

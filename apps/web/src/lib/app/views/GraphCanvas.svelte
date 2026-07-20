@@ -48,6 +48,7 @@
     swapping = false,
     ready = true,
     snapGrid,
+    deleteKey = ['Delete', 'Backspace'],
     defaultEdgeOptions,
     onBeforeConnect,
     onNodeClick,
@@ -84,6 +85,11 @@
     /** Snap dragged nodes to a grid (px). When set, the background dots align to the same grid so
         the snap targets are visible. Omitted → free positioning (the Trigger graph). */
     snapGrid?: [number, number];
+    /** SvelteFlow delete-key binding. Defaults to Delete/Backspace (the Trigger graph, which owns
+        node/edge deletion). The Patch graph passes `null` to DISABLE the keypath entirely — its
+        outputs are a static port set, so a stray Delete must never drop a wire/output (that both
+        froze the app and drove the output-count drift). */
+    deleteKey?: string[] | null;
     defaultEdgeOptions?: Record<string, unknown>;
     onBeforeConnect?: (c: Connection) => Connection | false;
     onNodeClick?: (id: string) => void;
@@ -130,7 +136,7 @@
       {snapGrid}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
-      deleteKey={['Delete', 'Backspace']}
+      deleteKey={deleteKey}
       onbeforeconnect={onBeforeConnect}
       onnodeclick={({ node }) => onNodeClick?.(node.id)}
       onpaneclick={() => onPaneClick?.()}
