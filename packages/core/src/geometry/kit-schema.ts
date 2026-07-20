@@ -111,9 +111,13 @@ const outputObjectSchema = z.object({
    * control). Moved off the controller so different data runs may differ; the v<6 project
    * migrator seeds each existing output with the controller-level order it inherited. */
   rgbOrder: rgbOrderSchema.optional(),
-  /** The output's ordered hoop chain, range-compressed (D1). Min 1 — an output with no chain
-   *  is not persisted (it is inert / awaiting wiring, dropped by the editor at commit). */
-  segments: z.array(outputSegmentSchema).min(1),
+  /** The output's ordered hoop chain, range-compressed (D1). May be EMPTY: outputs are a fixed
+   *  set of physical controller ports (4 normal / 8 expanded, {@link logicalOutputCount}), so an
+   *  unwired port is a first-class, persisted output awaiting wiring — {@link reconcileOutputs}
+   *  grows/shrinks the port count to the controller mode, seeding new ports empty. An empty
+   *  output is inert downstream (buildDmxMap emits nothing for it; the patch graph shows it as an
+   *  "unwired" node), never a crash. */
+  segments: z.array(outputSegmentSchema),
 });
 
 /**
@@ -491,4 +495,41 @@ export function logicalOutputCount(kit: KitConfig): number {
  */
 export function logicalOutputsForPhysical(physicalPort: number, expanded: boolean): number[] {
   return expanded ? [physicalPort * 2 - 1, physicalPort * 2] : [physicalPort];
+}
+
+/**
+ * Force `kit.outputs` to be EXACTLY {@link logicalOutputCount} entries — the number of physical
+ * controller ports the `expanded` mode exposes (4 normal / 8 expanded). Outputs are a static rig
+ * shape driven solely by the controller toggle, NOT freely add/delete-able; this is the single
+ * function that enforces the count so `kit.outputs.length` can never drift from the canonical
+ * count (the drummer's 3-in-expanded corruption). Pure + deterministic (no id/rng):
+ *
+ * - **grow**: keep every existing output in order, then append empty ports (`segments: []`) with
+ *   stable ids until the count is reached. An empty port is inert (buildDmxMap emits nothing) and
+ *   shows as an "unwired" node — the user wires it, never creates it.
+ * - **shrink**: keep the first `count` outputs in order, trim the surplus.
+ * - **identity**: already the right length → returned unchanged (same array ref).
+ *
+ * Appended port ids are `output:<n>` (1-based over the FINAL count), matching the patch graph's
+ * `outputId(index)` grammar and avoiding collision with existing numeric/`output:*` ids in the
+ * common case; a pre-existing id is never rewritten (order + identity of kept outputs preserved).
+ */
+export function reconcileOutputs(kit: KitConfig): KitConfig {
+  const target = logicalOutputCount(kit);
+  const current = kit.outputs;
+  if (current.length === target) return kit;
+
+  const outputs: OutputConfig[] =
+    current.length > target
+      ? current.slice(0, target)
+      : [
+          ...current,
+          ...Array.from({ length: target - current.length }, (_unused, i) => ({
+            id: `output:${current.length + i + 1}`,
+            channelsPerPixel: 3,
+            segments: [],
+          })),
+        ];
+
+  return { ...kit, outputs };
 }
