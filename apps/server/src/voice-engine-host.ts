@@ -6,6 +6,7 @@ import {
   checkRoutingIntegrity,
   getHoopPixelRange,
   materializeHoops,
+  reconcileOutputs,
   SLOT_LABELS,
   voice,
   type DmxMap,
@@ -224,6 +225,11 @@ export class VoiceEngineHost {
    * so reloadKit rebuilds the model AND dmxMap AND re-applies output. */
   setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.kit.global, partial);
+    // Static port set sized by `expanded` (4 normal / 8 expanded) — flipping the mode reconciles
+    // the count. No-op when `expanded` is unchanged. Mutation parity with Engine.setKitGlobal.
+    if (partial.expanded !== undefined) {
+      this.kit.outputs = reconcileOutputs(this.kit).outputs;
+    }
     this.reloadKit();
   }
 

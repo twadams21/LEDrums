@@ -5,7 +5,7 @@
    inputMap) so an identity-checking consumer still sees the same object. Extracted from
    store.svelte.ts unchanged in behaviour. */
 
-import { materializeHoops, type InputMap, type NodeLayout, type OutputConfig, type Project } from '@ledrums/core';
+import { materializeHoops, reconcileOutputs, type InputMap, type NodeLayout, type OutputConfig, type Project } from '@ledrums/core';
 
 /** Partial drum transform — origin/rotation/spin/start-angle/literal pixel geometry. */
 export interface DrumTransformPartial {
@@ -67,9 +67,14 @@ export function applyDrumTransform(project: Project, drumId: string, partial: Dr
   };
 }
 
-/** Kit-global change (S11 mirror + C1/C2 config): merge onto project.kit.global (immutable). */
+/** Kit-global change (S11 mirror + C1/C2 config): merge onto project.kit.global (immutable). When
+    `expanded` flips, reconcile kit.outputs to the new port count (4 normal / 8 expanded) so the
+    optimistic local project matches what the server-apply backstop yields — mutation parity with
+    Engine / VoiceEngineHost setKitGlobal. Reconcile is a no-op (same outputs ref) when the count is
+    already right, so a plain mirror/density edit preserves the outputs identity as before. */
 export function applyKitGlobal(project: Project, partial: KitGlobalPartial): Project {
-  return { ...project, kit: { ...project.kit, global: { ...project.kit.global, ...partial } } };
+  const merged: Project = { ...project, kit: { ...project.kit, global: { ...project.kit.global, ...partial } } };
+  return partial.expanded !== undefined ? { ...merged, kit: reconcileOutputs(merged.kit) } : merged;
 }
 
 /** Per-hoop edit (B4): merge a partial onto `drum.hoops[hoopIndex-1]` (immutable). `hoopIndex`
