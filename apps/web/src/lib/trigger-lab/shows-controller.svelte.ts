@@ -231,7 +231,7 @@ export class ShowsController {
   // `lib:<id>/` namespace). The persisted authored state stays UN-resolved (refs, not copies) — every
   // consumer that must SELECT / PLAY / EDIT a referenced song reads through here, so an edit writes to
   // the library rune (canonical propagation) while persistence keeps refs.
-  resolvedView = $derived(
+  resolvedView = $derived.by(() =>
     songRefsLib.resolveSongRefs(
       {
         songs: this.songs,
