@@ -11,4 +11,4 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "ledrums-errors"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "066f4464-0cf5-40c1-ba6e-6bb328df7bb2"
