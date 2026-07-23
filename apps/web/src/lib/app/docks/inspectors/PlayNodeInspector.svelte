@@ -7,9 +7,11 @@
      preset. Params are always node-local — editing one clip never touches another. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
-  import type { Hsv } from '@ledrums/core';
+  import { voice, type Hsv } from '@ledrums/core';
   import { busIcon } from '../../views/trigger-node-meta';
   import { MODE_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
+  import { nodeLintEntries } from '../../views/graph-lint';
+  import LintCallout from '../../../ui/LintCallout.svelte';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -23,6 +25,15 @@
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
+
+  // Reachability finding anchored to this producer (R15): a Play/Effect whose flow never reaches the
+  // Output renders nothing — surface it here the way empty-scope surfaces on the Output inspector.
+  // Compiled uncached (render-plan cache contract); reachability reads structure only, so it's cheap.
+  const lint = $derived.by(() => {
+    const graph = store.selectedGraph;
+    if (!graph) return [];
+    return nodeLintEntries(voice.compileRenderPlan(graph).issues, node.id, ['no-path-to-output']);
+  });
 
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
@@ -71,6 +82,10 @@
     return [];
   });
 </script>
+
+{#each lint as entry (entry.code)}
+  <LintCallout problem={entry.problem} action={entry.action} />
+{/each}
 
 {#if eff}
   <header class="ihead">

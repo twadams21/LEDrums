@@ -1,8 +1,11 @@
 <script lang="ts">
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode } from '../../../trigger-lab/sim';
+  import { voice } from '@ledrums/core';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import LintCallout from '../../../ui/LintCallout.svelte';
+  import { nodeLintEntries } from '../../views/graph-lint';
   import ScopeHoopPreview from './ScopeHoopPreview.svelte';
   import {
     commitSelection,
@@ -24,6 +27,14 @@
   const selectedHoops = $derived(selection.kind === 'hoops' ? selection.hoops : []);
   const localReadout = $derived(describeSelection(selection, drums));
   const effectiveReadout = $derived(effectiveScopeForNode(store.selectedGraph, node, drums));
+
+  // Reachability finding anchored to this Scope (R15): a scope reaching Output with no producer
+  // upstream is a dead branch that renders nothing — surface it inline, mirroring the Output row.
+  const lint = $derived.by(() => {
+    const graph = store.selectedGraph;
+    if (!graph) return [];
+    return nodeLintEntries(voice.compileRenderPlan(graph).issues, node.id, ['dead-branch']);
+  });
 
   function commit(next: ScopeSelection): void {
     commitSelection(node, next, (n, scope) => store.setScope(n, scope), (n, targetId) => store.setTargetId(n, targetId));
@@ -49,6 +60,10 @@
 </script>
 
 <div class="body">
+  {#each lint as entry (entry.code)}
+    <LintCallout problem={entry.problem} action={entry.action} />
+  {/each}
+
   <label class="toprow">
     <span>
       <span class="k">Whole Kit</span>
