@@ -510,26 +510,33 @@ export function logicalOutputsForPhysical(physicalPort: number, expanded: boolea
  * - **shrink**: keep the first `count` outputs in order, trim the surplus.
  * - **identity**: already the right length → returned unchanged (same array ref).
  *
- * Appended port ids are `output:<n>` (1-based over the FINAL count), matching the patch graph's
- * `outputId(index)` grammar and avoiding collision with existing numeric/`output:*` ids in the
- * common case; a pre-existing id is never rewritten (order + identity of kept outputs preserved).
+ * Appended port ids are `output:<n>`, matching the patch graph's `outputId(index)` grammar and
+ * minted as the LOWEST unused `output:<n>` not already claimed by a kept output — so a sparse
+ * survivor set (e.g. `output:1,2,8` grown to 8) can never mint a duplicate id and stick the count
+ * below target (the id-collision stuck-state defect). A pre-existing id is never rewritten (order +
+ * identity of kept outputs preserved); every id in the returned kit is unique when the survivors are.
  */
 export function reconcileOutputs(kit: KitConfig): KitConfig {
   const target = logicalOutputCount(kit);
   const current = kit.outputs;
   if (current.length === target) return kit;
 
-  const outputs: OutputConfig[] =
-    current.length > target
-      ? current.slice(0, target)
-      : [
-          ...current,
-          ...Array.from({ length: target - current.length }, (_unused, i) => ({
-            id: `output:${current.length + i + 1}`,
-            channelsPerPixel: 3,
-            segments: [],
-          })),
-        ];
+  let outputs: OutputConfig[];
+  if (current.length > target) {
+    outputs = current.slice(0, target);
+  } else {
+    // Grow: append empty ports with the lowest unused `output:<n>` ids, skipping any id a kept
+    // output already holds — deterministic (no rng/clock) and collision-free for sparse survivors.
+    const taken = new Set(current.map((o) => o.id));
+    const appended: OutputConfig[] = [];
+    for (let n = 1; appended.length < target - current.length; n++) {
+      const id = `output:${n}`;
+      if (taken.has(id)) continue;
+      taken.add(id);
+      appended.push({ id, channelsPerPixel: 3, segments: [] });
+    }
+    outputs = [...current, ...appended];
+  }
 
   return { ...kit, outputs };
 }

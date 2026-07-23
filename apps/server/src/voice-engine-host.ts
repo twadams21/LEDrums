@@ -250,9 +250,16 @@ export class VoiceEngineHost {
   }
 
   /** Replace the physical-output topology (PixLite patch order). Outputs change the DMX
-   * patch only, not geometry — rebuild the dmxMap and re-apply output, skip the model. */
+   * patch only, not geometry — rebuild the dmxMap and re-apply output, skip the model.
+   *
+   * The incoming topology is reconciled to the canonical port count for the current `expanded`
+   * mode: setKitOutputs is the 4th path that writes `kit.outputs`, and unlike the setKitGlobal
+   * paths it carries no `expanded`, so a caller (e.g. an undo resync that re-applies the restored
+   * outputs while the live mode still differs) could otherwise drift the count. reconcileOutputs is
+   * a no-op when the topology is already canonical, so a normal rewire is untouched — mutation
+   * parity with the setKitGlobal reconcile gate. */
   setKitOutputs(outputs: OutputConfig[]): void {
-    this.kit.outputs = outputs;
+    this.kit.outputs = reconcileOutputs({ ...this.kit, outputs }).outputs;
     this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
   }

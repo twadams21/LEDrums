@@ -70,6 +70,21 @@ describe('reconcileOutputs — output count is derived from the controller mode'
     }
   });
 
+  it('grows sparse survivors (output:1,2,8) → 8 with UNIQUE ids and the full count (no id collision)', () => {
+    // The stuck-state defect: the old minting appended `output:${len+i+1}` (→ output:4..8),
+    // duplicating the surviving `output:8` and leaving the count pinned below target forever.
+    const kit = kitWith(true, [wired('output:1'), wired('output:2'), wired('output:8')]);
+    const out = reconcileOutputs(kit).outputs;
+    expect(out).toHaveLength(8);
+    const ids = out.map((o) => o.id);
+    expect(new Set(ids).size).toBe(8); // every id unique — no duplicate to stick the count
+    // Survivors kept verbatim in order; appended ports take the lowest unused output:<n> (skips 8).
+    expect(ids.slice(0, 3)).toEqual(['output:1', 'output:2', 'output:8']);
+    expect(ids.slice(3)).toEqual(['output:3', 'output:4', 'output:5', 'output:6', 'output:7']);
+    // A second reconcile is now a no-op — the count reached target, so it self-heals for good.
+    expect(reconcileOutputs(reconcileOutputs(kit)).outputs).toHaveLength(8);
+  });
+
   it('is idempotent — reconciling twice yields the same count', () => {
     const kit = kitWith(true, [wired('a')]);
     const once = reconcileOutputs(kit);

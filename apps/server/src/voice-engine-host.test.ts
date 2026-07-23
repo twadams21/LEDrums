@@ -213,6 +213,18 @@ describe('VoiceEngineHost', () => {
     expect(after).not.toBe(before);
   });
 
+  it('reconciles setKitOutputs to the canonical port count for the current mode (undo-drift backstop)', () => {
+    // N1 defense-in-depth / N3: setKitOutputs is the 4th path writing kit.outputs and carries no
+    // `expanded`. An undo resync could re-apply a 4-output topology while the live kit is still
+    // expanded (8 ports) — the host must clamp/grow to logicalOutputCount rather than pin at 4.
+    const { host } = makeHost(voice.createNullEngine());
+    host.setKitGlobal({ expanded: true }); // 8-port mode live
+    host.setKitOutputs([{ id: 'output:1', channelsPerPixel: 3, segments: [] }]); // stale 1-output set
+    const outputs = host.getProject().kit.outputs;
+    expect(outputs).toHaveLength(8);
+    expect(new Set(outputs.map((o) => o.id)).size).toBe(8); // unique ids after the grow
+  });
+
   // --- S07: routing degradation is reported, not silent ---
   /** A schema-typed output topology whose segment references a drum the kit lacks — buildDmxMap
    * throws on it, so buildMapSafe must degrade to a flat map AND name the offending reference. */
