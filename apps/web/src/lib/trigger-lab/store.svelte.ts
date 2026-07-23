@@ -78,6 +78,7 @@ import {
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
 import { ControllerMonitor } from './controller-monitor.svelte';
+import { ControllerTest } from './controller-test.svelte';
 import { MidiController, type MidiLearnTarget } from './midi-controller.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
@@ -529,6 +530,15 @@ export class TriggerLab {
     isViewer: () => this.isViewer,
     setOutput: (patch) => this.setOutput(patch),
   });
+  /** PixLite controller test-pattern (S49) — the LOUD test-data takeover (drive / exit) + its
+      reactive view, extracted into {@link ControllerTest} (R22, store split 3/5). Sibling of
+      {@link monitor}; the active pattern is server-reported on the monitor's status, so this reads
+      it through `currentTestPattern`. The store delegates its public surface below, unchanged. */
+  private readonly controllerTest = new ControllerTest({
+    send: (msg) => this.client.send(msg),
+    isViewer: () => this.isViewer,
+    currentTestPattern: () => this.monitor.status?.testPattern ?? null,
+  });
   /** Live status of the ADOPTED PixLite controller (S47/S48). See {@link ControllerMonitor.status}.
       Settable so the ui-shot seam can inject a synthetic status. */
   get controllerStatus(): ControllerStatus | null {
@@ -542,9 +552,9 @@ export class TriggerLab {
     return this.monitor.candidates;
   }
   /** The active controller test pattern (S49), or null in LIVE mode. Drives the panel banner AND
-      {@link deriveOutputPill}'s third argument. See {@link ControllerMonitor.takeover}. */
+      {@link deriveOutputPill}'s third argument. See {@link ControllerTest.takeover}. */
   get controllerTakeover(): ControllerTestPattern | null {
-    return this.monitor.takeover;
+    return this.controllerTest.takeover;
   }
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
@@ -2178,9 +2188,10 @@ export class TriggerLab {
     this.client.send({ t: 'setOutput', ...partial });
   }
 
-  // --- PixLite controller monitor (S48, group L) ----------------------------
-  // Public API preserved as thin forwarders onto {@link monitor} (R20 store split). The domain
-  // docs + gating live on ControllerMonitor; these keep the store's call surface unchanged.
+  // --- PixLite controller monitor + test (S48/S49, group L) -----------------
+  // Public API preserved as thin forwarders onto {@link monitor} (R20) and {@link controllerTest}
+  // (R22) — the store split. The domain docs + gating live on those controllers; these keep the
+  // store's call surface unchanged.
 
   watchController(watching: boolean): void {
     this.monitor.watch(watching);
@@ -2229,11 +2240,11 @@ export class TriggerLab {
   }
 
   setControllerTestData(pattern: ControllerTestPattern): void {
-    this.monitor.setTestData(pattern);
+    this.controllerTest.setTestData(pattern);
   }
 
   backToLive(): void {
-    this.monitor.backToLive();
+    this.controllerTest.backToLive();
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).
