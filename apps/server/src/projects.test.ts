@@ -7,7 +7,10 @@ import {
   buildDmxMap,
   buildPixelModel,
   defaultProject,
+  logicalOutputCount,
+  reconcileOutputs,
   ReferentialIntegrityError,
+  type Project,
 } from '@ledrums/core';
 import {
   listProjects,
@@ -21,12 +24,39 @@ import {
 const tmp = mkdtempSync(join(tmpdir(), 'ledrums-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
+/** loadProject defensively reconciles kit.outputs to the canonical port count (4 normal / 8
+    expanded), so the reload of a project whose outputs drifted (e.g. defaultProject's `outputs: []`)
+    equals the saved project with its outputs healed — not the raw saved bytes. */
+const healed = (p: Project): Project => ({ ...p, kit: reconcileOutputs(p.kit) });
+
 describe('projects', () => {
-  it('round-trips save -> load', () => {
+  it('round-trips save -> load (outputs self-heal to the canonical count)', () => {
     const p = defaultProject();
     saveProject('show', p, tmp);
     expect(listProjects(tmp)).toContain('show');
-    expect(loadProject('show', tmp)).toEqual(p);
+    expect(loadProject('show', tmp)).toEqual(healed(p));
+  });
+
+  // Defensive self-heal (#112): a project corrupted by the old delete keypath — fewer outputs than
+  // the controller mode exposes (the drummer's 3-in-expanded file) — loads back to the canonical
+  // port count with NO hand-editing. Grows to 8 in expanded, trims to 4 in normal.
+  it('self-heals a drifted output count to logicalOutputCount on load', () => {
+    const base = defaultProject();
+    const expanded: Project = {
+      ...base,
+      kit: {
+        ...base.kit,
+        global: { ...base.kit.global, expanded: true },
+        outputs: [{ id: 'o1', channelsPerPixel: 3, segments: [{ drumId: base.kit.drums[0]!.id, hoopStart: 1, hoopEnd: 1 }] }],
+      },
+    };
+    saveProject('corrupt', expanded, tmp);
+    const reloaded = loadProject('corrupt', tmp);
+    expect(reloaded.kit.outputs).toHaveLength(8);
+    expect(reloaded.kit.outputs).toHaveLength(logicalOutputCount(reloaded.kit));
+    // The one real output is preserved in place; the appended ports are empty/unwired.
+    expect(reloaded.kit.outputs[0]!.id).toBe('o1');
+    expect(reloaded.kit.outputs.slice(1).every((o) => o.segments.length === 0)).toBe(true);
   });
 
   it('surfaces a validation error for invalid JSON rather than crashing', () => {
@@ -89,13 +119,13 @@ describe('atomic writes (temp + rename)', () => {
   it('saveProject leaves only the final file — no temp residue', () => {
     saveProject('atomic', defaultProject(), tmp);
     expect(readdirSync(tmp).filter((f) => f.startsWith('atomic'))).toEqual(['atomic.json']);
-    expect(loadProject('atomic', tmp)).toEqual(defaultProject());
+    expect(loadProject('atomic', tmp)).toEqual(healed(defaultProject()));
   });
 
   it('saveProjectAsync writes atomically and round-trips', async () => {
     await saveProjectAsync('atomic-async', defaultProject(), tmp);
     expect(readdirSync(tmp).filter((f) => f.startsWith('atomic-async'))).toEqual(['atomic-async.json']);
-    expect(loadProject('atomic-async', tmp)).toEqual(defaultProject());
+    expect(loadProject('atomic-async', tmp)).toEqual(healed(defaultProject()));
   });
 
   it('overwriting an existing project leaves a single valid file', async () => {
@@ -117,7 +147,7 @@ describe('atomic writes (temp + rename)', () => {
     await saveProjectAsync('mutated', p, tmp);
 
     const reloaded = loadProject('mutated', tmp);
-    expect(reloaded).toEqual(p);
+    expect(reloaded).toEqual(healed(p));
     expect(reloaded.kit.drums[0]!.pixelsPerHoop).toBe(244);
     expect(reloaded.output.priority).toBe(175);
   });

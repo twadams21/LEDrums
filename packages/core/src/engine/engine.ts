@@ -1,6 +1,6 @@
 import { buildPixelModel, materializeHoops, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
-import type { DrumConfig, HoopConfig, KitGlobalConfig, NodeLayout } from '../geometry/kit-schema';
+import { reconcileOutputs, type DrumConfig, type HoopConfig, type KitGlobalConfig, type NodeLayout } from '../geometry/kit-schema';
 import type {
   Clip,
   InputMap,
@@ -315,6 +315,12 @@ export class Engine {
    * reflects (density/hoopCount/expanded change the pixel model AND the DMX patch). */
   setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.project.kit.global, partial);
+    // Outputs are a static port set sized by `expanded` (4 normal / 8 expanded): flipping the mode
+    // must immediately yield that many ports. Reconcile is a no-op when `expanded` is unchanged
+    // (count already matches) — mutation parity with VoiceEngineHost + the web's applyKitGlobal.
+    if (partial.expanded !== undefined) {
+      this.project.kit.outputs = reconcileOutputs(this.project.kit).outputs;
+    }
     this.rebuild();
   }
 
