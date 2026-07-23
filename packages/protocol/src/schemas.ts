@@ -192,6 +192,17 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('controllerBackToLive') }).strict(),
   z.object({ t: z.literal('watchController'), watching: z.boolean() }).strict(),
   z.object({ t: z.literal('listNetworkAdapters') }).strict(),
+  // Web-side error capture (observability #122): the browser forwards an uncaught error, an
+  // unhandled promise rejection, or a `console.error` call over the socket it already holds. The
+  // server re-emits it onto the Monitor bus as an `error` event (single fault stream). Diagnostic
+  // only — never authoring — so the handler processes it BEFORE the editor gate. `origin` names the
+  // capture surface; `message`/`stack` are the fault text (size-capped server-side before the bus).
+  z.object({
+    t: z.literal('webError'),
+    origin: z.enum(['window.onerror', 'unhandledrejection', 'console.error']),
+    message: z.string(),
+    stack: z.string().optional(),
+  }).strict(),
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

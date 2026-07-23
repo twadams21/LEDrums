@@ -58,6 +58,7 @@ import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
+import { installErrorCapture } from '../app/error-capture';
 import {
   STORAGE_KEY,
   SHOWS_STORAGE_KEY,
@@ -670,6 +671,9 @@ export class TriggerLab {
       defaults to the real auto-reconnecting client. Created in start(), closed
       in stop(). */
   private readonly client: WSClient;
+  /** Uninstall for the global web-error capture (observability #122), installed in {@link start}
+      and torn down in {@link stop}. Null while not running. */
+  private errorCaptureUninstall: (() => void) | null = null;
   /** MIDI input + MIDI-learn (R6/S37) — the WebMIDI device layer + learn-arm machinery, extracted
       into {@link MidiController} (R21). The store keeps `forwardMidi`/`receiveInputEcho` (entangled
       with the offline sim + S04 badges) and delegates the rest via the accessors + forwarders below,
@@ -901,6 +905,12 @@ export class TriggerLab {
     if (this.raf) return;
     this.startAutosave();
     this.wireClient();
+    // Global web-error capture (#122): forward uncaught errors / rejections / console.error over the
+    // socket. Fire-and-forget; `send` no-ops while the link is closed, so early-boot errors before
+    // the socket opens are simply dropped (the local Monitor still shows server-echoed faults).
+    this.errorCaptureUninstall = installErrorCapture((report) =>
+      this.client.send({ t: 'webError', ...report }),
+    );
     this.client.connect();
     // Request hardware MIDI and forward it to the server (notes + transport recall).
     // Fire-and-forget: degrades to a no-op when the browser has no WebMIDI / in tests.
@@ -942,6 +952,8 @@ export class TriggerLab {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.midi.release();
+    this.errorCaptureUninstall?.();
+    this.errorCaptureUninstall = null;
     this.client.close();
     this.engineSync.reset();
     if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);

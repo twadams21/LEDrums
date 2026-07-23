@@ -13,6 +13,8 @@
  *   2. Locate the updater artifact (e.g. `*.app.tar.gz`) + signature under
  *      src-tauri/target/release/bundle/.
  *   3. Upload the artifact to r2://<bucket>/<version>/<target>/<file>.
+ *   3b. Archive the web build's hidden sourcemaps to r2://<bucket>/<version>/sourcemaps/ (#122) so a
+ *      minified stack trace from any released build stays symbolicatable.
  *   4. Fetch any existing latest.json from the public base, MERGE this platform's entry in (so a
  *      multi-arch release built on several machines accumulates into one manifest), and upload it.
  *
@@ -47,13 +49,15 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
 const tauriConfPath = join(desktopDir, 'src-tauri', 'tauri.conf.json');
 const bundleDir = join(desktopDir, 'src-tauri', 'target', 'release', 'bundle');
+/** The web build output (hidden `.js.map` sourcemaps land here — see apps/web/vite.config.ts). */
+const webDistDir = resolve(desktopDir, '..', 'web', 'dist');
 
 const BUCKET = process.env.OTA_BUCKET || 'ledrums-ota';
 const PUBLIC_BASE = process.env.OTA_PUBLIC_BASE?.replace(/\/+$/, '');
@@ -156,6 +160,37 @@ function assertSignatureMatchesUpdaterKey(conf, signatureB64) {
   console.log(`[ota] signature key id ${sigId} matches the app updater pubkey ✓`);
 }
 
+/** Recursively collect `.map` files under `dir` (with their dist-relative paths). */
+function collectSourcemaps(dir, base = dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectSourcemaps(p, base));
+    else if (entry.name.endsWith('.map')) out.push({ path: p, rel: relative(base, p).split(sep).join('/') });
+  }
+  return out;
+}
+
+/**
+ * Archive the web build's hidden sourcemaps to R2 keyed by version (#122), so a minified stack trace
+ * from ANY released build stays symbolicatable forever. Platform-independent (the JS bundle is the
+ * same across arches), so re-running per platform just idempotently re-uploads the same keys. Absent
+ * maps (e.g. a build with sourcemaps disabled) is a loud skip, never a silent one.
+ */
+function uploadSourcemaps(version) {
+  const maps = collectSourcemaps(webDistDir);
+  if (maps.length === 0) {
+    console.warn(
+      `[ota] WARNING: no .js.map files under ${webDistDir} — sourcemaps NOT archived for v${version}. ` +
+        'A build with no archived map is un-symbolicatable forever. Is build.sourcemap enabled in vite.config.ts?',
+    );
+    return;
+  }
+  for (const m of maps) r2Put(`${version}/sourcemaps/${m.rel}`, m.path, 'application/json');
+  console.log(`[ota] archived ${maps.length} sourcemap(s) -> r2://${BUCKET}/${version}/sourcemaps/`);
+}
+
 /** Fetch the current manifest so we can merge this platform into it (best-effort). */
 async function fetchExistingManifest(version) {
   try {
@@ -226,6 +261,10 @@ async function main() {
   // Upload the artifact FIRST so the manifest never points ahead of an uploaded file.
   const artifactType = file.endsWith('.zip') ? 'application/zip' : 'application/gzip';
   r2Put(key, artifactPath, artifactType);
+
+  // Archive the web build's hidden sourcemaps for this version (#122) — symbolication capability for
+  // every reported stack trace. Done before the manifest so a failed map upload aborts the publish.
+  uploadSourcemaps(version);
 
   // Merge this platform into any existing same-version manifest.
   const existing = await fetchExistingManifest(version);
