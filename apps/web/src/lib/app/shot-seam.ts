@@ -435,6 +435,12 @@ class ShotSeamImpl implements ShotSeam {
         this.shell.setView('patch');
         if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
         break;
+      case 'expanded':
+        // Flip the Advatek expanded/normal controller mode — the ONLY control over the output-port
+        // count (8 expanded / 4 normal). Drives kit.outputs reconcile so the patch graph's output
+        // half can be captured at either count. `expanded` / `expanded:on` → on; `expanded:off` → off.
+        this.store.setKitGlobal({ expanded: arg !== 'off' });
+        break;
       case 'mix-layers':
         this.mixWithLayers();
         break;

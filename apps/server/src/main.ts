@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   defaultProject,
   parseProject,
+  reconcileOutputs,
   WS_PATH,
   WS_PORT,
   type Project,
@@ -134,7 +135,14 @@ function initialProject(): { project: Project; source: 'seed' | 'file'; name: st
   // so there is no hand-edited file to drift from the engine/lab kit. Once any edit lands,
   // the autosaver writes this slot and it is what subsequent boots restore.
   const path = projectFilePath(LIVE_PROJECT);
-  if (!projectExists(LIVE_PROJECT)) return { project: defaultProject(), source: 'seed', name: LIVE_PROJECT, path };
+  // Both boot paths land on the canonical port count (4 normal / 8 expanded): loadProject already
+  // reconciles a saved file; the seed (fresh machine) reconciles here so DEFAULT_KIT's `outputs: []`
+  // boots as 4 real ports too — so the patch graph always renders exactly logicalOutputCount ports,
+  // never defaultRouting's hoops-per-output chunking (the "3 outputs" the drummer saw).
+  if (!projectExists(LIVE_PROJECT)) {
+    const seed = defaultProject();
+    return { project: { ...seed, kit: reconcileOutputs(seed.kit) }, source: 'seed', name: LIVE_PROJECT, path };
+  }
   return { project: loadProject(LIVE_PROJECT), source: 'file', name: LIVE_PROJECT, path };
 }
 
