@@ -44,7 +44,7 @@ interface TunnelHarnessOpts {
   backups?: {
     list(): import('../ws-protocol').BackupSnapshotMeta[];
     restore(id: string): boolean;
-    snapshotPreRisk(): void;
+    snapshotPreRisk(): boolean;
   };
 }
 
@@ -859,12 +859,19 @@ describe('webError capture (#122)', () => {
 });
 
 describe('project backups (#123) — WS messages + pre-risk triggers at the handler seam', () => {
-  /** A backups fake with spies: `list` returns a canned listing, `restore` reports success by id. */
-  function fakeBackups(overrides: Partial<{ list: () => import('../ws-protocol').BackupSnapshotMeta[]; restore: (id: string) => boolean }> = {}) {
+  /** A backups fake with spies: `list` returns a canned listing, `restore` reports success by id,
+   * `snapshotPreRisk` reports whether the safety snapshot was taken (default: always taken). */
+  function fakeBackups(
+    overrides: Partial<{
+      list: () => import('../ws-protocol').BackupSnapshotMeta[];
+      restore: (id: string) => boolean;
+      snapshotPreRisk: () => boolean;
+    }> = {},
+  ) {
     return {
       list: vi.fn(overrides.list ?? (() => [{ id: '1000-boot', createdAt: 1000, reason: 'boot' as const }])),
       restore: vi.fn(overrides.restore ?? ((id: string) => id === '1000-boot')),
-      snapshotPreRisk: vi.fn(),
+      snapshotPreRisk: vi.fn(overrides.snapshotPreRisk ?? (() => true)),
     };
   }
 
@@ -930,5 +937,32 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     // kit with no drums fails validation before any mutation → no snapshot.
     handle({ t: 'setProject', patch: { name: 'x', kit: { drums: [] } } as never }, editor);
     expect(backups.snapshotPreRisk).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES the setProject re-rig (fail-closed C1) when the pre-risk snapshot fails — no mutation', () => {
+    const backups = fakeBackups({ snapshotPreRisk: () => false }); // safety snapshot WRITE failed
+    const { handle, join, host } = harness({ backups });
+    const editor = join();
+    const before = host.engine.getProject().name;
+    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
+    expect(host.engine.getProject().name).toBe(before); // NOT 'Rig B' — the mutation was refused
+    const err = editor.sent.find((m) => m.t === 'error');
+    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Backup failed') });
+  });
+
+  it('restoreBackup surfaces a pre-risk-failure THROW from the store as a clear error (live state untouched)', () => {
+    const backups = fakeBackups({
+      restore: () => {
+        throw new Error('pre-risk safety snapshot failed; restore of 1000-boot refused (live state untouched)');
+      },
+    });
+    const { handle, join, host } = harness({ backups });
+    const editor = join();
+    const before = host.engine.getProject();
+    handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
+    const err = editor.sent.find((m) => m.t === 'error');
+    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Restore aborted') });
+    expect(host.engine.getProject()).toBe(before); // nothing applied
   });
 });

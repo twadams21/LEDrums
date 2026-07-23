@@ -622,9 +622,10 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   backups: {
     list: () => snapshotStore.list(),
     restore: (id) => snapshotStore.restore(id) !== null,
-    snapshotPreRisk: () => {
-      snapshotStore.snapshot('pre-risk');
-    },
+    // Returns whether the safety snapshot was taken: `snapshot('pre-risk')` returns null only when
+    // the WRITE fails (pre-risk never self-gates), so `!== null` is the fail-closed signal the risky-
+    // op seams check before mutating — a false makes them refuse rather than overwrite unprotected.
+    snapshotPreRisk: () => snapshotStore.snapshot('pre-risk') !== null,
   },
   controller: {
     discover: () => controllerMonitor.discover(),

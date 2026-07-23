@@ -119,12 +119,14 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
    * runs the server-side restore — pre-risk snapshot of current state, atomic replace of all three
    * blobs, engine/client cold-load reload — and returns false for an unknown id (a user-visible
    * `error` reply). `snapshotPreRisk` is the append-only pre-risk trigger the risky-op seams call
-   * BEFORE mutating (a bulk `setProject`/`loadProject` also migrates the schema on parse). Absent
-   * when the wiring runs without backups (snapshotting disabled): the reads reply empty + no-op. */
+   * BEFORE mutating (a bulk `setProject`/`loadProject` also migrates the schema on parse); it returns
+   * `true` when the safety snapshot was taken and `false` when the WRITE failed, so a seam can refuse
+   * the mutation fail-closed rather than overwrite live state with no recovery point. Absent when the
+   * wiring runs without backups (snapshotting disabled): the reads reply empty + no-op. */
   backups?: {
     list(): BackupSnapshotMeta[];
     restore(id: string): boolean;
-    snapshotPreRisk(): void;
+    snapshotPreRisk(): boolean;
   };
   /** PixLite controller monitor (S47), or absent when the wiring runs without one (the controller
    * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
@@ -293,7 +295,24 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
     if (msg.t === 'restoreBackup') {
-      const ok = deps.backups?.restore(msg.id) ?? false;
+      // Fail-closed: the store THROWS when its pre-risk safety snapshot cannot be written — surface
+      // that as a clear user-visible error with the socket kept alive and live state untouched (the
+      // store never reached applyRestored). A `false`/`null` return is the distinct "unknown id" path.
+      let ok: boolean;
+      try {
+        ok = deps.backups?.restore(msg.id) ?? false;
+      } catch (err) {
+        ws.send(encodeServer({ t: 'error', message: `Restore aborted — backup failed, live state untouched (${err instanceof Error ? err.message : String(err)})` }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'backups',
+          label: 'Restore aborted (pre-risk snapshot failed)',
+          detail: msg.id,
+        });
+        return;
+      }
       if (!ok) {
         ws.send(encodeServer({ t: 'error', message: `Unknown backup: ${msg.id}` }));
         monitor?.({
@@ -318,7 +337,9 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     }
 
     // Project IO (load/save/list) is handled here, not by the reducer.
-    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups?.snapshotPreRisk() })) return;
+    // `?? true`: with backups absent (snapshotting disabled) there is no safety net to fail, so the
+    // load proceeds; when backups is present, its `false` (write failed) makes the load refuse.
+    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups?.snapshotPreRisk() ?? true })) return;
 
     // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
     // legacy reducer so every MIDI input adapter obeys the same setting.
@@ -414,8 +435,20 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       }
       // Pre-risk snapshot (#123): a bulk re-rig rewrites the whole kit/output/input-map at once (and
       // parse migrated the patch's schema) — capture current state BEFORE the mutation, so a bad
-      // paste still has a clean state behind it. Fail-closed: the snapshot precedes any state touch.
-      deps.backups?.snapshotPreRisk();
+      // paste still has a clean state behind it. Fail-closed: if the safety snapshot's WRITE fails,
+      // REFUSE the re-rig (a bulk apply with no recovery point behind it is the data-loss path) —
+      // the socket stays alive and live state is untouched. Backups absent = no net to fail → proceed.
+      if (deps.backups && !deps.backups.snapshotPreRisk()) {
+        ws.send(encodeServer({ t: 'error', message: 'Backup failed — patch not applied (no recovery snapshot)' }));
+        monitor?.({
+          type: 'error',
+          direction: 'in',
+          source: 'client',
+          destination: 'project',
+          label: 'Patch refused (pre-risk snapshot failed)',
+        });
+        return;
+      }
       const cur = host.engine.getProject();
       host.engine.setProject({
         ...cur,

@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -252,6 +252,31 @@ describe('createSnapshotStore (#123)', () => {
       writeFileSync(join(dir, `${meta.id}.json.gz`), Buffer.from('not gzip'));
       expect(s.restore(meta.id)).toBeNull();
       expect(h.applied).toHaveLength(0);
+    });
+
+    it('REFUSES (throws) and applies nothing when the pre-risk safety snapshot cannot be written (fail-closed C1)', () => {
+      const h = harness();
+      const s = h.store();
+      const target = s.snapshot('boot')!; // readable target exists
+
+      // Live state drifts to what a failed restore would destroy.
+      h.advance(1000);
+      const live: SnapshotFiles = { project: { name: 'live', v: 42 }, showLibrary: null, songLibrary: null };
+      h.setCurrent(live);
+
+      // Backups dir read-only: the target is still READABLE, but the pre-risk WRITE fails (the exact
+      // ENOSPC/read-only scenario). The store must refuse rather than overwrite live state uncovered.
+      chmodSync(dir, 0o500);
+      try {
+        // Guard against a permissive env (e.g. root ignores 0o500): a null pre-risk return is what
+        // the fail-closed check keys on, so if the write still succeeds this env can't exercise C1.
+        if (s.snapshot('pre-risk') !== null) return; // write not actually blocked here — skip
+        expect(() => s.restore(target.id)).toThrow(/pre-risk/i);
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+      expect(h.applied).toHaveLength(0); // nothing applied — restore refused before the sink
+      expect(h.getCurrent()).toEqual(live); // live state untouched
     });
   });
 

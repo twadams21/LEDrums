@@ -69,6 +69,11 @@ export interface SnapshotStore {
    * (which replaces the live blobs + reloads the engine/clients like a cold load). Returns the target
    * meta on success, or null when `id` is unknown/corrupt — in which case NOTHING is applied, so a
    * bad restore leaves current state intact.
+   *
+   * Fail-closed: if the pre-risk safety snapshot cannot be written (disk full, perms, rotation
+   * error), restore THROWS and applies nothing — refusing to overwrite the live project when no
+   * recovery point exists. The throw (distinct from the `null` "unknown id" return) lets the caller
+   * surface a clear error while the live state stays untouched.
    */
   restore(id: string): SnapshotMeta | null;
 }
@@ -242,9 +247,15 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
     if (!bundle) return null;
     const meta = parseStem(id);
     if (!meta) return null;
-    // Safety net: capture current state as a pre-risk snapshot BEFORE overwriting it, so even a
-    // correct-but-unwanted restore is itself recoverable.
-    snapshot('pre-risk');
+    // Safety net (fail-closed): capture current state as a pre-risk snapshot BEFORE overwriting it,
+    // so even a correct-but-unwanted restore is itself recoverable. pre-risk never self-gates, so a
+    // null here means the snapshot WRITE failed — REFUSE the restore rather than destroy the live
+    // project with no recovery point. Throwing (vs the `null` "unknown id" return) lets the WS seam
+    // surface a clear error; applyRestored is never reached, so live state is untouched.
+    const pre = snapshot('pre-risk');
+    if (!pre) {
+      throw new Error(`pre-risk safety snapshot failed; restore of ${id} refused (live state untouched)`);
+    }
     deps.applyRestored(bundle.files);
     return meta;
   }
