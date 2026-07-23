@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MonitorEvent } from '../ws-protocol';
 import { createReporter } from './reporter';
 import type { Envelope, ReportOrigin, ReportRecord } from './envelope';
-import type { ShipQueue } from './ship-queue';
+import { createShipQueue, type ShipQueue } from './ship-queue';
 
 /** A fake queue capturing every enqueued record (the Reporter's only real output). */
 function fakeQueue(): ShipQueue<ReportRecord> & { enqueued: ReportRecord[] } {
@@ -108,5 +111,56 @@ describe('createReporter (#122)', () => {
     const r = createReporter({ queue, envelope, now: () => 1, log });
     expect(() => r.observe(errorEv({ label: 'x' }))).not.toThrow();
     expect(log).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #137 C1: the fake array-push queue above delegates collapse away, so it can't prove the prod
+// wiring. This drives the reporter through the REAL ship-queue with the same `keyOf: r.dedupKey`
+// main.ts wires — a repeated error must collapse to ONE queued entry with a rising count, never N.
+describe('reporter over the real ship-queue (#137 C1 — prod dedup wiring)', () => {
+  let dir: string;
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('collapses N repeats of one error to a single queued report with count === N', () => {
+    dir = mkdtempSync(join(tmpdir(), 'ledrums-reporter-'));
+    const queue = createShipQueue<ReportRecord>({
+      path: join(dir, 'error-reports.jsonl'),
+      transport: async () => {},
+      keyOf: (r) => r.dedupKey, // exactly what main.ts wires — the line #137 C1 was missing
+      persistDebounceMs: 600_000, // keep disk IO out of the test
+    });
+    clock = 1000;
+    const r = createReporter({ queue, envelope, now: () => clock, breadcrumbLimit: 20 });
+
+    const N = 300;
+    const stack = 'Error: render\n    at frame (loop.js:1:1)';
+    for (let i = 0; i < N; i++) r.observe(errorEv({ label: 'render', detail: stack }));
+
+    expect(queue.size()).toBe(1); // ONE logical report, not N appended rows
+    const [rec] = queue.items();
+    expect(rec!.count).toBe(N);
+    queue.dispose();
+  });
+
+  it('keeps distinct throw sites as separate entries (no over-collapse)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'ledrums-reporter-'));
+    const queue = createShipQueue<ReportRecord>({
+      path: join(dir, 'error-reports.jsonl'),
+      transport: async () => {},
+      keyOf: (r) => r.dedupKey,
+      persistDebounceMs: 600_000,
+    });
+    clock = 1000;
+    const r = createReporter({ queue, envelope, now: () => clock, breadcrumbLimit: 20 });
+
+    for (let i = 0; i < 5; i++) r.observe(errorEv({ label: 'boom', detail: 'Error: boom\n    at f (a.js:1:1)' }));
+    for (let i = 0; i < 5; i++) r.observe(errorEv({ label: 'boom', detail: 'Error: boom\n    at g (b.js:2:2)' }));
+
+    expect(queue.size()).toBe(2);
+    expect(queue.items().map((r) => r.count)).toEqual([5, 5]);
+    queue.dispose();
   });
 });

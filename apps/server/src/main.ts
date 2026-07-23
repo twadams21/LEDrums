@@ -272,6 +272,9 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
     const queue = createShipQueue<ReportRecord>({
       path: join(resolveProjectsDir(process.env), 'error-reports.jsonl'),
       transport: createHttpTransport<ReportRecord>({ endpoint, token }),
+      // Upsert by dedup key so a render-loop error firing 120×/s collapses to ONE queued
+      // report whose count rises, instead of appending N near-identical rows (#137 C1).
+      keyOf: (r) => r.dedupKey,
     });
     reporter = createReporter({
       queue,
