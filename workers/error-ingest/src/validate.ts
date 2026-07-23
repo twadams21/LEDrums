@@ -1,4 +1,4 @@
-import type { IngestBatch, WireBreadcrumb, WireEnvelope, WireReport } from './types';
+import type { BackupBatch, IngestBatch, WireBackup, WireBreadcrumb, WireEnvelope, WireReport } from './types';
 
 /** Thrown on a malformed batch — the fetch handler maps it to a 400. */
 export class ValidationError extends Error {}
@@ -75,4 +75,46 @@ export function parseIngestBatch(body: unknown): IngestBatch {
   if (reports.length > MAX_REPORTS_PER_BATCH) throw new ValidationError('too many reports in one batch');
   const dropped = body.dropped === undefined ? 0 : num(body.dropped, 'dropped');
   return { reports: reports.map(report), dropped };
+}
+
+// --- Project backups (#123) --------------------------------------------------
+
+export const MAX_BACKUPS_PER_BATCH = 100;
+export const MAX_KEY_SEGMENT_LEN = 200;
+
+/** A path segment (`machine`, `key`) is safe to compose into an R2 object key iff it is a non-empty,
+ * bounded string with no separators or dot-dot — the Worker is the trust boundary for the key, so a
+ * leaked token can never traverse out of the `backups/` prefix or collide across machines. */
+export function safeKeySegment(v: unknown, field: string): string {
+  const s = str(v, field, MAX_KEY_SEGMENT_LEN);
+  if (s.length === 0) throw new ValidationError(`${field} must be non-empty`);
+  if (s.includes('/') || s.includes('\\') || s.includes('..')) throw new ValidationError(`${field} has an illegal path char`);
+  if (/[\u0000-\u001f\u007f]/.test(s)) throw new ValidationError(`${field} has a control char`);
+  return s;
+}
+
+function backup(v: unknown): WireBackup {
+  if (!isObject(v)) throw new ValidationError('backup must be an object');
+  if (v.bundle === undefined) throw new ValidationError('backup.bundle is required');
+  return {
+    machine: safeKeySegment(v.machine, 'backup.machine'),
+    key: safeKeySegment(v.key, 'backup.key'),
+    createdAt: num(v.createdAt, 'backup.createdAt'),
+    reason: str(v.reason, 'backup.reason'),
+    bundle: v.bundle,
+  };
+}
+
+/**
+ * Parse + validate a backups batch. The generic shipper posts items under the `reports` key (the
+ * transport is payload-agnostic), so we read `body.reports` here too — the ROUTE, not the key,
+ * distinguishes a backup batch from an error batch. Throws {@link ValidationError} on bad input.
+ */
+export function parseBackupBatch(body: unknown): BackupBatch {
+  if (!isObject(body)) throw new ValidationError('body must be an object');
+  const items = body.reports;
+  if (!Array.isArray(items)) throw new ValidationError('reports must be an array');
+  if (items.length > MAX_BACKUPS_PER_BATCH) throw new ValidationError('too many backups in one batch');
+  const dropped = body.dropped === undefined ? 0 : num(body.dropped, 'dropped');
+  return { backups: items.map(backup), dropped };
 }

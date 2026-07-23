@@ -19,6 +19,29 @@ export interface D1Database {
   prepare(query: string): D1PreparedStatement;
 }
 
+// R2 subset used by the backups routes (#123). Wrangler injects the full runtime types at deploy.
+export interface R2Object {
+  key: string;
+  size: number;
+  uploaded: Date;
+}
+
+export interface R2ObjectBody extends R2Object {
+  text(): Promise<string>;
+}
+
+export interface R2Objects {
+  objects: R2Object[];
+  truncated: boolean;
+  cursor?: string;
+}
+
+export interface R2Bucket {
+  put(key: string, value: string | ArrayBuffer | ReadableStream): Promise<R2Object>;
+  get(key: string): Promise<R2ObjectBody | null>;
+  list(opts?: { prefix?: string; cursor?: string; limit?: number }): Promise<R2Objects>;
+}
+
 export interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
   passThroughOnException(): void;

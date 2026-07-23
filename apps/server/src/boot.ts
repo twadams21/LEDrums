@@ -23,6 +23,8 @@ export interface BootDeps {
   voiceMode: boolean;
   /** The periodic-stats interval, cleared on shutdown. */
   statsTimer: ReturnType<typeof setInterval>;
+  /** The 30-min backup-cadence interval (#123), cleared on shutdown. */
+  snapshotTimer?: ReturnType<typeof setInterval>;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
   songLibraryAutosaver: Autosaver;
@@ -83,6 +85,7 @@ export function boot(deps: BootDeps): void {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(deps.statsTimer);
+    if (deps.snapshotTimer) clearInterval(deps.snapshotTimer);
     deps.controllerMonitor?.stop();
     deps.tunnelControl.stop();
     if (deps.voiceHost) deps.voiceHost.stop();
