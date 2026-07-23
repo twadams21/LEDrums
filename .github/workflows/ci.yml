@@ -5,10 +5,18 @@ on:
     branches: [main]
   pull_request:
 
+# One live run per ref: a new push supersedes the queued/running one instead of
+# stacking behind it (the 2026-07-09 runner-starvation incident left runs queued
+# for 15+ minutes; superseded runs should die immediately).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Workspace-wide checks: typecheck + the full test suite.
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,6 +33,7 @@ jobs:
   # needs no extra system deps for `cargo build`.
   desktop:
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
