@@ -17,7 +17,7 @@
   import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import X from '@lucide/svelte/icons/x';
-  import type { Component } from 'svelte';
+  import { untrack, type Component } from 'svelte';
 
   let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
 
@@ -29,16 +29,23 @@
 
   // On open: pull the latest listing and start the relative-time ticker; on close, stop it. The
   // list arrives asynchronously on the `backups` message and lands in store.backups.
+  // Dependencies are DELIBERATELY just `open` + `link`: re-open, or a reconnect while the dialog
+  // sits open, re-pulls the list. Everything else must be untracked — `refreshBackups` sends over
+  // the WS, whose `onSend` hook appends to `store.monitorEvents` by reading AND writing it. Tracked,
+  // that write invalidates this very effect and it re-runs forever (Svelte
+  // `effect_update_depth_exceeded`, which wedged the dialog: empty list, un-closeable).
   $effect(() => {
-    if (open) {
+    if (!open) return;
+    void store.link; // tracked ONLY to re-run on reconnect; refreshBackups self-guards on it
+    untrack(() => {
       now = Date.now();
       store.refreshBackups();
-      tick = setInterval(() => (now = Date.now()), 20_000);
-      return () => {
-        if (tick) clearInterval(tick);
-        tick = null;
-      };
-    }
+    });
+    tick = setInterval(() => (now = Date.now()), 20_000);
+    return () => {
+      if (tick) clearInterval(tick);
+      tick = null;
+    };
   });
 
   const REASONS: Record<BackupReason, { label: string; icon: Component }> = {
