@@ -28,6 +28,9 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
+# CSPRNG for the per-run host-session token the shell mints and injects into the sidecar (#139).
+# Already in the tree transitively; declared here because we depend on it directly.
+getrandom = "0.2"
 
 # SIGTERM-based graceful shutdown of the sidecar is unix-only; on Windows we fall back to the
 # shell plugin's kill().

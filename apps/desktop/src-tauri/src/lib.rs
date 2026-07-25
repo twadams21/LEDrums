@@ -12,6 +12,9 @@
 //      then guarantee it's gone — no orphaned processes.
 
 mod native_midi;
+#[cfg(test)]
+mod native_midi_tests;
+mod sidecar_progress;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,6 +24,8 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_updater::UpdaterExt;
+
+use sidecar_progress::{SidecarAction, SidecarProgress};
 
 /// Fallback local port if free-port allocation fails. Overridable via `LEDRUMS_DESKTOP_PORT`.
 const DEFAULT_PORT: u16 = 4178;
@@ -37,6 +42,26 @@ struct SidecarState {
 /// Keeps the native MIDI virtual destination alive for the app lifetime.
 #[derive(Default)]
 struct NativeMidiState(Mutex<Option<native_midi::NativeMidiBridge>>);
+
+/// A per-run host-session token minted HERE, in the shell, and injected into the sidecar via
+/// `LEDRUMS_HOST_TOKEN` (#139).
+///
+/// The shell used to learn the token by regex-scraping the sidecar's `Host token:` banner line —
+/// which the server only prints conditionally, and which shares a line buffer with stderr. Minting
+/// it up-front means the shell holds the token BEFORE the sidecar starts, so neither the MIDI port
+/// nor the app window can be held hostage by a log line. 32 bytes of CSPRNG → 64 hex chars, matching
+/// the server's own `generateHostToken`.
+fn mint_host_token() -> String {
+    let mut bytes = [0_u8; 32];
+    if getrandom::getrandom(&mut bytes).is_err() {
+        // The OS entropy source is not something we can substitute for safely. Returning an empty
+        // token disables the bypass (the server mints its own and the shell self-heals from the
+        // banner) rather than shipping a predictable credential.
+        eprintln!("[desktop] could not read OS entropy; falling back to the sidecar's own token");
+        return String::new();
+    }
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
 
 /// Boot status pushed to the native share window as the banner is parsed, and held in app state
 /// so the share page can pull the latest snapshot on load (events alone are race-prone — they can
@@ -221,16 +246,6 @@ fn parse_pin(line: &str) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-/// Extract the per-run host-session token from the banner (`Host token: <hex>`). The server prints it
-/// to local stdout only; we inject it into the host app window URL so its WebSocket is admitted
-/// without the room PIN (loopback alone is not proof of the host — see the server pin-gate).
-fn parse_host_token(line: &str) -> Option<String> {
-    let re = regex::Regex::new(r"Host token: ([^\s]+)").unwrap();
-    re.captures(line)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-}
-
 /// Navigate the full-app webview window to the local origin.
 /// The shareable URL/PIN live in the app's own UI (the host auto-connects, see the PIN gate bypass).
 fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
@@ -255,18 +270,38 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
     }
 }
 
-fn start_native_midi(app: &AppHandle, port: u16, host_token: &str) {
+/// Bring up the CoreMIDI virtual destination. Idempotent — a second call while a bridge is alive is
+/// a no-op.
+///
+/// Both outcomes are reported into the server's Monitor stream (#139). A packaged `.app` launched
+/// from Finder has no visible stdout, so the previous `eprintln!`-only failure path meant a drummer
+/// whose `LEDrums` port never appeared had nothing whatsoever to look at.
+fn start_native_midi(app: &AppHandle, port: u16, host_token: &native_midi::HostToken) {
     let state = app.state::<NativeMidiState>();
     let mut guard = state.0.lock().unwrap();
     if guard.is_some() {
         return;
     }
-    match native_midi::NativeMidiBridge::start(port, host_token.to_string()) {
+    match native_midi::NativeMidiBridge::start(port, host_token.clone()) {
         Ok(bridge) => {
             *guard = Some(bridge);
+            native_midi::report_host_event(
+                port,
+                host_token.clone(),
+                native_midi::HostEventLevel::Info,
+                format!("MIDI destination '{}' is live", native_midi::PORT_NAME),
+                Some("Select it as a MIDI output target in your DAW.".to_string()),
+            );
         }
         Err(err) => {
             eprintln!("[native-midi] failed to start: {err}");
+            native_midi::report_host_event(
+                port,
+                host_token.clone(),
+                native_midi::HostEventLevel::Error,
+                format!("MIDI destination '{}' failed to start", native_midi::PORT_NAME),
+                Some(err),
+            );
         }
     }
 }
@@ -299,7 +334,7 @@ fn terminate_sidecar(app: &AppHandle) {
 }
 
 /// Spawn the server sidecar and wire its banner output to the native share surface + app window.
-fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
+fn spawn_sidecar(app: &AppHandle, port: u16, host_token: native_midi::HostToken) -> Result<(), String> {
     // App-data projects dir (where a sandboxed binary can actually write); created if missing.
     let app_data = app
         .path()
@@ -342,6 +377,11 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
             std::env::var("LEDRUMS_ENGINE").unwrap_or_else(|_| "voice".into()),
         )
         .env("LEDRUMS_APP_VERSION", env!("CARGO_PKG_VERSION"))
+        // Hand the sidecar the token we already hold, so the shell never has to scrape it back out
+        // of stdout to authenticate the MIDI bridge or the app window (#139). The server prefers an
+        // injected token over minting its own (see `resolveHostToken`); it still mints when this is
+        // empty (entropy failure) or too weak, and the reader below self-heals from the banner.
+        .env("LEDRUMS_HOST_TOKEN", host_token.get())
         .env("LEDRUMS_OTA_ENDPOINT", UPDATER_ENDPOINT);
 
     // Only enable the tunnel when a cloudflared binary was actually bundled — otherwise the app
@@ -369,12 +409,10 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let mut app_window_opened = false;
-        // The app window and native MIDI bridge both use the host token. The token line prints a
-        // beat after "listening on", so hold off until the server has printed it.
-        let mut listening_seen = false;
-        let mut host_token: Option<String> = None;
-        let mut native_midi_started = false;
+        // When to bring up the MIDI port and the app window is decided by a pure reducer
+        // (`sidecar_progress`) so those conditions are testable without Tauri or a real server.
+        // Both now hinge on "the server is listening" alone — never on a banner line (#139).
+        let mut progress = SidecarProgress::new();
         let mut buf = String::new();
         while let Some(event) = rx.recv().await {
             match event {
@@ -388,32 +426,35 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<(), String> {
                         println!("[sidecar] {line}");
 
                         let mut changed = false;
-                        if !listening_seen && line.contains("listening on") {
-                            status.stage = if has_cloudflared {
-                                "running".into()
-                            } else {
-                                "no-tunnel".into()
-                            };
-                            status.local_url = Some(format!("http://127.0.0.1:{port}"));
-                            listening_seen = true;
-                            changed = true;
-                        }
-                        if host_token.is_none() {
-                            if let Some(t) = parse_host_token(line) {
-                                host_token = Some(t);
+                        for action in progress.observe(line) {
+                            match action {
+                                SidecarAction::Listening => {
+                                    status.stage = if has_cloudflared {
+                                        "running".into()
+                                    } else {
+                                        "no-tunnel".into()
+                                    };
+                                    status.local_url = Some(format!("http://127.0.0.1:{port}"));
+                                    changed = true;
+                                }
+                                SidecarAction::StartNativeMidi => {
+                                    start_native_midi(&app_handle, port, &host_token);
+                                }
+                                SidecarAction::OpenAppWindow => {
+                                    open_app_window(&app_handle, port, Some(&host_token.get()));
+                                }
+                                // Self-heal: a sidecar that ignored `LEDRUMS_HOST_TOKEN` (a stale
+                                // binary) minted its own. Adopt it so the already-running MIDI
+                                // bridge authenticates on its next POST — no restart needed.
+                                SidecarAction::HostTokenChanged(token) => {
+                                    if host_token.set(&token) {
+                                        eprintln!(
+                                            "[desktop] sidecar reported a different host token; adopting it"
+                                        );
+                                        open_app_window(&app_handle, port, Some(&token));
+                                    }
+                                }
                             }
-                        }
-                        // Open the app window once the server is up AND we have the host token — or,
-                        // when no tunnel was bundled, immediately (no token/PIN will ever print).
-                        if !native_midi_started && listening_seen {
-                            if let Some(token) = host_token.as_deref() {
-                                start_native_midi(&app_handle, port, token);
-                                native_midi_started = true;
-                            }
-                        }
-                        if !app_window_opened && listening_seen && host_token.is_some() {
-                            open_app_window(&app_handle, port, host_token.as_deref());
-                            app_window_opened = true;
                         }
                         if status.tunnel_url.is_none() {
                             if let Some(url) = parse_tunnel_url(line) {
@@ -526,6 +567,9 @@ async fn check_for_update(app: AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = resolve_port();
+    // Minted before anything is spawned, so the MIDI bridge and the app window are never waiting on
+    // the sidecar to tell us who we are (#139).
+    let host_token = native_midi::HostToken::new(mint_host_token());
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -549,7 +593,7 @@ pub fn run() {
             // check_for_update).
             tauri::async_runtime::spawn(check_for_update(app.handle().clone()));
 
-            if let Err(e) = spawn_sidecar(app.handle(), port) {
+            if let Err(e) = spawn_sidecar(app.handle(), port, host_token.clone()) {
                 // A failed sidecar is fatal to the app's purpose — surface it in the share window
                 // (stored in state so the page shows it even if it loads after this fires).
                 eprintln!("[desktop] failed to start server sidecar: {e}");
@@ -585,7 +629,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_host_token, parse_pin, parse_tunnel_url};
+    use super::{parse_pin, parse_tunnel_url};
 
     #[test]
     fn extracts_tunnel_url_from_banner_line() {
@@ -634,19 +678,5 @@ mod tests {
         assert_eq!(parse_pin("OSC listening on udp:57120"), None);
     }
 
-    #[test]
-    fn parses_host_token_from_banner_line() {
-        assert_eq!(
-            parse_host_token("  Host token: a1b2c3d4e5f6").as_deref(),
-            Some("a1b2c3d4e5f6")
-        );
-    }
 
-    #[test]
-    fn returns_none_when_no_host_token_present() {
-        assert_eq!(
-            parse_host_token("  Room PIN: 481923 (required to join)"),
-            None
-        );
-    }
 }

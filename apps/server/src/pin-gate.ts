@@ -131,6 +131,29 @@ export function generateHostToken(bytes = 32): string {
   return randomBytes(bytes).toString('hex');
 }
 
+/** Minimum accepted length for an INJECTED host token. {@link generateHostToken} produces 64 hex
+ * chars; anything materially shorter is not a credential we are willing to run the PIN bypass on. */
+export const MIN_HOST_TOKEN_LENGTH = 32;
+
+/**
+ * Resolve the per-run host token, preferring one INJECTED by the launching process
+ * (`LEDRUMS_HOST_TOKEN`) over minting a fresh one.
+ *
+ * The desktop shell spawns this server as a sidecar and needs the token to authenticate its native
+ * MIDI bridge and its app window. Injecting it at spawn means the shell KNOWS the token before the
+ * process has printed anything — which is what lets the MIDI bridge come up the moment the server is
+ * listening, instead of being gated on scraping a conditional banner line (#139).
+ *
+ * Fail-closed on strength: an injected token shorter than {@link MIN_HOST_TOKEN_LENGTH} is ignored
+ * and a strong one is minted instead — a weak injected value must never widen the PIN bypass. The
+ * token is never null, so the bypass is always available to a caller that can prove it holds it.
+ */
+export function resolveHostToken(env: NodeJS.ProcessEnv): string {
+  const injected = env.LEDRUMS_HOST_TOKEN?.trim();
+  if (injected && injected.length >= MIN_HOST_TOKEN_LENGTH) return injected;
+  return generateHostToken();
+}
+
 /** Extract the `hostToken` query parameter from a WS connect URL (or null when absent/unparseable).
  * Mirrors {@link pinFromUrl}: the url is a path-relative request target resolved against a dummy base. */
 export function hostTokenFromUrl(url: string | undefined): string | null {
