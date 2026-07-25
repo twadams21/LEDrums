@@ -100,6 +100,28 @@ describe('installErrorCapture (#122)', () => {
     uninstall();
   });
 
+  it('caps an oversized message and stack BEFORE the sink (#137 C2 — no multi-MB WS frame)', () => {
+    const { con, original, reports } = harness();
+    const huge = 'X'.repeat(10_000_000);
+    const err = new Error('boom');
+    err.stack = 'Y'.repeat(10_000_000);
+    con.error(huge, err);
+    // the ORIGINAL console.error still receives the full args (nothing lost locally)
+    expect(original).toHaveBeenCalledWith(huge, err);
+    // but what rides the wire is bounded: 4000 chars + an ellipsis, 16000 + an ellipsis
+    expect(reports[0]!.message.length).toBe(4_001);
+    expect(reports[0]!.message.endsWith('…')).toBe(true);
+    expect(reports[0]!.stack!.length).toBe(16_001);
+    expect(reports[0]!.stack!.endsWith('…')).toBe(true);
+  });
+
+  it('leaves a short message and stack untouched (cap is a no-op under the limit)', () => {
+    const { win, reports } = harness();
+    const err = new Error('small');
+    win.fire('error', { error: err, message: 'small' });
+    expect(reports[0]).toEqual({ origin: 'window.onerror', message: 'small', stack: err.stack });
+  });
+
   it('uninstall removes listeners and restores the original console.error', () => {
     const { win, con, original, reports, uninstall } = harness();
     uninstall();

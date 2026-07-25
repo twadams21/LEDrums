@@ -27,6 +27,17 @@ export interface WebErrorReport {
 /** The forward sink — receives each captured fault. Must never throw back into the caller (guarded). */
 export type WebErrorSink = (report: WebErrorReport) => void;
 
+// Cap the payload BEFORE it rides the WS frame (#137 C2). The server re-caps on receipt
+// (envelope.ts MESSAGE_CAP/STACK_CAP), but that is after the wire — a `console.error` of a
+// multi-MB string would otherwise send a multi-MB frame and grow the browser send buffer
+// unbounded. These mirror the server caps so web truncation makes the server cap a no-op.
+const MESSAGE_CAP = 4_000;
+const STACK_CAP = 16_000;
+
+function cap(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
 export interface ErrorCaptureEnv {
   /** Defaults to the global `window`; injected in tests. */
   windowRef?: Pick<Window, 'addEventListener' | 'removeEventListener'>;
@@ -72,7 +83,11 @@ export function installErrorCapture(sink: WebErrorSink, env: ErrorCaptureEnv = {
     if (inSink) return;
     inSink = true;
     try {
-      sink(report);
+      sink({
+        origin: report.origin,
+        message: cap(report.message, MESSAGE_CAP),
+        stack: report.stack !== undefined ? cap(report.stack, STACK_CAP) : undefined,
+      });
     } catch {
       /* fire-and-forget: reporting must never affect the app */
     } finally {
