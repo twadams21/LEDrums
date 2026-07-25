@@ -11,7 +11,7 @@ import {
   type ShowLibrary,
 } from './persistence';
 import type { WSClient, WSCallbacks } from '../ws/client';
-import type { ClientMessage, OutputStatus, SerializedModel, ShowLibraryBlob } from '../ws/protocol-types';
+import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel, ShowLibraryBlob } from '../ws/protocol-types';
 
 /* Server-authoritative show library (S7 cold-load adopt + write-through). The server owns the
    authored library and ships it on the `state` message; the web ADOPTS it once on a cold load
@@ -76,6 +76,7 @@ const MODEL: SerializedModel = {
   bounds: { center: [0, 0, 0], size: 0 },
 };
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
+const OSC_LISTEN: OscListenInfo = { status: 'listening', port: 9000, hosts: ['192.168.1.20'] };
 
 /** Drive the real autosave: start() registers the persist $effect; a no-op RAF keeps the render
     loop from running in node; stop() flushes synchronously. */
@@ -96,7 +97,7 @@ function fireOpen(h: Harness): void {
   h.cb!.onConnection!('open');
 }
 function fireState(h: Harness, showLibrary: ShowLibraryBlob | null): void {
-  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, showLibrary, null, null);
+  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, showLibrary, null, null, OSC_LISTEN);
 }
 /** Drive a `presence` message (S1 multi-client) — `youAreEditor` decides editor vs viewer role. */
 function firePresence(h: Harness, youAreEditor: boolean, clientCount = 2, editorId: string | null = 'c1'): void {

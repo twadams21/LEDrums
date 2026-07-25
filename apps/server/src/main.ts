@@ -36,7 +36,7 @@ import {
   resolveHostToken,
   resolvePin,
 } from './pin-gate';
-import { boot } from './boot';
+import { boot, lanAddresses } from './boot';
 import { createControllerMonitor } from './controller-monitor';
 import { listNetworkAdapters } from './network-adapters';
 import { createClientMessageHandler } from './handlers/client-message';
@@ -59,6 +59,7 @@ import {
   encodeServer,
   serializeModel,
   type ClientMessage,
+  type OscListenInfo,
   type ServerMessage,
   type TunnelInfo,
 } from './ws-protocol';
@@ -356,6 +357,7 @@ for (const event of startupDiagnostics({
   voiceMode: VOICE_MODE,
   port,
   oscPort,
+  oscHosts: lanAddresses(),
   webRoot,
   webRootExists: existsSync(webRoot),
   project: projectLoad,
@@ -453,6 +455,9 @@ function stateMessage(): ServerMessage {
     showLibrary: liveShowLibrary,
     songLibrary: liveSongLibrary,
     tunnel: tunnelInfo(),
+    // Where to point Sensory Percussion / a Max device, and whether the socket is actually
+    // bound (#139). Read at send time, so a client always gets the settled truth.
+    osc: oscListen,
   };
 }
 
@@ -690,6 +695,33 @@ updateStatusHttpHandler = createUpdateStatusHandler({
 // the transport-recall handler just needs the voice host + broadcast sink.
 const oscVoiceDeps = { voiceHost, broadcastJson };
 const oscInput = new OscInput({ port: oscPort });
+
+// The listen surface a third-party sender (Sensory Percussion, a Max device) is configured
+// against, plus whether the transport is actually alive. Seeded optimistically because the bind
+// resolves a tick after construction; `onStatus` overwrites it with the truth — and always well
+// before `server.listen` admits the first client, so no client ever reads the optimistic value.
+let oscListen: OscListenInfo = { status: 'listening', port: oscPort, hosts: lanAddresses() };
+
+oscInput.onStatus((status) => {
+  oscListen = {
+    status: status.state,
+    port: status.port,
+    hosts: lanAddresses(),
+    ...(status.error ? { error: status.error } : {}),
+  };
+  if (status.state === 'error') {
+    // A dead OSC socket used to be completely silent — no terminal line, no Monitor row, no UI.
+    // Surface it the same way the native-MIDI bridge surfaces its faults.
+    monitor({ type: 'error', direction: 'local', source: 'server/osc', destination: 'osc-input', label: 'OSC input unavailable', detail: `${status.code ?? 'error'} on udp:${status.port} — ${status.error ?? 'socket error'}` });
+    console.error(`OSC input unavailable on udp:${status.port}: ${status.error ?? 'socket error'}`);
+  } else {
+    monitor({ type: 'system', direction: 'local', source: 'server/osc', destination: 'osc-input', label: `OSC bound on udp:${status.port}`, detail: oscListen.hosts.length ? `send OSC to ${oscListen.hosts.map((h) => `${h}:${status.port}`).join(' or ')}` : `send OSC to 127.0.0.1:${status.port}` });
+  }
+  // Status settles at boot before any client exists, so this normally broadcasts to nobody. It
+  // matters for a LATER socket fault: without it, every connected UI keeps claiming OSC is live.
+  broadcastJson(stateMessage());
+});
+
 oscInput.on((e) => {
   const event = oscToEvent(e, host.engineTimeMs);
   if (!event || event.kind !== 'osc') return;

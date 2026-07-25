@@ -46,7 +46,7 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
-import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -684,6 +684,17 @@ export class TriggerLab {
       Cloudflare tunnel + the room PIN, for the host to share. null when neither is configured
       (plain local dev). */
   tunnel = $state<TunnelInfo | null>(null);
+
+  /** OSC listen surface (#139) from the server's `state` message: the host:port a third-party
+      sender (Sensory Percussion, an Ableton/Max device) must be configured with, plus whether the
+      UDP socket actually bound. null until the first `state` lands. */
+  oscListen = $state<OscListenInfo | null>(null);
+  /** The most recent OSC packet heard on ANY address, for the "is anything arriving?" badge on
+      the listen surface. Distinct from {@link inputActivity}, which is keyed per address so a
+      binding's badge only tracks its own traffic — here the question is whether the transport
+      itself is carrying anything at all. */
+  lastOscHeard = $state<InputActivity | null>(null);
+
   /** The server refused our connection for a wrong/absent room PIN (close 4401) — drives the
       PIN-entry gate. Cleared once a supplied PIN is accepted (the link opens). */
   authRequired = $state(false);
@@ -1308,7 +1319,7 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel) => {
+      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
@@ -1319,6 +1330,8 @@ export class TriggerLab {
         this.output = output;
         // remote-access surface (share URL + PIN) for the host UI
         this.tunnel = tunnel;
+        // where a third-party OSC sender should aim, and whether the socket is actually bound
+        this.oscListen = osc;
         // Cold-load reconcile of BOTH server-authoritative libraries (show library + canonical song
         // pool): adopt server on first state / seed it from our cache / viewer live-follows. Role-
         // aware (S1) — presence arrives before this state on a (re)connect, so `isViewer` is settled.
@@ -1932,7 +1945,17 @@ export class TriggerLab {
       this.inputActivity.set(activityKey({ kind: 'midi', note: activity.note }), activity);
     } else if (activity.address) {
       this.inputActivity.set(activityKey({ kind: 'osc', address: activity.address }), activity);
+      // Newest OSC packet on any address — the transport-level "something is arriving" proof.
+      this.lastOscHeard = activity;
     }
+  }
+
+  /** Last-heard badge for the OSC transport as a whole: whatever address arrived most recently,
+      whether or not anything is bound to it. Null until the first OSC packet lands. */
+  get oscHeardBadge(): InputBadgeView | null {
+    const hit = this.lastOscHeard;
+    if (!hit?.address) return null;
+    return deriveInputBadge({ kind: 'osc', address: hit.address }, this.inputActivity, this.nowTick);
   }
 
   /** Last-heard badge for an input binding, or null when nothing matching has been heard

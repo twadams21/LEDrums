@@ -5,7 +5,7 @@ import { buildShow } from './show-builder';
 import { SONGS_STORAGE_KEY, serializeSongLibrary, type SongLibrary } from './persistence';
 import type { LibrarySong } from './store/song-library';
 import type { WSClient, WSCallbacks } from '../ws/client';
-import type { ClientMessage, OutputStatus, SerializedModel } from '../ws/protocol-types';
+import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel } from '../ws/protocol-types';
 
 /* Song library on the store (S41): export a local song into the canonical pool, reference it from
    a show (resolve materializes it into the runtime view), canonical propagation across shows, detach
@@ -44,6 +44,7 @@ const harnessClient =
 
 const MODEL: SerializedModel = { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } };
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
+const OSC_LISTEN: OscListenInfo = { status: 'listening', port: 9000, hosts: ['192.168.1.20'] };
 
 /** A minimal, valid pool song under `id` (empty closure — enough to reserve its id). */
 const libSong = (id: string): LibrarySong => ({ id, name: id, sections: [], graphs: {}, graphNames: {}, effects: [], presets: [] });
@@ -246,7 +247,7 @@ describe('pool-id reservation (no collision with local song mints)', () => {
       const store = new TriggerLab(harnessClient(h));
       store.start(); // attaches the WS callbacks
       const blob = serializeSongLibrary({ songs: { [POOL]: libSong(POOL) } } as SongLibrary);
-      h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, blob, null);
+      h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, blob, null, OSC_LISTEN);
       expect(store.songLibraryList.map((s) => s.id)).toEqual([POOL]); // adopted
       const local = store.createSong('Local');
       expect(suffix(local)).toBeGreaterThan(3_000_000_000); // counter advanced past the adopted id

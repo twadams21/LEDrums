@@ -3,7 +3,7 @@ import { defaultProject, type Project } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
 import { parse, isClipParseError } from './clipdoc';
 import type { WSClient, WSCallbacks } from '../ws/client';
-import type { ClientMessage, OutputStatus, SerializedModel } from '../ws/protocol-types';
+import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel } from '../ws/protocol-types';
 
 /* Patch copy/paste store surface (group K / S45): copyPatch serializes the rig's device slices as
    a portable `patch` ClipDoc; setProjectPatch fires the bulk `setProject` re-rig WITHOUT an
@@ -61,12 +61,13 @@ const MODEL: SerializedModel = {
   bounds: { center: [0, 0, 0], size: 0 },
 };
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
+const OSC_LISTEN: OscListenInfo = { status: 'listening', port: 9000, hosts: ['192.168.1.20'] };
 
 function fireOpen(h: Harness): void {
   h.cb!.onConnection!('open');
 }
 function fireState(h: Harness, project: Project): void {
-  h.cb!.onState!(project, MODEL, [], [], OUTPUT, null, null, null);
+  h.cb!.onState!(project, MODEL, [], [], OUTPUT, null, null, null, OSC_LISTEN);
 }
 function firePresence(h: Harness, youAreEditor: boolean): void {
   h.cb!.onPresence!('c1', youAreEditor, 2);

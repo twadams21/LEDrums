@@ -38,6 +38,7 @@ import type {
   EffectSpec,
   MonitorEvent,
   NetworkAdapter,
+  OscListenInfo,
   OutputStatus,
   SerializedModel,
   ShowLibraryBlob,
@@ -328,6 +329,13 @@ const tunnelInfoSchema = z.object({
   error: z.string().optional(),
 });
 
+const oscListenInfoSchema = z.object({
+  status: z.enum(['listening', 'error']),
+  port: z.number(),
+  hosts: z.array(z.string()),
+  error: z.string().optional(),
+});
+
 const controllerUniverseRxSchema = z.object({
   uniNum: z.number(),
   protocol: z.enum(['sACN', 'artNet']),
@@ -390,6 +398,7 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     showLibrary: showLibraryBlobSchema.nullable(),
     songLibrary: songLibraryBlobSchema.nullable(),
     tunnel: tunnelInfoSchema.nullable(),
+    osc: oscListenInfoSchema,
   }).strict(),
   z.object({
     t: z.literal('stats'),
@@ -447,6 +456,7 @@ type _LockOutputStatus = Assert<Equals<z.infer<typeof outputStatusSchema>, Outpu
 type _LockEngineStats = Assert<Equals<z.infer<typeof engineStatsSchema>, EngineStats>>;
 type _LockMonitorEvent = Assert<Equals<z.infer<typeof monitorEventSchema>, MonitorEvent>>;
 type _LockTunnelInfo = Assert<Equals<z.infer<typeof tunnelInfoSchema>, TunnelInfo>>;
+type _LockOscListenInfo = Assert<Equals<z.infer<typeof oscListenInfoSchema>, OscListenInfo>>;
 type _LockControllerStatus = Assert<Equals<z.infer<typeof controllerStatusSchema>, ControllerStatus>>;
 type _LockControllerUniverseRx = Assert<
   Equals<z.infer<typeof controllerUniverseRxSchema>, ControllerUniverseRx>

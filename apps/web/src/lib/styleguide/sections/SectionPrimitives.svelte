@@ -21,6 +21,7 @@
   import Pill from '../../ui/Pill.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
   import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
+  import CopyableValue from '../../ui/CopyableValue.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import EditableRow from '../../ui/EditableRow.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
@@ -304,6 +305,17 @@
         <InputActivityBadge label="C4" value="92" age="now" tone="live" fresh title="Last heard C4 · velocity 92 · now ago" />
         <InputActivityBadge label="/kick" value="0.75" age="3s" tone="live" title="Last heard /kick · 0.75 · 3s ago" />
         <InputActivityBadge label="D2" value="41" age="2m" tone="muted" title="Last heard D2 · velocity 41 · 2m ago" />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Copyable value"
+      src="lib/ui/CopyableValue"
+      note="A value the user must retype into ANOTHER app — a share URL, a room PIN, an OSC host:port for Sensory Percussion. Mono + tabular + select-all, with a copy button that cross-fades to a check for a beat. If the Clipboard API is missing it does not flash success; the value stays selectable."
+    >
+      <div class="comp-stack">
+        <CopyableValue value="192.168.1.20:9000" copyLabel="Copy OSC address 192.168.1.20:9000" />
+        <CopyableValue label="PIN" value="481920" />
       </div>
     </DemoCard>
 

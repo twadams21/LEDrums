@@ -286,3 +286,19 @@ export interface TunnelInfo {
   error?: string;
 }
 
+/** Where a third-party OSC sender should aim, and whether the transport is actually alive (#139).
+ * Sensory Percussion and Ableton/Max devices are configured by typing a host and a port into
+ * THEIR settings, so the app has to be able to answer "what do I type?" without reading source.
+ * Carried on the `state` message; always present. */
+export interface OscListenInfo {
+  /** `listening` once the UDP socket is bound; `error` when the bind failed (e.g. EADDRINUSE). */
+  status: 'listening' | 'error';
+  /** The UDP port actually bound. */
+  port: number;
+  /** Non-internal IPv4 addresses of this machine — what a sender on the LAN should target.
+   * Empty when the machine has no LAN address (send to `127.0.0.1` in that case). */
+  hosts: string[];
+  /** Plain-language failure description, present only when `status === 'error'`. */
+  error?: string;
+}
+

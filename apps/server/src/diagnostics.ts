@@ -6,6 +6,8 @@ export interface StartupDiagnosticsInput {
   voiceMode: boolean;
   port: number;
   oscPort: number;
+  /** LAN addresses an OSC sender can aim at (#139) — empty on a machine with no LAN address. */
+  oscHosts: string[];
   webRoot: string;
   webRootExists: boolean;
   project: { name: string; path: string; source: 'seed' | 'file' };
@@ -24,6 +26,18 @@ export function startupDiagnostics(input: StartupDiagnosticsInput): MonitorDraft
       source: 'server',
       label: `Server started in ${input.voiceMode ? 'voice' : 'legacy'} mode`,
       detail: `http=:${input.port}; osc=:${input.oscPort}`,
+    },
+    {
+      // The "what do I type into Sensory Percussion?" line. A port alone does not answer it —
+      // a third-party sender needs a reachable host too.
+      type: 'system',
+      direction: 'local',
+      source: 'server/osc',
+      destination: 'osc-input',
+      label: `OSC input on udp:${input.oscPort}`,
+      detail: input.oscHosts.length
+        ? `send OSC to ${input.oscHosts.map((h) => `${h}:${input.oscPort}`).join(' or ')}`
+        : `no LAN address detected; send OSC to 127.0.0.1:${input.oscPort}`,
     },
     {
       type: 'persistence',

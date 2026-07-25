@@ -90,13 +90,17 @@ describe('WSClient', () => {
       showLibrary: null,
       songLibrary: null,
       tunnel: null,
+      osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
     };
     ws.emitText(JSON.stringify(msg));
 
     expect(onState).toHaveBeenCalledTimes(1);
-    const [, model, , projects] = onState.mock.calls[0]!;
+    const [, model, , projects, , , , , osc] = onState.mock.calls[0]!;
     expect(model.count).toBe(2);
     expect(projects).toEqual(['default']);
+    // The OSC listen surface (#139) rides `state` — it is what the Settings panel reads to tell a
+    // user which host:port to type into Sensory Percussion.
+    expect(osc).toEqual({ status: 'listening', port: 9000, hosts: ['192.168.1.20'] });
   });
 
   it('decodes a binary frame into a Uint8Array and invokes onFrame', () => {

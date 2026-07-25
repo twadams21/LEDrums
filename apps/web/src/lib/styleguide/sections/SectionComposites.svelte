@@ -13,6 +13,7 @@
   import { makeNode } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import OscInputPanel from '../../app/chrome/OscInputPanel.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
@@ -29,7 +30,8 @@
   import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OutputStatus } from '../../ws/protocol-types';
+  import type { ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus } from '../../ws/protocol-types';
+  import type { InputBadgeView } from '../../trigger-lab/input-activity';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
 
   /* ---- OutputStatusPanel (pure props — no store) ------------------------------- */
@@ -125,6 +127,18 @@
   });
   const pillStub = (link: TriggerLab['link'], output: OutputStatus | null = null) =>
     ({ link, output }) as unknown as TriggerLab;
+
+  /* ---- OscInputPanel (reads store.oscListen + store.oscHeardBadge) -------------- */
+  const oscHeard: InputBadgeView = {
+    label: '/kick',
+    value: '0.82',
+    age: 'now',
+    tone: 'live',
+    fresh: true,
+    title: 'Last heard /kick · 0.82 · now ago',
+  };
+  const oscStub = (oscListen: OscListenInfo, oscHeardBadge: InputBadgeView | null = null) =>
+    ({ oscListen, oscHeardBadge }) as unknown as TriggerLab;
 
   /* ---- Monitor — reactive stub store (filters actually work) ------------------- */
   const now = Date.now();
@@ -323,6 +337,20 @@
     </DemoCard>
 
     <DemoCard
+      title="OSC input panel"
+      src={['lib/app/chrome/OscInputPanel', 'lib/ui/CopyableValue', 'lib/ui/InputActivityBadge']}
+      note="The 'what do I type into Sensory Percussion?' surface (#139). Copyable host:port rows, whether the UDP socket actually bound, and — the part that separates configured from working — live proof that packets are arriving, via the same InputActivityBadge used for per-binding last-heard. A failed bind is a live-toned fault, never silence."
+    >
+      <div class="osc-demo">
+        <OscInputPanel store={oscStub({ status: 'listening', port: 9000, hosts: ['192.168.1.20'] }, oscHeard)} />
+        <OscInputPanel store={oscStub({ status: 'listening', port: 9000, hosts: ['192.168.1.20', '10.0.0.5'] })} />
+        <OscInputPanel
+          store={oscStub({ status: 'error', port: 9000, hosts: ['192.168.1.20'], error: 'bind EADDRINUSE 0.0.0.0:9000' })}
+        />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Output status panel"
       src={['lib/app/docks/inspectors/OutputStatusPanel', 'lib/app/docks/inspectors/output-status']}
       note="The confidence home in the controller inspector — state pill, packets/s (tabular), universes, target, protocol. lastError raises a prominent red alert; offline shows a hint. Extended by the PixLite panel (S48)."
@@ -467,6 +495,13 @@
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+  }
+  /* Three states side by side at the panel's real width (it lives in the Settings dialog). */
+  .osc-demo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-4);
+    align-items: start;
   }
   .panel-row {
     display: grid;

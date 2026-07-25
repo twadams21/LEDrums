@@ -43,16 +43,22 @@ export interface BootDeps {
   monitor?: (event: MonitorDraft) => void;
 }
 
-/** Every non-internal IPv4 address as an http URL on port `p` (for the boot LAN banner). */
-export function lanUrls(p: number): string[] {
-  const urls: string[] = [];
-  const ifaces = networkInterfaces();
-  for (const addrs of Object.values(ifaces)) {
+/** Every non-internal IPv4 address of this machine — what a peer on the LAN can reach it at.
+ * Shared by the boot banner (http) and the OSC listen surface (#139): a third-party sender like
+ * Sensory Percussion is configured by typing one of these plus the OSC port. */
+export function lanAddresses(): string[] {
+  const addresses: string[] = [];
+  for (const addrs of Object.values(networkInterfaces())) {
     for (const a of addrs ?? []) {
-      if (a.family === 'IPv4' && !a.internal) urls.push(`http://${a.address}:${p}`);
+      if (a.family === 'IPv4' && !a.internal) addresses.push(a.address);
     }
   }
-  return urls;
+  return addresses;
+}
+
+/** Every non-internal IPv4 address as an http URL on port `p` (for the boot LAN banner). */
+export function lanUrls(p: number): string[] {
+  return lanAddresses().map((a) => `http://${a}:${p}`);
 }
 
 /**
@@ -67,7 +73,19 @@ export function boot(deps: BootDeps): void {
     else deps.host.start();
     console.log(`LEDrums server listening on http://localhost:${deps.port}${deps.voiceMode ? ' [voice engine]' : ''}`);
     for (const url of lanUrls(deps.port)) console.log(`  LAN: ${url}`);
-    console.log(`OSC listening on udp:${deps.oscPort}`);
+    // Print the address a sender is actually configured with, not just the port — the whole
+    // point of the OSC surface is that a user can answer "what do I type into Sensory
+    // Percussion / my Max device?" without reading source. Never claim liveness we have not
+    // observed: a failed bind says so, and an unsettled bind says only that it is in flight.
+    const osc = deps.oscInput.status;
+    if (osc?.state === 'error') {
+      console.log(`OSC NOT listening on udp:${osc.port} — ${osc.error ?? 'bind failed'}`);
+    } else if (osc) {
+      console.log(`OSC listening on udp:${osc.port}`);
+      for (const a of lanAddresses()) console.log(`  send OSC to: ${a}:${osc.port}`);
+    } else {
+      console.log(`OSC binding on udp:${deps.oscPort}…`);
+    }
     console.log('Pixel output: set target IP + Arm in the UI');
     if (deps.pin) {
       console.log(`  Room PIN: ${deps.pin} (required to join)`);
