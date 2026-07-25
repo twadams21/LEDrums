@@ -48,6 +48,31 @@ describe('buildDmxMap — dense packing', () => {
     expect(map.perPixel[1]!.channel).toBe(3);
   });
 
+  it('derives the flat map when the port set exists but is entirely UNWIRED (all empty segments)', () => {
+    // #112: outputs are now a fixed 4/8 port set seeded empty; an unwired rig (every port has no
+    // segments) must still light via the flat fallback, exactly as an empty `outputs: []` array did —
+    // otherwise reconciling []→N empty ports would silently dark the rig.
+    const k = kit(
+      [{ id: 'a', pixelsPerHoop: 30 }, { id: 'b', pixelsPerHoop: 20 }],
+      [out('o1', []), out('o2', []), out('o3', []), out('o4', [])],
+    );
+    const model = buildPixelModel(k);
+    const map = buildDmxMap(k, model);
+    expect(map.perPixel.filter(Boolean)).toHaveLength(model.pixelCount);
+    expect(map.perPixel[0]!.channel).toBe(0);
+    expect(map.perPixel[1]!.channel).toBe(3);
+  });
+
+  it('uses the authored ports (empty ones inert) once ANY port is wired — no flat fallback', () => {
+    // A partially-wired set routes only the wired port; the empty ports contribute nothing (they do
+    // NOT re-trigger the light-everything fallback).
+    const k = kit([{ id: 'A', pixelsPerHoop: 10 }, { id: 'B', pixelsPerHoop: 10 }], [out('o1', [seg('A')]), out('o2', [])]);
+    const model = buildPixelModel(k);
+    const map = buildDmxMap(k, model);
+    // Only drum A's 10 pixels are patched; drum B (on no wired port) is dark.
+    expect(map.perPixel.filter(Boolean)).toHaveLength(10);
+  });
+
   it('packs pixels channel-dense and straddles a universe boundary', () => {
     // One output run, one drum of 196 px → 588 channels → universes 0 and 1.
     const k = kit([{ id: 'A', pixelsPerHoop: 196 }], [out('o1', [seg('A')])]);

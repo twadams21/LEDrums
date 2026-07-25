@@ -30,6 +30,7 @@ import {
 } from '@ledrums/core';
 import type { EngineStats, voice } from '@ledrums/core';
 import type {
+  BackupSnapshotMeta,
   ControllerStatus,
   ControllerTestPattern,
   ControllerUniverseRx,
@@ -180,6 +181,12 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('loadProject'), name: z.string() }).strict(),
   z.object({ t: z.literal('saveProject'), name: z.string() }).strict(),
   z.object({ t: z.literal('listProjects') }).strict(),
+  // Project backups (#123). `listBackups` is a pure read (ungated) — the Backups dialog fetches the
+  // local snapshot list. `restoreBackup` is an AUTHORING mutation (editor-gated by deny-by-default):
+  // the server takes a pre-risk snapshot, atomically replaces all three blobs, and reloads every
+  // client like a cold load. `id` is the snapshot's stable `<createdAt>-<reason>` id.
+  z.object({ t: z.literal('listBackups') }).strict(),
+  z.object({ t: z.literal('restoreBackup'), id: z.string() }).strict(),
   z.object({ t: z.literal('discoverControllers') }).strict(),
   z.object({ t: z.literal('adoptController'), host: z.string() }).strict(),
   z.object({ t: z.literal('setControllerAuth'), password: z.string() }).strict(),
@@ -192,6 +199,17 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('controllerBackToLive') }).strict(),
   z.object({ t: z.literal('watchController'), watching: z.boolean() }).strict(),
   z.object({ t: z.literal('listNetworkAdapters') }).strict(),
+  // Web-side error capture (observability #122): the browser forwards an uncaught error, an
+  // unhandled promise rejection, or a `console.error` call over the socket it already holds. The
+  // server re-emits it onto the Monitor bus as an `error` event (single fault stream). Diagnostic
+  // only — never authoring — so the handler processes it BEFORE the editor gate. `origin` names the
+  // capture surface; `message`/`stack` are the fault text (size-capped server-side before the bus).
+  z.object({
+    t: z.literal('webError'),
+    origin: z.enum(['window.onerror', 'unhandledrejection', 'console.error']),
+    message: z.string(),
+    stack: z.string().optional(),
+  }).strict(),
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -210,6 +228,12 @@ function controllerTestPatternSchema() {
     pixNum: z.number().optional(),
   });
 }
+
+const backupSnapshotMetaSchema = z.object({
+  id: z.string(),
+  createdAt: z.number(),
+  reason: z.enum(['boot', 'cadence', 'pre-risk']),
+});
 
 const serializedDrumSchema = z.object({
   id: z.string(),
@@ -385,6 +409,7 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
   }).strict(),
   z.object({ t: z.literal('monitor'), event: monitorEventSchema }).strict(),
   z.object({ t: z.literal('projects'), names: z.array(z.string()) }).strict(),
+  z.object({ t: z.literal('backups'), items: z.array(backupSnapshotMetaSchema) }).strict(),
   z.object({ t: z.literal('presence'), editorId: z.string().nullable(), youAreEditor: z.boolean(), clientCount: z.number() }).strict(),
   z.object({ t: z.literal('showLibrary'), library: showLibraryBlobSchema }).strict(),
   z.object({ t: z.literal('songLibrary'), library: songLibraryBlobSchema }).strict(),
@@ -434,4 +459,5 @@ type _LockControllerTestPattern = Assert<
   Equals<z.infer<ReturnType<typeof controllerTestPatternSchema>>, ControllerTestPattern>
 >;
 type _LockVoiceStats = Assert<Equals<z.infer<typeof voiceStatsSchema>, VoiceStats>>;
+type _LockBackupSnapshotMeta = Assert<Equals<z.infer<typeof backupSnapshotMetaSchema>, BackupSnapshotMeta>>;
 /* eslint-enable @typescript-eslint/no-unused-vars */

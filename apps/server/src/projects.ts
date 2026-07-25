@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertProjectIntegrity, parseProject, type Project } from '@ledrums/core';
+import { assertProjectIntegrity, parseProject, reconcileOutputs, type Project } from '@ledrums/core';
 import { writeFileAtomic, writeFileAtomicSync } from './atomic-file';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,7 +53,12 @@ export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean
  */
 export function loadProject(name: string, dir: string = PROJECTS_DIR): Project {
   const raw = readFileSync(projectFilePath(name, dir), 'utf8');
-  const project = parseProject(JSON.parse(raw));
+  const parsed = parseProject(JSON.parse(raw));
+  // Defensive self-heal: force kit.outputs back to the canonical port count for the controller
+  // mode (4 normal / 8 expanded). A project corrupted by the old delete keypath (the drummer's
+  // 3-outputs-in-expanded file) loads back to 8 on next boot with NO hand-editing — reconcile is
+  // a no-op for an already-correct project, so this never perturbs a healthy file.
+  const project: Project = { ...parsed, kit: reconcileOutputs(parsed.kit) };
   assertProjectIntegrity(project);
   return project;
 }

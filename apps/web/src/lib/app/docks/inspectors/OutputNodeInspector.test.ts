@@ -51,11 +51,34 @@ describe('OutputNodeInspector', () => {
         node: outputNode({ scope: 'drum', targetId: 'snare' } as Partial<GraphNode>),
       },
     });
-    const row = container.querySelector('.empty-scope');
+    const row = container.querySelector('.lint-callout');
     expect(row).not.toBeNull();
-    expect(row?.querySelector('.es-problem')?.textContent).toBeTruthy();
+    expect(row?.querySelector('.lc-problem')?.textContent).toBeTruthy();
     // The copy names the next step, not just the fault.
-    expect(row?.querySelector('.es-action')?.textContent).toMatch(/widen|scope/i);
+    expect(row?.querySelector('.lc-action')?.textContent).toMatch(/widen|scope/i);
+  });
+
+  it('shows a reachability row when the Output is a dead branch (reaches Output, no producer)', () => {
+    // trigger → route → Output: the branch reaches Output but nothing produces a layer (R07/R15).
+    const graph = {
+      version: 3,
+      nodes: [
+        { id: 'trigger', kind: 'trigger', x: 0, y: 0, scope: 'kit' },
+        { id: 'rt', kind: 'all', x: 200, y: 0 },
+        { id: 'output', kind: 'output', x: 400, y: 0, scope: 'kit' },
+      ],
+      edges: [
+        { id: 't-rt', from: 'trigger', to: 'rt' },
+        { id: 'rt-out', from: 'rt', to: 'output' },
+      ],
+    } as unknown as TriggerLab['selectedGraph'];
+    const { container } = render(OutputNodeInspector, {
+      props: { store: stubStore(graph), node: outputNode({ scope: 'kit' }) },
+    });
+    const row = container.querySelector('.lint-callout');
+    expect(row).not.toBeNull();
+    // The dead-branch next step names wiring a producer in.
+    expect(row?.querySelector('.lc-action')?.textContent).toMatch(/effect|play|layer/i);
   });
 
   it('omits the empty-scope row when the Output scope resolves', () => {
@@ -72,6 +95,6 @@ describe('OutputNodeInspector', () => {
     const { container } = render(OutputNodeInspector, {
       props: { store: stubStore(graph), node: outputNode({ scope: 'kit' } as Partial<GraphNode>) },
     });
-    expect(container.querySelector('.empty-scope')).toBeNull();
+    expect(container.querySelector('.lint-callout')).toBeNull();
   });
 });

@@ -68,6 +68,19 @@ export function lintEntries(issues: readonly voice.RenderPlanIssue[]): LintEntry
   }));
 }
 
+/** The lint entries anchored to `nodeId`, optionally narrowed to a set of codes — the model behind
+    a node inspector's warn row (R15). Callers compile the plan UNCACHED and pass its `issues`, per
+    the render-plan cache contract (empty-scope is param-derived and must not be served stale). */
+export function nodeLintEntries(
+  issues: readonly voice.RenderPlanIssue[],
+  nodeId: string,
+  codes?: readonly voice.RenderPlanIssueCode[],
+): LintEntry[] {
+  return lintEntries(issues).filter(
+    (entry) => entry.nodeId === nodeId && (codes === undefined || codes.includes(entry.code)),
+  );
+}
+
 /** Group the anchored findings by their node so the canvas can badge each offending node with
     the SAME entries the strip renders (strip ↔ badge agree — one lint model, two surfaces).
     Findings without a `nodeId` (missing-trigger / missing-output) live only on the strip. */

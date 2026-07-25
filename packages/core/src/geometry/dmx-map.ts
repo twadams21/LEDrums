@@ -68,18 +68,22 @@ function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
  * There is NO hardcoded pixel cap — the controller enforces its own; `maxPixelsPerOutput` is
  * advisory only.
  *
- * When the kit declares no outputs, a single flat output over all pixels is derived
- * (visualizer / loopback target). Its RGB wiring order is stamped from `controllerRgbOrder`
- * when the caller supplies it, so the flat/loopback path carries a DEFINED order (rather than
- * leaving each pixel's order undefined and relying on the packer's own fallback) — see
- * {@link deriveFlatOutputs}. Omitting it preserves the historical behaviour byte-for-byte.
+ * When the kit declares no WIRED outputs — an empty `outputs` array OR a fixed port set that is
+ * entirely unwired (every output has zero segments, the fresh-rig state now that ports are a
+ * static 4/8 set seeded empty by {@link reconcileOutputs}) — a single flat output over all pixels
+ * is derived (visualizer / loopback target) so an un-patched rig still lights rather than going
+ * dark. Its RGB wiring order is stamped from `controllerRgbOrder` when the caller supplies it, so
+ * the flat/loopback path carries a DEFINED order (rather than leaving each pixel's order undefined
+ * and relying on the packer's own fallback) — see {@link deriveFlatOutputs}. Omitting it preserves
+ * the historical behaviour byte-for-byte. A partially-wired port set uses the authored outputs
+ * as-is (empty ports are simply inert).
  *
  * Throws on topology errors: an unknown drum or an out-of-range hoop.
  */
 export function buildDmxMap(kit: KitConfig, model: PixelModel, controllerRgbOrder?: RgbOrder): DmxMap {
   const perPixel: (PixelDmx | undefined)[] = new Array(model.pixelCount).fill(undefined);
-  const outputs =
-    kit.outputs.length > 0 ? kit.outputs : deriveFlatOutputs(model, controllerRgbOrder);
+  const hasWiredOutput = kit.outputs.some((o) => o.segments.length > 0);
+  const outputs = hasWiredOutput ? kit.outputs : deriveFlatOutputs(model, controllerRgbOrder);
 
   // Universe number → its patch, built lazily as pixels land in each.
   const byUniverse = new Map<number, UniversePatch>();
