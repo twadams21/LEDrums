@@ -3,9 +3,9 @@ import worker from '../src/index';
 import type { Env } from '../src/env';
 import type { ExecutionContext } from '../src/cf';
 
-// A stub env whose DB is never touched on the auth/404 paths under test (token rejection happens
-// before any D1 access). Full ingest/read logic is covered at the handler level.
-const env: Env = { DB: {} as Env['DB'], TELEMETRY_TOKEN: 'secret' };
+// A stub env whose DB/R2 are never touched on the auth/404 paths under test (token rejection happens
+// before any binding access). Full ingest/read/backup logic is covered at the handler level.
+const env: Env = { DB: {} as Env['DB'], BACKUPS: {} as Env['BACKUPS'], TELEMETRY_TOKEN: 'secret' };
 const ctx: ExecutionContext = { waitUntil() {}, passThroughOnException() {} };
 
 describe('worker.fetch auth (#122)', () => {

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   defaultProject,
+  parseProject,
   WS_PATH,
   WS_PORT,
   type Project,
@@ -44,10 +45,12 @@ import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
 import { createMonitorBus } from './monitor';
 import { installProcessErrorCapture } from './process-errors';
-import { createShipQueue } from './telemetry/ship-queue';
+import { createShipQueue, type ShipQueue } from './telemetry/ship-queue';
 import { createHttpTransport } from './telemetry/transport';
 import { createReporter, type Reporter } from './telemetry/reporter';
 import { isTelemetryEnabled, type ReportRecord } from './telemetry/envelope';
+import { createSnapshotStore, type SnapshotFiles, type SnapshotStore } from './backups/snapshot-store';
+import { backupsEndpoint, toBackupRecord, type BackupRecord } from './backups/offsite';
 import {
   decodeClient,
   effectSpecs,
@@ -228,6 +231,10 @@ const monitorBus = createMonitorBus(broadcastJson);
 // The error Reporter (#122) subscribes to EVERY Monitor event: non-error events become breadcrumbs,
 // error events become deduplicated, shipped reports. Created below iff telemetry is enabled + wired.
 let reporter: Reporter | null = null;
+// The off-site backups outbox (#123): a SECOND disk-backed ship-queue reusing the #122 transport
+// against a `/backups` route on the same Worker. Created in the same enablement block as the
+// reporter (endpoint/token present); null under dev / capture-only, where snapshotting stays local.
+let backupsQueue: ShipQueue<BackupRecord> | null = null;
 function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
   const full = monitorBus.emit(event);
   reporter?.observe(full);
@@ -290,16 +297,34 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
         origin,
       }),
     });
-    flushReportsSync = () => reporter?.persistSync();
-    // Clean shutdown (boot calls process.exit) + any exit path: flush the queue durably.
-    process.on('exit', () => reporter?.persistSync());
+    // Off-site backups (#123) reuse the same Worker + token via the derived `/backups` route — one
+    // second disk-backed queue, no third shipping mechanism. Append-only (no keyOf: each snapshot
+    // ships once). Larger byte cap than error reports since a bundle carries the whole project.
+    const backupUrl = backupsEndpoint(endpoint);
+    if (backupUrl) {
+      backupsQueue = createShipQueue<BackupRecord>({
+        path: join(resolveProjectsDir(process.env), 'backups-outbox.jsonl'),
+        transport: createHttpTransport<BackupRecord>({ endpoint: backupUrl, token }),
+        maxItems: 100,
+        maxBytes: 8_000_000,
+      });
+    }
+    flushReportsSync = () => {
+      reporter?.persistSync();
+      backupsQueue?.persistSync();
+    };
+    // Clean shutdown (boot calls process.exit) + any exit path: flush both queues durably.
+    process.on('exit', () => {
+      reporter?.persistSync();
+      backupsQueue?.persistSync();
+    });
     monitor({
       type: 'system',
       direction: 'local',
       source: 'server',
       destination: 'telemetry',
       label: 'Remote error reporting enabled',
-      detail: `endpoint=${endpoint}`,
+      detail: `endpoint=${endpoint}${backupUrl ? ` · backups=${backupUrl}` : ''}`,
     });
   } else {
     monitor({
@@ -499,6 +524,57 @@ function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
   }
 }
 
+// --- Project backups (#123) --------------------------------------------------
+// Snapshotting is ALWAYS on (local + cheap); only the off-site push follows #122's enablement rule
+// (the `backupsQueue` above is null under dev). A snapshot bundles the project + both libraries at
+// one instant; a restore replaces all three and cold-loads every client — so it is always coherent.
+
+/** A value is a usable versioned library blob iff it is an object with a numeric `version` — the same
+ * opaque-envelope gate the persistence layer applies. Restore only re-adopts a library the snapshot
+ * actually carried (a null slot at snapshot time leaves the current library untouched). */
+function isVersionedBlob(v: unknown): v is ShowLibraryBlob & SongLibraryBlob {
+  return !!v && typeof v === 'object' && typeof (v as { version?: unknown }).version === 'number';
+}
+
+/** Restore sink: replace the live project + libraries from a snapshot and reload every client exactly
+ * like a cold load (mirrors the `loadProject` path). The project is re-parsed (validated) before it
+ * touches the engine; the library slots are the module-level live state `stateMessage` reads. */
+function applyRestoredSnapshot(files: SnapshotFiles): void {
+  const project = parseProject(files.project);
+  host.engine.setProject(project);
+  host.reloadOutputSettings();
+  autosaver.markDirty();
+  if (isVersionedBlob(files.showLibrary)) {
+    liveShowLibrary = files.showLibrary;
+    showLibraryAutosaver.markDirty();
+  }
+  if (isVersionedBlob(files.songLibrary)) {
+    liveSongLibrary = files.songLibrary;
+    songLibraryAutosaver.markDirty();
+  }
+  broadcastState();
+  monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'backups', label: 'Snapshot restored — engine + clients reloaded' });
+}
+
+const snapshotOutbox = backupsQueue;
+const snapshotStore: SnapshotStore = createSnapshotStore({
+  dir: join(resolveProjectsDir(process.env), 'backups'),
+  now: () => Date.now(),
+  readCurrent: () => ({ project: host.engine.getProject(), showLibrary: liveShowLibrary, songLibrary: liveSongLibrary }),
+  applyRestored: applyRestoredSnapshot,
+  onSnapshot: snapshotOutbox ? (meta, bundle) => snapshotOutbox.enqueue(toBackupRecord(hostname(), meta, bundle)) : undefined,
+});
+
+// Boot snapshot: capture whatever state the app starts this session with BEFORE any client can
+// connect and mutate (the WS server isn't listening until boot() below). Trigger #3.
+snapshotStore.snapshot('boot');
+
+/** Change-driven cadence (#123): every 30 min, snapshot iff content changed (the store self-gates on
+ * a content hash), so an idle session never churns retention. unref'd — never keeps the process up. */
+const SNAPSHOT_CADENCE_MS = 30 * 60_000;
+const snapshotTimer = setInterval(() => snapshotStore.snapshot('cadence'), SNAPSHOT_CADENCE_MS);
+(snapshotTimer as { unref?: () => void }).unref?.();
+
 /** PixLite controller monitor (S47, group L): discovery + adoption + the client-interest-gated poll
  * loop. ONE HttpPixliteClient per controller (its internal queue enforces the sequential rule). The
  * adopted controller is persisted as `project.controller` (data-only) and rehydrated at boot below.
@@ -543,6 +619,17 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   isTunnelClient: (ws) => tunnelClients.has(ws),
   monitor,
   listNetworkAdapters: () => listNetworkAdapters(),
+  // Project backups (#123): the list read, the server-side restore (pre-risk snapshot → atomic
+  // replace → cold-load reload, all in the store), and the append-only pre-risk trigger the bulk
+  // apply seams call before mutating.
+  backups: {
+    list: () => snapshotStore.list(),
+    restore: (id) => snapshotStore.restore(id) !== null,
+    // Returns whether the safety snapshot was taken: `snapshot('pre-risk')` returns null only when
+    // the WRITE fails (pre-risk never self-gates), so `!== null` is the fail-closed signal the risky-
+    // op seams check before mutating — a false makes them refuse rather than overwrite unprotected.
+    snapshotPreRisk: () => snapshotStore.snapshot('pre-risk') !== null,
+  },
   controller: {
     discover: () => controllerMonitor.discover(),
     adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),
@@ -650,6 +737,7 @@ boot({
   oscPort,
   voiceMode: VOICE_MODE,
   statsTimer,
+  snapshotTimer,
   autosaver,
   showLibraryAutosaver,
   songLibraryAutosaver,

@@ -10,6 +10,7 @@
   import ShareInfo from './ShareInfo.svelte';
   import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ShowBrowser from './ShowBrowser.svelte';
+  import BackupsDialog from './BackupsDialog.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
   import AppSettingsDialog from './AppSettingsDialog.svelte';
   import UpdateBadge from './UpdateBadge.svelte';
@@ -17,6 +18,7 @@
   import CommitInput from '../../ui/CommitInput.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
+  import History from '@lucide/svelte/icons/history';
   import Settings from '@lucide/svelte/icons/settings';
 
   let { store }: { store: TriggerLab } = $props();
@@ -26,6 +28,7 @@
   const sectionCount = $derived(store.activeSong?.sections.length ?? 0);
 
   let browserOpen = $state(false);
+  let backupsOpen = $state(false);
   let settingsOpen = $state(false);
   let editingName = $state(false);
 
@@ -83,6 +86,7 @@
     {/if}
     <ShareInfo {store} />
     <UpdateBadge onOpen={() => (settingsOpen = true)} />
+    <IconButton icon={History} label="Backups" size={15} onclick={() => (backupsOpen = true)} />
     <IconButton icon={Settings} label="Settings" size={15} onclick={() => (settingsOpen = true)} />
     <StatusBar {store} />
     <OutputPill {store} />
@@ -90,6 +94,7 @@
 </header>
 
 <ShowBrowser {store} open={browserOpen} onClose={() => (browserOpen = false)} />
+<BackupsDialog {store} open={backupsOpen} onClose={() => (backupsOpen = false)} />
 <AppSettingsDialog {store} open={settingsOpen} onClose={() => (settingsOpen = false)} />
 
 <style>

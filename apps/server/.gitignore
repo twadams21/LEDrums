@@ -3,3 +3,8 @@
 # runtime state, not source, so it is never committed. Mirrors the repo's *.local.json
 # convention. Plain named saves (projects/<name>.json) are intentionally NOT ignored.
 projects/*.local.json
+
+# Project backups (#123): local snapshot bundles + the off-site outbox mirror. Runtime state,
+# regenerated on every boot/cadence/pre-risk trigger — never committed.
+projects/backups/
+projects/backups-outbox.jsonl

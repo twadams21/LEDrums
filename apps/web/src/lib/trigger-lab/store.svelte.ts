@@ -46,7 +46,7 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
-import type { ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -552,6 +552,10 @@ export class TriggerLab {
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
       unchanged. */
   presence = $state<{ editorId: string | null; youAreEditor: boolean; clientCount: number } | null>(null);
+  /** Local project backups (#123), newest-first — the server's reply to `listBackups`, rendered by
+      the Backups dialog. Populated on demand via {@link refreshBackups}; empty until then. Public +
+      settable like {@link presence}/{@link controllerStatus} so the dev shot-seam can seed it. */
+  backups = $state<BackupSnapshotMeta[]>([]);
   /** latest binary RGB frame from the server engine (null until one arrives) —
       the kit preview shows this instead of the local composite when connected. */
   serverFrame = $state<Uint8Array | null>(null);
@@ -1553,6 +1557,10 @@ export class TriggerLab {
         // The server enumerated its NICs — used to recommend which subnet/IP to set the PixLite to.
         this.monitor.ingestNetworkAdapters(adapters);
       },
+      onBackups: (items) => {
+        // Reply to listBackups (#123) — the local snapshot listing the Backups dialog renders.
+        this.backups = items;
+      },
       onAuthError: () => {
         // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
         // loop is paused in the client until submitPin() supplies one.
@@ -2202,6 +2210,23 @@ export class TriggerLab {
       {@link ControllerMonitor.adapters}. */
   get networkAdapters(): NetworkAdapter[] {
     return this.monitor.adapters;
+  }
+
+  // --- project backups (#123) ----------------------------------------------
+
+  /** Ask the server for the current snapshot list (a pure read — a viewer may refresh too). No-op
+      when the link is down; the reply lands on {@link backups} via the `onBackups` callback. */
+  refreshBackups(): void {
+    if (this.link !== 'open') return;
+    this.client.send({ t: 'listBackups' });
+  }
+
+  /** Restore a local snapshot by id (#123). The server takes a pre-risk snapshot of current state,
+      atomically replaces all three blobs, and cold-loads every client — so the whole app follows.
+      Editor-only (an authoring mutation); a no-op for a viewer or an offline link. */
+  restoreBackup(id: string): void {
+    if (this.link !== 'open' || this.isViewer) return;
+    this.client.send({ t: 'restoreBackup', id });
   }
 
   /** The featured adapter for the controller recommendation — the one the output `iface` is bound
