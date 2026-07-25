@@ -2,6 +2,7 @@ import { WS_PATH } from '@ledrums/core';
 import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
   decodeServer,
+  type BackupSnapshotMeta,
   type ClientMessage,
   type ControllerStatus,
   type DiscoveredController,
@@ -51,6 +52,8 @@ export interface WSCallbacks {
   onMonitor?: (event: MonitorEvent) => void;
   onSend?: (msg: ClientMessage) => void;
   onProjects?: (names: string[]) => void;
+  /** Reply to `listBackups` (#123): the local snapshot listing (newest-first) for the Backups dialog. */
+  onBackups?: (items: BackupSnapshotMeta[]) => void;
   /** Multi-client presence (S1): who is the single editor, whether WE are it, and the headcount. */
   onPresence?: (editorId: string | null, youAreEditor: boolean, clientCount: number) => void;
   /** Live authored-library push (S1): the editor's library relayed by the server — a viewer adopts
@@ -250,6 +253,9 @@ export class WSClient {
         break;
       case 'projects':
         this.cb.onProjects?.(msg.names);
+        break;
+      case 'backups':
+        this.cb.onBackups?.(msg.items);
         break;
       case 'presence':
         this.cb.onPresence?.(msg.editorId, msg.youAreEditor, msg.clientCount);

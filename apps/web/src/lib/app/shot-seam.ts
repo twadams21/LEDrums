@@ -16,7 +16,7 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { ShellStore, View } from './shell-store.svelte';
 import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
-import type { ControllerStatus } from '../ws/protocol-types';
+import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
 import { voice } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
@@ -53,6 +53,9 @@ export interface ShotSeam {
   openGallery(): void;
   /** Open the app Settings dialog (clicks the stable TopBar control). */
   openSettings(): void;
+  /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
+      capture the snapshot list + reasons + relative times without a live backend history. */
+  previewBackups(): void;
   /** Type a query into the Add pane's search field (drives the flat grouped
       results state). The field's value is component-local, so this drives the
       real input rather than a store method. */
@@ -195,6 +198,32 @@ class ShotSeamImpl implements ShotSeam {
     // stay declarative (`state: "settings"`) instead of carrying a click chain.
     const button = document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]');
     button?.click();
+  }
+
+  previewBackups(): void {
+    // Seed a representative snapshot set (one of each reason, spread across time) so the capture
+    // reads like a real recovery list, then open the dialog via its stable TopBar control. The
+    // dialog's own refreshBackups() would overwrite this from a live server, but the dev shot
+    // session has no backup history — so the seed is what a real machine's list would look like.
+    const nowMs = Date.now();
+    const seed: BackupSnapshotMeta[] = [
+      { id: `${nowMs - 4 * 60_000}-pre-risk`, createdAt: nowMs - 4 * 60_000, reason: 'pre-risk' },
+      { id: `${nowMs - 35 * 60_000}-cadence`, createdAt: nowMs - 35 * 60_000, reason: 'cadence' },
+      { id: `${nowMs - 3 * 3_600_000}-cadence`, createdAt: nowMs - 3 * 3_600_000, reason: 'cadence' },
+      { id: `${nowMs - 27 * 3_600_000}-boot`, createdAt: nowMs - 27 * 3_600_000, reason: 'boot' },
+    ];
+    this.store.backups = seed;
+    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Backups"]');
+    button?.click();
+    // The dialog's open-effect fires refreshBackups(); a live dev server may answer with its own
+    // (near-empty) list and clobber the seed. Re-assert across a few frames so the capture shows the
+    // representative set. Dev-only.
+    let frames = 0;
+    const reassert = (): void => {
+      this.store.backups = seed;
+      if (frames++ < 30) requestAnimationFrame(reassert);
+    };
+    requestAnimationFrame(reassert);
   }
 
   setSearch(query: string): void {
@@ -372,6 +401,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'settings':
         this.openSettings();
+        break;
+      case 'backups':
+        this.previewBackups();
         break;
       case 'search':
         this.setSearch(arg ?? '');

@@ -41,6 +41,11 @@ interface TunnelHarnessOpts {
   tunnelControl?: { start(): void; stop(): void };
   isTunnelClient?(ws: FakeSocket): boolean;
   listNetworkAdapters?: () => NetworkAdapter[];
+  backups?: {
+    list(): import('../ws-protocol').BackupSnapshotMeta[];
+    restore(id: string): boolean;
+    snapshotPreRisk(): boolean;
+  };
 }
 
 function harness(opts: TunnelHarnessOpts = {}) {
@@ -96,6 +101,7 @@ function harness(opts: TunnelHarnessOpts = {}) {
     tunnelControl: opts.tunnelControl,
     isTunnelClient: opts.isTunnelClient,
     listNetworkAdapters: opts.listNetworkAdapters,
+    backups: opts.backups,
     monitor,
   });
 
@@ -814,5 +820,161 @@ describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end parity)', 
     const before = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount;
     handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: before + 50 }, viewer);
     expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount).toBe(before);
+  });
+});
+
+describe('webError capture (#122)', () => {
+  const monitorErrors = (monitor: ReturnType<typeof vi.fn>) =>
+    monitor.mock.calls.map((c) => c[0]).filter((e) => e.type === 'error');
+
+  it('re-emits a forwarded web error onto the Monitor bus', () => {
+    const { handle, join, monitor } = harness();
+    const s = join();
+    handle(
+      { t: 'webError', origin: 'window.onerror', message: 'boom', stack: 'Error: boom\n  at f (a.js:1:1)' },
+      s,
+    );
+    const errs = monitorErrors(monitor);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({
+      type: 'error',
+      direction: 'in',
+      source: 'web',
+      destination: 'window.onerror',
+      label: 'boom',
+      detail: 'Error: boom\n  at f (a.js:1:1)',
+    });
+  });
+
+  it('reports a VIEWER browser fault too (diagnostic, bypasses the editor gate)', () => {
+    const { handle, join, monitor } = harness();
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'webError', origin: 'console.error', message: 'svelte warning' }, viewer);
+    const errs = monitorErrors(monitor);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({ source: 'web', destination: 'console.error', label: 'svelte warning' });
+    expect(errs[0].detail).toBeUndefined();
+  });
+
+  it('caps an oversized message + stack before they reach the bus', () => {
+    const { handle, join, monitor } = harness();
+    const s = join();
+    handle(
+      { t: 'webError', origin: 'unhandledrejection', message: 'x'.repeat(5000), stack: 'y'.repeat(20000) },
+      s,
+    );
+    const [err] = monitorErrors(monitor);
+    expect(err.label.length).toBeLessThanOrEqual(1001); // 1000 + ellipsis
+    expect(err.detail.length).toBeLessThanOrEqual(8001);
+  });
+});
+
+describe('project backups (#123) — WS messages + pre-risk triggers at the handler seam', () => {
+  /** A backups fake with spies: `list` returns a canned listing, `restore` reports success by id,
+   * `snapshotPreRisk` reports whether the safety snapshot was taken (default: always taken). */
+  function fakeBackups(
+    overrides: Partial<{
+      list: () => import('../ws-protocol').BackupSnapshotMeta[];
+      restore: (id: string) => boolean;
+      snapshotPreRisk: () => boolean;
+    }> = {},
+  ) {
+    return {
+      list: vi.fn(overrides.list ?? (() => [{ id: '1000-boot', createdAt: 1000, reason: 'boot' as const }])),
+      restore: vi.fn(overrides.restore ?? ((id: string) => id === '1000-boot')),
+      snapshotPreRisk: vi.fn(overrides.snapshotPreRisk ?? (() => true)),
+    };
+  }
+
+  function patchFrom(host: ReturnType<typeof harness>['host']) {
+    const cur = host.engine.getProject();
+    return { name: 'Rig B', kit: cur.kit, inputMap: cur.inputMap, output: { ...cur.output, host: '10.0.0.9', protocol: 'sacn' as const } };
+  }
+
+  it('listBackups replies to the requester with the store listing (ungated — a viewer may read)', () => {
+    const backups = fakeBackups();
+    const { handle, join } = harness({ backups });
+    join(); // first socket is editor
+    const viewer = join();
+    handle({ t: 'listBackups' }, viewer);
+    const reply = viewer.sent.find((m) => m.t === 'backups');
+    expect(reply).toEqual({ t: 'backups', items: [{ id: '1000-boot', createdAt: 1000, reason: 'boot' }] });
+    expect(backups.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('restoreBackup runs the restore for a known id (the store applies + broadcasts)', () => {
+    const backups = fakeBackups();
+    const { handle, join, monitor } = harness({ backups });
+    const editor = join();
+    handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
+    expect(backups.restore).toHaveBeenCalledWith('1000-boot');
+    expect(editor.has('error')).toBe(false);
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ label: 'Backup restored' }));
+  });
+
+  it('restoreBackup rejects an unknown id with a user-visible error, no crash', () => {
+    const backups = fakeBackups();
+    const { handle, join } = harness({ backups });
+    const editor = join();
+    handle({ t: 'restoreBackup', id: 'nope' }, editor);
+    expect(backups.restore).toHaveBeenCalledWith('nope');
+    const err = editor.sent.find((m) => m.t === 'error');
+    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Unknown backup') });
+  });
+
+  it('restoreBackup is editor-gated — a viewer cannot restore', () => {
+    const backups = fakeBackups();
+    const { handle, join } = harness({ backups });
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'restoreBackup', id: '1000-boot' }, viewer);
+    expect(backups.restore).not.toHaveBeenCalled();
+  });
+
+  it('a bulk setProject takes a pre-risk snapshot BEFORE the mutation', () => {
+    const backups = fakeBackups();
+    const { handle, join, host } = harness({ backups });
+    const editor = join();
+    // Assert ordering: snapshotPreRisk fires, and the project really did change (mutation happened).
+    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
+    expect(host.engine.getProject().name).toBe('Rig B');
+  });
+
+  it('a REJECTED setProject takes no pre-risk snapshot (nothing was going to mutate)', () => {
+    const backups = fakeBackups();
+    const { handle, join } = harness({ backups });
+    const editor = join();
+    // kit with no drums fails validation before any mutation → no snapshot.
+    handle({ t: 'setProject', patch: { name: 'x', kit: { drums: [] } } as never }, editor);
+    expect(backups.snapshotPreRisk).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES the setProject re-rig (fail-closed C1) when the pre-risk snapshot fails — no mutation', () => {
+    const backups = fakeBackups({ snapshotPreRisk: () => false }); // safety snapshot WRITE failed
+    const { handle, join, host } = harness({ backups });
+    const editor = join();
+    const before = host.engine.getProject().name;
+    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
+    expect(host.engine.getProject().name).toBe(before); // NOT 'Rig B' — the mutation was refused
+    const err = editor.sent.find((m) => m.t === 'error');
+    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Backup failed') });
+  });
+
+  it('restoreBackup surfaces a pre-risk-failure THROW from the store as a clear error (live state untouched)', () => {
+    const backups = fakeBackups({
+      restore: () => {
+        throw new Error('pre-risk safety snapshot failed; restore of 1000-boot refused (live state untouched)');
+      },
+    });
+    const { handle, join, host } = harness({ backups });
+    const editor = join();
+    const before = host.engine.getProject();
+    handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
+    const err = editor.sent.find((m) => m.t === 'error');
+    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Restore aborted') });
+    expect(host.engine.getProject()).toBe(before); // nothing applied
   });
 });

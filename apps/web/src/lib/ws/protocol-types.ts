@@ -3,6 +3,8 @@
 // re-exports those types for the web's existing import paths and adds the web-side
 // runtime helper (`decodeServer`) that parses inbound server frames.
 export type {
+  BackupReason,
+  BackupSnapshotMeta,
   ClientMessage,
   ControllerStatus,
   ControllerTestPattern,

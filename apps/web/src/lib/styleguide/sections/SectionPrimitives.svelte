@@ -29,6 +29,7 @@
   import Drawer from '../../ui/Drawer.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import AnchorHeader from '../../ui/AnchorHeader.svelte';
+  import LintCallout from '../../ui/LintCallout.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
   import { pushToast } from '../../ui/toast.svelte';
@@ -397,6 +398,16 @@
             <IconButton icon={Copy} label="Duplicate graph" variant="soft" size={14} />
           {/snippet}
         </AnchorHeader>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Lint callout"
+      src="lib/ui/LintCallout"
+      note="Warn-toned inspector row for a node's render-plan lint finding (empty scope, not reaching Output, dead branch). Glyph + plain problem + one next step, copy shared with the lint strip and node badge so a finding reads identically everywhere. Warn, never the red fault alarm — it guides authoring."
+    >
+      <div class="ph-demo">
+        <LintCallout problem="Not reaching Output" action="Wire this into the Output node so what it renders can light." />
       </div>
     </DemoCard>
 

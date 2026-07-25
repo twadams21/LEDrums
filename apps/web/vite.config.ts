@@ -41,6 +41,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Hidden sourcemaps (#122): emit `.js.map` files but DON'T reference them from the shipped JS
+    // (no `//# sourceMappingURL` comment). The OTA publish flow archives them to R2 keyed by version
+    // so any minified stack trace ever reported stays symbolicatable — without exposing source maps
+    // from the served bundle. This is the one irreversible decision: a build with no archived map is
+    // un-symbolicatable forever, so it must land in the first release that ships the Reporter.
+    sourcemap: 'hidden',
   },
   test: {
     environment: 'node',
