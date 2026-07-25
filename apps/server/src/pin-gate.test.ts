@@ -10,7 +10,9 @@ import {
   isLoopbackAddress,
   isTrustedHost,
   isViaCloudflare,
+  MIN_HOST_TOKEN_LENGTH,
   pinFromUrl,
+  resolveHostToken,
   resolvePin,
 } from './pin-gate';
 
@@ -90,6 +92,47 @@ describe('generateHostToken', () => {
     const b = generateHostToken();
     expect(a).toMatch(/^[0-9a-f]{64}$/); // 32 bytes → 64 hex chars
     expect(a).not.toBe(b);
+  });
+});
+
+describe('resolveHostToken', () => {
+  // #139: the desktop shell mints the token and injects it at spawn, so it holds the token before
+  // the sidecar has printed anything — that is what lets the MIDI port come up on "listening"
+  // alone instead of being gated on scraping a conditional banner line.
+  it('prefers a strong injected token over minting one', () => {
+    const injected = 'a'.repeat(64);
+    expect(resolveHostToken({ LEDRUMS_HOST_TOKEN: injected })).toBe(injected);
+  });
+
+  it('trims surrounding whitespace on an injected token', () => {
+    const injected = 'b'.repeat(64);
+    expect(resolveHostToken({ LEDRUMS_HOST_TOKEN: `  ${injected}  ` })).toBe(injected);
+  });
+
+  it('accepts an injected token exactly at the minimum length', () => {
+    const injected = 'c'.repeat(MIN_HOST_TOKEN_LENGTH);
+    expect(resolveHostToken({ LEDRUMS_HOST_TOKEN: injected })).toBe(injected);
+  });
+
+  it('mints its own when nothing is injected', () => {
+    expect(resolveHostToken({})).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('IGNORES a weak injected token and mints a strong one instead', () => {
+    // Fail-closed on strength: a short injected value must never widen the PIN bypass.
+    const weak = 'short';
+    const resolved = resolveHostToken({ LEDRUMS_HOST_TOKEN: weak });
+    expect(resolved).not.toBe(weak);
+    expect(resolved).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('ignores an empty or whitespace-only injected token', () => {
+    expect(resolveHostToken({ LEDRUMS_HOST_TOKEN: '' })).toMatch(/^[0-9a-f]{64}$/);
+    expect(resolveHostToken({ LEDRUMS_HOST_TOKEN: '   ' })).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('never returns null, so the host bypass is always available to a caller holding the token', () => {
+    expect(resolveHostToken({})).toBeTruthy();
   });
 });
 

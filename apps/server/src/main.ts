@@ -31,9 +31,9 @@ import { TunnelControl } from './tunnel-control';
 import {
   admitDecision,
   createMutablePinGate,
-  generateHostToken,
   isTrustedHost,
   isViaCloudflare,
+  resolveHostToken,
   resolvePin,
 } from './pin-gate';
 import { boot } from './boot';
@@ -41,6 +41,7 @@ import { createControllerMonitor } from './controller-monitor';
 import { listNetworkAdapters } from './network-adapters';
 import { createClientMessageHandler } from './handlers/client-message';
 import { createNativeMidiHandler } from './http/native-midi';
+import { createHostEventHandler } from './http/host-event';
 import { createUpdateStatusHandler } from './http/update-status';
 import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
@@ -114,10 +115,14 @@ const tunnelControl = new TunnelControl({
 });
 
 /** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
- * hash, printed in the boot banner for the shell to read) so the host's own window is admitted
- * without the room PIN — while a stray local browser tab/script that merely reached the loopback
- * port cannot. Always minted; only meaningful when the gate is active (open gate admits everyone). */
-const hostToken = generateHostToken();
+ * hash) so the host's own window is admitted without the room PIN — while a stray local browser
+ * tab/script that merely reached the loopback port cannot. Always present; only meaningful when the
+ * gate is active (open gate admits everyone).
+ *
+ * The desktop shell INJECTS this via `LEDRUMS_HOST_TOKEN` at spawn (#139) so it holds the token
+ * before the server has printed anything — the native MIDI bridge must never be gated on scraping a
+ * banner line. A standalone `pnpm dev` server injects nothing and mints its own, unchanged. */
+const hostToken = resolveHostToken(process.env);
 
 // --- project + host ---------------------------------------------------------
 
@@ -210,10 +215,12 @@ const webRoot = resolveWebRoot(process.env);
 
 let nativeHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
 let updateStatusHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
+let hostEventHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
 
 const server = createServer((req, res) => {
   if (updateStatusHttpHandler?.(req, res)) return;
   if (nativeHttpHandler?.(req, res)) return;
+  if (hostEventHttpHandler?.(req, res)) return;
   serveStatic(req, res, webRoot);
 });
 
@@ -666,6 +673,11 @@ nativeHttpHandler = createNativeMidiHandler({
   dispatch: (msg) => handleClientMessage(msg, nativeInputSocket),
   monitor,
 });
+
+// The desktop shell's own diagnostics (notably "the LEDrums MIDI port failed to come up") land on
+// the SAME Monitor stream as the server's native-MIDI errors — a packaged .app has no visible
+// stdout, so eprintln! alone means the drummer gets silence (#139).
+hostEventHttpHandler = createHostEventHandler({ hostToken, monitor });
 
 updateStatusHttpHandler = createUpdateStatusHandler({
   endpoint: process.env.LEDRUMS_OTA_ENDPOINT,
