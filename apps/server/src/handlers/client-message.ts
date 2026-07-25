@@ -62,6 +62,14 @@ function isVersionedBlob(lib: unknown): lib is { version: number; data: unknown 
   return !!lib && typeof lib === 'object' && typeof (lib as { version?: unknown }).version === 'number';
 }
 
+/** Bound a captured web-error field before it rides the Monitor bus (the Reporter caps the shipped
+ * payload separately). A render-loop throw firing 120×/s must not put megabytes on the wire. */
+const WEB_ERROR_MESSAGE_CAP = 1000;
+const WEB_ERROR_STACK_CAP = 8000;
+function capText(text: string, cap: number): string {
+  return text.length > cap ? `${text.slice(0, cap)}…` : text;
+}
+
 // ---------------------------------------------------------------------------
 // Handler factory
 // ---------------------------------------------------------------------------
@@ -162,6 +170,22 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     if (msg.t === 'takeover') {
       clients.takeover(ws);
       broadcastPresence();
+      return;
+    }
+
+    // Web-error capture (#122). Diagnostic forward, NOT authoring — processed BEFORE the editor gate
+    // so a viewer's browser fault is reported too. Re-emit onto the Monitor bus as an `error` event;
+    // the Reporter (which subscribes to the bus) dedups, breadcrumbs, and ships it. `source: 'web'`
+    // makes it a web-origin report; `origin` (which tap fired) rides `destination`.
+    if (msg.t === 'webError') {
+      monitor?.({
+        type: 'error',
+        direction: 'in',
+        source: 'web',
+        destination: msg.origin,
+        label: capText(msg.message, WEB_ERROR_MESSAGE_CAP),
+        detail: msg.stack ? capText(msg.stack, WEB_ERROR_STACK_CAP) : undefined,
+      });
       return;
     }
 

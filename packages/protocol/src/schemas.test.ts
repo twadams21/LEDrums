@@ -91,6 +91,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'controllerBackToLive' },
   { t: 'watchController', watching: true },
   { t: 'listNetworkAdapters' },
+  { t: 'webError', origin: 'window.onerror', message: 'boom', stack: 'Error: boom' },
 ];
 
 const outputStatus: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '1.2.3.4', packetsSent: 0, lastError: null, universeCount: 4 };

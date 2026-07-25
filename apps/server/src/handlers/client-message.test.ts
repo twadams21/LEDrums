@@ -804,3 +804,50 @@ describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end parity)', 
     expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount).toBe(before);
   });
 });
+
+describe('webError capture (#122)', () => {
+  const monitorErrors = (monitor: ReturnType<typeof vi.fn>) =>
+    monitor.mock.calls.map((c) => c[0]).filter((e) => e.type === 'error');
+
+  it('re-emits a forwarded web error onto the Monitor bus', () => {
+    const { handle, join, monitor } = harness();
+    const s = join();
+    handle(
+      { t: 'webError', origin: 'window.onerror', message: 'boom', stack: 'Error: boom\n  at f (a.js:1:1)' },
+      s,
+    );
+    const errs = monitorErrors(monitor);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({
+      type: 'error',
+      direction: 'in',
+      source: 'web',
+      destination: 'window.onerror',
+      label: 'boom',
+      detail: 'Error: boom\n  at f (a.js:1:1)',
+    });
+  });
+
+  it('reports a VIEWER browser fault too (diagnostic, bypasses the editor gate)', () => {
+    const { handle, join, monitor } = harness();
+    join(); // editor
+    const viewer = join();
+    handle({ t: 'webError', origin: 'console.error', message: 'svelte warning' }, viewer);
+    const errs = monitorErrors(monitor);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatchObject({ source: 'web', destination: 'console.error', label: 'svelte warning' });
+    expect(errs[0].detail).toBeUndefined();
+  });
+
+  it('caps an oversized message + stack before they reach the bus', () => {
+    const { handle, join, monitor } = harness();
+    const s = join();
+    handle(
+      { t: 'webError', origin: 'unhandledrejection', message: 'x'.repeat(5000), stack: 'y'.repeat(20000) },
+      s,
+    );
+    const [err] = monitorErrors(monitor);
+    expect(err.label.length).toBeLessThanOrEqual(1001); // 1000 + ellipsis
+    expect(err.detail.length).toBeLessThanOrEqual(8001);
+  });
+});
