@@ -185,7 +185,9 @@ async fn install_update_now(app: AppHandle) -> Result<(), String> {
                     downloaded.fetch_add(chunk_len as u64, Ordering::Relaxed) + chunk_len as u64;
                 let (message, progress_pct) = match content_len {
                     Some(len) if len > 0 => {
-                        let pct = (total as f64 / len as f64 * 100.0).round().clamp(0.0, 100.0);
+                        let pct = (total as f64 / len as f64 * 100.0)
+                            .round()
+                            .clamp(0.0, 100.0);
                         (format!("Downloading update… {pct}%"), Some(pct as u8))
                     }
                     // Unknown total length — no meaningful percentage, only a byte count.
@@ -299,7 +301,10 @@ fn start_native_midi(app: &AppHandle, port: u16, host_token: &native_midi::HostT
                 port,
                 host_token.clone(),
                 native_midi::HostEventLevel::Error,
-                format!("MIDI destination '{}' failed to start", native_midi::PORT_NAME),
+                format!(
+                    "MIDI destination '{}' failed to start",
+                    native_midi::PORT_NAME
+                ),
                 Some(err),
             );
         }
@@ -334,7 +339,11 @@ fn terminate_sidecar(app: &AppHandle) {
 }
 
 /// Spawn the server sidecar and wire its banner output to the native share surface + app window.
-fn spawn_sidecar(app: &AppHandle, port: u16, host_token: native_midi::HostToken) -> Result<(), String> {
+fn spawn_sidecar(
+    app: &AppHandle,
+    port: u16,
+    host_token: native_midi::HostToken,
+) -> Result<(), String> {
     // App-data projects dir (where a sandboxed binary can actually write); created if missing.
     let app_data = app
         .path()
@@ -677,6 +686,4 @@ mod tests {
     fn returns_none_when_no_pin_present() {
         assert_eq!(parse_pin("OSC listening on udp:57120"), None);
     }
-
-
 }

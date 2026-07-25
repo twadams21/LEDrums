@@ -48,7 +48,9 @@ fn stub_server() -> StubServer {
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
-            let Ok(clone) = stream.try_clone() else { continue };
+            let Ok(clone) = stream.try_clone() else {
+                continue;
+            };
             let mut reader = BufReader::new(clone);
             let mut content_length = 0_usize;
             let mut request_line = String::new();

@@ -185,6 +185,9 @@ mod tests {
             parse_host_token("  Host token: a1b2c3d4e5f6").as_deref(),
             Some("a1b2c3d4e5f6")
         );
-        assert_eq!(parse_host_token("  Room PIN: 481923 (required to join)"), None);
+        assert_eq!(
+            parse_host_token("  Room PIN: 481923 (required to join)"),
+            None
+        );
     }
 }
