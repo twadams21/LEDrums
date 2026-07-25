@@ -80,26 +80,19 @@ function expandSegment(seg: OutputSegment): HoopRef[] {
  *
  * Each web `PatchOutput` maps directly to ONE core Output: its hoops coalesce into that
  * Output's `segments`, and it carries its own transport (`startUniverse`, `channelsPerPixel`,
- * `rgbOrder`). An output with NO hoops coalesces to zero segments — core requires
- * `segments.min(1)`, so an inert/unwired output is SKIPPED (it is not persisted until wired,
- * matching the schema's "no chain ⇒ not persisted" rule). Output order follows `routing.outputs`.
+ * `rgbOrder`). An output with NO hoops coalesces to zero segments and is PRESERVED as an empty
+ * (unwired) port — outputs are a fixed port set (4 normal / 8 expanded), so the count must survive
+ * a rewire round-trip unchanged; dropping unwired ports here would re-introduce the very drift
+ * reconcileOutputs exists to kill. Output order follows `routing.outputs`.
  */
 export function patchToOutputs(routing: PatchRouting): OutputConfig[] {
-  const configs: OutputConfig[] = [];
-
-  for (const output of routing.outputs) {
-    const segments = coalesceHoops(output.hoops);
-    if (segments.length === 0) continue; // inert output — nothing to persist until wired
-    configs.push({
-      id: output.id,
-      ...(output.startUniverse !== undefined ? { startUniverse: output.startUniverse } : {}),
-      channelsPerPixel: output.channelsPerPixel,
-      ...(output.rgbOrder !== undefined ? { rgbOrder: output.rgbOrder } : {}),
-      segments,
-    });
-  }
-
-  return configs;
+  return routing.outputs.map((output) => ({
+    id: output.id,
+    ...(output.startUniverse !== undefined ? { startUniverse: output.startUniverse } : {}),
+    channelsPerPixel: output.channelsPerPixel,
+    ...(output.rgbOrder !== undefined ? { rgbOrder: output.rgbOrder } : {}),
+    segments: coalesceHoops(output.hoops),
+  }));
 }
 
 /**

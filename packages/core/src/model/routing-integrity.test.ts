@@ -181,9 +181,14 @@ describe('validateRouting (schema + integrity over raw input)', () => {
     expect(issues[0]!.path).toMatch(/channelsPerPixel/);
   });
 
-  it('reports empty segments as a schema issue', () => {
+  it('accepts an empty-segment output as a valid unwired port (no schema issue; advisory only)', () => {
+    // Outputs are a fixed port set (4 normal / 8 expanded); an unwired port carries no segments and
+    // is first-class-valid. The schema no longer rejects it — it falls through to integrity and the
+    // only issues are advisory hoop-uncovered warnings (nothing blocking).
     const issues = validateRouting(k, [{ id: 'o1', channelsPerPixel: 3, segments: [] }]);
-    expect(issues[0]!.code).toBe('schema');
+    expect(issues.some((i) => i.code === 'schema')).toBe(false);
+    expect(blockingRoutingIssues(issues)).toHaveLength(0);
+    expect(issues.every((i) => i.code === 'hoop-uncovered')).toBe(true);
   });
 
   it('reports a zero/negative hoop range as a schema issue (positive-int shape, 1-based A1)', () => {

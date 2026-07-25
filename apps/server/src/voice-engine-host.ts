@@ -6,6 +6,7 @@ import {
   checkRoutingIntegrity,
   getHoopPixelRange,
   materializeHoops,
+  reconcileOutputs,
   SLOT_LABELS,
   voice,
   type DmxMap,
@@ -224,6 +225,11 @@ export class VoiceEngineHost {
    * so reloadKit rebuilds the model AND dmxMap AND re-applies output. */
   setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.kit.global, partial);
+    // Static port set sized by `expanded` (4 normal / 8 expanded) — flipping the mode reconciles
+    // the count. No-op when `expanded` is unchanged. Mutation parity with Engine.setKitGlobal.
+    if (partial.expanded !== undefined) {
+      this.kit.outputs = reconcileOutputs(this.kit).outputs;
+    }
     this.reloadKit();
   }
 
@@ -244,9 +250,16 @@ export class VoiceEngineHost {
   }
 
   /** Replace the physical-output topology (PixLite patch order). Outputs change the DMX
-   * patch only, not geometry — rebuild the dmxMap and re-apply output, skip the model. */
+   * patch only, not geometry — rebuild the dmxMap and re-apply output, skip the model.
+   *
+   * The incoming topology is reconciled to the canonical port count for the current `expanded`
+   * mode: setKitOutputs is the 4th path that writes `kit.outputs`, and unlike the setKitGlobal
+   * paths it carries no `expanded`, so a caller (e.g. an undo resync that re-applies the restored
+   * outputs while the live mode still differs) could otherwise drift the count. reconcileOutputs is
+   * a no-op when the topology is already canonical, so a normal rewire is untouched — mutation
+   * parity with the setKitGlobal reconcile gate. */
   setKitOutputs(outputs: OutputConfig[]): void {
-    this.kit.outputs = outputs;
+    this.kit.outputs = reconcileOutputs({ ...this.kit, outputs }).outputs;
     this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
   }

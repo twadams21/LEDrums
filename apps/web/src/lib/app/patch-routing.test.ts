@@ -76,11 +76,15 @@ describe('patchToOutputs — D1: each web output → one core Output (Output = o
     expect(patchToOutputs(routing).map((o) => o.id)).toEqual(['o1', 'o2', 'o3']);
   });
 
-  it('skips inert outputs left with no hoops (core requires segments.min(1))', () => {
+  it('preserves unwired outputs as empty ports (fixed port set — count survives the round-trip)', () => {
     const routing: PatchRouting = {
       outputs: [output('empty', []), output('o2', [h('A', 1)]), output('blank', [])],
     };
-    expect(patchToOutputs(routing).map((o) => o.id)).toEqual(['o2']);
+    const cfgs = patchToOutputs(routing);
+    expect(cfgs.map((o) => o.id)).toEqual(['empty', 'o2', 'blank']);
+    expect(cfgs[0]!.segments).toEqual([]);
+    expect(cfgs[1]!.segments).toEqual([{ drumId: 'A', hoopStart: 1, hoopEnd: 1 }]);
+    expect(cfgs[2]!.segments).toEqual([]);
   });
 });
 

@@ -47,6 +47,35 @@ describe('projectResyncMessages', () => {
     expect(projectResyncMessages(live, restored)).toEqual([{ t: 'setKitGlobal', mirror: 'none' }]);
   });
 
+  it('carries expanded on setKitGlobal, emitted BEFORE setKitOutputs (undo across the Expanded toggle)', () => {
+    // N1: `expanded` is the sole driver of the output count. An undo that flips Expanded back must
+    // re-apply the mode ahead of the outputs, else the engine reconciles the restored ports against
+    // the wrong mode and the count drifts right back. Restored = normal/4; live = expanded/8.
+    const restored = defaultProject();
+    restored.kit.global.expanded = false;
+    restored.kit.outputs = [{ id: 'output:1', channelsPerPixel: 3, segments: [] }];
+    const live = structuredClone(restored);
+    live.kit.global.expanded = true;
+    live.kit.outputs = Array.from({ length: 8 }, (_u, i) => ({ id: `output:${i + 1}`, channelsPerPixel: 3, segments: [] }));
+
+    const msgs = projectResyncMessages(live, restored);
+    const kinds = msgs.map((m) => m.t);
+    expect(kinds).toContain('setKitGlobal');
+    expect(kinds).toContain('setKitOutputs');
+    // Ordering: the mode reconcile must land before the topology replace.
+    expect(kinds.indexOf('setKitGlobal')).toBeLessThan(kinds.indexOf('setKitOutputs'));
+    expect(msgs.find((m) => m.t === 'setKitGlobal')).toMatchObject({ expanded: false });
+  });
+
+  it('does not carry expanded when only the mirror moved (partial stays minimal)', () => {
+    const restored = defaultProject();
+    restored.kit.global.mirror = 'none';
+    const live = structuredClone(restored);
+    live.kit.global.mirror = 'x';
+    // Same expanded on both sides → the setKitGlobal partial is mirror-only.
+    expect(projectResyncMessages(live, restored)).toEqual([{ t: 'setKitGlobal', mirror: 'none' }]);
+  });
+
   it('emits only setInputMap when the input map differs', () => {
     const restored = defaultProject();
     const live = structuredClone(restored);
