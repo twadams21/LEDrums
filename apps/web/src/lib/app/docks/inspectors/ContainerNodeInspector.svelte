@@ -10,14 +10,25 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import Field from '../../../ui/Field.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import LintCallout from '../../../ui/LintCallout.svelte';
   import { SWITCH_OPTS, VALUEMODE_OPTS, pct } from '../../views/node-options';
   import { mixLayerRowsFor } from '../../views/mix-layer-rows';
-  import { BLEND_MODES, type BlendMode } from '@ledrums/core';
+  import { nodeLintEntries } from '../../views/graph-lint';
+  import { voice, BLEND_MODES, type BlendMode } from '@ledrums/core';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Plus from '@lucide/svelte/icons/plus';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
   const BLEND_OPTS = BLEND_MODES.map((mode) => ({ value: mode, label: mode }));
+
+  // Reachability finding anchored to this node (R15): a Mix reaching Output with no producer upstream
+  // is a dead branch that renders nothing. Only carriers (mix here) ever carry a dead-branch entry;
+  // for the router kinds the list stays empty, so nothing renders.
+  const lint = $derived.by(() => {
+    const graph = store.selectedGraph;
+    if (!graph) return [];
+    return nodeLintEntries(voice.compileRenderPlan(graph).issues, node.id, ['dead-branch']);
+  });
   const mixRows = $derived.by(() => {
     if (node.kind !== 'mix' || !store.selectedGraph) return [];
     return mixLayerRowsFor(store.selectedGraph, node.id, (nodeId) => store.liveNodeY(nodeId));
@@ -37,6 +48,10 @@
     }
   }
 </script>
+
+{#each lint as entry (entry.code)}
+  <LintCallout problem={entry.problem} action={entry.action} />
+{/each}
 
 {#if node.kind === 'random'}
   <div class="kindbody">

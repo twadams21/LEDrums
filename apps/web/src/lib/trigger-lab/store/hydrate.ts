@@ -22,7 +22,7 @@ import {
 } from '../sim';
 import { voice, resolveEffectAlias, playTypeForEffect } from '@ledrums/core';
 import { EFFECTS, PRESETS, type Pad } from '../fixtures';
-import { nid } from './ids';
+import { freshId } from './ids';
 import { padKey, padLabel } from './seed';
 
 /** Union built-in effects with persisted USER-CREATED ones. Hydration must never
@@ -271,7 +271,10 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
       if (!env || env.kind === 'none') continue; // no envelope authored on this param
       const spec = specs.find((s) => s.key === key);
       if (!spec || spec.kind !== 'number') continue; // inert in the legacy sweep → drop, no node
-      const src = makeNode('envelope', nid('n'), n.x - (NODE_W + MIGRATE_H_GAP), n.y + placed * MIGRATE_V_GAP, {
+      // R15/R25: dedupe the minted id against the graph's own ids — the `nid` counter resets on
+      // reload, so a bare mint could duplicate an id an existing node already carries.
+      const srcId = freshId('n', (id) => nodes.some((m) => m.id === id) || graph.nodes.some((m) => m.id === id));
+      const src = makeNode('envelope', srcId, n.x - (NODE_W + MIGRATE_H_GAP), n.y + placed * MIGRATE_V_GAP, {
         env: { [voice.ENVELOPE_NODE_KEY]: cloneEnvelope(env) },
       });
       nodes.push(src);
@@ -280,7 +283,7 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
       // One `param:<key>` edge IS one mapping — bake the equivalent of `envelopeToMapping`
       // (the store's `connect` does the same at authoring time).
       addedEdges.push({
-        id: nid('e'),
+        id: freshId('e', (id) => addedEdges.some((e) => e.id === id) || graph.edges.some((e) => e.id === id)),
         from: src.id,
         to: n.id,
         toPort: `param:${key}`,
