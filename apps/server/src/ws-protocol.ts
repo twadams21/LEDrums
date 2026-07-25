@@ -17,6 +17,7 @@ export type {
   DiscoveredController,
   EffectSpec,
   NetworkAdapter,
+  OscListenInfo,
   OutputStatus,
   MonitorEvent,
   MonitorEventType,

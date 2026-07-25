@@ -109,6 +109,7 @@ const serverSamples: ServerMessage[] = [
     showLibrary: { version: 1, data: { s: 1 } },
     songLibrary: null,
     tunnel: { status: 'off', url: null, pin: null },
+    osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
   },
   { t: 'stats', stats: { timeMs: 0, beat: 0, bar: 0, activeTriggers: 0, tickCount: 1, pixelCount: 2 }, latencyMs: 5, fps: 60, output: outputStatus, voice: { voiceCount: 1, busLevels: { main: 0.5 }, voices: [{ id: 'v1', busId: 'main', effectId: 'swirl', mode: 'oneshot', level: 0.5, hue: 200, releasing: false, via: 'kick' }] } },
   { t: 'input', kind: 'midi', label: 'note', value: 100, note: 38, channel: 1 },

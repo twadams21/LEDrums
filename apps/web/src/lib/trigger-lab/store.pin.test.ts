@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
 import type { WSClient, WSCallbacks } from '../ws/client';
-import type { OutputStatus, SerializedModel, TunnelInfo } from '../ws/protocol-types';
+import type { OscListenInfo, OutputStatus, SerializedModel, TunnelInfo } from '../ws/protocol-types';
 
 /* Room-PIN + tunnel wiring (S3). A capturing harness client lets us drive the store's WS
    callbacks (onAuthError / onState / onConnection) and inspect the PIN it replays via
@@ -61,6 +61,7 @@ const MODEL: SerializedModel = {
   bounds: { center: [0, 0, 0], size: 0 },
 };
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
+const OSC_LISTEN: OscListenInfo = { status: 'listening', port: 9000, hosts: ['192.168.1.20'] };
 
 /** Stub rAF so start()'s render loop never runs in node; stop() restores. */
 function withRaf(fn: () => void): void {
@@ -77,7 +78,7 @@ function withRaf(fn: () => void): void {
 }
 
 function fireState(h: Harness, tunnel: TunnelInfo | null): void {
-  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, null, tunnel);
+  h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, null, tunnel, OSC_LISTEN);
 }
 
 let sessionStore: MemStorage;

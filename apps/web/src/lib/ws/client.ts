@@ -9,6 +9,7 @@ import {
   type EffectSpec,
   type MonitorEvent,
   type NetworkAdapter,
+  type OscListenInfo,
   type OutputStatus,
   type SerializedModel,
   type ServerMessage,
@@ -45,6 +46,9 @@ export interface WSCallbacks {
     showLibrary: ShowLibraryBlob | null,
     songLibrary: SongLibraryBlob | null,
     tunnel: TunnelInfo | null,
+    /** OSC listen surface (#139): the host:port a third-party sender should target, plus
+     * whether the socket actually bound. */
+    osc: OscListenInfo,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
@@ -240,7 +244,7 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc);
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);

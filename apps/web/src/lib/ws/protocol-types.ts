@@ -13,6 +13,7 @@ export type {
   EffectSpec,
   MonitorEvent,
   NetworkAdapter,
+  OscListenInfo,
   OutputStatus,
   SerializedDrum,
   SerializedModel,

@@ -6,6 +6,7 @@
   import StatusPill from '../../ui/StatusPill.svelte';
   import { midiChannelOptions } from '../../midi/midi-note';
   import { deviceListEmptyState } from './midi-devices';
+  import OscInputPanel from './OscInputPanel.svelte';
   import UpdateControl from './UpdateControl.svelte';
 
   let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
@@ -53,6 +54,7 @@
         </ul>
       {/if}
     </section>
+    <OscInputPanel {store} />
     <Field label="Updates" hint="desktop app">
       <UpdateControl />
     </Field>

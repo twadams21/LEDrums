@@ -262,6 +262,12 @@ export class OscInput implements EventInput {
     return this.lastStatus?.port ?? this.requestedPort;
   }
 
+  /** The latched transport status, or null while the bind is still in flight. Callers that
+   *  must not claim liveness they haven't observed should treat null as "not yet known". */
+  get status(): OscInputStatus | null {
+    return this.lastStatus;
+  }
+
   on(handler: (e: OscEvent) => void): void {
     this.handlers.push(handler);
   }

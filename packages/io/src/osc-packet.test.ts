@@ -67,9 +67,9 @@ describe('parseOscPacket — messages', () => {
 
     const events = parseOscPacket(packet);
     expect(events).toHaveLength(1);
-    expect(events[0].address).toBe('/kick');
-    expect(events[0].args[0]).toBe(7);
-    expect(events[0].args[1]).toBeCloseTo(0.5, 6);
+    expect(events[0]!.address).toBe('/kick');
+    expect(events[0]!.args[0]).toBe(7);
+    expect(events[0]!.args[1]).toBeCloseTo(0.5, 6);
   });
 
   it('parses an address-only message with no type-tag string', () => {
@@ -86,8 +86,8 @@ describe('parseOscPacket — bundles (defect 1)', () => {
 
     const events = parseOscPacket(packet);
     expect(addresses(events)).toEqual(['/snare', '/hat']);
-    expect(events[0].args[0]).toBeCloseTo(0.25, 6);
-    expect(events[1].args[0]).toBe(3);
+    expect(events[0]!.args[0]).toBeCloseTo(0.25, 6);
+    expect(events[1]!.args[0]).toBe(3);
   });
 
   it('recurses into a nested bundle and flattens it in wire order', () => {
@@ -121,10 +121,10 @@ describe('parseOscPacket — type tags (defect 2)', () => {
     expect(events).toHaveLength(1);
     // `N` (nil) carries no bytes and has no numeric meaning, so it yields no arg — but it must
     // not swallow the args around it.
-    expect(events[0].args).toHaveLength(3);
-    expect(events[0].args[0]).toBeCloseTo(0.75, 12);
-    expect(events[0].args[1]).toBe(42);
-    expect(events[0].args[2]).toBeCloseTo(0.125, 6);
+    expect(events[0]!.args).toHaveLength(3);
+    expect(events[0]!.args[0]).toBeCloseTo(0.75, 12);
+    expect(events[0]!.args[1]).toBe(42);
+    expect(events[0]!.args[2]).toBeCloseTo(0.125, 6);
   });
 
   it('maps char, symbol, midi, and rgba tags instead of discarding the message', () => {
@@ -138,7 +138,7 @@ describe('parseOscPacket — type tags (defect 2)', () => {
       f32(1),
     );
 
-    const [event] = parseOscPacket(packet);
+    const event = parseOscPacket(packet)[0]!;
     expect(event.address).toBe('/wide');
     expect(event.args[0]).toBe('A');
     expect(event.args[1]).toBe('sym');
@@ -150,7 +150,7 @@ describe('parseOscPacket — type tags (defect 2)', () => {
   it('flattens array tags and keeps the surrounding args', () => {
     const packet = msg('/arr', '[ii]f', i32(1), i32(2), f32(0.5));
 
-    const [event] = parseOscPacket(packet);
+    const event = parseOscPacket(packet)[0]!;
     expect(event.args[0]).toBe(1);
     expect(event.args[1]).toBe(2);
     expect(event.args[2]).toBeCloseTo(0.5, 6);
@@ -161,7 +161,7 @@ describe('parseOscPacket — type tags (defect 2)', () => {
     // args ahead of it are known-good and must survive.
     const packet = msg('/partial', 'fZf', f32(0.5), f32(0.25));
 
-    const [event] = parseOscPacket(packet);
+    const event = parseOscPacket(packet)[0]!;
     expect(event.address).toBe('/partial');
     expect(event.args[0]).toBeCloseTo(0.5, 6);
   });
@@ -175,7 +175,7 @@ describe('parseOscPacket — malformed input', () => {
 
   it('returns no args for a message whose declared arg is truncated', () => {
     const truncated = Buffer.concat([oscStr('/x'), oscStr(',i')]); // ',i' with no int32 body
-    const [event] = parseOscPacket(truncated);
+    const event = parseOscPacket(truncated)[0]!;
     expect(event.address).toBe('/x');
     expect(event.args).toEqual([]);
   });
@@ -266,7 +266,7 @@ describe('OscInput over a real UDP socket', () => {
       );
       const events = await pending;
       expect(addresses(events)).toEqual(['/kick', '/snare', '/hat']);
-      expect(events[2].args[0]).toBeCloseTo(0.25, 6);
+      expect(events[2]!.args[0]).toBeCloseTo(0.25, 6);
     } finally {
       input.close();
     }
