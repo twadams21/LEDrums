@@ -77,11 +77,17 @@ whose fix changes **no exported interface** while removing a guard, error branch
 path is **ineligible for Phase 5 auto-fix regardless of model confidence.** It may only enter
 the structural-plan track for human review.
 
-**Machine evidence precedes agent opinion.** Phase 0 runs `knip`, `ts-prune`, `depcheck`,
-`madge` and `jscpd` before any agent reads a file. Agents interpret that inventory rather
-than sweeping 70k lines hunting for what a tool finds deterministically. None of those tools is
-currently installed or declared in this workspace, so Phase 0 acquires them at pinned versions
-first — the leverage is real but it is not free, and v1 asserted otherwise.
+**Machine evidence precedes agent opinion — after the tool has earned it.** Phase 0 runs
+`knip`, `depcheck`, `madge` and `jscpd` before any agent reads a file, and agents interpret
+that inventory rather than sweeping 70k lines. All four are now installed as pinned root
+devDependencies.
+
+The qualification is load-bearing and comes from the pilot: **tool output is only high-signal
+once the tool has passed a precision gate.** `ts-prune` was in this list until it was run
+against `packages/io` and flagged all ~20 barrel re-exports as unused, because it does not
+understand package entry points — 0/20 precision, where `knip` scored 1/1. Extrapolated to 70k
+LOC that is roughly a thousand false findings consuming refuter budget. `ts-prune` is dropped.
+See `pilot/PILOT.md`.
 
 **Every finding must survive an attempt to refute it, and then be proven independently.** LLM
 claims of the form "this is dead" or "this is duplicated" carry a high false-positive rate.
@@ -90,8 +96,8 @@ refuted under uncertainty. Phase 3b then requires **non-model evidence** before 
 deleted automatically — surviving an argument is not the same as being true.
 
 Findings that fail either gate are **retained in full** (`03-refuted.json`,
-`03-unadmitted.json`) — never discarded and never reduced to a count. They are the only
-measure of the gate's false-negative rate, and a count cannot be re-examined.
+`03-unadmitted.json`) — never discarded and never reduced to a count. They **enable** a false-negative audit — they do not by themselves measure one, which needs
+ground truth the pipeline does not have. A count cannot be re-examined at all.
 
 **Nothing structural executes without human approval.** Phases 0–10 end in a ranked table.
 Execution is out of scope for this spec.
@@ -106,7 +112,7 @@ inside a dynamic Workflow — proven, not assumed (see Implementation Decisions)
 1. As Trent, I want an evidence-backed inventory of what in LEDrums is not earning its keep, so that I can stop guessing which parts of the codebase are dead weight.
 2. As Trent, I want dead code identified by tooling before any agent opines, so that I am not paying model tokens to rediscover what `knip` reports deterministically.
 3. As Trent, I want every finding to have survived an explicit attempt to refute it, so that the ledger I act on contains conclusions rather than suspicions.
-4. As Trent, I want findings that fail refutation kept out of the actionable ledger but retained in full in a separate artifact, so that the ledger stays clean while the gate's false-negative rate remains measurable.
+4. As Trent, I want findings that fail refutation kept out of the actionable ledger but retained in full in a separate artifact, so that the ledger stays clean while a later false-negative audit still has something to examine.
 5. As Trent, I want the review to measure interface reduction rather than lines deleted, so that no agent is rewarded for removing a guard.
 6. As Trent, I want a dedicated lens looking for places that need *more* code, so that the review can make the system more resilient rather than only smaller.
 7. As Trent, I want the trivial fixes applied automatically, so that I do not spend my own attention on mechanical deletions.
@@ -301,16 +307,19 @@ it. Four steps, in order:
    `git ls-files` filter command beside the numbers. The v1 table went stale *during the
    conversation that produced it* — commit `ed07b29` added `apps/desktop/scripts/ota-announce.mjs`
    and its test — so the table is only meaningful with its command and commit attached.
-2. **Acquire the tooling.** None of `knip`, `ts-prune`, `depcheck`, `madge`, `jscpd` is
-   installed, on PATH, or declared in any workspace manifest. Each runs via a
-   **version-pinned** `pnpm dlx <tool>@<version>`, and the resolved version is recorded in
-   `00-baseline.md`. Floating versions would make the "reproducible" baseline depend on
-   whatever npm served that afternoon.
-3. **Calibrate.** Run one real lane end to end and measure actual wrapper boot cost and Sol
-   throughput. Every token and agent-count figure in this spec is extrapolated from a
-   three-lane probe of trivial tasks; that sample cannot support the projections and this step
-   replaces them with measurements.
-4. **Coverage snapshot** — no coverage script or config currently exists in the repo, so this
+2. **Acquire the tooling.** All four are installed as **root devDependencies at pinned exact versions** (`knip@6.29.0`, `depcheck@1.4.7`, `madge@8.0.0`, `jscpd@5.0.12`, plus `ajv-cli@5.0.0` for schema validation), so the version is in `package.json` and the lockfile rather than resolved per invocation. Resolved versions are echoed into `00-baseline.md`.
+3. **Calibrate**, measuring the three quantities the budget is actually denominated in:
+   **(a) mean Opus-5-high tokens per refutation** — this is what `REFUTER_BUDGET` counts, and
+   v3 omitted it while measuring two quantities that do not feed it; **(b)** wrapper boot cost;
+   **(c)** Sol lane throughput. Every projection in this spec is extrapolated from a three-lane
+   probe of trivial tasks and must be replaced by these measurements before Run A.
+4. **Tool-calibration gate** (added from the pilot). Run each tool against `packages/io` and
+   measure its false-positive rate by manual inspection. **A tool below 50% precision does not
+   proceed to the full sweep.** In the pilot `ts-prune` scored 0/20 — it flags every barrel
+   re-export because it does not understand package entry points — and `knip` scored 1/1. At
+   70k LOC that difference is ~1,000 false findings, which would exhaust `REFUTER_BUDGET`
+   entirely on tool noise. `ts-prune` is therefore **dropped**; `knip` subsumes it.
+5. **Coverage snapshot** — no coverage script or config currently exists in the repo, so this
    step includes standing one up or explicitly recording that behaviour parity will be
    measured by test-count and pass/fail alone.
 
@@ -522,9 +531,9 @@ reduction rather than line count, why the deletion test is the arbiter, and why 
 carries a counter-lens whose only job is to find places needing *more* code. An agent fleet
 scored on lines deleted would reliably find and destroy the safety net.
 
-**On budget.** Phase 3 is the cost centre — 25–45 Opus 5 high agents. The available knob is
-refuter count: three votes only for findings whose fix exceeds 50 LOC or touches
-`packages/core`, one vote otherwise. Phases 7 and 9 add 10–14 more native Opus high agents.
+**On budget.** Phase 3 is the cost centre, bounded by `REFUTER_BUDGET = 90` Opus-5-high
+**calls** (not findings — see the admission cap). Refuters per finding: 3 when the fix exceeds
+50 LOC or touches `packages/core`, else 1. Phases 7 and 9 add 10–14 more native Opus high agents.
 House rule holds: no new launches past 70% of the 5h window; wake at reset.
 
 **Open question carried into review.** Phase 8 runs Fable low and Sol low. Adversarially

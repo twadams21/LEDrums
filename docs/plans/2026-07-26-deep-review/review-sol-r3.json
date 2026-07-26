@@ -1,0 +1,292 @@
+{
+  "reviewer": "gpt-5.6-sol(high)",
+  "target": "docs/plans/2026-07-26-deep-review/SPEC.md",
+  "round": 3,
+  "verdict": "BLOCK",
+  "verdict_rationale": "The new schemas are descriptive rather than enforcing the load-bearing gates: AJV accepts a refuted finding as `auto-fix`, accepts `required: true` with a null worktree, and accepts records missing the fields that decide whether 3b and isolation apply. The artifact graph is also not executable end to end because plural phase files have only single-record schemas and Phase 4's ledger cannot carry the fix or initiative data its consumers require.",
+  "strongest_objection": "The v3 design claims that schema validation makes the refutation, mechanical-verification, isolation, and disposition rules fail closed, but the actual verdict schema contains no conditional invariants. Using the available AJV implementation, a record with a refuting vote, `refutation.outcome='refuted'`, `mechanical_verification.outcome='not-applicable'`, `isolation.required=true`, `worktree_path=null`, and `disposition='auto-fix'` validates successfully. That is not an edge-case omission: it means the artifact intended to prevent an unproven deletion can canonically authorize that deletion, while the specific B1 claim that null is invalid is false.",
+  "scores": {
+    "D1_soundness": {
+      "score": 0,
+      "why": "Matches the 0 anchor: the core verification gate demonstrably accepts contradictory records that authorize auto-fix after refutation and without required isolation."
+    },
+    "D2_completeness": {
+      "score": 0,
+      "why": "Matches the 0 anchor: Phase 5 and Phase 7 consume `04-ledger.json`, but its declared verdict schema contains neither proposed-fix/file data nor structural initiative grouping; no earlier declared input to those phases supplies it."
+    },
+    "D3_cost_realism": {
+      "score": 1,
+      "why": "Matches the 1 anchor: the stated 90-call default is not produced by the described calibration, admission order is not numerically defined, and the newly serialized 3b full-gate workload is unbudgeted; these can change the decision to run at this scale."
+    },
+    "D4_failure_modes": {
+      "score": 0,
+      "why": "Matches the 0 anchor: both the verdict schema and replayable nonce receipt can produce confident success signals for work that was not proven to be the returned child result."
+    },
+    "D5_evidence": {
+      "score": 0,
+      "why": "Matches the 0 anchor: load-bearing claims are contradicted by executable evidence—the schema does not reject null required worktrees, and the committed transport probe does not invoke or verify the committed nonce wrapper."
+    },
+    "D6_scope": {
+      "score": 1,
+      "why": "Matches the 1 anchor: Phase 3's required verdict already contains the final `auto-fix|structural-track` disposition, while Phase 4 is separately specified to make that same split but has no schema field for its remaining unique job, initiative grouping."
+    },
+    "D7_fix_integrity": {
+      "score": 0,
+      "why": "Matches the 0 anchor: B1 explicitly claims a conditional schema guarantee that is absent and AJV-contradicted; B2/B3/B4/B6/B9/B10/B11 also land artifacts whose second-order contracts do not enforce what the response claims."
+    }
+  },
+  "fix_regression": [
+    {
+      "adjudication_id": "B1",
+      "status": "introduced_new_problem",
+      "evidence": "Worktree isolation is now required in prose, but `mechanical_verification.isolation` is optional, and `worktree_path` permits null without an `if required=true then string` condition. AJV validated `required:true, worktree_path:null` and an `auto-fix` disposition."
+    },
+    {
+      "adjudication_id": "B2",
+      "status": "introduced_new_problem",
+      "evidence": "The wrapper and verifier are tracked and executable, but the receipt is replayable, writable by the same Bash-capable wrapper principal, and not bound to the task prompt, child output, exit status, or run id. The committed mixed-model probe still invokes the old scratchpad wrapper and never calls `verify-nonce.sh`."
+    },
+    {
+      "adjudication_id": "B3",
+      "status": "introduced_new_problem",
+      "evidence": "The two schemas now exist and the supplied valid/invalid examples behave as claimed, but the schemas cover one record rather than the plural artifact files, omit load-bearing required fields, and contain no cross-field rules for vote majority, criterion equality, isolation, or disposition."
+    },
+    {
+      "adjudication_id": "B4",
+      "status": "introduced_new_problem",
+      "evidence": "The cap is now denominated in refuter calls and `WRAPPER_BATCH_SIZE` is bound, but Phase 0's described calibration measures wrapper boot cost and Sol throughput—not Opus-high refuter cost—so it cannot calculate the budget it is required to emit. The 90 default is ungrounded, 3b's serialized gate cost is uncapped, and the admission multiplication uses a string severity with no weight mapping."
+    },
+    {
+      "adjudication_id": "B5",
+      "status": "introduced_new_problem",
+      "evidence": "Numeric thresholds are present, but the duplicated-code row still requires semantic equivalence and interface reduction, and the combined divergent-change/shotgun row still requires identifying one logical change. Those are model judgments despite both rows being marked mechanical and auto-fix eligible."
+    },
+    {
+      "adjudication_id": "B6",
+      "status": "introduced_new_problem",
+      "evidence": "The definition of mechanical and the auto-fix column landed, but `criterion_is_mechanical` is optional in the required finding record and is not constrained by lens or criterion. AJV accepts a dead-code lens using `deletion-test`, marked mechanical, while its verification plan says non-mechanical."
+    },
+    {
+      "adjudication_id": "B7",
+      "status": "introduced_new_problem",
+      "evidence": "`interface_delta` and `removes_failure_path` are required objects, but `net_interface_change` is a free enum rather than derived from the counts or a broader interface measure; AJV accepts four exported symbols added while claiming the interface reduces. Phase 4's declared ledger also does not retain these fields, so the final disposition cannot be schema-audited there."
+    },
+    {
+      "adjudication_id": "B8",
+      "status": "landed",
+      "evidence": "The discard/retain contradiction is fixed consistently in Solution, User Story 4, and Phase 3. A separate evidence defect remains: retained refuter verdicts do not by themselves measure a false-negative rate without independent truth labels or sampling."
+    },
+    {
+      "adjudication_id": "B9",
+      "status": "introduced_new_problem",
+      "evidence": "The spec now requires complete unadmitted findings rather than counts, but `03-unadmitted.json` is a plural file declared against a schema that validates one finding object and rejects an array, so the artifact cannot retain multiple records while satisfying its declared schema."
+    },
+    {
+      "adjudication_id": "B10",
+      "status": "introduced_new_problem",
+      "evidence": "JSON is canonical and Markdown is demoted to a view, but `04-ledger.json` uses the verdict schema, which lacks finding details and initiative grouping. The schema requires Phase 3 to set disposition before Phase 4 performs triage, leaving Phase 4 circular and its consumers without their required data."
+    },
+    {
+      "adjudication_id": "B11",
+      "status": "introduced_new_problem",
+      "evidence": "The seam table now lists refuted/unadmitted records and launcher/schema artifacts, but collection schemas are missing, `03-unadmitted` conflicts with the verdict schema's producer description, the Phase 4 schema cannot represent its output, and the listed probe is stale and has no committed run transcript for the new guard."
+    },
+    {
+      "adjudication_id": "B12",
+      "status": "landed",
+      "evidence": "The output root and the named wrapper/schema/probe files are now git-tracked; `git ls-files docs/plans/2026-07-26-deep-review/` confirms this. Tracking is real even though several tracked artifacts are internally stale or insufficient."
+    },
+    {
+      "adjudication_id": "B13",
+      "status": "landed",
+      "evidence": "REVIEW-RUBRIC-v3 contains the verdict-vs-score table and forces BLOCK when any dimension scores 0. This review applies that constraint."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "dimension": "D1",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Phase 3b; schemas/verdict.schema.json",
+      "quote": "a verdict with `required: true` and a null `worktree_path` is invalid against the schema",
+      "claim": "The B1/B3 schema guarantee is false: the verdict schema does not enforce required isolation, vote/outcome consistency, criterion equality, or the prerequisites for `auto-fix`.",
+      "failure_scenario": "A Phase 3 record contains one refuting vote, declares the finding refuted, skips mechanical verification, sets `isolation.required=true` with a null worktree, and still sets `disposition='auto-fix'`. AJV validates the record, so Phase 4 can accept a canonical artifact that authorizes an unverified deletion and provides no machine-visible contract violation.",
+      "would_change_my_mind": "An executable schema or mandatory procedural validator that rejects the demonstrated record; it must enforce vote count and majority, exact criterion match, mechanical-attempt/outcome rules, conditional isolation, and every `auto-fix` prerequisite after joining the finding.",
+      "recommendation": "Add `allOf`/`if`/`then` constraints for same-document invariants and validate a combined finding+verdict envelope for cross-document rules; add failing fixtures for every contradictory state exercised in this review."
+    },
+    {
+      "id": "F2",
+      "dimension": "D2",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Seams; schemas/finding.schema.json; schemas/verdict.schema.json",
+      "quote": "`02-findings/<lens>.json` | `schemas/finding.schema.json`",
+      "claim": "The schemas validate one finding or verdict object, but the declared phase artifacts are plural collections and no array/envelope schemas exist.",
+      "failure_scenario": "A lens emits two findings, or Phase 3 emits two verdicts. Writing the natural JSON array makes the artifact invalid because both schemas require the root to be an object; writing one object satisfies the schema but silently discards every other finding. The same failure affects `03-refuted.json`, `03-unadmitted.json`, and `04-ledger.json`.",
+      "would_change_my_mind": "Tracked collection schemas or envelopes with `items` referencing the record schemas, stable uniqueness constraints enforced procedurally, and examples containing multiple records that AJV validates.",
+      "recommendation": "Split record schemas from artifact schemas: define `finding-list`, `verdict-list`, and ledger envelopes, then validate the actual complete files rather than one hand-picked record."
+    },
+    {
+      "id": "F3",
+      "dimension": "D2",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Phase 4; Seams",
+      "quote": "`04-ledger.json` (+ `.md` view) | `verdict.schema.json` | Phase 4 | Phase 5, Phase 7",
+      "claim": "The B10 JSON rewrite preserves the data-flow break: Phase 3 must already set disposition, while Phase 4's verdict-shaped ledger cannot carry proposed fixes, locations, safety/interface fields, or structural initiative grouping to Phase 5 and Phase 7.",
+      "failure_scenario": "A verified dead-code finding reaches Phase 4. Its verdict has only `finding_id` and gate outcomes; Phase 5 receives the ledger but not the proposed fix or allowed files. A structural finding likewise reaches Phase 7 with no `initiative_id` or group members because that field exists only on the Phase 2 finding, is optional, and is not present in the Phase 4 output schema. The consumers must undeclaredly rejoin and mutate Phase 2 data or re-derive the grouping.",
+      "would_change_my_mind": "A Phase 4 ledger schema that is the canonical joined record, includes the finding snapshot, final disposition, scope fence, and initiative/group identity, plus a producer/consumer table naming all joins Phase 5, 7, and 10 perform.",
+      "recommendation": "Move final disposition ownership to Phase 4 and emit a dedicated ledger envelope containing the joined finding+verdict and initiative assignment; make Phase 5/7 consume that artifact exclusively."
+    },
+    {
+      "id": "F4",
+      "dimension": "D4",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "The wrapper primitive; artifacts/codex-agent.sh; artifacts/verify-nonce.sh",
+      "quote": "That pairing is what makes the guard fail-closed rather than decorative.",
+      "claim": "The nonce+receipt pairing proves only that some script invocation minted that model-spec receipt; it is replayable and unbound to the task prompt, child output, exit status, wrapper return, or run, so it does not attest wrapper fidelity.",
+      "failure_scenario": "A native wrapper runs `codex-agent.sh` once on a trivial or failed prompt, captures a valid nonce, then answers the real lane itself and returns that nonce with its own result. `verify-nonce.sh` accepts because the ledger contains the nonce/model pair. The same old receipt can be reused indefinitely—running the verifier twice against the recorded test nonce returned VALID both times—and the Bash-capable wrapper has the same filesystem permission to append to the supposedly out-of-band ledger.",
+      "would_change_my_mind": "A one-time receipt bound to a run id plus cryptographic hashes of the exact prompt and raw child output, recorded only after child exit 0, and a workflow validator that compares those hashes before parsing or accepting the answer; the receipt must be consumed or reject replay.",
+      "recommendation": "Bind receipts to run/lane, prompt hash, output hash, and exit 0; make validation atomic and one-use. Treat the current check as process-start evidence, not answer provenance."
+    },
+    {
+      "id": "F5",
+      "dimension": "D5",
+      "severity": "major",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Testing Decisions; artifacts/codex-mix-probe.js",
+      "quote": "Re-run it before each of runs A/B/C",
+      "claim": "The committed regression probe does not exercise the committed wrapper-fidelity fix: it hardcodes a prior session scratchpad, invokes that old nonce-free wrapper, and never runs `verify-nonce.sh`.",
+      "failure_scenario": "Before Run A, the orchestrator executes the tracked probe as required. It either fails because the session-specific scratchpad is gone, or succeeds through the old wrapper and reports `mixed_ok`; neither outcome tests `artifacts/codex-agent.sh`, the receipt ledger, or nonce verification, so drift in the actual production guard is not detected.",
+      "would_change_my_mind": "A repository-relative probe that invokes the tracked wrapper and verifier, records the raw transcript, checks child exit and answer provenance, and runs successfully from a fresh checkout with no historical scratchpad.",
+      "recommendation": "Replace every absolute scratchpad path with repository-relative artifact paths, integrate nonce verification into both proxied lanes, and commit a transcript from the revised probe."
+    },
+    {
+      "id": "F6",
+      "dimension": "D3",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Phase 0; Phase 3 admission cap; Further Notes → budget",
+      "quote": "The budget is a Phase 0 output, recalculated from the calibration lane's measured Opus-high cost against the remaining 5h window",
+      "claim": "Phase 0 does not measure the quantity needed to calculate `REFUTER_BUDGET`: its calibration lane measures wrapper boot cost and Sol throughput, while the 90-call default, admission order, and serialized Phase 3b cost remain ungrounded.",
+      "failure_scenario": "Phase 0 runs exactly the specified calibration and obtains Sol wrapper metrics but no Opus-high refuter tokens or duration. It therefore cannot derive a safe call budget from the remaining Anthropic window and falls back to 90. Phase 3 then also admits dozens of mutation checks that queue full `pnpm gates` runs with no 3b wall-clock cap; the Further Notes still budget only 25–45 agents, so the run can hit the 70% launch wall or span resets despite claiming a bounded phase.",
+      "would_change_my_mind": "A calibration plan that measures representative Opus-high 1-vote and 3-vote findings plus mutation/non-mutation 3b durations, a numerical formula using current remaining usage, and low/base/high scenarios including the serialized gate queue.",
+      "recommendation": "Calibrate each dominant cost separately immediately before Phase 3, cap both refuter calls and 3b gate minutes, and remove the stale 25–45 budget language."
+    },
+    {
+      "id": "F7",
+      "dimension": "D1",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Solution → per-lens acceptance criteria; Phase 2",
+      "quote": "Duplicated Code | ≥2 sites, ≥12 lines each, ≥90% token-similarity per `jscpd`, semantically equivalent; consolidation reduces total interface rather than relocating it | ✅ (via `jscpd`) | ✅",
+      "claim": "The mechanical/non-mechanical surgery still marks semantic judgments as mechanical and collapses two different smells into one shotgun-only criterion, so Phase 3 applies an invalid oracle to auto-fix-eligible findings.",
+      "failure_scenario": "A 95%-similar pair performs deliberately different domain behavior: jscpd satisfies the numeric threshold, but semantic equivalence and whether consolidation reduces interface require a model, contradicting the mechanical definition. Separately, a true Divergent Change finding—one module repeatedly changed for unrelated reasons—cannot satisfy the combined criterion about one logical change touching four files, which defines Shotgun Surgery; the schema offers only `divergent-change/change-scatter`, so the finding is either misrepresented or refuted under the wrong criterion.",
+      "would_change_my_mind": "Separate criteria/lens ids for Divergent Change and Shotgun Surgery, and reclassification of any criterion containing semantic equivalence, logical-change interpretation, or prospective interface quality as non-mechanical unless a deterministic oracle is supplied.",
+      "recommendation": "Keep jscpd similarity as mechanical evidence, not the complete verdict; route semantic consolidation judgment to structural review, and split Divergent Change from Shotgun Surgery in the table and schema."
+    },
+    {
+      "id": "F8",
+      "dimension": "D7",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "schemas/finding.schema.json",
+      "quote": "True only if the criterion is decidable without model judgement. Governs whether Phase 3b can produce non-model evidence.",
+      "claim": "The finding schema does not require or constrain the fields that route 3b and isolation, and its supposedly computable interface result is a self-declared enum with no arithmetic or criterion consistency.",
+      "failure_scenario": "A Phase 2 finding omits `criterion_is_mechanical` and `verification_plan.requires_mutation`; AJV accepts it, leaving Phase 3 unable to know whether to run 3b or require a worktree. AJV also accepts a dead-code lens with the deletion-test criterion, contradictory mechanical flags, and an interface delta that adds four exports while declaring `reduces`, so deterministic Phase 4 receives schema-valid but mutually incompatible routing facts.",
+      "would_change_my_mind": "A required-field list containing both routing flags, conditional lens→criterion→mechanical mappings, consistency between the two mechanical flags, and either a derived interface metric or independently justified evidence that Phase 4 verifies before use.",
+      "recommendation": "Make the routing fields required; encode criterion-specific conditions with `if/then`; remove duplicated mechanical flags or require equality; replace free `net_interface_change` assertion with measurable fields plus a deterministic derivation."
+    },
+    {
+      "id": "F9",
+      "dimension": "D5",
+      "severity": "major",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Solution; User Story 4; Phase 3a",
+      "quote": "They are the only measure of the gate's false-negative rate",
+      "claim": "Retaining refuted and unadmitted model records enables later audit but does not measure false negatives because the artifacts contain no independent truth label or sampling result.",
+      "failure_scenario": "Phase 3 refutes 40 findings and retains every verdict. The pipeline reports this as false-negative-rate evidence, but it cannot distinguish 40 correct rejections from 10 true defects mistakenly rejected; without independently verifying a sample of rejected records, both cases produce the same artifact.",
+      "would_change_my_mind": "A specified blinded audit sample of refuted and unadmitted findings, independently established truth labels, and a reported denominator/estimate with uncertainty.",
+      "recommendation": "Call the artifacts audit inputs, not a rate measure, and add an independent sample-verification step if false-negative estimation is a requirement."
+    },
+    {
+      "id": "F10",
+      "dimension": "D3",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "schemas/finding.schema.json; Phase 3 admission cap",
+      "quote": "Stable id, '<lens>-NNNN'. Used as the dedup key across lenses",
+      "claim": "An id containing the emitting lens cannot deduplicate the same defect across lenses, so duplicate candidates consume the refuter budget multiple times and can receive conflicting canonical outcomes.",
+      "failure_scenario": "The dead-code lane and tooling-interpreter lane report the same unused export as `dead-code-0007` and `tooling-0012`. Because the ids differ by construction and no fingerprint/canonical-id field exists, admission treats them as two findings, spends two or six refuter calls, and may retain one as verified while the other is refuted with no declared reconciliation.",
+      "would_change_my_mind": "A deterministic content/location fingerprint, an explicit cross-lens dedup phase producing one canonical id plus source aliases, and an artifact showing conflicts are merged before budget admission.",
+      "recommendation": "Keep lane-local ids for provenance but add a canonical finding id/fingerprint assigned during deterministic dedup before Phase 3; preserve all source-lens aliases on the merged record."
+    }
+  ],
+  "assumptions_made": [
+    "I infer that files named `02-findings/<lens>.json`, `03-verdicts.json`, `03-refuted.json`, `03-unadmitted.json`, and `04-ledger.json` must represent more than one record; the spec calls them plural artifacts and budgets dozens of findings.",
+    "I treat the producer/consumer table as the declared data flow: if Phase 5 or Phase 7 must also join `02-findings`, that join must be named rather than assumed.",
+    "I evaluate the nonce mechanism against its stated failure model—a capable Bash-enabled wrapper that does not follow launcher instructions—not merely against random corruption.",
+    "I interpret `severity × blast_radius.files_touched` as requiring an explicit numeric severity mapping and tie/packing rule for deterministic JavaScript.",
+    "I assume Phase 0 performs the calibration exactly as described at lines 309–312; no hidden representative Opus-high calibration lane is implied.",
+    "I mark a finding novel only when its specific second-order failure was not raised in rounds 1 or 2; failures of an accepted B fix are marked non-novel where they preserve the earlier defect.",
+    "I did not infer or target any desired review score."
+  ],
+  "checked_independently": [
+    {
+      "claim": "The schemas reject missing routing flags, required isolation with a null path, contradictory majority outcomes, wrong criteria, and auto-fix after refutation.",
+      "scope_searched": "Read both schemas and examples; resolved AJV from `/Users/trent/node_modules/ajv/dist/2020`; ran Node/AJV validations for the supplied examples, a finding without `criterion_is_mechanical`, a finding without `requires_mutation`, a lens/criterion/mechanical mismatch, a contradictory interface delta, a 2-of-3 refuting vote set with `outcome=survived`, and a refuted/not-applicable/null-worktree verdict with `disposition=auto-fix`.",
+      "result": "contradicted",
+      "detail": "Every contradictory record listed above validated except the intentionally invalid supplied fixture. The claimed conditional and cross-field protections are descriptions only."
+    },
+    {
+      "claim": "The record schemas validate the actual plural phase artifacts.",
+      "scope_searched": "Grepped every schema for root arrays/envelopes and `items` references; validated `[finding]` and `[verdict]` arrays directly with AJV against the declared schemas.",
+      "result": "contradicted",
+      "detail": "Both arrays fail with `must be object`; no collection schema exists."
+    },
+    {
+      "claim": "The nonce receipt is non-replayable out-of-band proof that the returned answer came from the child invocation.",
+      "scope_searched": "Read `artifacts/codex-agent.sh`, `artifacts/verify-nonce.sh`, and `NONCE-TEST.md`; checked permissions on `~/.twux/codex-agent-receipts.tsv` and its directory; ran `verify-nonce.sh` twice against the same recorded valid nonce/model.",
+      "result": "contradicted",
+      "detail": "The same receipt validated twice. The ledger is writable by the same user/principal as the Bash-capable wrapper, is written before child execution, and records no prompt hash, output hash, exit status, run id, or consumed state."
+    },
+    {
+      "claim": "The committed mixed-model probe regression-tests the new tracked wrapper and nonce verifier.",
+      "scope_searched": "Read and grepped `artifacts/codex-mix-probe.js`; checked its hardcoded scratchpad target and inspected the referenced scratch wrapper for nonce/receipt logic; compared paths with the tracked artifact list from `git ls-files`.",
+      "result": "contradicted",
+      "detail": "The probe invokes `/Users/trent/.cctmp/.../scratchpad/codex-agent.sh`, not the tracked artifact, and contains no call to `verify-nonce.sh`."
+    },
+    {
+      "claim": "The v3 files named in the response are tracked at commit e50da8d/current HEAD.",
+      "scope_searched": "Ran `git show --stat e50da8d`, `git ls-files docs/plans/2026-07-26-deep-review/`, `git rev-parse HEAD`, and `git status --short`.",
+      "result": "confirmed",
+      "detail": "The schemas, wrapper, verifier, probe, response, and prior review files are tracked. The current branch contains later round-3 brief commit e59e99c."
+    },
+    {
+      "claim": "The standing twux worktree pool itself enforces the spec's cap of three concurrent Phase 3b experiments.",
+      "scope_searched": "Ran `twux worktree list`; grepped `~/.twux/install` worktree, routing, launch, and help files for pool and `TWUX_MAX_WIDE` behavior.",
+      "result": "contradicted",
+      "detail": "The standing pool currently contains 24 worktrees. The cap of 3 applies to live twux children under one parent, not to worktree allocation itself; the spec gives Workflow-launched 3b experiments no exclusive pool lease mechanism."
+    }
+  ],
+  "no_findings_justification": "",
+  "coverage_gaps": [
+    "Per the brief, I did not run the project test suite, builds, installs, or a live proxy model invocation. I executed only shell syntax checks, the nonce verifier, read-only git/grep commands, and in-memory AJV validations.",
+    "The map, fix, plan, plan-review, and ranked schemas are intentionally deferred to Phase 0, so I did not treat their current absence as a finding; their future quality cannot yet be assessed.",
+    "I could not quantify the actual duration of one full `pnpm gates` run or Opus-high token cost without running prohibited workloads, so the cost finding establishes missing calibration and an unbounded serialized queue rather than a precise overrun factor.",
+    "No production Workflow implementation for Phases 1–10 exists in the reviewed artifacts, so I could assess the declared contracts and probe but not verify an orchestrator-side join, admission, worktree lease, or nonce-validation implementation.",
+    "I did not reassess the carried-forward Phase 8 effort-tier choice or the `apps/web` partition choice because the rubric places carried-forward unresolved items out of bounds."
+  ]
+}

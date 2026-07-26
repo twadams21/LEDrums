@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/collection.schema.json",
+  "title": "Deep Review Artifact Envelope",
+  "description": "EVERY collection artifact (02-findings/*, 03-verdicts, 03-refuted, 03-unadmitted, 04-ledger) is this shape. Schemas for single objects validate one element; this validates the file. PRODUCER: every phase emitting a collection. CONSUMER: the validator each phase runs on its inputs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact",
+    "schema_version",
+    "baseline_sha",
+    "produced_by",
+    "items"
+  ],
+  "properties": {
+    "artifact": {
+      "type": "string",
+      "description": "e.g. '02-findings/dead-code'"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "3"
+    },
+    "baseline_sha": {
+      "type": "string",
+      "minLength": 7,
+      "description": "The pinned Phase 0 sha every item was computed against. A phase MUST reject an input whose baseline_sha differs from its own."
+    },
+    "produced_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "lane",
+        "model",
+        "effort",
+        "nonce_verified"
+      ],
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "nonce_verified": {
+          "type": "boolean",
+          "description": "False MUST fail the lane for a proxied producer."
+        },
+        "run_id": {
+          "type": "string"
+        }
+      }
+    },
+    "dropped": {
+      "type": "array",
+      "description": "Items excluded by a cap, retained IN FULL. Never a count.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

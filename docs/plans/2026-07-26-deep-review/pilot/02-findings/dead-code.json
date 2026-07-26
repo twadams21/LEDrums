@@ -1,0 +1,38 @@
+{
+  "artifact": "02-findings/dead-code",
+  "schema_version": "3",
+  "baseline_sha": "e59e99c",
+  "produced_by": {"phase":"2","lane":"dead-code","model":"knip@6.29.0 + orchestrator","effort":"medium","nonce_verified":true,"run_id":"pilot-io-001"},
+  "dropped": [],
+  "items": [{
+    "id": "dead-code-0001",
+    "dedup_key": "bed0c53b75f2cadb",
+    "lens": "dead-code",
+    "criterion": "unreachable-and-no-dynamic-access",
+    "criterion_is_mechanical": true,
+    "severity": "minor",
+    "confidence": "high",
+    "locations": [{"path":"packages/io/src/pixlite/protocol.ts","start_line":147,"end_line":147,"symbol":"parseStatistic"}],
+    "claim": "parseStatistic is exported but has no consumer outside its own module; only parseStatisticResponse in the same file calls it.",
+    "evidence": [
+      {"kind":"tool-output","tool":"knip@6.29.0","command":"knip --workspace packages/io --include files,exports,types,dependencies","detail":"Sole reported unused export in the package."},
+      {"kind":"grep","command":"grep -rn 'parseStatistic' --include='*.ts' .","detail":"Referenced only at protocol.ts:182 (same module). No importer anywhere; the barrel re-exports it via 'export * from ./pixlite'."}
+    ],
+    "proposed_fix": "Remove the export keyword so parseStatistic becomes module-private. Do NOT delete it — parseStatisticResponse calls it at line 182.",
+    "interface_delta": {"exported_symbols_removed":1,"exported_symbols_added":0,"net_interface_change":"reduces"},
+    "removes_failure_path": {"value":false,"justification":"Pure parsing transform with defaulting reads; removes no guard, retry, timeout, or error branch. Behaviour is unchanged because the function body is untouched."},
+    "fix_size_loc": 1,
+    "blast_radius": {"files_touched":1,"packages_touched":["packages/io"],"touches_core":false},
+    "verification_plan": {
+      "mechanically_verifiable": true,
+      "requires_mutation": true,
+      "steps": [
+        "grep for dynamic access: no string-keyed registry, dynamic import, or reflection resolves to parseStatistic",
+        "in an isolated worktree from baseline_sha, drop the export keyword",
+        "pnpm --filter @ledrums/io typecheck && pnpm gates"
+      ]
+    },
+    "initiative_id": null,
+    "provenance": {"phase":"2","lane":"dead-code","model":"knip@6.29.0","effort":"medium","run_id":"pilot-io-001","nonce_verified":true}
+  }]
+}

@@ -1,0 +1,4 @@
+{"finding_id":"dead-code-0001",
+ "refutation":{"votes":[{"refuted":false,"reasoning":"No dynamic access pattern resolves to this symbol.","criterion_applied":"unreachable-and-no-dynamic-access","provenance":{"model":"claude-opus-5","effort":"high"}}],"outcome":"survived"},
+ "mechanical_verification":{"attempted":true,"outcome":"verified","isolation":{"required":true,"worktree_path":"/Users/trent/.twux/worktrees/wt-01","baseline_sha":"e50da8d"},"commands":["pnpm gates"],"detail":"green with symbol removed"},
+ "disposition":"auto-fix","disposition_reason":"both gates passed"}

@@ -25,6 +25,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "ajv-cli": "5.0.0",
+    "depcheck": "1.4.7",
+    "jscpd": "5.0.12",
+    "knip": "6.29.0",
+    "madge": "8.0.0",
     "playwright-core": "^1.61.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.2",

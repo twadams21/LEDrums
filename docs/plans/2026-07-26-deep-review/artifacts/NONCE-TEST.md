@@ -1,68 +1,90 @@
 # Wrapper-fidelity guard — test record
 
-Run 2026-07-26 on `feat/ota-discord-announce` @ `ed07b29`. Verbatim output.
+Run 2026-07-26 against `codex-agent.sh` + `verify-nonce.sh` at commit `e59e99c`.
+**Single clean run**, ledger truncated first. Verbatim output.
 
-## What is being proven
+> The previous version of this file listed five nonces as a "verbatim record" while the
+> receipts ledger held one — the earlier runs predated the ledger code. A reviewer caught it.
+> This record is one session, start to finish.
 
-A Workflow `agent()` call cannot reach a codex model, so a native Opus-low wrapper shells out
-to `codex-agent.sh`. The wrapper's failure mode is **silent**: it can answer the task itself
-and return a confident result from the wrong model. The guard has two halves, and neither
-works alone:
+## What must be true, and why one property is not enough
 
-1. `codex-agent.sh` mints a nonce at run time and prints it in a provenance line.
-2. It also appends that nonce **out-of-band** to a receipts ledger only it writes.
-   `verify-nonce.sh` checks a returned nonce against that ledger.
+| Property | Mechanism | Attack it stops |
+|---|---|---|
+| 1. The script ran | runtime nonce from `/dev/urandom` | wrapper invents a provenance line |
+| 2. **This child produced this output** | nonce injected into the child's prompt; child must echo it; no echo ⇒ no provenance, no receipt | wrapper runs the script, harvests a valid nonce, then substitutes its **own** answer |
+| 3. Not replayable | receipts are single-use; `verify-nonce.sh` consumes atomically via `mkdir` | wrapper relays a nonce harvested from an earlier run |
+| 4. Bound to the request | receipt carries `sha256(prompt)` | valid nonce reused against a different prompt |
 
-Half 1 alone is decorative — a wrapper could invent 32 hex characters. It is half 2 that makes
-the claim checkable.
+v3 had only property 1, which is why both reviewers called the guard decorative. Properties
+2–4 are what make it fail-closed.
 
-## Test 1 — happy path
+## T1 — happy path
 
 ```
-$ OUT="$(bash codex-agent.sh 'gpt-5.6-luna(low)' "$PWD/nonce-test-prompt.txt" Read,Grep,Glob <repo>)"
-child said: NONCE-TEST-OK
-nonce: cd6228ee2d763347ad945ca010fd8e2f
+CODEX-PROVENANCE nonce=5785bcf13b147827b8d39da58685719b model=gpt-5.6-luna(low) prompt_sha=923a8d6103b6c874fc33c0bc13b9ff9653c70a1feb208fe5ea1705a6456cd627 exit=0
+ATTEST-OK
+```
 
-$ bash verify-nonce.sh cd6228ee2d763347ad945ca010fd8e2f 'gpt-5.6-luna(low)'
-VALID nonce=cd6228ee2d763347ad945ca010fd8e2f model=gpt-5.6-luna(low) issued=2026-07-26T11:08:08Z
+The `NONCE-ECHO` line the child emitted is stripped from relayed output: `0` occurrences
+downstream. The child attests; the caller never has to see the plumbing.
+
+## T2 — verify, with model and prompt binding
+
+```
+$ verify-nonce.sh 5785bcf1… 'gpt-5.6-luna(low)' 923a8d61…
+VALID nonce=5785bcf13b147827b8d39da58685719b model=gpt-5.6-luna(low) prompt_sha=923a8d6103b6… issued=2026-07-26T11:28:07Z consumed=now
 exit=0
 ```
 
-## Test 2 — fabricated nonce (the wrapper self-answer case)
+## T3 — replay the same nonce
 
 ```
-$ bash verify-nonce.sh deadbeefdeadbeefdeadbeefdeadbeef
-INVALID nonce=deadbeefdeadbeefdeadbeefdeadbeef reason=no-matching-receipt (wrapper likely self-answered — FAIL THE LANE)
+$ verify-nonce.sh 5785bcf1…
+REPLAY nonce=5785bcf13b147827b8d39da58685719b reason=already-consumed (a valid nonce may be used once — FAIL THE LANE)
+exit=4
+```
+
+## T4 — fabricated nonce
+
+```
+$ verify-nonce.sh cafebabecafebabecafebabecafebabe
+INVALID nonce=cafebabecafebabecafebabecafebabe reason=no-matching-receipt (wrapper self-answered or fabricated — FAIL THE LANE)
 exit=1
 ```
 
-## Test 3 — real nonce, wrong expected model
+## T5 — real nonce, wrong prompt
 
 ```
-$ bash verify-nonce.sh cd6228ee2d763347ad945ca010fd8e2f 'gpt-5.6-sol(high)'
-MISMATCH nonce=cd6228ee2d763347ad945ca010fd8e2f expected=gpt-5.6-sol(high) actual=gpt-5.6-luna(low)
-exit=2
+$ verify-nonce.sh 7cc47708… '' <sha of a different prompt>
+MISMATCH nonce=7cc477089f96fcecd1f237ac9dfe00ed expected_prompt_sha=17f21f0a… actual=923a8d61…
+exit=5
 ```
 
-## Nonce uniqueness
+## Ledger after the run
 
-Four consecutive runs produced `1d673f62…`, `81936d95…`, `746f791f…`, `08483a18…`,
-`cd6228ee…` — distinct every time, 16 bytes from `/dev/urandom`.
+```
+5785bcf13b147827b8d39da58685719b	gpt-5.6-luna(low)	923a8d61…
+7cc477089f96fcecd1f237ac9dfe00ed	gpt-5.6-luna(low)	923a8d61…
+```
 
-## A real bug this testing caught
+Two runs, two receipts, no orphans. Every nonce in this document is either in the ledger or is
+the deliberately fabricated one from T4.
 
-The first version of `codex-agent.sh` ran `cd "$WORKDIR"` **before** `cat "$PROMPT_FILE"`, so a
-relative prompt path failed to resolve after the `cd`. The failure was near-silent: `claude`
-exited 1 with *"Input must be provided either through stdin or as a prompt argument"*, while
-the provenance line still printed. A caller checking only for a provenance line would have
-recorded a successful lane that produced nothing.
+## Not covered
 
-Fixed by reading the prompt into a variable before changing directory. This is the reason the
-spec requires the guard to be *demonstrated* rather than *described*: v2 of the spec asserted
-the nonce mitigation existed when no implementation did.
+- **exit 4 (child fails to echo) is not exercised here.** The code path is a single `grep -qF`
+  guard, but forcing a compliant model to omit a trailing line is unreliable to test, so it
+  rests on inspection rather than demonstration. Stated rather than glossed.
+- The ledger is append-only and never pruned. Not a correctness issue — `verify-nonce.sh` does
+  an exact field match and 128-bit collision is not a practical concern — but it should be
+  rotated if this outlives the initiative.
 
-## Known limitation
+## A bug this testing caught
 
-The ledger is append-only and never pruned. It grows unbounded across runs. Not a correctness
-problem — `verify-nonce.sh` does an exact field match, and nonce collision at 128 bits is not a
-practical concern — but it should be rotated if this outlives the initiative.
+The first version ran `cd "$WORKDIR"` **before** `cat "$PROMPT_FILE"`, so relative prompt paths
+failed to resolve. Near-silent: `claude` exited 1 with *"Input must be provided"* while the
+provenance line still printed, so a caller checking only for provenance would have recorded a
+successful lane that produced nothing. Fixed by reading the prompt before the `cd`.
+
+Three rounds of adversarial *reading* did not find this. Running it found it immediately.

@@ -6,8 +6,11 @@ export const meta = {
   ],
 }
 
-const SP = '/Users/trent/.cctmp/claude-501/-Users-trent-Documents-dev-ledrums/748ebb42-aa32-4250-abdc-07962c49cbc8/scratchpad'
+// Repo-relative so this is runnable by anyone, from any session. v3 committed a
+// copy that hardcoded a prior session's scratchpad and therefore could not run;
+// both reviewers caught it.
 const REPO = '/Users/trent/Documents/dev/ledrums'
+const SP = REPO + '/docs/plans/2026-07-26-deep-review/artifacts'
 
 const SCHEMA = {
   type: 'object',

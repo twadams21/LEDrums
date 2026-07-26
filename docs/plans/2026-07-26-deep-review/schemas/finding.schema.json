@@ -6,23 +6,44 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "id", "lens", "criterion", "severity", "confidence",
-    "locations", "claim", "evidence", "proposed_fix",
-    "interface_delta", "removes_failure_path", "fix_size_loc",
-    "blast_radius", "verification_plan", "provenance"
+    "id",
+    "lens",
+    "criterion",
+    "severity",
+    "confidence",
+    "locations",
+    "claim",
+    "evidence",
+    "proposed_fix",
+    "interface_delta",
+    "removes_failure_path",
+    "fix_size_loc",
+    "blast_radius",
+    "verification_plan",
+    "provenance",
+    "dedup_key",
+    "criterion_is_mechanical"
   ],
   "properties": {
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9-]+-[0-9]{4}$",
-      "description": "Stable id, '<lens>-NNNN'. Used as the dedup key across lenses and the join key for 03-verdicts.json."
+      "description": "Unique per emission, '<lens>-NNNN'. NOT the dedup key \u2014 see dedup_key."
     },
     "lens": {
       "type": "string",
       "enum": [
-        "dead-code", "duplicated-code", "speculative-generality", "middle-man",
-        "data-clumps", "primitive-obsession", "repeated-switches",
-        "divergent-change", "resilience-hole", "boundary-violation", "tooling"
+        "dead-code",
+        "duplicated-code",
+        "speculative-generality",
+        "middle-man",
+        "data-clumps",
+        "primitive-obsession",
+        "repeated-switches",
+        "divergent-change",
+        "resilience-hole",
+        "boundary-violation",
+        "tooling"
       ],
       "description": "Which Phase 2 lane emitted this. Determines which acceptance criterion applies."
     },
@@ -46,111 +67,316 @@
       "type": "boolean",
       "description": "True only if the criterion is decidable without model judgement. Governs whether Phase 3b can produce non-model evidence. If false the finding can never reach Phase 5 auto-fix, regardless of 3a outcome."
     },
-    "severity": { "type": "string", "enum": ["critical", "major", "minor"] },
-    "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "major",
+        "minor"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
     "locations": {
-      "type": "array", "minItems": 1,
+      "type": "array",
+      "minItems": 1,
       "description": "Every site involved. Duplication findings have >=2.",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["path", "start_line", "end_line"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "start_line",
+          "end_line"
+        ],
         "properties": {
-          "path": { "type": "string", "description": "Repo-relative." },
-          "start_line": { "type": "integer", "minimum": 1 },
-          "end_line": { "type": "integer", "minimum": 1 },
-          "symbol": { "type": "string" }
+          "path": {
+            "type": "string",
+            "description": "Repo-relative."
+          },
+          "start_line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "end_line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "symbol": {
+            "type": "string"
+          }
         }
       }
     },
-    "claim": { "type": "string", "minLength": 20, "description": "One sentence: what is wrong." },
+    "claim": {
+      "type": "string",
+      "minLength": 20,
+      "description": "One sentence: what is wrong."
+    },
     "evidence": {
-      "type": "array", "minItems": 1,
+      "type": "array",
+      "minItems": 1,
       "description": "What supports the claim. Tool output outranks model reading.",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["kind", "detail"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "detail"
+        ],
         "properties": {
-          "kind": { "type": "string", "enum": ["tool-output", "grep", "read", "git-history", "type-check"] },
-          "tool": { "type": "string", "description": "e.g. knip@5.x — required when kind is tool-output." },
-          "command": { "type": "string", "description": "Exact command, so the evidence is reproducible." },
-          "detail": { "type": "string" }
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tool-output",
+              "grep",
+              "read",
+              "git-history",
+              "type-check"
+            ]
+          },
+          "tool": {
+            "type": "string",
+            "description": "e.g. knip@5.x \u2014 required when kind is tool-output."
+          },
+          "command": {
+            "type": "string",
+            "description": "Exact command, so the evidence is reproducible."
+          },
+          "detail": {
+            "type": "string"
+          }
         }
       }
     },
-    "proposed_fix": { "type": "string", "minLength": 20, "description": "The smallest change that resolves it." },
-
+    "proposed_fix": {
+      "type": "string",
+      "minLength": 20,
+      "description": "The smallest change that resolves it."
+    },
     "interface_delta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["exported_symbols_removed", "exported_symbols_added", "net_interface_change"],
+      "required": [
+        "exported_symbols_removed",
+        "exported_symbols_added",
+        "net_interface_change"
+      ],
       "description": "The objective function, made computable. Phase 4 reads this to apply the ineligibility rule. A lane that cannot compute it must set net_interface_change to 'unknown', which routes the finding to the structural track rather than auto-fix.",
       "properties": {
-        "exported_symbols_removed": { "type": "integer", "minimum": 0 },
-        "exported_symbols_added": { "type": "integer", "minimum": 0 },
+        "exported_symbols_removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exported_symbols_added": {
+          "type": "integer",
+          "minimum": 0
+        },
         "net_interface_change": {
           "type": "string",
-          "enum": ["reduces", "neutral", "increases", "unknown"],
+          "enum": [
+            "reduces",
+            "neutral",
+            "increases",
+            "unknown"
+          ],
           "description": "'reduces' is the only value that scores under the objective function."
         }
       }
     },
-
     "removes_failure_path": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["value", "justification"],
+      "required": [
+        "value",
+        "justification"
+      ],
       "description": "The load-bearing-slack guard. Phase 4 makes any finding with value=true AND interface_delta.net_interface_change != 'reduces' INELIGIBLE for Phase 5 auto-fix, regardless of model confidence. Such findings route to the structural-plan track for human review.",
       "properties": {
         "value": {
           "type": "boolean",
           "description": "True if the proposed fix removes a guard, error branch, retry, timeout, fallback, validation, or any other handler for a failure condition."
         },
-        "justification": { "type": "string", "minLength": 10, "description": "Why true or false. A bare 'false' with no reasoning fails validation on length." }
-      }
-    },
-
-    "fix_size_loc": { "type": "integer", "minimum": 0, "description": "Estimated lines changed. Drives the 3a refuter-count rule." },
-    "blast_radius": {
-      "type": "object", "additionalProperties": false,
-      "required": ["files_touched", "packages_touched", "touches_core"],
-      "properties": {
-        "files_touched": { "type": "integer", "minimum": 1 },
-        "packages_touched": { "type": "array", "items": { "type": "string" } },
-        "touches_core": { "type": "boolean", "description": "True if packages/core is affected. Forces 3 refuters." }
-      }
-    },
-
-    "verification_plan": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["mechanically_verifiable", "steps"],
-      "description": "How Phase 3b proves this without a model. CONSUMER: Phase 3b.",
-      "properties": {
-        "mechanically_verifiable": { "type": "boolean" },
-        "requires_mutation": {
-          "type": "boolean",
-          "description": "True if verification requires editing the tree (e.g. remove symbol, build, run suite). Findings with this true MUST be verified in an isolated worktree — see SPEC Phase 3b."
-        },
-        "steps": {
-          "type": "array", "minItems": 1,
-          "items": { "type": "string", "description": "One reproducible command or check." }
+        "justification": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Why true or false. A bare 'false' with no reasoning fails validation on length."
         }
       }
     },
-
-    "initiative_id": { "type": ["string", "null"], "description": "Set by Phase 4 when this finding is grouped into a structural initiative. Null until then." },
-    "provenance": {
-      "type": "object", "additionalProperties": false,
-      "required": ["phase", "lane", "model", "effort", "run_id"],
-      "description": "Who produced this. 'model' and 'effort' are stamped by the ORCHESTRATOR from the runtime pane footer, never self-reported by the lane — twux's registry EFFORT column records the launch flag, not the live setting.",
+    "fix_size_loc": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated lines changed. Drives the 3a refuter-count rule."
+    },
+    "blast_radius": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files_touched",
+        "packages_touched",
+        "touches_core"
+      ],
       "properties": {
-        "phase": { "type": "string" },
-        "lane": { "type": "string" },
-        "model": { "type": "string" },
-        "effort": { "type": "string", "enum": ["low", "medium", "high", "xhigh", "max"] },
-        "run_id": { "type": "string" },
-        "nonce_verified": { "type": "boolean", "description": "For proxied lanes: whether the codex-agent.sh nonce validated. False fails the lane." }
+        "files_touched": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "packages_touched": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "touches_core": {
+          "type": "boolean",
+          "description": "True if packages/core is affected. Forces 3 refuters."
+        }
+      }
+    },
+    "verification_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mechanically_verifiable",
+        "requires_mutation",
+        "steps"
+      ],
+      "description": "How Phase 3b proves this without a model. CONSUMER: Phase 3b.",
+      "properties": {
+        "mechanically_verifiable": {
+          "type": "boolean"
+        },
+        "requires_mutation": {
+          "type": "boolean",
+          "description": "True if verification requires editing the tree (e.g. remove symbol, build, run suite). Findings with this true MUST be verified in an isolated worktree \u2014 see SPEC Phase 3b."
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "description": "One reproducible command or check."
+          }
+        }
+      }
+    },
+    "initiative_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Set by Phase 4 when this finding is grouped into a structural initiative. Null until then."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "lane",
+        "model",
+        "effort",
+        "run_id"
+      ],
+      "description": "Who produced this. 'model' and 'effort' are stamped by the ORCHESTRATOR from the runtime pane footer, never self-reported by the lane \u2014 twux's registry EFFORT column records the launch flag, not the live setting.",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "nonce_verified": {
+          "type": "boolean",
+          "description": "For proxied lanes: whether the codex-agent.sh nonce validated. False fails the lane."
+        }
+      }
+    },
+    "dedup_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "sha256(sorted normalised locations + proposed_fix intent)[:16]. THE cross-lens dedup key: the same defect found by two lenses yields the same value, which an id embedding the lens cannot do. Phase 3 admission dedups on this before spending refuter budget."
+    }
+  },
+  "allOf": [
+    {
+      "description": "A mutation experiment is only meaningful for a mechanical criterion.",
+      "if": {
+        "type": "object",
+        "required": [
+          "verification_plan"
+        ],
+        "properties": {
+          "verification_plan": {
+            "type": "object",
+            "required": [
+              "requires_mutation"
+            ],
+            "properties": {
+              "requires_mutation": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "criterion_is_mechanical"
+        ],
+        "properties": {
+          "criterion_is_mechanical": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "description": "Non-mechanical criteria cannot claim mechanical verifiability.",
+      "if": {
+        "type": "object",
+        "required": [
+          "criterion_is_mechanical"
+        ],
+        "properties": {
+          "criterion_is_mechanical": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "verification_plan": {
+            "properties": {
+              "mechanically_verifiable": {
+                "const": false
+              }
+            }
+          }
+        }
       }
     }
-  }
+  ]
 }

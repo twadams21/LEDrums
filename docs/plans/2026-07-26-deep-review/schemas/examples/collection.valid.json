@@ -1,0 +1,3 @@
+{"artifact":"02-findings/dead-code","schema_version":"3","baseline_sha":"e50da8d",
+ "produced_by":{"phase":"2","lane":"dead-code","model":"gpt-5.6-sol","effort":"medium","nonce_verified":true},
+ "dropped":[],"items":[]}
