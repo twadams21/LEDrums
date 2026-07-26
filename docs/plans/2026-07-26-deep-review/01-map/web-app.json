@@ -1,0 +1,861 @@
+{
+  "artifact": "01-map/web-app",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "1",
+    "lane": "web-app",
+    "model": "claude-opus-5",
+    "effort": "low",
+    "nonce_verified": true,
+    "run_id": "wf_2cd19a09-dd0"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "lane": "web-app",
+      "scope": {
+        "paths": [
+          "apps/web/src/lib/app"
+        ],
+        "files_read": 32
+      },
+      "modules": [
+        {
+          "name": "shell-nav + ShellStore",
+          "paths": [
+            "apps/web/src/lib/app/shell-nav.ts",
+            "apps/web/src/lib/app/shell-store.svelte.ts"
+          ],
+          "responsibility": "Holds which workspace view is active and what object is selected, enforcing the view-switch-clears-selection invariant in one pure reducer with a thin rune wrapper.",
+          "public_interface": [
+            "View",
+            "Selection",
+            "ShellStore.view/selection/setView/select/clearSelection/isSelected",
+            "ShellStore.patchRouting/setPatchRouting",
+            "initialNav",
+            "parseSearch"
+          ],
+          "depends_on": [
+            "patch-routing (type only)"
+          ],
+          "depth": "shallow",
+          "loc": 141,
+          "notes": "ShellStore is a near 1:1 forwarder over shell-nav; the one piece of real state it owns alone is `liveRouting`, a Patch-view-published side channel that doesn't belong to navigation."
+        },
+        {
+          "name": "AuthorShell (app shell layout)",
+          "paths": [
+            "apps/web/src/lib/app/AuthorShell.svelte",
+            "apps/web/src/lib/app/Overlays.svelte"
+          ],
+          "responsibility": "Composes top bar, transport, left rail, center workspace view and right column into the resizable shell and reconciles selection against the engine store as the active song/section/graph move.",
+          "public_interface": [
+            "<AuthorShell {store} {shell} />",
+            "<Overlays {store} />"
+          ],
+          "depends_on": [
+            "ShellStore",
+            "TriggerLab engine store",
+            "chrome/*",
+            "docks/*",
+            "views/*",
+            "ui/Splitter, ui/ToastHost"
+          ],
+          "depth": "mixed",
+          "loc": 263,
+          "notes": "Overlays is a 3-line pass-through mount point. AuthorShell holds a non-obvious $effect bridging shell selection to engine state \u2014 the kind of coupling worth a lens."
+        },
+        {
+          "name": "Patch routing model",
+          "paths": [
+            "apps/web/src/lib/app/patch-routing.ts",
+            "apps/web/src/lib/app/patch-graph.ts"
+          ],
+          "responsibility": "Pure translation between the project's OutputConfig list and the Patch graph's Output\u2192Hoop chain routing, including pixel-span math, signatures and default routing synthesis.",
+          "public_interface": [
+            "PatchRouting",
+            "PatchOutput",
+            "patchToOutputs",
+            "outputsToPatch",
+            "pixelRanges",
+            "hasHoopFanOut",
+            "buildOutputHalf",
+            "rebuildOutputHalf",
+            "routingFromGraph",
+            "routingSignature",
+            "outputsSignature",
+            "defaultRouting",
+            "hoopNodeId/parseHoopNodeId/outputNodeId/parseOutputNodeId"
+          ],
+          "depends_on": [
+            "@ledrums/core kit/output types"
+          ],
+          "depth": "deep",
+          "loc": 504,
+          "notes": "Real algorithmic content behind a modest interface. Signature-string functions hint at change-detection by stringification."
+        },
+        {
+          "name": "Patch topology + zone layout",
+          "paths": [
+            "apps/web/src/lib/app/patch-topology.ts",
+            "apps/web/src/lib/app/patch-zones.ts"
+          ],
+          "responsibility": "Builds the Patch graph's node/edge structure \u2014 stages, id encoding, container zones, auto-fit, persisted layout adoption, and connection classification.",
+          "public_interface": [
+            "buildPatchTopology",
+            "topoDrumsFromKit",
+            "describePatchNode",
+            "STAGE_ORDER",
+            "triggerId/zoneNodeId/drumNodeId/hoopId/outputId",
+            "buildZoneGraph",
+            "buildChainEdges",
+            "buildRefEdges",
+            "graphChainEdges",
+            "classifyGraphConnection",
+            "autoFitContainers",
+            "adoptLayoutNodes",
+            "layoutSignature",
+            "GRID",
+            "NODE_W/NODE_H"
+          ],
+          "depends_on": [
+            "@xyflow/svelte types",
+            "patch-routing",
+            "@ledrums/core kit"
+          ],
+          "depth": "deep",
+          "loc": 723,
+          "notes": "Two overlapping id vocabularies exist (patch-topology's hoopId/outputId vs patch-graph's hoopNodeId/outputNodeId) \u2014 a likely lens target."
+        },
+        {
+          "name": "Patch graph view",
+          "paths": [
+            "apps/web/src/lib/app/views/PatchGraphView.svelte",
+            "apps/web/src/lib/app/views/PatchNode.svelte",
+            "apps/web/src/lib/app/views/PatchZoneNode.svelte",
+            "apps/web/src/lib/app/views/RefEdge.svelte",
+            "apps/web/src/lib/app/views/PatchMirrorControl.svelte",
+            "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
+            "apps/web/src/lib/app/views/PatchDiffDialog.svelte",
+            "apps/web/src/lib/app/views/patch-context.ts"
+          ],
+          "responsibility": "Renders the physical rig as an xyflow container graph, reads rewires back into routing, persists manual layout, and publishes live routing to the shell.",
+          "public_interface": [
+            "<PatchGraphView {store} {shell} />",
+            "PATCH_STORE_KEY context"
+          ],
+          "depends_on": [
+            "patch-topology",
+            "patch-zones",
+            "patch-graph",
+            "patch-routing",
+            "GraphCanvas",
+            "TriggerLab store",
+            "ShellStore.setPatchRouting"
+          ],
+          "depth": "mixed",
+          "loc": 900,
+          "notes": "~395 LOC of orchestration in one component: derivation, signature comparison, mount/destroy lifecycle, persistence."
+        },
+        {
+          "name": "Trigger graph view",
+          "paths": [
+            "apps/web/src/lib/app/views/TriggerGraphView.svelte",
+            "apps/web/src/lib/app/views/TriggerNode.svelte",
+            "apps/web/src/lib/app/views/BandSwitchNode.svelte",
+            "apps/web/src/lib/app/views/WireEdge.svelte",
+            "apps/web/src/lib/app/views/NodeCard.svelte",
+            "apps/web/src/lib/app/views/NodeIconChip.svelte",
+            "apps/web/src/lib/app/views/NodeSignalPreview.svelte",
+            "apps/web/src/lib/app/views/NodeStatePreview.svelte",
+            "apps/web/src/lib/app/views/ParamRowTick.svelte",
+            "apps/web/src/lib/app/views/trigger-context.ts",
+            "apps/web/src/lib/app/views/trigger-node-meta.ts"
+          ],
+          "responsibility": "Renders the active section's trigger graph on xyflow with wiring validation, splice-on-drop, alignment guides, lint strip and the Node Editor drawer.",
+          "public_interface": [
+            "<TriggerGraphView {store} {shell} />",
+            "TRIGGER_STORE_KEY context",
+            "kindIcon/kindLabel/tint/kindSummary"
+          ],
+          "depends_on": [
+            "graph-to-flow",
+            "trigger-flow-projection",
+            "splice-geometry",
+            "align-guides",
+            "graph-lint",
+            "node-placement",
+            "flow-guard/flow-dom",
+            "GraphCanvas",
+            "AddPalette",
+            "NodeEditor",
+            "TriggerLab store"
+          ],
+          "depth": "mixed",
+          "loc": 1400,
+          "notes": "TriggerGraphView at 746 LOC is the largest component in scope and the densest interaction hub."
+        },
+        {
+          "name": "Graph canvas kit (shared xyflow substrate)",
+          "paths": [
+            "apps/web/src/lib/app/views/GraphCanvas.svelte",
+            "apps/web/src/lib/app/views/GraphFitView.svelte",
+            "apps/web/src/lib/app/views/FlowHandle.svelte",
+            "apps/web/src/lib/app/views/WireDragValidity.svelte",
+            "apps/web/src/lib/app/views/AlignGuides.svelte",
+            "apps/web/src/lib/app/views/align-guides.ts",
+            "apps/web/src/lib/app/views/flow-dom.ts",
+            "apps/web/src/lib/app/views/flow-guard.ts",
+            "apps/web/src/lib/app/views/node-placement.ts",
+            "apps/web/src/lib/app/views/splice-geometry.ts"
+          ],
+          "responsibility": "The one deduplicated SvelteFlow setup (background, controls, fit, theming, wiring events) plus the geometric helpers both graph views share.",
+          "public_interface": [
+            "<GraphCanvas generic nodes/edges \u2026 />",
+            "FlowApi",
+            "WireDragFrom",
+            "computeAlignment",
+            "edgeUnderNode",
+            "findFreePosition",
+            "guardFlowCallback",
+            "nodeIdAtEvent"
+          ],
+          "depends_on": [
+            "@xyflow/svelte"
+          ],
+          "depth": "deep",
+          "loc": 700,
+          "notes": "This is the intended seam between the two graph views; worth checking whether both views actually route everything through it."
+        },
+        {
+          "name": "Graph projection + lint",
+          "paths": [
+            "apps/web/src/lib/app/views/graph-to-flow.ts",
+            "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+            "apps/web/src/lib/app/views/graph-lint.ts",
+            "apps/web/src/lib/app/views/graph-lint-index.svelte.ts",
+            "apps/web/src/lib/app/views/GraphLintStrip.svelte",
+            "apps/web/src/lib/app/views/graph-thumb.ts",
+            "apps/web/src/lib/app/views/mix-layer-rows.ts"
+          ],
+          "responsibility": "Projects the domain TriggerGraph into xyflow nodes/edges with signature-based incremental caching, and turns core render-plan issues into per-node lint entries.",
+          "public_interface": [
+            "graphToFlow",
+            "projectTriggerFlowNodes",
+            "projectionDesyncIds",
+            "resetProjectionCache",
+            "triggerNodeSignature/triggerEdgeSignature",
+            "lintEntries",
+            "nodeLintEntries",
+            "lintEntriesByNode",
+            "GraphLintIndex",
+            "graphThumb",
+            "mixLayerRowsFor"
+          ],
+          "depends_on": [
+            "trigger-lab/sim",
+            "@ledrums/core voice",
+            "@xyflow/svelte types"
+          ],
+          "depth": "deep",
+          "loc": 460
+        },
+        {
+          "name": "Add palette / node taxonomy",
+          "paths": [
+            "apps/web/src/lib/app/views/AddPalette.svelte",
+            "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+            "apps/web/src/lib/app/views/add-pane.ts",
+            "apps/web/src/lib/app/views/node-options.ts",
+            "apps/web/src/lib/app/views/canvas-drop-preview.svelte.ts"
+          ],
+          "responsibility": "Defines the catalog of addable node kinds/presets, its search/filter/drag encoding, and the shared select-option constants used by every inspector.",
+          "public_interface": [
+            "buildAddGroups",
+            "addCategories",
+            "filterAddGroups",
+            "encode/decodeAddDragPayload",
+            "ADD_NODE_DRAG_TYPE",
+            "KIND_OPTS/MODE_OPTS/SCOPE_OPTS/\u2026 option consts",
+            "num/fmt/pct/fmtSpan"
+          ],
+          "depends_on": [
+            "trigger-lab/sim",
+            "@ledrums/core voice",
+            "trigger-node-meta"
+          ],
+          "depth": "mixed",
+          "loc": 740,
+          "notes": "node-options.ts is a constants bag plus formatting helpers \u2014 two unrelated responsibilities in one file."
+        },
+        {
+          "name": "Inspector dispatcher",
+          "paths": [
+            "apps/web/src/lib/app/docks/Inspector.svelte",
+            "apps/web/src/lib/app/docks/patch-inspector.ts",
+            "apps/web/src/lib/app/docks/inspectors/forms.ts",
+            "apps/web/src/lib/app/docks/inspectors/RenameField.svelte",
+            "apps/web/src/lib/app/docks/inspectors/ReadRow.svelte"
+          ],
+          "responsibility": "Resolves the current selection to a node or patch object and dispatches to the correct per-kind inspector, owning only the shared header chrome and read-only fieldset.",
+          "public_interface": [
+            "<Inspector {store} {shell} />",
+            "patchEditorFor",
+            "PatchEditor",
+            "hoopPixelSpan",
+            "buildPixelOutputTable",
+            "zoneMidiNote/setZoneMidiNote/zoneOscAddress/setZoneOscAddress",
+            "addDeclaredZone/removeZone",
+            "onNum/patchLabel/commitLabel"
+          ],
+          "depends_on": [
+            "ShellStore",
+            "TriggerLab",
+            "patch-topology",
+            "node-options",
+            "all inspectors/*"
+          ],
+          "depth": "mixed",
+          "loc": 650,
+          "notes": "Inspector.svelte is a 307-line if/else-if ladder over ~22 kinds \u2014 a repeated-switch candidate. patch-inspector.ts is separately deep (pixel math, input-map mutation)."
+        },
+        {
+          "name": "Trigger node inspectors",
+          "paths": [
+            "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/DelayNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/ScopeNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/OutputNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/EnvelopeNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/LfoNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/CcNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/NoteNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/OscNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/RandomModNodeInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/ModulationParamsSection.svelte",
+            "apps/web/src/lib/app/docks/inspectors/scope-inspector.ts",
+            "apps/web/src/lib/app/docks/inspectors/ScopeHoopPreview.svelte"
+          ],
+          "responsibility": "One form editor per trigger-graph node kind, mutating the engine store through its public mutators.",
+          "public_interface": [
+            "<XNodeInspector {store} {node} />",
+            "selectionFromNode/commitSelection/toggleHoop/describeSelection/effectiveScopeForNode"
+          ],
+          "depends_on": [
+            "TriggerLab store mutators",
+            "node-options",
+            "forms.ts",
+            "ui primitives"
+          ],
+          "depth": "shallow",
+          "loc": 2200,
+          "notes": "Thirteen sibling forms with the same prop shape and near-identical row markup; scope-inspector.ts is the one with real logic."
+        },
+        {
+          "name": "Patch object inspectors + controller status",
+          "paths": [
+            "apps/web/src/lib/app/docks/inspectors/PatchTriggerInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PatchDrumInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PatchHoopInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PatchKitInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/PatchControllerInspector.svelte",
+            "apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte",
+            "apps/web/src/lib/app/docks/inspectors/OutputStatusPanel.svelte",
+            "apps/web/src/lib/app/docks/inspectors/UniverseRxTable.svelte",
+            "apps/web/src/lib/app/docks/inspectors/AdoptByIpRow.svelte",
+            "apps/web/src/lib/app/docks/inspectors/DrumZonesList.svelte",
+            "apps/web/src/lib/app/docks/inspectors/output-status.ts"
+          ],
+          "responsibility": "Editors for physical rig objects plus the live output/controller confidence panels driven by server status messages.",
+          "public_interface": [
+            "<Patch*Inspector \u2026 />",
+            "<ControllerStatusPanel \u2026 />",
+            "<OutputStatusPanel \u2026 />",
+            "packetsPerSecond",
+            "outputStateTone/Label",
+            "controllerHeadline",
+            "format* helpers",
+            "testPatternLabel/Target"
+          ],
+          "depends_on": [
+            "ws/protocol-types",
+            "patch-inspector.ts",
+            "output-status.ts",
+            "ui primitives"
+          ],
+          "depth": "mixed",
+          "loc": 1900,
+          "notes": "ControllerStatusPanel is 847 LOC \u2014 the single largest file in scope, presentational but huge. output-status.ts is a bag of ~15 tiny formatters."
+        },
+        {
+          "name": "Sections view",
+          "paths": [
+            "apps/web/src/lib/app/views/SectionsView.svelte",
+            "apps/web/src/lib/app/views/SectionColumn.svelte",
+            "apps/web/src/lib/app/views/SectionGraphRow.svelte",
+            "apps/web/src/lib/app/views/sections-dnd.ts",
+            "apps/web/src/lib/app/views/sections-dnd-preview.svelte.ts",
+            "apps/web/src/lib/app/docks/inspectors/SectionInspector.svelte",
+            "apps/web/src/lib/app/setlist.ts",
+            "apps/web/src/lib/app/recall.ts"
+          ],
+          "responsibility": "Arranges a song's sections and their graph placements as drag-and-droppable columns over the pure setlist transform functions.",
+          "public_interface": [
+            "<SectionsView \u2026 />",
+            "Song/SetlistSection",
+            "makeSection/makeSong",
+            "addSection/moveSection/removeSection/renameSection/cloneSection",
+            "addGraph/removeGraph/setGraphs/setLook/moveGraphPlacement",
+            "graphUsageCount/isReused/referencedGraphs",
+            "gapIndexAt/columnGapIndexAt",
+            "sectionRecall/midiForSong/oscForSection"
+          ],
+          "depends_on": [
+            "TriggerLab store",
+            "ui primitives"
+          ],
+          "depth": "deep",
+          "loc": 1000,
+          "notes": "setlist.ts is a clean immutable-transform module; recall.ts is a tiny naming-convention module."
+        },
+        {
+          "name": "Objects view",
+          "paths": [
+            "apps/web/src/lib/app/views/ObjectsView.svelte",
+            "apps/web/src/lib/app/views/objects-view.ts",
+            "apps/web/src/lib/app/views/SongRow.svelte",
+            "apps/web/src/lib/app/views/LibrarySongRow.svelte",
+            "apps/web/src/lib/app/views/LibraryRefRow.svelte",
+            "apps/web/src/lib/app/views/GraphRow.svelte",
+            "apps/web/src/lib/app/views/EffectRow.svelte",
+            "apps/web/src/lib/app/views/PresetRow.svelte",
+            "apps/web/src/lib/app/views/CanvasSceneRow.svelte",
+            "apps/web/src/lib/app/views/GraphPickerDrawer.svelte"
+          ],
+          "responsibility": "Browsable index of every authored object type (songs, library, effects, graphs, presets, canvas scenes) with per-type row projections.",
+          "public_interface": [
+            "<ObjectsView \u2026 />",
+            "ObjectTypeId",
+            "showSongRows/librarySongRows/effectRows/presetRows/graphRows/canvasSceneRows"
+          ],
+          "depends_on": [
+            "setlist",
+            "TriggerLab store"
+          ],
+          "depth": "mixed",
+          "loc": 1000,
+          "notes": "Six *Row components and six *Rows projection functions with parallel shapes \u2014 a duplication lens should start here."
+        },
+        {
+          "name": "Clipboard dialogs",
+          "paths": [
+            "apps/web/src/lib/app/views/PasteSongDialog.svelte",
+            "apps/web/src/lib/app/views/PasteFallbackDialog.svelte",
+            "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte"
+          ],
+          "responsibility": "Modal surfaces for pasting copied songs/graphs/sections when the browser clipboard read is unavailable or a destination choice is needed.",
+          "public_interface": [
+            "<PasteSongDialog {store} />",
+            "<PasteFallbackDialog {store} />"
+          ],
+          "depends_on": [
+            "TriggerLab store paste APIs",
+            "ui/Dialog"
+          ],
+          "depth": "shallow",
+          "loc": 343,
+          "notes": "Confirmed by whitespace-stripped diff: the two dialogs are structurally the same file with one extra destination control."
+        },
+        {
+          "name": "Chrome (top bar, rails, transport)",
+          "paths": [
+            "apps/web/src/lib/app/chrome/TopBar.svelte",
+            "apps/web/src/lib/app/chrome/Transport.svelte",
+            "apps/web/src/lib/app/chrome/LeftRail.svelte",
+            "apps/web/src/lib/app/chrome/SongRail.svelte",
+            "apps/web/src/lib/app/chrome/SaveIndicator.svelte",
+            "apps/web/src/lib/app/chrome/OutputPill.svelte",
+            "apps/web/src/lib/app/chrome/output-pill.ts",
+            "apps/web/src/lib/app/chrome/midi-devices.ts",
+            "apps/web/src/lib/app/chrome/OscInputPanel.svelte",
+            "apps/web/src/lib/app/chrome/AppSettingsDialog.svelte"
+          ],
+          "responsibility": "Persistent app chrome \u2014 navigation rails, transport controls, save/link status indicators and the settings/IO dialogs reachable from them.",
+          "public_interface": [
+            "<TopBar/>",
+            "<Transport/>",
+            "<LeftRail/>",
+            "<SongRail/>",
+            "<OutputPill/>",
+            "deriveOutputPill",
+            "LinkState",
+            "deviceListEmptyState"
+          ],
+          "depends_on": [
+            "ShellStore",
+            "TriggerLab",
+            "ws client status",
+            "ui primitives"
+          ],
+          "depth": "mixed",
+          "loc": 900
+        },
+        {
+          "name": "Show/share/backup chrome",
+          "paths": [
+            "apps/web/src/lib/app/chrome/ShowBrowser.svelte",
+            "apps/web/src/lib/app/chrome/ShareInfo.svelte",
+            "apps/web/src/lib/app/chrome/share-gating.ts",
+            "apps/web/src/lib/app/chrome/BackupsDialog.svelte",
+            "apps/web/src/lib/app/chrome/PinGate.svelte"
+          ],
+          "responsibility": "Show selection, viewer-share link surfacing with its visibility gate, PIN entry, and backup snapshot browsing/restore.",
+          "public_interface": [
+            "<ShowBrowser/>",
+            "<ShareInfo/>",
+            "<BackupsDialog/>",
+            "<PinGate/>",
+            "shareVisible"
+          ],
+          "depends_on": [
+            "desktop bridge boot stage",
+            "ws client",
+            "ui primitives"
+          ],
+          "depth": "mixed",
+          "loc": 800,
+          "notes": "share-gating.ts is a single 3-argument boolean \u2014 a guard worth a fail-closed lens."
+        },
+        {
+          "name": "Desktop bridge + boot",
+          "paths": [
+            "apps/web/src/lib/app/desktop-bridge.svelte.ts",
+            "apps/web/src/lib/app/boot-reducer.ts",
+            "apps/web/src/lib/app/chrome/boot-overlay.ts",
+            "apps/web/src/lib/app/chrome/BootOverlay.svelte",
+            "apps/web/src/lib/app/chrome/UpdateBadge.svelte",
+            "apps/web/src/lib/app/chrome/UpdateControl.svelte"
+          ],
+          "responsibility": "Adapts the optional Tauri desktop host (boot events, tunnel state, updates) into a reactive boot status and the overlays/badges that render it.",
+          "public_interface": [
+            "DesktopAdapter",
+            "loadTauriAdapter",
+            "DesktopBridge",
+            "desktopBridge singleton",
+            "reduceBoot",
+            "BootStatus/BootStage",
+            "computeBootOverlay",
+            "<BootOverlay/>",
+            "<UpdateControl/>"
+          ],
+          "depends_on": [
+            "@tauri-apps runtime (dynamic, optional)"
+          ],
+          "depth": "deep",
+          "loc": 800,
+          "notes": "Cleanly seamed: pure reducer + adapter interface + reactive class. The module-level `desktopBridge` singleton is the notable global."
+        },
+        {
+          "name": "Monitor dock",
+          "paths": [
+            "apps/web/src/lib/app/docks/Monitor.svelte",
+            "apps/web/src/lib/app/monitor.ts"
+          ],
+          "responsibility": "Ring-buffered live event log with type/text filtering, rendered as the Monitor workspace view.",
+          "public_interface": [
+            "<Monitor {store} />",
+            "appendMonitorEvent",
+            "filterMonitorEvents",
+            "monitorEventRowKey",
+            "monitorSearchText",
+            "DEFAULT_MONITOR_FILTERS",
+            "MONITOR_RETENTION_LIMIT"
+          ],
+          "depends_on": [
+            "ws MonitorEvent types"
+          ],
+          "depth": "deep",
+          "loc": 288
+        },
+        {
+          "name": "Layers / visualizer / perform docks",
+          "paths": [
+            "apps/web/src/lib/app/docks/LayersDock.svelte",
+            "apps/web/src/lib/app/docks/Visualizer.svelte",
+            "apps/web/src/lib/app/views/PerformView.svelte",
+            "apps/web/src/lib/app/views/GraphsDock.svelte"
+          ],
+          "responsibility": "Right-column bus/layer mixer, 3D kit preview, the chrome-light performance surface, and the graph list rail.",
+          "public_interface": [
+            "<LayersDock/>",
+            "<Visualizer/>",
+            "<PerformView/>",
+            "<GraphsDock/>"
+          ],
+          "depends_on": [
+            "TriggerLab store",
+            "ShellStore",
+            "three/visualizer package"
+          ],
+          "depth": "mixed",
+          "loc": 800
+        },
+        {
+          "name": "Keyboard shortcuts",
+          "paths": [
+            "apps/web/src/lib/app/shortcuts.ts",
+            "apps/web/src/lib/app/primary-shortcut.ts"
+          ],
+          "responsibility": "Parses shortcut combos, matches keyboard events against a registry, and dispatches with editable-target suppression and platform-aware modifier handling.",
+          "public_interface": [
+            "parseCombo",
+            "matchShortcut",
+            "dispatchShortcut",
+            "describeShortcuts",
+            "ShortcutEntry",
+            "platformShortcutModifier",
+            "hasPrimaryModifier",
+            "isEditableShortcutTarget"
+          ],
+          "depends_on": [],
+          "depth": "deep",
+          "loc": 146
+        },
+        {
+          "name": "Error capture",
+          "paths": [
+            "apps/web/src/lib/app/error-capture.ts"
+          ],
+          "responsibility": "Installs window.onerror / unhandledrejection / console.error hooks that funnel browser errors into an injectable sink and returns an uninstall function.",
+          "public_interface": [
+            "installErrorCapture",
+            "WebErrorSink",
+            "WebErrorReport",
+            "ErrorCaptureEnv"
+          ],
+          "depends_on": [],
+          "depth": "deep",
+          "loc": 138
+        },
+        {
+          "name": "Screenshot seam (dev-only)",
+          "paths": [
+            "apps/web/src/lib/app/shot-seam.ts"
+          ],
+          "responsibility": "Exposes window.__LEDRUMS_SHOT__, a scripted driver that puts the app into arbitrary named states for the ui-shot capture tool.",
+          "public_interface": [
+            "ShotSeam interface (~40 ops)",
+            "installShotSeam(store, shell)"
+          ],
+          "depends_on": [
+            "TriggerLab",
+            "ShellStore",
+            "every *-preview.svelte.ts state singleton",
+            "toast store"
+          ],
+          "depth": "shallow",
+          "loc": 540,
+          "notes": "A very wide interface over thin forwarding calls; must track every store API it drives, so it is a natural drift point."
+        },
+        {
+          "name": "Transient UI preview singletons",
+          "paths": [
+            "apps/web/src/lib/app/views/wire-preview.svelte.ts",
+            "apps/web/src/lib/app/views/lint-preview.svelte.ts",
+            "apps/web/src/lib/app/views/canvas-drop-preview.svelte.ts",
+            "apps/web/src/lib/app/views/sections-dnd-preview.svelte.ts",
+            "apps/web/src/lib/app/views/graph-hover.svelte.ts"
+          ],
+          "responsibility": "Module-level rune singletons holding ephemeral drag/hover/lint preview state shared between a view and its child nodes.",
+          "public_interface": [
+            "wireInvalidPreview",
+            "spliceArmedPreview",
+            "lintPreview",
+            "canvasDropPreview",
+            "sectionsDndPreview",
+            "GraphHover"
+          ],
+          "depends_on": [],
+          "depth": "shallow",
+          "loc": 185,
+          "notes": "Five near-identical tiny classes exported as module singletons \u2014 global mutable UI state outside any component tree."
+        },
+        {
+          "name": "Trigger source labelling",
+          "paths": [
+            "apps/web/src/lib/app/trigger-source-label.ts"
+          ],
+          "responsibility": "Turns a TriggerSource plus the input map into human labels and the cross-links between a graph, a drum and a zone.",
+          "public_interface": [
+            "describeTriggerSource",
+            "zoneLabel",
+            "zoneLinkForSource",
+            "drumLinkHint",
+            "graphsLinkedToZone"
+          ],
+          "depends_on": [
+            "core input map types"
+          ],
+          "depth": "deep",
+          "loc": 127
+        }
+      ],
+      "seams": [
+        {
+          "at": "apps/web/src/lib/app/views/GraphCanvas.svelte",
+          "kind": "existing",
+          "why": "Deliberately extracted shared SvelteFlow substrate, generic over node/edge types \u2014 behaviour common to both graph views can be changed here without touching either view."
+        },
+        {
+          "at": "apps/web/src/lib/app/desktop-bridge.svelte.ts (DesktopAdapter)",
+          "kind": "existing",
+          "why": "The Tauri host is behind an injectable interface with a pure reducer, so desktop behaviour is swappable/testable without a desktop build."
+        },
+        {
+          "at": "apps/web/src/lib/app/error-capture.ts (WebErrorSink / ErrorCaptureEnv)",
+          "kind": "existing",
+          "why": "Sink and environment are both injected; error routing changes without editing the capture logic."
+        },
+        {
+          "at": "apps/web/src/lib/app/shell-nav.ts",
+          "kind": "existing",
+          "why": "Navigation transitions are pure functions the rune store merely forwards to, so the invariant can be changed in one tested place."
+        },
+        {
+          "at": "apps/web/src/lib/app/docks/Inspector.svelte",
+          "kind": "leaky",
+          "why": "Meant to be a thin dispatcher, but the if/else ladder also owns per-kind header chrome and icon choices, so adding a node kind requires editing the dispatcher as well as the new inspector."
+        },
+        {
+          "at": "apps/web/src/lib/app/docks/inspectors/*Inspector.svelte",
+          "kind": "missing",
+          "why": "Thirteen sibling forms share a prop contract and row layout by convention only \u2014 no inspector-shell primitive, so a change to inspector chrome means thirteen edits."
+        },
+        {
+          "at": "apps/web/src/lib/app/views/*Row.svelte + views/objects-view.ts",
+          "kind": "missing",
+          "why": "Six object-row components and six parallel row-projection functions with no shared row abstraction; a new object type is a copy-paste of both halves."
+        },
+        {
+          "at": "apps/web/src/lib/app/shot-seam.ts",
+          "kind": "leaky",
+          "why": "A dev-only seam over the store that must be updated in lockstep with every store/shell API it drives; it can silently drift from the UI it claims to mirror."
+        },
+        {
+          "at": "apps/web/src/lib/app/shell-store.svelte.ts (setPatchRouting / patchRouting)",
+          "kind": "leaky",
+          "why": "PatchGraphView publishes live routing into the navigation store so the Inspector can read it \u2014 a back-channel that couples three modules through global-ish state rather than a declared interface."
+        },
+        {
+          "at": "apps/web/src/lib/app/views/*-preview.svelte.ts",
+          "kind": "leaky",
+          "why": "Module-level mutable singletons let any component alter drag/lint/hover presentation from anywhere, with no ownership or reset contract."
+        },
+        {
+          "at": "apps/web/src/lib/app/chrome/share-gating.ts (shareVisible)",
+          "kind": "existing",
+          "why": "A single pure predicate gates whether the viewer share link is exposed \u2014 one place to change the policy, and the obvious place to check it fails closed."
+        },
+        {
+          "at": "apps/web/src/lib/app/patch-topology.ts id helpers vs patch-graph.ts node-id helpers",
+          "kind": "leaky",
+          "why": "Two coexisting encodings for the same node identities mean the id vocabulary can be changed in one file and silently disagree with the other."
+        },
+        {
+          "at": "apps/web/src/lib/app/views/trigger-flow-projection.ts (signature functions)",
+          "kind": "existing",
+          "why": "Re-projection is gated entirely by string signatures, so incremental-update behaviour is tunable in one module \u2014 and also fails there if a signature omits a field."
+        }
+      ],
+      "suspicions": [
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/app/views/PasteSongDialog.svelte vs views/PasteFallbackDialog.svelte",
+          "hunch": "A whitespace-stripped diff shows the two files are the same dialog modulo one destination SegmentedControl; PatchDiffDialog may be a third member of the family."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/app/docks/inspectors/ (13 trigger-node inspectors)",
+          "hunch": "Same prop shape, same header/row scaffolding repeated per node kind; likely the bulk of the jscpd clone count in this scope."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/app/views/SongRow.svelte, LibrarySongRow, LibraryRefRow, GraphRow, EffectRow, PresetRow, CanvasSceneRow",
+          "hunch": "Seven row components plus six parallel *Rows() projections in objects-view.ts look like one row abstraction copied per object type."
+        },
+        {
+          "lens": "repeated-switches",
+          "where": "apps/web/src/lib/app/docks/Inspector.svelte",
+          "hunch": "A 307-line if/else-if ladder over node kind is likely mirrored by kind switches in trigger-node-meta.ts (kindIcon/kindLabel/tint) and node-options.ts KIND_OPTS \u2014 adding a kind probably means editing four places."
+        },
+        {
+          "lens": "divergent-change",
+          "where": "apps/web/src/lib/app/views/TriggerGraphView.svelte",
+          "hunch": "746 LOC combining projection, wiring validation, splice geometry, drag-and-drop from the palette, lint and drawer state \u2014 several unrelated reasons to change one file."
+        },
+        {
+          "lens": "divergent-change",
+          "where": "apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte",
+          "hunch": "847 LOC in one 'presentational' component covering identity, discovery/adoption, per-universe rx, health and test patterns; each is a separate change axis."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/web/src/lib/app/shell-store.svelte.ts setPatchRouting + views/PatchGraphView.svelte + docks/Inspector.svelte",
+          "hunch": "Live patch routing is smuggled through the navigation store as a publish/subscribe back-channel; the long apologetic comment suggests it papers over a missing model boundary."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "apps/web/src/lib/app/patch-topology.ts and patch-zones.ts id builders",
+          "hunch": "Node identity is stringly-typed with several parallel prefix schemes (hoop:/zone:/drum:/output:/trigger:) plus separate parsers in patch-graph.ts; mismatched encodings would fail only at runtime."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "apps/web/src/lib/app/views/trigger-flow-projection.ts and patch-graph.ts/patch-zones.ts *Signature functions",
+          "hunch": "Change detection across several modules is done by concatenated strings; a field omitted from a signature yields a stale view with no error."
+        },
+        {
+          "lens": "middle-man",
+          "where": "apps/web/src/lib/app/Overlays.svelte and apps/web/src/lib/app/shell-store.svelte.ts",
+          "hunch": "Overlays is a bare three-component mount; ShellStore forwards nearly every method straight to shell-nav \u2014 both may be pass-throughs earning little."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "apps/web/src/lib/app/shot-seam.ts",
+          "hunch": "A 540-line dev-only interface with ~40 ops; some ops may be unreferenced by any ui-shot preset and simply carried along."
+        },
+        {
+          "lens": "dead-code",
+          "where": "apps/web/src/lib/app/views/node-options.ts and docks/inspectors/output-status.ts",
+          "hunch": "Both are large bags of exported constants/formatters; knip's 73 issues plausibly cluster here as unused exports."
+        },
+        {
+          "lens": "data-clumps",
+          "where": "apps/web/src/lib/app/docks/patch-inspector.ts (drum, kit, hoopIndex parameters)",
+          "hunch": "pixelsPerHoopForDrum / perHoopPixelCount / hoopPixelSpan all take the same (drum, kit, \u2026) tuple, suggesting a missing hoop-geometry value object."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/web/src/lib/app/chrome/share-gating.ts and chrome/PinGate.svelte",
+          "hunch": "Viewer-share exposure hinges on one boolean derived from boot stage; worth checking it fails closed on unknown/transitional stages."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/web/src/lib/app/AuthorShell.svelte selection-reconciliation $effect",
+          "hunch": "The comment describes a past race where a transiently-null selectedGraph cleared the selection; the current guard may still have untreated interleavings."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/web/src/lib/app/views/*-preview.svelte.ts (five module singletons)",
+          "hunch": "Global mutable UI state shared across component trees with no reset ownership; stale preview state could survive a view switch."
+        }
+      ],
+      "coverage_notes": "Read fully or substantially: shell-nav.ts, shell-store.svelte.ts, AuthorShell.svelte (script + top of markup), Overlays.svelte, Inspector.svelte (head), and the export surfaces of every non-test .ts / .svelte.ts file in scope (app root, chrome/, docks/, docks/inspectors/, views/). Read the header comments of the largest Svelte components (TriggerGraphView, PatchGraphView, GraphCanvas, ControllerStatusPanel, shot-seam). Did NOT read the bodies of most .svelte files \u2014 component LOC, responsibilities and grouping for those are inferred from filenames, imports, header comments and line counts, so per-component depth judgements (especially in the inspectors and Objects-view row families) are informed guesses rather than verified. Test files were listed but not read, so I cannot speak to test quality or coverage per module. I did not verify which knip issues or jscpd clones fall in which module \u2014 the dead-code and duplication suspicions name likely clusters, not confirmed hits. The only duplication claim I actually verified is PasteSongDialog vs PasteFallbackDialog (whitespace-stripped diff). External dependencies (trigger-lab store, ui/ primitives, ws/protocol-types, @ledrums/core) are outside scope and were not opened, so 'depends_on' names them without describing their surfaces."
+    }
+  ]
+}

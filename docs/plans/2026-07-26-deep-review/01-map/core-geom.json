@@ -1,0 +1,653 @@
+{
+  "artifact": "01-map/core-geom",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "1",
+    "lane": "core-geom",
+    "model": "claude-opus-5",
+    "effort": "low",
+    "nonce_verified": true,
+    "run_id": "wf_2cd19a09-dd0"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "lane": "core-geom",
+      "scope": {
+        "paths": [
+          "packages/core/src/geometry",
+          "packages/core/src/model",
+          "packages/core/src/modifiers",
+          "packages/core/src/canvas",
+          "packages/core/src/color",
+          "packages/core/src/engine"
+        ],
+        "files_read": 12
+      },
+      "modules": [
+        {
+          "name": "math-and-euler",
+          "paths": [
+            "packages/core/src/math.ts",
+            "packages/core/src/geometry/euler.ts"
+          ],
+          "responsibility": "Scalar helpers (clamp01, lerp, wrap, distance, DEG2RAD) and XYZ Euler rotation / local-to-world point transforms used by every geometric and colour computation.",
+          "public_interface": [
+            "clamp01",
+            "lerp",
+            "wrap",
+            "distance",
+            "DEG2RAD",
+            "Vec3",
+            "eulerXYZApply(v, rotDeg)",
+            "localToWorld(local, rotDeg, origin)"
+          ],
+          "depends_on": [],
+          "depth": "shallow",
+          "loc": 100,
+          "notes": "math.ts sits outside the named scope dirs but is the leaf every scoped module imports; included for dependency clarity."
+        },
+        {
+          "name": "kit-schema",
+          "paths": [
+            "packages/core/src/geometry/kit-schema.ts"
+          ],
+          "responsibility": "Zod schema, versioned migration ladder (v1\u2192v7) and derived accessors for the physical kit description: drums, hoops, outputs/segments, RGB order, node layout, and kit globals.",
+          "public_interface": [
+            "kitSchema",
+            "parseKit(raw)",
+            "migrateKit(raw)",
+            "CURRENT_KIT_VERSION",
+            "drumHoopCount(kit, drum)",
+            "KitConfig",
+            "DrumConfig",
+            "HoopConfig",
+            "OutputConfig",
+            "OutputSegment",
+            "RgbOrder",
+            "NodeLayout",
+            "KitGlobalConfig"
+          ],
+          "depends_on": [
+            "math-and-euler"
+          ],
+          "depth": "deep",
+          "loc": 542,
+          "notes": "Largest file in scope. Mixes three concerns: schema declaration, migration functions (shiftOutputHoops, shiftDrumOriginToCentre, shiftDrumToHoops, splitOutputDataLines), and derived queries. outputSchema uses z.preprocess to normalise legacy shapes."
+        },
+        {
+          "name": "pixel-model",
+          "paths": [
+            "packages/core/src/geometry/pixel-model.ts",
+            "packages/core/src/geometry/zones.ts"
+          ],
+          "responsibility": "Materialise a KitConfig into the authoritative flat pixel array \u2014 world/local positions, tangent/normal, hoop and zone labels, per-drum bounds and pixel ranges.",
+          "public_interface": [
+            "buildPixelModel(kit)",
+            "materializeHoops(kit, drum)",
+            "drumHoopPixelRange(drum, hoopIndex)",
+            "getHoopPixelRange(...)",
+            "PixelModel",
+            "Pixel",
+            "DrumInfo",
+            "Bounds",
+            "classifyZone(normHoop)",
+            "Zone",
+            "ZONES"
+          ],
+          "depends_on": [
+            "kit-schema",
+            "math-and-euler"
+          ],
+          "depth": "deep",
+          "loc": 336,
+          "notes": "buildPixelModel is one ~130-line nested loop carrying flip, per-hoop reverse, kit mirror, 1-based labelling and effect-origin derivation simultaneously. It is the single seam every renderer and the DMX map reads."
+        },
+        {
+          "name": "dmx-map",
+          "paths": [
+            "packages/core/src/geometry/dmx-map.ts"
+          ],
+          "responsibility": "Walk kit outputs \u2192 segments with one monotonic channel cursor to produce the pixel\u2192(universe, channel) patch used by Art-Net/sACN senders.",
+          "public_interface": [
+            "buildDmxMap(kit, model, controllerRgbOrder?)",
+            "DmxMap",
+            "PixelDmx",
+            "UniversePixel",
+            "UniversePatch",
+            "CHANNELS_PER_UNIVERSE"
+          ],
+          "depends_on": [
+            "kit-schema",
+            "pixel-model"
+          ],
+          "depth": "deep",
+          "loc": 157,
+          "notes": "The v6\u2192v7 migration's byte-parity claim is a contract between this walk and splitOutputDataLines in kit-schema."
+        },
+        {
+          "name": "pixel-grid",
+          "paths": [
+            "packages/core/src/geometry/pixel-grid.ts"
+          ],
+          "responsibility": "Spatial hash over pixel world positions for radius queries and nearest-pixel lookups by 3D point.",
+          "public_interface": [
+            "buildPixelGrid(model, cellSize?)",
+            "forEachPixelWithin(...)",
+            "nearestPixelIdWithin(grid, point, radius)",
+            "nearestPixelWithin(...)",
+            "PixelGrid"
+          ],
+          "depends_on": [
+            "pixel-model",
+            "math-and-euler"
+          ],
+          "depth": "deep",
+          "loc": 136,
+          "notes": "Not re-exported from src/index.ts \u2014 check who actually consumes it."
+        },
+        {
+          "name": "color",
+          "paths": [
+            "packages/core/src/color/color.ts",
+            "packages/core/src/color/blend.ts"
+          ],
+          "responsibility": "Colour-space conversion (HSV/RGB/hex, gamma byte quantisation) and the per-channel blend-mode table plus buffer-level composite primitive.",
+          "public_interface": [
+            "hsvToRgb",
+            "rgbToHsv",
+            "hexToRgb",
+            "rgbToHex",
+            "hsvToHex",
+            "hexToHsv",
+            "toByte(v, gamma)",
+            "BLEND_MODES",
+            "BlendMode",
+            "blendChannel(mode, d, s)",
+            "compositeInto(...)"
+          ],
+          "depends_on": [
+            "math-and-euler"
+          ],
+          "depth": "shallow",
+          "loc": 136,
+          "notes": "Pure leaf; the natural place for hot-path allocation review (returns Rgb objects per call)."
+        },
+        {
+          "name": "project-schema",
+          "paths": [
+            "packages/core/src/model/project-schema.ts"
+          ],
+          "responsibility": "Zod schema and inferred types for the authored show document \u2014 layers, clips, params, modulation, transport, sections, songs, setlists, input maps and output settings.",
+          "public_interface": [
+            "parseProject(raw)",
+            "projectSchema",
+            "Project",
+            "Layer",
+            "Clip",
+            "Transport",
+            "Composition",
+            "Section",
+            "Song",
+            "Setlist",
+            "InputMap",
+            "TriggerBinding",
+            "ControlSource",
+            "Curve",
+            "ParamValue",
+            "TRIGGER_SLOT_COUNT",
+            "SLOT_LABELS",
+            "outputStateSchema"
+          ],
+          "depends_on": [
+            "color",
+            "kit-schema"
+          ],
+          "depth": "mixed",
+          "loc": 287,
+          "notes": "Broad declarative surface; embeds kitSchema + migrateKit so a project parse implicitly migrates its kit."
+        },
+        {
+          "name": "integrity-checks",
+          "paths": [
+            "packages/core/src/model/integrity.ts",
+            "packages/core/src/model/routing-integrity.ts"
+          ],
+          "responsibility": "Referential and routing validation over a project/kit pair \u2014 drum-id references, pad-key parsing, authored-graph keys, and hoop coverage/fan-out/range checks over outputs.",
+          "public_interface": [
+            "assertProjectIntegrity(project)",
+            "assertShowIntegrity(input)",
+            "ReferentialIntegrityError",
+            "kitDrumIds(kit)",
+            "drumIdOfPadKey(padKey)",
+            "isAuthoredGraphKey(key)",
+            "checkRoutingIntegrity(...)",
+            "validateRouting(kit, rawOutputs)",
+            "assertRoutingIntegrity(...)",
+            "blockingRoutingIssues(issues)",
+            "RoutingIssue",
+            "RoutingIssueCode",
+            "RoutingIntegrityError"
+          ],
+          "depends_on": [
+            "kit-schema",
+            "project-schema"
+          ],
+          "depth": "deep",
+          "loc": 329,
+          "notes": "Two guard families with different error models (throwing assert vs issue-list) living side by side; routing-integrity claims 'a routing that passes here never throws in buildDmxMap' \u2014 a contract worth checking for parity."
+        },
+        {
+          "name": "chain-wiring",
+          "paths": [
+            "packages/core/src/model/chain-wiring.ts"
+          ],
+          "responsibility": "Classify whether a proposed Output\u2192Hoop\u2192Hoop chain edge is legal given existing edges, returning a typed rejection code for the patch-graph UI.",
+          "public_interface": [
+            "hoopKey(ref)",
+            "sourceKey(from)",
+            "classifyChainConnection(edges, candidate)",
+            "HoopRef",
+            "ChainEdge",
+            "ChainSource",
+            "ChainRejectionCode",
+            "ChainConnectionVerdict"
+          ],
+          "depends_on": [],
+          "depth": "deep",
+          "loc": 129,
+          "notes": "Dependency-free pure classifier; a good example of a well-placed seam."
+        },
+        {
+          "name": "defaults",
+          "paths": [
+            "packages/core/src/model/defaults.ts"
+          ],
+          "responsibility": "Construct the canonical DEFAULT_KIT and a valid starter Project, asserting integrity on the way out.",
+          "public_interface": [
+            "DEFAULT_KIT",
+            "defaultProject()"
+          ],
+          "depends_on": [
+            "kit-schema",
+            "project-schema",
+            "integrity-checks"
+          ],
+          "depth": "shallow",
+          "loc": 181,
+          "notes": "Mostly literal data; the pixel counts here are load-bearing for tests and for the real rig."
+        },
+        {
+          "name": "canvas-types-and-ids",
+          "paths": [
+            "packages/core/src/canvas/types.ts",
+            "packages/core/src/canvas/ids.ts"
+          ],
+          "responsibility": "Declare the canvas scene document shape (elements, gradients, sampler configs, lenses) and the `canvas:<sceneId>` effect-id encoding that hosts scenes inside the effect registry.",
+          "public_interface": [
+            "CanvasScene",
+            "CanvasElement",
+            "GradientStop",
+            "SamplerConfig",
+            "Lens",
+            "CANVAS_EFFECT_PREFIX",
+            "canvasEffectId(sceneId)",
+            "isCanvasEffectId(id)",
+            "canvasSceneIdOf(effectId)"
+          ],
+          "depends_on": [],
+          "depth": "shallow",
+          "loc": 139,
+          "notes": "The id encoding is the adapter seam that lets canvas scenes reuse the single EffectGenerator interface."
+        },
+        {
+          "name": "canvas-field",
+          "paths": [
+            "packages/core/src/canvas/elements.ts",
+            "packages/core/src/canvas/lenses.ts"
+          ],
+          "responsibility": "Evaluate a scene's 2D field: per-element colour sampling at (u,v,t) with gradients, plus UV-space lens distortions and 4D hyper-projection applied before sampling.",
+          "public_interface": [
+            "elementAt(u, v, t, el)",
+            "sceneColorAt(...)",
+            "ElementSample",
+            "applyLens(lens, uv, t)",
+            "applyLensChain(lenses, uv, t)",
+            "hyper4dUv(...)",
+            "UvPair"
+          ],
+          "depends_on": [
+            "color",
+            "math-and-euler",
+            "canvas-types-and-ids"
+          ],
+          "depth": "deep",
+          "loc": 349,
+          "notes": "Both are switch-over-variant dispatchers on discriminated unions (element kind, lens kind) \u2014 the canonical place for a repeated-switch lens."
+        },
+        {
+          "name": "canvas-sampler",
+          "paths": [
+            "packages/core/src/canvas/sampler.ts"
+          ],
+          "responsibility": "Map pixel ids to UV coordinates under several projection modes and precompute a per-pixel sampler table so scene evaluation is a table lookup on the render path.",
+          "public_interface": [
+            "uvFor(pixelId, model, mode)",
+            "renderUvField(ctx, fb, mode, sample)",
+            "buildSamplerTable(model, config)",
+            "isWorldSpaceSampler(config)",
+            "SamplerTable",
+            "UvMode",
+            "FieldSample"
+          ],
+          "depends_on": [
+            "pixel-model",
+            "engine-buffer",
+            "canvas-types-and-ids",
+            "math-and-euler"
+          ],
+          "depth": "deep",
+          "loc": 164,
+          "notes": "UvMode (4 string modes) and SamplerConfig (richer union) are two overlapping vocabularies for the same idea."
+        },
+        {
+          "name": "canvas-scene-host",
+          "paths": [
+            "packages/core/src/canvas/scene.ts",
+            "packages/core/src/canvas/registry.ts",
+            "packages/core/src/canvas/presets.ts"
+          ],
+          "responsibility": "Adapt a CanvasScene document into an EffectGenerator (state, param spec, per-frame render) and keep a mutable registry of scenes plus the built-in preset set.",
+          "public_interface": [
+            "createCanvasSceneEffect(scene)",
+            "CanvasSceneState",
+            "CANVAS_PARAM_SPEC",
+            "registerCanvasScene(scene)",
+            "unregisterCanvasScene(sceneId)",
+            "tryGetCanvasScene(sceneId)",
+            "listCanvasScenes()",
+            "tryGetCanvasEffect(effectId)",
+            "BUILTIN_CANVAS_SCENES"
+          ],
+          "depends_on": [
+            "canvas-field",
+            "canvas-sampler",
+            "canvas-types-and-ids",
+            "pixel-model",
+            "color",
+            "effects/types (out of scope)"
+          ],
+          "depth": "deep",
+          "loc": 290,
+          "notes": "Module-level mutable registry; presets.ts registers by import side effect and effects/registry.ts does a bare `import '../canvas/presets'` to trigger it."
+        },
+        {
+          "name": "modifier-contract",
+          "paths": [
+            "packages/core/src/modifiers/types.ts",
+            "packages/core/src/modifiers/registry.ts",
+            "packages/core/src/modifiers/palette.ts"
+          ],
+          "responsibility": "Define the ModifierDef contract (paramSpec, createState, apply over a PixelRange) and hold the static registry plus the category grouping the UI palette renders from.",
+          "public_interface": [
+            "ModifierDef",
+            "ModifierContext",
+            "ModifierCategory",
+            "PixelRange",
+            "ResolvedModifier",
+            "getModifier(id)",
+            "tryGetModifier(id)",
+            "listModifiers()",
+            "modifierIds()",
+            "listModifiersByCategory()",
+            "MODIFIER_CATEGORY_ORDER",
+            "MODIFIER_CATEGORY_LABEL"
+          ],
+          "depends_on": [
+            "pixel-model",
+            "engine-buffer",
+            "effects/types (out of scope)",
+            "voice/modulation (out of scope)"
+          ],
+          "depth": "shallow",
+          "loc": 199,
+          "notes": "registry.ts is a hand-maintained import+map of 20 impls; getModifier/listModifiers are thin. types.ts importing voice/modulation is the one madge cycle that touches this scope."
+        },
+        {
+          "name": "modifier-impls",
+          "paths": [
+            "packages/core/src/modifiers/impl/"
+          ],
+          "responsibility": "Twenty pure framebuffer transforms (trail, echo, bloom, blur, mirror, slice, feedback, strobe, grain, sparkle, hue-shift, levels, posterize, slide, kaleidoscope, freeze, flicker, chromatic, pixelate, strip) each applied in place over a pixel range.",
+          "public_interface": [
+            "one exported ModifierDef per file, consumed only through modifiers/registry"
+          ],
+          "depends_on": [
+            "modifier-contract",
+            "engine-buffer",
+            "pixel-model",
+            "color"
+          ],
+          "depth": "mixed",
+          "loc": 1000,
+          "notes": "Uniform shape by construction; several (echo, trail, feedback, freeze) keep scratch buffers in state and are the likeliest home for allocation or aliasing bugs."
+        },
+        {
+          "name": "modifier-chain-runner",
+          "paths": [
+            "packages/core/src/modifiers/chain.ts"
+          ],
+          "responsibility": "Run a resolved modifier chain over a framebuffer range in order, lazily materialising per-link state and optionally sampling per-link param modulation before apply.",
+          "public_interface": [
+            "applyModifierChain(chain, state, fb, range, model, timeMs, dt, modCtx?)"
+          ],
+          "depends_on": [
+            "modifier-contract",
+            "engine-buffer",
+            "pixel-model",
+            "voice/modulation (out of scope)"
+          ],
+          "depth": "deep",
+          "loc": 58,
+          "notes": "An 8-positional-parameter signature; deliberately never throws on the render path (unknown modifier id is silently skipped)."
+        },
+        {
+          "name": "engine-buffer",
+          "paths": [
+            "packages/core/src/engine/framebuffer.ts",
+            "packages/core/src/engine/compositor.ts",
+            "packages/core/src/engine/render-context.ts"
+          ],
+          "responsibility": "The flat RGB pixel buffer, the layer-stack composite (blend mode + opacity into a destination buffer), and the RenderContext / TransportState / Trigger shapes every effect and modifier receives.",
+          "public_interface": [
+            "Framebuffer",
+            "composite(layers, dst)",
+            "CompositeLayer",
+            "RenderContext",
+            "TransportState",
+            "Trigger"
+          ],
+          "depends_on": [
+            "color",
+            "math-and-euler",
+            "pixel-model"
+          ],
+          "depth": "deep",
+          "loc": 126,
+          "notes": "The narrowest, most-depended-upon interface in core \u2014 nearly everything in scope imports Framebuffer or RenderContext."
+        },
+        {
+          "name": "engine-control-and-modulation",
+          "paths": [
+            "packages/core/src/engine/control-state.ts",
+            "packages/core/src/engine/transport.ts",
+            "packages/core/src/engine/modulation.ts"
+          ],
+          "responsibility": "Hold decaying live control values (per-drum velocity, OSC addresses, volume), advance beat/bar transport from dt, and resolve a clip's authored params into effective values via LFO/control-source/curve modulation.",
+          "public_interface": [
+            "ControlState (setVelocity, setOsc, volume, decay)",
+            "advanceTransport(transport, beat, timeMs, dtMs)",
+            "resolveParams(clip, controlState, transport)",
+            "lfoValue(shape, timeMs, rate)",
+            "sourceValue(...)",
+            "applyCurve(curve, x)"
+          ],
+          "depends_on": [
+            "project-schema",
+            "engine-buffer",
+            "math-and-euler",
+            "effects/types (out of scope)"
+          ],
+          "depth": "mixed",
+          "loc": 165,
+          "notes": "lfoValue takes `shape: string` rather than a union \u2014 primitive-obsession candidate; a near-identical modulation stack exists in voice/."
+        },
+        {
+          "name": "engine-orchestrator",
+          "paths": [
+            "packages/core/src/engine/engine.ts"
+          ],
+          "responsibility": "The legacy top-level render loop: owns the project, rebuilds pixel model and DMX map, queues and drains timed input events into triggers, renders each layer's active clip, composites, and exposes the mutation API the server reducer calls.",
+          "public_interface": [
+            "Engine (constructor(project), tick(dtMs), applyEvent(event), setProject/getProject, getModel, getDmxMap, getFrame, getStats, setParam, setLayerProps, setActiveClip, setTransport, setOutput, addLayer/removeLayer, addClip/removeClip, setKitTransform, \u2026)",
+            "InputEvent",
+            "EngineStats"
+          ],
+          "depends_on": [
+            "pixel-model",
+            "dmx-map",
+            "kit-schema",
+            "project-schema",
+            "effects/registry (out of scope)",
+            "engine-buffer",
+            "engine-control-and-modulation"
+          ],
+          "depth": "mixed",
+          "loc": 438,
+          "notes": "God-object shape: render loop + input routing + section/binding resolution + ~15 CRUD mutators on one class. Instantiated once, in apps/server/src/engine-host.ts:62; apps/server/src/main.ts also constructs a VoiceEngineHost behind a VOICE_MODE flag."
+        }
+      ],
+      "seams": [
+        {
+          "at": "packages/core/src/canvas/ids.ts \u2014 `canvas:<sceneId>` effect-id encoding",
+          "kind": "existing",
+          "why": "Lets an entire scene-document subsystem be swapped in behind the single EffectGenerator interface without forking the compositor."
+        },
+        {
+          "at": "packages/core/src/modifiers/registry.ts + types.ts ModifierDef",
+          "kind": "existing",
+          "why": "New framebuffer transforms plug in by adding one file and one registry line; nothing else in core changes."
+        },
+        {
+          "at": "packages/core/src/canvas/registry.ts (module-level mutable scene map)",
+          "kind": "leaky",
+          "why": "Registration happens by import side effect (`import '../canvas/presets'` in effects/registry.ts), so behaviour depends on module load order and global mutable state rather than on an explicit wiring call."
+        },
+        {
+          "at": "packages/core/src/geometry/kit-schema.ts migrateKit ladder",
+          "kind": "existing",
+          "why": "Version-keyed steps compose cumulatively; a new schema shape is added by appending one step and bumping CURRENT_KIT_VERSION."
+        },
+        {
+          "at": "packages/core/src/model/chain-wiring.ts classifyChainConnection",
+          "kind": "existing",
+          "why": "Pure edge-legality decision, dependency-free \u2014 routing policy can change here without touching graph UI or geometry."
+        },
+        {
+          "at": "packages/core/src/engine/engine.ts mutation API",
+          "kind": "missing",
+          "why": "Roughly fifteen ad-hoc setters (setParam, setLayerProps, addClip, setKitTransform, \u2026) are the server reducer's only way in; there is no command/reducer seam, so a new mutation means editing the Engine class itself."
+        },
+        {
+          "at": "packages/core/src/geometry/pixel-model.ts buildPixelModel",
+          "kind": "missing",
+          "why": "Flip, per-hoop reverse, kit mirror, zone classification and 1-based labelling are all inlined in one nested loop; altering any one of them requires editing that loop rather than supplying a transform."
+        },
+        {
+          "at": "packages/core/src/modifiers/types.ts \u2192 voice/modulation.ts",
+          "kind": "leaky",
+          "why": "The modifier contract reaches into the voice subsystem for Mapping/applyModulations, creating the one import cycle that touches this scope and coupling a supposedly generic layer to the voice engine."
+        },
+        {
+          "at": "packages/core/src/engine/* vs packages/core/src/voice/*",
+          "kind": "leaky",
+          "why": "Two parallel engines (engine.ts/compositor.ts/modulation.ts vs voice/engine.ts/compositor.ts/modulation.ts) are selected by a VOICE_MODE flag in the server, so there is no single seam where render semantics are defined."
+        }
+      ],
+      "suspicions": [
+        {
+          "lens": "divergent-change",
+          "where": "packages/core/src/engine/ vs packages/core/src/voice/ (engine.ts, compositor.ts, modulation.ts each exist in both)",
+          "hunch": "Two full render stacks coexist behind apps/server VOICE_MODE; semantics changes likely have to be made twice, and one copy may already be stale."
+        },
+        {
+          "lens": "dead-code",
+          "where": "packages/core/src/engine/engine.ts (legacy Engine) and its only construction site apps/server/src/engine-host.ts:62",
+          "hunch": "If VOICE_MODE is the shipping path, the 438-line legacy Engine plus engine/modulation.ts and engine/compositor.ts may be maintained-but-unreachable in production."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "packages/core/src/engine/modulation.ts vs packages/core/src/voice/modulation.ts",
+          "hunch": "LFO shapes, curve application and source sampling look reimplemented rather than shared; drift between them would make the same authored modulation behave differently per mode."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "packages/core/src/modifiers/types.ts:23 importing Mapping from ../voice/modulation, and modifiers/chain.ts importing applyModulations from the same",
+          "hunch": "The generic modifier layer depends on the voice engine, producing madge cycle #1 (modifiers/types \u2192 voice/modulation \u2192 voice/envelope \u2192 voice/easing \u2192 voice/types)."
+        },
+        {
+          "lens": "repeated-switches",
+          "where": "packages/core/src/canvas/elements.ts elementAt and packages/core/src/canvas/lenses.ts applyLens",
+          "hunch": "Parallel switch dispatch over the CanvasElement and Lens unions; adding a variant probably requires edits in several switches plus types.ts and presets.ts."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "packages/core/src/engine/modulation.ts:8 lfoValue(shape: string, \u2026) and canvas/sampler.ts UvMode as a bare string union alongside SamplerConfig",
+          "hunch": "Untyped shape strings and two overlapping projection vocabularies invite silent no-op fallthroughs on a typo."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "packages/core/src/modifiers/chain.ts (unknown modifierId silently `continue`) and engine/engine.ts renderLayer (missing effect silently returns)",
+          "hunch": "Render-path failures are swallowed by design with no counter or diagnostic, so a bad id shows up only as an unexplained dark layer."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "packages/core/src/geometry/kit-schema.ts migrateKit \u2014 steps exist for <2, <3, <4, <5, <7 but no v5\u2192v6",
+          "hunch": "A gap in the version ladder suggests a v6 change with no migration, so a v5 file may reach the schema missing whatever v6 introduced."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "packages/core/src/geometry/pixel-grid.ts (not re-exported from src/index.ts)",
+          "hunch": "A full spatial-hash module with four public query functions that may have no live caller outside its own tests."
+        },
+        {
+          "lens": "data-clumps",
+          "where": "packages/core/src/modifiers/chain.ts applyModifierChain \u2014 8 positional parameters (chain, state, fb, range, model, timeMs, dt, modCtx)",
+          "hunch": "model/timeMs/dt are already bundled as ModifierContext one line later; the clump wants to be the parameter."
+        },
+        {
+          "lens": "divergent-change",
+          "where": "packages/core/src/geometry/kit-schema.ts (542 LOC)",
+          "hunch": "Schema declaration, five migration transforms, and derived query helpers share one file, so unrelated reasons to change all land here."
+        },
+        {
+          "lens": "middle-man",
+          "where": "packages/core/src/modifiers/registry.ts and modifiers/palette.ts",
+          "hunch": "getModifier/listModifiers/listModifiersByCategory are thin wrappers over a static map; the category grouping may be the only real behaviour."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "packages/core/src/canvas/sampler.ts:13 importing Framebuffer from ../engine/framebuffer, and canvas/registry.ts \u2190 effects/registry.ts side-effect import",
+          "hunch": "Canvas, engine and effects are mutually entangled; the load-order-dependent preset registration could break under tree-shaking or a different bundler entry."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "packages/core/src/model/integrity.ts (throwing asserts) vs model/routing-integrity.ts (issue lists)",
+          "hunch": "Two validation styles over the same kit/project pair; a rule added to one may not be mirrored in the other (mutation-parity risk)."
+        }
+      ],
+      "coverage_notes": "Read in full or in substantial part: engine/engine.ts (input + tick + mutators), geometry/kit-schema.ts (migration ladder and derived helpers), geometry/pixel-model.ts (buildPixelModel), modifiers/chain.ts, plus src/index.ts. Everything else was mapped from export/import signatures via grep, file sizes, and doc comments rather than full reads \u2014 so responsibilities are accurate at the interface level but I did not verify implementation behaviour for: all 20 modifiers/impl files, canvas/elements.ts, canvas/lenses.ts, canvas/scene.ts, canvas/sampler.ts internals, geometry/dmx-map.ts channel walk, geometry/pixel-grid.ts, model/project-schema.ts field-by-field, model/routing-integrity.ts rules, model/defaults.ts data, and the colour maths. I read no test files, so LOC figures for modules exclude tests and my depth calls are based on interface-to-implementation ratio, not on test coverage. Cycle data came from the repo's own node_modules/.bin/madge (read-only run): 5 cycles confirmed, only #1 (modifiers/types.ts \u2192 voice/modulation.ts \u2192 voice/envelope.ts \u2192 voice/easing.ts \u2192 voice/types.ts) touches this scope; the other four are entirely inside packages/core/src/voice, which is out of scope and which I did not map. I did not verify purity (no Node/DOM imports) exhaustively \u2014 no such imports appeared in any import line I inspected, but I did not grep every file for it. The VOICE_MODE / legacy-Engine live-path question is stated as a suspicion, not a finding: I confirmed both construction sites exist but did not determine which runs in production."
+    }
+  ]
+}

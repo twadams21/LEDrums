@@ -1,0 +1,639 @@
+{
+  "artifact": "01-map/server",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "1",
+    "lane": "server",
+    "model": "claude-opus-5",
+    "effort": "low",
+    "nonce_verified": true,
+    "run_id": "wf_2cd19a09-dd0"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "lane": "server",
+      "scope": {
+        "paths": [
+          "apps/server/src"
+        ],
+        "files_read": 12
+      },
+      "modules": [
+        {
+          "name": "server-composition-root",
+          "paths": [
+            "apps/server/src/main.ts",
+            "apps/server/src/boot.ts"
+          ],
+          "responsibility": "Top-level wiring script that constructs every collaborator (engine hosts, HTTP/WS servers, OSC input, monitors, autosavers, telemetry, backups, tunnel) and owns the module-level mutable live state (project slot, show/song library slots, oscListen).",
+          "public_interface": [
+            "(none \u2014 main.ts is a side-effecting entry module)",
+            "boot(deps)",
+            "lanAddresses()",
+            "lanUrls(port)"
+          ],
+          "depends_on": [
+            "engine-host",
+            "voice-engine-host",
+            "ws-client-message-handler",
+            "client-registry",
+            "pin-gate",
+            "controller-monitor",
+            "persistence-project",
+            "persistence-libraries",
+            "backups",
+            "telemetry",
+            "tunnel",
+            "http-routes",
+            "static-host",
+            "monitor-bus",
+            "input-router",
+            "output-manager (indirect)"
+          ],
+          "depth": "shallow",
+          "loc": 935,
+          "notes": "801-line script with ~15 top-level closures over module-scope `let`s; it is the god-file of the server. Most 'logic' is glue, but non-trivial policy (stateMessage composition, OSC recall branch, stats adaptation, snapshot restore) lives here untested."
+        },
+        {
+          "name": "engine-host",
+          "paths": [
+            "apps/server/src/engine-host.ts"
+          ],
+          "responsibility": "Legacy render-loop host that owns the core Engine, ticks it, tracks latency/fps stats, and pushes frames to the output manager.",
+          "public_interface": [
+            "class EngineHost",
+            "HostStats",
+            "PartialInput"
+          ],
+          "depends_on": [
+            "@ledrums/core",
+            "output-manager"
+          ],
+          "depth": "mixed",
+          "loc": 223
+        },
+        {
+          "name": "voice-engine-host",
+          "paths": [
+            "apps/server/src/voice-engine-host.ts"
+          ],
+          "responsibility": "Voice-bus render host: owns kit/model/dmx-map rebuilds, show + transport state, the fixed-step loop, input translation, identify mode, and output/monitor sinks.",
+          "public_interface": [
+            "class VoiceEngineHost (getProject/getModel/getDmxMap/reloadKit/setKitTransform/setKitGlobal/setHoopConfig/setKitOutputs/setKitNodeLayout/adoptPatch/setShow/getShow/applyInput/markInput/setInputMap/identifyHoop/start/stop/step/getStats/getOutputStatus/setOutputMonitor/setMonitor)",
+            "VoiceHostStats",
+            "VoicePartialInput"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice, buildPixelModel, DmxMap)",
+            "output-manager",
+            "monitor-bus types"
+          ],
+          "depth": "mixed",
+          "loc": 648,
+          "notes": "Very wide public surface (30+ methods) \u2014 many are thin per-field setters mirroring wire message types, which is what makes the handler a switch over setters."
+        },
+        {
+          "name": "output-manager",
+          "paths": [
+            "apps/server/src/output-manager.ts",
+            "apps/server/src/output-monitor.ts"
+          ],
+          "responsibility": "Converts RGBA frames into universe byte packets under a patch/RGB order and fire-and-forget transmits them, with coalesced monitor sampling.",
+          "public_interface": [
+            "class OutputManager",
+            "applyRgbOrder()",
+            "frameToUniverseBytes()",
+            "OutputFactory",
+            "OutputMonitorSink",
+            "createOutputMonitorCoalescer()",
+            "outputDestination()",
+            "universeRangeLabel()"
+          ],
+          "depends_on": [
+            "@ledrums/core (OutputSettings, UniversePatch)",
+            "@ledrums/io (PixelOutput)"
+          ],
+          "depth": "deep",
+          "loc": 393
+        },
+        {
+          "name": "ws-client-message-handler",
+          "paths": [
+            "apps/server/src/handlers/client-message.ts",
+            "apps/server/src/handlers/voice-input.ts",
+            "apps/server/src/handlers/projects.ts"
+          ],
+          "responsibility": "Single dispatcher for every client\u2192server WS message: editor gating, then per-message-type routing into hosts, libraries, backups, controller, tunnel and project IO.",
+          "public_interface": [
+            "createClientMessageHandler(deps)",
+            "requiresEditor(t)",
+            "ClientMessageDeps",
+            "handleVoiceInput()",
+            "applyTransportRecall()",
+            "propagateToVoiceHost()",
+            "handleProjectMessage()"
+          ],
+          "depends_on": [
+            "engine-host",
+            "voice-engine-host",
+            "client-registry",
+            "autosave",
+            "input-router",
+            "persistence-*",
+            "@ledrums/protocol"
+          ],
+          "depth": "mixed",
+          "loc": 602,
+          "notes": "Dispatch is a long if-chain on msg.t (20+ arms) rather than a table; deps interface is ~15 optional collaborators, several `?`-optional with silent no-op fallbacks."
+        },
+        {
+          "name": "input-router",
+          "paths": [
+            "apps/server/src/input-router.ts"
+          ],
+          "responsibility": "Pure translation layer from MIDI/OSC wire values to engine InputEvents and from CC/program/OSC addresses to show section-recall targets.",
+          "public_interface": [
+            "zoneForNote()",
+            "zoneForOsc()",
+            "midiToEvent()",
+            "oscToEvent()",
+            "parseSectionRecallAddress()",
+            "programChangeRecall()",
+            "sectionIndexRecall()",
+            "oscRecall()",
+            "applyClientMessage()",
+            "SECTION_RECALL_CC"
+          ],
+          "depends_on": [
+            "@ledrums/core (Engine, InputMap, voice)",
+            "@ledrums/protocol"
+          ],
+          "depth": "deep",
+          "loc": 249,
+          "notes": "applyClientMessage (the legacy structural reducer) sits oddly alongside the pure input translation functions."
+        },
+        {
+          "name": "client-registry",
+          "paths": [
+            "apps/server/src/client-registry.ts"
+          ],
+          "responsibility": "Tracks connected sockets and elects/hands off the single editor slot, producing per-client presence.",
+          "public_interface": [
+            "class ClientRegistry<S>",
+            "CloseableSocket",
+            "Presence"
+          ],
+          "depends_on": [
+            "(none beyond types)"
+          ],
+          "depth": "deep",
+          "loc": 113
+        },
+        {
+          "name": "pin-gate",
+          "paths": [
+            "apps/server/src/pin-gate.ts"
+          ],
+          "responsibility": "Admission policy for WS/HTTP: room PIN lifecycle, host-token minting/validation, loopback and cloudflared detection, and the composed admit decision.",
+          "public_interface": [
+            "createPinGate()",
+            "createMutablePinGate()",
+            "generatePin()",
+            "resolvePin()",
+            "pinFromUrl()",
+            "isLoopbackAddress()",
+            "isViaCloudflare()",
+            "generateHostToken()",
+            "resolveHostToken()",
+            "hostTokenFromUrl()",
+            "isTrustedHost()",
+            "admitDecision()",
+            "MIN_HOST_TOKEN_LENGTH"
+          ],
+          "depends_on": [
+            "node:crypto"
+          ],
+          "depth": "mixed",
+          "loc": 220,
+          "notes": "14 exports for one policy question; the composed entry points are admitDecision + isTrustedHost, the rest are leaked internals used by tests and main."
+        },
+        {
+          "name": "tunnel",
+          "paths": [
+            "apps/server/src/tunnel-manager.ts",
+            "apps/server/src/tunnel-control.ts"
+          ],
+          "responsibility": "Spawns and supervises the cloudflared share tunnel, parsing its URL from stdout and exposing start/stop plus a status/error report.",
+          "public_interface": [
+            "class TunnelManager",
+            "class TunnelControl",
+            "tunnelConfigFromEnv()",
+            "tunnelArgs()",
+            "parseTunnelUrl()",
+            "describeTunnelError()",
+            "TunnelSpawner",
+            "TunnelExit"
+          ],
+          "depends_on": [
+            "node:child_process (via injected spawner)",
+            "monitor-bus"
+          ],
+          "depth": "mixed",
+          "loc": 362,
+          "notes": "Two layers over one concern: TunnelControl is largely a status-caching pass-through in front of TunnelManager."
+        },
+        {
+          "name": "controller-monitor",
+          "paths": [
+            "apps/server/src/controller-monitor.ts"
+          ],
+          "responsibility": "Discovers, adopts, polls and commands the PixLite controller, holding all adopted-controller state and broadcasting status/discovery to watchers.",
+          "public_interface": [
+            "createControllerMonitor(deps)",
+            "ControllerMonitor",
+            "ControllerMonitorDeps",
+            "localNicSubnets()",
+            "subnet24()",
+            "candidateSubnets()",
+            "AdoptResult",
+            "IntervalScheduler"
+          ],
+          "depends_on": [
+            "@ledrums/io (PixliteClient, probe)",
+            "@ledrums/protocol",
+            "node:os"
+          ],
+          "depth": "deep",
+          "loc": 513,
+          "notes": "~12 pieces of closure-scoped mutable state plus async poll/identify/test-pattern flows in one factory; the returned object's shape is inferred (ReturnType), so its interface is implicit."
+        },
+        {
+          "name": "persistence-project",
+          "paths": [
+            "apps/server/src/projects.ts",
+            "apps/server/src/autosave.ts",
+            "apps/server/src/atomic-file.ts"
+          ],
+          "responsibility": "Reads/writes the live project JSON on disk atomically and debounce-schedules autosaves off the render loop.",
+          "public_interface": [
+            "resolveProjectsDir()",
+            "projectFilePath()",
+            "listProjects()",
+            "projectExists()",
+            "loadProject()",
+            "saveProject()",
+            "saveProjectAsync()",
+            "PROJECTS_DIR",
+            "createAutosaver()",
+            "Autosaver",
+            "writeFileAtomic()",
+            "writeFileAtomicSync()"
+          ],
+          "depends_on": [
+            "@ledrums/core (parseProject)",
+            "node:fs"
+          ],
+          "depth": "mixed",
+          "loc": 222,
+          "notes": "PROJECTS_DIR is a module-level constant evaluated at import time \u2014 an env-read frozen at first import."
+        },
+        {
+          "name": "persistence-libraries",
+          "paths": [
+            "apps/server/src/named-blob-store.ts",
+            "apps/server/src/show-library.ts",
+            "apps/server/src/song-library.ts"
+          ],
+          "responsibility": "Generic versioned-blob file store plus two near-identical instantiations of it for the show and song libraries.",
+          "public_interface": [
+            "createNamedBlobStore()",
+            "NamedBlobStore",
+            "VersionedBlob",
+            "BlobLoadSource",
+            "load/save/saveAsync/inspect/path for show and song libraries"
+          ],
+          "depends_on": [
+            "atomic-file",
+            "projects (PROJECTS_DIR)",
+            "@ledrums/protocol"
+          ],
+          "depth": "shallow",
+          "loc": 190,
+          "notes": "show-library.ts and song-library.ts are the same 50 lines twice, differing only in file name and type parameter."
+        },
+        {
+          "name": "backups",
+          "paths": [
+            "apps/server/src/backups/snapshot-store.ts",
+            "apps/server/src/backups/offsite.ts"
+          ],
+          "responsibility": "Bundles project + both libraries into retained on-disk snapshots and restores them atomically, with an off-site record adapter.",
+          "public_interface": [
+            "createSnapshotStore(deps)",
+            "SnapshotStore (snapshot/list/restore)",
+            "SnapshotFiles",
+            "SnapshotBundle",
+            "SnapshotMeta",
+            "RetentionPolicy",
+            "toBackupRecord()",
+            "backupsEndpoint()"
+          ],
+          "depends_on": [
+            "atomic-file",
+            "node:fs",
+            "telemetry (endpoint reuse)"
+          ],
+          "depth": "deep",
+          "loc": 307
+        },
+        {
+          "name": "telemetry",
+          "paths": [
+            "apps/server/src/telemetry/envelope.ts",
+            "apps/server/src/telemetry/reporter.ts",
+            "apps/server/src/telemetry/ship-queue.ts",
+            "apps/server/src/telemetry/transport.ts"
+          ],
+          "responsibility": "Subscribes to monitor errors, dedups and envelopes them as reports, and ships them via a bounded retrying queue over HTTP.",
+          "public_interface": [
+            "createReporter(deps)",
+            "Reporter",
+            "createShipQueue(opts)",
+            "ShipQueue",
+            "createHttpTransport()",
+            "isTelemetryEnabled()",
+            "ReportRecord"
+          ],
+          "depends_on": [
+            "monitor-bus",
+            "node:fetch"
+          ],
+          "depth": "deep",
+          "loc": 466
+        },
+        {
+          "name": "monitor-bus",
+          "paths": [
+            "apps/server/src/monitor.ts",
+            "apps/server/src/diagnostics.ts"
+          ],
+          "responsibility": "In-memory retained event stream that stamps id/time on drafts, broadcasts them to clients, replays on connect, and seeds startup diagnostic rows.",
+          "public_interface": [
+            "createMonitorBus(sendAll, now)",
+            "MonitorDraft",
+            "MonitorJsonSink",
+            "SERVER_MONITOR_RETENTION_LIMIT",
+            "startupDiagnostics()"
+          ],
+          "depends_on": [
+            "@ledrums/protocol"
+          ],
+          "depth": "deep",
+          "loc": 111,
+          "notes": "Small module with a very wide blast radius \u2014 almost every other module takes a monitor sink."
+        },
+        {
+          "name": "http-routes",
+          "paths": [
+            "apps/server/src/http/native-midi.ts",
+            "apps/server/src/http/host-event.ts",
+            "apps/server/src/http/update-status.ts"
+          ],
+          "responsibility": "Three host-token-gated HTTP endpoints handling native MIDI injection, desktop-shell diagnostic events, and OTA update status.",
+          "public_interface": [
+            "createNativeMidiHandler()",
+            "createHostEventHandler()",
+            "createUpdateStatusHandler()",
+            "NATIVE_MIDI_PATH",
+            "HOST_EVENT_PATH",
+            "UPDATE_STATUS_PATH",
+            "isNativeMidiMessage()",
+            "parseHostEvent()",
+            "hostEventToMonitorDraft()",
+            "compareVersions()"
+          ],
+          "depends_on": [
+            "pin-gate (host token)",
+            "monitor-bus",
+            "ws-client-message-handler (dispatch)"
+          ],
+          "depth": "mixed",
+          "loc": 326,
+          "notes": "Each returns a boolean 'did I handle it' predicate; routing is a manual if-chain in main.ts rather than a router."
+        },
+        {
+          "name": "static-host",
+          "paths": [
+            "apps/server/src/static-host.ts"
+          ],
+          "responsibility": "Serves the built web dist over plain HTTP with SPA fallback and env-overridable root resolution.",
+          "public_interface": [
+            "serveStatic()",
+            "resolveWebRoot()",
+            "DEFAULT_WEB_ROOT"
+          ],
+          "depends_on": [
+            "node:fs",
+            "node:path"
+          ],
+          "depth": "mixed",
+          "loc": 119
+        },
+        {
+          "name": "ws-protocol-codec",
+          "paths": [
+            "apps/server/src/ws-protocol.ts"
+          ],
+          "responsibility": "Encode/decode of the client and server WS message envelopes plus model/effect-spec serialization for the wire.",
+          "public_interface": [
+            "decodeClient()",
+            "encodeServer()",
+            "serializeModel()",
+            "effectSpecs()",
+            "frameToRgbBytes()",
+            "re-exported protocol types"
+          ],
+          "depends_on": [
+            "@ledrums/protocol",
+            "@ledrums/core"
+          ],
+          "depth": "shallow",
+          "loc": 114,
+          "notes": "Mostly a re-export + thin JSON.parse/stringify facade over @ledrums/protocol."
+        },
+        {
+          "name": "network-adapters",
+          "paths": [
+            "apps/server/src/network-adapters.ts"
+          ],
+          "responsibility": "Enumerates the machine's NICs and recommends a controller IP on each adapter's subnet for the output setup panel.",
+          "public_interface": [
+            "listNetworkAdapters()",
+            "recommendControllerIp()",
+            "NicInfo",
+            "NicEnumerator"
+          ],
+          "depends_on": [
+            "node:os"
+          ],
+          "depth": "mixed",
+          "loc": 126
+        },
+        {
+          "name": "process-errors",
+          "paths": [
+            "apps/server/src/process-errors.ts"
+          ],
+          "responsibility": "Installs uncaughtException/unhandledRejection capture that routes process faults onto the monitor bus and returns an uninstaller.",
+          "public_interface": [
+            "installProcessErrorCapture(deps)",
+            "ProcessErrorDeps"
+          ],
+          "depends_on": [
+            "monitor-bus",
+            "node:process"
+          ],
+          "depth": "deep",
+          "loc": 84
+        }
+      ],
+      "seams": [
+        {
+          "at": "apps/server/src/handlers/client-message.ts ClientMessageDeps",
+          "kind": "existing",
+          "why": "Every server capability (hosts, backups, controller, tunnel, adapters) reaches the handler through one injected deps object, so behaviour is fully substitutable in tests without touching the handler."
+        },
+        {
+          "at": "apps/server/src/controller-monitor.ts ControllerMonitorDeps (createClient/probe/scheduler/now)",
+          "kind": "existing",
+          "why": "Clock, timer scheduler, HTTP client and probe are all injected, so polling and adoption can be driven deterministically."
+        },
+        {
+          "at": "apps/server/src/output-manager.ts OutputFactory",
+          "kind": "existing",
+          "why": "Output transport construction is a function parameter, so Art-Net/sACN/fake sinks swap without editing the manager."
+        },
+        {
+          "at": "apps/server/src/tunnel-manager.ts TunnelSpawner",
+          "kind": "existing",
+          "why": "Process spawn is injected, so tunnel lifecycle is testable without cloudflared."
+        },
+        {
+          "at": "apps/server/src/main.ts (whole module)",
+          "kind": "missing",
+          "why": "There is no `createServerApp(deps)` factory \u2014 the composition root is a top-level side-effecting script, so nothing inside it (stateMessage, OSC recall branch, stats adaptation, applyRestoredSnapshot, the HTTP if-chain) can be exercised or replaced without booting the process."
+        },
+        {
+          "at": "apps/server/src/projects.ts PROJECTS_DIR",
+          "kind": "leaky",
+          "why": "An import-time constant read from process.env doubles as the default argument for every persistence function, so the storage location is only overridable by parameter-threading and cannot change after first import."
+        },
+        {
+          "at": "apps/server/src/main.ts HTTP dispatch (updateStatus \u2192 nativeMidi \u2192 hostEvent \u2192 static)",
+          "kind": "leaky",
+          "why": "Adding a route requires editing main.ts and a new module-level `let` handler slot; the boolean-predicate handlers imply a router that does not exist."
+        },
+        {
+          "at": "apps/server/src/handlers/client-message.ts optional deps (tunnelControl?, controller?, backups?, listNetworkAdapters?, monitor?)",
+          "kind": "leaky",
+          "why": "Absent collaborators degrade to silent no-ops inside the handler, so the seam also encodes fallback policy \u2014 a wiring omission is indistinguishable from a legitimate no-op."
+        },
+        {
+          "at": "apps/server/src/named-blob-store.ts createNamedBlobStore",
+          "kind": "leaky",
+          "why": "The generic store exists but show-library.ts and song-library.ts each re-wrap it with a duplicated hand-written function surface instead of exposing the store object, so a change must be made twice."
+        },
+        {
+          "at": "apps/server/src/voice-engine-host.ts setter surface",
+          "kind": "leaky",
+          "why": "Per-field setters (setKitTransform/setKitGlobal/setHoopConfig/setKitOutputs/setKitNodeLayout/setOutput/setInputMap) mirror wire message types one-for-one, so every new message type forces a new host method and a new handler arm."
+        }
+      ],
+      "suspicions": [
+        {
+          "lens": "divergent-change",
+          "where": "apps/server/src/main.ts",
+          "hunch": "At 801 lines with ~15 closures over module-level mutable state, main.ts changes for every unrelated reason \u2014 new route, new message, new persisted slot, new monitor source. Prime candidate for extracting a composable app factory."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/server/src/show-library.ts vs apps/server/src/song-library.ts",
+          "hunch": "These two files look like the same ~50 lines with the noun swapped, and main.ts duplicates the pairing again in three places (load/inspect, autosaver construction, stateMessage fields)."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/server/src/main.ts autosaver construction (three createAutosaver calls with near-identical monitor hooks)",
+          "hunch": "The onScheduled/onSaved/onError monitor triples differ only in a destination string \u2014 a factory is begging to exist."
+        },
+        {
+          "lens": "repeated-switches",
+          "where": "apps/server/src/handlers/client-message.ts (20+ `if (msg.t === ...)` arms) and apps/server/src/main.ts monitorInput (switch over the same tags)",
+          "hunch": "The same message-tag taxonomy is switched on in at least two places, so a new message type must be added in both or it silently goes unmonitored."
+        },
+        {
+          "lens": "dead-code",
+          "where": "apps/server/src/boot.ts lanUrls and apps/server/src/show-library.ts showLibraryPath",
+          "hunch": "knip flagged both as unused exports; songLibraryPath/saveShowLibrary/saveSongLibrary/saveProject (sync variants) look like the same category and are worth sweeping together."
+        },
+        {
+          "lens": "middle-man",
+          "where": "apps/server/src/tunnel-control.ts",
+          "hunch": "TunnelControl mostly caches status/url/error and forwards start/stop to TunnelManager; the second layer may not be earning its place."
+        },
+        {
+          "lens": "middle-man",
+          "where": "apps/server/src/ws-protocol.ts",
+          "hunch": "decodeClient/encodeServer plus type re-exports read as a thin facade over @ledrums/protocol \u2014 check whether anything but JSON.parse/stringify happens here."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "apps/server/src/pin-gate.ts (pin, host token, remote address, url all as raw strings)",
+          "hunch": "Security-relevant identities are bare strings threaded through 14 exports; an argument-order mistake between pin and token would typecheck."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/server/src/main.ts statsTimer (setInterval at 10ms broadcasting full stats to all clients)",
+          "hunch": "A 100Hz JSON broadcast with no backpressure or overlap guard; if serialization or a slow socket exceeds 10ms the timer queue grows unbounded."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/server/src/main.ts initialProject / loadProject at boot",
+          "hunch": "Boot throws on a corrupt or dangling-ref live project file with (apparently) no fallback to the seed, so one bad autosave could make the server unbootable for a drummer with no terminal."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/server/src/main.ts applyRestoredSnapshot + isVersionedBlob",
+          "hunch": "Restore replaces project and both libraries with only a `typeof version === 'number'` gate on the library blobs; a partially-written snapshot may be adopted as valid."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/server/src/input-router.ts applyClientMessage",
+          "hunch": "A protocol-message reducer living inside the otherwise-pure MIDI/OSC translation module; likely a source of one of madge's cycles between handlers, input-router and the hosts."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/server/src/named-blob-store.ts importing PROJECTS_DIR from projects.ts",
+          "hunch": "The generic blob store depending on the project module's env-derived constant is a plausible import cycle and couples two unrelated concerns."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "apps/server/src/handlers/client-message.ts ClientMessageDeps optional collaborators",
+          "hunch": "Six optional deps with no-op fallbacks suggest configurations that never actually occur in production wiring \u2014 main.ts appears to always supply them."
+        },
+        {
+          "lens": "data-clumps",
+          "where": "apps/server/src/main.ts boot() call and stateMessage()",
+          "hunch": "The same cluster (host, voiceHost, clients, autosavers x3, tunnelControl, monitor) is passed as a bag to boot, to the message handler, and reassembled in stateMessage \u2014 an implicit 'ServerContext' object that has never been named."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "apps/server/src/voice-engine-host.ts vs apps/server/src/engine-host.ts (VOICE_MODE dual-host)",
+          "hunch": "Two parallel hosts kept alive behind a mode flag, with main.ts branching on `voiceHost ?? host` in many places; if voice mode is now the real path the legacy host may be carried dead weight."
+        }
+      ],
+      "coverage_notes": "Read in full or substantially: main.ts (skimmed ~450 of 801 lines, all section headers and top-level function list), handlers/client-message.ts (deps interface + dispatch skeleton, not each arm's body), controller-monitor.ts (factory head + state, not the discovery/identify/test-pattern bodies), voice-engine-host.ts (method signature list only, no bodies). Export surfaces were read for all 35 non-test source files.\n\nNot read at all (mapped from export names, file size and imports only): output-manager.ts internals, engine-host.ts internals, backups/snapshot-store.ts internals, all four telemetry files, static-host.ts, network-adapters.ts, process-errors.ts, autosave.ts, atomic-file.ts, named-blob-store.ts, diagnostics.ts, monitor.ts, output-monitor.ts, the three http/ handlers, handlers/voice-input.ts, handlers/projects.ts. Depth ratings for those are inferred from LOC-to-export ratio, not verified.\n\nNo test files were read, so I cannot say which of the 72.3% coverage gap sits where \u2014 the suspicions are not coverage-informed. I did not re-run madge, so the specific 6 cycles are unconfirmed; the two cycle hunches (input-router/handlers, named-blob-store/projects) are inferred from import statements alone. telemetry/envelope.ts returned as a binary match to grep and its exports were not enumerated beyond what main.ts imports."
+    }
+  ]
+}

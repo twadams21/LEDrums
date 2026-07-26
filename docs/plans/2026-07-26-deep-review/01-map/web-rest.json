@@ -1,0 +1,542 @@
+{
+  "artifact": "01-map/web-rest",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "1",
+    "lane": "web-rest",
+    "model": "claude-opus-5",
+    "effort": "low",
+    "nonce_verified": true,
+    "run_id": "wf_2cd19a09-dd0"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "lane": "web-rest",
+      "scope": {
+        "paths": [
+          "apps/web/src/lib/ui",
+          "apps/web/src/lib/styleguide",
+          "apps/web/src/lib/visualizer",
+          "apps/web/src/lib/ws",
+          "apps/web/src/lib/midi",
+          "apps/web/src/main.ts",
+          "apps/web/src/design-system.ts",
+          "apps/web/src/App.svelte"
+        ],
+        "files_read": 26
+      },
+      "modules": [
+        {
+          "name": "app-entry",
+          "paths": [
+            "apps/web/src/main.ts",
+            "apps/web/src/design-system.ts",
+            "apps/web/src/App.svelte"
+          ],
+          "responsibility": "Mounts either the app shell or the styleguide from a single Vite SPA entry, owns the TriggerLab engine store, shell store, global keyboard shortcuts, and the desktop-bridge/boot lifecycle.",
+          "public_interface": [
+            "main.ts (browser entry, ?style switch)",
+            "design-system.ts (artifact entry)",
+            "App.svelte (root component)"
+          ],
+          "depends_on": [
+            "lib/trigger-lab/store.svelte",
+            "lib/app/*",
+            "lib/styleguide/Styleguide.svelte"
+          ],
+          "depth": "mixed",
+          "loc": 170,
+          "notes": "Scope named `apps/web/src/lib/ui/.../routes` but there is NO SvelteKit routes dir \u2014 routing is the `?style` query switch in main.ts plus shell-nav in lib/app (out of my scope). App.svelte holds real keyboard-dispatch logic inline alongside a registry-based shortcut seam."
+        },
+        {
+          "name": "ws-client",
+          "paths": [
+            "apps/web/src/lib/ws/client.ts",
+            "apps/web/src/lib/ws/client.test.ts"
+          ],
+          "responsibility": "Owns the browser end of the engine WebSocket: dialling with pin/hostToken, reconnect with exponential backoff, binary-vs-text frame demux, and fan-out of typed server messages to a callback bag.",
+          "public_interface": [
+            "WSClient (connect, close, send, on, reconnectWithPin, hasAuthError, reconnectAttempt)",
+            "WSCallbacks",
+            "WSLike / WSFactory injection points",
+            "ConnectionState"
+          ],
+          "depends_on": [
+            "lib/ws/protocol-types",
+            "@ledrums/core (WS_PATH)",
+            "@ledrums/protocol (WS_CLOSE_INVALID_PIN)"
+          ],
+          "depth": "deep",
+          "loc": 324,
+          "notes": "Reconnect/auth-pause/frame-decoding behaviour behind a small class; WSFactory makes it test-hermetic."
+        },
+        {
+          "name": "ws-protocol-decode",
+          "paths": [
+            "apps/web/src/lib/ws/protocol-types.ts",
+            "apps/web/src/lib/ws/protocol-types.test.ts"
+          ],
+          "responsibility": "Re-exports the shared @ledrums/protocol wire types for web import paths and adds the runtime zod decode of inbound text frames with a dev-only malformed-frame warning.",
+          "public_interface": [
+            "decodeServer(raw)",
+            "re-exported ServerMessage/ClientMessage and payload types"
+          ],
+          "depends_on": [
+            "@ledrums/protocol"
+          ],
+          "depth": "shallow",
+          "loc": 68,
+          "notes": "Mostly a re-export barrel; the only real behaviour is decodeServer's silent-drop contract."
+        },
+        {
+          "name": "webmidi-capture",
+          "paths": [
+            "apps/web/src/lib/midi/webmidi.ts",
+            "apps/web/src/lib/midi/webmidi.test.ts"
+          ],
+          "responsibility": "Requests WebMIDI access, enumerates and hot-plug-tracks input ports, and parses raw MIDI bytes into a note/cc/programChange discriminated union for forwarding to the engine.",
+          "public_interface": [
+            "initMidi(handler, nav?, onDevices?) -> MidiInitResult",
+            "parseMidiMessage(data)",
+            "enumerateDevices(access)",
+            "MidiEvent / MidiDeviceInfo types"
+          ],
+          "depends_on": [
+            "navigator.requestMIDIAccess (injectable structural type)"
+          ],
+          "depth": "deep",
+          "loc": 212,
+          "notes": "Degrades to an available:false result rather than throwing; structural nav type keeps it node-testable."
+        },
+        {
+          "name": "midi-note-format",
+          "paths": [
+            "apps/web/src/lib/midi/midi-note.ts",
+            "apps/web/src/lib/midi/midi-note.test.ts"
+          ],
+          "responsibility": "Pure conversions between MIDI note numbers and note names, plus the channel dropdown option list used by MIDI-filter UI.",
+          "public_interface": [
+            "formatMidiNote",
+            "parseMidiNote",
+            "midiChannelOptions"
+          ],
+          "depends_on": [],
+          "depth": "shallow",
+          "loc": 56
+        },
+        {
+          "name": "visualizer-3d",
+          "paths": [
+            "apps/web/src/lib/visualizer/Scene.svelte",
+            "apps/web/src/lib/visualizer/Pixels.svelte"
+          ],
+          "responsibility": "Renders the LED kit as a Threlte/three.js scene, building a curved per-pixel tube mesh from the serialized model geometry and rewriting vertex colours from each incoming RGB frame.",
+          "public_interface": [
+            "<Scene model frame dim?>",
+            "<Pixels model frame scale>"
+          ],
+          "depends_on": [
+            "@threlte/core",
+            "@threlte/extras",
+            "three",
+            "lib/ws/protocol-types (SerializedModel)",
+            "lib/visualizer/dark-pixel"
+          ],
+          "depth": "deep",
+          "loc": 434,
+          "notes": "Pixels.svelte is the densest file in scope: hand-rolled BufferGeometry (12 verts / 48 indices per pixel), heuristic hoop-boundary detection via AXIAL_K / HOOP_GAP_K constants, cold-build vs hot colour-only path."
+        },
+        {
+          "name": "visualizer-2d",
+          "paths": [
+            "apps/web/src/lib/visualizer/Pixels2D.svelte"
+          ],
+          "responsibility": "Draws a flat diagnostic canvas strip of the live frame, one row per drum, sized by a ResizeObserver on its wrapper.",
+          "public_interface": [
+            "<Pixels2D model frame>"
+          ],
+          "depends_on": [
+            "lib/visualizer/dark-pixel",
+            "lib/ws/protocol-types"
+          ],
+          "depth": "mixed",
+          "loc": 128
+        },
+        {
+          "name": "visualizer-shared-color",
+          "paths": [
+            "apps/web/src/lib/visualizer/dark-pixel.ts"
+          ],
+          "responsibility": "Single source of truth for the unlit-pixel colour in both normalized-float and 8-bit forms so the 3D and 2D views cannot drift.",
+          "public_interface": [
+            "DARK_PIXEL_RGB",
+            "DARK_PIXEL_RGB8"
+          ],
+          "depends_on": [],
+          "depth": "shallow",
+          "loc": 13
+        },
+        {
+          "name": "ui-form-controls",
+          "paths": [
+            "apps/web/src/lib/ui/Slider.svelte",
+            "apps/web/src/lib/ui/TextField.svelte",
+            "apps/web/src/lib/ui/CommitInput.svelte",
+            "apps/web/src/lib/ui/commit-input.ts",
+            "apps/web/src/lib/ui/Select.svelte",
+            "apps/web/src/lib/ui/Switch.svelte",
+            "apps/web/src/lib/ui/Toggle.svelte",
+            "apps/web/src/lib/ui/SegmentedControl.svelte",
+            "apps/web/src/lib/ui/SearchField.svelte",
+            "apps/web/src/lib/ui/Field.svelte",
+            "apps/web/src/lib/ui/EasePicker.svelte",
+            "apps/web/src/lib/ui/ColorSwatch.svelte"
+          ],
+          "responsibility": "The project's styled input primitives \u2014 numeric slider with inline editable readout, commit-on-enter/blur text and number fields, select, boolean controls, search, easing and colour pickers.",
+          "public_interface": [
+            "value/checked/pressed props (mostly $bindable) + onChange callback",
+            "class passthrough",
+            "resolveCommit / clampNumber (pure commit rules)",
+            "EASE_FAMILY_OPTIONS / EASE_DIR_OPTIONS"
+          ],
+          "depends_on": [
+            "bits-ui",
+            "@lucide/svelte",
+            "@ledrums/core (hexToHsv/hsvToHex in ColorSwatch)",
+            "lib/ui/theme-tokens"
+          ],
+          "depth": "mixed",
+          "loc": 1300,
+          "notes": "Slider and CommitInput are genuinely deep (normalize/step/precision, commit-decision rules extracted to a pure module and unit-tested); Switch, Toggle, SegmentedControl, Separator, Tooltip are thin bits-ui wrappers."
+        },
+        {
+          "name": "ui-layout-shell",
+          "paths": [
+            "apps/web/src/lib/ui/Splitter.svelte",
+            "apps/web/src/lib/ui/MasterDetail.svelte",
+            "apps/web/src/lib/ui/MasterDetail.fixture.svelte",
+            "apps/web/src/lib/ui/PanelHeader.svelte",
+            "apps/web/src/lib/ui/AnchorHeader.svelte",
+            "apps/web/src/lib/ui/Tabs.svelte",
+            "apps/web/src/lib/ui/Separator.svelte",
+            "apps/web/src/lib/ui/Eyebrow.svelte"
+          ],
+          "responsibility": "Layout scaffolding primitives: a controlled drag/keyboard splitter, the master-detail rail+pane grid, and the panel/section header treatments.",
+          "public_interface": [
+            "<Splitter orientation size onResize invert min max step label style>",
+            "<MasterDetail bind:selected master detail railHeader railWidth>",
+            "header components"
+          ],
+          "depends_on": [
+            "bits-ui (Tabs, Separator)",
+            "svelte snippets"
+          ],
+          "depth": "mixed",
+          "loc": 560,
+          "notes": "Splitter is deliberately controlled \u2014 it never persists; callers own the size. MasterDetail is generic over T and pure layout."
+        },
+        {
+          "name": "ui-overlays",
+          "paths": [
+            "apps/web/src/lib/ui/Dialog.svelte",
+            "apps/web/src/lib/ui/Drawer.svelte",
+            "apps/web/src/lib/ui/ConfirmDialog.svelte",
+            "apps/web/src/lib/ui/ContextMenu.svelte",
+            "apps/web/src/lib/ui/Tooltip.svelte"
+          ],
+          "responsibility": "Modal, drawer, confirm and context-menu surfaces layered on bits-ui Dialog/ContextMenu/Tooltip with project chrome and layering.",
+          "public_interface": [
+            "<Dialog open onClose title layer>",
+            "<Drawer open onClose side title width>",
+            "<ConfirmDialog ...>",
+            "<ContextMenu actions disabled>",
+            "ContextMenuAction type"
+          ],
+          "depends_on": [
+            "bits-ui",
+            "@lucide/svelte"
+          ],
+          "depth": "shallow",
+          "loc": 580,
+          "notes": "Dialog and Drawer both wrap bits-ui Dialog with near-identical prop shapes."
+        },
+        {
+          "name": "ui-status-display",
+          "paths": [
+            "apps/web/src/lib/ui/StatusDot.svelte",
+            "apps/web/src/lib/ui/StatusPill.svelte",
+            "apps/web/src/lib/ui/Pill.svelte",
+            "apps/web/src/lib/ui/InputActivityBadge.svelte",
+            "apps/web/src/lib/ui/LintCallout.svelte",
+            "apps/web/src/lib/ui/CopyableValue.svelte",
+            "apps/web/src/lib/ui/ListItem.svelte",
+            "apps/web/src/lib/ui/EditableRow.svelte",
+            "apps/web/src/lib/ui/IconButton.svelte",
+            "apps/web/src/lib/ui/Logo.svelte"
+          ],
+          "responsibility": "Read-mostly display primitives: tonal dots/pills, live input-activity badge, lint callout, copy-to-clipboard value, list rows with inline rename and context menu, icon buttons and the logo mark.",
+          "public_interface": [
+            "tone/label/active props",
+            "onclick/onRename callbacks",
+            "StatusTone type",
+            "ContextMenuAction re-export from EditableRow"
+          ],
+          "depends_on": [
+            "lib/ui/ContextMenu",
+            "@lucide/svelte"
+          ],
+          "depth": "mixed",
+          "loc": 950
+        },
+        {
+          "name": "ui-toast",
+          "paths": [
+            "apps/web/src/lib/ui/toast.svelte.ts",
+            "apps/web/src/lib/ui/ToastHost.svelte"
+          ],
+          "responsibility": "A singleton rune-based transient-notification store plus the single host component that renders the stack with reduced-motion-aware transitions.",
+          "public_interface": [
+            "pushToast(message, opts)",
+            "toastStore (items, push, dismiss, clear)",
+            "<ToastHost /> mounted once at app root"
+          ],
+          "depends_on": [
+            "svelte/transition",
+            "@lucide/svelte"
+          ],
+          "depth": "deep",
+          "loc": 227,
+          "notes": "Store is DOM-free and node-testable; host owns rendering only. Module-level singleton with module-level `seq` counter."
+        },
+        {
+          "name": "ui-theme-tokens",
+          "paths": [
+            "apps/web/src/lib/ui/theme-tokens.ts"
+          ],
+          "responsibility": "The one sanctioned way for canvas-drawing components to sample CSS custom-property colours, with fixed non-reactive fallbacks that make a known effect-cycle bug unwritable.",
+          "public_interface": [
+            "readThemeTokens(el, tokens, fallbacks)"
+          ],
+          "depends_on": [
+            "getComputedStyle"
+          ],
+          "depth": "shallow",
+          "loc": 31,
+          "notes": "Exists specifically as a guard against a previously app-fatal effect_update_depth_exceeded pattern."
+        },
+        {
+          "name": "styleguide-shell",
+          "paths": [
+            "apps/web/src/lib/styleguide/Styleguide.svelte",
+            "apps/web/src/lib/styleguide/DemoCard.svelte",
+            "apps/web/src/lib/styleguide/CopyChip.svelte",
+            "apps/web/src/lib/styleguide/TokenSwatch.svelte",
+            "apps/web/src/lib/styleguide/GraphDemoNode.svelte",
+            "apps/web/src/lib/styleguide/README.md"
+          ],
+          "responsibility": "The living-styleguide page frame: table of contents, demo-card chrome, click-to-copy chips and token swatches, mounted both by the /?style dev route and the single-file design-system artifact build.",
+          "public_interface": [
+            "<Styleguide /> (the only export consumers mount)",
+            "<DemoCard title src note wide>",
+            "<CopyChip text label title>"
+          ],
+          "depends_on": [
+            "lib/styleguide/sections/*",
+            "lib/styleguide/source-pointer",
+            "lib/styleguide/resolve-color",
+            "lib/ui/Eyebrow"
+          ],
+          "depth": "mixed",
+          "loc": 550
+        },
+        {
+          "name": "styleguide-sections",
+          "paths": [
+            "apps/web/src/lib/styleguide/sections/SectionColor.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionType.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionSpaceShape.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionMotion.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionPrimitives.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionComposites.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionGraph.svelte",
+            "apps/web/src/lib/styleguide/sections/SectionInteraction.svelte"
+          ],
+          "responsibility": "Per-topic demo pages that instantiate the REAL lib/ui, lib/app and lib/trigger-lab components against local stub state, so the styleguide references rather than duplicates the shipped components.",
+          "public_interface": [
+            "each section is a prop-less component rendered by Styleguide.svelte"
+          ],
+          "depends_on": [
+            "lib/ui/*",
+            "lib/app/views/*",
+            "lib/app/chrome/*",
+            "lib/app/docks/inspectors/*",
+            "lib/trigger-lab/*",
+            "@xyflow/svelte",
+            "@ledrums/core"
+          ],
+          "depth": "shallow",
+          "loc": 2536,
+          "notes": "Confirmed reference-not-duplicate for components: demos import the real thing. BUT the sections reach deep into private-looking app internals (app/docks/inspectors/*, trigger-lab/sim, trigger-lab/fixtures, app/boot-reducer) and SectionGraph carries long prose descriptions of graph interaction that are hand-maintained, not generated."
+        },
+        {
+          "name": "styleguide-introspection",
+          "paths": [
+            "apps/web/src/lib/styleguide/source-pointer.ts",
+            "apps/web/src/lib/styleguide/resolve-color.ts",
+            "apps/web/src/virtual-source-manifest.d.ts"
+          ],
+          "responsibility": "Resolves design-system metadata at runtime: repo-relative source paths from a build-time virtual manifest, and authored+browser-resolved colour values for each token via a canvas round-trip.",
+          "public_interface": [
+            "srcPath(key)",
+            "tokenRaw(name)",
+            "tokenResolved(name)"
+          ],
+          "depends_on": [
+            "virtual:source-manifest (scripts/vite-plugin-source-manifest.mjs)",
+            "DOM getComputedStyle + canvas 2d"
+          ],
+          "depth": "deep",
+          "loc": 54,
+          "notes": "Small interface, real machinery behind it; a stale manifest key surfaces as a visible \u26a0 chip rather than a silent wrong path."
+        }
+      ],
+      "seams": [
+        {
+          "at": "apps/web/src/lib/ws/client.ts \u2014 WSFactory / WSLike injection",
+          "kind": "existing",
+          "why": "The socket constructor is a prop, so transport can be swapped for a fake without touching client code; client.test.ts already uses it."
+        },
+        {
+          "at": "apps/web/src/lib/midi/webmidi.ts \u2014 MidiNavigatorLike `nav` parameter",
+          "kind": "existing",
+          "why": "WebMIDI access is injectable, so device enumeration and parsing are testable with no hardware."
+        },
+        {
+          "at": "apps/web/src/lib/ws/protocol-types.ts \u2014 decodeServer",
+          "kind": "existing",
+          "why": "All inbound validation funnels through one function; changing wire-tolerance policy is a single-site edit."
+        },
+        {
+          "at": "apps/web/src/lib/ui/commit-input.ts \u2014 resolveCommit",
+          "kind": "existing",
+          "why": "Commit/cancel/revert policy is a pure function separated from the component's DOM wiring; new field semantics land here, not in markup."
+        },
+        {
+          "at": "apps/web/src/lib/ui/theme-tokens.ts \u2014 readThemeTokens",
+          "kind": "existing",
+          "why": "A deliberate seam that makes the canvas token-read idiom uniform and makes the self-referential-effect bug unwritable."
+        },
+        {
+          "at": "apps/web/src/lib/styleguide/source-pointer.ts \u2014 virtual:source-manifest",
+          "kind": "existing",
+          "why": "Source pointers resolve through a build-time generated manifest, so renames surface as visible misses instead of being hand-maintained."
+        },
+        {
+          "at": "apps/web/src/App.svelte \u2014 ShortcutEntry registry + dispatchShortcut",
+          "kind": "leaky",
+          "why": "Only mod+z and mod+d go through the registry; digits, arrows, Backspace/Delete and the typing-target guard are still hand-branched below it, so 'add a shortcut' has two different answers."
+        },
+        {
+          "at": "apps/web/src/main.ts \u2014 `?style` query switch",
+          "kind": "leaky",
+          "why": "The app's only routing decision is an inline URLSearchParams branch in the entry file; there is no route table, so adding a second non-app surface means editing the bootstrap."
+        },
+        {
+          "at": "apps/web/src/lib/ui \u2014 no barrel/index module",
+          "kind": "missing",
+          "why": "Every consumer deep-imports individual .svelte paths, so the primitive set has no declared public surface and no place to deprecate or rename through."
+        },
+        {
+          "at": "apps/web/src/lib/visualizer/Pixels.svelte \u2014 hoop-boundary heuristic (AXIAL_K / HOOP_GAP_K)",
+          "kind": "missing",
+          "why": "Ring segmentation is inferred from geometry with tuned constants inside a Svelte component; there is no injectable/pure boundary function, so it cannot be unit-tested or swapped for real hoop metadata."
+        },
+        {
+          "at": "apps/web/src/lib/ui/toast.svelte.ts \u2014 module-level singleton store",
+          "kind": "leaky",
+          "why": "pushToast writes to a module global with a module-level id counter; there is no provider/context seam, so tests and any second host share one instance."
+        },
+        {
+          "at": "apps/web/src/lib/ws/client.ts \u2014 WSCallbacks bag",
+          "kind": "leaky",
+          "why": "Every new server message type requires editing three places (protocol type, callback field, dispatch switch); the seam exists but does not absorb change."
+        }
+      ],
+      "suspicions": [
+        {
+          "lens": "repeated-switches",
+          "where": "apps/web/src/lib/ws/client.ts dispatch() + WSCallbacks + @ledrums/protocol ServerMessage union",
+          "hunch": "A 14-arm switch that mechanically mirrors the message union, plus an optional-callback field per arm; adding a message means three coordinated edits and a missed arm fails silently."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "apps/web/src/lib/ws/client.ts WSCallbacks.onState \u2014 nine positional parameters",
+          "hunch": "onState takes project, model, effects, projects, output, showLibrary, songLibrary, tunnel, osc positionally; a reordering or an added field is easy to mis-wire and impossible for the type system to catch across same-typed nullable slots."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/ui/Dialog.svelte vs Drawer.svelte vs ConfirmDialog.svelte",
+          "hunch": "Three components wrap the same bits-ui Dialog with overlapping open/onClose/title/class props and likely duplicated overlay/layer/escape chrome."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/ui/Toggle.svelte vs Switch.svelte vs SegmentedControl.svelte",
+          "hunch": "Three boolean/enum controls with near-identical prop shapes and bits-ui wrapping; the differences may be purely visual and collapsible into one control with a variant."
+        },
+        {
+          "lens": "data-clumps",
+          "where": "apps/web/src/lib/ui/* Props types",
+          "hunch": "The tuple {onChange, disabled, ariaLabel, class} recurs in roughly a dozen primitives with no shared base type, so a change to the control contract has to be applied by hand everywhere."
+        },
+        {
+          "lens": "divergent-change",
+          "where": "apps/web/src/App.svelte onKey()",
+          "hunch": "The root keyboard handler mixes a shortcut registry with inline branches for digits, arrows, delete and typing-target detection, and reaches into store.selectedGraph/activeSong \u2014 it will change for both shell reasons and domain reasons."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/web/src/lib/styleguide/sections/SectionComposites.svelte and SectionGraph.svelte",
+          "hunch": "Styleguide sections import from app/docks/inspectors/*, app/boot-reducer, trigger-lab/sim and trigger-lab/fixtures \u2014 the design system depends on app-internal modules, so refactoring an inspector breaks the styleguide build."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "apps/web/src/lib/ui/Slider.svelte inferUnit / decimalPlaces / normalizeNumber",
+          "hunch": "A 271-line primitive that reverse-engineers a unit string out of the formatted display; formatting policy probably belongs to the caller's `format` prop rather than being inferred."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/web/src/lib/ws/client.ts handleMessage / send / decodeServer",
+          "hunch": "Malformed frames, Blob arrayBuffer rejections, and send() failures are all swallowed with no user-visible signal outside DEV; a version-skewed server would present as a silently frozen UI."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/web/src/lib/ws/client.ts scheduleReconnect + reconnectAttempt",
+          "hunch": "Backoff caps at 8s and retries forever with no jitter and no surfaced 'giving up' state; many tabs reconnecting to a restarted engine would sync-thunder."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/web/src/lib/styleguide/CopyChip.svelte clipboard fallback",
+          "hunch": "Uses deprecated document.execCommand('copy') with DOM scratch nodes; CopyableValue.svelte likely has its own separate copy implementation, so there are two clipboard policies."
+        },
+        {
+          "lens": "middle-man",
+          "where": "apps/web/src/lib/ws/protocol-types.ts",
+          "hunch": "Two-thirds of the module is a pure re-export barrel over @ledrums/protocol kept only for legacy web import paths; only decodeServer earns its place."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/visualizer/Pixels.svelte vs Pixels2D.svelte frame-to-colour mapping",
+          "hunch": "Both walk model.drums / pixelStart against the same flat RGB frame buffer with their own indexing arithmetic; only the dark-pixel constant is actually shared."
+        },
+        {
+          "lens": "dead-code",
+          "where": "apps/web/src/lib/ui/MasterDetail.fixture.svelte and lib/ui/Logo.svelte",
+          "hunch": "A test-only fixture living in the shipped primitives directory, and a Logo primitive whose only consumer may be the styleguide \u2014 both may be unreachable from the app bundle."
+        }
+      ],
+      "coverage_notes": "The stated scope path `apps/web/src/lib/routes` (and any SvelteKit routes dir) DOES NOT EXIST \u2014 apps/web is a plain Vite SPA whose entry is main.ts with a `?style` query switch. I substituted the three entry files (main.ts, design-system.ts, App.svelte) so the mount/route surface is still mapped; lib/app, lib/trigger-lab and src/styles were treated as out of scope and only observed through imports. Read in full or in substantial part: main.ts, design-system.ts, App.svelte, ws/client.ts, ws/protocol-types.ts, midi/webmidi.ts, midi/midi-note.ts, visualizer/dark-pixel.ts, visualizer/Pixels2D.svelte (script), visualizer/Scene.svelte (script), styleguide/Styleguide.svelte, CopyChip, DemoCard, source-pointer, resolve-color, README, ui/theme-tokens, ui/toast.svelte.ts, ui/ToastHost, ui/commit-input.ts, ui/Slider (script), Splitter, MasterDetail, Toggle, Switch, TextField. NOT read: the bodies of Pixels.svelte (rtk's reader elided the function bodies \u2014 the geometry-build and hot colour path are described from comments and structure only, so my depth call there is inferential), all eight Section*.svelte files (mapped from their import lists and size, not their content \u2014 the duplication verdict \"references real components\" is confirmed by imports but I did not check every demo for inlined markup), and roughly 20 smaller lib/ui components mapped only from their Props signatures. All CSS blocks in every .svelte file are unread, so styling duplication across primitives is unassessed. No test file contents were reviewed beyond noting which modules have tests."
+    }
+  ]
+}
