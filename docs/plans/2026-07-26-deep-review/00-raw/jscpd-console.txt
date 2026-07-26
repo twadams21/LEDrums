@@ -1,0 +1,504 @@
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/engine-host.ts[39m[22m [38:16 - 59:39] (22 lines, 75 tokens)
+   server/src/voice-engine-host.ts [81:16 - 102:39]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/handlers/client-message.test.ts[39m[22m [193:10 - 215:8] (23 lines, 86 tokens)
+   server/src/handlers/voice-input.test.ts [22:4 - 26:8]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/handlers/client-message.test.ts[39m[22m [195:9 - 214:21] (20 lines, 81 tokens)
+   server/src/voice-engine-host.test.ts [305:34 - 308:49]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/handlers/client-message.test.ts[39m[22m [577:78 - 590:6] (14 lines, 158 tokens)
+   server/src/handlers/client-message.test.ts [628:112 - 641:6]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/http/host-event.test.ts[39m[22m [9:22 - 39:76] (31 lines, 144 tokens)
+   server/src/http/native-midi.test.ts [4:52 - 37:76]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/http/host-event.test.ts[39m[22m [44:89 - 61:9] (18 lines, 106 tokens)
+   server/src/http/native-midi.test.ts [41:68 - 59:9]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/http/host-event.ts[39m[22m [93:33 - 115:23] (23 lines, 109 tokens)
+   server/src/http/native-midi.ts [50:34 - 72:23]
+[1mClone found (typescript)[22m
+ - [1m[32mserver/src/network-adapters.ts[39m[22m [27:72 - 46:2] (20 lines, 152 tokens)
+   io/src/pixlite/sweep.ts [26:29 - 42:2]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/chrome/OscInputPanel.svelte:css[39m[22m [143:32 - 172:4] (30 lines, 266 tokens)
+   web/src/lib/app/docks/inspectors/OutputStatusPanel.svelte:css [175:60 - 204:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/Inspector.svelte:css[39m[22m [218:3 - 240:5] (23 lines, 144 tokens)
+   web/src/lib/app/docks/inspectors/SectionInspector.svelte:css [92:3 - 114:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/Inspector.svelte:css[39m[22m [218:3 - 240:5] (23 lines, 144 tokens)
+   web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css [258:3 - 280:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/Inspector.svelte:css[39m[22m [223:48 - 238:30] (16 lines, 93 tokens)
+   web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte:css [134:69 - 149:30]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/Inspector.svelte:css[39m[22m [223:49 - 239:4] (17 lines, 93 tokens)
+   web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte:css [228:15 - 244:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/AdoptByIpRow.svelte:css[39m[22m [100:42 - 112:4] (13 lines, 103 tokens)
+   web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte:css [586:42 - 598:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/CcNodeInspector.svelte:css[39m[22m [75:6 - 96:15] (22 lines, 161 tokens)
+   web/src/lib/app/docks/inspectors/DrumZonesList.svelte:css [218:8 - 239:15]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte:css[39m[22m [392:15 - 406:4] (15 lines, 70 tokens)
+   web/src/lib/app/docks/inspectors/OutputStatusPanel.svelte:css [134:10 - 148:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte:css[39m[22m [573:55 - 611:4] (39 lines, 263 tokens)
+   web/src/lib/app/docks/inspectors/PatchHoopInspector.svelte:css [103:95 - 141:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/DrumZonesList.svelte:css[39m[22m [172:23 - 191:4] (20 lines, 113 tokens)
+   web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css [348:45 - 367:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/DrumZonesList.svelte:css[39m[22m [216:24 - 246:4] (31 lines, 208 tokens)
+   web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte:css [145:21 - 175:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/DrumZonesList.svelte:css[39m[22m [216:24 - 253:4] (38 lines, 259 tokens)
+   web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css [287:16 - 324:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/DrumZonesList.svelte:css[39m[22m [235:19 - 254:4] (20 lines, 120 tokens)
+   web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css [306:19 - 325:5]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte:css[39m[22m [150:31 - 162:25] (13 lines, 80 tokens)
+   web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte:css [243:29 - 255:25]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/NoteNodeInspector.svelte:css[39m[22m [67:3 - 88:4] (22 lines, 127 tokens)
+   web/src/lib/app/docks/inspectors/RandomModNodeInspector.svelte:css [56:3 - 77:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/NoteNodeInspector.svelte:css[39m[22m [74:16 - 88:4] (15 lines, 78 tokens)
+   web/src/lib/app/docks/inspectors/OscNodeInspector.svelte:css [47:22 - 61:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/PatchControllerInspector.svelte:css[39m[22m [169:14 - 181:4] (13 lines, 90 tokens)
+   web/src/lib/app/docks/inspectors/PatchHoopInspector.svelte:css [89:9 - 101:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:css[39m[22m [134:3 - 146:4] (13 lines, 90 tokens)
+   web/src/lib/app/docks/inspectors/SectionInspector.svelte:css [184:3 - 195:4]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/docks/inspectors/ScopeHoopPreview.svelte:typescript[39m[22m [71:3 - 83:10] (13 lines, 91 tokens)
+   web/src/lib/trigger-lab/EffectThumb.svelte:typescript [127:3 - 142:10]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/views/GraphsDock.svelte:css[39m[22m [171:3 - 185:4] (15 lines, 116 tokens)
+   web/src/lib/styleguide/sections/SectionGraph.svelte:css [431:14 - 445:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/views/GraphsDock.svelte:css[39m[22m [193:10 - 205:7] (13 lines, 75 tokens)
+   web/src/lib/styleguide/sections/SectionGraph.svelte:css [451:14 - 463:4]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/views/GraphsDock.svelte:css[39m[22m [218:15 - 230:22] (13 lines, 114 tokens)
+   web/src/lib/styleguide/sections/SectionGraph.svelte:css [474:14 - 486:22]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/NodeSignalPreview.svelte:typescript[39m[22m [63:65 - 78:7] (16 lines, 114 tokens)
+   web/src/lib/app/views/NodeSignalPreview.svelte:typescript [102:74 - 116:7]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/views/PasteFallbackDialog.svelte:css[39m[22m [48:26 - 60:10] (13 lines, 87 tokens)
+   web/src/lib/app/views/PasteSongDialog.svelte:css [87:22 - 99:10]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/views/PasteFallbackDialog.svelte:css[39m[22m [74:22 - 95:25] (22 lines, 163 tokens)
+   web/src/lib/app/views/PasteSongDialog.svelte:css [126:16 - 147:25]
+[1mClone found (css)[22m
+ - [1m[32mweb/src/lib/app/views/PasteFallbackDialog.svelte:css[39m[22m [95:23 - 144:4] (50 lines, 295 tokens)
+   web/src/lib/app/views/PasteSongDialog.svelte:css [148:30 - 197:4]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 26:19] (17 lines, 77 tokens)
+   web/src/lib/trigger-lab/EnvelopeEditor.test.ts [7:45 - 23:19]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 46:9] (37 lines, 226 tokens)
+   web/src/lib/trigger-lab/store.autowire.test.ts [4:48 - 25:100]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 49:45] (40 lines, 252 tokens)
+   web/src/lib/trigger-lab/store.cc.test.ts [6:38 - 29:4]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 40:5] (31 lines, 158 tokens)
+   web/src/lib/trigger-lab/store.controller.test.ts [6:137 - 34:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 40:8] (31 lines, 159 tokens)
+   web/src/lib/trigger-lab/store.dock-source.test.ts [6:35 - 34:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 45:18] (36 lines, 225 tokens)
+   web/src/lib/trigger-lab/store.echo-gate.test.ts [6:49 - 45:19]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [10:43 - 40:13] (31 lines, 163 tokens)
+   web/src/lib/trigger-lab/store.lfo.test.ts [7:39 - 24:22]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [18:11 - 43:45] (26 lines, 199 tokens)
+   web/src/lib/trigger-lab/store.autosave.test.ts [14:3 - 38:19]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/app/views/object-rows.test.ts[39m[22m [26:29 - 40:77] (15 lines, 106 tokens)
+   web/src/lib/trigger-lab/EnvelopeEditor.test.ts [23:45 - 36:110]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EffectThumb.svelte:typescript[39m[22m [79:4 - 130:10] (52 lines, 198 tokens)
+   web/src/lib/trigger-lab/SignalFace.svelte:typescript [29:36 - 73:10]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:39 - 43:44] (38 lines, 263 tokens)
+   web/src/lib/trigger-lab/enum-params.test.ts [4:38 - 40:4]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:53 - 44:8] (39 lines, 262 tokens)
+   web/src/lib/trigger-lab/store.canvas-scenes.test.ts [2:44 - 36:10]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:53 - 39:9] (34 lines, 207 tokens)
+   web/src/lib/trigger-lab/store.clipboard.test.ts [13:34 - 47:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:39 - 43:45] (38 lines, 264 tokens)
+   web/src/lib/trigger-lab/store.delay.test.ts [3:25 - 30:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:53 - 39:9] (34 lines, 207 tokens)
+   web/src/lib/trigger-lab/store.persistence.test.ts [5:46 - 40:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:53 - 43:45] (38 lines, 261 tokens)
+   web/src/lib/trigger-lab/store.songs.test.ts [3:83 - 44:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/EnvelopeEditor.test.ts[39m[22m [6:53 - 39:9] (34 lines, 207 tokens)
+   web/src/lib/trigger-lab/store.system-toasts.test.ts [5:48 - 39:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/clipdoc.test.ts[39m[22m [35:129 - 47:6] (13 lines, 86 tokens)
+   web/src/lib/trigger-lab/store/song-library-refs.test.ts [34:96 - 45:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/dock-voices.test.ts[39m[22m [4:54 - 34:2] (31 lines, 105 tokens)
+   web/src/lib/trigger-lab/store.dock-source.test.ts [41:82 - 66:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/enum-params.test.ts[39m[22m [3:69 - 35:19] (33 lines, 225 tokens)
+   web/src/lib/trigger-lab/store.ids.test.ts [9:1 - 37:19]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/enum-params.test.ts[39m[22m [3:91 - 50:37] (48 lines, 350 tokens)
+   web/src/lib/trigger-lab/store.objects.test.ts [2:44 - 60:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/enum-params.test.ts[39m[22m [4:18 - 50:37] (47 lines, 346 tokens)
+   web/src/lib/trigger-lab/store.presets.test.ts [3:34 - 57:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/generator-bridge.test.ts[39m[22m [4:44 - 18:2] (15 lines, 98 tokens)
+   web/src/lib/trigger-lab/sim.modifiers.test.ts [3:92 - 22:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/persistence.songlibrary.test.ts[39m[22m [14:61 - 30:40] (17 lines, 105 tokens)
+   web/src/lib/trigger-lab/store/song-library-refs.test.ts [19:50 - 38:34]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/persistence.songlibrary.test.ts[39m[22m [14:61 - 71:12] (58 lines, 444 tokens)
+   web/src/lib/trigger-lab/store/song-library.test.ts [5:69 - 57:12]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/render.ts[39m[22m [80:35 - 92:26] (13 lines, 71 tokens)
+   core/src/voice/compositor.ts [98:20 - 110:26]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/render.ts[39m[22m [215:37 - 228:14] (14 lines, 109 tokens)
+   core/src/voice/generator-bridge.ts [97:30 - 113:18]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/show-builder.ts[39m[22m [84:29 - 100:2] (17 lines, 157 tokens)
+   web/src/lib/trigger-lab/store/hydrate.ts [317:36 - 335:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.delay-overlap.test.ts[39m[22m [33:57 - 46:2] (14 lines, 125 tokens)
+   web/src/lib/trigger-lab/sim.delay-timeline.test.ts [34:56 - 47:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.delay-overlap.test.ts[39m[22m [34:21 - 49:9] (16 lines, 119 tokens)
+   web/src/lib/trigger-lab/sim.delay-timeline.test.ts [35:21 - 50:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.delay-timeline.test.ts[39m[22m [1:46 - 21:6] (21 lines, 90 tokens)
+   web/src/lib/trigger-lab/sim.delay.test.ts [2:38 - 19:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.delay-timeline.test.ts[39m[22m [1:1 - 22:6] (22 lines, 109 tokens)
+   web/src/lib/trigger-lab/sim.fanin-coalescing.test.ts [1:1 - 22:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.delay.test.ts[39m[22m [160:77 - 174:14] (15 lines, 96 tokens)
+   web/src/lib/trigger-lab/sim.delay.test.ts [189:84 - 202:14]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.graph-compilation.ts[39m[22m [79:7 - 101:21] (23 lines, 83 tokens)
+   core/src/voice/graph-integrity.ts [44:13 - 65:21]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.modifiers.test.ts[39m[22m [3:23 - 27:6] (25 lines, 170 tokens)
+   web/src/lib/trigger-lab/sim.modulation.test.ts [4:40 - 28:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.modulation.test.ts[39m[22m [36:58 - 50:39] (15 lines, 95 tokens)
+   web/src/lib/trigger-lab/store.lfo.test.ts [102:58 - 115:39]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.trigger-source.test.ts[39m[22m [8:73 - 23:74] (16 lines, 205 tokens)
+   core/src/voice/types.test.ts [57:75 - 75:74]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.ts[39m[22m [157:53 - 183:12] (27 lines, 72 tokens)
+   core/src/voice/types.ts [127:23 - 161:12]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.ts[39m[22m [578:15 - 594:21] (17 lines, 116 tokens)
+   core/src/voice/engine.ts [669:6 - 686:21]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/sim.value-switch.test.ts[39m[22m [32:20 - 60:10] (29 lines, 229 tokens)
+   core/src/voice/engine.test.ts [796:12 - 824:10]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.autowire.test.ts[39m[22m [1:1 - 42:6] (42 lines, 374 tokens)
+   web/src/lib/trigger-lab/store.splice.test.ts [1:1 - 43:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.canvas-scenes.test.ts[39m[22m [1:1 - 27:110] (27 lines, 227 tokens)
+   web/src/lib/trigger-lab/store.graphs.test.ts [1:1 - 33:110]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.canvas-scenes.test.ts[39m[22m [1:1 - 29:11] (29 lines, 228 tokens)
+   web/src/lib/trigger-lab/store.shows.test.ts [1:1 - 45:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.cc.test.ts[39m[22m [5:49 - 32:9] (28 lines, 260 tokens)
+   web/src/lib/trigger-lab/store.modulation.test.ts [4:45 - 30:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.controller.test.ts[39m[22m [6:108 - 49:17] (44 lines, 224 tokens)
+   web/src/lib/trigger-lab/store.looks.test.ts [6:29 - 38:110]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.controller.test.ts[39m[22m [6:108 - 53:31] (48 lines, 250 tokens)
+   web/src/lib/trigger-lab/store.patch-clipboard.test.ts [6:75 - 52:31]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.controller.test.ts[39m[22m [6:108 - 37:26] (32 lines, 170 tokens)
+   web/src/lib/trigger-lab/store.pin.test.ts [5:72 - 35:26]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.controller.test.ts[39m[22m [6:108 - 55:11] (50 lines, 251 tokens)
+   web/src/lib/trigger-lab/store.server-library.test.ts [14:92 - 67:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.delay.test.ts[39m[22m [1:1 - 30:9] (30 lines, 290 tokens)
+   web/src/lib/trigger-lab/store.modifiers.test.ts [1:1 - 32:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.delay.test.ts[39m[22m [1:1 - 30:22] (30 lines, 294 tokens)
+   web/src/lib/trigger-lab/store.node-clipboard.test.ts [1:1 - 29:23]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.dock-source.test.ts[39m[22m [6:21 - 43:23] (38 lines, 256 tokens)
+   web/src/lib/trigger-lab/store.id-collision.test.ts [4:25 - 31:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.dock-source.test.ts[39m[22m [6:21 - 43:24] (38 lines, 257 tokens)
+   web/src/lib/trigger-lab/store.modulation-sources.test.ts [6:38 - 27:10]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.graphs.test.ts[39m[22m [35:103 - 56:2] (22 lines, 134 tokens)
+   web/src/lib/trigger-lab/store.modulation.test.ts [21:109 - 41:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.looks.test.ts[39m[22m [4:43 - 38:110] (35 lines, 237 tokens)
+   web/src/lib/trigger-lab/store.routing.test.ts [3:66 - 35:110]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.looks.test.ts[39m[22m [4:43 - 38:42] (35 lines, 215 tokens)
+   web/src/lib/trigger-lab/store.sections.test.ts [2:44 - 35:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.patch-clipboard.test.ts[39m[22m [4:52 - 44:13] (41 lines, 223 tokens)
+   web/src/lib/trigger-lab/store.song-library.test.ts [6:56 - 40:6]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.patch-clipboard.test.ts[39m[22m [50:22 - 66:9] (17 lines, 119 tokens)
+   web/src/lib/trigger-lab/store.pin.test.ts [50:30 - 67:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.patch-clipboard.test.ts[39m[22m [52:5 - 72:65] (21 lines, 194 tokens)
+   web/src/lib/trigger-lab/store.server-library.test.ts [67:84 - 96:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.pin.test.ts[39m[22m [64:95 - 78:2] (15 lines, 80 tokens)
+   web/src/lib/trigger-lab/store.shows.test.ts [41:109 - 56:2]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.pin.test.ts[39m[22m [64:95 - 86:13] (23 lines, 136 tokens)
+   web/src/lib/trigger-lab/store.song-library.test.ts [51:64 - 73:10]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.songs.test.ts[39m[22m [3:61 - 44:16] (42 lines, 265 tokens)
+   web/src/lib/trigger-lab/store.trigger-source.test.ts [4:31 - 43:10]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store.songs.test.ts[39m[22m [3:61 - 44:9] (42 lines, 264 tokens)
+   web/src/lib/trigger-lab/store.value-switch.test.ts [4:22 - 45:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store/canvas-scenes.test.ts[39m[22m [17:17 - 41:9] (25 lines, 90 tokens)
+   core/src/canvas/canvas-determinism.test.ts [63:13 - 70:9]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store/canvas-scenes.test.ts[39m[22m [17:17 - 36:21] (20 lines, 81 tokens)
+   core/src/voice/types.test.ts [12:20 - 31:21]
+[1mClone found (typescript)[22m
+ - [1m[32mweb/src/lib/trigger-lab/store/show-library-sync.ts[39m[22m [66:44 - 82:39] (17 lines, 71 tokens)
+   web/src/lib/trigger-lab/store/song-library-sync.ts [56:44 - 70:39]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/canvas/canvas-determinism.test.ts[39m[22m [44:30 - 86:28] (43 lines, 394 tokens)
+   core/src/voice/determinism.test.ts [31:89 - 73:28]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/canvas/canvas-determinism.test.ts[39m[22m [61:38 - 73:31] (13 lines, 152 tokens)
+   core/src/voice/reachability-lint.test.ts [6:29 - 33:126]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/canvas/canvas-determinism.test.ts[39m[22m [86:101 - 104:94] (19 lines, 218 tokens)
+   core/src/voice/determinism.test.ts [73:112 - 94:94]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/canvas/elements.ts[39m[22m [30:1 - 56:34] (27 lines, 227 tokens)
+   core/src/effects/impl/perlin-clouds.ts [7:1 - 35:34]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-a.test.ts[39m[22m [12:52 - 62:2] (51 lines, 434 tokens)
+   core/src/effects/batch-b.test.ts [12:44 - 62:2]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-a.test.ts[39m[22m [12:52 - 59:18] (48 lines, 397 tokens)
+   core/src/effects/batch-e.test.ts [11:40 - 64:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-a.test.ts[39m[22m [14:25 - 47:9] (34 lines, 243 tokens)
+   core/src/effects/batch-c.test.ts [14:25 - 47:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-a.test.ts[39m[22m [30:3 - 43:34] (14 lines, 121 tokens)
+   core/src/effects/u6-gap-fill.test.ts [20:154 - 28:157]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-a.test.ts[39m[22m [44:3 - 65:26] (22 lines, 190 tokens)
+   core/src/effects/effects.test.ts [86:58 - 106:10]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-a.test.ts[39m[22m [47:115 - 65:9] (19 lines, 156 tokens)
+   core/src/effects/batch-c.test.ts [57:1 - 74:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-c.test.ts[39m[22m [12:48 - 74:9] (63 lines, 480 tokens)
+   core/src/effects/batch-d.test.ts [12:68 - 74:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-c.test.ts[39m[22m [12:48 - 56:12] (45 lines, 323 tokens)
+   core/src/effects/effects.test.ts [50:56 - 89:115]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-c.test.ts[39m[22m [44:3 - 60:63] (17 lines, 123 tokens)
+   core/src/effects/u6-gap-fill.test.ts [28:158 - 38:64]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/batch-e.test.ts[39m[22m [59:64 - 81:10] (23 lines, 213 tokens)
+   core/src/effects/u6-gap-fill.test.ts [38:69 - 60:10]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [13:33 - 25:9] (13 lines, 83 tokens)
+   core/src/effects/registry.ts [12:21 - 25:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [27:46 - 41:9] (15 lines, 87 tokens)
+   core/src/effects/registry.ts [23:47 - 38:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [345:71 - 365:12] (21 lines, 198 tokens)
+   core/src/effects/effects.test.ts [398:71 - 418:12]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [345:71 - 363:8] (19 lines, 151 tokens)
+   core/src/effects/effects.test.ts [472:82 - 491:8]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [345:71 - 361:4] (17 lines, 150 tokens)
+   core/src/effects/effects.test.ts [540:71 - 556:4]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [373:118 - 385:6] (13 lines, 90 tokens)
+   core/src/effects/effects.test.ts [426:146 - 438:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [373:120 - 385:6] (13 lines, 89 tokens)
+   core/src/effects/effects.test.ts [513:5 - 525:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/effects/effects.test.ts[39m[22m [373:97 - 385:6] (13 lines, 98 tokens)
+   core/src/effects/effects.test.ts [613:112 - 625:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/engine/engine.ts[39m[22m [134:26 - 147:19] (14 lines, 117 tokens)
+   core/src/voice/engine.ts [299:23 - 311:19]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/geometry/dmx-map.test.ts[39m[22m [18:5 - 32:41] (15 lines, 112 tokens)
+   core/src/model/routing-integrity.test.ts [27:5 - 41:41]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/modifiers/modifiers.s30.test.ts[39m[22m [193:120 - 210:94] (18 lines, 123 tokens)
+   core/src/voice/modulation-cc.test.ts [39:49 - 54:70]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/modifiers/modifiers.s30.test.ts[39m[22m [193:120 - 227:47] (35 lines, 322 tokens)
+   core/src/voice/modulation-osc.test.ts [52:6 - 96:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/modifiers/modifiers.s30.test.ts[39m[22m [195:3 - 210:9] (16 lines, 91 tokens)
+   core/src/voice/canvas-show.test.ts [10:106 - 20:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/modifiers/modifiers.s30.test.ts[39m[22m [195:3 - 212:56] (18 lines, 138 tokens)
+   core/src/voice/enum-params.test.ts [14:89 - 27:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/canvas-show.test.ts[39m[22m [10:27 - 28:17] (19 lines, 152 tokens)
+   core/src/voice/determinism.test.ts [18:26 - 29:2]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/canvas-show.test.ts[39m[22m [10:90 - 28:104] (19 lines, 168 tokens)
+   core/src/voice/engine.test.ts [7:169 - 24:70]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/compositor.test.ts[39m[22m [48:20 - 65:14] (18 lines, 75 tokens)
+   core/src/voice/engine.delay-overlap.test.ts [46:23 - 55:14]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/compositor.test.ts[39m[22m [48:20 - 82:9] (35 lines, 131 tokens)
+   core/src/voice/engine.test.ts [38:19 - 72:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/compositor.test.ts[39m[22m [137:12 - 156:2] (20 lines, 110 tokens)
+   core/src/voice/engine.test.ts [125:98 - 144:2]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/compositor.test.ts[39m[22m [445:23 - 458:9] (14 lines, 97 tokens)
+   core/src/voice/compositor.test.ts [575:33 - 588:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/determinism.test.ts[39m[22m [13:1 - 25:55] (13 lines, 158 tokens)
+   core/src/voice/engine.delay-overlap.test.ts [1:1 - 29:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [471:48 - 484:65] (14 lines, 81 tokens)
+   core/src/voice/engine.test.ts [523:7 - 531:106]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [720:5 - 737:10] (18 lines, 125 tokens)
+   core/src/voice/engine.test.ts [894:98 - 911:10]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [1047:74 - 1059:10] (13 lines, 77 tokens)
+   core/src/voice/engine.test.ts [1114:40 - 1126:10]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [1260:59 - 1276:12] (17 lines, 141 tokens)
+   core/src/voice/engine.test.ts [1317:68 - 1333:12]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [1260:59 - 1273:29] (14 lines, 114 tokens)
+   core/src/voice/engine.test.ts [1377:57 - 1389:29]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [1260:59 - 1274:41] (15 lines, 136 tokens)
+   core/src/voice/engine.test.ts [1397:59 - 1411:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/engine.test.ts[39m[22m [1500:63 - 1521:9] (22 lines, 89 tokens)
+   core/src/voice/engine.test.ts [1626:62 - 1637:4]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.delay-timeline.test.ts[39m[22m [1:1 - 28:24] (28 lines, 218 tokens)
+   core/src/voice/eval-graph.fanin-coalescing.test.ts [1:1 - 27:24]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.delay-timeline.test.ts[39m[22m [1:1 - 28:141] (28 lines, 249 tokens)
+   core/src/voice/eval-graph.mix.test.ts [1:1 - 34:141]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.delay-timeline.test.ts[39m[22m [2:69 - 27:51] (26 lines, 163 tokens)
+   core/src/voice/eval-graph.playtype.test.ts [4:35 - 35:51]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.delay-timeline.test.ts[39m[22m [3:30 - 27:126] (25 lines, 174 tokens)
+   core/src/voice/graph-integrity.test.ts [2:64 - 32:126]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.delay-timeline.test.ts[39m[22m [4:15 - 27:125] (24 lines, 169 tokens)
+   core/src/voice/modulation-graph.test.ts [15:41 - 47:2]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.delay-timeline.test.ts[39m[22m [28:29 - 53:9] (26 lines, 239 tokens)
+   core/src/voice/eval-graph.fanin-coalescing.test.ts [27:26 - 50:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.mix.test.ts[39m[22m [69:39 - 81:6] (13 lines, 99 tokens)
+   core/src/voice/eval-graph.mix.test.ts [95:29 - 107:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.mix.test.ts[39m[22m [123:34 - 135:6] (13 lines, 124 tokens)
+   core/src/voice/eval-graph.mix.test.ts [151:28 - 163:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/eval-graph.playtype.test.ts[39m[22m [3:46 - 35:6] (33 lines, 156 tokens)
+   core/src/voice/modifier-graph.test.ts [2:56 - 35:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/modifier-graph.test.ts[39m[22m [16:15 - 39:6] (24 lines, 109 tokens)
+   core/src/voice/modulation-graph.test.ts [26:15 - 50:9]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/modifier-graph.test.ts[39m[22m [42:1 - 60:3] (19 lines, 87 tokens)
+   core/src/voice/modulation-graph.test.ts [54:1 - 72:3]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/modulation-cc.test.ts[39m[22m [92:30 - 106:6] (15 lines, 160 tokens)
+   core/src/voice/modulation-osc.test.ts [105:31 - 119:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/modulation-cc.test.ts[39m[22m [183:38 - 195:6] (13 lines, 90 tokens)
+   core/src/voice/modulation-osc.test.ts [181:41 - 193:6]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/reachability-lint.test.ts[39m[22m [3:57 - 36:16] (34 lines, 175 tokens)
+   core/src/voice/render-plan.test.ts [10:30 - 42:10]
+[1mClone found (typescript)[22m
+ - [1m[32mcore/src/voice/reachability-lint.test.ts[39m[22m [3:35 - 36:9] (34 lines, 177 tokens)
+   core/src/voice/scope-lint.test.ts [2:28 - 35:9]
+[90m┌────────────┬────────────────┬─────────────┬──────────────┬──────────────┬──────────────────┬───────────────────┐[39m
+[90m│[39m[31m Format     [39m[90m│[39m[31m Files analyzed [39m[90m│[39m[31m Total lines [39m[90m│[39m[31m Total tokens [39m[90m│[39m[31m Clones found [39m[90m│[39m[31m Duplicated lines [39m[90m│[39m[31m Duplicated tokens [39m[90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m bash       [90m│[39m 1              [90m│[39m 224         [90m│[39m 224          [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m css        [90m│[39m 127            [90m│[39m 23468       [90m│[39m 95999        [90m│[39m 24           [90m│[39m 485 (2.07%)      [90m│[39m 3352 (3.49%)      [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m html       [90m│[39m 132            [90m│[39m 23700       [90m│[39m 57211        [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m javascript [90m│[39m 13             [90m│[39m 1623        [90m│[39m 9469         [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m json       [90m│[39m 6              [90m│[39m 207         [90m│[39m 648          [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m markdown   [90m│[39m 1              [90m│[39m 224         [90m│[39m 379          [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m markup     [90m│[39m 4              [90m│[39m 173         [90m│[39m 1976         [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m rust       [90m│[39m 4              [90m│[39m 1709        [90m│[39m 9623         [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m svelte     [90m│[39m 144            [90m│[39m 24724       [90m│[39m 141194       [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m text       [90m│[39m 1              [90m│[39m 19          [90m│[39m 155          [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m toml       [90m│[39m 1              [90m│[39m 45          [90m│[39m 175          [90m│[39m 0            [90m│[39m 0 (0.00%)        [90m│[39m 0 (0.00%)         [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m typescript [90m│[39m 683            [90m│[39m 91535       [90m│[39m 679568       [90m│[39m 132          [90m│[39m 3260 (3.56%)     [90m│[39m 22908 (3.37%)     [90m│[39m
+[90m├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤[39m
+[90m│[39m [1mTotal:[22m     [90m│[39m 1117           [90m│[39m 167651      [90m│[39m 996621       [90m│[39m 156          [90m│[39m 3745 (2.23%)     [90m│[39m 26260 (2.63%)     [90m│[39m
+[90m└────────────┴────────────────┴─────────────┴──────────────┴──────────────┴──────────────────┴───────────────────┘[39m
+[90mFound 156 clones.[39m
+[32mJSON report saved to /Users/trent/Documents/dev/ledrums/docs/plans/2026-07-26-deep-review/00-raw/jscpd/jscpd-report.json[39m
+[90mtime: 153.624ms[39m
+
+[90m💡 Auto-refactor with AI: [1m[39mnpx skills add https://github.com/kucherenko/jscpd --skill dry-refactoring[90m[22m
+[90m🎩 New: Gangsta Agents — discipline your AI coding → gangsta.page[39m
+[90m💖 Support jscpd project → https://opencollective.com/jscpd[39m

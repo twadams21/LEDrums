@@ -1,0 +1,27 @@
+{
+  "core": {
+    "lines": 97,
+    "functions": 93,
+    "branches": 86.4
+  },
+  "io": {
+    "lines": 88.94,
+    "functions": 81.81,
+    "branches": 85.66
+  },
+  "protocol": {
+    "lines": 99.35,
+    "functions": 66.66,
+    "branches": 80
+  },
+  "server": {
+    "lines": 72.31,
+    "functions": 89.61,
+    "branches": 83.12
+  },
+  "web": {
+    "lines": 57.82,
+    "functions": 78.13,
+    "branches": 84.47
+  }
+}

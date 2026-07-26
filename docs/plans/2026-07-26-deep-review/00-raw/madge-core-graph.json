@@ -1,0 +1,1290 @@
+{
+  "canvas/canvas-determinism.test.ts": [
+    "canvas/registry.ts",
+    "canvas/scene.ts",
+    "canvas/types.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "canvas/elements.test.ts": [
+    "canvas/elements.ts",
+    "canvas/types.ts"
+  ],
+  "canvas/elements.ts": [
+    "canvas/types.ts",
+    "color/color.ts",
+    "math.ts"
+  ],
+  "canvas/ids.ts": [],
+  "canvas/lenses.test.ts": [
+    "canvas/lenses.ts",
+    "canvas/sampler.ts",
+    "canvas/scene.ts",
+    "canvas/types.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "canvas/lenses.ts": [
+    "canvas/types.ts",
+    "math.ts"
+  ],
+  "canvas/presets.ts": [
+    "canvas/registry.ts",
+    "canvas/types.ts"
+  ],
+  "canvas/registry.ts": [
+    "canvas/ids.ts",
+    "canvas/scene.ts",
+    "canvas/types.ts",
+    "effects/types.ts"
+  ],
+  "canvas/sampler.test.ts": [
+    "canvas/sampler.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "canvas/sampler.ts": [
+    "canvas/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "canvas/scene.test.ts": [
+    "canvas/registry.ts",
+    "canvas/scene.ts",
+    "canvas/types.ts",
+    "effects/registry.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/lfo.ts",
+    "voice/modulation.ts"
+  ],
+  "canvas/scene.ts": [
+    "canvas/elements.ts",
+    "canvas/ids.ts",
+    "canvas/lenses.ts",
+    "canvas/sampler.ts",
+    "canvas/types.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "canvas/types.ts": [],
+  "color/blend.test.ts": [
+    "color/blend.ts"
+  ],
+  "color/blend.ts": [
+    "math.ts"
+  ],
+  "color/color.test.ts": [
+    "color/color.ts"
+  ],
+  "color/color.ts": [
+    "math.ts"
+  ],
+  "effects/aliases.test.ts": [
+    "effects/aliases.ts",
+    "effects/registry.ts"
+  ],
+  "effects/aliases.ts": [],
+  "effects/batch-a.test.ts": [
+    "effects/impl/checker-pulse.ts",
+    "effects/impl/fire.ts",
+    "effects/impl/plasma.ts",
+    "effects/impl/rainbow-flow.ts",
+    "effects/impl/ripple-pond.ts",
+    "effects/impl/tunnel.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/batch-b.test.ts": [
+    "effects/impl/caustics.ts",
+    "effects/impl/grid-glow.ts",
+    "effects/impl/interference.ts",
+    "effects/impl/lava-lamp.ts",
+    "effects/impl/perlin-clouds.ts",
+    "effects/impl/spiral.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/batch-c.test.ts": [
+    "effects/impl/comet-trails.ts",
+    "effects/impl/confetti-burst.ts",
+    "effects/impl/helix.ts",
+    "effects/impl/lightning.ts",
+    "effects/impl/orbit-rings.ts",
+    "effects/impl/starfield.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/batch-d.test.ts": [
+    "effects/impl/breathing-kit.ts",
+    "effects/impl/gravity-wells.ts",
+    "effects/impl/hue-rotate-kit.ts",
+    "effects/impl/temp-sweep.ts",
+    "effects/impl/velocity-flames.ts",
+    "effects/impl/wave-collapse.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/batch-e.test.ts": [
+    "effects/emitter.ts",
+    "effects/impl/chase-bands.ts",
+    "effects/impl/rain-3d.ts",
+    "effects/impl/ripple-3d.ts",
+    "effects/impl/spark-arc.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/effects.test.ts": [
+    "effects/impl/breathing-kit.ts",
+    "effects/impl/burst.ts",
+    "effects/impl/caustics.ts",
+    "effects/impl/chase.ts",
+    "effects/impl/checker-pulse.ts",
+    "effects/impl/collisions.ts",
+    "effects/impl/colour-melody.ts",
+    "effects/impl/comet-trails.ts",
+    "effects/impl/confetti-burst.ts",
+    "effects/impl/fire.ts",
+    "effects/impl/follow-hoop.ts",
+    "effects/impl/gravity-wells.ts",
+    "effects/impl/grid-glow.ts",
+    "effects/impl/helix.ts",
+    "effects/impl/hue-rotate-kit.ts",
+    "effects/impl/interference.ts",
+    "effects/impl/lava-lamp.ts",
+    "effects/impl/lightning.ts",
+    "effects/impl/meter-eq.ts",
+    "effects/impl/orbit-rings.ts",
+    "effects/impl/perlin-clouds.ts",
+    "effects/impl/pixel-accum.ts",
+    "effects/impl/plasma.ts",
+    "effects/impl/radial-wash.ts",
+    "effects/impl/rainbow-flow.ts",
+    "effects/impl/ripple-pond.ts",
+    "effects/impl/sacred-hogs.ts",
+    "effects/impl/sidechain.ts",
+    "effects/impl/solid-base.ts",
+    "effects/impl/spiral.ts",
+    "effects/impl/starfield.ts",
+    "effects/impl/strobe.ts",
+    "effects/impl/swing.ts",
+    "effects/impl/synced-hoops.ts",
+    "effects/impl/temp-sweep.ts",
+    "effects/impl/tunnel.ts",
+    "effects/impl/velocity-flames.ts",
+    "effects/impl/wave-collapse.ts",
+    "effects/impl/whole-drum.ts",
+    "effects/impl/whole-kit.ts",
+    "effects/impl/wipe-3d.ts",
+    "effects/registry.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/emitter.ts": [
+    "engine/render-context.ts"
+  ],
+  "effects/impl/breathing-kit.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/burst.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/caustics.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/chase-bands.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/chase.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/checker-pulse.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/collisions.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/colour-melody.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/comet-trails.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/confetti-burst.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-grid.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/drum-sonar.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/fire.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/follow-hoop.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/gravity-drops.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/gravity-wells.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/grid-glow.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/helix.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/hue-rotate-kit.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/interference.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/lava-lamp.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/lightning.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-grid.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/meter-eq.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/orbit-comet.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/orbit-rings.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/perlin-clouds.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/pixel-accum.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/plasma.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/radial-wash.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/rain-3d.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-grid.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/rainbow-flow.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/ripple-3d.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/ripple-pond.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/sacred-hogs.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/scan-plane.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/sidechain.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/solid-base.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/spark-arc.ts": [
+    "color/color.ts",
+    "effects/emitter.ts",
+    "effects/types.ts",
+    "geometry/pixel-grid.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/spiral.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/starfield.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/strobe.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/swing.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "effects/impl/synced-hoops.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/temp-sweep.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/tunnel.ts": [
+    "canvas/sampler.ts",
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/velocity-flames.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/wave-collapse.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "math.ts"
+  ],
+  "effects/impl/whole-drum.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/whole-kit.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/impl/wipe-3d.ts": [
+    "color/color.ts",
+    "effects/types.ts"
+  ],
+  "effects/metadata.ts": [
+    "effects/vocabulary.ts"
+  ],
+  "effects/registry.test.ts": [
+    "effects/registry.ts",
+    "effects/vocabulary.ts"
+  ],
+  "effects/registry.ts": [
+    "canvas/ids.ts",
+    "canvas/presets.ts",
+    "canvas/registry.ts",
+    "effects/impl/breathing-kit.ts",
+    "effects/impl/burst.ts",
+    "effects/impl/caustics.ts",
+    "effects/impl/chase-bands.ts",
+    "effects/impl/chase.ts",
+    "effects/impl/checker-pulse.ts",
+    "effects/impl/collisions.ts",
+    "effects/impl/colour-melody.ts",
+    "effects/impl/comet-trails.ts",
+    "effects/impl/confetti-burst.ts",
+    "effects/impl/drum-sonar.ts",
+    "effects/impl/fire.ts",
+    "effects/impl/follow-hoop.ts",
+    "effects/impl/gravity-drops.ts",
+    "effects/impl/gravity-wells.ts",
+    "effects/impl/grid-glow.ts",
+    "effects/impl/helix.ts",
+    "effects/impl/hue-rotate-kit.ts",
+    "effects/impl/interference.ts",
+    "effects/impl/lava-lamp.ts",
+    "effects/impl/lightning.ts",
+    "effects/impl/meter-eq.ts",
+    "effects/impl/orbit-comet.ts",
+    "effects/impl/orbit-rings.ts",
+    "effects/impl/perlin-clouds.ts",
+    "effects/impl/pixel-accum.ts",
+    "effects/impl/plasma.ts",
+    "effects/impl/radial-wash.ts",
+    "effects/impl/rain-3d.ts",
+    "effects/impl/rainbow-flow.ts",
+    "effects/impl/ripple-3d.ts",
+    "effects/impl/ripple-pond.ts",
+    "effects/impl/sacred-hogs.ts",
+    "effects/impl/scan-plane.ts",
+    "effects/impl/sidechain.ts",
+    "effects/impl/solid-base.ts",
+    "effects/impl/spark-arc.ts",
+    "effects/impl/spiral.ts",
+    "effects/impl/starfield.ts",
+    "effects/impl/strobe.ts",
+    "effects/impl/swing.ts",
+    "effects/impl/synced-hoops.ts",
+    "effects/impl/temp-sweep.ts",
+    "effects/impl/tunnel.ts",
+    "effects/impl/velocity-flames.ts",
+    "effects/impl/wave-collapse.ts",
+    "effects/impl/whole-drum.ts",
+    "effects/impl/whole-kit.ts",
+    "effects/impl/wipe-3d.ts",
+    "effects/metadata.ts",
+    "effects/types.ts",
+    "effects/vocabulary.ts"
+  ],
+  "effects/types.ts": [
+    "effects/vocabulary.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/u6-gap-fill.test.ts": [
+    "canvas/ids.ts",
+    "canvas/presets.ts",
+    "canvas/registry.ts",
+    "effects/impl/drum-sonar.ts",
+    "effects/impl/gravity-drops.ts",
+    "effects/impl/orbit-comet.ts",
+    "effects/impl/scan-plane.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "effects/vocabulary.ts": [],
+  "engine/compositor.ts": [
+    "color/blend.ts",
+    "engine/framebuffer.ts"
+  ],
+  "engine/control-state.ts": [],
+  "engine/engine.test.ts": [
+    "engine/engine.ts",
+    "engine/framebuffer.ts",
+    "model/defaults.ts",
+    "model/project-schema.ts"
+  ],
+  "engine/engine.ts": [
+    "effects/registry.ts",
+    "engine/compositor.ts",
+    "engine/control-state.ts",
+    "engine/framebuffer.ts",
+    "engine/modulation.ts",
+    "engine/render-context.ts",
+    "engine/transport.ts",
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "model/project-schema.ts"
+  ],
+  "engine/framebuffer.ts": [
+    "math.ts"
+  ],
+  "engine/modulation.test.ts": [
+    "engine/control-state.ts",
+    "engine/modulation.ts",
+    "engine/render-context.ts",
+    "model/project-schema.ts"
+  ],
+  "engine/modulation.ts": [
+    "effects/types.ts",
+    "engine/control-state.ts",
+    "engine/render-context.ts",
+    "math.ts",
+    "model/project-schema.ts"
+  ],
+  "engine/render-context.ts": [
+    "geometry/pixel-model.ts"
+  ],
+  "engine/transport.ts": [
+    "engine/render-context.ts",
+    "model/project-schema.ts"
+  ],
+  "geometry/dmx-map.flat-rgb.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/pixel-model.ts",
+    "model/defaults.ts"
+  ],
+  "geometry/dmx-map.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/dmx-map.ts": [
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/euler.test.ts": [
+    "geometry/euler.ts",
+    "math.ts"
+  ],
+  "geometry/euler.ts": [
+    "math.ts"
+  ],
+  "geometry/expanded-migration.test.ts": [
+    "geometry/kit-schema.ts"
+  ],
+  "geometry/flip.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/hoop-migration.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/kit-schema.hoop-invariant.test.ts": [
+    "geometry/kit-schema.ts"
+  ],
+  "geometry/kit-schema.ts": [
+    "geometry/euler.ts"
+  ],
+  "geometry/mirror.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/origin-centre.test.ts": [
+    "geometry/euler.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "geometry/per-hoop-attrs.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/per-output-rgb.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "model/project-schema.ts"
+  ],
+  "geometry/pixel-grid.test.ts": [
+    "geometry/kit-schema.ts",
+    "geometry/pixel-grid.ts",
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "geometry/pixel-grid.ts": [
+    "geometry/pixel-model.ts",
+    "math.ts"
+  ],
+  "geometry/pixel-model.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts"
+  ],
+  "geometry/pixel-model.ts": [
+    "geometry/euler.ts",
+    "geometry/kit-schema.ts",
+    "geometry/zones.ts",
+    "math.ts"
+  ],
+  "geometry/reconcile-outputs.test.ts": [
+    "geometry/kit-schema.ts"
+  ],
+  "geometry/zones.ts": [],
+  "index.ts": [
+    "canvas/elements.ts",
+    "canvas/ids.ts",
+    "canvas/lenses.ts",
+    "canvas/presets.ts",
+    "canvas/registry.ts",
+    "canvas/sampler.ts",
+    "canvas/scene.ts",
+    "canvas/types.ts",
+    "color/blend.ts",
+    "color/color.ts",
+    "effects/aliases.ts",
+    "effects/emitter.ts",
+    "effects/metadata.ts",
+    "effects/registry.ts",
+    "effects/types.ts",
+    "effects/vocabulary.ts",
+    "engine/compositor.ts",
+    "engine/control-state.ts",
+    "engine/engine.ts",
+    "engine/framebuffer.ts",
+    "engine/modulation.ts",
+    "engine/render-context.ts",
+    "engine/transport.ts",
+    "geometry/dmx-map.ts",
+    "geometry/euler.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "geometry/zones.ts",
+    "math.ts",
+    "model/chain-wiring.ts",
+    "model/defaults.ts",
+    "model/integrity.ts",
+    "model/project-schema.ts",
+    "model/routing-integrity.ts",
+    "modifiers/chain.ts",
+    "modifiers/palette.ts",
+    "modifiers/registry.ts",
+    "modifiers/types.ts",
+    "voice/index.ts"
+  ],
+  "math.ts": [],
+  "model/chain-wiring.test.ts": [
+    "model/chain-wiring.ts"
+  ],
+  "model/chain-wiring.ts": [],
+  "model/defaults.ts": [
+    "geometry/kit-schema.ts",
+    "model/integrity.ts",
+    "model/project-schema.ts"
+  ],
+  "model/integrity.test.ts": [
+    "model/defaults.ts",
+    "model/integrity.ts"
+  ],
+  "model/integrity.ts": [
+    "geometry/kit-schema.ts",
+    "model/project-schema.ts"
+  ],
+  "model/project-schema.test.ts": [
+    "model/defaults.ts",
+    "model/project-schema.ts"
+  ],
+  "model/project-schema.ts": [
+    "color/blend.ts",
+    "geometry/kit-schema.ts"
+  ],
+  "model/routing-integrity.test.ts": [
+    "geometry/dmx-map.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "model/defaults.ts",
+    "model/routing-integrity.ts"
+  ],
+  "model/routing-integrity.ts": [
+    "geometry/kit-schema.ts",
+    "model/integrity.ts"
+  ],
+  "modifiers/chain.ts": [
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/registry.ts",
+    "modifiers/types.ts",
+    "voice/modulation.ts"
+  ],
+  "modifiers/impl/bloom.ts": [
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/blur.ts": [
+    "effects/types.ts",
+    "modifiers/impl/strip.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/chromatic.ts": [
+    "effects/types.ts",
+    "modifiers/impl/strip.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/echo.ts": [
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "math.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/feedback.ts": [
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/impl/strip.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/flicker.ts": [
+    "effects/types.ts",
+    "math.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/freeze.ts": [
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/grain.ts": [
+    "effects/types.ts",
+    "modifiers/types.ts",
+    "voice/prng.ts"
+  ],
+  "modifiers/impl/hue-shift.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/kaleidoscope.ts": [
+    "effects/types.ts",
+    "modifiers/impl/strip.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/levels.ts": [
+    "color/color.ts",
+    "effects/types.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/mirror.ts": [
+    "effects/types.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/pixelate.ts": [
+    "effects/types.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/posterize.ts": [
+    "effects/types.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/slice.ts": [
+    "effects/types.ts",
+    "math.ts",
+    "modifiers/impl/strip.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/slide.ts": [
+    "effects/types.ts",
+    "modifiers/impl/strip.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/sparkle.ts": [
+    "effects/types.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/types.ts",
+    "voice/prng.ts"
+  ],
+  "modifiers/impl/strip.ts": [
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/strobe.ts": [
+    "effects/types.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/impl/trail.ts": [
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/modifiers.s30.test.ts": [
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/impl/bloom.ts",
+    "modifiers/impl/grain.ts",
+    "modifiers/impl/sparkle.ts",
+    "modifiers/impl/strobe.ts",
+    "modifiers/types.ts",
+    "voice/compositor.ts",
+    "voice/modifier-graph.ts",
+    "voice/types.ts"
+  ],
+  "modifiers/modifiers.s31.test.ts": [
+    "color/color.ts",
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/impl/echo.ts",
+    "modifiers/impl/hue-shift.ts",
+    "modifiers/impl/levels.ts",
+    "modifiers/impl/mirror.ts",
+    "modifiers/impl/pixelate.ts",
+    "modifiers/registry.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/modifiers.s32.test.ts": [
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/palette.ts",
+    "modifiers/registry.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/palette.ts": [
+    "modifiers/registry.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/registry.ts": [
+    "modifiers/impl/bloom.ts",
+    "modifiers/impl/blur.ts",
+    "modifiers/impl/chromatic.ts",
+    "modifiers/impl/echo.ts",
+    "modifiers/impl/feedback.ts",
+    "modifiers/impl/flicker.ts",
+    "modifiers/impl/freeze.ts",
+    "modifiers/impl/grain.ts",
+    "modifiers/impl/hue-shift.ts",
+    "modifiers/impl/kaleidoscope.ts",
+    "modifiers/impl/levels.ts",
+    "modifiers/impl/mirror.ts",
+    "modifiers/impl/pixelate.ts",
+    "modifiers/impl/posterize.ts",
+    "modifiers/impl/slice.ts",
+    "modifiers/impl/slide.ts",
+    "modifiers/impl/sparkle.ts",
+    "modifiers/impl/strobe.ts",
+    "modifiers/impl/trail.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/slice.test.ts": [
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/impl/slice.ts",
+    "modifiers/registry.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/trail.test.ts": [
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/impl/trail.ts",
+    "modifiers/types.ts"
+  ],
+  "modifiers/types.ts": [
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "voice/modulation.ts"
+  ],
+  "voice/canvas-show.test.ts": [
+    "canvas/ids.ts",
+    "canvas/registry.ts",
+    "canvas/types.ts",
+    "effects/registry.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "voice/compositor.test.ts": [
+    "effects/registry.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/compositor.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "voice/compositor.ts": [
+    "color/blend.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/types.ts",
+    "voice/generator-bridge.ts",
+    "voice/modulation.ts",
+    "voice/scope.ts",
+    "voice/types.ts"
+  ],
+  "voice/delay.test.ts": [
+    "voice/delay.ts"
+  ],
+  "voice/delay.ts": [],
+  "voice/determinism.test.ts": [
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "voice/diagnostics.ts": [
+    "voice/engine.ts"
+  ],
+  "voice/easing.test.ts": [
+    "voice/easing.ts",
+    "voice/types.ts"
+  ],
+  "voice/easing.ts": [
+    "voice/types.ts"
+  ],
+  "voice/engine.delay-overlap.test.ts": [
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "voice/engine.test.ts": [
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/diagnostics.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "voice/engine.ts": [
+    "canvas/presets.ts",
+    "canvas/registry.ts",
+    "canvas/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/pixel-model.ts",
+    "voice/compositor.ts",
+    "voice/diagnostics.ts",
+    "voice/envelope-tick.ts",
+    "voice/eval-graph.ts",
+    "voice/graph-integrity.ts",
+    "voice/modulation.ts",
+    "voice/prng.ts",
+    "voice/render-plan.ts",
+    "voice/types.ts",
+    "voice/voice-pool.ts"
+  ],
+  "voice/enum-params.test.ts": [
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/types.ts"
+  ],
+  "voice/envelope-tick.ts": [
+    "voice/types.ts",
+    "voice/voice-pool.ts"
+  ],
+  "voice/envelope.test.ts": [
+    "voice/envelope.ts",
+    "voice/types.ts"
+  ],
+  "voice/envelope.ts": [
+    "voice/easing.ts",
+    "voice/types.ts"
+  ],
+  "voice/eval-graph.delay-timeline.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ],
+  "voice/eval-graph.fanin-coalescing.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ],
+  "voice/eval-graph.mix.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ],
+  "voice/eval-graph.playtype.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ],
+  "voice/eval-graph.ts": [
+    "color/blend.ts",
+    "voice/delay.ts",
+    "voice/modifier-graph.ts",
+    "voice/modulation-graph.ts",
+    "voice/modulation.ts",
+    "voice/prng.ts",
+    "voice/render-plan.ts",
+    "voice/scope.ts",
+    "voice/types.ts"
+  ],
+  "voice/generator-bridge.ts": [
+    "effects/registry.ts",
+    "effects/types.ts",
+    "engine/framebuffer.ts",
+    "engine/render-context.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/types.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/graph-integrity.test.ts": [
+    "voice/graph-integrity.ts",
+    "voice/types.ts"
+  ],
+  "voice/graph-integrity.ts": [
+    "voice/types.ts"
+  ],
+  "voice/index.ts": [
+    "voice/compositor.ts",
+    "voice/delay.ts",
+    "voice/diagnostics.ts",
+    "voice/easing.ts",
+    "voice/engine.ts",
+    "voice/envelope.ts",
+    "voice/eval-graph.ts",
+    "voice/graph-integrity.ts",
+    "voice/lfo.ts",
+    "voice/modifier-graph.ts",
+    "voice/modulation-graph.ts",
+    "voice/modulation-parity.ts",
+    "voice/modulation.ts",
+    "voice/prng.ts",
+    "voice/render-plan.ts",
+    "voice/scope.ts",
+    "voice/types.ts"
+  ],
+  "voice/lfo.ts": [
+    "voice/delay.ts"
+  ],
+  "voice/modifier-graph.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/modifier-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ],
+  "voice/modifier-graph.ts": [
+    "modifiers/registry.ts",
+    "voice/modulation-graph.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation-cc.test.ts": [
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation-graph.test.ts": [
+    "voice/compositor.ts",
+    "voice/envelope.ts",
+    "voice/eval-graph.ts",
+    "voice/modifier-graph.ts",
+    "voice/modulation-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts",
+    "voice/voice-pool.ts"
+  ],
+  "voice/modulation-graph.ts": [
+    "voice/envelope.ts",
+    "voice/lfo.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation-lfo.test.ts": [
+    "voice/lfo.ts",
+    "voice/modulation-graph.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation-osc.test.ts": [
+    "engine/render-context.ts",
+    "geometry/kit-schema.ts",
+    "geometry/pixel-model.ts",
+    "voice/engine.ts",
+    "voice/modulation-graph.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation-parity.ts": [
+    "voice/envelope.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation-random-note.test.ts": [
+    "voice/modulation.ts",
+    "voice/prng.ts"
+  ],
+  "voice/modulation.test.ts": [
+    "engine/framebuffer.ts",
+    "geometry/pixel-model.ts",
+    "modifiers/chain.ts",
+    "modifiers/impl/levels.ts",
+    "modifiers/registry.ts",
+    "modifiers/types.ts",
+    "voice/compositor.ts",
+    "voice/modulation-parity.ts",
+    "voice/modulation.ts",
+    "voice/types.ts"
+  ],
+  "voice/modulation.ts": [
+    "voice/envelope.ts",
+    "voice/lfo.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ],
+  "voice/prng.test.ts": [
+    "voice/prng.ts"
+  ],
+  "voice/prng.ts": [],
+  "voice/reachability-lint.test.ts": [
+    "voice/render-plan.ts",
+    "voice/types.ts"
+  ],
+  "voice/reachability-lint.ts": [
+    "voice/render-plan.ts",
+    "voice/types.ts"
+  ],
+  "voice/render-plan.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/prng.ts",
+    "voice/render-plan.ts",
+    "voice/types.ts"
+  ],
+  "voice/render-plan.ts": [
+    "voice/reachability-lint.ts",
+    "voice/scope-lint.ts",
+    "voice/types.ts"
+  ],
+  "voice/scope-lint.test.ts": [
+    "voice/render-plan.ts",
+    "voice/types.ts"
+  ],
+  "voice/scope-lint.ts": [
+    "voice/render-plan.ts",
+    "voice/types.ts"
+  ],
+  "voice/scope.parse.test.ts": [
+    "voice/scope.ts"
+  ],
+  "voice/scope.ts": [
+    "voice/types.ts"
+  ],
+  "voice/types.test.ts": [
+    "voice/types.ts"
+  ],
+  "voice/types.ts": [
+    "canvas/types.ts",
+    "color/blend.ts",
+    "effects/vocabulary.ts",
+    "modifiers/types.ts",
+    "voice/lfo.ts",
+    "voice/modulation.ts"
+  ],
+  "voice/voice-pool.test.ts": [
+    "voice/eval-graph.ts",
+    "voice/types.ts",
+    "voice/voice-pool.ts"
+  ],
+  "voice/voice-pool.ts": [
+    "canvas/ids.ts",
+    "voice/eval-graph.ts",
+    "voice/prng.ts",
+    "voice/types.ts"
+  ]
+}

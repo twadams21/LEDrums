@@ -1,0 +1,5 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+ERROR: Error loading apps/web/vite.config.ts (Cannot find module '@sveltejs/vite-plugin-svelte')
+ERROR: Please fix or visit https://knip.dev/reference/known-issues
+ERROR: Error loading apps/web/vite.design-system.config.ts (Cannot find module '@sveltejs/vite-plugin-svelte')
+ERROR: Please fix or visit https://knip.dev/reference/known-issues

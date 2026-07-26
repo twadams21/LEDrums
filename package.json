@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "2.1.9",
     "ajv-cli": "5.0.0",
     "depcheck": "1.4.7",
     "jscpd": "5.0.12",

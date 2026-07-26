@@ -1,0 +1,5781 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 59,
+        "endLoc": {
+          "column": 38,
+          "line": 59,
+          "position": 2303
+        },
+        "name": "server/src/engine-host.ts",
+        "start": 38,
+        "startLoc": {
+          "column": 15,
+          "line": 38,
+          "position": 1568
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 102,
+        "endLoc": {
+          "column": 38,
+          "line": 102,
+          "position": 3881
+        },
+        "name": "server/src/voice-engine-host.ts",
+        "start": 81,
+        "startLoc": {
+          "column": 15,
+          "line": 81,
+          "position": 3146
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 215,
+        "endLoc": {
+          "column": 7,
+          "line": 215,
+          "position": 7495
+        },
+        "name": "server/src/handlers/client-message.test.ts",
+        "start": 193,
+        "startLoc": {
+          "column": 9,
+          "line": 193,
+          "position": 7146
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 26,
+        "endLoc": {
+          "column": 7,
+          "line": 26,
+          "position": 1322
+        },
+        "name": "server/src/handlers/voice-input.test.ts",
+        "start": 22,
+        "startLoc": {
+          "column": 3,
+          "line": 22,
+          "position": 1045
+        }
+      },
+      "tokens": 86
+    },
+    {
+      "firstFile": {
+        "end": 214,
+        "endLoc": {
+          "column": 20,
+          "line": 214,
+          "position": 7487
+        },
+        "name": "server/src/handlers/client-message.test.ts",
+        "start": 195,
+        "startLoc": {
+          "column": 8,
+          "line": 195,
+          "position": 7164
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 308,
+        "endLoc": {
+          "column": 48,
+          "line": 308,
+          "position": 12119
+        },
+        "name": "server/src/voice-engine-host.test.ts",
+        "start": 305,
+        "startLoc": {
+          "column": 33,
+          "line": 305,
+          "position": 11854
+        }
+      },
+      "tokens": 81
+    },
+    {
+      "firstFile": {
+        "end": 590,
+        "endLoc": {
+          "column": 5,
+          "line": 590,
+          "position": 24417
+        },
+        "name": "server/src/handlers/client-message.test.ts",
+        "start": 577,
+        "startLoc": {
+          "column": 77,
+          "line": 577,
+          "position": 23776
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 641,
+        "endLoc": {
+          "column": 5,
+          "line": 641,
+          "position": 27237
+        },
+        "name": "server/src/handlers/client-message.test.ts",
+        "start": 628,
+        "startLoc": {
+          "column": 111,
+          "line": 628,
+          "position": 26596
+        }
+      },
+      "tokens": 158
+    },
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 75,
+          "line": 39,
+          "position": 1222
+        },
+        "name": "server/src/http/host-event.test.ts",
+        "start": 9,
+        "startLoc": {
+          "column": 21,
+          "line": 9,
+          "position": 259
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 31,
+      "secondFile": {
+        "end": 37,
+        "endLoc": {
+          "column": 75,
+          "line": 37,
+          "position": 1540
+        },
+        "name": "server/src/http/native-midi.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 51,
+          "line": 4,
+          "position": 285
+        }
+      },
+      "tokens": 144
+    },
+    {
+      "firstFile": {
+        "end": 61,
+        "endLoc": {
+          "column": 8,
+          "line": 61,
+          "position": 1923
+        },
+        "name": "server/src/http/host-event.test.ts",
+        "start": 44,
+        "startLoc": {
+          "column": 88,
+          "line": 44,
+          "position": 1567
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 18,
+      "secondFile": {
+        "end": 59,
+        "endLoc": {
+          "column": 8,
+          "line": 59,
+          "position": 2209
+        },
+        "name": "server/src/http/native-midi.test.ts",
+        "start": 41,
+        "startLoc": {
+          "column": 67,
+          "line": 41,
+          "position": 1772
+        }
+      },
+      "tokens": 106
+    },
+    {
+      "firstFile": {
+        "end": 115,
+        "endLoc": {
+          "column": 22,
+          "line": 115,
+          "position": 4485
+        },
+        "name": "server/src/http/host-event.ts",
+        "start": 93,
+        "startLoc": {
+          "column": 32,
+          "line": 93,
+          "position": 3984
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 72,
+        "endLoc": {
+          "column": 22,
+          "line": 72,
+          "position": 3165
+        },
+        "name": "server/src/http/native-midi.ts",
+        "start": 50,
+        "startLoc": {
+          "column": 33,
+          "line": 50,
+          "position": 2664
+        }
+      },
+      "tokens": 109
+    },
+    {
+      "firstFile": {
+        "end": 46,
+        "endLoc": {
+          "column": 1,
+          "line": 46,
+          "position": 2154
+        },
+        "name": "server/src/network-adapters.ts",
+        "start": 27,
+        "startLoc": {
+          "column": 71,
+          "line": 27,
+          "position": 1371
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 42,
+        "endLoc": {
+          "column": 1,
+          "line": 42,
+          "position": 1436
+        },
+        "name": "io/src/pixlite/sweep.ts",
+        "start": 26,
+        "startLoc": {
+          "column": 28,
+          "line": 26,
+          "position": 938
+        }
+      },
+      "tokens": 152
+    },
+    {
+      "firstFile": {
+        "end": 172,
+        "endLoc": {
+          "column": 3,
+          "line": 172,
+          "position": 5567
+        },
+        "name": "web/src/lib/app/chrome/OscInputPanel.svelte:css",
+        "start": 143,
+        "startLoc": {
+          "column": 31,
+          "line": 143,
+          "position": 4874
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 30,
+      "secondFile": {
+        "end": 204,
+        "endLoc": {
+          "column": 3,
+          "line": 204,
+          "position": 7240
+        },
+        "name": "web/src/lib/app/docks/inspectors/OutputStatusPanel.svelte:css",
+        "start": 175,
+        "startLoc": {
+          "column": 59,
+          "line": 175,
+          "position": 6547
+        }
+      },
+      "tokens": 266
+    },
+    {
+      "firstFile": {
+        "end": 240,
+        "endLoc": {
+          "column": 4,
+          "line": 240,
+          "position": 11346
+        },
+        "name": "web/src/lib/app/docks/Inspector.svelte:css",
+        "start": 218,
+        "startLoc": {
+          "column": 2,
+          "line": 218,
+          "position": 10922
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 114,
+        "endLoc": {
+          "column": 3,
+          "line": 114,
+          "position": 3806
+        },
+        "name": "web/src/lib/app/docks/inspectors/SectionInspector.svelte:css",
+        "start": 92,
+        "startLoc": {
+          "column": 2,
+          "line": 92,
+          "position": 3383
+        }
+      },
+      "tokens": 144
+    },
+    {
+      "firstFile": {
+        "end": 240,
+        "endLoc": {
+          "column": 4,
+          "line": 240,
+          "position": 11346
+        },
+        "name": "web/src/lib/app/docks/Inspector.svelte:css",
+        "start": 218,
+        "startLoc": {
+          "column": 2,
+          "line": 218,
+          "position": 10922
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 280,
+        "endLoc": {
+          "column": 3,
+          "line": 280,
+          "position": 11839
+        },
+        "name": "web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css",
+        "start": 258,
+        "startLoc": {
+          "column": 2,
+          "line": 258,
+          "position": 11416
+        }
+      },
+      "tokens": 144
+    },
+    {
+      "firstFile": {
+        "end": 238,
+        "endLoc": {
+          "column": 29,
+          "line": 238,
+          "position": 11337
+        },
+        "name": "web/src/lib/app/docks/Inspector.svelte:css",
+        "start": 223,
+        "startLoc": {
+          "column": 47,
+          "line": 223,
+          "position": 11076
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 16,
+      "secondFile": {
+        "end": 149,
+        "endLoc": {
+          "column": 29,
+          "line": 149,
+          "position": 5353
+        },
+        "name": "web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte:css",
+        "start": 134,
+        "startLoc": {
+          "column": 68,
+          "line": 134,
+          "position": 5092
+        }
+      },
+      "tokens": 93
+    },
+    {
+      "firstFile": {
+        "end": 239,
+        "endLoc": {
+          "column": 3,
+          "line": 239,
+          "position": 11341
+        },
+        "name": "web/src/lib/app/docks/Inspector.svelte:css",
+        "start": 223,
+        "startLoc": {
+          "column": 48,
+          "line": 223,
+          "position": 11077
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 244,
+        "endLoc": {
+          "column": 3,
+          "line": 244,
+          "position": 9890
+        },
+        "name": "web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte:css",
+        "start": 228,
+        "startLoc": {
+          "column": 14,
+          "line": 228,
+          "position": 9626
+        }
+      },
+      "tokens": 93
+    },
+    {
+      "firstFile": {
+        "end": 112,
+        "endLoc": {
+          "column": 3,
+          "line": 112,
+          "position": 3223
+        },
+        "name": "web/src/lib/app/docks/inspectors/AdoptByIpRow.svelte:css",
+        "start": 100,
+        "startLoc": {
+          "column": 41,
+          "line": 100,
+          "position": 2905
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 598,
+        "endLoc": {
+          "column": 3,
+          "line": 598,
+          "position": 23321
+        },
+        "name": "web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte:css",
+        "start": 586,
+        "startLoc": {
+          "column": 41,
+          "line": 586,
+          "position": 23003
+        }
+      },
+      "tokens": 103
+    },
+    {
+      "firstFile": {
+        "end": 96,
+        "endLoc": {
+          "column": 14,
+          "line": 96,
+          "position": 3135
+        },
+        "name": "web/src/lib/app/docks/inspectors/CcNodeInspector.svelte:css",
+        "start": 75,
+        "startLoc": {
+          "column": 5,
+          "line": 75,
+          "position": 2615
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 239,
+        "endLoc": {
+          "column": 14,
+          "line": 239,
+          "position": 8787
+        },
+        "name": "web/src/lib/app/docks/inspectors/DrumZonesList.svelte:css",
+        "start": 218,
+        "startLoc": {
+          "column": 7,
+          "line": 218,
+          "position": 8267
+        }
+      },
+      "tokens": 161
+    },
+    {
+      "firstFile": {
+        "end": 406,
+        "endLoc": {
+          "column": 3,
+          "line": 406,
+          "position": 17576
+        },
+        "name": "web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte:css",
+        "start": 392,
+        "startLoc": {
+          "column": 14,
+          "line": 392,
+          "position": 17315
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 148,
+        "endLoc": {
+          "column": 3,
+          "line": 148,
+          "position": 5569
+        },
+        "name": "web/src/lib/app/docks/inspectors/OutputStatusPanel.svelte:css",
+        "start": 134,
+        "startLoc": {
+          "column": 9,
+          "line": 134,
+          "position": 5308
+        }
+      },
+      "tokens": 70
+    },
+    {
+      "firstFile": {
+        "end": 611,
+        "endLoc": {
+          "column": 3,
+          "line": 611,
+          "position": 23576
+        },
+        "name": "web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte:css",
+        "start": 573,
+        "startLoc": {
+          "column": 54,
+          "line": 573,
+          "position": 22723
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 39,
+      "secondFile": {
+        "end": 141,
+        "endLoc": {
+          "column": 3,
+          "line": 141,
+          "position": 4784
+        },
+        "name": "web/src/lib/app/docks/inspectors/PatchHoopInspector.svelte:css",
+        "start": 103,
+        "startLoc": {
+          "column": 94,
+          "line": 103,
+          "position": 3931
+        }
+      },
+      "tokens": 263
+    },
+    {
+      "firstFile": {
+        "end": 191,
+        "endLoc": {
+          "column": 3,
+          "line": 191,
+          "position": 7691
+        },
+        "name": "web/src/lib/app/docks/inspectors/DrumZonesList.svelte:css",
+        "start": 172,
+        "startLoc": {
+          "column": 22,
+          "line": 172,
+          "position": 7282
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 367,
+        "endLoc": {
+          "column": 3,
+          "line": 367,
+          "position": 13940
+        },
+        "name": "web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css",
+        "start": 348,
+        "startLoc": {
+          "column": 44,
+          "line": 348,
+          "position": 13531
+        }
+      },
+      "tokens": 113
+    },
+    {
+      "firstFile": {
+        "end": 246,
+        "endLoc": {
+          "column": 3,
+          "line": 246,
+          "position": 8924
+        },
+        "name": "web/src/lib/app/docks/inspectors/DrumZonesList.svelte:css",
+        "start": 216,
+        "startLoc": {
+          "column": 23,
+          "line": 216,
+          "position": 8254
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 31,
+      "secondFile": {
+        "end": 175,
+        "endLoc": {
+          "column": 3,
+          "line": 175,
+          "position": 5738
+        },
+        "name": "web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte:css",
+        "start": 145,
+        "startLoc": {
+          "column": 20,
+          "line": 145,
+          "position": 5068
+        }
+      },
+      "tokens": 208
+    },
+    {
+      "firstFile": {
+        "end": 253,
+        "endLoc": {
+          "column": 3,
+          "line": 253,
+          "position": 9077
+        },
+        "name": "web/src/lib/app/docks/inspectors/DrumZonesList.svelte:css",
+        "start": 216,
+        "startLoc": {
+          "column": 23,
+          "line": 216,
+          "position": 8254
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 38,
+      "secondFile": {
+        "end": 324,
+        "endLoc": {
+          "column": 3,
+          "line": 324,
+          "position": 12821
+        },
+        "name": "web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css",
+        "start": 287,
+        "startLoc": {
+          "column": 15,
+          "line": 287,
+          "position": 11998
+        }
+      },
+      "tokens": 259
+    },
+    {
+      "firstFile": {
+        "end": 254,
+        "endLoc": {
+          "column": 3,
+          "line": 254,
+          "position": 9081
+        },
+        "name": "web/src/lib/app/docks/inspectors/DrumZonesList.svelte:css",
+        "start": 235,
+        "startLoc": {
+          "column": 18,
+          "line": 235,
+          "position": 8708
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 325,
+        "endLoc": {
+          "column": 4,
+          "line": 325,
+          "position": 12826
+        },
+        "name": "web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte:css",
+        "start": 306,
+        "startLoc": {
+          "column": 18,
+          "line": 306,
+          "position": 12452
+        }
+      },
+      "tokens": 120
+    },
+    {
+      "firstFile": {
+        "end": 162,
+        "endLoc": {
+          "column": 24,
+          "line": 162,
+          "position": 5638
+        },
+        "name": "web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte:css",
+        "start": 150,
+        "startLoc": {
+          "column": 30,
+          "line": 150,
+          "position": 5384
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 255,
+        "endLoc": {
+          "column": 24,
+          "line": 255,
+          "position": 10139
+        },
+        "name": "web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte:css",
+        "start": 243,
+        "startLoc": {
+          "column": 28,
+          "line": 243,
+          "position": 9885
+        }
+      },
+      "tokens": 80
+    },
+    {
+      "firstFile": {
+        "end": 88,
+        "endLoc": {
+          "column": 3,
+          "line": 88,
+          "position": 2822
+        },
+        "name": "web/src/lib/app/docks/inspectors/NoteNodeInspector.svelte:css",
+        "start": 67,
+        "startLoc": {
+          "column": 2,
+          "line": 67,
+          "position": 2388
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 77,
+        "endLoc": {
+          "column": 3,
+          "line": 77,
+          "position": 2380
+        },
+        "name": "web/src/lib/app/docks/inspectors/RandomModNodeInspector.svelte:css",
+        "start": 56,
+        "startLoc": {
+          "column": 2,
+          "line": 56,
+          "position": 1946
+        }
+      },
+      "tokens": 127
+    },
+    {
+      "firstFile": {
+        "end": 88,
+        "endLoc": {
+          "column": 3,
+          "line": 88,
+          "position": 2822
+        },
+        "name": "web/src/lib/app/docks/inspectors/NoteNodeInspector.svelte:css",
+        "start": 74,
+        "startLoc": {
+          "column": 15,
+          "line": 74,
+          "position": 2548
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 61,
+        "endLoc": {
+          "column": 3,
+          "line": 61,
+          "position": 1766
+        },
+        "name": "web/src/lib/app/docks/inspectors/OscNodeInspector.svelte:css",
+        "start": 47,
+        "startLoc": {
+          "column": 21,
+          "line": 47,
+          "position": 1492
+        }
+      },
+      "tokens": 78
+    },
+    {
+      "firstFile": {
+        "end": 181,
+        "endLoc": {
+          "column": 3,
+          "line": 181,
+          "position": 6820
+        },
+        "name": "web/src/lib/app/docks/inspectors/PatchControllerInspector.svelte:css",
+        "start": 169,
+        "startLoc": {
+          "column": 13,
+          "line": 169,
+          "position": 6557
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 101,
+        "endLoc": {
+          "column": 3,
+          "line": 101,
+          "position": 3737
+        },
+        "name": "web/src/lib/app/docks/inspectors/PatchHoopInspector.svelte:css",
+        "start": 89,
+        "startLoc": {
+          "column": 8,
+          "line": 89,
+          "position": 3474
+        }
+      },
+      "tokens": 90
+    },
+    {
+      "firstFile": {
+        "end": 146,
+        "endLoc": {
+          "column": 3,
+          "line": 146,
+          "position": 6328
+        },
+        "name": "web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:css",
+        "start": 134,
+        "startLoc": {
+          "column": 2,
+          "line": 134,
+          "position": 6062
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 195,
+        "endLoc": {
+          "column": 3,
+          "line": 195,
+          "position": 5622
+        },
+        "name": "web/src/lib/app/docks/inspectors/SectionInspector.svelte:css",
+        "start": 184,
+        "startLoc": {
+          "column": 2,
+          "line": 184,
+          "position": 5360
+        }
+      },
+      "tokens": 90
+    },
+    {
+      "firstFile": {
+        "end": 83,
+        "endLoc": {
+          "column": 9,
+          "line": 83,
+          "position": 2984
+        },
+        "name": "web/src/lib/app/docks/inspectors/ScopeHoopPreview.svelte:typescript",
+        "start": 71,
+        "startLoc": {
+          "column": 2,
+          "line": 71,
+          "position": 2653
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 142,
+        "endLoc": {
+          "column": 9,
+          "line": 142,
+          "position": 5870
+        },
+        "name": "web/src/lib/trigger-lab/EffectThumb.svelte:typescript",
+        "start": 127,
+        "startLoc": {
+          "column": 2,
+          "line": 127,
+          "position": 5320
+        }
+      },
+      "tokens": 91
+    },
+    {
+      "firstFile": {
+        "end": 185,
+        "endLoc": {
+          "column": 3,
+          "line": 185,
+          "position": 5989
+        },
+        "name": "web/src/lib/app/views/GraphsDock.svelte:css",
+        "start": 171,
+        "startLoc": {
+          "column": 2,
+          "line": 171,
+          "position": 5635
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 445,
+        "endLoc": {
+          "column": 3,
+          "line": 445,
+          "position": 20627
+        },
+        "name": "web/src/lib/styleguide/sections/SectionGraph.svelte:css",
+        "start": 431,
+        "startLoc": {
+          "column": 13,
+          "line": 431,
+          "position": 20273
+        }
+      },
+      "tokens": 116
+    },
+    {
+      "firstFile": {
+        "end": 205,
+        "endLoc": {
+          "column": 6,
+          "line": 205,
+          "position": 6444
+        },
+        "name": "web/src/lib/app/views/GraphsDock.svelte:css",
+        "start": 193,
+        "startLoc": {
+          "column": 9,
+          "line": 193,
+          "position": 6165
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 463,
+        "endLoc": {
+          "column": 3,
+          "line": 463,
+          "position": 21043
+        },
+        "name": "web/src/lib/styleguide/sections/SectionGraph.svelte:css",
+        "start": 451,
+        "startLoc": {
+          "column": 13,
+          "line": 451,
+          "position": 20767
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 230,
+        "endLoc": {
+          "column": 21,
+          "line": 230,
+          "position": 7075
+        },
+        "name": "web/src/lib/app/views/GraphsDock.svelte:css",
+        "start": 218,
+        "startLoc": {
+          "column": 14,
+          "line": 218,
+          "position": 6728
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 486,
+        "endLoc": {
+          "column": 21,
+          "line": 486,
+          "position": 21618
+        },
+        "name": "web/src/lib/styleguide/sections/SectionGraph.svelte:css",
+        "start": 474,
+        "startLoc": {
+          "column": 13,
+          "line": 474,
+          "position": 21271
+        }
+      },
+      "tokens": 114
+    },
+    {
+      "firstFile": {
+        "end": 78,
+        "endLoc": {
+          "column": 6,
+          "line": 78,
+          "position": 3374
+        },
+        "name": "web/src/lib/app/views/NodeSignalPreview.svelte:typescript",
+        "start": 63,
+        "startLoc": {
+          "column": 64,
+          "line": 63,
+          "position": 2934
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 16,
+      "secondFile": {
+        "end": 116,
+        "endLoc": {
+          "column": 6,
+          "line": 116,
+          "position": 4580
+        },
+        "name": "web/src/lib/app/views/NodeSignalPreview.svelte:typescript",
+        "start": 102,
+        "startLoc": {
+          "column": 73,
+          "line": 102,
+          "position": 4223
+        }
+      },
+      "tokens": 114
+    },
+    {
+      "firstFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 9,
+          "line": 60,
+          "position": 2095
+        },
+        "name": "web/src/lib/app/views/PasteFallbackDialog.svelte:css",
+        "start": 48,
+        "startLoc": {
+          "column": 25,
+          "line": 48,
+          "position": 1844
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 99,
+        "endLoc": {
+          "column": 9,
+          "line": 99,
+          "position": 3526
+        },
+        "name": "web/src/lib/app/views/PasteSongDialog.svelte:css",
+        "start": 87,
+        "startLoc": {
+          "column": 21,
+          "line": 87,
+          "position": 3275
+        }
+      },
+      "tokens": 87
+    },
+    {
+      "firstFile": {
+        "end": 95,
+        "endLoc": {
+          "column": 24,
+          "line": 95,
+          "position": 2898
+        },
+        "name": "web/src/lib/app/views/PasteFallbackDialog.svelte:css",
+        "start": 74,
+        "startLoc": {
+          "column": 21,
+          "line": 74,
+          "position": 2391
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 147,
+        "endLoc": {
+          "column": 24,
+          "line": 147,
+          "position": 4536
+        },
+        "name": "web/src/lib/app/views/PasteSongDialog.svelte:css",
+        "start": 126,
+        "startLoc": {
+          "column": 15,
+          "line": 126,
+          "position": 4029
+        }
+      },
+      "tokens": 163
+    },
+    {
+      "firstFile": {
+        "end": 144,
+        "endLoc": {
+          "column": 3,
+          "line": 144,
+          "position": 3898
+        },
+        "name": "web/src/lib/app/views/PasteFallbackDialog.svelte:css",
+        "start": 95,
+        "startLoc": {
+          "column": 22,
+          "line": 95,
+          "position": 2896
+        }
+      },
+      "format": "css",
+      "fragment": "",
+      "lines": 50,
+      "secondFile": {
+        "end": 197,
+        "endLoc": {
+          "column": 3,
+          "line": 197,
+          "position": 5568
+        },
+        "name": "web/src/lib/app/views/PasteSongDialog.svelte:css",
+        "start": 148,
+        "startLoc": {
+          "column": 29,
+          "line": 148,
+          "position": 4566
+        }
+      },
+      "tokens": 295
+    },
+    {
+      "firstFile": {
+        "end": 26,
+        "endLoc": {
+          "column": 18,
+          "line": 26,
+          "position": 1191
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 23,
+        "endLoc": {
+          "column": 18,
+          "line": 23,
+          "position": 912
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 7,
+        "startLoc": {
+          "column": 44,
+          "line": 7,
+          "position": 357
+        }
+      },
+      "tokens": 77
+    },
+    {
+      "firstFile": {
+        "end": 46,
+        "endLoc": {
+          "column": 8,
+          "line": 46,
+          "position": 1650
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 37,
+      "secondFile": {
+        "end": 25,
+        "endLoc": {
+          "column": 99,
+          "line": 25,
+          "position": 1256
+        },
+        "name": "web/src/lib/trigger-lab/store.autowire.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 47,
+          "line": 4,
+          "position": 208
+        }
+      },
+      "tokens": 226
+    },
+    {
+      "firstFile": {
+        "end": 49,
+        "endLoc": {
+          "column": 44,
+          "line": 49,
+          "position": 1757
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 40,
+      "secondFile": {
+        "end": 29,
+        "endLoc": {
+          "column": 3,
+          "line": 29,
+          "position": 1303
+        },
+        "name": "web/src/lib/trigger-lab/store.cc.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 37,
+          "line": 6,
+          "position": 288
+        }
+      },
+      "tokens": 252
+    },
+    {
+      "firstFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 4,
+          "line": 40,
+          "position": 1427
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 31,
+      "secondFile": {
+        "end": 34,
+        "endLoc": {
+          "column": 1,
+          "line": 34,
+          "position": 1263
+        },
+        "name": "web/src/lib/trigger-lab/store.controller.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 136,
+          "line": 6,
+          "position": 387
+        }
+      },
+      "tokens": 158
+    },
+    {
+      "firstFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 7,
+          "line": 40,
+          "position": 1430
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 31,
+      "secondFile": {
+        "end": 34,
+        "endLoc": {
+          "column": 5,
+          "line": 34,
+          "position": 1076
+        },
+        "name": "web/src/lib/trigger-lab/store.dock-source.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 34,
+          "line": 6,
+          "position": 309
+        }
+      },
+      "tokens": 159
+    },
+    {
+      "firstFile": {
+        "end": 45,
+        "endLoc": {
+          "column": 17,
+          "line": 45,
+          "position": 1641
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 36,
+      "secondFile": {
+        "end": 45,
+        "endLoc": {
+          "column": 18,
+          "line": 45,
+          "position": 1754
+        },
+        "name": "web/src/lib/trigger-lab/store.echo-gate.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 48,
+          "line": 6,
+          "position": 307
+        }
+      },
+      "tokens": 225
+    },
+    {
+      "firstFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 12,
+          "line": 40,
+          "position": 1435
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 42,
+          "line": 10,
+          "position": 556
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 31,
+      "secondFile": {
+        "end": 24,
+        "endLoc": {
+          "column": 21,
+          "line": 24,
+          "position": 1339
+        },
+        "name": "web/src/lib/trigger-lab/store.lfo.test.ts",
+        "start": 7,
+        "startLoc": {
+          "column": 38,
+          "line": 7,
+          "position": 392
+        }
+      },
+      "tokens": 163
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 44,
+          "line": 43,
+          "position": 1564
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 18,
+        "startLoc": {
+          "column": 10,
+          "line": 18,
+          "position": 971
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 26,
+      "secondFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 18,
+          "line": 38,
+          "position": 1211
+        },
+        "name": "web/src/lib/trigger-lab/store.autosave.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 2,
+          "line": 14,
+          "position": 647
+        }
+      },
+      "tokens": 199
+    },
+    {
+      "firstFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 76,
+          "line": 40,
+          "position": 1499
+        },
+        "name": "web/src/lib/app/views/object-rows.test.ts",
+        "start": 26,
+        "startLoc": {
+          "column": 28,
+          "line": 26,
+          "position": 1201
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 109,
+          "line": 36,
+          "position": 1234
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 23,
+        "startLoc": {
+          "column": 44,
+          "line": 23,
+          "position": 938
+        }
+      },
+      "tokens": 106
+    },
+    {
+      "firstFile": {
+        "end": 130,
+        "endLoc": {
+          "column": 9,
+          "line": 130,
+          "position": 5389
+        },
+        "name": "web/src/lib/trigger-lab/EffectThumb.svelte:typescript",
+        "start": 79,
+        "startLoc": {
+          "column": 3,
+          "line": 79,
+          "position": 3802
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 52,
+      "secondFile": {
+        "end": 73,
+        "endLoc": {
+          "column": 9,
+          "line": 73,
+          "position": 2967
+        },
+        "name": "web/src/lib/trigger-lab/SignalFace.svelte:typescript",
+        "start": 29,
+        "startLoc": {
+          "column": 35,
+          "line": 29,
+          "position": 1496
+        }
+      },
+      "tokens": 198
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 43,
+          "line": 43,
+          "position": 1543
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 38,
+          "line": 6,
+          "position": 297
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 38,
+      "secondFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 3,
+          "line": 40,
+          "position": 1359
+        },
+        "name": "web/src/lib/trigger-lab/enum-params.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 37,
+          "line": 4,
+          "position": 244
+        }
+      },
+      "tokens": 263
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 7,
+          "line": 44,
+          "position": 1552
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 52,
+          "line": 6,
+          "position": 311
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 39,
+      "secondFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 9,
+          "line": 36,
+          "position": 956
+        },
+        "name": "web/src/lib/trigger-lab/store.canvas-scenes.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 43,
+          "line": 2,
+          "position": 113
+        }
+      },
+      "tokens": 262
+    },
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 8,
+          "line": 39,
+          "position": 1324
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 52,
+          "line": 6,
+          "position": 311
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 34,
+      "secondFile": {
+        "end": 47,
+        "endLoc": {
+          "column": 8,
+          "line": 47,
+          "position": 1594
+        },
+        "name": "web/src/lib/trigger-lab/store.clipboard.test.ts",
+        "start": 13,
+        "startLoc": {
+          "column": 33,
+          "line": 13,
+          "position": 401
+        }
+      },
+      "tokens": 207
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 44,
+          "line": 43,
+          "position": 1544
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 38,
+          "line": 6,
+          "position": 297
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 38,
+      "secondFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 8,
+          "line": 30,
+          "position": 1219
+        },
+        "name": "web/src/lib/trigger-lab/store.delay.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 24,
+          "line": 3,
+          "position": 139
+        }
+      },
+      "tokens": 264
+    },
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 8,
+          "line": 39,
+          "position": 1324
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 52,
+          "line": 6,
+          "position": 311
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 34,
+      "secondFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 8,
+          "line": 40,
+          "position": 1411
+        },
+        "name": "web/src/lib/trigger-lab/store.persistence.test.ts",
+        "start": 5,
+        "startLoc": {
+          "column": 45,
+          "line": 5,
+          "position": 307
+        }
+      },
+      "tokens": 207
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 44,
+          "line": 43,
+          "position": 1544
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 52,
+          "line": 6,
+          "position": 311
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 38,
+      "secondFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 8,
+          "line": 44,
+          "position": 1554
+        },
+        "name": "web/src/lib/trigger-lab/store.songs.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 82,
+          "line": 3,
+          "position": 197
+        }
+      },
+      "tokens": 261
+    },
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 8,
+          "line": 39,
+          "position": 1324
+        },
+        "name": "web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 52,
+          "line": 6,
+          "position": 311
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 34,
+      "secondFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 8,
+          "line": 39,
+          "position": 1425
+        },
+        "name": "web/src/lib/trigger-lab/store.system-toasts.test.ts",
+        "start": 5,
+        "startLoc": {
+          "column": 47,
+          "line": 5,
+          "position": 269
+        }
+      },
+      "tokens": 207
+    },
+    {
+      "firstFile": {
+        "end": 47,
+        "endLoc": {
+          "column": 5,
+          "line": 47,
+          "position": 1483
+        },
+        "name": "web/src/lib/trigger-lab/clipdoc.test.ts",
+        "start": 35,
+        "startLoc": {
+          "column": 128,
+          "line": 35,
+          "position": 1009
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 45,
+        "endLoc": {
+          "column": 8,
+          "line": 45,
+          "position": 1393
+        },
+        "name": "web/src/lib/trigger-lab/store/song-library-refs.test.ts",
+        "start": 34,
+        "startLoc": {
+          "column": 95,
+          "line": 34,
+          "position": 993
+        }
+      },
+      "tokens": 86
+    },
+    {
+      "firstFile": {
+        "end": 34,
+        "endLoc": {
+          "column": 1,
+          "line": 34,
+          "position": 1057
+        },
+        "name": "web/src/lib/trigger-lab/dock-voices.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 53,
+          "line": 4,
+          "position": 231
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 31,
+      "secondFile": {
+        "end": 66,
+        "endLoc": {
+          "column": 1,
+          "line": 66,
+          "position": 1980
+        },
+        "name": "web/src/lib/trigger-lab/store.dock-source.test.ts",
+        "start": 41,
+        "startLoc": {
+          "column": 81,
+          "line": 41,
+          "position": 1525
+        }
+      },
+      "tokens": 105
+    },
+    {
+      "firstFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 18,
+          "line": 35,
+          "position": 1167
+        },
+        "name": "web/src/lib/trigger-lab/enum-params.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 68,
+          "line": 3,
+          "position": 183
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 33,
+      "secondFile": {
+        "end": 37,
+        "endLoc": {
+          "column": 18,
+          "line": 37,
+          "position": 955
+        },
+        "name": "web/src/lib/trigger-lab/store.ids.test.ts",
+        "start": 9,
+        "startLoc": {
+          "column": 0,
+          "line": 9,
+          "position": 240
+        }
+      },
+      "tokens": 225
+    },
+    {
+      "firstFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 36,
+          "line": 50,
+          "position": 1785
+        },
+        "name": "web/src/lib/trigger-lab/enum-params.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 90,
+          "line": 3,
+          "position": 205
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 48,
+      "secondFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 8,
+          "line": 60,
+          "position": 2152
+        },
+        "name": "web/src/lib/trigger-lab/store.objects.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 43,
+          "line": 2,
+          "position": 113
+        }
+      },
+      "tokens": 350
+    },
+    {
+      "firstFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 36,
+          "line": 50,
+          "position": 1785
+        },
+        "name": "web/src/lib/trigger-lab/enum-params.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 17,
+          "line": 4,
+          "position": 224
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 47,
+      "secondFile": {
+        "end": 57,
+        "endLoc": {
+          "column": 8,
+          "line": 57,
+          "position": 1958
+        },
+        "name": "web/src/lib/trigger-lab/store.presets.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 33,
+          "line": 3,
+          "position": 148
+        }
+      },
+      "tokens": 346
+    },
+    {
+      "firstFile": {
+        "end": 18,
+        "endLoc": {
+          "column": 1,
+          "line": 18,
+          "position": 618
+        },
+        "name": "web/src/lib/trigger-lab/generator-bridge.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 43,
+          "line": 4,
+          "position": 237
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 22,
+        "endLoc": {
+          "column": 1,
+          "line": 22,
+          "position": 941
+        },
+        "name": "web/src/lib/trigger-lab/sim.modifiers.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 91,
+          "line": 3,
+          "position": 192
+        }
+      },
+      "tokens": 98
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 39,
+          "line": 30,
+          "position": 935
+        },
+        "name": "web/src/lib/trigger-lab/persistence.songlibrary.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 60,
+          "line": 14,
+          "position": 476
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 33,
+          "line": 38,
+          "position": 1117
+        },
+        "name": "web/src/lib/trigger-lab/store/song-library-refs.test.ts",
+        "start": 19,
+        "startLoc": {
+          "column": 49,
+          "line": 19,
+          "position": 651
+        }
+      },
+      "tokens": 105
+    },
+    {
+      "firstFile": {
+        "end": 71,
+        "endLoc": {
+          "column": 11,
+          "line": 71,
+          "position": 2448
+        },
+        "name": "web/src/lib/trigger-lab/persistence.songlibrary.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 60,
+          "line": 14,
+          "position": 476
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 58,
+      "secondFile": {
+        "end": 57,
+        "endLoc": {
+          "column": 11,
+          "line": 57,
+          "position": 2232
+        },
+        "name": "web/src/lib/trigger-lab/store/song-library.test.ts",
+        "start": 5,
+        "startLoc": {
+          "column": 68,
+          "line": 5,
+          "position": 320
+        }
+      },
+      "tokens": 444
+    },
+    {
+      "firstFile": {
+        "end": 92,
+        "endLoc": {
+          "column": 25,
+          "line": 92,
+          "position": 3768
+        },
+        "name": "web/src/lib/trigger-lab/render.ts",
+        "start": 80,
+        "startLoc": {
+          "column": 34,
+          "line": 80,
+          "position": 3407
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 110,
+        "endLoc": {
+          "column": 25,
+          "line": 110,
+          "position": 5390
+        },
+        "name": "core/src/voice/compositor.ts",
+        "start": 98,
+        "startLoc": {
+          "column": 19,
+          "line": 98,
+          "position": 5029
+        }
+      },
+      "tokens": 71
+    },
+    {
+      "firstFile": {
+        "end": 228,
+        "endLoc": {
+          "column": 13,
+          "line": 228,
+          "position": 9472
+        },
+        "name": "web/src/lib/trigger-lab/render.ts",
+        "start": 215,
+        "startLoc": {
+          "column": 36,
+          "line": 215,
+          "position": 9015
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 113,
+        "endLoc": {
+          "column": 17,
+          "line": 113,
+          "position": 6274
+        },
+        "name": "core/src/voice/generator-bridge.ts",
+        "start": 97,
+        "startLoc": {
+          "column": 29,
+          "line": 97,
+          "position": 5528
+        }
+      },
+      "tokens": 109
+    },
+    {
+      "firstFile": {
+        "end": 100,
+        "endLoc": {
+          "column": 1,
+          "line": 100,
+          "position": 5367
+        },
+        "name": "web/src/lib/trigger-lab/show-builder.ts",
+        "start": 84,
+        "startLoc": {
+          "column": 28,
+          "line": 84,
+          "position": 4762
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 335,
+        "endLoc": {
+          "column": 1,
+          "line": 335,
+          "position": 17399
+        },
+        "name": "web/src/lib/trigger-lab/store/hydrate.ts",
+        "start": 317,
+        "startLoc": {
+          "column": 35,
+          "line": 317,
+          "position": 16614
+        }
+      },
+      "tokens": 157
+    },
+    {
+      "firstFile": {
+        "end": 46,
+        "endLoc": {
+          "column": 1,
+          "line": 46,
+          "position": 2293
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay-overlap.test.ts",
+        "start": 33,
+        "startLoc": {
+          "column": 56,
+          "line": 33,
+          "position": 1898
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 47,
+        "endLoc": {
+          "column": 1,
+          "line": 47,
+          "position": 1844
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay-timeline.test.ts",
+        "start": 34,
+        "startLoc": {
+          "column": 55,
+          "line": 34,
+          "position": 1449
+        }
+      },
+      "tokens": 125
+    },
+    {
+      "firstFile": {
+        "end": 49,
+        "endLoc": {
+          "column": 8,
+          "line": 49,
+          "position": 2367
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay-overlap.test.ts",
+        "start": 34,
+        "startLoc": {
+          "column": 20,
+          "line": 34,
+          "position": 1922
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 16,
+      "secondFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 5,
+          "line": 50,
+          "position": 1929
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay-timeline.test.ts",
+        "start": 35,
+        "startLoc": {
+          "column": 20,
+          "line": 35,
+          "position": 1473
+        }
+      },
+      "tokens": 119
+    },
+    {
+      "firstFile": {
+        "end": 21,
+        "endLoc": {
+          "column": 5,
+          "line": 21,
+          "position": 802
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay-timeline.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 45,
+          "line": 1,
+          "position": 45
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 21,
+      "secondFile": {
+        "end": 19,
+        "endLoc": {
+          "column": 5,
+          "line": 19,
+          "position": 652
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 37,
+          "line": 2,
+          "position": 84
+        }
+      },
+      "tokens": 90
+    },
+    {
+      "firstFile": {
+        "end": 22,
+        "endLoc": {
+          "column": 5,
+          "line": 22,
+          "position": 825
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay-timeline.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 22,
+        "endLoc": {
+          "column": 5,
+          "line": 22,
+          "position": 841
+        },
+        "name": "web/src/lib/trigger-lab/sim.fanin-coalescing.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 109
+    },
+    {
+      "firstFile": {
+        "end": 174,
+        "endLoc": {
+          "column": 13,
+          "line": 174,
+          "position": 5820
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay.test.ts",
+        "start": 160,
+        "startLoc": {
+          "column": 76,
+          "line": 160,
+          "position": 5473
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 202,
+        "endLoc": {
+          "column": 13,
+          "line": 202,
+          "position": 6664
+        },
+        "name": "web/src/lib/trigger-lab/sim.delay.test.ts",
+        "start": 189,
+        "startLoc": {
+          "column": 83,
+          "line": 189,
+          "position": 6346
+        }
+      },
+      "tokens": 96
+    },
+    {
+      "firstFile": {
+        "end": 101,
+        "endLoc": {
+          "column": 20,
+          "line": 101,
+          "position": 4770
+        },
+        "name": "web/src/lib/trigger-lab/sim.graph-compilation.ts",
+        "start": 79,
+        "startLoc": {
+          "column": 6,
+          "line": 79,
+          "position": 4317
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 65,
+        "endLoc": {
+          "column": 20,
+          "line": 65,
+          "position": 1712
+        },
+        "name": "core/src/voice/graph-integrity.ts",
+        "start": 44,
+        "startLoc": {
+          "column": 12,
+          "line": 44,
+          "position": 1354
+        }
+      },
+      "tokens": 83
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 5,
+          "line": 27,
+          "position": 1177
+        },
+        "name": "web/src/lib/trigger-lab/sim.modifiers.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 22,
+          "line": 3,
+          "position": 123
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 25,
+      "secondFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 5,
+          "line": 28,
+          "position": 1294
+        },
+        "name": "web/src/lib/trigger-lab/sim.modulation.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 39,
+          "line": 4,
+          "position": 179
+        }
+      },
+      "tokens": 170
+    },
+    {
+      "firstFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 38,
+          "line": 50,
+          "position": 2277
+        },
+        "name": "web/src/lib/trigger-lab/sim.modulation.test.ts",
+        "start": 36,
+        "startLoc": {
+          "column": 57,
+          "line": 36,
+          "position": 1855
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 115,
+        "endLoc": {
+          "column": 38,
+          "line": 115,
+          "position": 5033
+        },
+        "name": "web/src/lib/trigger-lab/store.lfo.test.ts",
+        "start": 102,
+        "startLoc": {
+          "column": 57,
+          "line": 102,
+          "position": 4613
+        }
+      },
+      "tokens": 95
+    },
+    {
+      "firstFile": {
+        "end": 23,
+        "endLoc": {
+          "column": 73,
+          "line": 23,
+          "position": 1218
+        },
+        "name": "web/src/lib/trigger-lab/sim.trigger-source.test.ts",
+        "start": 8,
+        "startLoc": {
+          "column": 72,
+          "line": 8,
+          "position": 430
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 16,
+      "secondFile": {
+        "end": 75,
+        "endLoc": {
+          "column": 73,
+          "line": 75,
+          "position": 3329
+        },
+        "name": "core/src/voice/types.test.ts",
+        "start": 57,
+        "startLoc": {
+          "column": 74,
+          "line": 57,
+          "position": 2301
+        }
+      },
+      "tokens": 205
+    },
+    {
+      "firstFile": {
+        "end": 183,
+        "endLoc": {
+          "column": 11,
+          "line": 183,
+          "position": 6755
+        },
+        "name": "web/src/lib/trigger-lab/sim.ts",
+        "start": 157,
+        "startLoc": {
+          "column": 52,
+          "line": 157,
+          "position": 6286
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 27,
+      "secondFile": {
+        "end": 161,
+        "endLoc": {
+          "column": 11,
+          "line": 161,
+          "position": 5806
+        },
+        "name": "core/src/voice/types.ts",
+        "start": 127,
+        "startLoc": {
+          "column": 22,
+          "line": 127,
+          "position": 4803
+        }
+      },
+      "tokens": 72
+    },
+    {
+      "firstFile": {
+        "end": 594,
+        "endLoc": {
+          "column": 20,
+          "line": 594,
+          "position": 23909
+        },
+        "name": "web/src/lib/trigger-lab/sim.ts",
+        "start": 578,
+        "startLoc": {
+          "column": 14,
+          "line": 578,
+          "position": 23051
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 686,
+        "endLoc": {
+          "column": 20,
+          "line": 686,
+          "position": 29621
+        },
+        "name": "core/src/voice/engine.ts",
+        "start": 669,
+        "startLoc": {
+          "column": 5,
+          "line": 669,
+          "position": 28776
+        }
+      },
+      "tokens": 116
+    },
+    {
+      "firstFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 9,
+          "line": 60,
+          "position": 2189
+        },
+        "name": "web/src/lib/trigger-lab/sim.value-switch.test.ts",
+        "start": 32,
+        "startLoc": {
+          "column": 19,
+          "line": 32,
+          "position": 1308
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 29,
+      "secondFile": {
+        "end": 824,
+        "endLoc": {
+          "column": 9,
+          "line": 824,
+          "position": 31350
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 796,
+        "startLoc": {
+          "column": 11,
+          "line": 796,
+          "position": 30469
+        }
+      },
+      "tokens": 229
+    },
+    {
+      "firstFile": {
+        "end": 42,
+        "endLoc": {
+          "column": 5,
+          "line": 42,
+          "position": 1792
+        },
+        "name": "web/src/lib/trigger-lab/store.autowire.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 42,
+      "secondFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 5,
+          "line": 43,
+          "position": 1818
+        },
+        "name": "web/src/lib/trigger-lab/store.splice.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 374
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 109,
+          "line": 27,
+          "position": 733
+        },
+        "name": "web/src/lib/trigger-lab/store.canvas-scenes.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 27,
+      "secondFile": {
+        "end": 33,
+        "endLoc": {
+          "column": 109,
+          "line": 33,
+          "position": 1192
+        },
+        "name": "web/src/lib/trigger-lab/store.graphs.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 227
+    },
+    {
+      "firstFile": {
+        "end": 29,
+        "endLoc": {
+          "column": 10,
+          "line": 29,
+          "position": 745
+        },
+        "name": "web/src/lib/trigger-lab/store.canvas-scenes.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 29,
+      "secondFile": {
+        "end": 45,
+        "endLoc": {
+          "column": 8,
+          "line": 45,
+          "position": 2030
+        },
+        "name": "web/src/lib/trigger-lab/store.shows.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 228
+    },
+    {
+      "firstFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 8,
+          "line": 32,
+          "position": 1383
+        },
+        "name": "web/src/lib/trigger-lab/store.cc.test.ts",
+        "start": 5,
+        "startLoc": {
+          "column": 48,
+          "line": 5,
+          "position": 249
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 28,
+      "secondFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 8,
+          "line": 30,
+          "position": 1280
+        },
+        "name": "web/src/lib/trigger-lab/store.modulation.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 44,
+          "line": 4,
+          "position": 199
+        }
+      },
+      "tokens": 260
+    },
+    {
+      "firstFile": {
+        "end": 49,
+        "endLoc": {
+          "column": 16,
+          "line": 49,
+          "position": 1504
+        },
+        "name": "web/src/lib/trigger-lab/store.controller.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 107,
+          "line": 6,
+          "position": 358
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 44,
+      "secondFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 109,
+          "line": 38,
+          "position": 1441
+        },
+        "name": "web/src/lib/trigger-lab/store.looks.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 28,
+          "line": 6,
+          "position": 293
+        }
+      },
+      "tokens": 224
+    },
+    {
+      "firstFile": {
+        "end": 53,
+        "endLoc": {
+          "column": 30,
+          "line": 53,
+          "position": 1600
+        },
+        "name": "web/src/lib/trigger-lab/store.controller.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 107,
+          "line": 6,
+          "position": 358
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 48,
+      "secondFile": {
+        "end": 52,
+        "endLoc": {
+          "column": 30,
+          "line": 52,
+          "position": 1585
+        },
+        "name": "web/src/lib/trigger-lab/store.patch-clipboard.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 74,
+          "line": 6,
+          "position": 367
+        }
+      },
+      "tokens": 250
+    },
+    {
+      "firstFile": {
+        "end": 37,
+        "endLoc": {
+          "column": 25,
+          "line": 37,
+          "position": 1310
+        },
+        "name": "web/src/lib/trigger-lab/store.controller.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 107,
+          "line": 6,
+          "position": 358
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 32,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 25,
+          "line": 35,
+          "position": 1185
+        },
+        "name": "web/src/lib/trigger-lab/store.pin.test.ts",
+        "start": 5,
+        "startLoc": {
+          "column": 71,
+          "line": 5,
+          "position": 293
+        }
+      },
+      "tokens": 170
+    },
+    {
+      "firstFile": {
+        "end": 55,
+        "endLoc": {
+          "column": 10,
+          "line": 55,
+          "position": 1612
+        },
+        "name": "web/src/lib/trigger-lab/store.controller.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 107,
+          "line": 6,
+          "position": 358
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 50,
+      "secondFile": {
+        "end": 67,
+        "endLoc": {
+          "column": 5,
+          "line": 67,
+          "position": 2165
+        },
+        "name": "web/src/lib/trigger-lab/store.server-library.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 91,
+          "line": 14,
+          "position": 482
+        }
+      },
+      "tokens": 251
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 8,
+          "line": 30,
+          "position": 1219
+        },
+        "name": "web/src/lib/trigger-lab/store.delay.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 30,
+      "secondFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 8,
+          "line": 32,
+          "position": 1329
+        },
+        "name": "web/src/lib/trigger-lab/store.modifiers.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 290
+    },
+    {
+      "firstFile": {
+        "end": 30,
+        "endLoc": {
+          "column": 21,
+          "line": 30,
+          "position": 1232
+        },
+        "name": "web/src/lib/trigger-lab/store.delay.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 30,
+      "secondFile": {
+        "end": 29,
+        "endLoc": {
+          "column": 22,
+          "line": 29,
+          "position": 1162
+        },
+        "name": "web/src/lib/trigger-lab/store.node-clipboard.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 294
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 22,
+          "line": 43,
+          "position": 1550
+        },
+        "name": "web/src/lib/trigger-lab/store.dock-source.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 20,
+          "line": 6,
+          "position": 295
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 38,
+      "secondFile": {
+        "end": 31,
+        "endLoc": {
+          "column": 8,
+          "line": 31,
+          "position": 1360
+        },
+        "name": "web/src/lib/trigger-lab/store.id-collision.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 24,
+          "line": 4,
+          "position": 185
+        }
+      },
+      "tokens": 256
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 23,
+          "line": 43,
+          "position": 1551
+        },
+        "name": "web/src/lib/trigger-lab/store.dock-source.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 20,
+          "line": 6,
+          "position": 295
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 38,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 9,
+          "line": 27,
+          "position": 1074
+        },
+        "name": "web/src/lib/trigger-lab/store.modulation-sources.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 37,
+          "line": 6,
+          "position": 299
+        }
+      },
+      "tokens": 257
+    },
+    {
+      "firstFile": {
+        "end": 56,
+        "endLoc": {
+          "column": 1,
+          "line": 56,
+          "position": 2020
+        },
+        "name": "web/src/lib/trigger-lab/store.graphs.test.ts",
+        "start": 35,
+        "startLoc": {
+          "column": 102,
+          "line": 35,
+          "position": 1296
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 41,
+        "endLoc": {
+          "column": 1,
+          "line": 41,
+          "position": 1695
+        },
+        "name": "web/src/lib/trigger-lab/store.modulation.test.ts",
+        "start": 21,
+        "startLoc": {
+          "column": 108,
+          "line": 21,
+          "position": 1057
+        }
+      },
+      "tokens": 134
+    },
+    {
+      "firstFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 109,
+          "line": 38,
+          "position": 1441
+        },
+        "name": "web/src/lib/trigger-lab/store.looks.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 42,
+          "line": 4,
+          "position": 217
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 35,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 109,
+          "line": 35,
+          "position": 1189
+        },
+        "name": "web/src/lib/trigger-lab/store.routing.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 65,
+          "line": 3,
+          "position": 180
+        }
+      },
+      "tokens": 237
+    },
+    {
+      "firstFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 41,
+          "line": 38,
+          "position": 1373
+        },
+        "name": "web/src/lib/trigger-lab/store.looks.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 42,
+          "line": 4,
+          "position": 217
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 35,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 5,
+          "line": 35,
+          "position": 1218
+        },
+        "name": "web/src/lib/trigger-lab/store.sections.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 43,
+          "line": 2,
+          "position": 113
+        }
+      },
+      "tokens": 215
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 12,
+          "line": 44,
+          "position": 1409
+        },
+        "name": "web/src/lib/trigger-lab/store.patch-clipboard.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 51,
+          "line": 4,
+          "position": 232
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 41,
+      "secondFile": {
+        "end": 40,
+        "endLoc": {
+          "column": 5,
+          "line": 40,
+          "position": 1581
+        },
+        "name": "web/src/lib/trigger-lab/store.song-library.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 55,
+          "line": 6,
+          "position": 353
+        }
+      },
+      "tokens": 223
+    },
+    {
+      "firstFile": {
+        "end": 66,
+        "endLoc": {
+          "column": 8,
+          "line": 66,
+          "position": 1998
+        },
+        "name": "web/src/lib/trigger-lab/store.patch-clipboard.test.ts",
+        "start": 50,
+        "startLoc": {
+          "column": 21,
+          "line": 50,
+          "position": 1543
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 67,
+        "endLoc": {
+          "column": 8,
+          "line": 67,
+          "position": 1997
+        },
+        "name": "web/src/lib/trigger-lab/store.pin.test.ts",
+        "start": 50,
+        "startLoc": {
+          "column": 29,
+          "line": 50,
+          "position": 1464
+        }
+      },
+      "tokens": 119
+    },
+    {
+      "firstFile": {
+        "end": 72,
+        "endLoc": {
+          "column": 64,
+          "line": 72,
+          "position": 2264
+        },
+        "name": "web/src/lib/trigger-lab/store.patch-clipboard.test.ts",
+        "start": 52,
+        "startLoc": {
+          "column": 4,
+          "line": 52,
+          "position": 1559
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 21,
+      "secondFile": {
+        "end": 96,
+        "endLoc": {
+          "column": 8,
+          "line": 96,
+          "position": 3264
+        },
+        "name": "web/src/lib/trigger-lab/store.server-library.test.ts",
+        "start": 67,
+        "startLoc": {
+          "column": 83,
+          "line": 67,
+          "position": 2243
+        }
+      },
+      "tokens": 194
+    },
+    {
+      "firstFile": {
+        "end": 78,
+        "endLoc": {
+          "column": 1,
+          "line": 78,
+          "position": 2408
+        },
+        "name": "web/src/lib/trigger-lab/store.pin.test.ts",
+        "start": 64,
+        "startLoc": {
+          "column": 94,
+          "line": 64,
+          "position": 1908
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 56,
+        "endLoc": {
+          "column": 1,
+          "line": 56,
+          "position": 2441
+        },
+        "name": "web/src/lib/trigger-lab/store.shows.test.ts",
+        "start": 41,
+        "startLoc": {
+          "column": 108,
+          "line": 41,
+          "position": 1830
+        }
+      },
+      "tokens": 80
+    },
+    {
+      "firstFile": {
+        "end": 86,
+        "endLoc": {
+          "column": 12,
+          "line": 86,
+          "position": 2613
+        },
+        "name": "web/src/lib/trigger-lab/store.pin.test.ts",
+        "start": 64,
+        "startLoc": {
+          "column": 94,
+          "line": 64,
+          "position": 1908
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 73,
+        "endLoc": {
+          "column": 9,
+          "line": 73,
+          "position": 3105
+        },
+        "name": "web/src/lib/trigger-lab/store.song-library.test.ts",
+        "start": 51,
+        "startLoc": {
+          "column": 63,
+          "line": 51,
+          "position": 2460
+        }
+      },
+      "tokens": 136
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 15,
+          "line": 44,
+          "position": 1561
+        },
+        "name": "web/src/lib/trigger-lab/store.songs.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 60,
+          "line": 3,
+          "position": 175
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 42,
+      "secondFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 9,
+          "line": 43,
+          "position": 1375
+        },
+        "name": "web/src/lib/trigger-lab/store.trigger-source.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 30,
+          "line": 4,
+          "position": 198
+        }
+      },
+      "tokens": 265
+    },
+    {
+      "firstFile": {
+        "end": 44,
+        "endLoc": {
+          "column": 8,
+          "line": 44,
+          "position": 1554
+        },
+        "name": "web/src/lib/trigger-lab/store.songs.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 60,
+          "line": 3,
+          "position": 175
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 42,
+      "secondFile": {
+        "end": 45,
+        "endLoc": {
+          "column": 8,
+          "line": 45,
+          "position": 1528
+        },
+        "name": "web/src/lib/trigger-lab/store.value-switch.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 21,
+          "line": 4,
+          "position": 220
+        }
+      },
+      "tokens": 264
+    },
+    {
+      "firstFile": {
+        "end": 41,
+        "endLoc": {
+          "column": 8,
+          "line": 41,
+          "position": 830
+        },
+        "name": "web/src/lib/trigger-lab/store/canvas-scenes.test.ts",
+        "start": 17,
+        "startLoc": {
+          "column": 16,
+          "line": 17,
+          "position": 463
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 25,
+      "secondFile": {
+        "end": 70,
+        "endLoc": {
+          "column": 8,
+          "line": 70,
+          "position": 3025
+        },
+        "name": "core/src/canvas/canvas-determinism.test.ts",
+        "start": 63,
+        "startLoc": {
+          "column": 12,
+          "line": 63,
+          "position": 2726
+        }
+      },
+      "tokens": 90
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 20,
+          "line": 36,
+          "position": 787
+        },
+        "name": "web/src/lib/trigger-lab/store/canvas-scenes.test.ts",
+        "start": 17,
+        "startLoc": {
+          "column": 16,
+          "line": 17,
+          "position": 463
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 31,
+        "endLoc": {
+          "column": 20,
+          "line": 31,
+          "position": 992
+        },
+        "name": "core/src/voice/types.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 19,
+          "line": 12,
+          "position": 668
+        }
+      },
+      "tokens": 81
+    },
+    {
+      "firstFile": {
+        "end": 82,
+        "endLoc": {
+          "column": 38,
+          "line": 82,
+          "position": 5111
+        },
+        "name": "web/src/lib/trigger-lab/store/show-library-sync.ts",
+        "start": 66,
+        "startLoc": {
+          "column": 43,
+          "line": 66,
+          "position": 4269
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 70,
+        "endLoc": {
+          "column": 38,
+          "line": 70,
+          "position": 4331
+        },
+        "name": "web/src/lib/trigger-lab/store/song-library-sync.ts",
+        "start": 56,
+        "startLoc": {
+          "column": 43,
+          "line": 56,
+          "position": 3608
+        }
+      },
+      "tokens": 71
+    },
+    {
+      "firstFile": {
+        "end": 86,
+        "endLoc": {
+          "column": 27,
+          "line": 86,
+          "position": 3635
+        },
+        "name": "core/src/canvas/canvas-determinism.test.ts",
+        "start": 44,
+        "startLoc": {
+          "column": 29,
+          "line": 44,
+          "position": 2248
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 43,
+      "secondFile": {
+        "end": 73,
+        "endLoc": {
+          "column": 27,
+          "line": 73,
+          "position": 3176
+        },
+        "name": "core/src/voice/determinism.test.ts",
+        "start": 31,
+        "startLoc": {
+          "column": 88,
+          "line": 31,
+          "position": 1789
+        }
+      },
+      "tokens": 394
+    },
+    {
+      "firstFile": {
+        "end": 73,
+        "endLoc": {
+          "column": 30,
+          "line": 73,
+          "position": 3162
+        },
+        "name": "core/src/canvas/canvas-determinism.test.ts",
+        "start": 61,
+        "startLoc": {
+          "column": 37,
+          "line": 61,
+          "position": 2645
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 33,
+        "endLoc": {
+          "column": 125,
+          "line": 33,
+          "position": 818
+        },
+        "name": "core/src/voice/reachability-lint.test.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 28,
+          "line": 6,
+          "position": 262
+        }
+      },
+      "tokens": 152
+    },
+    {
+      "firstFile": {
+        "end": 104,
+        "endLoc": {
+          "column": 93,
+          "line": 104,
+          "position": 4359
+        },
+        "name": "core/src/canvas/canvas-determinism.test.ts",
+        "start": 86,
+        "startLoc": {
+          "column": 100,
+          "line": 86,
+          "position": 3708
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 19,
+      "secondFile": {
+        "end": 94,
+        "endLoc": {
+          "column": 93,
+          "line": 94,
+          "position": 4088
+        },
+        "name": "core/src/voice/determinism.test.ts",
+        "start": 73,
+        "startLoc": {
+          "column": 111,
+          "line": 73,
+          "position": 3260
+        }
+      },
+      "tokens": 218
+    },
+    {
+      "firstFile": {
+        "end": 56,
+        "endLoc": {
+          "column": 33,
+          "line": 56,
+          "position": 1870
+        },
+        "name": "core/src/canvas/elements.ts",
+        "start": 30,
+        "startLoc": {
+          "column": 0,
+          "line": 30,
+          "position": 1142
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 27,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 33,
+          "line": 35,
+          "position": 1160
+        },
+        "name": "core/src/effects/impl/perlin-clouds.ts",
+        "start": 7,
+        "startLoc": {
+          "column": 0,
+          "line": 7,
+          "position": 282
+        }
+      },
+      "tokens": 227
+    },
+    {
+      "firstFile": {
+        "end": 62,
+        "endLoc": {
+          "column": 1,
+          "line": 62,
+          "position": 2178
+        },
+        "name": "core/src/effects/batch-a.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 51,
+          "line": 12,
+          "position": 657
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 51,
+      "secondFile": {
+        "end": 62,
+        "endLoc": {
+          "column": 1,
+          "line": 62,
+          "position": 2188
+        },
+        "name": "core/src/effects/batch-b.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 43,
+          "line": 12,
+          "position": 667
+        }
+      },
+      "tokens": 434
+    },
+    {
+      "firstFile": {
+        "end": 59,
+        "endLoc": {
+          "column": 17,
+          "line": 59,
+          "position": 2090
+        },
+        "name": "core/src/effects/batch-a.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 51,
+          "line": 12,
+          "position": 657
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 48,
+      "secondFile": {
+        "end": 64,
+        "endLoc": {
+          "column": 8,
+          "line": 64,
+          "position": 2135
+        },
+        "name": "core/src/effects/batch-e.test.ts",
+        "start": 11,
+        "startLoc": {
+          "column": 39,
+          "line": 11,
+          "position": 657
+        }
+      },
+      "tokens": 397
+    },
+    {
+      "firstFile": {
+        "end": 47,
+        "endLoc": {
+          "column": 8,
+          "line": 47,
+          "position": 1588
+        },
+        "name": "core/src/effects/batch-a.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 24,
+          "line": 14,
+          "position": 684
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 34,
+      "secondFile": {
+        "end": 47,
+        "endLoc": {
+          "column": 8,
+          "line": 47,
+          "position": 1613
+        },
+        "name": "core/src/effects/batch-c.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 24,
+          "line": 14,
+          "position": 709
+        }
+      },
+      "tokens": 243
+    },
+    {
+      "firstFile": {
+        "end": 43,
+        "endLoc": {
+          "column": 33,
+          "line": 43,
+          "position": 1570
+        },
+        "name": "core/src/effects/batch-a.test.ts",
+        "start": 30,
+        "startLoc": {
+          "column": 2,
+          "line": 30,
+          "position": 1130
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 156,
+          "line": 28,
+          "position": 1589
+        },
+        "name": "core/src/effects/u6-gap-fill.test.ts",
+        "start": 20,
+        "startLoc": {
+          "column": 153,
+          "line": 20,
+          "position": 1169
+        }
+      },
+      "tokens": 121
+    },
+    {
+      "firstFile": {
+        "end": 65,
+        "endLoc": {
+          "column": 25,
+          "line": 65,
+          "position": 2264
+        },
+        "name": "core/src/effects/batch-a.test.ts",
+        "start": 44,
+        "startLoc": {
+          "column": 2,
+          "line": 44,
+          "position": 1574
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 106,
+        "endLoc": {
+          "column": 9,
+          "line": 106,
+          "position": 4157
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 86,
+        "startLoc": {
+          "column": 57,
+          "line": 86,
+          "position": 3542
+        }
+      },
+      "tokens": 190
+    },
+    {
+      "firstFile": {
+        "end": 65,
+        "endLoc": {
+          "column": 8,
+          "line": 65,
+          "position": 2247
+        },
+        "name": "core/src/effects/batch-a.test.ts",
+        "start": 47,
+        "startLoc": {
+          "column": 114,
+          "line": 47,
+          "position": 1694
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 19,
+      "secondFile": {
+        "end": 74,
+        "endLoc": {
+          "column": 8,
+          "line": 74,
+          "position": 2390
+        },
+        "name": "core/src/effects/batch-c.test.ts",
+        "start": 57,
+        "startLoc": {
+          "column": 0,
+          "line": 57,
+          "position": 1896
+        }
+      },
+      "tokens": 156
+    },
+    {
+      "firstFile": {
+        "end": 74,
+        "endLoc": {
+          "column": 8,
+          "line": 74,
+          "position": 2390
+        },
+        "name": "core/src/effects/batch-c.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 47,
+          "line": 12,
+          "position": 682
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 63,
+      "secondFile": {
+        "end": 74,
+        "endLoc": {
+          "column": 8,
+          "line": 74,
+          "position": 2438
+        },
+        "name": "core/src/effects/batch-d.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 67,
+          "line": 12,
+          "position": 730
+        }
+      },
+      "tokens": 480
+    },
+    {
+      "firstFile": {
+        "end": 56,
+        "endLoc": {
+          "column": 11,
+          "line": 56,
+          "position": 1894
+        },
+        "name": "core/src/effects/batch-c.test.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 47,
+          "line": 12,
+          "position": 682
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 45,
+      "secondFile": {
+        "end": 89,
+        "endLoc": {
+          "column": 114,
+          "line": 89,
+          "position": 3662
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 50,
+        "startLoc": {
+          "column": 55,
+          "line": 50,
+          "position": 2461
+        }
+      },
+      "tokens": 323
+    },
+    {
+      "firstFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 62,
+          "line": 60,
+          "position": 2082
+        },
+        "name": "core/src/effects/batch-c.test.ts",
+        "start": 44,
+        "startLoc": {
+          "column": 2,
+          "line": 44,
+          "position": 1599
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 63,
+          "line": 38,
+          "position": 2061
+        },
+        "name": "core/src/effects/u6-gap-fill.test.ts",
+        "start": 28,
+        "startLoc": {
+          "column": 157,
+          "line": 28,
+          "position": 1590
+        }
+      },
+      "tokens": 123
+    },
+    {
+      "firstFile": {
+        "end": 81,
+        "endLoc": {
+          "column": 9,
+          "line": 81,
+          "position": 2666
+        },
+        "name": "core/src/effects/batch-e.test.ts",
+        "start": 59,
+        "startLoc": {
+          "column": 63,
+          "line": 59,
+          "position": 2058
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 23,
+      "secondFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 9,
+          "line": 60,
+          "position": 2674
+        },
+        "name": "core/src/effects/u6-gap-fill.test.ts",
+        "start": 38,
+        "startLoc": {
+          "column": 68,
+          "line": 38,
+          "position": 2066
+        }
+      },
+      "tokens": 213
+    },
+    {
+      "firstFile": {
+        "end": 25,
+        "endLoc": {
+          "column": 8,
+          "line": 25,
+          "position": 1232
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 13,
+        "startLoc": {
+          "column": 32,
+          "line": 13,
+          "position": 699
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 25,
+        "endLoc": {
+          "column": 8,
+          "line": 25,
+          "position": 1092
+        },
+        "name": "core/src/effects/registry.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 20,
+          "line": 12,
+          "position": 535
+        }
+      },
+      "tokens": 83
+    },
+    {
+      "firstFile": {
+        "end": 41,
+        "endLoc": {
+          "column": 8,
+          "line": 41,
+          "position": 1978
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 27,
+        "startLoc": {
+          "column": 45,
+          "line": 27,
+          "position": 1376
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 38,
+        "endLoc": {
+          "column": 8,
+          "line": 38,
+          "position": 1663
+        },
+        "name": "core/src/effects/registry.ts",
+        "start": 23,
+        "startLoc": {
+          "column": 46,
+          "line": 23,
+          "position": 1058
+        }
+      },
+      "tokens": 87
+    },
+    {
+      "firstFile": {
+        "end": 365,
+        "endLoc": {
+          "column": 11,
+          "line": 365,
+          "position": 15900
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 345,
+        "startLoc": {
+          "column": 70,
+          "line": 345,
+          "position": 15192
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 21,
+      "secondFile": {
+        "end": 418,
+        "endLoc": {
+          "column": 11,
+          "line": 418,
+          "position": 19036
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 398,
+        "startLoc": {
+          "column": 70,
+          "line": 398,
+          "position": 18328
+        }
+      },
+      "tokens": 198
+    },
+    {
+      "firstFile": {
+        "end": 363,
+        "endLoc": {
+          "column": 7,
+          "line": 363,
+          "position": 15763
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 345,
+        "startLoc": {
+          "column": 70,
+          "line": 345,
+          "position": 15192
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 19,
+      "secondFile": {
+        "end": 491,
+        "endLoc": {
+          "column": 7,
+          "line": 491,
+          "position": 23193
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 472,
+        "startLoc": {
+          "column": 81,
+          "line": 472,
+          "position": 22531
+        }
+      },
+      "tokens": 151
+    },
+    {
+      "firstFile": {
+        "end": 361,
+        "endLoc": {
+          "column": 3,
+          "line": 361,
+          "position": 15754
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 345,
+        "startLoc": {
+          "column": 70,
+          "line": 345,
+          "position": 15192
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 556,
+        "endLoc": {
+          "column": 3,
+          "line": 556,
+          "position": 26826
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 540,
+        "startLoc": {
+          "column": 70,
+          "line": 540,
+          "position": 26264
+        }
+      },
+      "tokens": 150
+    },
+    {
+      "firstFile": {
+        "end": 385,
+        "endLoc": {
+          "column": 5,
+          "line": 385,
+          "position": 17431
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 373,
+        "startLoc": {
+          "column": 117,
+          "line": 373,
+          "position": 17089
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 438,
+        "endLoc": {
+          "column": 5,
+          "line": 438,
+          "position": 20467
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 426,
+        "startLoc": {
+          "column": 145,
+          "line": 426,
+          "position": 20125
+        }
+      },
+      "tokens": 90
+    },
+    {
+      "firstFile": {
+        "end": 385,
+        "endLoc": {
+          "column": 5,
+          "line": 385,
+          "position": 17431
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 373,
+        "startLoc": {
+          "column": 119,
+          "line": 373,
+          "position": 17091
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 525,
+        "endLoc": {
+          "column": 5,
+          "line": 525,
+          "position": 25218
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 513,
+        "startLoc": {
+          "column": 4,
+          "line": 513,
+          "position": 24878
+        }
+      },
+      "tokens": 89
+    },
+    {
+      "firstFile": {
+        "end": 385,
+        "endLoc": {
+          "column": 5,
+          "line": 385,
+          "position": 17431
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 373,
+        "startLoc": {
+          "column": 96,
+          "line": 373,
+          "position": 17068
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 625,
+        "endLoc": {
+          "column": 5,
+          "line": 625,
+          "position": 30483
+        },
+        "name": "core/src/effects/effects.test.ts",
+        "start": 613,
+        "startLoc": {
+          "column": 111,
+          "line": 613,
+          "position": 30120
+        }
+      },
+      "tokens": 98
+    },
+    {
+      "firstFile": {
+        "end": 147,
+        "endLoc": {
+          "column": 18,
+          "line": 147,
+          "position": 4573
+        },
+        "name": "core/src/engine/engine.ts",
+        "start": 134,
+        "startLoc": {
+          "column": 25,
+          "line": 134,
+          "position": 4137
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 311,
+        "endLoc": {
+          "column": 18,
+          "line": 311,
+          "position": 12195
+        },
+        "name": "core/src/voice/engine.ts",
+        "start": 299,
+        "startLoc": {
+          "column": 22,
+          "line": 299,
+          "position": 11820
+        }
+      },
+      "tokens": 117
+    },
+    {
+      "firstFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 40,
+          "line": 32,
+          "position": 1301
+        },
+        "name": "core/src/geometry/dmx-map.test.ts",
+        "start": 18,
+        "startLoc": {
+          "column": 4,
+          "line": 18,
+          "position": 906
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 41,
+        "endLoc": {
+          "column": 40,
+          "line": 41,
+          "position": 1540
+        },
+        "name": "core/src/model/routing-integrity.test.ts",
+        "start": 27,
+        "startLoc": {
+          "column": 4,
+          "line": 27,
+          "position": 1145
+        }
+      },
+      "tokens": 112
+    },
+    {
+      "firstFile": {
+        "end": 210,
+        "endLoc": {
+          "column": 93,
+          "line": 210,
+          "position": 9867
+        },
+        "name": "core/src/modifiers/modifiers.s30.test.ts",
+        "start": 193,
+        "startLoc": {
+          "column": 119,
+          "line": 193,
+          "position": 9122
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 18,
+      "secondFile": {
+        "end": 54,
+        "endLoc": {
+          "column": 69,
+          "line": 54,
+          "position": 2400
+        },
+        "name": "core/src/voice/modulation-cc.test.ts",
+        "start": 39,
+        "startLoc": {
+          "column": 48,
+          "line": 39,
+          "position": 1887
+        }
+      },
+      "tokens": 123
+    },
+    {
+      "firstFile": {
+        "end": 227,
+        "endLoc": {
+          "column": 46,
+          "line": 227,
+          "position": 10773
+        },
+        "name": "core/src/modifiers/modifiers.s30.test.ts",
+        "start": 193,
+        "startLoc": {
+          "column": 119,
+          "line": 193,
+          "position": 9122
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 35,
+      "secondFile": {
+        "end": 96,
+        "endLoc": {
+          "column": 8,
+          "line": 96,
+          "position": 4022
+        },
+        "name": "core/src/voice/modulation-osc.test.ts",
+        "start": 52,
+        "startLoc": {
+          "column": 5,
+          "line": 52,
+          "position": 2405
+        }
+      },
+      "tokens": 322
+    },
+    {
+      "firstFile": {
+        "end": 210,
+        "endLoc": {
+          "column": 8,
+          "line": 210,
+          "position": 9782
+        },
+        "name": "core/src/modifiers/modifiers.s30.test.ts",
+        "start": 195,
+        "startLoc": {
+          "column": 2,
+          "line": 195,
+          "position": 9133
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 16,
+      "secondFile": {
+        "end": 20,
+        "endLoc": {
+          "column": 8,
+          "line": 20,
+          "position": 932
+        },
+        "name": "core/src/voice/canvas-show.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 105,
+          "line": 10,
+          "position": 617
+        }
+      },
+      "tokens": 91
+    },
+    {
+      "firstFile": {
+        "end": 212,
+        "endLoc": {
+          "column": 55,
+          "line": 212,
+          "position": 9936
+        },
+        "name": "core/src/modifiers/modifiers.s30.test.ts",
+        "start": 195,
+        "startLoc": {
+          "column": 2,
+          "line": 195,
+          "position": 9133
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 18,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 8,
+          "line": 27,
+          "position": 1396
+        },
+        "name": "core/src/voice/enum-params.test.ts",
+        "start": 14,
+        "startLoc": {
+          "column": 88,
+          "line": 14,
+          "position": 946
+        }
+      },
+      "tokens": 138
+    },
+    {
+      "firstFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 16,
+          "line": 28,
+          "position": 1125
+        },
+        "name": "core/src/voice/canvas-show.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 26,
+          "line": 10,
+          "position": 538
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 19,
+      "secondFile": {
+        "end": 29,
+        "endLoc": {
+          "column": 1,
+          "line": 29,
+          "position": 1699
+        },
+        "name": "core/src/voice/determinism.test.ts",
+        "start": 18,
+        "startLoc": {
+          "column": 25,
+          "line": 18,
+          "position": 1180
+        }
+      },
+      "tokens": 152
+    },
+    {
+      "firstFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 103,
+          "line": 28,
+          "position": 1212
+        },
+        "name": "core/src/voice/canvas-show.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 89,
+          "line": 10,
+          "position": 601
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 19,
+      "secondFile": {
+        "end": 24,
+        "endLoc": {
+          "column": 69,
+          "line": 24,
+          "position": 1201
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 7,
+        "startLoc": {
+          "column": 168,
+          "line": 7,
+          "position": 555
+        }
+      },
+      "tokens": 168
+    },
+    {
+      "firstFile": {
+        "end": 65,
+        "endLoc": {
+          "column": 13,
+          "line": 65,
+          "position": 2044
+        },
+        "name": "core/src/voice/compositor.test.ts",
+        "start": 48,
+        "startLoc": {
+          "column": 19,
+          "line": 48,
+          "position": 1754
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 18,
+      "secondFile": {
+        "end": 55,
+        "endLoc": {
+          "column": 13,
+          "line": 55,
+          "position": 2656
+        },
+        "name": "core/src/voice/engine.delay-overlap.test.ts",
+        "start": 46,
+        "startLoc": {
+          "column": 22,
+          "line": 46,
+          "position": 2398
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 82,
+        "endLoc": {
+          "column": 8,
+          "line": 82,
+          "position": 2349
+        },
+        "name": "core/src/voice/compositor.test.ts",
+        "start": 48,
+        "startLoc": {
+          "column": 19,
+          "line": 48,
+          "position": 1754
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 35,
+      "secondFile": {
+        "end": 72,
+        "endLoc": {
+          "column": 8,
+          "line": 72,
+          "position": 2156
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 38,
+        "startLoc": {
+          "column": 18,
+          "line": 38,
+          "position": 1593
+        }
+      },
+      "tokens": 131
+    },
+    {
+      "firstFile": {
+        "end": 156,
+        "endLoc": {
+          "column": 1,
+          "line": 156,
+          "position": 4760
+        },
+        "name": "core/src/voice/compositor.test.ts",
+        "start": 137,
+        "startLoc": {
+          "column": 11,
+          "line": 137,
+          "position": 4353
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 144,
+        "endLoc": {
+          "column": 1,
+          "line": 144,
+          "position": 4227
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 125,
+        "startLoc": {
+          "column": 97,
+          "line": 125,
+          "position": 3820
+        }
+      },
+      "tokens": 110
+    },
+    {
+      "firstFile": {
+        "end": 458,
+        "endLoc": {
+          "column": 8,
+          "line": 458,
+          "position": 17623
+        },
+        "name": "core/src/voice/compositor.test.ts",
+        "start": 445,
+        "startLoc": {
+          "column": 22,
+          "line": 445,
+          "position": 16997
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 588,
+        "endLoc": {
+          "column": 8,
+          "line": 588,
+          "position": 24329
+        },
+        "name": "core/src/voice/compositor.test.ts",
+        "start": 575,
+        "startLoc": {
+          "column": 32,
+          "line": 575,
+          "position": 23640
+        }
+      },
+      "tokens": 97
+    },
+    {
+      "firstFile": {
+        "end": 25,
+        "endLoc": {
+          "column": 54,
+          "line": 25,
+          "position": 1586
+        },
+        "name": "core/src/voice/determinism.test.ts",
+        "start": 13,
+        "startLoc": {
+          "column": 0,
+          "line": 13,
+          "position": 851
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 29,
+        "endLoc": {
+          "column": 8,
+          "line": 29,
+          "position": 1637
+        },
+        "name": "core/src/voice/engine.delay-overlap.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 158
+    },
+    {
+      "firstFile": {
+        "end": 484,
+        "endLoc": {
+          "column": 64,
+          "line": 484,
+          "position": 17797
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 471,
+        "startLoc": {
+          "column": 47,
+          "line": 471,
+          "position": 17394
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 531,
+        "endLoc": {
+          "column": 105,
+          "line": 531,
+          "position": 19596
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 523,
+        "startLoc": {
+          "column": 6,
+          "line": 523,
+          "position": 19290
+        }
+      },
+      "tokens": 81
+    },
+    {
+      "firstFile": {
+        "end": 737,
+        "endLoc": {
+          "column": 9,
+          "line": 737,
+          "position": 27959
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 720,
+        "startLoc": {
+          "column": 4,
+          "line": 720,
+          "position": 27561
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 18,
+      "secondFile": {
+        "end": 911,
+        "endLoc": {
+          "column": 9,
+          "line": 911,
+          "position": 35479
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 894,
+        "startLoc": {
+          "column": 97,
+          "line": 894,
+          "position": 35081
+        }
+      },
+      "tokens": 125
+    },
+    {
+      "firstFile": {
+        "end": 1059,
+        "endLoc": {
+          "column": 9,
+          "line": 1059,
+          "position": 42735
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1047,
+        "startLoc": {
+          "column": 73,
+          "line": 1047,
+          "position": 42511
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 1126,
+        "endLoc": {
+          "column": 9,
+          "line": 1126,
+          "position": 45842
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1114,
+        "startLoc": {
+          "column": 39,
+          "line": 1114,
+          "position": 45618
+        }
+      },
+      "tokens": 77
+    },
+    {
+      "firstFile": {
+        "end": 1276,
+        "endLoc": {
+          "column": 11,
+          "line": 1276,
+          "position": 51508
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1260,
+        "startLoc": {
+          "column": 58,
+          "line": 1260,
+          "position": 50887
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 1333,
+        "endLoc": {
+          "column": 11,
+          "line": 1333,
+          "position": 53940
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1317,
+        "startLoc": {
+          "column": 67,
+          "line": 1317,
+          "position": 53372
+        }
+      },
+      "tokens": 141
+    },
+    {
+      "firstFile": {
+        "end": 1273,
+        "endLoc": {
+          "column": 28,
+          "line": 1273,
+          "position": 51353
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1260,
+        "startLoc": {
+          "column": 58,
+          "line": 1260,
+          "position": 50887
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 14,
+      "secondFile": {
+        "end": 1389,
+        "endLoc": {
+          "column": 28,
+          "line": 1389,
+          "position": 56102
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1377,
+        "startLoc": {
+          "column": 56,
+          "line": 1377,
+          "position": 55720
+        }
+      },
+      "tokens": 114
+    },
+    {
+      "firstFile": {
+        "end": 1274,
+        "endLoc": {
+          "column": 40,
+          "line": 1274,
+          "position": 51405
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1260,
+        "startLoc": {
+          "column": 58,
+          "line": 1260,
+          "position": 50887
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 1411,
+        "endLoc": {
+          "column": 5,
+          "line": 1411,
+          "position": 56825
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1397,
+        "startLoc": {
+          "column": 58,
+          "line": 1397,
+          "position": 56379
+        }
+      },
+      "tokens": 136
+    },
+    {
+      "firstFile": {
+        "end": 1521,
+        "endLoc": {
+          "column": 8,
+          "line": 1521,
+          "position": 61346
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1500,
+        "startLoc": {
+          "column": 62,
+          "line": 1500,
+          "position": 60488
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 22,
+      "secondFile": {
+        "end": 1637,
+        "endLoc": {
+          "column": 3,
+          "line": 1637,
+          "position": 66483
+        },
+        "name": "core/src/voice/engine.test.ts",
+        "start": 1626,
+        "startLoc": {
+          "column": 61,
+          "line": 1626,
+          "position": 66221
+        }
+      },
+      "tokens": 89
+    },
+    {
+      "firstFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 23,
+          "line": 28,
+          "position": 1504
+        },
+        "name": "core/src/voice/eval-graph.delay-timeline.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 28,
+      "secondFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 23,
+          "line": 27,
+          "position": 1531
+        },
+        "name": "core/src/voice/eval-graph.fanin-coalescing.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 218
+    },
+    {
+      "firstFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 140,
+          "line": 28,
+          "position": 1621
+        },
+        "name": "core/src/voice/eval-graph.delay-timeline.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 28,
+      "secondFile": {
+        "end": 34,
+        "endLoc": {
+          "column": 140,
+          "line": 34,
+          "position": 1006
+        },
+        "name": "core/src/voice/eval-graph.mix.test.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 249
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 50,
+          "line": 27,
+          "position": 1405
+        },
+        "name": "core/src/voice/eval-graph.delay-timeline.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 68,
+          "line": 2,
+          "position": 115
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 26,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 50,
+          "line": 35,
+          "position": 941
+        },
+        "name": "core/src/voice/eval-graph.playtype.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 34,
+          "line": 4,
+          "position": 266
+        }
+      },
+      "tokens": 163
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 125,
+          "line": 27,
+          "position": 1480
+        },
+        "name": "core/src/voice/eval-graph.delay-timeline.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 29,
+          "line": 3,
+          "position": 202
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 25,
+      "secondFile": {
+        "end": 32,
+        "endLoc": {
+          "column": 125,
+          "line": 32,
+          "position": 773
+        },
+        "name": "core/src/voice/graph-integrity.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 63,
+          "line": 2,
+          "position": 110
+        }
+      },
+      "tokens": 174
+    },
+    {
+      "firstFile": {
+        "end": 27,
+        "endLoc": {
+          "column": 124,
+          "line": 27,
+          "position": 1479
+        },
+        "name": "core/src/voice/eval-graph.delay-timeline.test.ts",
+        "start": 4,
+        "startLoc": {
+          "column": 14,
+          "line": 4,
+          "position": 218
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 24,
+      "secondFile": {
+        "end": 47,
+        "endLoc": {
+          "column": 1,
+          "line": 47,
+          "position": 1290
+        },
+        "name": "core/src/voice/modulation-graph.test.ts",
+        "start": 15,
+        "startLoc": {
+          "column": 40,
+          "line": 15,
+          "position": 559
+        }
+      },
+      "tokens": 169
+    },
+    {
+      "firstFile": {
+        "end": 53,
+        "endLoc": {
+          "column": 8,
+          "line": 53,
+          "position": 2643
+        },
+        "name": "core/src/voice/eval-graph.delay-timeline.test.ts",
+        "start": 28,
+        "startLoc": {
+          "column": 28,
+          "line": 28,
+          "position": 1509
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 26,
+      "secondFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 8,
+          "line": 50,
+          "position": 2529
+        },
+        "name": "core/src/voice/eval-graph.fanin-coalescing.test.ts",
+        "start": 27,
+        "startLoc": {
+          "column": 25,
+          "line": 27,
+          "position": 1533
+        }
+      },
+      "tokens": 239
+    },
+    {
+      "firstFile": {
+        "end": 81,
+        "endLoc": {
+          "column": 5,
+          "line": 81,
+          "position": 2874
+        },
+        "name": "core/src/voice/eval-graph.mix.test.ts",
+        "start": 69,
+        "startLoc": {
+          "column": 38,
+          "line": 69,
+          "position": 2567
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 107,
+        "endLoc": {
+          "column": 5,
+          "line": 107,
+          "position": 3776
+        },
+        "name": "core/src/voice/eval-graph.mix.test.ts",
+        "start": 95,
+        "startLoc": {
+          "column": 28,
+          "line": 95,
+          "position": 3469
+        }
+      },
+      "tokens": 99
+    },
+    {
+      "firstFile": {
+        "end": 135,
+        "endLoc": {
+          "column": 5,
+          "line": 135,
+          "position": 4864
+        },
+        "name": "core/src/voice/eval-graph.mix.test.ts",
+        "start": 123,
+        "startLoc": {
+          "column": 33,
+          "line": 123,
+          "position": 4499
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 163,
+        "endLoc": {
+          "column": 5,
+          "line": 163,
+          "position": 5936
+        },
+        "name": "core/src/voice/eval-graph.mix.test.ts",
+        "start": 151,
+        "startLoc": {
+          "column": 27,
+          "line": 151,
+          "position": 5571
+        }
+      },
+      "tokens": 124
+    },
+    {
+      "firstFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 5,
+          "line": 35,
+          "position": 896
+        },
+        "name": "core/src/voice/eval-graph.playtype.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 45,
+          "line": 3,
+          "position": 230
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 33,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 8,
+          "line": 35,
+          "position": 847
+        },
+        "name": "core/src/voice/modifier-graph.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 55,
+          "line": 2,
+          "position": 102
+        }
+      },
+      "tokens": 156
+    },
+    {
+      "firstFile": {
+        "end": 39,
+        "endLoc": {
+          "column": 5,
+          "line": 39,
+          "position": 979
+        },
+        "name": "core/src/voice/modifier-graph.test.ts",
+        "start": 16,
+        "startLoc": {
+          "column": 14,
+          "line": 16,
+          "position": 568
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 24,
+      "secondFile": {
+        "end": 50,
+        "endLoc": {
+          "column": 8,
+          "line": 50,
+          "position": 1372
+        },
+        "name": "core/src/voice/modulation-graph.test.ts",
+        "start": 26,
+        "startLoc": {
+          "column": 14,
+          "line": 26,
+          "position": 886
+        }
+      },
+      "tokens": 109
+    },
+    {
+      "firstFile": {
+        "end": 60,
+        "endLoc": {
+          "column": 2,
+          "line": 60,
+          "position": 1457
+        },
+        "name": "core/src/voice/modifier-graph.test.ts",
+        "start": 42,
+        "startLoc": {
+          "column": 0,
+          "line": 42,
+          "position": 1114
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 19,
+      "secondFile": {
+        "end": 72,
+        "endLoc": {
+          "column": 2,
+          "line": 72,
+          "position": 1877
+        },
+        "name": "core/src/voice/modulation-graph.test.ts",
+        "start": 54,
+        "startLoc": {
+          "column": 0,
+          "line": 54,
+          "position": 1534
+        }
+      },
+      "tokens": 87
+    },
+    {
+      "firstFile": {
+        "end": 106,
+        "endLoc": {
+          "column": 5,
+          "line": 106,
+          "position": 4483
+        },
+        "name": "core/src/voice/modulation-cc.test.ts",
+        "start": 92,
+        "startLoc": {
+          "column": 29,
+          "line": 92,
+          "position": 3945
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 119,
+        "endLoc": {
+          "column": 5,
+          "line": 119,
+          "position": 4935
+        },
+        "name": "core/src/voice/modulation-osc.test.ts",
+        "start": 105,
+        "startLoc": {
+          "column": 30,
+          "line": 105,
+          "position": 4397
+        }
+      },
+      "tokens": 160
+    },
+    {
+      "firstFile": {
+        "end": 195,
+        "endLoc": {
+          "column": 5,
+          "line": 195,
+          "position": 7880
+        },
+        "name": "core/src/voice/modulation-cc.test.ts",
+        "start": 183,
+        "startLoc": {
+          "column": 37,
+          "line": 183,
+          "position": 7613
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 193,
+        "endLoc": {
+          "column": 5,
+          "line": 193,
+          "position": 7768
+        },
+        "name": "core/src/voice/modulation-osc.test.ts",
+        "start": 181,
+        "startLoc": {
+          "column": 40,
+          "line": 181,
+          "position": 7501
+        }
+      },
+      "tokens": 90
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 15,
+          "line": 36,
+          "position": 894
+        },
+        "name": "core/src/voice/reachability-lint.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 56,
+          "line": 3,
+          "position": 154
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 34,
+      "secondFile": {
+        "end": 42,
+        "endLoc": {
+          "column": 9,
+          "line": 42,
+          "position": 975
+        },
+        "name": "core/src/voice/render-plan.test.ts",
+        "start": 10,
+        "startLoc": {
+          "column": 29,
+          "line": 10,
+          "position": 300
+        }
+      },
+      "tokens": 175
+    },
+    {
+      "firstFile": {
+        "end": 36,
+        "endLoc": {
+          "column": 8,
+          "line": 36,
+          "position": 887
+        },
+        "name": "core/src/voice/reachability-lint.test.ts",
+        "start": 3,
+        "startLoc": {
+          "column": 34,
+          "line": 3,
+          "position": 132
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 34,
+      "secondFile": {
+        "end": 35,
+        "endLoc": {
+          "column": 8,
+          "line": 35,
+          "position": 847
+        },
+        "name": "core/src/voice/scope-lint.test.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 27,
+          "line": 2,
+          "position": 74
+        }
+      },
+      "tokens": 177
+    }
+  ],
+  "statistics": {
+    "detectionDate": "2026-07-26T11:45:33.472Z",
+    "formats": {
+      "bash": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 224,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 1,
+        "tokens": 224
+      },
+      "css": {
+        "clones": 24,
+        "duplicatedLines": 485,
+        "duplicatedTokens": 3352,
+        "lines": 23468,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 2.0666439406851884,
+        "percentageTokens": 3.491703038573318,
+        "sources": 127,
+        "tokens": 95999
+      },
+      "html": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 23700,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 132,
+        "tokens": 57211
+      },
+      "javascript": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 1623,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 13,
+        "tokens": 9469
+      },
+      "json": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 207,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 6,
+        "tokens": 648
+      },
+      "markdown": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 224,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 1,
+        "tokens": 379
+      },
+      "markup": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 173,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 4,
+        "tokens": 1976
+      },
+      "rust": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 1709,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 4,
+        "tokens": 9623
+      },
+      "svelte": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 24724,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 144,
+        "tokens": 141194
+      },
+      "text": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 19,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 1,
+        "tokens": 155
+      },
+      "toml": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 45,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 1,
+        "tokens": 175
+      },
+      "typescript": {
+        "clones": 132,
+        "duplicatedLines": 3260,
+        "duplicatedTokens": 22908,
+        "lines": 91535,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 3.56147921560059,
+        "percentageTokens": 3.370965083700233,
+        "sources": 683,
+        "tokens": 679568
+      }
+    },
+    "total": {
+      "clones": 156,
+      "duplicatedLines": 3745,
+      "duplicatedTokens": 26260,
+      "lines": 167651,
+      "newClones": 0,
+      "newDuplicatedLines": 0,
+      "percentage": 2.2338071350603337,
+      "percentageTokens": 2.6349033383803877,
+      "sources": 1117,
+      "tokens": 996621
+    }
+  }
+}
