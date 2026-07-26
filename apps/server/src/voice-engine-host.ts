@@ -339,7 +339,9 @@ export class VoiceEngineHost {
         return {
           kind: 'key',
           drumId: partial.drumId,
-          zone: partial.zone ?? SLOT_LABELS[0],
+          // Zone identity is the slot index as a string (the padKey form the web sends and
+          // authored graphs are keyed by) — NOT a SLOT_LABELS label.
+          zone: partial.zone ?? '0',
           velocity: partial.velocity ?? 1,
           timeMs,
         };
@@ -629,11 +631,20 @@ export class VoiceEngineHost {
   }
 }
 
+/** ` (center)` for a numeric-string zone, else `''`. The zone IDENTITY is the slot index;
+ *  the {@link SLOT_LABELS} name is appended for readability only, so a Monitor line stays
+ *  diagnosable (`pad=snare:0 (center)`) without the label ever becoming a key. */
+function zoneLabelSuffix(zone: string | undefined): string {
+  if (zone === undefined || !/^\d+$/.test(zone)) return '';
+  const label = SLOT_LABELS[Number(zone)];
+  return label ? ` (${label})` : '';
+}
+
 function describeVoiceInput(input: voice.VoiceInputDescriptor): string {
   const parts: string[] = [input.kind];
   if (input.note !== undefined) parts.push(`note=${input.note}`);
   if (input.address !== undefined) parts.push(`address=${input.address}`);
-  if (input.drumId !== undefined) parts.push(`pad=${input.drumId}:${input.zone ?? ''}`);
+  if (input.drumId !== undefined) parts.push(`pad=${input.drumId}:${input.zone ?? ''}${zoneLabelSuffix(input.zone)}`);
   if (input.velocity !== undefined) parts.push(`velocity=${input.velocity}`);
   if (input.value !== undefined) parts.push(`value=${input.value}`);
   if (input.songId !== undefined) parts.push(`song=${input.songId}`);

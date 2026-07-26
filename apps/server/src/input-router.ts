@@ -1,4 +1,4 @@
-import { SLOT_LABELS, type Engine, type InputEvent, type InputMap, type voice } from '@ledrums/core';
+import { TRIGGER_SLOT_COUNT, type Engine, type InputEvent, type InputMap, type voice } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
 import type { ClientMessage } from './ws-protocol';
 
@@ -15,15 +15,25 @@ export interface ZonePad {
   zone: string;
 }
 
-/** Map a trigger slot index to a voice zone label (clamped into range). */
+/**
+ * Map a trigger slot index to its padKey zone form — the slot index AS A STRING (clamped).
+ *
+ * This is the zone identity the authored model uses everywhere: graphs are keyed
+ * `padKey(drumId, String(slot))` (`"snare:0"`), a `drum` trigger source carries the same
+ * numeric-string zone, and the web sends `zone: String(pad.zone)` on a `key` message.
+ * Emitting a LABEL here instead (`"snare:center"`) meant a MIDI- or OSC-resolved pad could
+ * never match an authored graph — every hit missed with `no-slot-graphs` while the web's own
+ * pad clicks worked, because only this path converted. {@link SLOT_LABELS} is a DISPLAY
+ * concern (see `describeVoiceInput`), never an identity.
+ */
 function slotToZone(slot: number): string {
-  return SLOT_LABELS[Math.max(0, Math.min(SLOT_LABELS.length - 1, slot))] ?? SLOT_LABELS[0];
+  return String(Math.max(0, Math.min(TRIGGER_SLOT_COUNT - 1, slot)));
 }
 
 /**
  * Zone-map resolution — PINNED precedence STEP 1. Resolve a raw MIDI note to its
  * `(drumId, zone)` pad via the patch {@link InputMap} (`midiNotes`, keyed `(drumId,
- * slot)` → zone label). A match fires the pad-bound graph (the padKey path) and the
+ * slot)` → numeric-string zone). A match fires the pad-bound graph (the padKey path) and the
  * caller STOPS; a miss (`null`) means the caller forwards the raw note so the engine can
  * fire a graph bound DIRECTLY to it by its trigger source (step 2) — never both.
  */

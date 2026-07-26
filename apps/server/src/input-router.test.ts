@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Engine, SLOT_LABELS, defaultProject, voice } from '@ledrums/core';
+import { Engine, defaultProject, voice } from '@ledrums/core';
 import {
   applyClientMessage,
   midiToEvent,
@@ -54,13 +54,30 @@ describe('input-router', () => {
 });
 
 describe('zone-map resolution (PINNED precedence step 1)', () => {
-  // defaultProject maps note 36 → kick/slot 0 and OSC /sp/kick → kick/slot 0; slot 0 is
-  // the 'center' zone. A match fires the pad-bound graph (caller stops); a miss returns
-  // null so the caller forwards the raw input for a DIRECT trigger-source binding.
+  // defaultProject maps note 36 → kick/slot 0 and OSC /sp/kick → kick/slot 0. The zone is the
+  // slot index AS A STRING ('0'), which is the identity authored graphs are keyed by
+  // (`padKey('kick','0')` === 'kick:0') — NOT the 'center' display label. A match fires the
+  // pad-bound graph (caller stops); a miss returns null so the caller forwards the raw input
+  // for a DIRECT trigger-source binding.
   it('resolves a mapped MIDI note to its (drumId, zone) pad', () => {
     const { inputMap } = defaultProject();
-    expect(zoneForNote(inputMap, 36)).toEqual({ drumId: 'kick', zone: SLOT_LABELS[0] });
-    expect(zoneForNote(inputMap, 38)).toEqual({ drumId: 'snare', zone: SLOT_LABELS[0] });
+    expect(zoneForNote(inputMap, 36)).toEqual({ drumId: 'kick', zone: '0' });
+    expect(zoneForNote(inputMap, 38)).toEqual({ drumId: 'snare', zone: '0' });
+  });
+
+  // Regression (the drummer's silent rig): a resolved pad MUST be usable as a graph key.
+  // This resolved to 'kick:center' while every authored graph was keyed 'kick:0', so every
+  // MIDI hit missed with `no-slot-graphs` — while the web's own pad clicks worked, because
+  // only this path converted the slot to a label.
+  it('resolves to a zone that composes into the authored graph key', () => {
+    const { inputMap } = defaultProject();
+    const pad = zoneForNote(inputMap, 36)!;
+    expect(voice.padKey(pad.drumId, pad.zone)).toBe('kick:0');
+  });
+
+  it('clamps an out-of-range slot into the trigger-slot range', () => {
+    const inputMap = { ...defaultProject().inputMap, midiNotes: [{ note: 60, drumId: 'kick', slot: 99 }] };
+    expect(zoneForNote(inputMap, 60)).toEqual({ drumId: 'kick', zone: '7' });
   });
 
   it('returns null for an unmapped MIDI note (forward raw for direct binding)', () => {
@@ -69,7 +86,7 @@ describe('zone-map resolution (PINNED precedence step 1)', () => {
 
   it('resolves a mapped OSC address to its pad, null otherwise', () => {
     const { inputMap } = defaultProject();
-    expect(zoneForOsc(inputMap, '/sp/kick')).toEqual({ drumId: 'kick', zone: SLOT_LABELS[0] });
+    expect(zoneForOsc(inputMap, '/sp/kick')).toEqual({ drumId: 'kick', zone: '0' });
     expect(zoneForOsc(inputMap, '/nope')).toBeNull();
   });
 });

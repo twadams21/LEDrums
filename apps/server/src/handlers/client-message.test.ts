@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultProject, getHoopPixelRange, SLOT_LABELS, voice } from '@ledrums/core';
+import { defaultProject, getHoopPixelRange, voice } from '@ledrums/core';
 import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
@@ -230,7 +230,7 @@ function midiVoiceShow(note: number): voice.Show {
     sections: [],
     effects: [voiceEffect('fx-flash')],
     presets: [],
-    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', SLOT_LABELS[0])]: [] } }] }],
+    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', '0')]: [] } }] }],
   };
 }
 
