@@ -233,6 +233,22 @@ manifest. Env knobs: `OTA_BUCKET` (default `ledrums-ota`), `OTA_PUBLIC_BASE` (**
 `OTA_VERSION`, `OTA_TARGET`, `OTA_NOTES`. It needs `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
 (R2 read/write) — supplied by Infisical.
 
+### Release announcements (Discord)
+
+A successful publish posts to the **#ledrums-updates** Discord channel via
+`scripts/ota-announce.mjs`, using **`LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK`** from Infisical (`prod`).
+Separate channel + webhook from the error-report pings the ingest Worker sends
+(`workers/error-ingest`, its own `DISCORD_WEBHOOK_URL` wrangler secret).
+
+- Posted **after** `latest.json` is uploaded, so a message always means *installable right now*.
+- The **first platform** of a version posts the `@everyone` announcement (version, platform list,
+  `OTA_NOTES` quoted, and how to install); later platforms of the **same** version post a quiet
+  follow-up with no ping, so one release pings the channel exactly once.
+- Announcing is **best-effort**: a missing webhook or a failed post prints a loud
+  `[ota] WARNING:` and leaves the (already-completed) release alone. It is never silent and never
+  fails the publish.
+- Set **`OTA_ANNOUNCE=0`** to publish without announcing (test publishes, re-uploads).
+
 > **Per-platform builds.** As with the sidecar (Node SEA is not a cross-compiler), produce each
 > platform's signed bundle **on that platform** and run `publish:ota` there; the manifest merge
 > keeps both arch entries.
