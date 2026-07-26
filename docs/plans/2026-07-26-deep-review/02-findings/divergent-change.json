@@ -1,0 +1,764 @@
+{
+  "artifact": "02-findings/divergent-change",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "divergent-change",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "core-voice-fx.json: \"packages/core/src/voice/engine.ts applyInput (~lines 298-694) is one ~400-line method holding input normalization, graph resolution, table updates, action execution and pending-fire scheduling\"",
+      "why_rejected": "Factually wrong. `applyInput` (voice/engine.ts:298-300) is three lines \u2014 it pushes onto a queue. The 298-694 span is already decomposed into 16 named private methods (processEvent 310, processFireGraph 422, resolveGraphsForEvent 450, resolveDirectGraphs 468, resolveHitGraphs 499, missReasonFor 526, beatPhase 541, spawnSectionLooks 558, lookAction 583, lookDefaultParams 593, evalState 603, fireGraph 617, applyActions 642, enqueuePendingFire 664, drainPendingFires 679). The longest is processEvent at ~110 lines. The class is large (850 LOC) but that is a size concern for the large-module lens, not change-scatter: only 5 commits in the last 400 touch it, well under this lens's bar."
+    },
+    {
+      "candidate": "web-triggerlab.json: \"three independent version axes (persistence.ts VERSION/SHOWS_VERSION/SONGS_VERSION, clipdoc.ts CLIPDOC_VERSION, store/hydrate.ts gen3 migrations) \u2014 drift likely already present in hoop-target handling\"",
+      "why_rejected": "The specific drift predicted is not there \u2014 it is the counterexample. clipdoc.ts:33 imports `migrateGraphHoopTargets` / `migrateGraphsHoopTargets` from persistence.ts, and clipdoc.ts:337 states the reason explicitly: \"show-schema and clipboard migrations can never drift\". The hoop-target transform has exactly one implementation (persistence.ts:187-212) shared by all four envelopes. Four separate version constants remain, but each gates a genuinely independent blob with its own lifecycle (authored state / show library / song library / clipboard document), which is correct design, not scatter."
+    },
+    {
+      "candidate": "web-rest.json / web-triggerlab.json: \"apps/web/src/lib/trigger-lab/fixtures.ts carries a second, divergent effect catalog outside packages/core\"",
+      "why_rejected": "fixtures.ts:4-10 imports `listEffects`, `collectionOf`, `DEFAULT_KIT` and core's `ParamSpec` from @ledrums/core \u2014 the catalog is derived from core's registry, not forked. render.ts:1-6 documents the same discipline for compositing: \"every voice hosts a core EffectGenerator \u2026 renderFrame delegates to the SAME generators the server engine runs \u2014 the preview can never silently diverge from real output\". The real fork in that directory is sim.ts's voice lifecycle and graph evaluation, which I filed separately as finding 3."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/shot-seam.ts \u2014 540 LOC and the SECOND-most-changed file in the repo (26 touches in 400 commits)",
+      "why_rejected": "Highest-churn-by-count but a deliberate, correctly-designed convergence point, not a defect. Its header (lines 1-14) states the contract: \"It duplicates NO logic: every operation calls the same public store methods the UI calls\" and \"To teach ui-shot a new app state, add ONE method here \u2014 never a bespoke click script in a preset.\" Every touch is one method added for one new UI state; the alternative (per-preset Playwright choreography) is strictly worse and is what this file replaced. Its churn is a linear function of UI surface growth, which is the intended behaviour of a screenshot seam."
+    },
+    {
+      "candidate": "packages/io/src/osc.ts (294 LOC) mixing OSC codec (readString/readArg/parseMessage/parseOsc/collectBundle/parseOscPacket/encodeOsc, lines 10-195) with UDP socket lifecycle and status reporting (OscInput class, lines 197-294)",
+      "why_rejected": "Real but too weak to spend a slot on. Only 2 commits in the sampled window touch it (d1d6eb9 bundle/type-tag parsing, c7bf94d socket status surfacing) \u2014 below this lens's >=3-commit evidence bar \u2014 and the codec half already has its own dedicated test file (osc-packet.test.ts, 324 lines) separate from osc.test.ts, so the seam is effectively drawn at the test level even though the source lives in one file. Filed here rather than as a finding so a future reviewer does not re-derive it."
+    },
+    {
+      "candidate": "apps/web/src/lib/ws/protocol-types.ts as a hand-maintained mirror of the protocol package requiring a parallel edit per new message type",
+      "why_rejected": "It is a pure re-export shim (lines 5-26 are a single `export type { \u2026 } from '@ledrums/protocol'`) plus one web-only runtime helper, `decodeServer`. Critically, its discriminant set is DERIVED, not mirrored: line 33 builds it via `serverMessageSchema.options.map(opt => opt.shape.t.value)` with an explicit comment \"DERIVED from the schema (never hand-maintained)\". Adding a message type requires touching the re-export list only if a new named payload type is introduced, which is barrel maintenance, not divergent change."
+    }
+  ],
+  "items": [
+    {
+      "id": "divergent-change-0001",
+      "dedup_key": "7f8200fa9137c50c",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 71,
+          "end_line": 72,
+          "symbol": "VOICE_MODE"
+        },
+        {
+          "path": "apps/server/src/input-router.ts",
+          "start_line": 133,
+          "end_line": 215,
+          "symbol": "applyClientMessage"
+        },
+        {
+          "path": "apps/server/src/handlers/voice-input.ts",
+          "start_line": 136,
+          "end_line": 190,
+          "symbol": "propagateToVoiceHost"
+        },
+        {
+          "path": "packages/core/src/index.ts",
+          "start_line": 65,
+          "end_line": 69,
+          "symbol": "legacy engine barrel exports"
+        },
+        {
+          "path": "packages/core/src/engine/engine.ts",
+          "start_line": 1,
+          "end_line": 438,
+          "symbol": "Engine"
+        }
+      ],
+      "claim": "The legacy `packages/core/src/engine` stack (engine.ts 438 / compositor.ts / modulation.ts / control-state.ts / transport.ts) and the `packages/core/src/voice` stack (~5,900 LOC of non-test source) are both live: `apps/server/src/main.ts:72` selects between them on `LEDRUMS_ENGINE`, and only the desktop shell (`apps/desktop/src-tauri/src/lib.rs:386`) and `scripts/dev.mjs:32` default it to `voice`. Plain `pnpm start` leaves it unset, so the legacy `EngineHost` render loop is the running engine (`apps/server/src/boot.ts:72-73`). Independently of mode, `host = new EngineHost(project0)` is ALWAYS constructed (`main.ts:157`) and remains the authoritative project/model store the autosaver persists, so every kit/geometry mutation message must be applied twice \u2014 once through `applyClientMessage(host.engine, \u2026)` and once through `propagateToVoiceHost(voiceHost, \u2026)`. Drift has already happened and is documented in the code itself.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "`grep -rn LEDRUMS_ENGINE apps packages scripts` \u2192 only apps/desktop/src-tauri/src/lib.rs:386 and scripts/dev.mjs:32 set it to 'voice'; apps/server/src/main.ts:72 defaults to legacy when unset. Root package.json `start` = `pnpm --filter @ledrums/server run start` with no env, so the shipped prod-server script runs the LEGACY stack.",
+          "tool": "Bash",
+          "command": "grep -rn \"LEDRUMS_ENGINE\" apps packages scripts docs"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/input-router.ts:176-179 carries the literal drift record: \"// pixelsPerHoop was historically dropped on this legacy-engine path (the voice host already forwarded it) \u2014 forward it here too so literal LED counts apply.\" A geometry field silently applied on one stack and not the other is exactly the divergent-change failure this lens predicts.",
+          "tool": "Read"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/handlers/voice-input.ts:138-190 re-handles setKitTransform / setKitGlobal / setHoopConfig / setKitOutputs / setKitNodeLayout / setOutput / setInputMap \u2014 the same discriminants already handled at input-router.ts:171-215 against the legacy Engine.",
+          "tool": "Read"
+        },
+        {
+          "kind": "git-history",
+          "detail": "`git log --name-only` on packages/protocol/src/schemas.ts shows commit ec611a5 (\"P1 \u2014 extend setKitGlobal/setKitTransform, add setHoopConfig\") and 39b7d6b (Patch Graph v2) both fanning across protocol + input-router/voice-input + engine/engine.ts + voice-engine-host.ts, i.e. one logical kit change hitting >=4 files across >=3 commits.",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -200 -- packages/protocol/src/schemas.ts); do git show --name-only --format='' $c; done"
+        }
+      ],
+      "proposed_fix": "Decide the engine question once. Either (a) make `voice` the only stack: delete `packages/core/src/engine/{engine,compositor,modulation,control-state,transport}.ts` plus their barrel exports at packages/core/src/index.ts:65-69, drop `EngineHost`/`applyClientMessage`'s mutator arms, keep only `framebuffer.ts` + `render-context.ts` (which voice/ genuinely depends on), and let `VoiceEngineHost` own the project/model store; or (b) if legacy must stay as a fallback, collapse the mutation surface to ONE reducer that both hosts consume, so a kit message can never be handled on one path and dropped on the other. Do not leave the current shape.",
+      "interface_delta": {
+        "exported_symbols_removed": 40,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Option (a) removes the legacy engine as a runtime fallback and removes the LEDRUMS_ENGINE mode branch entirely \u2014 a deployment-selectable fallback path disappears. This must be a human/product decision, not an auto-fix."
+      },
+      "fix_size_loc": 900,
+      "blast_radius": {
+        "files_touched": 14,
+        "packages_touched": [
+          "packages/core",
+          "apps/server",
+          "apps/desktop",
+          "scripts"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Confirm reachability: run `pnpm --filter @ledrums/server run start` with LEDRUMS_ENGINE unset and observe boot.ts:74 printing WITHOUT the '[voice engine]' suffix \u2014 proving the legacy loop is the one started.",
+          "Delete packages/core/src/engine/{engine,compositor,modulation,control-state,transport}.ts and their index.ts:65-69 exports; run `pnpm typecheck` and enumerate every break \u2014 each break is a live legacy-stack consumer.",
+          "Run `pnpm test`; the surviving red set (engine/engine.test.ts, engine/modulation.test.ts, apps/server/src/input-router.test.ts, engine-host.test.ts) is the exact cost of the deletion."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0002",
+      "dedup_key": "83e0ad8774c72e62",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 1,
+          "end_line": 3641,
+          "symbol": "TriggerLab"
+        }
+      ],
+      "claim": "`TriggerLab` is the repo's single highest-churn file and every unrelated concern converges on it. In the last 400 commits it was edited 32 times, and the commit subjects are mutually unrelated axes: OSC input panel (#139), the Backups dialog (#123), web fault capture (#122), kit-global / per-hoop mutators (P1), Patch Graph v2 zone canvas, undo-stack semantics, node/edge id minting, splice-on-drop, wire validation toasts, MIDI controller ownership, PixLite controller monitoring, and Mix layer rows. Five prior split waves (R20-R24, store/ subdirectory with 20 extracted modules) have already pulled controllers out and the file is still 3,641 lines, which shows the split is being done by subtraction of leaves rather than by drawing a seam.",
+      "evidence": [
+        {
+          "kind": "git-history",
+          "detail": "`git log --format='%h' -400 | while read c; do git show --name-only --format='' $c; done | sort | uniq -c | sort -rn` ranks apps/web/src/lib/trigger-lab/store.svelte.ts first at 32 touches \u2014 nearly double the next non-seam file.",
+          "tool": "Bash",
+          "command": "git log --format='%h' -400 | while read c; do git show --name-only --format='' $c | grep -E '\\.(ts|svelte|rs|mjs)$'; done | sort | uniq -c | sort -rn | head -40"
+        },
+        {
+          "kind": "git-history",
+          "detail": "The 30 most recent subjects touching the file span OSC panel, Backups dialog, observability capture, kit-global mutators, Patch Graph v2, undo, id minting, splice-on-drop, wire validation, admin-password field, Mix rows, Add-Node taxonomy \u2014 no two share a change reason.",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -40 -- apps/web/src/lib/trigger-lab/store.svelte.ts); do git log -1 --format='%s' $c; done"
+        },
+        {
+          "kind": "tool-output",
+          "detail": "`wc -l` = 3641; `ls apps/web/src/lib/trigger-lab/store/` shows 20 already-extracted sibling modules (graphs.ts, hydrate.ts, shows.ts, song-library.ts, mod-graph.ts, transport.ts, trigger-routing.ts, \u2026), confirming the split is in progress but unfinished.",
+          "tool": "Bash",
+          "command": "wc -l apps/web/src/lib/trigger-lab/store.svelte.ts; ls apps/web/src/lib/trigger-lab/store/"
+        }
+      ],
+      "proposed_fix": "Stop extracting leaves and draw the seam by change-axis. Split `TriggerLab` into facades that compose already-existing store/ modules: (1) an authoring-document store (graphs/nodes/edges/undo/clipboard), (2) a library store (shows/songs/sections \u2014 mostly already in store/shows.ts + store/song-library*.ts), (3) a device/link store (WS link, controller monitor, MIDI, OSC status, backups). Keep `TriggerLab` as a thin composition root that owns only cross-store coordination, so an OSC-panel change and a Patch-Graph change stop landing in the same file.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 3,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "A pure decomposition of an existing class into composed sub-stores removes no guard, retry, timeout, fallback or validation; every method keeps its body."
+      },
+      "fix_size_loc": 2500,
+      "blast_radius": {
+        "files_touched": 30,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "`pnpm --filter @ledrums/web run typecheck` after each facade extraction \u2014 the public `store.<method>` surface must stay call-compatible.",
+          "`pnpm --filter @ledrums/web run test` \u2014 the ~15 store.*.test.ts suites already pin the behaviour and must stay green untouched.",
+          "Re-run the churn histogram after the split; the success criterion is that no single resulting file exceeds ~800 LOC and no two of the three facades appear together in a majority of future commits."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0003",
+      "dedup_key": "3e7e1cf35a16e798",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.ts",
+          "start_line": 280,
+          "end_line": 702,
+          "symbol": "Sim"
+        },
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 1,
+          "end_line": 637,
+          "symbol": "evalGraph"
+        },
+        {
+          "path": "packages/core/src/voice/voice-pool.ts",
+          "start_line": 1,
+          "end_line": 252,
+          "symbol": "VoicePool"
+        }
+      ],
+      "claim": "Beyond the engine/voice duplication, the web app carries a THIRD implementation of the same semantics: `Sim` (sim.ts:280-702) owns voice lifecycle, bus polyphony/voice-stealing (`sim.ts:451`, `sim.ts:692`) and trigger-graph evaluation (`sim.ts:376`), which `packages/core/src/voice/voice-pool.ts` and `packages/core/src/voice/eval-graph.ts` also implement. Its own header (sim.ts:2-14) declares it \"throwaway \u2026 NOT the engine \u2026 Delete this whole directory once the branches are decided\", yet it was edited in 12 of the last 400 commits and still feeds the visualiser whenever the WS link is closed. A change to polyphony, voice-stealing or graph evaluation therefore has to be made in core voice/ AND in web sim.ts, and the repo's own docs record a rendering divergence traced to exactly this fork.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "grep on sim.ts shows `export class Sim` (280), `/** Fire a freeform trigger graph: evaluate from the trigger node, spawn/stop. */` (376), `if (bus.polyphony === 'mono')` (451) and `if (bus?.polyphony === 'mono') return Math.max(...)` (692) \u2014 the same concerns core's voice-pool.ts/eval-graph.ts own.",
+          "tool": "Bash",
+          "command": "grep -n \"class Sim|evaluate|voiceSteal|polyphony|Math.random\" apps/web/src/lib/trigger-lab/sim.ts"
+        },
+        {
+          "kind": "git-history",
+          "detail": "The 400-commit churn histogram ranks apps/web/src/lib/trigger-lab/sim.ts at 12 touches \u2014 a file explicitly marked for deletion is among the top dozen most-changed files in the repo.",
+          "tool": "Bash",
+          "command": "git log --format='%h' -400 | while read c; do git show --name-only --format=''; done | sort | uniq -c | sort -rn"
+        },
+        {
+          "kind": "read",
+          "detail": "docs/plans/2026-07-03-phase2-review/PHASE0-RECONCILIATION.md:41 attributes 'identical settings render differently' to this fork: \"That throwaway layer is still what the visualiser renders from whenever the app isn't adopting server frames.\"",
+          "tool": "Bash"
+        }
+      ],
+      "proposed_fix": "Retire the fork rather than maintaining it. `render.ts` already proves the pattern \u2014 it delegates to core generators so 'the preview can never silently diverge from real output'. Do the same for evaluation: have the local preview drive `packages/core/src/voice`'s `evalGraph` + `VoicePool` directly (they are pure and platform-agnostic, so the browser can run them), and reduce sim.ts to the web-only view types it still exports. If a local preview engine must remain, it must be constructed from core, not reimplemented.",
+      "interface_delta": {
+        "exported_symbols_removed": 12,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "sim.ts is the offline fallback the visualiser renders from when the WS link is closed; replacing it with core evaluation removes the current link-down fallback implementation (the capability should be preserved via core, but the existing fallback code path is deleted)."
+      },
+      "fix_size_loc": 700,
+      "blast_radius": {
+        "files_touched": 10,
+        "packages_touched": [
+          "apps/web",
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Diff the semantics first: write a table of sim.ts's polyphony/steal rules (sim.ts:451, 692) against voice-pool.ts's, and its graph fire path (sim.ts:376) against eval-graph.ts's \u2014 any cell that differs is live drift, not just duplication.",
+          "Swap the preview to core evaluation behind a flag and compare frame output link-open vs link-closed for the same authored graph; byte-identical frames is the acceptance bar (the repo already has determinism tests in voice/determinism.test.ts to model this on).",
+          "`pnpm --filter @ledrums/web run test` \u2014 the sim.*.test.ts suites pin current behaviour and will localise every semantic difference."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0004",
+      "dedup_key": "c655634e77b165b8",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 1,
+          "end_line": 801,
+          "symbol": "module top-level"
+        }
+      ],
+      "claim": "main.ts is 801 lines of module-level mutable state and closures over it (`host`, `voiceHost`, `liveShowLibrary`, `liveSongLibrary`, three autosavers, `oscListen`, `tunnelControl`, `pinGate`, stats timer, monitor sink). Because everything is wired at module scope, every unrelated feature must edit this file: the last 20 commits touching it add OSC listen reporting, native-MIDI decoupling, pre-risk snapshots, observability dedup keys, output port reconciliation, SnapshotStore wiring, controller admin-password, controller test-data, tunnel start/stop, song-library messages, and per-voice stats. There is no seam a new feature can attach to without editing the root.",
+      "evidence": [
+        {
+          "kind": "git-history",
+          "detail": "20 commits touching main.ts, all with distinct reasons: c7bf94d (OSC), 81b2a8f (native MIDI), e361d8a (snapshots), a6ef21f (observability dedup), b950a4d (output port fallback), fbd63a2 (SnapshotStore), 2dee93a/de6f7e7 (observability), ecd31e1/da3342d (controller auth + subnet), bd5a928 (stats cadence), 4df4112/509fa49 (controller monitor), 744f5e9 (tunnel), 448ce81 (song library), e70cec9 (voice stats), ef72db2 (fireGraph).",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -20 -- apps/server/src/main.ts); do git log -1 --format='%h %s' $c; done"
+        },
+        {
+          "kind": "read",
+          "detail": "main.ts:157-200 constructs host, voiceHost, autosaver, showLibraryLoad/liveShowLibrary, songLibraryLoad/liveSongLibrary and showLibraryAutosaver as module-level `const`/`let`, and stateMessage() (main.ts:446-462) closes over all of them \u2014 so a new persisted slot cannot be added anywhere else.",
+          "tool": "Read"
+        },
+        {
+          "kind": "grep",
+          "detail": "31 references to `host.`/`voiceHost` inside main.ts alone, spread from line 157 to line 790.",
+          "tool": "Bash",
+          "command": "grep -n \"host\\.|voiceHost\" apps/server/src/main.ts"
+        }
+      ],
+      "proposed_fix": "Extract a composable app factory: `createServerApp(deps) -> { stateMessage, broadcast, shutdown }` holding the currently module-level state as fields, with the persisted slots (project / show library / song library / snapshots) behind one `PersistedSlots` registry so adding a slot is one registration rather than five edits (loader, live let, autosaver, stateMessage field, shutdown flush). main.ts then becomes env parsing + `createServerApp(...)` + `boot(...)`.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Moving module-level state into a factory's fields preserves every autosave error handler, the PIN gate, the OSC error branch and the shutdown flush verbatim."
+      },
+      "fix_size_loc": 600,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "`pnpm --filter @ledrums/server run typecheck` after the extraction.",
+          "`pnpm --filter @ledrums/server run test` \u2014 boot.test.ts, client-message.test.ts, client-registry.test.ts and diagnostics.test.ts already exercise the wiring and must stay green.",
+          "Boot the server and confirm the state message still carries project/model/effects/projects/output/showLibrary/songLibrary/tunnel/osc (main.ts:446-462) with identical fields."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0005",
+      "dedup_key": "8640cead1afe766b",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/geometry/kit-schema.ts",
+          "start_line": 5,
+          "end_line": 236,
+          "symbol": "zod schemas + inferred types"
+        },
+        {
+          "path": "packages/core/src/geometry/kit-schema.ts",
+          "start_line": 244,
+          "end_line": 456,
+          "symbol": "migration transforms + migrateKit"
+        },
+        {
+          "path": "packages/core/src/geometry/kit-schema.ts",
+          "start_line": 466,
+          "end_line": 542,
+          "symbol": "drumHoopCount / logicalOutputCount / logicalOutputsForPhysical / reconcileOutputs"
+        }
+      ],
+      "claim": "One file holds three independent change axes: (1) the zod schema surface and its inferred types (lines 5-236), (2) the v1\u2192v7 migration ladder \u2014 `shiftOutputHoops`, `splitOutputDataLines`, `shiftDrumOriginToCentre`, `shiftDrumToHoops`, `isRawVec3` and `migrateKit` (lines 244-456), and (3) derived query/reconciliation helpers that are pure functions OF a parsed kit \u2014 `drumHoopCount`, `drumDensity`, `logicalOutputCount`, `logicalOutputsForPhysical`, `reconcileOutputs` (lines 466-542). Git confirms these are genuinely unrelated reasons to change: 15 commits, some adding a schema field (0491a13 per-output RGB order, 85e6995 per-hoop attributes), some adding a migrator (b5495d8 v?\u2192expanded, cba77b5 1-based indexing, 182ed74 v6\u21927), and some changing only a derived query (4890f0f drumHoopCount, c0bfbec reconcileOutputs).",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "`grep -n '^export |^function ' packages/core/src/geometry/kit-schema.ts` shows the three clusters cleanly separated by line range: schemas end at 236, migration helpers run 244-394, migrateKit/parseKit at 395-465, derived helpers 466-542.",
+          "tool": "Bash",
+          "command": "grep -n \"^export |^function |^const \" packages/core/src/geometry/kit-schema.ts"
+        },
+        {
+          "kind": "git-history",
+          "detail": "15 commits, distinct reasons: 46eeca7 (output ids), c0bfbec (reconcileOutputs), 48eca04 (flat rgbOrder + invariant), 182ed74 (v6\u21927 migrator), 4890f0f (drumHoopCount), 0491a13 (per-output RGB order), 85e6995 (per-hoop model attrs), 6350289 (drum origin), b5495d8 (expanded-mode + migrator), cba77b5 (1-based indexing migration), c176a1a/d7691f6 (mirror/flip), cd5bfae (data lines), ee90ac5 (pixelsPerHoop override).",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -60 -- packages/core/src/geometry/kit-schema.ts); do git log -1 --format='%h %s' $c; done"
+        },
+        {
+          "kind": "tool-output",
+          "detail": "wc -l = 542, and CURRENT_KIT_VERSION = 7 at line 200 with the whole ladder below it \u2014 every future kit version adds a transform to this same file.",
+          "tool": "Bash",
+          "command": "wc -l packages/core/src/geometry/kit-schema.ts"
+        }
+      ],
+      "proposed_fix": "Split by change axis inside packages/core/src/geometry/: `kit-schema.ts` keeps only the zod declarations + inferred types + `parseKit`; `kit-migrations.ts` takes `CURRENT_KIT_VERSION`, the four shift/split transforms, `isRawVec3` and `migrateKit` (parseKit calls into it); `kit-queries.ts` takes `drumHoopCount`, `drumDensity`, `PIXLITE_PHYSICAL_OUTPUTS`, `logicalOutputCount`, `logicalOutputsForPhysical` and `reconcileOutputs`. Re-export all three from geometry's existing barrel so no consumer import changes.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "A pure file split with an unchanged barrel re-export; parseKit's validation, the migration gate and reconcileOutputs' invariants all move verbatim."
+      },
+      "fix_size_loc": 560,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Move the three clusters into three files, re-export from packages/core/src/index.ts exactly as today.",
+          "`pnpm typecheck` at the repo root \u2014 a green run proves no consumer's import path broke (the barrel is the only public entry).",
+          "`pnpm --filter @ledrums/core run test` \u2014 the kit-schema/migration tests must pass unmodified; any test file edit other than its import line means the split changed behaviour."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0006",
+      "dedup_key": "aac8e1b779a454d4",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/engine/modulation.ts",
+          "start_line": 8,
+          "end_line": 21,
+          "symbol": "lfoValue"
+        },
+        {
+          "path": "packages/core/src/voice/lfo.ts",
+          "start_line": 72,
+          "end_line": 84,
+          "symbol": "continuousWave"
+        }
+      ],
+      "claim": "`lfoValue(shape, timeMs, rate)` (engine/modulation.ts:8-21) and `continuousWave(waveform, p)` (voice/lfo.ts:72-84) independently implement the same four shapes with the same formulas \u2014 sine `0.5 + 0.5*sin(2\u03c0p)`, triangle `p<0.5 ? 2p : 2(1-p)`, saw `p`, square `p<0.5 ? 1 : 0`. They already disagree in scope: voice/lfo.ts adds a fifth waveform (`sample-hold`), bpm-synced rate via `computeDelayMs`, and a phase offset, none of which exist on the legacy side. A change to the shape vocabulary or to any waveform's curve is therefore a two-site edit with no compiler link between them.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "engine/modulation.ts:9-21 \u2014 `const phase = wrap(timeMs*0.001*rate,1)` then a switch over 'saw'|'square'|'triangle'|'sine' returning exactly the formulas listed above.",
+          "tool": "Read"
+        },
+        {
+          "kind": "read",
+          "detail": "voice/lfo.ts:73-84 \u2014 `continuousWave` switch over 'sine'|'triangle'|'saw'|'square' with byte-equivalent expressions; LFO_WAVEFORMS (line 22) adds 'sample-hold', and lfoPeriodMs (line 57) adds beats-synced rate that the legacy copy has no notion of.",
+          "tool": "Read"
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -rn 'lfoValue|sourceValue|applyCurve' apps packages | grep -v src/engine/` returns nothing \u2014 the legacy modulation module has zero consumers outside packages/core/src/engine and its own test, confirming the two copies never meet.",
+          "tool": "Bash",
+          "command": "grep -rn \"resolveParams|sourceValue|lfoValue|applyCurve\" apps packages | grep -v \"src/engine/\""
+        }
+      ],
+      "proposed_fix": "Make voice/lfo.ts the single owner of waveform math and have engine/modulation.ts's `lfoValue` delegate: `lfoValue(shape, t, rate) => sampleLfo({ waveform: shape as LfoWaveform, rateMode: 'hz', rateHz: rate, division: '1/4', phase: 0 }, t, 0)`. If the legacy stack is deleted per the dual-stack finding, this duplication disappears with it \u2014 so sequence this after that decision.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Delegating one pure math function to another pure math function removes no guard, validation, retry or fallback; the default-case behaviour of the legacy switch (unknown shape \u2192 sine) must be preserved explicitly in the delegation."
+      },
+      "fix_size_loc": 15,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Property-check equivalence before deleting: for shape in {sine,triangle,saw,square} and 1000 (t, rate) samples, assert `lfoValue(shape,t,rate) === sampleLfo({waveform:shape,rateMode:'hz',rateHz:rate,division:'1/4',phase:0}, t, 0)`.",
+          "Apply the delegation and run `pnpm --filter @ledrums/core run test` \u2014 engine/modulation.test.ts pins the legacy behaviour and must pass unchanged.",
+          "Confirm the unknown-shape default (legacy falls through to sine) still holds \u2014 sampleLfo has no default arm, so this needs an explicit guard in the delegation."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0007",
+      "dedup_key": "6d62f8eda362e519",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte",
+          "start_line": 1,
+          "end_line": 847,
+          "symbol": "ControllerStatusPanel"
+        }
+      ],
+      "claim": "A single 847-LOC 'presentational' inspector covers controller identity, discovery/adoption (including subnet recommendation and Adopt-by-IP), per-universe rx tables, health/takeover banners, admin-password auth, and test-pattern controls. Each is a distinct change axis and the history shows them arriving as separate commits into the same file: 0360c10 (takeover banner + test-pattern controls), de62307 (derivations + panel creation), 4731718 (admin-password field), da3342d (subnet recommendation + Adopt-by-IP), 6c12f97 (PixLite status hardening), 8dc92b9 (partial extraction of AdoptByIpRow + UniverseRxTable). The 8dc92b9 extraction confirms the seam exists and was only partly cut.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "detail": "wc -l apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte = 847.",
+          "tool": "Bash",
+          "command": "wc -l apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte"
+        },
+        {
+          "kind": "git-history",
+          "detail": "Commits touching the file, each for an unrelated reason: 8dc92b9 refactor(controller): extract AdoptByIpRow + UniverseRxTable composites; da3342d subnet recommendation + Adopt-by-IP; 4731718 admin-password field; 0360c10 S49 takeover banner + test-pattern controls; de62307 S48 derivations/panel; 6c12f97 Harden trigger graph sync and PixLite status.",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -30 -- apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte); do git log -1 --format='%h %s' $c; done"
+        }
+      ],
+      "proposed_fix": "Finish the extraction 8dc92b9 started, along the five axes: `ControllerIdentityCard`, `ControllerDiscoveryPanel` (subnet recommendation + adoption, wrapping the existing AdoptByIpRow), `ControllerUniverseRx` (already partly extracted as UniverseRxTable), `ControllerHealthBanner` (takeover + auth state), `ControllerTestPatterns`. Register each in apps/web/src/lib/styleguide/sections/ per AGENTS.md and regenerate docs/design-system.html in the same change. ControllerStatusPanel becomes the composition + data-derivation shell.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 5,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Splitting a presentational component into child components moves markup and bindings without touching any guard, error state or validation branch."
+      },
+      "fix_size_loc": 850,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "`pnpm --filter @ledrums/web run typecheck` (svelte-check) after each child extraction.",
+          "`pnpm ui-shot` against the controller inspector surface and diff the capture against the pre-split baseline \u2014 pixel parity is the acceptance bar, and the tool also surfaces console errors.",
+          "`pnpm design-system` must be re-run in the same change per AGENTS.md; a dirty docs/design-system.html at commit time means the styleguide entry was skipped."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0008",
+      "dedup_key": "856750a24793a60a",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/TriggerGraphView.svelte",
+          "start_line": 1,
+          "end_line": 746,
+          "symbol": "TriggerGraphView"
+        }
+      ],
+      "claim": "One view component is the landing site for six unrelated feature axes, each traceable to its own commit: graph-to-xyflow projection and anchors (82e2115), connection-time wire validation (cbd241c), arm-wire-on-drag-over + splice-on-drop geometry (a4ea3ea), Add-Node palette DnD and taxonomy previews (904bf18, 5b954b6), the lint strip and node-face lint badges (da21cd0, f2d223a), and Mix layer rows (ba8f0df). It is the third-most-changed file in the repo at 16 touches in 400 commits.",
+      "evidence": [
+        {
+          "kind": "git-history",
+          "detail": "Churn histogram: apps/web/src/lib/app/views/TriggerGraphView.svelte = 16 touches in the last 400 commits, behind only store.svelte.ts (32) and shot-seam.ts (26).",
+          "tool": "Bash",
+          "command": "git log --format='%h' -400 | while read c; do git show --name-only --format=''; done | sort | uniq -c | sort -rn | head -40"
+        },
+        {
+          "kind": "git-history",
+          "detail": "Commit subjects on the file span six unrelated features (validation / splice / palette / lint / mix rows / anchors) plus two dead-code cleanups (5c169a4, 0b38010) \u2014 a pattern typical of a file no one owns end to end.",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -30 -- apps/web/src/lib/app/views/TriggerGraphView.svelte); do git log -1 --format='%h %s' $c; done"
+        },
+        {
+          "kind": "tool-output",
+          "detail": "wc -l = 746.",
+          "tool": "Bash",
+          "command": "wc -l apps/web/src/lib/app/views/TriggerGraphView.svelte"
+        }
+      ],
+      "proposed_fix": "Pull the non-rendering axes into `.svelte.ts` controllers next to the view (the repo already uses this pattern \u2014 views/wire-preview.svelte.ts, views/lint-preview.svelte.ts, views/graph-hover.svelte.ts): a `graph-projection.ts` (graph \u2192 xyflow nodes/edges), a `wire-validation.svelte.ts` (connection-time predicate + reason toast), and a `splice.svelte.ts` (arm-on-drag-over + drop geometry). The component keeps markup, xyflow binding and drawer state only.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 3,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Moving the wire-validation predicate and splice geometry into modules preserves them exactly; the invalid-wire rejection branch and its toast move together and stay on the same call path."
+      },
+      "fix_size_loc": 500,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Extract projection first (pure function of the graph) and unit-test it directly \u2014 it currently has no isolated test because it is inline in the component.",
+          "`pnpm --filter @ledrums/web run typecheck` and `test` after each extraction.",
+          "`pnpm ui-shot` for the trigger-graph states already registered in shot-seam.ts (view:trigger, add:scope, splice-armed, wire-invalid, lint) and diff against baseline."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "divergent-change-0009",
+      "dedup_key": "3192246beb740c75",
+      "lens": "divergent-change",
+      "criterion": "change-scatter",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/protocol/src/index.ts",
+          "start_line": 45,
+          "end_line": 300,
+          "symbol": "payload interfaces"
+        },
+        {
+          "path": "packages/protocol/src/schemas.ts",
+          "start_line": 440,
+          "end_line": 472,
+          "symbol": "_Lock* assertions"
+        }
+      ],
+      "claim": "Adding or changing one field on any wire payload requires three coordinated edits inside a single package: the hand-written `interface` in index.ts (21 exported interfaces/types between lines 45 and 300), the corresponding zod schema in schemas.ts, and \u2014 for any newly added payload \u2014 a `_Lock<Name> = Assert<Equals<z.infer<typeof \u2026Schema>, \u2026>>` line in schemas.ts:453-472. The lock assertions exist precisely because the two declarations can drift; they are a compile-time patch over a structural duplication that `z.infer` would eliminate outright.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/protocol/src/index.ts:14-15 states outright: \"The payload interfaces below (SerializedModel, EffectSpec, OutputStatus, \u2026) are locked to their schemas by a type-level assertion in ./schemas\" \u2014 the duplication is acknowledged in the source.",
+          "tool": "Read"
+        },
+        {
+          "kind": "grep",
+          "detail": "grep on index.ts finds 21 exported interfaces/types (ShowLibraryBlob:45, SongLibraryBlob:54, BackupSnapshotMeta:66, SerializedDrum:74, SerializedModel:82, EffectSpec:96, OutputStatus:105, VoiceStat:120, VoiceStats:137, ControllerUniverseRx:155, DiscoveredController:176, NetworkAdapter:195, ControllerTestPattern:216, ControllerStatus:232, MonitorEvent:258, TunnelInfo:278, OscListenInfo:293, \u2026); schemas.ts:453-472 holds 15 matching `_Lock*` Assert lines.",
+          "tool": "Bash",
+          "command": "grep -n \"interface |^export type |z.infer\" packages/protocol/src/index.ts; grep -n \"_Lock\" packages/protocol/src/schemas.ts"
+        },
+        {
+          "kind": "git-history",
+          "detail": "Confirmed as a live scatter: fbd63a2 ('wire SnapshotStore') edits both packages/protocol/src/index.ts and packages/protocol/src/schemas.ts plus schemas.test.ts in one commit, alongside 5 server files.",
+          "tool": "Bash",
+          "command": "for c in $(git log --format='%h' -200 -- packages/protocol/src/schemas.ts); do git show --name-only --format='' $c; done"
+        }
+      ],
+      "proposed_fix": "Invert the direction: keep the zod schemas as the sole declaration and replace each hand-written interface with `export type SerializedModel = z.infer<typeof serializedModelSchema>;` (doc comments move onto the type alias / schema). The 15 `_Lock*` assertions then become unnecessary and delete. Exported names and their structural shapes are unchanged, so no consumer edits.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "The `_Lock*` Assert<Equals<>> lines are a compile-time validation guard; deleting them removes a check. It is safe only because the guard becomes tautological once the type is derived from the schema \u2014 but the honest answer is that a guard is removed."
+      },
+      "fix_size_loc": 300,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "packages/protocol"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Replace one interface at a time with a z.infer alias; the existing `_Lock*` assertion for it stays in place during the swap and must still compile \u2014 if it errors, the interface and schema were already subtly different and that difference is a real finding.",
+          "Once all are aliases, delete schemas.ts:440-472 and run `pnpm typecheck` at the repo root \u2014 apps/server/src/ws-protocol.ts and apps/web/src/lib/ws/protocol-types.ts both re-export these names and will catch any shape change.",
+          "`pnpm --filter @ledrums/protocol run test` \u2014 schemas.test.ts pins the runtime parse behaviour, which must be untouched."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "divergent-change",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

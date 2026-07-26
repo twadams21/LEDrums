@@ -1,0 +1,1068 @@
+{
+  "artifact": "02-findings/resilience-hole",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "resilience-hole",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "Phase 1 lead: geometry/kit-schema.ts migrateKit has a GAP in the version ladder (steps for <2,<3,<4,<5,<7 but no v5\u2192v6), so a v5 file may reach the schema missing whatever v6 introduced.",
+      "why_rejected": "REJECTED \u2014 the gap is deliberate and the migration exists, just at a different layer. kit-schema.ts:184-190 documents that v5\u2192v6 moved rgbOrder to a per-output attribute, and that the seed must happen at the PROJECT layer because the source field is `project.output.rgbOrder`, which migrateKit cannot see. project-schema.ts:255-272 implements it: migrateProjectKit captures the kit's ORIGINAL version before migrateKit bumps it, and when `kitVersion < 6` calls seedOutputRgbOrder with the controller order (defaulting to 'RGB'). I checked whether a bare kit could bypass this by grepping for parseKit/kitSchema.parse callers across apps and packages: the only non-test caller is model/defaults.ts:36 building DEFAULT_KIT from an in-code literal. There is no kit-only import path a user file could take, so the hole is not reachable. Residual nit not worth a finding: parseKit remains publicly exported and would silently skip the seed if a kit-import feature is ever added \u2014 a comment on parseKit would be cheap insurance."
+    },
+    {
+      "candidate": "Phase 1 lead: voice/render-plan.ts:162 renderPlanSignature \u2014 the plan cache keys on a derived string; if the signature omits a field the traversal reads, a mutated graph silently reuses a stale plan.",
+      "why_rejected": "REJECTED \u2014 I diffed what the signature covers against what compileRenderPlan actually reads. Signature (line 163-168) covers graph.version, node/edge counts, and per node `id~kind~y`, per edge `id>from>to>toPort`. compileRenderPlan reads exactly node.id, node.kind (via nodeCategory), node.y (the sort at line 106), and the edge endpoints \u2014 grep for `node.` across the file surfaces no other field. The one genuine staleness case (scope/target PARAMS feeding the empty-scope lint) is already documented at lines 155-158, with the mitigation that the lint is non-fatal and every UI surface compiles uncached. Object identity is additionally required via the WeakMap. This is a correctly-maintained invariant, not a hole."
+    },
+    {
+      "candidate": "Phase 1 lead: apps/web/src/lib/app/chrome/share-gating.ts \u2014 viewer-share exposure hinges on one boolean derived from boot stage; check it fails closed on unknown/transitional stages.",
+      "why_rejected": "REJECTED \u2014 share-gating.ts:12 is `return hasTunnel && (!isDesktop || stage === 'running');`. The only positive stage test is an equality against the single safe value, so every unknown, transitional, or future BootStage evaluates false on desktop. That is textbook fail-closed. The `!isDesktop` short-circuit is a deliberate documented carve-out for plain browsers where no boot lifecycle exists, and in that context there is nothing to gate on."
+    },
+    {
+      "candidate": "Phase 1 lead: apps/web/src/lib/ws/client.ts scheduleReconnect + reconnectAttempt \u2014 backoff caps at 8s and retries forever with no jitter; many tabs would sync-thunder a restarted engine.",
+      "why_rejected": "REJECTED as a standalone finding, though the underlying observation is correct (client.ts:288-299 has no jitter and no give-up). The claimed trigger does not hold for this product: it is a single-machine engine driving one drum kit, with a client population of the host window plus a handful of invited viewers. A thundering herd of ~5 clients at an 8s floor is not a load event. Retrying forever is also the RIGHT behaviour here \u2014 the drummer wants the app to reconnect when the engine comes back, not to give up. The real defect in this file is the absence of a liveness watchdog (reported separately), which is what makes the reconnect ladder never engage at all on a half-open socket; adding jitter would not touch that."
+    },
+    {
+      "candidate": "Phase 1 lead: apps/server/src/main.ts applyRestoredSnapshot + isVersionedBlob \u2014 restore adopts library blobs on only a `typeof version === 'number'` gate, so a partially-written snapshot may be adopted as valid.",
+      "why_rejected": "REJECTED at the severity implied. main.ts:562-565 re-parses the project through `parseProject` (full Zod validation + integrity) BEFORE anything touches the engine, and that is the slice that can brick the rig. The two library blobs are deliberately opaque envelopes \u2014 the same gate the persistence layer applies \u2014 and the web app owns their schema, so a stricter check here would duplicate a schema core does not have. A truncated bundle also fails at the JSON.parse in the snapshot store before reaching this function. The residual risk (a structurally-valid but semantically-empty library replacing a good one) is real but is a UX concern about restore confirmation, not an unhandled failure path."
+    },
+    {
+      "candidate": "packages/io/src/pixlite/client.ts nodeHttpTransport \u2014 the response stream has no 'error' listener, so a mid-body connection reset could leave the promise pending forever.",
+      "why_rejected": "REJECTED \u2014 I traced the settle paths. `req.on('error', reject)` (line 60) covers socket-level faults, and in Node 16+ a destroyed/reset socket surfaces on the request object, so the promise rejects. `req.setTimeout(spec.timeoutMs, ...)` (line 61) is a socket-inactivity timeout that also fires during a stalled response body, and it calls `req.destroy(err)` which routes to the same reject. Every enqueued task is therefore bounded, which is exactly the property SequentialQueue's docstring relies on ('A hung request is bounded by the caller's per-request timeout, so a failure never wedges the queue'). I could not construct a plausible pending-forever path without a Node version regression."
+    },
+    {
+      "candidate": "apps/web/src/lib/trigger-lab/store/transport.ts EngineLinkSync.planShowPush \u2014 records the new signature before the send, so a send that silently no-ops latches the show as 'pushed' and it is never re-sent.",
+      "why_rejected": "REJECTED \u2014 I chased this expecting a silent-desync bug and the recovery is already wired. planShowPush does commit the signature optimistically (transport.ts:41-45), but store.svelte.ts:1398 calls `this.engineSync.reset()` on any non-open connection state, clearing both lastShowSig and lastSent, and store.svelte.ts:1386-1392 re-sends the full Show and transport on every reopen before baselining. So the latch cannot survive a link drop. The only residual window is a send issued while the socket is CLOSING but before onclose fires \u2014 and that window is closed by the same reconnect resend. The genuine defect nearby is that `link` can stay 'open' indefinitely on a half-open socket so the drop is never detected, which is the heartbeat finding."
+    }
+  ],
+  "items": [
+    {
+      "id": "resilience-hole-0001",
+      "dedup_key": "ef7ac4cea0902754",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/voice-engine-host.ts",
+          "start_line": 455,
+          "end_line": 530,
+          "symbol": "VoiceEngineHost.scheduleNext / loop / step"
+        },
+        {
+          "path": "apps/server/src/process-errors.ts",
+          "start_line": 44,
+          "end_line": 60,
+          "symbol": "onUncaught"
+        },
+        {
+          "path": "packages/core/src/voice/generator-bridge.ts",
+          "start_line": 141,
+          "end_line": 141,
+          "symbol": "gen.render"
+        }
+      ],
+      "claim": "`scheduleNext()` calls `this.loop()` inside a bare `setTimeout` callback with no try/catch, and nothing between it and `gen.render(...)`/`compositor.render(...)` catches. A grep for `try {` across packages/core/src/voice/*.ts and engine/*.ts returns exactly two hits, both unrelated (`buildMapSafe` and interface declarations). So any throw inside an authored effect \u2014 including `canvas:` generator effects the web client pushes over `setShow` \u2014 escapes to `uncaughtException`, whose handler (`process-errors.ts:57`) calls `exit(1)`. `onFatal` only flushes the report queue; it never calls `output.blackout(this.dmxMap)` (only `dispose()` at line 451 does, and dispose is not on the fatal path). Net effect for a drummer mid-show: the process dies, the Art-Net/sACN stream stops, and the LEDs latch on whatever frame was last transmitted \u2014 a frozen lit rig with no recovery short of relaunching the app.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/voice-engine-host.ts:455-460 \u2014 `private scheduleNext(): void { this.timer = setTimeout(() => { this.loop(); if (this.timer) this.scheduleNext(); }, TICK_MS); }` \u2014 no try/catch; a throw also prevents rescheduling."
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -rn \"try {\" packages/core/src/voice/*.ts packages/core/src/engine/*.ts` \u2192 3 hits, only one real try (engine.ts:84 buildMapSafe). No per-effect or per-voice guard anywhere on the render path.",
+          "command": "grep -rn \"try {\" packages/core/src/voice/*.ts packages/core/src/engine/*.ts"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/process-errors.ts:53-58 \u2014 uncaughtException path: monitor, log, `deps.onFatal?.()`, `exit(1)`. apps/server/src/main.ts:263 wires onFatal to `flushReportsSync()` only \u2014 no output blackout, no engine restart."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/voice-engine-host.ts:451-452 \u2014 the only `output.blackout(this.dmxMap)` call lives in `dispose()`, which the fatal path never reaches."
+        }
+      ],
+      "proposed_fix": "Wrap `step()`'s engine tick in a try/catch inside `loop()` so a fault is contained to one frame: on catch, emit an `error` Monitor event carrying the offending voice/effect id, quarantine that voice/effect (skip it on subsequent frames after N consecutive throws) and keep the loop scheduled. Separately, add an output blackout to the fatal path so a hard crash darkens the rig rather than freezing it lit \u2014 pass a `beforeExit` hook from main.ts into `installProcessErrorCapture` that calls `voiceHost?.dispose()`.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Purely additive: adds a per-frame catch, a quarantine counter, a diagnostic event and a blackout-on-fatal hook. No existing guard, retry, timeout or validation is removed."
+      },
+      "fix_size_loc": 45,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server",
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Register a test effect whose render throws on frame 5.",
+          "Drive `VoiceEngineHost.step()` in a unit test (it is public for exactly this) and assert the host survives, keeps ticking, and emits an error Monitor event.",
+          "Assert `output.blackout` is invoked on the simulated fatal path."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0002",
+      "dedup_key": "660fa7d79881a5a2",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 137,
+          "end_line": 155,
+          "symbol": "initialProject"
+        },
+        {
+          "path": "apps/server/src/projects.ts",
+          "start_line": 57,
+          "end_line": 66,
+          "symbol": "loadProject"
+        }
+      ],
+      "claim": "`initialProject()` is executed at module scope (main.ts:155) and, when `default.local.json` exists, unconditionally calls `loadProject(LIVE_PROJECT)` \u2014 which does `JSON.parse` + `parseProject` (throws ZodError) + `assertProjectIntegrity` (throws ReferentialIntegrityError) with no try/catch anywhere in the chain. The file is written by a debounced async autosaver on every mutation, so a schema regression, a disk-full truncation, or a dangling drum ref bricks the app. Two aggravating factors: (1) this runs at line 155, but `installProcessErrorCapture` is not wired until line 263 \u2014 so the crash is not even captured or reported, the drummer just sees the process die; (2) the app already holds recoverable state \u2014 `snapshotStore` keeps local backups in `projects/backups` \u2014 but the restore path is only reachable through a running WS server and a connected client, which by definition cannot exist. For a packaged desktop user with no terminal, this is unrecoverable.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:137-155 \u2014 `initialProject()` has no try/catch on the `loadProject(LIVE_PROJECT)` branch; `const projectLoad = initialProject();` at module top level."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/projects.ts:57-66 \u2014 loadProject: `readFileSync` \u2192 `parseProject(JSON.parse(raw))` \u2192 `assertProjectIntegrity(project)`. Its own docstring says it 'throws on missing file or invalid JSON' and 'fails loudly at load'."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:263 \u2014 `installProcessErrorCapture(...)` is 108 lines AFTER the boot load, so the boot failure bypasses the #122 fault stream entirely."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:578-586 \u2014 `createSnapshotStore({ dir: join(resolveProjectsDir(...), 'backups'), ... applyRestored: applyRestoredSnapshot })`; restore is driven by a client WS message, unreachable when boot throws."
+        }
+      ],
+      "proposed_fix": "Wrap the file branch of `initialProject()` in a recovery ladder: try `loadProject`; on throw, log + record the reason, quarantine the bad file by renaming it to `default.local.corrupt-<ts>.json`, then try the newest local snapshot from the backups dir; if that also fails, fall back to the seed. Return the recovery outcome in the existing `{ source }` field (widen it to `'seed' | 'file' | 'snapshot' | 'recovered-seed'`) so `boot()` can print it and the UI can show a 'we recovered your project from a backup' banner. Move `installProcessErrorCapture` above the project load so boot faults are captured.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a fallback ladder and quarantine; the loud-failure guard in loadProject is untouched, it is merely caught by a caller that now has a recovery plan."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Write a truncated JSON and then a schema-valid-but-dangling-ref project into a temp LEDRUMS_PROJECTS_DIR.",
+          "Boot the server with that dir and assert it comes up (currently it exits).",
+          "Assert the bad file was renamed aside and the reported source is 'snapshot' or 'recovered-seed'."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0003",
+      "dedup_key": "38e517fcf610783e",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/io/src/artnet.ts",
+          "start_line": 49,
+          "end_line": 72,
+          "symbol": "ArtNetOutput constructor / send"
+        },
+        {
+          "path": "packages/io/src/sacn.ts",
+          "start_line": 95,
+          "end_line": 112,
+          "symbol": "SacnOutput constructor / send"
+        },
+        {
+          "path": "packages/io/src/interfaces.ts",
+          "start_line": 3,
+          "end_line": 10,
+          "symbol": "PixelOutput"
+        }
+      ],
+      "claim": "Both output adapters install `this.socket.on('error', () => {})` \u2014 a total swallow \u2014 and gate every send on a private `ready` flag that is only set inside the bind callback. A bind failure (stale `iface` address after the drummer switches ethernet\u2192wifi, EADDRNOTAVAIL, EACCES, EADDRINUSE on the sACN reuseAddr socket) emits 'error', the bind callback never fires, `ready` stays false, and `send()` returns early forever. Every subsequent per-send error is likewise dropped by the `() => {}` completion callback. The result is a completely dark rig with the UI happily reporting frames-per-second and packets-out, and nothing in the Monitor stream, the console, or the #122 telemetry pipeline saying why. This is exactly the failure OSC input was fixed for in commit d1d6eb9 ('surface socket errors') \u2014 `OscInput` now has a first-class `OscInputStatus` seam with a latched `state: 'listening' | 'error'`, an error code, and `onStatus` subscription. The product's actual OUTPUT path never got the same treatment, so the asymmetry is a known-correct pattern that simply was not applied where it matters most.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "`grep -n \"socket.on('error'\" packages/io/src/artnet.ts packages/io/src/sacn.ts` \u2192 artnet.ts:49 and sacn.ts:95, both `() => {}`.",
+          "command": "grep -n \"socket.on('error'\" packages/io/src/artnet.ts packages/io/src/sacn.ts"
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -n \"this.ready = true|if (!this.ready) return\"` \u2192 artnet.ts:58/72, sacn.ts:103/112 \u2014 ready is set only in the bind callback, and send() short-circuits on it with no signal.",
+          "command": "grep -n \"this.ready = true\\|if (!this.ready) return\" packages/io/src/artnet.ts packages/io/src/sacn.ts"
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/interfaces.ts:3-10 \u2014 the `PixelOutput` interface has only nextFrame/send/close. There is no status or error channel at all, so even a willing caller cannot observe transport health."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/osc.ts:203-248 \u2014 the counterpart OscInput exposes `OscInputStatus` with state/port/address/error/code, an `onStatus` subscription that replays the latched status, and a comment stating 'A swallowed error here means OSC is dead and nothing anywhere says so'. The same reasoning applies verbatim to the output adapters."
+        },
+        {
+          "kind": "git-history",
+          "detail": "`git log --oneline -5` shows d1d6eb9 'fix(io): parse OSC bundles ... and surface socket errors (#139)' \u2014 the status seam is a deliberate, recent house pattern."
+        }
+      ],
+      "proposed_fix": "Add a `PixelOutputStatus { state: 'ready' | 'error'; error?: string; code?: string }` and an optional `onStatus(handler)` to the `PixelOutput` interface, mirroring `OscInputStatus` exactly (latched + replayed on subscribe). Implement it in ArtNetOutput and SacnOutput: replace both `on('error', () => {})` swallows with a status emit, emit `ready` from the bind callback, and emit `error` from the per-send completion callback (rate-limited so a 44Hz stream cannot flood). Subscribe in apps/server/src/main.ts and route to `monitor({ type: 'error', ... })` so it reaches the Monitor bus, the UI output indicator, and the #122 reporter \u2014 the wiring OscInput already has.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds an observability channel; the ready-gate and the close() try/catch stay as they are."
+      },
+      "fix_size_loc": 80,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/io",
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Construct an ArtNetOutput with `iface` set to an address not on any local NIC.",
+          "Assert an onStatus 'error' with code EADDRNOTAVAIL is emitted (currently nothing is).",
+          "Mirror the existing packages/io OSC status tests for the sACN multicast path."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0004",
+      "dedup_key": "061858bb8b48151d",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ws/client.ts",
+          "start_line": 298,
+          "end_line": 310,
+          "symbol": "WsClient.send"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 470,
+          "end_line": 532,
+          "symbol": "wss.on('connection')"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 1380,
+          "end_line": 1383,
+          "symbol": "onConnection"
+        }
+      ],
+      "claim": "Neither side implements ping/pong or any staleness check (`grep -rn \"ping|pong|heartbeat|isAlive\"` across the ws client, main.ts and boot.ts returns zero relevant hits). Liveness is derived purely from the browser's `onclose`, which never fires on a half-open TCP connection \u2014 wifi drop, laptop sleep, a dead Cloudflare tunnel. In that state `store.link` stays `'open'`, so every guard of the form `if (this.link !== 'open') return` reads as connected: `hit()` sends a `key` message that `WsClient.send` silently discards (`if (!ws || ws.readyState !== 1) return`, or the `catch {}` two lines below), the local sim is deliberately NOT fired because the server 'owns' resolution, and the drummer hits pads that produce nothing at all with the UI showing a healthy link. The ironic part is that the fix requires no new protocol: the server already pushes a stats frame every 10ms, so a last-frame-received watchdog is a handful of lines. The server side has the mirror problem \u2014 it never reaps a dead peer, so the socket stays in the broadcast registry.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "`grep -rn \"ping|pong|heartbeat|isAlive|staleMs\" apps/web/src/lib/ws/client.ts apps/server/src/main.ts apps/server/src/boot.ts` \u2192 only incidental matches in unrelated comments; no keepalive exists.",
+          "command": "grep -rn \"ping\\|pong\\|heartbeat\\|isAlive\\|staleMs\" apps/web/src/lib/ws/client.ts apps/server/src/main.ts apps/server/src/boot*.ts"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/client.ts:298-310 \u2014 `send()`: `if (!ws || ws.readyState !== 1) return;` then `try { ws.send(...) } catch { /* Drop on transient send failures */ }`. No queue, no callback, no counter."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:1380-1383 \u2014 `link` is driven only by `onConnection`, i.e. only by onopen/onclose."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:1716-1722 \u2014 `hit()`: `if (this.link === 'open') { this.client.send({t:'key',...}); return; }` \u2014 the offline local-sim fallback is explicitly skipped when link reads 'open'."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:520-531 \u2014 the connection handler installs only `close` and `error` listeners; no interval ping, no termination of unresponsive peers."
+        }
+      ],
+      "proposed_fix": "Client: track `lastServerMessageAt` in `handleMessage`, and run a watchdog interval that, if nothing has arrived for ~3\u00d7 the stats period plus slack, treats the link as dead \u2014 force `ws.close()`, report `'closed'`, and let the existing reconnect ladder take over. Server: add the standard `ws` keepalive (an interval that `ping()`s each client and `terminate()`s any that failed to pong since the previous sweep), then `clients.remove` + `broadcastPresence`. Optionally have `WsClient.send` return a boolean and surface a dropped-send counter so a lost authoring mutation is at least observable.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a liveness watchdog and a reaper; the existing reconnect backoff and the 4401 auth-pause branch are untouched."
+      },
+      "fix_size_loc": 55,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/web",
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "In a WsClient unit test with the injected WSLike factory, open the socket, deliver no messages, advance fake timers past the watchdog window, and assert onConnection('closed') plus a scheduled reconnect.",
+          "Server-side: connect a raw socket that never answers pings and assert it is removed from `clients` after two sweeps."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0005",
+      "dedup_key": "75f8f4b00aae693f",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 748,
+          "end_line": 770,
+          "symbol": "statsTimer"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 239,
+          "end_line": 244,
+          "symbol": "broadcastJson"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 493,
+          "end_line": 494,
+          "symbol": "clients.admit"
+        }
+      ],
+      "claim": "`statsTimer` fires every 10ms and calls `broadcastJson`, which serializes a full stats object (including per-voice arrays under voice mode) and pushes it to every OPEN socket. `broadcastJson` never consults `ws.bufferedAmount` \u2014 a grep for `bufferedAmount` across apps/server/src and apps/web/src returns nothing. A remote viewer over the Cloudflare tunnel on a phone, or any peer whose TCP window collapses, cannot drain 100 messages/second; `ws` buffers the undeliverable frames in the Node process, and the queue grows for as long as the socket stays technically OPEN \u2014 which, per the heartbeat finding, is forever on a half-open link. Compounding it, `clients.admit(ws)` enforces no maximum connection count, so a shared room link (or a script against a 6-digit PIN) multiplies the per-client 100 Hz stream without limit. The machine under attack is the one driving a live show.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:770 \u2014 the stats interval is `}, 10);` i.e. 100 Hz, and the voice-mode branch includes `voices: s.engine.voices` (a per-voice array), so the payload is not small."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:239-244 \u2014 `broadcastJson`: encode once, then `for (const ws of clients) if (ws.readyState === ws.OPEN) ws.send(data);` \u2014 readyState is the only gate."
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -rn bufferedAmount apps/server/src apps/web/src` \u2192 no matches. Nothing anywhere inspects socket backpressure.",
+          "command": "grep -rn \"bufferedAmount\" apps/server/src apps/web/src"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:493 \u2014 `clients.admit(ws);` with the comment 'Admit additively (no eviction)'. No cap."
+        }
+      ],
+      "proposed_fix": "In `broadcastJson` (and `relayToOthers`), skip any socket whose `bufferedAmount` exceeds a threshold (e.g. 1MB) and count the skip; when a socket stays over the threshold across N consecutive sweeps, `terminate()` it and emit an error Monitor event naming the peer. Independently, drop the stats cadence from 100 Hz to something a UI can actually render (the preview stream is already throttled to 30fps) and add a `LEDRUMS_MAX_CLIENTS` cap enforced in the connection handler, refusing beyond it with a distinct close code.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a backpressure check, a slow-peer reaper and a connection cap. No existing guard is removed \u2014 the readyState check stays."
+      },
+      "fix_size_loc": 35,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Unit-test broadcastJson with a fake socket reporting a large bufferedAmount and assert send is skipped and the skip is counted.",
+          "Assert a socket over threshold for N sweeps is terminated and removed from the registry."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0006",
+      "dedup_key": "639ad567b68ba32c",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 486,
+          "end_line": 490,
+          "symbol": "wss.on('connection') admit"
+        },
+        {
+          "path": "apps/server/src/pin-gate.ts",
+          "start_line": 30,
+          "end_line": 37,
+          "symbol": "createPinGate.check"
+        },
+        {
+          "path": "apps/server/src/pin-gate.ts",
+          "start_line": 52,
+          "end_line": 64,
+          "symbol": "createMutablePinGate.check"
+        }
+      ],
+      "claim": "`resolvePin` mints a 6-digit numeric PIN (10^6 space) whenever the Cloudflare tunnel is enabled, and that PIN is the ONLY thing standing between the public internet and full authoring control of the rig. The connection handler simply calls `admitDecision` and, on refusal, `ws.close(4401)` \u2014 there is no attempt counter, no per-IP backoff, no lockout, and no monitor event on repeated refusals, so an attacker can dial the tunnel endpoint as fast as it will accept connections until the PIN falls. The legitimate client pauses its reconnect loop on 4401, but that is client-side courtesy, not a server control. Secondarily, `check()` compares with `supplied === pin` while the host token in the very same file correctly uses `safeEqual`/`timingSafeEqual` \u2014 the weaker credential got the weaker comparison. There is also no audit trail: nothing distinguishes 'nobody connected' from 'ten thousand refused attempts last night'.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:486-490 \u2014 `const decision = admitDecision(req.url, pinGate, trustedLocal); if (!decision.ok) { ws.close(decision.code, decision.reason); return; }` \u2014 no counter, no monitor emit, no throttle."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:34-36 and 56-58 \u2014 both `check` implementations end in `supplied === pin`, plain string equality."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:163-168 \u2014 `safeEqual` using `timingSafeEqual` exists in the file and is used for the host token at line 199, establishing the correct pattern."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:68 \u2014 `generatePin(digits = 6)`; pin-gate.ts:80-84 `resolvePin` returns a generated PIN whenever `tunnelEnabled`."
+        }
+      ],
+      "proposed_fix": "Add a small in-memory failed-attempt tracker keyed by peer identity (cf-connecting-ip when present, remoteAddress otherwise): after K failures inside a window, refuse immediately with an exponentially growing cooldown, and emit an `error` Monitor event on crossing the threshold so the drummer sees 'someone is guessing your PIN' in the app and the #122 reporter picks it up. Route `PinGate.check` through the existing `safeEqual`. Consider lengthening the tunnel-generated PIN beyond 6 digits, since it is a public-internet credential rather than a room code.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Strictly tightens a guard and adds diagnostics; the trustedLocal bypass, the open-gate default and the 4401 close path all remain."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Extend apps/server/src/pin-gate.test.ts: assert K wrong PINs from one peer produce an immediate refusal on attempt K+1 even when the correct PIN is supplied during the cooldown.",
+          "Assert a trustedLocal connection is never throttled.",
+          "Assert check() uses timingSafeEqual by injecting equal-length wrong PINs."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0007",
+      "dedup_key": "4eac32c36506fcd9",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 1288,
+          "end_line": 1309,
+          "symbol": "TriggerLabStore.scheduleSave"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts",
+          "start_line": 88,
+          "end_line": 106,
+          "symbol": "writeStoredLibrary / writeStoredSongLibrary"
+        }
+      ],
+      "claim": "`writeStoredLibrary` and `writeStoredSongLibrary` are void functions with a bare `catch { /* ignore */ }` around `localStorage.setItem` \u2014 the docstring calls this best-effort so persistence 'must never throw into the render loop'. That part is right; the hole is that `scheduleSave` then calls `this.saveStatusCtl.saved()` unconditionally on the same tick, so the indicator flips to 'Saved' regardless of whether either write succeeded. QuotaExceededError is the realistic trigger: a show library holding many graphs plus canvas scenes plus the song pool is easily hundreds of KB of JSON, and Safari private mode throws on the first setItem. If the server link is simultaneously down \u2014 the exact situation where the local cache is the only copy \u2014 the user's work is gone on refresh while the UI has been telling them it is saved. The same unconditional pattern repeats in the `beforeunload` flush (line 1260) and `stopAutosave` (line 1275), which are the last-chance writes.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:88-97 \u2014 `export function writeStoredLibrary(payload): void { if (typeof localStorage === 'undefined') return; try { localStorage.setItem(...) } catch { /* ignore */ } }` \u2014 returns nothing, so no caller can know."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:1296-1308 \u2014 writeStoredLibrary / writeStoredSongLibrary, then syncShowToServer + syncLibraryToServer, then `this.saveStatusCtl.saved();` with no condition on any of them succeeding."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:1258-1262 \u2014 the beforeunload flush calls both writeStored* with no result check; store.svelte.ts:1275 does the same in stopAutosave."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:1534-1536 \u2014 `syncShowToServer()` returns early when `this.link !== 'open'`, so the server fallback is also silently absent while offline."
+        }
+      ],
+      "proposed_fix": "Make `writeStoredLibrary`/`writeStoredSongLibrary` return a discriminated result (`{ ok: true } | { ok: false; reason: 'quota' | 'unavailable' | 'error'; message: string }`) instead of void \u2014 still never throwing. In `scheduleSave`, only call `saveStatusCtl.saved()` when the local write succeeded OR the server push was actually delivered; otherwise put the indicator into a new `error` state with a tooltip naming the cause, and emit a monitor event. Add a 'Saving failed \u2014 export your show' affordance for the both-failed case, which is the only genuinely lossy one.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a result channel and an error UI state; the try/catch that keeps persistence from throwing into the render loop is preserved exactly."
+      },
+      "fix_size_loc": 50,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Stub localStorage.setItem to throw QuotaExceededError in a store unit test.",
+          "Drive an authored edit past the save debounce and assert the indicator lands on 'error', not 'Saved'.",
+          "Assert no exception escapes the $effect."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0008",
+      "dedup_key": "2277569b756665ed",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/telemetry/ship-queue.ts",
+          "start_line": 143,
+          "end_line": 170,
+          "symbol": "doShip"
+        },
+        {
+          "path": "apps/server/src/telemetry/transport.ts",
+          "start_line": 16,
+          "end_line": 22,
+          "symbol": "createHttpTransport"
+        },
+        {
+          "path": "workers/error-ingest/src/index.ts",
+          "start_line": 36,
+          "end_line": 47,
+          "symbol": "fetch /ingest"
+        }
+      ],
+      "claim": "`createHttpTransport` collapses every non-2xx into one opaque `Error('ingest responded ' + status)`, and `doShip` catches that identically regardless of status: increment `failures`, log locally, retain the entire batch, back off. There is no notion of a permanent failure. The Worker returns 401 on a rotated `TELEMETRY_TOKEN`, 400 on a schema-drifted batch, and 413 when a body exceeds `MAX_BODY_BYTES`/`MAX_BACKUP_BODY_BYTES` \u2014 all of which will fail identically on every subsequent attempt, forever, at the 30-minute backoff ceiling. Because `doShip` always ships the WHOLE store as one batch, a single poison item blocks every later item behind it; the queue only 'recovers' by silently discarding oldest-first once `maxItems`/`maxBytes` is exceeded, which for the backups queue (maxItems 100, maxBytes 8MB, append-only keying) means the drummer's off-site snapshots quietly stop existing. And the only signal is `log()`, which defaults to `console.error` \u2014 there is no queue-health surface in the UI and no monitor event, by explicit design ('the queue reports its own failures only through the injected log').",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/telemetry/transport.ts:21 \u2014 `if (!res.ok) throw new Error(`ingest responded ${res.status}`);` \u2014 status class is discarded."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/telemetry/ship-queue.ts:162-166 \u2014 the catch does only `failures++` and `log(...)`. No status inspection, no permanent-failure branch, no dead-letter file, no give-up."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/telemetry/ship-queue.ts:146-148 \u2014 `const keys = [...store.keys()]; const batch = keys.map(...)` \u2014 the entire retained store ships as one batch, so one poison item blocks all."
+        },
+        {
+          "kind": "read",
+          "detail": "workers/error-ingest/src/index.ts:33 (`if (!authed(req, env)) return error(401,...)`), :40 (413), :50 (400) \u2014 three distinct permanent-failure statuses the client cannot distinguish."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:321-326 \u2014 the backups queue is created with maxItems 100 / maxBytes 8_000_000 and NO keyOf, so drop-oldest silently discards real snapshots once a poison batch wedges shipping."
+        }
+      ],
+      "proposed_fix": "Give the transport a typed rejection (`class ShipHttpError extends Error { status: number }`) and have `doShip` branch on it: 5xx / network \u2192 today's retain-and-backoff; 401/403 \u2192 stop shipping, set a `blocked` state, and emit ONE monitor event so the UI can say 'off-site backups are not authenticating'; 400/413 \u2192 move the batch to a `<path>.deadletter.jsonl` and continue with the rest, so one poison item cannot block the queue. Expose the failure state on the `ShipQueue` interface (`state(): 'ok' | 'retrying' | 'blocked'`) and surface it on the backups panel. For 413 specifically, split oversized batches rather than dead-lettering them.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds classification, a dead-letter sink and a health surface; the existing retain-and-backoff path is preserved for genuinely transient failures."
+      },
+      "fix_size_loc": 70,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Extend apps/server/src/telemetry/ship-queue.test.ts with a transport rejecting ShipHttpError(400) and assert the batch is dead-lettered, not retained.",
+          "Assert a 401 sets state 'blocked' and stops rescheduling.",
+          "Assert a 503 still retains and backs off exactly as today."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0009",
+      "dedup_key": "0ae0d7af8def1391",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ws/client.ts",
+          "start_line": 226,
+          "end_line": 231,
+          "symbol": "WsClient.handleMessage"
+        }
+      ],
+      "claim": "`void data.arrayBuffer().then((buf) => this.cb.onFrame?.(new Uint8Array(buf)));` has no `.catch`. Two ways this rejects: `Blob.arrayBuffer()` itself can reject (the browser may have discarded the backing store under memory pressure), and \u2014 more likely \u2014 a throw inside the `onFrame` callback propagates into the promise chain instead of the synchronous path, where the ArrayBuffer branch two lines above would have surfaced it normally. The result is an `unhandledrejection` on a hot per-frame path, which under the #122 web-error capture becomes a flood of shipped error reports for something the code was clearly written to shrug off. It is also a silent behaviour asymmetry: the same frame delivered as an ArrayBuffer, a Uint8Array, or a Blob takes three different error paths.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/client.ts:220-232 \u2014 the ArrayBuffer and Uint8Array branches call `this.cb.onFrame?.(...)` synchronously; only the Blob branch wraps it in a floating promise with `void` and no catch."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/client.ts:196 \u2014 `ws.binaryType = 'arraybuffer';` is set, so the Blob branch exists specifically as a defensive fallback for hosts that ignore it \u2014 i.e. exactly the untested path."
+        }
+      ],
+      "proposed_fix": "Append `.catch(() => { /* dropped frame \u2014 count it */ })` and increment a droppedFrames counter shared with the other binary branches, so a decode failure degrades to a skipped frame rather than an uncaught rejection. Better still, route all three binary branches through one `deliverFrame(bytes)` helper wrapped in try/catch so the error handling is identical whatever the host delivers.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a catch and a counter to a path that currently has neither."
+      },
+      "fix_size_loc": 10,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "In a WsClient test, deliver a fake Blob whose arrayBuffer() rejects.",
+          "Assert no unhandled rejection is raised and the dropped-frame counter increments."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0010",
+      "dedup_key": "33c0c60e5e602e47",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "workers/error-ingest/src/index.ts",
+          "start_line": 32,
+          "end_line": 108,
+          "symbol": "default.fetch"
+        },
+        {
+          "path": "workers/error-ingest/src/store.ts",
+          "start_line": 68,
+          "end_line": 140,
+          "symbol": "d1Store"
+        }
+      ],
+      "claim": "The Worker's `fetch` has no try/catch anywhere. Every `d1Store` method awaits a raw D1 call, and every `r2Store` method a raw R2 call, so a D1 rate-limit, a schema mismatch after a migration, or an R2 outage throws out of `fetch` and the Cloudflare runtime returns a bare 500 with no JSON body. That is invisible to the operator (nothing is logged in a shape the /reports API can show) and, per the ShipQueue finding, indistinguishable to the client from a transient failure \u2014 so the server retries indefinitely. The error-reporting pipeline is the thing you rely on precisely when everything else is broken, so it needs to fail legibly. Note also that `MAX_BODY_BYTES` is checked as `raw.length` AFTER `await req.text()` fully buffers the body, and `.length` counts UTF-16 code units rather than bytes, so the cap is both post-hoc and off by up to 3\u00d7 for non-ASCII stack traces.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "workers/error-ingest/src/index.ts:32-108 \u2014 the whole `fetch` body; the only try/catch blocks wrap `JSON.parse` and `parseIngestBatch`. Every `await ingestBatch(...)`, `await listReports(...)`, `await ingestBackups(...)` and `await getBackup(...)` is unguarded."
+        },
+        {
+          "kind": "read",
+          "detail": "workers/error-ingest/src/store.ts:70-140 \u2014 `d1Store` methods call `db.prepare(...).bind(...).first()/.run()/.all()` with no error handling; a D1 fault propagates straight out."
+        },
+        {
+          "kind": "read",
+          "detail": "workers/error-ingest/src/index.ts:38-40 \u2014 `const raw = await req.text(); if (raw.length > MAX_BODY_BYTES) return error(413, ...)` \u2014 the body is fully materialised before the cap is applied, and `.length` is code units, not bytes."
+        }
+      ],
+      "proposed_fix": "Wrap the routing body of `fetch` in a try/catch that returns `json({ status: 503, body: { error: 'storage unavailable', detail: <message> } })` for store faults, so the client can distinguish a retryable backend fault from a permanent 4xx (pairs with the ShipQueue classification fix). Log the fault via `console.error` so it lands in Worker tail logs. Move the size cap ahead of buffering by reading `content-length` first, and compare against a byte count.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a fault boundary and tightens the size cap; no existing validation, auth check or cap is removed."
+      },
+      "fix_size_loc": 25,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "workers/error-ingest"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Unit-test fetch with a fake Env whose DB.prepare throws; assert a 503 JSON body rather than a thrown error.",
+          "Assert an oversized content-length is rejected without buffering."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0011",
+      "dedup_key": "4ad0969833e6bdaa",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/modifiers/chain.ts",
+          "start_line": 47,
+          "end_line": 47,
+          "symbol": "applyModifierChain"
+        },
+        {
+          "path": "packages/core/src/engine/engine.ts",
+          "start_line": 230,
+          "end_line": 231,
+          "symbol": "Engine.renderLayer"
+        }
+      ],
+      "claim": "`applyModifierChain` does `const def = tryGetModifier(link.modifierId); if (!def) continue;` and `renderLayer` does `const effect = tryGetEffect(clip.effectId); if (!effect) return;`. Skipping rather than throwing on the render path is the right call \u2014 the hot loop must not fault on stale authored data, and the comments say so. What is missing is any record that it happened. A show authored against a build that had `modifier:bloom`, opened on a build that renamed it, produces a layer that renders unmodified (or a clip that renders nothing) with identical UI, identical stats, and nothing in the Monitor stream. The drummer's only symptom is 'this one looks wrong now' with no path from symptom to cause, and the maintainer has no telemetry to detect that a rename shipped without a content migration. The registries are exactly where a rename regression would be caught cheaply.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/modifiers/chain.ts:47 \u2014 `if (!def) continue; // unknown id \u2192 skip (never throw on the render path)`. No counter, no callback, no set of seen-unknown ids."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/engine/engine.ts:230-231 \u2014 `const effect = tryGetEffect(clip.effectId); if (!effect) return;` \u2014 same silent skip."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/modifiers/chain.ts:10-11 \u2014 the module docstring explicitly documents the skip as intentional, confirming this is a deliberate design with a missing diagnostic rather than an oversight in the guard itself."
+        }
+      ],
+      "proposed_fix": "Keep the render-path behaviour identical, but add a core-pure, allocation-free 'unresolved id' ledger: a `Set<string>` on the engine (not a module global \u2014 determinism must hold) that records each distinct unknown modifier/effect id the first time it is skipped, exposed via a `getUnresolvedIds()` accessor. The server reads it once per stats tick and, on a newly-added id, emits ONE `error` Monitor event ('effect \"x\" is not registered \u2014 this layer renders nothing'), which reaches the UI and the #122 reporter. First-occurrence-only keeps it off the hot path in cost terms.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The skip-never-throw behaviour is preserved exactly; only an observation channel is added."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core",
+          "apps/server"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Render a chain containing an unregistered modifierId and assert the framebuffer is unchanged (current behaviour preserved) AND the id appears in getUnresolvedIds().",
+          "Assert repeated frames do not re-report the same id."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0012",
+      "dedup_key": "dce935c76ef2b068",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "packages/core/src/effects/emitter.ts",
+          "start_line": 74,
+          "end_line": 91,
+          "symbol": "updateEmissions"
+        }
+      ],
+      "claim": "In the spawn loop the order is `if (trig.seq <= state.lastSeq) continue; state.lastSeq = trig.seq; if (state.emissions.length >= MAX_EMISSIONS) break;`. `lastSeq` is committed BEFORE the cap check, so the trigger that trips the cap is permanently marked as consumed without ever producing an emission \u2014 the spawn-exactly-once contract in the docstring becomes spawn-at-most-once. Worse, `break` abandons the remaining triggers in `ctx.triggers` for that frame while leaving `lastSeq` at the tripping trigger's seq; the abandoned hits are gone and, since triggers are a per-frame list, will never be revisited. The docstring promises the cap makes a runaway stream 'degrade, never explode', which it does \u2014 but nothing counts the degradation, so a fast roll silently loses hits and the effect author has no way to tell a dropped hit from a bug in their spawnData. The same silent-drop applies to the `age > ttlMs` continue on line 82, which also runs after lastSeq is committed.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/effects/emitter.ts:76-80 \u2014 `if (trig.seq <= state.lastSeq) continue; state.lastSeq = trig.seq; if (state.emissions.length >= MAX_EMISSIONS) break;` \u2014 the assignment precedes both the cap check and the ttl check."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/effects/emitter.ts:46 \u2014 `export const MAX_EMISSIONS = 64;` with the comment 'a runaway trigger stream degrades, never explodes'; no counter accompanies it."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/effects/emitter.ts:56-63 \u2014 the docstring states 'Each trigger with seq > lastSeq spawns one emission', which the break path violates."
+        }
+      ],
+      "proposed_fix": "Move `state.lastSeq = trig.seq` to after the cap and ttl checks so a refused trigger is not marked consumed (and, if the loop should still stop, use the max seq actually processed). Add a `droppedAtCap: number` field to `EmitterState`, incremented on the cap path, so hosts can surface 'emissions capped' in stats rather than leaving a fast roll's missing wavefronts unexplained.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The MAX_EMISSIONS cap itself is preserved; only its bookkeeping is corrected and a counter added."
+      },
+      "fix_size_loc": 12,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Fill an EmitterState to MAX_EMISSIONS, then deliver a frame with a new trigger and assert droppedAtCap increments.",
+          "Expire the emissions, redeliver the same seq, and assert it now spawns (proving lastSeq was not prematurely committed)."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "resilience-hole-0013",
+      "dedup_key": "8506d08d875d1c3a",
+      "lens": "resilience-hole",
+      "criterion": "unhandled-failure-path",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 501,
+          "end_line": 518,
+          "symbol": "ws.on('message') catch"
+        }
+      ],
+      "claim": "The message handler's catch does `ws.send(encodeServer({ t: 'error', message }))` where `message` is `err.message` verbatim. For a ZodError that is a multi-line path dump of the project schema; for a filesystem fault it is an absolute path on the drummer's machine (`/Users/<name>/\u2026`), leaked to whoever holds the room PIN over the public Cloudflare tunnel. It is also the only error surface that is NOT rate-limited: a client sending malformed messages in a loop gets an error frame per message, and each one also emits a Monitor event that feeds the #122 reporter, so a misbehaving client can amplify itself into the telemetry pipeline. The `handled` flag correctly distinguishes decode failures from handler failures, so the structure for a differentiated response already exists.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:509-517 \u2014 `const message = err instanceof Error ? err.message : String(err);` then `monitor({... detail: message })` and `ws.send(encodeServer({ t: 'error', message }))`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:494 \u2014 `if (isViaCloudflare(req.headers)) tunnelClients.add(ws);` \u2014 the server already knows which clients are remote, so a redaction branch has the information it needs."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/projects.ts:57-66 \u2014 loadProject and parseProject throw ZodError / ReferentialIntegrityError whose messages embed schema paths; these reach the same catch via handleClientMessage."
+        }
+      ],
+      "proposed_fix": "Send a stable, generic message to the client ('could not apply that change') plus a short correlation id, and keep the full `err.message`/stack on the Monitor event where it belongs. When the socket is in `tunnelClients`, redact unconditionally. Add a per-socket error-frame rate limit (e.g. max 5/second) so a malformed-message loop cannot amplify into the reporter.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The catch, the monitor emit and the keep-socket-alive behaviour are all preserved; only the outbound message content is narrowed and a rate limit added."
+      },
+      "fix_size_loc": 20,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Send a malformed client message over a simulated cf-forwarded connection and assert the error frame contains no filesystem path or schema detail.",
+          "Assert the Monitor event still carries the full detail.",
+          "Send 50 malformed messages and assert at most the rate-limited number of error frames are emitted."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "resilience-hole",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

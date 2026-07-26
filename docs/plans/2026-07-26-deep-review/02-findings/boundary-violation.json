@@ -1,0 +1,546 @@
+{
+  "artifact": "02-findings/boundary-violation",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "boundary-violation",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "madge: \"24 circular dependencies\" across web/protocol/server/core",
+      "why_rejected": "Inflated and benign. They are 8 distinct cycles re-counted once per consuming unit, and I read the closing import of every one \u2014 all 8 close through an `import type` edge, which tsc erases. There is no runtime cycle and no load-order fragility anywhere in the repo. Treating the raw count of 24 as 24 problems would be wrong by a factor of ~3 and wrong in kind."
+    },
+    {
+      "candidate": "Phase 1 (core-geom.json): canvas/sampler.ts importing Framebuffer creates a canvas/engine/effects entanglement whose \"load-order-dependent preset registration could break under tree-shaking or a different bundler entry\"",
+      "why_rejected": "No cycle exists \u2014 madge reports none involving canvas, and the edges are one-way: effects/registry.ts:4-6 imports canvas/ids + canvas/registry + `import '../canvas/presets'` (side effect), and canvas/registry.ts imports only effects/TYPES (type-only) plus canvas/scene. Tree-shaking cannot drop the presets import either: packages/core/package.json declares no `\"sideEffects\": false`, so bundlers must treat every core module as side-effectful. I also checked the feared double-registration: voice/engine.ts:253-262 re-registers a builtin only after an explicit unregister, which is deliberate, not a duplicate registration path."
+    },
+    {
+      "candidate": "Phase 1 (core-voice-fx.json): effects/registry.ts module-level `throw new Error('Duplicate effect id')` takes down module loading in a pure package",
+      "why_rejected": "Real code (registry.ts:116) but not an import-boundary defect \u2014 it is a load-time invariant on a statically-known array of effect generators, not a runtime input. Whether a build-time-constant duplicate should throw at import is an error-handling judgement, not a mechanical boundary violation, so it belongs to another lens."
+    },
+    {
+      "candidate": "Phase 1 (server.json): apps/server/src/named-blob-store.ts importing PROJECTS_DIR from projects.ts is \"a plausible import cycle\"",
+      "why_rejected": "Not a cycle. madge reports zero server-internal cycles, and projects.ts (lines 1-5) imports node builtins, @ledrums/core and ./atomic-file \u2014 never named-blob-store. It is a one-way dependency on a constant used as a default parameter value; mild coupling, no boundary violation."
+    },
+    {
+      "candidate": "Phase 1 (server.json): input-router.ts applyClientMessage is \"likely a source of one of madge's cycles between handlers, input-router and the hosts\"",
+      "why_rejected": "madge found no cycles in apps/server other than the ones inherited from core and protocol. input-router.ts's imports are @ledrums/core (types), a type-only OscEvent from @ledrums/io, and a type-only ClientMessage from ./ws-protocol. Whether a protocol reducer belongs in the input router is a cohesion question for another lens; it is not a cycle."
+    },
+    {
+      "candidate": "Phase 1 (web-triggerlab.json): apps/web/src/lib/trigger-lab/fixtures.ts + render.ts carry \"a second, divergent effect catalog\" while AGENTS.md says effects belong to packages/core",
+      "why_rejected": "Read both. fixtures.ts:4-10 imports DEFAULT_KIT, collectionOf and listEffects FROM core and derives its seed data from the real catalog; render.ts:7-17 imports Framebuffer, applyModifierChain, compositeInto, tryGetEffect and voice from core and delegates to the same generators the server engine runs (its header says so explicitly). There is no second catalog \u2014 the direction of dependency is correct and the boundary is respected."
+    },
+    {
+      "candidate": "Phase 1 (web-rest.json): the styleguide depending on app-internal modules (app/docks/inspectors/*, app/boot-reducer, trigger-lab/*) is a boundary violation",
+      "why_rejected": "Confirmed the imports exist (SectionComposites.svelte:13-34, SectionGraph.svelte:16-25) but rejected as a violation: AGENTS.md specifies the design system is \"generated from the REAL UI components\", so the styleguide is intentionally downstream of the app. Inverting it would require duplicating components into the styleguide, which is the failure mode the rule exists to prevent. The direction (styleguide \u2192 app, never app \u2192 styleguide) is correct and I verified nothing in apps/web/src/lib/app imports from lib/styleguide."
+    },
+    {
+      "candidate": "depcheck: playwright-core used by scripts/ui-shot/ui-shot.mjs but not declared",
+      "why_rejected": "Not an import-boundary issue \u2014 it is a manifest hygiene issue in a dev script, and playwright-core is present transitively. Belongs to a dependency-hygiene lens, not this one."
+    },
+    {
+      "candidate": "apps/web importing Node builtins (a common browser-bundle boundary break)",
+      "why_rejected": "Searched apps/web/src for `node:`, fs, path, os, dgram, child_process, crypto, http, net imports \u2014 zero hits. apps/web/tsconfig.json also scopes `types` to [\"svelte\", \"vite/client\", \"three\"] with no \"node\", so Node globals would not even typecheck. Clean."
+    },
+    {
+      "candidate": "packages/core importing @ledrums/io (the headline non-negotiable)",
+      "why_rejected": "Zero occurrences; the only textual hit is a doc comment in model/project-schema.ts:165 describing what the SERVER does with those fields. Additionally, core's package.json declares no dependency on @ledrums/io, so under pnpm's strict node_modules layout such an import could not even resolve. This half of the rule is enforced, not merely observed."
+    }
+  ],
+  "items": [
+    {
+      "id": "boundary-violation-0001",
+      "dedup_key": "62794bde5a5f7b6b",
+      "lens": "boundary-violation",
+      "criterion": "import-boundary",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/tsconfig.json",
+          "start_line": 1,
+          "end_line": 9,
+          "symbol": "compilerOptions"
+        },
+        {
+          "path": "tsconfig.base.json",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "lib"
+        },
+        {
+          "path": "packages/core/src/voice/engine.ts",
+          "start_line": 813,
+          "end_line": 815,
+          "symbol": "perfNow"
+        }
+      ],
+      "claim": "AGENTS.md declares `packages/core` must import no Node and no DOM. Node is in fact mechanically blocked (core/tsconfig.json sets `\"types\": []`, and pnpm's strict workspace linking means `@ledrums/io` would not resolve from core at all), but DOM is not: core inherits `\"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"]` from tsconfig.base.json, so `document`, `window`, `fetch`, `localStorage` and friends would typecheck silently inside the pure package. The hole is not hypothetical \u2014 `voice/engine.ts:814` already reaches for the ambient `performance` global, whose type comes only from lib.dom.d.ts. It is the single reference standing between core and a DOM-free lib setting.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/tsconfig.json extends ../../tsconfig.base.json and overrides only outDir/rootDir/types/moduleResolution \u2014 it does not narrow `lib`. tsconfig.base.json line 7: \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"]."
+        },
+        {
+          "kind": "grep",
+          "command": "grep -rnE \"\\\\b(document|window|navigator|localStorage|HTMLElement|CanvasRenderingContext2D|requestAnimationFrame|OffscreenCanvas|ImageData|WebSocket|globalThis|process\\\\.env|Buffer)\\\\b\" packages/core/src --include=\"*.ts\"",
+          "detail": "Every hit is inside a comment (the word \"window\" in freeze.ts/strobe.ts, \"document\" in canvas/*.ts prose). No DOM API is actually called."
+        },
+        {
+          "kind": "grep",
+          "command": "grep -rnE \"\\\\b(console|structuredClone|setTimeout|TextEncoder|URL|crypto|performance|Blob|AbortController)\\\\b\" packages/core/src --include=\"*.ts\" | grep -v test",
+          "detail": "Exactly one real usage: packages/core/src/voice/engine.ts:814 `return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : 0;`"
+        },
+        {
+          "kind": "grep",
+          "command": "grep -rhoE \"from '[^.'][^']*'\" packages/core/src --include=\"*.ts\" | sort | uniq -c",
+          "detail": "Core's only non-relative imports are 'vitest' (69, test files) and 'zod' (2). Zero node: imports, zero @ledrums/io imports \u2014 the Node half of the rule holds today."
+        }
+      ],
+      "proposed_fix": "Add `\"lib\": [\"ES2022\"]` to packages/core/tsconfig.json's compilerOptions, and rewrite perfNow to reach the host clock through globalThis (an ES2020 lib symbol) instead of the DOM ambient: `const p = (globalThis as { performance?: { now?: () => number } }).performance; return typeof p?.now === 'function' ? p.now() : 0;`. The feature-detect fallback is preserved verbatim; only the type source changes. `pnpm --filter @ledrums/core typecheck` then becomes a real purity gate.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The proposed rewrite keeps the exact `typeof \u2026 !== 'undefined'` / `typeof \u2026now === 'function'` feature-detect and the `: 0` fallback; it only changes where the type for `performance` comes from."
+      },
+      "fix_size_loc": 4,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add \"lib\": [\"ES2022\"] to packages/core/tsconfig.json",
+          "Run `pnpm --filter @ledrums/core typecheck` \u2014 it should fail on voice/engine.ts:814 only, proving that is the sole DOM dependency",
+          "Apply the globalThis rewrite and re-run typecheck; it must pass",
+          "Run `pnpm --filter @ledrums/core test` to confirm perf stats still populate"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "boundary-violation",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "boundary-violation-0002",
+      "dedup_key": "78067cb8f4314205",
+      "lens": "boundary-violation",
+      "criterion": "import-boundary",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "start_line": 16,
+          "end_line": 27,
+          "symbol": "jobs.checks"
+        },
+        {
+          "path": "AGENTS.md",
+          "start_line": 7,
+          "end_line": 10,
+          "symbol": "Non-Negotiables"
+        }
+      ],
+      "claim": "AGENTS.md states three import-boundary rules as non-negotiable (core imports no Node/DOM/IO; all IO lives behind packages/io interfaces; core never imports io). CI runs only `pnpm typecheck` and `pnpm test`. There is no ESLint config anywhere in the repo, no `no-restricted-imports`, no dependency-cruiser, and no madge/cycle gate \u2014 madge, knip and depcheck exist as devDependencies but are invoked only ad hoc, not from any script in CI. The rules therefore hold today purely by author discipline, and as finding 1 shows the typecheck does not in fact cover the DOM half of the rule.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": ".github/workflows/ci.yml: the `checks` job steps are checkout, pnpm setup, node setup, `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`. The `desktop` job builds the sidecar and cargo. No lint or boundary step in either."
+        },
+        {
+          "kind": "grep",
+          "command": "ls -a /Users/trent/Documents/dev/ledrums",
+          "detail": "No .eslintrc*, eslint.config.*, or .dependency-cruiser.* at the repo root. knip.json exists but only lists entry points for unused-export detection, not boundary rules."
+        },
+        {
+          "kind": "tool-output",
+          "detail": "docs/plans/2026-07-26-deep-review/00-raw/depcheck.json shows madge/knip/depcheck as root devDependencies \u2014 tooling present, but nothing in package.json scripts or ci.yml runs them."
+        }
+      ],
+      "proposed_fix": "Add a `boundaries` step to the CI `checks` job that fails on violation. Minimal version needs no new dependency: a vitest test in packages/core that globs src/**/*.ts and asserts no import specifier matches /^node:|^@ledrums\\/(io|protocol)$/, plus finding 1's `lib: [\"ES2022\"]` to cover DOM. Fuller version: add a dependency-cruiser config with three forbidden rules (core\u2192node builtins, core\u2192@ledrums/io, core\u2192@ledrums/protocol) and run `depcruise` in CI.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "This adds a fail-closed gate; it removes no guard, branch, retry or fallback."
+      },
+      "fix_size_loc": 30,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "packages/core",
+          "<root>"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add the purity test/depcruise config and wire it into CI",
+          "Mutate packages/core/src/color/color.ts to add `import 'node:fs';` and confirm the gate goes red",
+          "Revert the mutation and confirm the gate goes green"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "boundary-violation",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "boundary-violation-0003",
+      "dedup_key": "e44b0eb71c6560b1",
+      "lens": "boundary-violation",
+      "criterion": "import-boundary",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/modifiers/types.ts",
+          "start_line": 23,
+          "end_line": 23,
+          "symbol": "import type { Mapping }"
+        },
+        {
+          "path": "packages/core/src/voice/modulation.ts",
+          "start_line": 175,
+          "end_line": 175,
+          "symbol": "Mapping"
+        },
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 7,
+          "end_line": 11,
+          "symbol": "imports"
+        }
+      ],
+      "claim": "madge cycles #1 and #2 (reported four times over, once per unit that compiles core) both exist only because the pure data interface `Mapping` lives in `voice/modulation.ts`, a module that also holds runtime code and pulls in envelope \u2192 easing \u2192 types. `voice/types.ts:7` imports `ResolvedModifier` from `../modifiers/types`, and `modifiers/types.ts:23` imports `Mapping` back out of `../voice/modulation`, closing the loop. The cycle is type-only in both back-edges so it is harmless at runtime (see coverage notes), but it makes the generic modifier layer look like it depends on the voice engine, and it is the single largest contributor to the repo's reported cycle count.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "grep -nE \"^\\\\s*(import|export)\\\\b.*from\" packages/core/src/modifiers/types.ts packages/core/src/voice/types.ts packages/core/src/voice/modulation.ts",
+          "detail": "modifiers/types.ts:23 `import type { Mapping } from '../voice/modulation';`  voice/types.ts:7 `import type { ResolvedModifier } from '../modifiers/types';`  voice/types.ts:11 `import type { Mapping } from './modulation';`  voice/modulation.ts:17-20 imports sampleEnvelope (runtime) from ./envelope, sampleLfo from ./lfo, types from ./types."
+        },
+        {
+          "kind": "grep",
+          "command": "grep -n \"export interface Mapping\" packages/core/src/voice/modulation.ts",
+          "detail": "Line 175 \u2014 `Mapping` is a plain interface with no runtime counterpart, sitting in the runtime module rather than in voice/types.ts where every other shared voice type lives."
+        },
+        {
+          "kind": "tool-output",
+          "command": "cat docs/plans/2026-07-26-deep-review/00-raw/madge-cycles.txt",
+          "detail": "Cycles 1 and 2 of packages/core, repeated as cycles 1-2 of protocol, server and web (8 of the 24 reported cycles trace to this one declaration site)."
+        }
+      ],
+      "proposed_fix": "Move `interface Mapping` (and any purely-type companions it needs) from voice/modulation.ts into voice/types.ts, then have voice/modulation.ts `export type { Mapping } from './types';` so every existing import path keeps working. modifiers/types.ts:23 can then import it from '../voice/types', a leaf type module, and madge cycles #1 and #2 disappear with zero runtime change.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Moving a type declaration between modules removes no guard, validation or error branch."
+      },
+      "fix_size_loc": 20,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Move the Mapping interface into voice/types.ts and re-export from voice/modulation.ts",
+          "Run `pnpm typecheck` across the workspace \u2014 no consumer import should need changing",
+          "Run `npx madge --circular --extensions ts packages/core/src` and confirm cycles 1 and 2 are gone"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "boundary-violation",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "boundary-violation-0004",
+      "dedup_key": "9d978bcd7d6f4635",
+      "lens": "boundary-violation",
+      "criterion": "import-boundary",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/render-plan.ts",
+          "start_line": 1,
+          "end_line": 3,
+          "symbol": "imports"
+        },
+        {
+          "path": "packages/core/src/voice/reachability-lint.ts",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "import type { RenderPlanChild, RenderPlanIssue }"
+        },
+        {
+          "path": "packages/core/src/voice/scope-lint.ts",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "import type { RenderPlanChild, RenderPlanIssue }"
+        },
+        {
+          "path": "packages/core/src/voice/diagnostics.ts",
+          "start_line": 1,
+          "end_line": 1,
+          "symbol": "import type { InputEvent }"
+        }
+      ],
+      "claim": "madge cycles #3, #4 and #5 all have the same shape: a big runtime module (render-plan.ts, engine.ts) calls into a helper, and the helper imports its own result/argument types straight back out of the caller. render-plan.ts:2-3 runtime-imports detectEmptyScopes and detectUnreachable; both lint files then type-import RenderPlanChild/RenderPlanIssue from './render-plan'. diagnostics.ts:1 type-imports InputEvent from './engine', which engine.ts:59 runtime-imports back. All four back-edges are `import type` so nothing is load-order fragile, but the type declarations are living in the wrong modules: RenderPlanIssue/RenderPlanChild and InputEvent are contract types, not implementation details of the modules that happen to produce them.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "grep -nE \"^\\\\s*(import|export)\\\\b.*from\" packages/core/src/voice/render-plan.ts packages/core/src/voice/reachability-lint.ts packages/core/src/voice/scope-lint.ts packages/core/src/voice/diagnostics.ts",
+          "detail": "render-plan.ts:2 `import { detectEmptyScopes } from './scope-lint';` :3 `import { detectUnreachable } from './reachability-lint';` \u2014 value imports. reachability-lint.ts:22 and scope-lint.ts:22 both `import type { RenderPlanChild, RenderPlanIssue } from './render-plan';` \u2014 type-only. diagnostics.ts:1 `import type { InputEvent } from './engine';` \u2014 type-only; engine.ts:59 `} from './diagnostics';` is the runtime half."
+        },
+        {
+          "kind": "tool-output",
+          "command": "cat docs/plans/2026-07-26-deep-review/00-raw/madge-cycles.txt",
+          "detail": "packages/core cycles 3) voice/engine.ts > voice/diagnostics.ts, 4) voice/render-plan.ts > voice/reachability-lint.ts, 5) voice/render-plan.ts > voice/scope-lint.ts \u2014 repeated per consuming unit (12 of the 24 reported cycles)."
+        }
+      ],
+      "proposed_fix": "Move RenderPlanChild / RenderPlanIssue / RenderPlanIssueCode into voice/types.ts (or a new voice/render-plan-types.ts leaf) and re-export them from render-plan.ts; do the same for InputEvent, moving it from voice/engine.ts into voice/types.ts and re-exporting. All three cycles collapse with no runtime change and no import-path churn for consumers.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Relocating type declarations behind re-exports touches no guard, validation or error path."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 5,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Move the type declarations into voice/types.ts and re-export from their old homes",
+          "Run `pnpm typecheck` \u2014 every existing import specifier must still resolve",
+          "Run `npx madge --circular --extensions ts packages/core/src` and confirm cycles 3, 4 and 5 are gone"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "boundary-violation",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "boundary-violation-0005",
+      "dedup_key": "18728f29e81bd701",
+      "lens": "boundary-violation",
+      "criterion": "import-boundary",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/graph-lint.ts",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "import { voice }"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/lint-preview.svelte.ts",
+          "start_line": 13,
+          "end_line": 13,
+          "symbol": "import { voice }"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/GraphLintStrip.svelte",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "import { voice }"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "import { voice }"
+        }
+      ],
+      "claim": "tsconfig.base.json sets `verbatimModuleSyntax: true`, which means TypeScript emits an `import { voice } from '@ledrums/core'` statement verbatim even when every use of `voice` is a type position. In these four modules `voice` appears exclusively in type positions (voice.RenderPlanIssue, voice.EnvKind, voice.Mapping, \u2026), so each file creates an unnecessary runtime dependency on core's barrel \u2014 which is not side-effect free (packages/core/src/index.ts:34 re-exports canvas/presets, whose module body registers every builtin scene). These should be `import type { voice }`.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "grep -n \"voice\" apps/web/src/lib/app/views/graph-lint.ts",
+          "detail": "Line 12 `import { voice } from '@ledrums/core';` then lines 15, 27, 37, 52, 61, 75, 77 use only voice.RenderPlanIssue / voice.RenderPlanIssueCode \u2014 all type positions. Same pattern in lint-preview.svelte.ts (lines 17, 19), GraphLintStrip.svelte (line 15), sim.envelopes.ts (lines 16-28, a block of `export type X = voice.X` aliases)."
+        },
+        {
+          "kind": "read",
+          "detail": "tsconfig.base.json sets \"verbatimModuleSyntax\": true, so a non-`type` import is never elided."
+        },
+        {
+          "kind": "grep",
+          "command": "for f in $(grep -rl \"import { voice\" apps/web/src); do grep -c 'voice\\.[a-z][A-Za-z]*(' $f; done",
+          "detail": "Distinguished these four from the eight other zero-call files: the test files (sim.modulation.test.ts, store.modulation.test.ts, hydrate.envelopes.test.ts) and store/hydrate.ts genuinely use voice.ENVELOPE_NODE_KEY / voice.normalizeTriggerGraphToGen3 as values, so they were excluded."
+        }
+      ],
+      "proposed_fix": "Change the four imports to `import type { voice } from '@ledrums/core';`. For sim.envelopes.ts, which is a pure alias module, that also makes the file emit nothing at all.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Marking an import as type-only removes no guard, branch or fallback."
+      },
+      "fix_size_loc": 4,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Change the four import statements to `import type`",
+          "Run `pnpm --filter @ledrums/web typecheck` \u2014 it must pass, which proves no value usage existed",
+          "Run `pnpm --filter @ledrums/web test`"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "boundary-violation",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "boundary-violation-0006",
+      "dedup_key": "5a69cd96fbd1f5f8",
+      "lens": "boundary-violation",
+      "criterion": "import-boundary",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "start_line": 13,
+          "end_line": 18,
+          "symbol": "header NOTE + import { voice }"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "start_line": 57,
+          "end_line": 60,
+          "symbol": "nodeHasOutput / nodeHasInput"
+        }
+      ],
+      "claim": "The module header states \"Type-only import \u2014 adds NO runtime dependency on core (core stays pure).\" Line 18 is `import { voice } from '@ledrums/core';` \u2014 a value import \u2014 and lines 57-60 call `voice.isModSourceKind(kind)` at runtime. The comment is the load-bearing record of an import-boundary decision and it is false, which is exactly the kind of note a future reader would trust instead of re-checking. (The dependency itself is legitimate: apps/web is allowed to depend on core. Only the claim is wrong.)",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts lines 13-14: \"Type-only import \u2014 adds NO runtime dependency on core (core stays pure).\" Line 18: `import { voice } from '@ledrums/core';`"
+        },
+        {
+          "kind": "grep",
+          "command": "grep -n \"voice\\.\" apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "detail": "Line 57: `export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && !voice.isModSourceKind(kind);` and line 60 likewise \u2014 runtime calls into the core barrel."
+        }
+      ],
+      "proposed_fix": "Rewrite the NOTE to state the truth: the graph TYPES are aliased from core, and the module additionally takes a runtime dependency on core for `voice.isModSourceKind`. Do not silence it by switching to `import type` \u2014 that would break the two runtime call sites.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Comment-only change."
+      },
+      "fix_size_loc": 3,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Read lines 13-18 and 57-60 side by side; the contradiction is decidable without running anything",
+          "Optionally confirm by changing line 18 to `import type` and observing that `pnpm --filter @ledrums/web typecheck` fails at lines 57 and 60"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "boundary-violation",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

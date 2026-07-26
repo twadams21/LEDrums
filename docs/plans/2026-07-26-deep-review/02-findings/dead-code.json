@@ -1,0 +1,1200 @@
+{
+  "artifact": "02-findings/dead-code",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "dead-code",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "@vitest/coverage-v8, ajv-cli, depcheck, jscpd, madge, vitest (knip: unused devDependencies in root package.json)",
+      "why_rejected": "Pre-declared false positives, and correct ones. These are CLI tools invoked from package.json scripts or via flags (--coverage), never `import`ed, so knip's import-graph cannot see them. Rejected without further investigation per the brief."
+    },
+    {
+      "candidate": "rustc (knip: unlisted binary in apps/desktop/scripts/build-sidecar.mjs)",
+      "why_rejected": "Pre-declared false positive. A system toolchain binary shelled out to during the sidecar build; not a JS dependency."
+    },
+    {
+      "candidate": "docs/plans/2026-07-26-deep-review/artifacts/codex-mix-probe.js (knip: unused file)",
+      "why_rejected": "Pre-declared false positive \u2014 this review's own scratch artifact, inside the excluded review directory."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/shot-seam.ts (knip: unused file, 458+ lines)",
+      "why_rejected": "FALSE POSITIVE, killed by grep. It is loaded by a dynamic import at apps/web/src/App.svelte:30 \u2014 `void import('./lib/app/shot-seam').then((m) => m.installShotSeam(store, shell))`. knip missed it because its apps/web entry graph was built without the real vite config (see knip.err). It is also the documented backbone of the mandatory ui-shot workflow (scripts/ui-shot/README.md:38 and :81 both name it as the `window.__LEDRUMS_SHOT__` seam) and four preview modules reference it by name. Deleting it would break the repo's UI verification tooling."
+    },
+    {
+      "candidate": "apps/web/src/design-system.ts (knip: unused file)",
+      "why_rejected": "FALSE POSITIVE. It is an HTML entry point, not an imported module: apps/web/design-system.html:10 has `<script type=\"module\" src=\"/src/design-system.ts\">`, and apps/web/vite.design-system.config.ts:38 sets that HTML as rollup input. knip could not load vite.design-system.config.ts (knip.err) so it never learned of the entry. Driven by `pnpm design-system`, which AGENTS.md makes mandatory for UI changes."
+    },
+    {
+      "candidate": "apps/desktop/shell/main.js (knip: unused file)",
+      "why_rejected": "FALSE POSITIVE. It is an esbuild entry point: apps/desktop/scripts/prepare-bundle.mjs:53 declares `entryPoints: [join(desktopDir,'shell','main.js')]` and emits shell/main.bundle.js (:54), which index.template.html:115 loads. The Rust side even documents the contract at src-tauri/src/lib.rs:68 (\"Field names match the keys shell/main.js reads\"). Deleting it would break the desktop shell."
+    },
+    {
+      "candidate": "apps/web/scripts/contrast-check.mjs (knip: unused file, 81 lines)",
+      "why_rejected": "REJECTED as a deliberate manual dev tool, not dead code. It has no package.json script and no importer, but the design system documents it as the operator-run contrast auditor: apps/web/src/lib/styleguide/sections/SectionColor.svelte:3 and :83 both cite `apps/web/scripts/contrast-check.mjs` by path as the tool that validates the locked accent palette. Same category as scripts/pixlite-probe.mjs (documented in .mex/ROUTER.md as the hardware-confirm command). Unreferenced-by-code is the normal state for a diagnostic CLI."
+    },
+    {
+      "candidate": "packages/core/src/engine/engine.ts \u2014 the 438-line legacy Engine (Phase 1 core-geom.json dead-code suspicion)",
+      "why_rejected": "REJECTED \u2014 reachable, and in fact the DEFAULT path. apps/server/src/main.ts:72 reads `const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice'`, so with no env var set the server runs the legacy engine; main.ts:163 only constructs VoiceEngineHost when VOICE_MODE is true. It is also exported from packages/core/src/index.ts:69 and exercised by engine.test.ts. Whether the dual-host arrangement should be collapsed is a real question, but it belongs to the speculative-generality lens \u2014 under my mechanical criterion this code is reachable from an entry point and is not dead."
+    },
+    {
+      "candidate": "packages/core/src/voice/graph-integrity.ts normalizeTriggerGraphToGen3 and envelope.ts migrateAdsr (Phase 1 core-voice-fx.json suspicion)",
+      "why_rejected": "REJECTED under this lens. Both are invoked on every setShow, so they are reachable by definition. The hunch is really \"is this migration finished?\" \u2014 a question about persisted show data, which is not decidable from the source tree and is not a reachability question. Not mine to answer; deleting a migration on a guess risks corrupting user shows."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/views/node-options.ts (Phase 1 web-app.json suspicion: \"large bag of exported constants, knip issues plausibly cluster here\")",
+      "why_rejected": "REJECTED \u2014 knip flags ZERO exports in this file, and grep confirms live use. Spot-checked PROTOCOL_OPTS: imported by docks/inspectors/PatchControllerInspector.svelte:17 and used at :79, plus covered by node-options.test.ts:8. The map's hunch mistook file size for deadness."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/docks/inspectors/output-status.ts (Phase 1 web-app.json suspicion)",
+      "why_rejected": "REJECTED \u2014 18 exports, none flagged by knip, and the three I spot-checked are all live: defaultPort \u2192 OutputStatusPanel.svelte:25, formatQuietFor \u2192 ControllerStatusPanel.svelte:43/:102, testPatternTarget \u2192 output-status.test.ts:17. Every one also has direct test coverage."
+    },
+    {
+      "candidate": "apps/web/src/lib/ui/MasterDetail.fixture.svelte (Phase 1 web-rest.json suspicion: \"test-only fixture in the shipped primitives directory\")",
+      "why_rejected": "REJECTED as dead code \u2014 it IS imported, by apps/web/src/lib/ui/MasterDetail.test.ts:7, which needs a real .svelte file to supply {#snippet} blocks. It is test-only, so it should be tree-shaken from the app bundle already. Its directory placement is a code-organisation opinion, not unreachability."
+    },
+    {
+      "candidate": "apps/web/src/lib/ui/Logo.svelte (Phase 1 web-rest.json suspicion: \"only consumer may be the styleguide\")",
+      "why_rejected": "REJECTED outright \u2014 it has two production consumers, not just the styleguide: app/chrome/TopBar.svelte:19 and app/chrome/BootOverlay.svelte:13 (SectionPrimitives.svelte:34 is the third, styleguide). The Logo is the brand mark in the running app's top bar."
+    },
+    {
+      "candidate": "apps/web/src/lib/trigger-lab/fixtures.ts (EFFECTS, PRESETS, GENERATOR_EFFECTS, SECTIONS), render.ts renderFrame, kit.ts buildThumbPixelModel (Phase 1 web-triggerlab.json suspicion: \"abandoned probe-era code\" per the stale NOTES.md)",
+      "why_rejected": "REJECTED \u2014 all live. ZONE_LABELS is imported by production code at app/trigger-source-label.ts:5 and app/docks/patch-inspector.ts:12 and TriggerSourceInspector.svelte:25; GENERATOR_EFFECTS by styleguide/sections/SectionComposites.svelte:30; buildThumbPixelModel by trigger-lab/EffectThumb.svelte:18 and thumb-projection.ts:14; renderFrame and EFFECTS/PRESETS/SECTIONS by multiple test suites. NOTES.md calling the directory disposable is stale documentation (a docs-truth finding), not evidence of dead code."
+    },
+    {
+      "candidate": "apps/web/src/lib/trigger-lab/patch-diff.ts + PatchDiffRow type (knip: unused type export)",
+      "why_rejected": "NOT reported as a standalone finding \u2014 folded into the PatchClipboardToolbar cluster instead, to avoid double-counting the same defect. Today diffPatch has one production importer (the dead toolbar at line 10) and one test importer (patch-diff.test.ts:3), so it is only conditionally dead: it becomes orphaned the moment the toolbar is deleted, and its fate should be decided in that same change."
+    },
+    {
+      "candidate": "apps/server/src/telemetry/envelope.ts EngineMode (knip: unused type export)",
+      "why_rejected": "REJECTED for insufficient evidence rather than proven-live. My grep for the symbol across apps/ and packages/ returned no hits at all \u2014 not even the declaration knip points at \u2014 which means my search, not the code, is what failed. I will not report a finding I could not reproduce. Same treatment for the other ~30 knip type-only exports I did not individually verify; only the ws-protocol.ts barrel made the cut, and at medium confidence."
+    }
+  ],
+  "items": [
+    {
+      "id": "dead-code-0001",
+      "dedup_key": "6fc3e07d156fdda5",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
+          "start_line": 1,
+          "end_line": 191,
+          "symbol": "PatchClipboardToolbar"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/PatchDiffDialog.svelte",
+          "start_line": 1,
+          "end_line": 192,
+          "symbol": "PatchDiffDialog"
+        }
+      ],
+      "claim": "Both components are unreachable from any entry point. PatchClipboardToolbar has zero importers anywhere in apps/web/src; PatchDiffDialog's only importer is PatchClipboardToolbar itself (line 13 / line 124), so the pair forms a closed dead cluster. Together they are 383 LOC of shipped-but-unrenderable UI, plus they were the only production consumer of trigger-lab/patch-diff.ts (diffPatch is otherwise referenced only by patch-diff.test.ts).",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json lists both files under `files` (unused files) for apps/web: entries 5 and 6 of the issues array."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"PatchClipboardToolbar|PatchMirrorControl|PatchDiffDialog\" apps/web/src/",
+          "detail": "Only three hits total, all *inside* PatchClipboardToolbar.svelte itself (its own doc comment line 4, the import at line 13, the usage at line 124). No other src file names either component."
+        },
+        {
+          "kind": "git-history",
+          "tool": "Bash",
+          "command": "git log --oneline -S\"PatchClipboardToolbar\" -- apps/web/src/lib/app/views/PatchGraphView.svelte",
+          "detail": "Added by fdfd18c (\"S45: Patch copy/paste UI\"), removed from PatchGraphView by 39b7d6b (\"D1b Step 2 \u2014 Patch Graph v2 zone canvas\"). The v2 canvas rewrite dropped the mount and left the files behind."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"import(\" apps/web/src",
+          "detail": "The only real dynamic imports in apps/web are ./lib/styleguide/Styleguide.svelte (main.ts:13), ./lib/app/shot-seam (App.svelte:30) and @tauri-apps/api/{core,event}. No string-keyed component registry or template-literal import resolves to either file."
+        }
+      ],
+      "proposed_fix": "Delete apps/web/src/lib/app/views/PatchClipboardToolbar.svelte and PatchDiffDialog.svelte. Then decide separately whether patch copy/paste is a feature that should be re-mounted in the v2 Patch canvas; if not, trigger-lab/patch-diff.ts and patch-diff.test.ts go with them. Also drop the two component entries from the styleguide/design-system source so docs/design-system.html stops advertising them.",
+      "interface_delta": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The confirm dialog gates a paste action that can no longer be initiated \u2014 with no mount point the guard protects nothing reachable. No server-side or persistence guard is touched."
+      },
+      "fix_size_loc": 383,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "rm the two .svelte files",
+          "pnpm --filter @ledrums/web run check (svelte-check) \u2014 expect zero new unresolved-import errors",
+          "pnpm build \u2014 expect a successful web bundle",
+          "pnpm test \u2014 expect no suite referencing the components"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0002",
+      "dedup_key": "fd2b45385a02e18b",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/PatchMirrorControl.svelte",
+          "start_line": 1,
+          "end_line": 46,
+          "symbol": "PatchMirrorControl"
+        }
+      ],
+      "claim": "PatchMirrorControl.svelte has no importer in apps/web/src. It was added by 06bcf7b (\"S11: plumb setKitGlobal (mirror) end-to-end + Patch toolbar control\") and dropped from PatchGraphView by the same Patch Graph v2 commit (39b7d6b) that orphaned the clipboard toolbar. The server half of the feature is fully alive (input-router.ts:186, voice-input.ts:149, client-message.ts:524, plus kit-global-forwarding.test.ts), so this is dead client code sitting in front of a live, now-unreachable server capability.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json lists apps/web/src/lib/app/views/PatchMirrorControl.svelte under `files` (unused files)."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"PatchMirrorControl\" apps/web/src/",
+          "detail": "Zero hits in src outside the file itself; the only other repo hits are docs/design-system.html and stale coverage JSON."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"setKitGlobal\" apps/web/src apps/server/src packages",
+          "detail": "85 matches in 20 files, all server-side handlers/tests (input-router.ts:186, handlers/voice-input.ts:149, handlers/client-message.ts:524). No apps/web caller survives, confirming the UI entry point is gone."
+        },
+        {
+          "kind": "git-history",
+          "tool": "Bash",
+          "command": "git log --oneline -S\"PatchMirrorControl\" -- apps/web/src/lib/app/views/PatchGraphView.svelte",
+          "detail": "06bcf7b added the mount, 39b7d6b removed it."
+        }
+      ],
+      "proposed_fix": "Two mutually exclusive fixes, and this one needs a human product call rather than a blind auto-delete: either (a) re-mount PatchMirrorControl in the v2 Patch canvas so the setKitGlobal mirror is reachable again, or (b) delete the component AND the now-unreachable setKitGlobal client path. Do not delete the component silently without recording that the mirror feature is gone from the UI.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Deleting the component removes no guard, retry, timeout or validation \u2014 the server-side setKitGlobal validation in client-message.ts stays untouched."
+      },
+      "fix_size_loc": 46,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "rm apps/web/src/lib/app/views/PatchMirrorControl.svelte",
+          "pnpm --filter @ledrums/web run check \u2014 expect no unresolved imports",
+          "pnpm ui-shot against the Patch view to confirm no mirror control is visible today (proves the deadness rather than the fix)"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0003",
+      "dedup_key": "0f7a7060d1bc6f89",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/hydrate.ts",
+          "start_line": 67,
+          "end_line": 460,
+          "symbol": "withDrumSource, unionTriggerSources, hydratePadNames, resolveGraphAliases, splitModulationSources, migrateGen3Graphs, sanitizeGraphsIntegrity, sanitizeGraphsIntegrityWithActions, NO_SYSTEM_ACTIONS"
+        }
+      ],
+      "claim": "Nine exported symbols in this one module have no importer outside the file. Eight are called only from hydrate.ts's own normalizeGraphs pipeline (withDrumSource:67\u219293, unionTriggerSources:87\u2192490, hydratePadNames:104\u2192502, resolveGraphAliases:317\u2192481, splitModulationSources:370\u2192500, migrateGen3Graphs:403\u2192499, sanitizeGraphsIntegrity:421\u2192501, sanitizeGraphsIntegrityWithActions:447\u2192484) \u2014 dropping `export` on those reduces the module interface by 8 with zero behaviour change. NO_SYSTEM_ACTIONS (line 441) has literally zero references anywhere and is deletable outright.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json flags all nine names as unused exports of apps/web/src/lib/trigger-lab/store/hydrate.ts \u2014 the single largest unused-export cluster in the repo."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn for each of the nine names across apps/ and packages/ (*.ts, *.svelte)",
+          "detail": "Every name resolves to its own definition line plus one or two call sites in the same file. NO_SYSTEM_ACTIONS returns exactly one hit: its declaration at hydrate.ts:441."
+        },
+        {
+          "kind": "read",
+          "detail": "hydrate.ts:435-450 read directly: SystemActionSummary interface is used by sanitizeGraphsIntegrityWithActions's return type, but the NO_SYSTEM_ACTIONS const between them is never referenced."
+        }
+      ],
+      "proposed_fix": "Delete `export const NO_SYSTEM_ACTIONS` (hydrate.ts:441). Drop the `export` keyword from the other eight function declarations, keeping only normalizeGraphs (and whatever else has real importers) exported. Net: hydrate.ts's public surface shrinks from ~10 symbols to ~1\u20132.",
+      "interface_delta": {
+        "exported_symbols_removed": 9,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Un-exporting changes visibility only; the migration/sanitize logic still runs inside normalizeGraphs. NO_SYSTEM_ACTIONS is an unread zero-value constant, not a fallback anyone consumes."
+      },
+      "fix_size_loc": 10,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove the nine `export` keywords / the NO_SYSTEM_ACTIONS declaration",
+          "pnpm typecheck \u2014 TS surfaces any missed importer as an error",
+          "pnpm test \u2014 trigger-lab hydrate/persistence suites must stay green"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0004",
+      "dedup_key": "2c1251688cfdc882",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/show-library.ts",
+          "start_line": 25,
+          "end_line": 28,
+          "symbol": "showLibraryPath"
+        }
+      ],
+      "claim": "showLibraryPath is exported and never called \u2014 not by apps/server, not by any test, not by the web or desktop apps. It is a one-line passthrough to store.path(dir); the sibling inspectShowLibraryFile (line 30) is the function that is actually used. Nothing string-keyed or reflective reaches it: apps/server has no dynamic-import or registry lookup keyed on this name.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/server/src/show-library.ts \u2192 exports: [{name: showLibraryPath, line: 26}]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bshowLibraryPath\\b\" --include=*.ts --include=*.svelte --include=*.mjs apps packages workers scripts",
+          "detail": "Exactly one hit repo-wide: the declaration at apps/server/src/show-library.ts:26."
+        },
+        {
+          "kind": "read",
+          "detail": "Read show-library.ts:20-30 \u2014 the body is `return store.path(dir);` and inspectShowLibraryFile immediately below covers the real use case."
+        }
+      ],
+      "proposed_fix": "Delete the showLibraryPath function (4 lines including its doc comment). If a path accessor is later needed, store.path() is already available at the call site.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure path computation with no guard, retry, or validation."
+      },
+      "fix_size_loc": 4,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Delete lines 25-28 of apps/server/src/show-library.ts",
+          "pnpm typecheck",
+          "pnpm test --filter @ledrums/server"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0005",
+      "dedup_key": "b73e88595a374978",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+          "start_line": 48,
+          "end_line": 49,
+          "symbol": "ENV_KINDS"
+        }
+      ],
+      "claim": "`export const ENV_KINDS: EnvKind[] = ['decay','rise','pluck','pulse']` at sim.envelopes.ts:49 has exactly one occurrence in the whole source tree \u2014 its own declaration. The doc comment claims \"named envelope shapes the editor seeds from\", but the envelope editor never imports it, so the comment is stale. No dynamic access reaches it (the value is a plain array, never looked up by string key from elsewhere).",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/web/src/lib/trigger-lab/sim.envelopes.ts \u2192 exports: [{name: ENV_KINDS, line: 49}]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bENV_KINDS\\b\" apps/web/src --include=*.ts --include=*.svelte | wc -l",
+          "detail": "Count = 1; the single line is the declaration itself."
+        },
+        {
+          "kind": "read",
+          "detail": "Read sim.envelopes.ts:44-52 to confirm the constant is a standalone literal with no in-file consumer."
+        }
+      ],
+      "proposed_fix": "Delete the ENV_KINDS declaration and its doc comment (2 lines). If the EnvKind union still needs an enumerable runtime list later, derive it at the consuming site.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "A literal array of kind names \u2014 no guard, validation, or fallback path."
+      },
+      "fix_size_loc": 2,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Delete sim.envelopes.ts:48-49",
+          "pnpm typecheck",
+          "pnpm test"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0006",
+      "dedup_key": "9f2b9d0866e23dc5",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/mix-layer-rows.ts",
+          "start_line": 21,
+          "end_line": 23,
+          "symbol": "isMixRowHandleId"
+        }
+      ],
+      "claim": "isMixRowHandleId is a predicate over mix-row handle ids with zero call sites \u2014 the only repo occurrence is its declaration at mix-layer-rows.ts:21. The neighbouring MIX_ROW_HANDLE_PREFIX it consumes is itself only used inside this module. Svelte handle ids are passed as strings, but nothing looks this predicate up dynamically; svelte:component / registries are not used in this file's consumers.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/web/src/lib/app/views/mix-layer-rows.ts \u2192 exports: [MIX_ROW_HANDLE_PREFIX line 15, isMixRowHandleId line 21]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bisMixRowHandleId\\b\" apps packages workers --include=*.ts --include=*.svelte | wc -l",
+          "detail": "Count = 1 (declaration only). MIX_ROW_HANDLE_PREFIX by contrast has 3 hits, all inside mix-layer-rows.ts (lines 15, 18, 22)."
+        }
+      ],
+      "proposed_fix": "Delete isMixRowHandleId (3 lines) and drop the `export` keyword from MIX_ROW_HANDLE_PREFIX at line 15 \u2014 it is then a purely internal constant used at line 18 only.",
+      "interface_delta": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The predicate is never invoked, so it guards nothing today; removing it cannot change any branch that actually executes."
+      },
+      "fix_size_loc": 4,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Delete lines 21-23 and un-export line 15",
+          "pnpm typecheck",
+          "pnpm test"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0007",
+      "dedup_key": "379e791133f9ad6a",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "workers/error-ingest/src/validate.ts",
+          "start_line": 8,
+          "end_line": 88,
+          "symbol": "MAX_REPORTS_PER_BATCH, MAX_MESSAGE_LEN, MAX_STACK_LEN, MAX_BREADCRUMBS, MAX_STR, MAX_BACKUPS_PER_BATCH, MAX_KEY_SEGMENT_LEN, safeKeySegment"
+        }
+      ],
+      "claim": "All eight exported symbols are consumed only inside validate.ts: MAX_STR at :18, MAX_MESSAGE_LEN at :49/:59/:61, MAX_BREADCRUMBS at :57, MAX_STACK_LEN at :62, MAX_REPORTS_PER_BATCH at :75, MAX_BACKUPS_PER_BATCH at :117, MAX_KEY_SEGMENT_LEN at :89, safeKeySegment at :100/:101. No other worker module or test imports them, so the export keywords widen the module's interface by 8 for nothing. This is un-export, not delete \u2014 the values are load-bearing.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: workers/error-ingest/src/validate.ts \u2192 exports lists all eight names (lines 8,9,10,11,12,82,83,88)."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"MAX_MESSAGE_LEN|MAX_STACK_LEN|MAX_BREADCRUMBS|MAX_STR\\b\" workers/ --include=*.ts",
+          "detail": "Every hit is inside workers/error-ingest/src/validate.ts; no importer, including the worker's own test files."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bsafeKeySegment\\b\" apps packages workers scripts --include=*.ts",
+          "detail": "Three hits, all in validate.ts (definition :88, uses :100 and :101)."
+        }
+      ],
+      "proposed_fix": "Remove the `export` keyword from the seven MAX_* constants and from safeKeySegment. Do NOT delete them \u2014 every one is read by the validators in the same file. Interface drops from 8+ public symbols to just the validate entry points.",
+      "interface_delta": {
+        "exported_symbols_removed": 8,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Un-exporting only changes visibility. All the length/batch caps and the key-sanitiser keep running inside the validators \u2014 the ValidationError throws at :57, :75, :117 are untouched."
+      },
+      "fix_size_loc": 8,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "workers/error-ingest"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Strip the eight `export` keywords",
+          "pnpm typecheck",
+          "Run the error-ingest worker test suite \u2014 the validation limit tests must stay green"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0008",
+      "dedup_key": "1c1c16269a16e3c7",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/patch-topology.ts",
+          "start_line": 113,
+          "end_line": 117,
+          "symbol": "triggerId, zoneNodeId, outputId"
+        }
+      ],
+      "claim": "The three id-builder arrows at patch-topology.ts:113/114/117 are each called exactly once, from the layout builder in the same file (:178, :189, :217). No other module imports them \u2014 the `outputId` name has 59 repo hits but every one outside this file is an unrelated local variable or object property (e.g. patch-zones.ts:396 declares its own `const outputId`, patch-zones.test.ts uses it as a payload key). Ids are built here and consumed as plain strings elsewhere, so no template-literal or registry lookup resolves back to the functions.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/web/src/lib/app/patch-topology.ts \u2192 exports: [triggerId:113, zoneNodeId:114, outputId:117]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\btriggerId\\b|\\bzoneNodeId\\b|\\boutputId\\b\" apps/web/src packages",
+          "detail": "triggerId: 9 hits \u2014 declaration :113, use :178, and unrelated local bindings in packages/core/src/voice/render-plan.ts:41/116/118. zoneNodeId: exactly 2 hits (:114 declaration, :189 use). outputId: 59 hits, but the only ones referring to this function are :117 and :217."
+        }
+      ],
+      "proposed_fix": "Drop the `export` keyword from all three arrow consts. They stay module-local helpers of buildPatchTopology. Interface reduction of 3 with zero behaviour change.",
+      "interface_delta": {
+        "exported_symbols_removed": 3,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure string-template id builders; no guard, validation, or error branch involved."
+      },
+      "fix_size_loc": 3,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove three `export` keywords",
+          "pnpm typecheck \u2014 any missed importer becomes a compile error",
+          "pnpm test"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0009",
+      "dedup_key": "9c5c141d3f69cfb3",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/patch-graph.ts",
+          "start_line": 217,
+          "end_line": 337,
+          "symbol": "DEFAULT_OUTPUT_SCALARS, STAGE_ORDER (re-export)"
+        }
+      ],
+      "claim": "patch-graph.ts:337 re-exports STAGE_ORDER (imported at :29 from patch-topology) but no module imports STAGE_ORDER from patch-graph \u2014 the only real reader is patch-topology.ts:137, inside the module that declares it. Separately, DEFAULT_OUTPUT_SCALARS at :217 is referenced only once, as the default parameter value at :233 in the same file. Both are pure interface bloat on a widely-imported module.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/web/src/lib/app/patch-graph.ts \u2192 exports: [DEFAULT_OUTPUT_SCALARS:217, STAGE_ORDER:337]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bSTAGE_ORDER\\b|\\bDEFAULT_OUTPUT_SCALARS\\b\" apps packages workers --include=*.ts --include=*.svelte",
+          "detail": "STAGE_ORDER: 4 hits \u2014 patch-topology.ts:88 (declaration), :137 (use), patch-graph.ts:29 (import) and :337 (re-export). DEFAULT_OUTPUT_SCALARS: 2 hits \u2014 patch-graph.ts:217 and :233."
+        }
+      ],
+      "proposed_fix": "Delete the `export { STAGE_ORDER };` statement at patch-graph.ts:337 (the import at :29 stays only if still needed in-file; if not, drop it too). Remove the `export` keyword from DEFAULT_OUTPUT_SCALARS at :217 so it remains the in-file default for getScalars.",
+      "interface_delta": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "DEFAULT_OUTPUT_SCALARS remains in place as the default argument at :233 \u2014 the fallback is preserved, only its visibility changes. The STAGE_ORDER re-export carries no behaviour."
+      },
+      "fix_size_loc": 3,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove the re-export line and the export keyword",
+          "pnpm typecheck",
+          "pnpm test"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0010",
+      "dedup_key": "4bcee00fed31c1ec",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/ids.ts",
+          "start_line": 20,
+          "end_line": 20,
+          "symbol": "reserveId"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/transport.ts",
+          "start_line": 17,
+          "end_line": 17,
+          "symbol": "showSig"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/graphs.ts",
+          "start_line": 16,
+          "end_line": 47,
+          "symbol": "OUTPUT_ANCHOR_ID, firstEffectId"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/canvas-scenes.ts",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "CANVAS_BUS_ID"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "start_line": 24,
+          "end_line": 24,
+          "symbol": "blockChildren"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/clipdoc.ts",
+          "start_line": 453,
+          "end_line": 453,
+          "symbol": "makeDefaultMint"
+        }
+      ],
+      "claim": "Each of these six symbols is called exactly once or twice, always from within its own declaring module: reserveId (ids.ts:20 \u2192 :29), showSig (transport.ts:17 \u2192 :33,:39), firstEffectId (graphs.ts:47 \u2192 :57), CANVAS_BUS_ID (canvas-scenes.ts:22 \u2192 :50), blockChildren (sim.graph-compilation.ts:24 \u2192 :166), makeDefaultMint (clipdoc.ts:453 \u2192 :507). graphs.ts's OUTPUT_ANCHOR_ID is likewise unread across modules \u2014 sim.graph-compilation.ts:147 and packages/core/src/voice/graph-integrity.ts:38 each declare their own private copy of the same literal rather than importing it. These are un-exports, not deletes.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json flags reserveId (ids.ts:20), showSig (transport.ts:17), firstEffectId + OUTPUT_ANCHOR_ID (graphs.ts:47/:16), CANVAS_BUS_ID (canvas-scenes.ts:22), blockChildren (sim.graph-compilation.ts:24), makeDefaultMint (clipdoc.ts:453) as unused exports."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn per-symbol across apps/ and packages/ (*.ts, *.svelte)",
+          "detail": "Every symbol's hits are confined to its own file. OUTPUT_ANCHOR_ID's 13 hits split into three independent private declarations (graphs.ts:16, sim.graph-compilation.ts:147, core/voice/graph-integrity.ts:38) plus their local uses \u2014 no cross-module import."
+        }
+      ],
+      "proposed_fix": "Drop the `export` keyword from all seven symbols. Note the separate (non-dead-code) smell surfaced here: three modules each hard-code OUTPUT_ANCHOR_ID='output' privately \u2014 worth routing to the duplication lens rather than fixing under this finding.",
+      "interface_delta": {
+        "exported_symbols_removed": 7,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Visibility-only change; reserveId's id-collision reservation and makeDefaultMint's reservation-safe minter keep running at their existing in-file call sites."
+      },
+      "fix_size_loc": 7,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Strip the export keywords in the six files",
+          "pnpm typecheck",
+          "pnpm test \u2014 trigger-lab clipdoc/persistence/sim suites must stay green"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0011",
+      "dedup_key": "ab25449f81b15c75",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+          "start_line": 14,
+          "end_line": 22,
+          "symbol": "ENVELOPE_PRESETS, LFO_PRESETS"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/align-guides.ts",
+          "start_line": 39,
+          "end_line": 39,
+          "symbol": "ALIGN_THRESHOLD"
+        },
+        {
+          "path": "apps/web/src/lib/app/monitor.ts",
+          "start_line": 3,
+          "end_line": 47,
+          "symbol": "MONITOR_RETENTION_LIMIT, monitorSearchText"
+        }
+      ],
+      "claim": "ENVELOPE_PRESETS (:14) and LFO_PRESETS (:22) are each spread into the taxonomy list at :70 and :79 of the same file. ALIGN_THRESHOLD (:39) is used only as the default parameter at align-guides.ts:61. MONITOR_RETENTION_LIMIT (:3) is used only as the default limit at monitor.ts:24, and monitorSearchText (:47) is called only from the filter at monitor.ts:39. None has an importer in any other module or test.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json flags ENVELOPE_PRESETS/LFO_PRESETS (add-node-taxonomy.ts:14/22), ALIGN_THRESHOLD (align-guides.ts:39), MONITOR_RETENTION_LIMIT + monitorSearchText (monitor.ts:3/47)."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn per-symbol across apps/ packages/ workers/ (*.ts, *.svelte) with hit counts",
+          "detail": "ENVELOPE_PRESETS 2 hits, LFO_PRESETS 2, ALIGN_THRESHOLD 2, MONITOR_RETENTION_LIMIT 2, monitorSearchText 2 \u2014 in each case the declaration plus one in-file use."
+        }
+      ],
+      "proposed_fix": "Remove the `export` keyword from all five symbols. Nothing is deleted; the preset lists, the alignment threshold default and the monitor retention default all keep their current behaviour as module-private values.",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "ALIGN_THRESHOLD and MONITOR_RETENTION_LIMIT remain as default parameter values at their call sites \u2014 the retention cap and snap threshold still apply, only visibility changes."
+      },
+      "fix_size_loc": 5,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Strip the five export keywords",
+          "pnpm typecheck",
+          "pnpm test"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0012",
+      "dedup_key": "e900e75730d09de0",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/boot.ts",
+          "start_line": 60,
+          "end_line": 60,
+          "symbol": "lanUrls"
+        },
+        {
+          "path": "apps/server/src/controller-monitor.ts",
+          "start_line": 96,
+          "end_line": 96,
+          "symbol": "localNicSubnets"
+        }
+      ],
+      "claim": "lanUrls is called once, at boot.ts:75, in the same file. localNicSubnets is used once, at controller-monitor.ts:170, as the `deps.localSubnets ?? localNicSubnets` default. Neither has an importer in any other server module or test, so both `export` keywords widen apps/server's internal surface without a caller. Node has no reflective dispatch reaching them here.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/server/src/boot.ts \u2192 exports [lanUrls:60]; apps/server/src/controller-monitor.ts \u2192 exports [localNicSubnets:96]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\blanUrls\\b|\\blocalNicSubnets\\b\" apps packages workers scripts --include=*.ts --include=*.mjs",
+          "detail": "lanUrls: 2 hits (boot.ts:60 declaration, boot.ts:75 use). localNicSubnets: 2 hits (controller-monitor.ts:96 declaration, :170 use as an injected default)."
+        },
+        {
+          "kind": "read",
+          "detail": "controller-monitor.ts:170 reads `const localSubnets = deps.localSubnets ?? localNicSubnets;` \u2014 the dependency-injection seam is the `deps` parameter, not the export, so tests override via deps and never import the symbol."
+        }
+      ],
+      "proposed_fix": "Drop the `export` keyword on both functions. The controller-monitor DI seam already goes through `deps.localSubnets`, so nothing external needs the direct handle.",
+      "interface_delta": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "localNicSubnets stays wired as the `??` fallback for deps.localSubnets \u2014 the fallback path is preserved verbatim, only the export is removed."
+      },
+      "fix_size_loc": 2,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Strip both export keywords",
+          "pnpm typecheck",
+          "pnpm test --filter @ledrums/server"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0013",
+      "dedup_key": "bed0c53b75f2cadb",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/io/src/pixlite/protocol.ts",
+          "start_line": 147,
+          "end_line": 147,
+          "symbol": "parseStatistic"
+        }
+      ],
+      "claim": "parseStatistic is exported from packages/io/src/pixlite/protocol.ts and called only once, at line 182 in the same file. Because packages/io/src/index.ts does `export * from './pixlite'`, this unused symbol is part of the @ledrums/io package's public API \u2014 the widest-blast-radius un-export in this set, since packages/io is a cross-package boundary the AGENTS.md non-negotiables treat as the IO interface seam.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: packages/io/src/pixlite/protocol.ts \u2192 exports [parseStatistic:147]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bparseStatistic\\b\" apps packages workers scripts --include=*.ts --include=*.mjs",
+          "detail": "2 hits: the declaration at protocol.ts:147 and the internal call at :182. No consumer in apps/server, apps/web, or any io test."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/index.ts is five `export *` lines including './pixlite', so every exported name in protocol.ts is package-public by default."
+        }
+      ],
+      "proposed_fix": "Remove the `export` keyword from parseStatistic at protocol.ts:147. The wrapper at :182 remains the package's entry point for statistic parsing, so @ledrums/io's public surface shrinks by one without any behaviour change.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Visibility-only change; the parsing (and whatever coercion it performs) still executes at the :182 call site."
+      },
+      "fix_size_loc": 1,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "packages/io"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Strip the export keyword",
+          "pnpm typecheck (catches any apps/server import of @ledrums/io's parseStatistic)",
+          "pnpm test --filter @ledrums/io"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0014",
+      "dedup_key": "cc87cbf7fb444b97",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "apps/server/src/ws-protocol.ts",
+          "start_line": 10,
+          "end_line": 31,
+          "symbol": "BackupReason, MonitorEventType, SerializedDrum, TunnelStatus, VoiceStats"
+        }
+      ],
+      "claim": "ws-protocol.ts:10-31 is a back-compat `export type { \u2026 } from '@ledrums/protocol'` barrel. Five of its names are never imported from this path \u2014 consumers reach for @ledrums/protocol directly instead (e.g. apps/server/src/tunnel-control.ts:1 imports TunnelStatus straight from @ledrums/protocol; apps/web/src/lib/ws/client.ts:19 gets VoiceStats via its own protocol-types.ts). The barrel's stated purpose (\"so the server's existing ./ws-protocol import paths keep working\") no longer holds for these five entries.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/server/src/ws-protocol.ts \u2192 types: [BackupReason:11, MonitorEventType:23, SerializedDrum:24, TunnelStatus:30, VoiceStats:31]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bVoiceStats\\b|\\bTunnelStatus\\b\" apps packages --include=*.ts --include=*.svelte",
+          "detail": "TunnelStatus is imported at apps/server/src/tunnel-control.ts:1 from '@ledrums/protocol', not from './ws-protocol'. VoiceStats reaches the web client via apps/web/src/lib/ws/protocol-types.ts:25 and client.ts:19 \u2014 again not through the server barrel."
+        },
+        {
+          "kind": "read",
+          "detail": "Read apps/server/src/ws-protocol.ts:1-35 \u2014 the block is a pure type re-export with an explicit back-compat comment, so removing entries is behaviour-free at runtime."
+        }
+      ],
+      "proposed_fix": "Delete the five unused names from the `export type { \u2026 }` block at ws-protocol.ts:10-31, keeping the ones with live './ws-protocol' importers. Confidence is medium rather than high because the block is explicitly documented as a compatibility shim \u2014 confirm with a typecheck that no server file still resolves these names through it before trimming.",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Type-only re-exports are erased at compile time; no runtime guard, retry or validation is affected."
+      },
+      "fix_size_loc": 5,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove the five names from the export type block",
+          "pnpm typecheck \u2014 this is the whole proof for a type-only change; any surviving importer fails to resolve",
+          "pnpm build"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "dead-code-0015",
+      "dedup_key": "aba59de524518c88",
+      "lens": "dead-code",
+      "criterion": "unreachable-and-no-dynamic-access",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/scripts/vite-plugin-source-manifest.mjs",
+          "start_line": 35,
+          "end_line": 35,
+          "symbol": "buildSourceManifest"
+        }
+      ],
+      "claim": "buildSourceManifest is exported at line 35 and invoked once at line 50, inside the plugin factory in the same file. No other build script, config, or test imports it. This is build-tooling, not shipped code, so the fix is a plain un-export rather than a delete.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.json: apps/web/scripts/vite-plugin-source-manifest.mjs \u2192 exports [buildSourceManifest:35]."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"\\bbuildSourceManifest\\b\" apps packages workers scripts --include=*.ts --include=*.mjs --include=*.svelte",
+          "detail": "2 hits: declaration at :35 and the call at :50 within the plugin's hook."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "knip",
+          "detail": "knip.err shows knip could not load apps/web/vite.config.ts (missing @sveltejs/vite-plugin-svelte in the analysis env), so this file's *default* export is under-analysed \u2014 but the named export's deadness is settled independently by the grep above."
+        }
+      ],
+      "proposed_fix": "Remove the `export` keyword at vite-plugin-source-manifest.mjs:35, leaving only the plugin factory as the module's public surface.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Build-time manifest construction still runs at :50; nothing about the plugin's behaviour changes."
+      },
+      "fix_size_loc": 1,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Strip the export keyword",
+          "pnpm build (apps/web) \u2014 the vite build must still emit the source manifest",
+          "pnpm ui-shot to confirm the click-to-source seam the manifest feeds still resolves"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "dead-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

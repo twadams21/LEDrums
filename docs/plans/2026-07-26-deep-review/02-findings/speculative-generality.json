@@ -1,0 +1,993 @@
+{
+  "artifact": "02-findings/speculative-generality",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "speculative-generality",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "packages/core/src/geometry/pixel-grid.ts \u2014 \"a full spatial-hash module with four public query functions that may have no live caller outside its own tests\" (Phase-1 core-geom suspicion, addressed to this lens)",
+      "why_rejected": "REJECTED as stated. `rg -n \"forEachPixelWithin|nearestPixelIdWithin|buildPixelGrid\"` shows four production effects depend on it: confetti-burst.ts:4/51/107/113, rain-3d.ts:4/56/72/142, spark-arc.ts:4/69/81/129, lightning.ts:4/47/52/133. Each rebuilds the grid when `ctx.model` changes \u2014 exactly the reuse the module was built for. Four callers is a seam earning its keep. The map's premise (\"not re-exported from src/index.ts\") was a false signal: it is imported by relative path from within the same package, which is the correct way for an internal helper. Only the fourth function, nearestPixelWithin, survived scrutiny, and I filed that narrowly."
+    },
+    {
+      "candidate": "packages/core/src/canvas/* (1,636 LOC: lenses, elements, samplers, presets, registry) \u2014 a large \"lens system\" that smelled like a generality engine built ahead of demand",
+      "why_rejected": "REJECTED. I checked the 8-member `Lens` union (types.ts:92-100) against the seed library and every single kind is used by a shipped preset: polar (tunnel-rings, polar-spokes), unpolar (unpolar-ribbons, unpolar-rose), log-polar (log-tunnel, log-nebula, spiral-galaxy), kaleido (kaleido-bloom, kaleido-shards, prism-fan), mobius (mobius-ribbon, mobius-glass), tile (tile-matrix, tile-confetti), swirl (swirl-vortex, swirl-petal, spiral-galaxy), hyper4d (hyper-drift, hyper-checker). The subsystem is reachable from the UI (ObjectsView/CanvasSceneRow/PlayNodeInspector via store.allCanvasScenes, createCanvasScene, setCanvasScene). Configuration space fully exercised by real content \u2014 the opposite of speculative. Only the uncalled `listCanvasScenes` came out of it."
+    },
+    {
+      "candidate": "apps/server/src/tunnel-control.ts over tunnel-manager.ts \u2014 Phase-1 server map: \"Two layers over one concern: TunnelControl is largely a status-caching pass-through in front of TunnelManager\"",
+      "why_rejected": "REJECTED. The layers own different lifetimes and the split is load-bearing: TunnelManager owns ONE cloudflared child spawn-to-teardown, while TunnelControl owns lifecycle ACROSS children (each start builds a fresh manager via `createManager`), plus the off/starting/live/error status the UI renders, and the `ensurePinGated()` invariant that must run before any spawn so a public URL can never exist without a PIN gate. Collapsing them would put restart-after-failure state inside an object that dies with its child. The one weak point is `createManager` being an injectable seam with a single production implementation \u2014 real but too small to spend a finding slot on."
+    },
+    {
+      "candidate": "packages/io ArtNetOptions / SacnOptions knobs (broadcast, iface, priority, sourceName, port) \u2014 a wide options surface on transports that smelled like anticipated multi-NIC configurations",
+      "why_rejected": "REJECTED. Every knob traces to persisted user-facing project state: project-schema.ts:152 `broadcast`, :157 `iface`, :159 `priority` (with the 1-200 E1.31 range validated), and output-manager.ts:54-66 maps each straight from OutputSettings into the transport constructor. These are real settings a lighting operator changes on a multi-NIC rig, not hypothetical extension points."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/desktop-bridge.svelte.ts DesktopAdapter \u2014 an injectable seam over Tauri, i.e. another candidate single-implementation interface",
+      "why_rejected": "REJECTED. This one genuinely has multiple realisations and a real third state: `loadTauriAdapter()` returns the real Tauri adapter inside a webview, returns NULL in a plain browser (the load-bearing case \u2014 the file's comment explains that importing @tauri-apps/api succeeds in a browser too, so detection must key off `__TAURI_INTERNALS__`), and tests supply a fake invoke/event pair. Browser-vs-desktop is a shipped configuration, not a hypothetical one, so the seam is real by the two-adapter rule."
+    },
+    {
+      "candidate": "apps/web/src/lib/trigger-lab/sim.ts \u2014 a 702-line file whose own header says \"THROWAWAY simulation. NOT the engine, NOT production\u2026 Delete this whole directory once the branches are decided\"",
+      "why_rejected": "REJECTED FOR THIS LENS (still a problem, wrong lens). `new Sim(...)` is called from production code at store.svelte.ts:895 and :1218, and render.ts:105/195 renders from it \u2014 it is the offline preview path used whenever the WS engine link is closed. It fails the deletion test as speculative generality because deleting it removes live capability. The real issue is that a self-declared throwaway became load-bearing, which is a rewrite-parity / dead-branch question for another lens. I filed only the genuinely inert part of that cluster: the sim.envelopes alias barrel."
+    },
+    {
+      "candidate": "The many exported `*Deps` / `*Options` interfaces flagged by my unused-export scan as having zero external references (BootDeps, ClientMessageDeps, SnapshotStoreDeps, ReporterDeps, ShipQueueOptions, OutputManagerOptions, and ~40 more)",
+      "why_rejected": "REJECTED as a class \u2014 scan artifact. These are the parameter types of their own exported functions/classes; a caller passes an object literal and never names the type, so they read as unreferenced while being fully load-bearing. Filing them would have been exactly the safe-small-fix padding this lens is supposed to avoid. I kept only the case where the SHAPE of such an interface is the defect \u2014 ClientMessageDeps' six always-supplied optional members \u2014 not its reference count."
+    }
+  ],
+  "items": [
+    {
+      "id": "speculative-generality-0001",
+      "dedup_key": "5cb37029e9eeeb15",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 386,
+          "end_line": 530,
+          "symbol": "TriggerLab (sectionsCtl / showsCtl / monitor / controllerTest / midiCtl wiring)"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts",
+          "start_line": 113,
+          "end_line": 148,
+          "symbol": "ShowsControllerHost / ShowsController"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/sections-controller.svelte.ts",
+          "start_line": 35,
+          "end_line": 54,
+          "symbol": "SectionsControllerHost / SectionsController"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/controller-monitor.svelte.ts",
+          "start_line": 16,
+          "end_line": 26,
+          "symbol": "ControllerMonitorHost / ControllerMonitor"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/controller-test.svelte.ts",
+          "start_line": 19,
+          "end_line": 30,
+          "symbol": "ControllerTestHost / ControllerTest"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/midi-controller.svelte.ts",
+          "start_line": 32,
+          "end_line": 45,
+          "symbol": "MidiControllerHost / MidiController"
+        }
+      ],
+      "claim": "The R20/R22/R23/R24 store split created five controller classes, each with its own exported injectable `*Host` collaborator interface, but the store's own comments state the policy explicitly: \"the store delegates its public surface to this via the accessors + forwarders below, so callers/tests are unchanged\". Every Host interface has exactly ONE implementation \u2014 an inline object literal in store.svelte.ts \u2014 and nothing outside store.svelte.ts constructs any controller (`rg -ln 'ShowsController|SectionsController\\b|new ControllerMonitor|new ControllerTest|new MidiController' apps/web/src` returns only the three files that define/construct them). By the one-adapter rule these are hypothetical seams, not real ones. Apply the deletion test: remove the controllers and the ~1311 LOC folds back into the store \u2014 no complexity reappears at N callers, because there is exactly one caller. What the split actually bought is a net INCREASE of ~11 exported symbols plus a mechanical forwarder tax on every future field (each new piece of state must be added in the controller, in the Host interface, in the store's inline host literal, and in a store getter/setter pair).",
+      "evidence": [
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -ln \"ShowsController|SectionsController\\b|new ControllerMonitor|new ControllerTest|new MidiController\" apps/web/src",
+          "detail": "Returns only shows-controller.svelte.ts, sections-controller.svelte.ts and store.svelte.ts \u2014 no consumer outside the store constructs or references any controller class, so each Host seam has exactly one implementation."
+        },
+        {
+          "kind": "read",
+          "detail": "store.svelte.ts:380-530 read directly. Comments at 383-385, 476-478 and 508-513 state the forwarding policy verbatim (\"the store delegates its public surface to this via the accessors + forwarders below, so callers/tests are unchanged\"), and lines 404-416 / 496-506 show the getter/setter pairs that re-expose every controller field on the store."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"^export \" apps/web/src/lib/trigger-lab/{shows,sections,controller-monitor,controller-test,midi}-controller.svelte.ts",
+          "detail": "Each file exports a `*ControllerHost` interface plus its class (ShowsControllerHost/ShowsController, SectionsControllerHost/SectionsController, ControllerMonitorHost/ControllerMonitor, ControllerTestHost/ControllerTest, MidiControllerHost/MidiController) \u2014 10 new exported symbols, none consumed outside the store."
+        }
+      ],
+      "proposed_fix": "Decide which direction the split is actually going and finish it. Either (a) make the extraction real: move the controllers' surface OFF the store, retarget the ~109 external consumers at `store.shows.*` / `store.sections.*` etc., and delete the forwarders and the Host interfaces (the store can pass itself, since there is one host), or (b) accept that the store is the module and inline the controllers back, deleting 5 classes and 5 Host interfaces. What must not persist is the current state, where the seam costs four edit sites per field and buys no substitutability. Option (a) is the interface-reducing one: it removes ~80 forwarder members from the god object.",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Forwarders and Host interfaces are pure delegation and structural typing; no guard, retry, timeout, fallback or validation lives in them."
+      },
+      "fix_size_loc": 600,
+      "blast_radius": {
+        "files_touched": 7,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": false,
+        "requires_mutation": true,
+        "steps": [
+          "Confirm the one-implementation claim: for each `*ControllerHost`, grep the repo for `satisfies <Name>Host` and for `: <Name>Host` \u2014 each should have exactly one construction site in store.svelte.ts.",
+          "Count the forwarder members: in store.svelte.ts, count getters/setters/methods whose entire body is `this.<ctl>.<member>` \u2014 this is the interface debt the split failed to retire.",
+          "For the (a) direction: pick one controller (sections is smallest), delete its store forwarders, retarget consumers, run `pnpm typecheck` and `pnpm test` \u2014 the compiler enumerates the true external consumer set."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0002",
+      "dedup_key": "bd68e98fdc7e2d7c",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/handlers/client-message.ts",
+          "start_line": 84,
+          "end_line": 160,
+          "symbol": "ClientMessageDeps (tunnelControl?, isTunnelClient?, monitor?, listNetworkAdapters?, backups?, controller?)"
+        },
+        {
+          "path": "apps/server/src/handlers/client-message.ts",
+          "start_line": 342,
+          "end_line": 342,
+          "symbol": "snapshotPreRisk: () => deps.backups?.snapshotPreRisk() ?? true"
+        },
+        {
+          "path": "apps/server/src/handlers/projects.ts",
+          "start_line": 24,
+          "end_line": 43,
+          "symbol": "ProjectHandlerDeps.snapshotPreRisk?"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 618,
+          "end_line": 663,
+          "symbol": "createClientMessageHandler(...) call site"
+        }
+      ],
+      "claim": "Six collaborators on `ClientMessageDeps` are declared optional \"when the wiring provides none\", and each absent branch is a silent no-op or empty reply (~20 `deps.x?.` sites at lines 215-306). But there is exactly ONE production wiring, apps/server/src/main.ts:618-663, and it supplies ALL SIX: tunnelControl, isTunnelClient, monitor, listNetworkAdapters, backups (list/restore/snapshotPreRisk) and controller (8 methods). The configuration the optionality exists for has never occurred. Worse, the hypothetical config is not benign: `snapshotPreRisk` is a fail-CLOSED data-loss guard, and the absent-branch default is `?? true` (client-message.ts:342, projects.ts:40) plus `if (deps.backups && !deps.backups.snapshotPreRisk())` at line 441. So an accidental omission of `backups` from the deps object \u2014 a plain object-literal edit, no type error, since the field is optional \u2014 silently disables the pre-risk snapshot on `loadProject` and on the bulk patch re-rig while both paths keep mutating live state. The generality that exists for a nonexistent caller is the mechanism by which the guard can fail open.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:618-663 read in full: the single `createClientMessageHandler` call passes tunnelControl (637), isTunnelClient (638), monitor (640), listNetworkAdapters (641), backups (645-652) and controller (653-662). No other call site exists in non-test code."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"deps.controller|controller\\?\\.|backups\\?\\.|listNetworkAdapters\\?|tunnelControl\\?|isTunnelClient\\?|monitor\\?\\.\" apps/server/src/handlers/client-message.ts",
+          "detail": "~20 optional-chain call sites (215, 217, 227, 228, 237, 241, 248, 252, 256, 260, 264, 265, 284, 294, 303, \u2026) \u2014 each an unreachable no-op branch in the shipped wiring."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/handlers/client-message.ts:342 `snapshotPreRisk: () => deps.backups?.snapshotPreRisk() ?? true` and :441 `if (deps.backups && !deps.backups.snapshotPreRisk())`; apps/server/src/handlers/projects.ts:40 `if ((deps.snapshotPreRisk?.() ?? true) === false)`. All three default a data-loss guard to PASS when the optional collaborator is absent."
+        }
+      ],
+      "proposed_fix": "Make the six collaborators REQUIRED on `ClientMessageDeps` (and `snapshotPreRisk` required on `ProjectHandlerDeps`). Tests that genuinely want the disabled shape pass explicit no-op stubs, which makes 'backups disabled' a stated test intent rather than an ambient default. That deletes ~20 unreachable branches and, critically, turns a dropped `backups` field from a silent fail-open into a compile error. If a genuinely backup-less deployment is ever wanted, model it as an explicit `backups: DISABLED_BACKUPS` sentinel whose snapshotPreRisk returns a value the call sites decide on deliberately \u2014 not as an absent key defaulted to `true`.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Removing the `?` deletes the `?? true` / `deps.backups && \u2026` absent-collaborator fallbacks around the pre-risk snapshot guard and the no-op branches for controller/tunnel/adapters. The intent is to make those paths unreachable-by-type rather than unreachable-by-luck, but it does remove fallback branches, so this must not be auto-applied."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Drop `?` from the six fields in ClientMessageDeps and from ProjectHandlerDeps.snapshotPreRisk; run `pnpm typecheck` \u2014 every remaining error is a call site that was relying on the never-occurring absent configuration (expected: only test harnesses).",
+          "Delete the now-dead `?? []` / `?? false` / `?? true` fallbacks and the `deps.backups &&` short-circuit at client-message.ts:441; run `pnpm test` in apps/server.",
+          "Grep for any second `createClientMessageHandler` call in non-test code to confirm the single-wiring premise before committing."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0003",
+      "dedup_key": "7f8200fa9137c50c",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 71,
+          "end_line": 72,
+          "symbol": "VOICE_MODE"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 157,
+          "end_line": 163,
+          "symbol": "host = new EngineHost(project0) / voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null"
+        },
+        {
+          "path": "apps/server/src/boot.ts",
+          "start_line": 70,
+          "end_line": 110,
+          "symbol": "boot() \u2014 `if (deps.voiceHost) \u2026 else deps.host.\u2026`"
+        },
+        {
+          "path": "apps/server/src/voice-engine-host.ts",
+          "start_line": 1,
+          "end_line": 648,
+          "symbol": "VoiceEngineHost"
+        }
+      ],
+      "claim": "`VOICE_MODE` (main.ts:72) defaults to LEGACY when LEDRUMS_ENGINE is unset, yet every path that actually launches the product sets it to voice: scripts/dev.mjs:32 (`process.env.LEDRUMS_ENGINE ??= 'voice'`) and apps/desktop/src-tauri/src/lib.rs:380-386 (which explicitly defaults it to \"voice\" precisely because the server would otherwise pick legacy). So the legacy `EngineHost` render path is unreachable in dev, unreachable in the desktop app, and reachable only by a human typing LEDRUMS_ENGINE=legacy. The cost is not the dead path itself but the branch matrix it imposes on live code: 29 `voiceHost ?? host` / `if (voiceHost)` / `voiceHost?.` sites across non-test server source, a `voiceHost: VoiceEngineHost | null` field threaded through BootDeps and ClientMessageDeps, and a subtle split of authority \u2014 `host.engine.getProject()` remains the project-state owner (controller-monitor.ts:605-611, client-message.ts:346) even in voice mode, so the legacy host is half-alive rather than cleanly off. Every server feature must now be reasoned about twice, and history shows the branch is where bugs hide (docs/prompts/s1-patch-core-seam.md records kit/output mutations being dispatched to the legacy host only, never the voice host).",
+      "evidence": [
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"LEDRUMS_ENGINE\" -g '!node_modules' -g '!dist'",
+          "detail": "scripts/dev.mjs:32 sets voice by default; apps/desktop/src-tauri/src/lib.rs:385-386 sets voice by default with a comment saying the server 'defaults to the legacy engine unless LEDRUMS_ENGINE=voice, so set it here'; main.ts:72 is the only reader. No shipping entry point leaves it unset."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"voiceHost \\?\\? host|if \\(voiceHost\\)|voiceHost\\?\\.|host\\.engine\" apps/server/src -g '!*.test.ts' | wc -l",
+          "detail": "29 dual-host branch sites in non-test server source."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/boot.ts:72 `if (deps.voiceHost) deps.voiceHost.start(); else deps.host.start();` and :108 the mirrored stop \u2014 the mode fork reaches all the way into lifecycle orchestration; BootDeps carries both `host` and `voiceHost: VoiceEngineHost | null` (boot.ts:16-17)."
+        }
+      ],
+      "proposed_fix": "Retire the mode flag: make VoiceEngineHost the only render host, delete `VOICE_MODE`, `EngineHost`'s render/output responsibilities and the 29 `voiceHost ?? host` branches, and give the project-state ownership currently sitting on `host.engine` an explicit home (either move it onto VoiceEngineHost or extract a small ProjectStore that both the handler and the controller monitor read). This is a structural call for a human \u2014 the legacy engine may still be someone's fallback plan \u2014 but the current state is the worst of both: the legacy path is untested by any real run, yet still owns live project state.",
+      "interface_delta": {
+        "exported_symbols_removed": 3,
+        "exported_symbols_added": 1,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Deleting the mode fork removes the `else deps.host.start()` / `else deps.host.stop()` lifecycle fallbacks and every `voiceHost ?? host` degradation branch."
+      },
+      "fix_size_loc": 400,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/server",
+          "apps/desktop",
+          "scripts"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": false,
+        "requires_mutation": true,
+        "steps": [
+          "Ask the owner whether the legacy engine is a supported configuration or vestigial \u2014 the answer decides the whole finding; do not delete on inference.",
+          "If vestigial: hard-code VOICE_MODE=true, run `pnpm test` in apps/server, and note which tests only exercise the legacy branch (client-message.test.ts:87 passes `voiceHost: null`) \u2014 those are the tests that were keeping the dead path warm.",
+          "Trace `host.engine.getProject()` readers (controller-monitor.ts:605-611, client-message.ts:346, projects.ts) to size the project-state extraction before removing EngineHost."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0004",
+      "dedup_key": "a32bfc9c9aff810e",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ui/Slider.svelte",
+          "start_line": 44,
+          "end_line": 70,
+          "symbol": "inferUnit / unit $derived"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte",
+          "start_line": 75,
+          "end_line": 113,
+          "symbol": "format={pct}"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/ModulationParamsSection.svelte",
+          "start_line": 110,
+          "end_line": 110,
+          "symbol": "format={pct}"
+        }
+      ],
+      "claim": "`inferUnit(formatted, numeric)` (Slider.svelte:65-70) reverse-engineers a unit suffix out of the caller's already-formatted string by string-subtraction: strip the numeric prefix, else the numeric suffix, else \u2014 the final fallback at line 69 \u2014 `return formatted` wholesale. The generality is unearned AND actively wrong, because the app's dominant formatter rescales the value. With `format={pct}` where `pct = v => `${Math.round(v * 100)}%`` (node-options.ts:116, and re-defined in EnvelopeEditor.svelte:51, ModulationParamsSection.svelte:32, EnvelopeEditorView.svelte:178), a value of 0.6 gives `inputValue = \"0.6\"` and `display = \"60%\"`. `\"60%\"` neither starts nor ends with `\"0.6\"`, so inferUnit hits line 69 and returns `\"60%\"` as the *unit*; the markup then renders the text input (`0.6`) next to a unit span reading `60%` (lines 130-161). Six live call sites use `format={pct}`: Gate threshold, band cutoffs, chance, modulation depth, sweep amount. The deletion test is decisive \u2014 delete inferUnit and complexity does not reappear anywhere, because the caller already knows its unit and could simply pass it.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Slider.svelte:44 `const unit = $derived(inferUnit(display, inputValue));`, :65-70 the four-branch heuristic ending in `return formatted;`, and :130-161 where the raw `inputValue` goes into the <input> while `unit` is rendered as a sibling <span class=\"unit\">."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"const pct|export const pct\" apps/web/src/lib -g '*.ts' -g '*.svelte'",
+          "detail": "pct is defined as `v => `${Math.round(v * 100)}%`` in node-options.ts:116, EnvelopeEditor.svelte:51, ModulationParamsSection.svelte:32, EnvelopeEditorView.svelte:178 \u2014 a rescaling formatter, so format(v) never contains the numeric text inferUnit is trying to subtract."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"<Slider\" apps/web/src -A4 | rg \"format=\"",
+          "detail": "Live `format={pct}` sliders: ContainerNodeInspector.svelte:75 (Gate threshold), :92 (Band cutoff), :113 (Chance, inline pct), ModulationParamsSection.svelte:110 (Modulation depth), EnvelopeEditor.svelte:67 (Sweep amount)."
+        }
+      ],
+      "proposed_fix": "Replace the inference with declaration: add a `unit?: string` prop, render `{unit}` directly, and delete `inferUnit` entirely. Callers that currently pass `format={pct}` become `unit=\"%\"` plus either a scaled `value`/`min`/`max` (0-100) or a `display` transform pair \u2014 the important part is that the component stops guessing what the caller meant. Leave `format` for the pure-display case (`showValue` readouts with no editable input) or drop it in favour of `unit` + `precision`.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "inferUnit is display-only string manipulation; it guards nothing and has no error, retry or validation branch."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Confirm the rendering bug without editing: in a node REPL evaluate the Slider's own logic for value=0.6, step=0.01 \u2014 formatNumber gives \"0.6\", pct gives \"60%\", and inferUnit(\"60%\",\"0.6\") falls through all three branches to `return formatted` = \"60%\".",
+          "Run `pnpm ui-shot` against a surface with a pct slider (ContainerNodeInspector's Gate threshold) and read the readout: it should show the numeric box and a redundant/incorrect unit span.",
+          "After the fix, re-shoot the same surfaces and diff."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0005",
+      "dedup_key": "3b14bad66df405fc",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/shot-seam.ts",
+          "start_line": 21,
+          "end_line": 24,
+          "symbol": "preview store imports"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/TriggerGraphView.svelte",
+          "start_line": 106,
+          "end_line": 415,
+          "symbol": "dropActive / spliceArmedPreview / wireInvalidPreview / lintPreview DEV branches"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/SectionsView.svelte",
+          "start_line": 45,
+          "end_line": 45,
+          "symbol": "preview $derived"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/wire-preview.svelte.ts",
+          "start_line": 24,
+          "end_line": 43,
+          "symbol": "wireInvalidPreview / spliceArmedPreview"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/lint-preview.svelte.ts",
+          "start_line": 28,
+          "end_line": 28,
+          "symbol": "lintPreview"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/canvas-drop-preview.svelte.ts",
+          "start_line": 27,
+          "end_line": 27,
+          "symbol": "canvasDropPreview"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/sections-dnd-preview.svelte.ts",
+          "start_line": 28,
+          "end_line": 28,
+          "symbol": "sectionsDndPreview"
+        }
+      ],
+      "claim": "shot-seam.ts declares ~20 operations, but parsing every `state` spec in scripts/ui-shot/shots.json yields only five verbs actually driven by a preset: view, add, select, gallery, settings. The other fifteen \u2014 previewSectionsDnd, previewWireInvalid, previewSpliceArmed, previewCanvasDrop, previewLintIssues, previewBackups, previewToasts, mockController, mixWithLayers, emptyScope, notReachingOutput, setSearch, newGraph, openGraph \u2014 are carried for hypothetical captures. That would be cheap if it stayed in the dev-only module, but five of them required a *production* mechanism: four standalone override-store modules (wire-preview, lint-preview, canvas-drop-preview, sections-dnd-preview) plus five `import.meta.env.DEV && \u2026Preview.current` branches wired into the real render paths of TriggerGraphView (dropActive at :106, splice arming at :342, an entire synthetic-wire `$derived` at :386-390, the lint strip source at :415) and SectionsView (:45). The screenshot tool's speculative op set has leaked into the components' live derivations. Deletion test: remove the unused ops and their override stores and the production views get simpler with no capability lost \u2014 nothing calls them.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "python3",
+          "command": "python3 - <<'EOF' \u2026 parse shots.json, collect the verb before ':' in every state spec \u2026 EOF",
+          "detail": "Printed ['add', 'gallery', 'select', 'settings', 'view'] \u2014 the complete set of ops any preset drives. Every preview*/mock* op in shot-seam.ts is unreferenced by the preset file."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"sectionsDndPreview|wireInvalidPreview|spliceArmedPreview|lintPreview|canvasDropPreview\" apps/web/src -g '!*.test.ts'",
+          "detail": "Only two consumers exist per store: shot-seam.ts (set/clear) and a production view. TriggerGraphView.svelte:106/342/372/390/415 and SectionsView.svelte:45 each gate real render logic on a DEV-only preview override."
+        },
+        {
+          "kind": "read",
+          "detail": "shot-seam.ts:1-14 states the intent (\"To teach ui-shot a new app state, add ONE method here\") and :100-296 shows the preview ops, several of which \u2014 previewBackups (:203-227) and mockController (:283-300) \u2014 run 30-frame requestAnimationFrame re-assert loops to fight the live dev server's own state echoes."
+        }
+      ],
+      "proposed_fix": "Split the seam by cost. Ops that only call existing public store methods (newGraph, openGraph, setSearch, emptyScope, mixWithLayers) are free \u2014 keep them. Ops that required a production override store are not: delete previewWireInvalid/previewSpliceArmed/previewCanvasDrop/previewLintIssues plus the four *-preview.svelte.ts modules and the five DEV branches in TriggerGraphView/SectionsView, unless a named, checked-in preset needs each one \u2014 in which case add that preset to shots.json in the same change so the affordance has a live caller. The rule to adopt: a shot-seam op may not introduce a branch into a production component; if the state cannot be reached through the real store, that is a signal the state is not reachable by users either.",
+      "interface_delta": {
+        "exported_symbols_removed": 9,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The preview overrides are display-state injections; they gate no guard, validation or error path. The `import.meta.env.DEV &&` branches are DCE'd in production, so removing them changes no shipped behaviour."
+      },
+      "fix_size_loc": 220,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Re-run the shots.json verb extraction to confirm the used-op set, then diff it against the ShotSeam interface members in shot-seam.ts:35-109.",
+          "Search the repo (docs/handoff/rock-solid/*, docs/prompts/*) for `--state \"\u2026preview\u2026\"` invocations to catch ad-hoc CLI usage that shots.json would not show \u2014 an op used only in a one-off handoff command is still speculative once that slice shipped.",
+          "Delete one preview store (canvas-drop-preview is the smallest, single branch at TriggerGraphView:106), run `pnpm typecheck` and `pnpm ui-shot patch-graph --strict` to prove no preset regressed."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0006",
+      "dedup_key": "a77df0977b18b540",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/modulation-parity.ts",
+          "start_line": 1,
+          "end_line": 101,
+          "symbol": "MODULATION_PARITY_CASES / PARITY_PHASES / legacyEnvValue / mappingEnvValue / ParityCase"
+        },
+        {
+          "path": "packages/core/src/voice/index.ts",
+          "start_line": 20,
+          "end_line": 26,
+          "symbol": "export { \u2026 } from './modulation-parity'"
+        }
+      ],
+      "claim": "modulation-parity.ts exists to prove that a legacy per-param envelope sweep and its equivalent Mapping agree sample-for-sample across the S33\u2192S35 migration. Its own header says so, and its instruction \u2014 \"Importable + reusable \u2014 do not inline these into a test file\" \u2014 is what put it in the production barrel at voice/index.ts:20-26. The migration has shipped: apps/web/src/lib/trigger-lab/store/hydrate.ts:283 now bakes the envelope\u2192mapping conversion at hydrate time, and the only production use of the modulation model is `envelopeToMapping` from modulation.ts (live in modifier-graph.ts:43). `legacyEnvValue` (modulation-parity.ts:86) is a hand-copied historical formula with NO production counterpart anywhere in the tree \u2014 it is a frozen replica of code that no longer exists. Grepping all five exported symbols finds exactly two consumers, both test files: packages/core/src/voice/modulation.test.ts:17-20 and apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:37-40. Five symbols of a pure library's public API are a test fixture; every downstream package that imports `voice` gets them in autocomplete and in the API-compatibility surface.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"MODULATION_PARITY_CASES|legacyEnvValue|mappingEnvValue|PARITY_PHASES|ParityCase\" -g '!node_modules' -g '!dist' -g '!*.json'",
+          "detail": "Consumers outside the defining file: packages/core/src/voice/index.ts:21-25 (the barrel re-export), packages/core/src/voice/modulation.test.ts:17-20/223-231, apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:37-40. Zero production consumers."
+        },
+        {
+          "kind": "read",
+          "detail": "modulation-parity.ts:1-12 header \u2014 \"Legacy env-sweep \u2194 modulation-mapping PARITY FIXTURE (S33 \u2192 S35)\u2026 S35's EnvMap\u2192envelope-node migration reuses these cases + helpers to prove pre-migration behaviour is byte-preserved after the legacy field is removed.\" The migration it was staged for is complete."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"envelopeToMapping\" -g '!node_modules' -g '!*.md' | grep -v test",
+          "detail": "Production users of the modulation model are modifier-graph.ts:21/43 and web hydrate.ts:243/283 \u2014 none of them touch the parity module. `legacyEnvValue` has no production analogue at all."
+        }
+      ],
+      "proposed_fix": "Keep the regression value, drop the public surface. Move modulation-parity.ts to a test-only location that both suites can still import (a `packages/core/src/voice/__fixtures__/` file, or a dedicated `@ledrums/core/testing` subpath export), and delete the five re-exports from voice/index.ts. The cross-package import from the web test is the only reason it is in the barrel; a `testing` subpath serves that honestly and keeps fixtures out of the production API contract.",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure fixture data and two pure numeric helpers; no guard, retry or validation is involved. The regression coverage is preserved by relocating rather than deleting."
+      },
+      "fix_size_loc": 15,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove the export block at voice/index.ts:20-26 and run `pnpm typecheck` \u2014 the only breakages should be modulation.test.ts and hydrate.envmap.test.ts.",
+          "Re-point those two imports at the relocated fixture path and run `pnpm test` to confirm the parity assertions still execute.",
+          "Confirm no consumer outside the repo depends on the barrel entries (packages/core is workspace-internal \u2014 check package.json `exports`)."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0007",
+      "dedup_key": "9b8c2a3de1430e04",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/shell-nav.ts",
+          "start_line": 36,
+          "end_line": 74,
+          "symbol": "initialNav / setView / select / clearSelection / isSelected"
+        },
+        {
+          "path": "apps/web/src/lib/app/shell-store.svelte.ts",
+          "start_line": 13,
+          "end_line": 57,
+          "symbol": "ShellStore"
+        }
+      ],
+      "claim": "shell-nav.ts states its own rationale: \"a PURE reducer (no runes, no DOM) so the invariants are unit-testable in the node test env. shell-store.svelte.ts is a thin rune wrapper over this.\" The invariant being protected is two lines \u2014 `setView` returns `{...nav, view, selection: null}` when the view changes (shell-nav.ts:46-49). Around that, the split produces an exported `ShellNav` type, five exported transition functions, and a ShellStore whose every member is a one-line forward (`get view` \u2192 `this.s.view`, `setView` \u2192 `nav.setView(this.s, view)`, `select`, `clearSelection`, `isSelected` \u2014 shell-store.svelte.ts:28-56). The reducer has exactly one consumer, and the only state ShellStore genuinely owns is `liveRouting`, which the Phase-1 map already flags as not belonging to navigation. Deletion test: fold shell-nav into ShellStore and nothing reappears at other callers \u2014 there are none; the invariant still has one home (the setter), and the tests move from testing `setView(nav, v)` to testing `new ShellStore().setView(v)`, which is the behaviour users actually get.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "shell-nav.ts read in full (79 lines): VIEWS, initialNav, setView, select, clearSelection, isSelected, parseSearch, plus View/PatchNodeId/Selection/ShellNav types. setView's entire invariant is the `selection: null` at line 48."
+        },
+        {
+          "kind": "read",
+          "detail": "shell-store.svelte.ts read in full (57 lines): every public member except patchRouting/setPatchRouting is a one-line delegation to the nav module; the class holds one $state<ShellNav> and one $state<PatchRouting|null>."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"shell-nav\" apps/web/src",
+          "detail": "Imported by shell-store.svelte.ts and its own test; components consume the store, not the reducer \u2014 confirming a single production consumer for the extracted module."
+        }
+      ],
+      "proposed_fix": "Inline the transitions into ShellStore (setView keeps the clear-selection line; select/clearSelection/isSelected become three short methods) and keep only the genuinely shared, genuinely pure pieces in a small module: the `View`/`Selection`/`PatchNodeId` types, `VIEWS`, and `parseSearch` (which parses a URL and has real edge cases). Retarget shell-nav.test.ts at ShellStore. Separately, move `liveRouting`/`patchRouting` off the navigation store \u2014 a Patch-view side channel is not navigation state.",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The transitions are pure state mapping; the only invariant (clear selection on view change) is preserved verbatim by moving it into the setter."
+      },
+      "fix_size_loc": 90,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Confirm the single-consumer premise: `rg -n \"from './shell-nav'|from '../shell-nav'\" apps/web/src` should return only shell-store.svelte.ts and the test.",
+          "Inline the five functions, delete them from shell-nav.ts, run `pnpm typecheck`.",
+          "Rewrite shell-nav.test.ts against ShellStore (Svelte's runes work under the component test env) and run `pnpm test` \u2014 coverage of the view-switch-clears-selection invariant must remain."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0008",
+      "dedup_key": "71b7fea076535b9f",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+          "start_line": 15,
+          "end_line": 47,
+          "symbol": "type aliases + value re-exports of voice.*"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.ts",
+          "start_line": 29,
+          "end_line": 55,
+          "symbol": "re-export block \"so the public ./sim API is unchanged\""
+        }
+      ],
+      "claim": "sim.envelopes.ts contains almost no behaviour: lines 17-24 are eight `export type X = voice.X` aliases, lines 32-47 destructure eleven values straight off `voice` and re-export them. The only original code is `ENV_KINDS`, `clampUnit`, and a `ParamSpec`/`ParamValue` pair that the file's own comment says is \"structurally identical to the core type\". sim.ts then re-exports twenty of those same symbols again (lines 30-53) with the comment \"Re-export the extracted modules so the public `./sim` API is unchanged\" \u2014 a second aliasing hop whose stated goal is import-path stability inside a single app that has no external consumers. The scan for unused exports flags `ENV_KINDS` (sim.envelopes.ts:49) as referenced by nothing outside its own file. So the app has a three-hop path \u2014 `@ledrums/core` \u2192 sim.envelopes \u2192 sim \u2192 134 consumer files \u2014 where every hop is identity. Deletion test: delete sim.envelopes and the sim.ts block, and complexity does not reappear across the consumers; each one imports the type from `@ledrums/core` directly, which is where the truth already lives.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "sim.envelopes.ts read in full: lines 17-24 are pure `export type X = voice.X`; lines 32 and 35-47 are `export const { \u2026 } = voice`. The file's own header calls it single-sourcing and the value re-exports carry the comment \"proof there is one implementation, not a copy\"."
+        },
+        {
+          "kind": "read",
+          "detail": "sim.ts:28-55 \u2014 \"Re-export the extracted modules so the public `./sim` API is unchanged\" followed by twenty symbol re-exports plus two `export *` lines, all originating in core."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "python3",
+          "command": "unused-export scan over all non-test .ts/.svelte files, matching `export (function|class|const|interface|type|enum) NAME` against a token index of every other file",
+          "detail": "Reported `apps/web/src/lib/trigger-lab/sim.envelopes.ts:49 ENV_KINDS testfiles=0 infile=1` \u2014 declared, exported, referenced by nothing."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -l \"trigger-lab/sim'|from './sim'|from '../sim'|sim.envelopes|sim.graph-compilation|sim.trigger-source\" apps/web/src | wc -l",
+          "detail": "134 files route through the sim barrel \u2014 the blast radius of the indirection, and the reason it has never been unwound."
+        }
+      ],
+      "proposed_fix": "Delete the aliasing. Run a codemod that rewrites `import { Envelope, sampleEnvelope, \u2026 } from './sim'` (and './sim.envelopes') to `import { voice } from '@ledrums/core'` for every symbol that sim.envelopes merely forwards, then delete sim.envelopes.ts's alias/re-export sections and the sim.ts re-export block, keeping only genuinely web-local code (clampUnit, and ParamSpec if it truly diverges from voice.ParamSpec \u2014 if it does not, delete it too and import the core type). Delete ENV_KINDS outright. This is mechanical but wide; it belongs on the structural plan, not in a drive-by.",
+      "interface_delta": {
+        "exported_symbols_removed": 28,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure type aliases and value re-exports; no runtime behaviour, guard or validation is involved."
+      },
+      "fix_size_loc": 300,
+      "blast_radius": {
+        "files_touched": 40,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "For each symbol in sim.envelopes.ts's re-export list, confirm it is byte-identical to the core symbol (the value re-exports guarantee reference identity by construction; the type aliases are `= voice.X`).",
+          "Delete `ENV_KINDS` alone first and run `pnpm typecheck` \u2014 a clean run proves the unused-export scan.",
+          "Codemod one consumer directory (apps/web/src/lib/app/docks) off the barrel, run `pnpm typecheck` and `pnpm test`, then widen."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0009",
+      "dedup_key": "8d262fc7971e9cef",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/ws-protocol.ts",
+          "start_line": 6,
+          "end_line": 31,
+          "symbol": "export type { \u2026 } from '@ledrums/protocol'"
+        },
+        {
+          "path": "apps/web/src/lib/ws/protocol-types.ts",
+          "start_line": 5,
+          "end_line": 26,
+          "symbol": "export type { \u2026 } from '@ledrums/protocol'"
+        }
+      ],
+      "claim": "When the wire contract was consolidated into @ledrums/protocol, neither consumer was retargeted. Instead each grew a re-export barrel with the same stated reason \u2014 server: \"Re-export the types here so the server's existing `./ws-protocol` import paths keep working\"; web: \"re-exports those types for the web's existing import paths\". These are twenty-two and twenty-one symbol names respectively, hand-listed and therefore hand-maintained: the two lists have already drifted (the server list carries MonitorEventType and TunnelStatus; the web list carries ControllerTestPattern, OscListenInfo and VoiceStat \u2014 each has entries the other lacks), and adding a protocol type means editing up to three files. The back-compat generality is aimed at a caller that does not exist: every importer is inside this monorepo and can be retargeted mechanically. Deletion test: remove the barrels and the real content of each file \u2014 decodeClient/encodeServer/serializeModel/frameToRgbBytes on the server, decodeServer on the web \u2014 remains and is genuinely earned; only the identity forwarding disappears.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/ws-protocol.ts:6-31 (22 re-exported names) and apps/web/src/lib/ws/protocol-types.ts:5-26 (21 names), both read in full alongside their stated rationale comments."
+        },
+        {
+          "kind": "read",
+          "detail": "Comparing the two lists shows drift: server-only entries MonitorEventType, TunnelStatus; web-only entries ControllerTestPattern, OscListenInfo, VoiceStat, DiscoveredController. Neither list is derivable from the other, so both must be updated by hand as the protocol grows."
+        },
+        {
+          "kind": "read",
+          "detail": "The non-forwarding content is real and stays: ws-protocol.ts:47-58 decodeClient, :66-68 encodeServer, :71-95 serializeModel, :102-112 frameToRgbBytes; protocol-types.ts:50-68 decodeServer with its dev-warn silent-drop contract."
+        }
+      ],
+      "proposed_fix": "Rewrite consumer imports to take types from '@ledrums/protocol' directly (a find-replace on the type-only import specifiers), delete both re-export blocks, and keep each file as what it actually is: the server-side and web-side runtime codecs. Adding a protocol type then touches one file.",
+      "interface_delta": {
+        "exported_symbols_removed": 43,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Type-only re-exports erase at compile time; decodeClient's throw contract and decodeServer's silent-drop contract are untouched."
+      },
+      "fix_size_loc": 120,
+      "blast_radius": {
+        "files_touched": 30,
+        "packages_touched": [
+          "apps/server",
+          "apps/web",
+          "packages/protocol"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Delete the re-export block in apps/server/src/ws-protocol.ts and run `pnpm typecheck` \u2014 the error list enumerates exactly the import sites to retarget.",
+          "Repeat for apps/web/src/lib/ws/protocol-types.ts.",
+          "Run `pnpm test` and `pnpm build`; type-only changes should be behaviour-neutral by construction."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0010",
+      "dedup_key": "436b5c98452a7799",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/io/src/pixlite/index.ts",
+          "start_line": 34,
+          "end_line": 40,
+          "symbol": "export { FakePixliteClient, makeFakeProber, defaultIdentity, defaultStats, type FakePixliteClientOptions }"
+        },
+        {
+          "path": "packages/io/src/pixlite/fake.ts",
+          "start_line": 1,
+          "end_line": 126,
+          "symbol": "FakePixliteClient / defaultIdentity / defaultStats / makeFakeProber"
+        }
+      ],
+      "claim": "packages/io/src/index.ts does `export * from './pixlite'`, and pixlite/index.ts:34-40 re-exports the in-memory fake, its options type, and two canned-fixture builders. The module's own header calls it \"the second implementation of PixliteClient that makes the interface a real seam\" \u2014 but a fake used only by tests does not make a seam real; the production tree has exactly one implementation, HttpPixliteClient, constructed once at apps/server/src/main.ts:603. The five fake symbols are consumed only by apps/server/src/controller-monitor.test.ts:3. Same shape as the modulation-parity finding, in a different package: a test double occupying the production API surface, shipped in the built package. Note the seam is doubled \u2014 HttpPixliteClient ALSO takes an injectable `HttpTransport` (client.ts:36, defaulting to nodeHttpTransport at :86/:144), so the code carries two layers of substitutability for one real network implementation.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/io/src/pixlite/index.ts read in full \u2014 the barrel exports FakePixliteClient, makeFakeProber, defaultIdentity, defaultStats and FakePixliteClientOptions alongside the production surface; packages/io/src/index.ts:5 does `export * from './pixlite'`, hoisting them to the package root."
+        },
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"FakePixliteClient|makeFakeProber|HttpTransport|nodeHttpTransport|expandTargets|expandCidr|RankedCandidate\" -g '!node_modules' -g '!dist' -g '!*.md' -g '!*.json' | grep -v 'packages/io/src/pixlite/'",
+          "detail": "The only consumer outside the defining directory is apps/server/src/controller-monitor.test.ts:3/39/44/56. No production file imports the fake."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/pixlite/client.ts:20-38 declares a second injectable seam (`HttpTransport`), defaulted to `nodeHttpTransport` at :86 and :144 \u2014 a transport-level substitution point layered under the client-level one, with one real implementation each."
+        }
+      ],
+      "proposed_fix": "Move the fake behind a separate entry point (`@ledrums/io/testing`, or a `pixlite/testing.ts` the server test imports by deep path) and drop the five symbols from the package barrel. Then pick ONE substitution layer and delete the other: if tests inject FakePixliteClient, HttpPixliteClient does not also need an injectable HttpTransport (its own tests can use the transport seam and the server tests the client seam \u2014 but the code should not carry both merely because each was convenient once).",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Relocating a test double changes no guard, retry or timeout. Collapsing the transport seam would touch nodeHttpTransport's per-request timeout, so that half is deliberately left as a separate judgement call."
+      },
+      "fix_size_loc": 30,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/io",
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove the fake re-export block from packages/io/src/pixlite/index.ts and run `pnpm typecheck` \u2014 the only breakage should be apps/server/src/controller-monitor.test.ts.",
+          "Point that test at the new testing entry point and run `pnpm test`.",
+          "Before collapsing the HttpTransport seam, check packages/io/src/pixlite/client.test.ts to see which layer its 197 lines actually drive."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "speculative-generality-0011",
+      "dedup_key": "f2f1b4b39665f586",
+      "lens": "speculative-generality",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/geometry/pixel-grid.ts",
+          "start_line": 128,
+          "end_line": 136,
+          "symbol": "nearestPixelWithin"
+        },
+        {
+          "path": "packages/core/src/voice/graph-integrity.ts",
+          "start_line": 218,
+          "end_line": 223,
+          "symbol": "assertTriggerGraphIntegrity"
+        },
+        {
+          "path": "packages/core/src/canvas/registry.ts",
+          "start_line": 33,
+          "end_line": 35,
+          "symbol": "listCanvasScenes"
+        }
+      ],
+      "claim": "Phase 1's hunch that pixel-grid has no live caller is WRONG \u2014 buildPixelGrid, forEachPixelWithin and nearestPixelIdWithin are each used by real effects (rain-3d, spark-arc, lightning, confetti-burst). But the FOURTH function, `nearestPixelWithin` (pixel-grid.ts:128), is explicitly documented as an \"Object-returning convenience over nearestPixelIdWithin\" and every one of its call sites is in pixel-grid.test.ts. It exists because the allocation-free primitive felt unfriendly, for a caller that never materialised \u2014 and it re-derives the distance the primitive deliberately discarded. Likewise `assertTriggerGraphIntegrity` (graph-integrity.ts:218) is a throwing wrapper over `validateTriggerGraphIntegrity` with no caller anywhere, including tests: a fail-fast affordance nobody opted into, in a codebase whose actual policy is to surface issues as data (`issues[]`). `listCanvasScenes` (canvas/registry.ts:33) completes the registry's CRUD quartet and is likewise uncalled \u2014 the web reads scenes from its own store, not from core's registry.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "tool": "rg",
+          "command": "rg -n \"forEachPixelWithin|nearestPixelIdWithin|nearestPixelWithin|buildPixelGrid\" -g '!node_modules' -g '!dist' -g '!*.json' | grep -v 'geometry/pixel-grid.ts:'",
+          "detail": "buildPixelGrid/forEachPixelWithin/nearestPixelIdWithin appear in confetti-burst.ts, rain-3d.ts, spark-arc.ts, lightning.ts (production). nearestPixelWithin appears ONLY at pixel-grid.test.ts:4/84/129 \u2014 this both rejects the Phase-1 hunch and isolates the one genuinely unused function."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "python3",
+          "command": "unused-export scan (export declarations vs a token index of every other non-defining file)",
+          "detail": "Reported `packages/core/src/voice/graph-integrity.ts:218 assertTriggerGraphIntegrity testfiles=0 infile=1` and `packages/core/src/canvas/registry.ts:33 listCanvasScenes testfiles=0 infile=1` \u2014 declared and exported, referenced nowhere, not even by their own tests."
+        },
+        {
+          "kind": "read",
+          "detail": "pixel-grid.ts:120-136 \u2014 the doc on nearestPixelIdWithin states the allocation-free contract (\"no closure, no result object \u2014 safe on a per-particle-per-frame hot path; callers needing the distance recompute it\"), and nearestPixelWithin immediately undoes it for a hypothetical caller."
+        }
+      ],
+      "proposed_fix": "Delete all three. For nearestPixelWithin, rewrite the two test assertions against nearestPixelIdWithin (the test is already proving brute-force equivalence, which the id alone establishes). For assertTriggerGraphIntegrity, if a throwing form is ever wanted the caller can write `if (issues.length) throw` in one line at the site that wants it. For listCanvasScenes, delete unless a scene-browser UI is imminent \u2014 and if it is, add it with its caller.",
+      "interface_delta": {
+        "exported_symbols_removed": 3,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "assertTriggerGraphIntegrity is a throwing validation wrapper. It has no callers, so deleting it removes no reachable guard \u2014 but it IS a validation surface, so the honest answer is true and this should not be auto-applied without a human confirming nothing plans to call it."
+      },
+      "fix_size_loc": 25,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Delete the three functions and run `pnpm typecheck` \u2014 only pixel-grid.test.ts:4/84/129 should break.",
+          "Rewrite those assertions against nearestPixelIdWithin and run `pnpm test` in packages/core.",
+          "Confirm packages/core's package.json `exports` has no external consumer that could depend on the removed names."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "speculative-generality",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

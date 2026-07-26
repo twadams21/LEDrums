@@ -1,0 +1,649 @@
+{
+  "artifact": "02-findings/middle-man",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "middle-man",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "apps/server/src/tunnel-control.ts \u2014 'TunnelControl mostly caches status/url/error and forwards start/stop to TunnelManager; the second layer may not be earning its place' (server.json)",
+      "why_rejected": "Killed on reading. TunnelControl is a state machine across manager lifetimes, not a forwarder. start() (lines 71-107) is idempotent-while-starting, calls ensurePinGated() BEFORE any spawn (the documented S3 invariant that a public URL can never exist un-gated), builds a FRESH manager per start, and uses `if (this.manager !== manager) return` identity checks in three async callbacks to defeat the stop-while-starting race. stop() (110-118) distinguishes deliberate teardown from crash and early-returns when already off-and-clean. TunnelManager owns one child process; TunnelControl owns the off/starting/live/error status the UI renders across children. Deleting it would delete the PIN interlock and the race guards. Two distinct layers, both earning their keep."
+    },
+    {
+      "candidate": "encodeServer in apps/server/src/ws-protocol.ts:66-68 \u2014 a literal one-line alias of JSON.stringify with 30 call sites",
+      "why_rejected": "Looks like the purest middle-man in the repo and is not one. `encodeServer(msg: ServerMessage): string` constrains its argument to the discriminated union; JSON.stringify(x: any) accepts anything. The wrapper is the only thing stopping a handler from broadcasting an off-contract object, and it is the natural place a future change (envelope version, binary framing, compression) lands without touching 30 call sites. Deleting it would trade 3 lines for 30 unchecked serialization points. Kept \u2014 and deliberately NOT folded into the protocol-barrel finding, whose fix leaves it in place."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/shell-store.svelte.ts \u2014 'ShellStore forwards nearly every method straight to shell-nav' (web-app.json)",
+      "why_rejected": "Rejected. The forwarding is the point: shell-nav.ts is a pure reducer with no runes so its invariants are testable in the node env (shell-nav.test.ts), and ShellStore is the adapter that gives it $state reactivity. That is a type-changing boundary, not a pass-through \u2014 you cannot delete either side and keep both properties. I also checked for the failure mode that WOULD make it a middle-man (consumers importing both surfaces arbitrarily) and it does not occur: 15 files import ShellStore, only App.svelte:9 and LeftRail.svelte:7 touch shell-nav directly and both take things ShellStore does not publish (parseSearch) or re-publishes anyway (View). ShellStore also owns real state of its own, liveRouting (lines 22, 35-41), which has no shell-nav counterpart."
+    },
+    {
+      "candidate": "packages/core/src/modifiers/palette.ts \u2014 'listModifiersByCategory \u2026 the category grouping may be the only real behaviour' (core-geom.json)",
+      "why_rejected": "Rejected as a module; the hunch was half-right and the surviving half moved into finding 6. palette.ts is 41 lines and every one earns its place: it owns the category display order and labels (the UI vocabulary core deliberately holds), derives groups dynamically from the registry so a newly-registered modifier appears with no edit, and drops empty categories so the palette never renders an empty group. It is consumed for real by apps/web/src/lib/app/views/add-node-taxonomy.ts:99 and covered by modifiers.s32.test.ts:199-215. The grouping IS the real behaviour and it is enough."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/chrome/OutputPill.svelte \u2014 one-line markup delegating to StatusPill",
+      "why_rejected": "Rejected. The markup is one line but the component's job is the $derived on line 21, which folds three inputs (link state, OutputStatus, controller takeover) through the pure deriveOutputPill truth table. It encodes a stated safety invariant \u2014 a fire-and-forget Art-Net socket can be open while output is failing, so the pill must not claim LIVE \u2014 that would be lost if the tag were inlined. The delegation to StatusPill is design-system reuse, which is the required pattern here, not a layer."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/views/RefEdge.svelte \u2014 one-line markup delegating to BaseEdge",
+      "why_rejected": "Rejected. @xyflow/svelte requires a component per entry in the edgeTypes registry (PatchGraphView.svelte:76 `const edgeTypes = { wire: WireEdge, ref: RefEdge }`), so the component is the framework's unit of registration \u2014 there is nothing to inline it into. It also computes the bezier path ($derived, lines 10-12) and pins interactionWidth={0} to make the reference wire non-interactive. Framework-mandated indirection is not a middle-man."
+    },
+    {
+      "candidate": "apps/web/src/lib/ui/Separator.svelte \u2014 one-line markup over bits-ui Separator.Root",
+      "why_rejected": "Rejected. It is a design-system primitive: it applies the .lab-sep token styling (--border, orientation-driven 1px sizing) that the repo requires UI to compose from rather than re-declare. The thin-wrapper-over-a-headless-primitive shape is the intended pattern for the styleguide layer, and deleting it would push raw bits-ui plus duplicated CSS into every call site."
+    },
+    {
+      "candidate": "workers/error-ingest/src/index.ts \u2014 a 109-line fetch handler that mostly calls into ./handlers",
+      "why_rejected": "Rejected after a full read. The dispatch is not delegation-only: it owns the bearer auth gate (line 36, before any routing), two distinct body-size caps (1MB for /ingest, 16MB for /backups, with the comment explaining the leaked-token threat model), JSON.parse and ValidationError translation into 400s, and the /backups/object special case that returns a stored body verbatim instead of re-wrapping it (lines 99-105). The handlers are pure over injected stores; the Worker entry owns everything Worker-shaped. Correct split."
+    }
+  ],
+  "items": [
+    {
+      "id": "middle-man-0001",
+      "dedup_key": "6548ac70c0142ee4",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 540,
+          "end_line": 660,
+          "symbol": "TriggerLab showsCtl delegators + forwarders"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 399,
+          "end_line": 416,
+          "symbol": "TriggerLab sectionsCtl delegators"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 2112,
+          "end_line": 2160,
+          "symbol": "TriggerLab section forwarders"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 1983,
+          "end_line": 2050,
+          "symbol": "TriggerLab monitor/controllerTest forwarders"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts",
+          "start_line": 17,
+          "end_line": 24,
+          "symbol": "ShowsController doc-comment stating the delegation contract"
+        }
+      ],
+      "claim": "R20-R24 extracted five rune-owning collaborators (ShowsController, SectionsController, ControllerMonitor, ControllerTest, MidiController) out of the 3641-line store, but every extracted member was re-published on the store as a one-line forwarder so that 'callers + tests are unchanged'. A mechanical scan finds 75 members whose entire body is a single this.<ctl>.<x> read/write/call: showsCtl 35, sectionsCtl 18, monitor 12, midi 7, controllerTest 3. The store's public surface (339 members) did not shrink by one symbol; the five controller classes are private middle-men with zero external callers, so the refactor moved code without moving the boundary. ShowsController cannot be reasoned about, tested at a seam, or reused except through TriggerLab.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "python3 scan of store.svelte.ts for methods/accessors whose body is a single `this.<ctlName>` statement returned TOTAL 75, broken down sectionsCtl 18, monitor 12, controllerTest 3, showsCtl 35, midi 7, with line numbers (403,406,411,414,917,925,2112..2155 for sections; 542..656 for shows; 497..2033 for monitor; 509,2046,2050 for controllerTest).",
+          "command": "python3 - <<EOF regex scan over apps/web/src/lib/trigger-lab/store.svelte.ts EOF"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:17-19 states the intent verbatim: 'Reactivity lives here (Svelte 5 runes fields); the store delegates its public surface via getter/setter/forwarders so callers + tests are unchanged.' Same sentence appears on sectionsCtl (store.svelte.ts:382-384), monitor (:478-480) and controllerTest (:486-489)."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "Public-member count on the TriggerLab class: 339 (regex over class-level `get/set/name(` at 2-space indent). File is 3641 lines."
+        },
+        {
+          "kind": "grep",
+          "detail": "Call-site counts outside trigger-lab/store for a sample of forwarded names: resolvedSongs 15, newShow 5, openShow 5, renameLibrarySong 5, pasteSection 5, addGraphToSection 4, songLibraryList 4, saveShowAs 3, adoptController 2, setControllerTestData 2 \u2014 i.e. ~120 call sites total across the 75 forwarders."
+        }
+      ],
+      "proposed_fix": "Delete the 75 forwarders and publish the collaborators themselves as readonly getters on the store: store.shows, store.sections, store.controller, store.controllerTest, store.midi. Repoint the ~120 call sites (store.newShow() -> store.shows.newShow()). This turns five private implementation details into five named seams, shrinks TriggerLab from 339 to ~269 members, and lets each controller be constructed and tested against its Host interface without the store. Do it one controller at a time, starting with controllerTest (3 forwarders, 2 call sites) as the tracer.",
+      "interface_delta": {
+        "exported_symbols_removed": 75,
+        "exported_symbols_added": 5,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The forwarders contain no guards, validation, retries or error branches \u2014 each body is a single unconditional read/write/call. All isViewer/link gating lives inside the controllers, which are untouched."
+      },
+      "fix_size_loc": 420,
+      "blast_radius": {
+        "files_touched": 45,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Remove one controller's forwarders (start with controllerTest) and add a `get controllerTest()` accessor.",
+          "Run `pnpm typecheck` \u2014 every stale call site surfaces as a type error, giving an exact repoint list.",
+          "Run `pnpm test` for apps/web; the controller's own unit tests must still pass unchanged.",
+          "Run `pnpm ui-shot` on the Patch/Output surfaces to confirm the controller-test takeover banner still renders."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "middle-man-0002",
+      "dedup_key": "2414441f760cbdde",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/ws-protocol.ts",
+          "start_line": 6,
+          "end_line": 32,
+          "symbol": "export type { ... } from '@ledrums/protocol'"
+        },
+        {
+          "path": "apps/web/src/lib/ws/protocol-types.ts",
+          "start_line": 1,
+          "end_line": 26,
+          "symbol": "export type { ... } from '@ledrums/protocol'"
+        },
+        {
+          "path": "packages/protocol/src/index.ts",
+          "start_line": 1,
+          "end_line": 8,
+          "symbol": "module header acknowledging the duplication"
+        }
+      ],
+      "claim": "The wire contract has one home (@ledrums/protocol) and three published surfaces. apps/server/src/ws-protocol.ts re-exports 22 protocol types and apps/web/src/lib/ws/protocol-types.ts re-exports 22 (overlapping but NOT identical \u2014 server has MonitorEventType and TunnelStatus, web has VoiceStat; neither is a superset). Both modules state the only reason in a comment: 'so the server's existing ./ws-protocol import paths keep working' / 'for the web's existing import paths'. protocol/src/index.ts:6-8 acknowledges it from the other side. That is the deletion test failing by the module's own admission: the barrels add no behaviour, and adding one wire type now means editing up to three files, with drift already visible in the three-name delta. 27 server files and 42 web files import through the barrels.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/ws-protocol.ts:6-9 comment: 'Re-export the types here so the server's existing ./ws-protocol import paths keep working; this module owns the server-side runtime helpers (decode/encode/serialize) below.' Lines 10-32 list 22 type names."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/protocol-types.ts:1-4 comment: 'This module re-exports those types for the web's existing import paths and adds the web-side runtime helper (decodeServer)'. Lines 5-26 list 22 type names."
+        },
+        {
+          "kind": "grep",
+          "detail": "Diff of the two lists: server-only = MonitorEventType, TunnelStatus; web-only = VoiceStat. Confirms the duplicated surface is already drifting rather than being kept in lockstep."
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -rn \"from '.*ws-protocol'\" apps/server/src` -> 27 importing files. `grep -rn \"protocol-types'\" apps/web/src | wc -l` -> 42 importing lines."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/protocol/src/index.ts:6-8: 'The server's ws-protocol.ts and the web's lib/ws/protocol-types.ts both re-export these types and add their own runtime (de)serialization helpers on top.'"
+        }
+      ],
+      "proposed_fix": "Delete both `export type { ... }` blocks. Keep each module as a pure runtime-helper module: ws-protocol.ts keeps decodeClient/encodeServer/serializeModel/effectSpecs/frameToRgbBytes, protocol-types.ts keeps decodeServer (and should be renamed decode-server.ts once it no longer publishes types). Repoint the ~69 importing files to `@ledrums/protocol` for types \u2014 a mechanical codemod, since the names are identical. The protocol package becomes the single import path it already claims to be.",
+      "interface_delta": {
+        "exported_symbols_removed": 44,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Only type re-exports are removed. decodeClient's throw-on-invalid contract and decodeServer's silent-null + dev-warn behaviour are untouched."
+      },
+      "fix_size_loc": 110,
+      "blast_radius": {
+        "files_touched": 71,
+        "packages_touched": [
+          "apps/server",
+          "apps/web",
+          "packages/protocol"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Delete the two export-type blocks.",
+          "Run `pnpm typecheck` \u2014 every unresolved type import is a repoint site; the compiler enumerates them exhaustively.",
+          "Codemod the import specifiers to '@ledrums/protocol'.",
+          "`pnpm test` must be green with zero test-file edits other than import paths."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "middle-man-0003",
+      "dedup_key": "697eff66709212bc",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/index.ts",
+          "start_line": 20,
+          "end_line": 26,
+          "symbol": "export { MODULATION_PARITY_CASES, PARITY_PHASES, legacyEnvValue, mappingEnvValue, type ParityCase }"
+        },
+        {
+          "path": "packages/core/src/voice/modulation-parity.ts",
+          "start_line": 21,
+          "end_line": 100,
+          "symbol": "modulation-parity module"
+        }
+      ],
+      "claim": "voice/index.ts hand-picks five symbols out of modulation-parity.ts \u2014 a table of legacy-vs-new envelope cases plus a reimplementation of the OLD envelope math (legacyEnvValue) that production must never call \u2014 and publishes them through core's public `voice` namespace. The only consumers are two test files (packages/core/src/voice/modulation.test.ts and apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts). The curated export block exists solely to let a cross-package test reach a fixture, so the index is acting as a middle-man for the test harness. Worse than dead surface: legacyEnvValue is deliberately-superseded math sitting in the shipped API where an implementer could plausibly call it.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "grep for MODULATION_PARITY_CASES|PARITY_PHASES|legacyEnvValue|mappingEnvValue|ParityCase across apps and packages returns hits only in: modulation-parity.ts (definitions), voice/index.ts (the re-export), packages/core/src/voice/modulation.test.ts, apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:37-40. Zero production call sites."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/index.ts:73 `export * as voice from './voice'` \u2014 so the fixtures are reachable as `voice.legacyEnvValue` from any consumer of @ledrums/core, which is exactly how hydrate.envmap.test.ts:40 reaches them."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/modulation-parity.ts:86 `export function legacyEnvValue(spec, base, e, phase)` \u2014 the pre-migration envelope formula, kept only to be diffed against mappingEnvValue."
+        }
+      ],
+      "proposed_fix": "Add a second package entry point (e.g. `@ledrums/core/test-fixtures` -> packages/core/src/test-fixtures.ts) that re-exports modulation-parity, and drop lines 20-26 from voice/index.ts. Point both test files at the new path. Production consumers of @ledrums/core lose five symbols including the legacy math; nothing in the shipped bundle references them, so tree-shaking improves as a side effect.",
+      "interface_delta": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Nothing is deleted \u2014 the fixtures move to a test-only entry point and both parity suites keep running unchanged."
+      },
+      "fix_size_loc": 20,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add the test-fixtures entry point and remove the block from voice/index.ts.",
+          "Repoint packages/core/src/voice/modulation.test.ts and apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts.",
+          "`pnpm typecheck` must be clean and `pnpm test` must run the same parity assertions.",
+          "grep the repo for `voice.legacyEnvValue` to confirm no production reference reappears."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "middle-man-0004",
+      "dedup_key": "c905809f49b97b34",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/index.ts",
+          "start_line": 12,
+          "end_line": 19,
+          "symbol": "export * from './types' \u2026 './render-plan'"
+        },
+        {
+          "path": "packages/core/src/voice/index.ts",
+          "start_line": 29,
+          "end_line": 74,
+          "symbol": "curated export blocks"
+        }
+      ],
+      "claim": "The module deliberately curates exports for eval-graph, lfo, modifier-graph, modulation-graph, compositor, engine and delay \u2014 but blanket-exports types, diagnostics, easing, envelope, modulation, scope, graph-integrity, render-plan and prng. The nine blanket lines publish 106 top-level symbols, of which 29 are never referenced anywhere in apps/web or apps/server: the whole RenderPlan* cache family (RenderPlan, RenderPlanCache, RenderPlanChild, RenderPlanNode, RenderPlanNodeCategory, createRenderPlanCache, renderPlanSignature, nodeCategory), the graph-integrity validators (validateTriggerGraphIntegrity, assertTriggerGraphIntegrity, TriggerGraphIntegrityResult, TriggerGraphIssue, TriggerGraphIssueCode, TriggerGraphSystemActions), hoop-target internals (HoopTarget, ParseHoopTargetOptions, EmptyHoopFallback), and more. The result is that nobody can tell which of voice's ~150 symbols are contract and which are leakage \u2014 the barrel is a middle-man that has stopped making a decision.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "python3 scan of the 9 blanket-exported voice modules counted 106 top-level `export (function|const|class|interface|type|enum)` symbols; cross-grepping each name against apps/web/src and apps/server/src found 29 with zero references outside packages/core, listed above."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/index.ts:12-19 (nine `export *` lines) sitting directly above line 20's hand-picked block and lines 29-74's six more curated blocks \u2014 the two styles are interleaved with no stated rule."
+        },
+        {
+          "kind": "read",
+          "detail": "Phase-1 core-voice-fx map records the same module as 'Curates the package-facing export surface for the voice subsystem, mixing blanket re-exports with hand-picked named ones.'"
+        }
+      ],
+      "proposed_fix": "Convert the nine `export *` lines to curated named blocks matching the style already used from line 29 down, listing only what apps/web and apps/server actually import. Anything not listed stays module-internal and becomes free to change. The 29-symbol list above is the starting deletion candidate set; each needs a per-symbol judgement call (some, e.g. the graph-integrity validators, may be intended contract that is simply not wired yet \u2014 that is a decision for a human, not a codemod).",
+      "interface_delta": {
+        "exported_symbols_removed": 29,
+        "exported_symbols_added": 0,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "The unreferenced set includes validateTriggerGraphIntegrity / assertTriggerGraphIntegrity \u2014 integrity validators. Un-exporting them does not delete the guards, but it removes the ability for a future caller to reach them, and if any are intended-but-unwired guards this is exactly the case that must not be auto-applied."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": false,
+        "requires_mutation": true,
+        "steps": [
+          "Replace the export * lines with explicit named lists derived from a real import graph (ts-morph or tsc --listFiles), not from grep \u2014 grep matches substrings and same-named locals.",
+          "Run pnpm typecheck across the workspace; any unresolved import is a symbol that must go back on the list.",
+          "For each of the 29 candidates, a human decides contract-vs-leak; the graph-integrity ones need an explicit call on whether the validators are meant to be reachable."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "middle-man-0005",
+      "dedup_key": "e255e3d34f8d0681",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/io/src/index.ts",
+          "start_line": 1,
+          "end_line": 5,
+          "symbol": "export * from './interfaces'|'./artnet'|'./sacn'|'./osc'|'./pixlite'"
+        },
+        {
+          "path": "packages/io/src/pixlite/index.ts",
+          "start_line": 8,
+          "end_line": 44,
+          "symbol": "curated pixlite barrel"
+        }
+      ],
+      "claim": "packages/io/src/index.ts is the only pure-re-export module in the repo (verified by a whole-repo barrel scan) and is the package's single declared export (package.json exports: {'.': './src/index.ts'}). Four of its five lines are `export *`, which republishes every top-level symbol in artnet.ts, sacn.ts and osc.ts. The one consumer, apps/server, imports 17 names; the blanket republishes at least 12 more that no file outside packages/io references \u2014 ARTNET_PORT, SACN_PORT, ROOT_VECTOR_DATA, FRAMING_VECTOR_DATA, DMP_VECTOR_SET_PROPERTY, encodeArtDmx, encodeE131, sacnMulticastAddress, encodeOsc, parseOsc, expandCidr, expandTargets, nodeHttpTransport \u2014 plus the fake-client fixtures defaultIdentity and defaultStats (zero external references; FakePixliteClient and makeFakeProber have exactly one, a server test). The fifth line re-exports pixlite/index.ts, which already did the curation job properly, so the root barrel is a middle-man in front of a module that had already made the decision.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "Repo-wide scan for modules whose non-comment lines are >90% re-export syntax returned exactly one hit: 'packages/io/src/index.ts (5 lines, pure-barrel)'."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/package.json declares exports {'.': './src/index.ts'} only \u2014 there is no subpath, so every consumer must go through the blanket barrel."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "Per-symbol grep across apps and packages excluding packages/io: FakePixliteClient=1 file, makeFakeProber=1 file, and defaultIdentity, defaultStats, expandCidr, expandTargets, nodeHttpTransport, encodeOsc, parseOsc, encodeArtDmx, encodeE131, sacnMulticastAddress, ROOT_VECTOR_DATA, FRAMING_VECTOR_DATA, DMP_VECTOR_SET_PROPERTY, SACN_PORT, ARTNET_PORT all = 0 files."
+        },
+        {
+          "kind": "grep",
+          "detail": "Actual @ledrums/io imports from apps/server: OscEvent, PixelOutput, HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe, authHash, sweep, FakePixliteClient, makeFakeProber, ArtNetOutput, SacnOutput, ControllerIdentity, ControllerStats, PixliteClient, UniverseRx \u2014 16 names across 12 files."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/pixlite/index.ts:1-7 describes itself as 'A deep module: a small PixliteClient interface with two adapters \u2026 the strict-order JSON / auth / sequential-queue machinery hidden inside' \u2014 the curation the root barrel then undoes for its siblings."
+        }
+      ],
+      "proposed_fix": "Rewrite packages/io/src/index.ts as a curated named barrel in the style of pixlite/index.ts, listing only the 16 names apps/server consumes. Move FakePixliteClient/makeFakeProber/defaultIdentity/defaultStats behind a second entry point ('@ledrums/io/testing') so production callers cannot reach the fakes. The encoders (encodeArtDmx, encodeE131, encodeOsc, parseOsc) and the protocol constants stay exported from their own modules for their own unit tests but leave the package surface.",
+      "interface_delta": {
+        "exported_symbols_removed": 16,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "No guards, retries or validation are touched \u2014 only which symbols the package barrel republishes. OscInput's socket-error surfacing and the pixlite auth/queue machinery stay exactly as they are."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/io",
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Replace the four export * lines with a named list of the 16 consumed symbols.",
+          "Run `pnpm typecheck` \u2014 apps/server is the only consumer, so any omission is caught immediately.",
+          "Add the '@ledrums/io/testing' subpath and repoint apps/server/src/controller-monitor.test.ts.",
+          "`pnpm test` in packages/io and apps/server must be green (io's own tests import from sibling modules, not the barrel \u2014 confirm with grep before editing)."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "middle-man-0006",
+      "dedup_key": "64e04903f9cb502b",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/index.ts",
+          "start_line": 46,
+          "end_line": 60,
+          "symbol": "modifiers export block"
+        },
+        {
+          "path": "packages/core/src/modifiers/registry.ts",
+          "start_line": 62,
+          "end_line": 78,
+          "symbol": "getModifier / tryGetModifier / listModifiers / modifierIds"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/graphs.ts",
+          "start_line": 66,
+          "end_line": 75,
+          "symbol": "listModifiers().find(...)"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/mod-graph.ts",
+          "start_line": 29,
+          "end_line": 29,
+          "symbol": "listModifiers().find(...)"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/trigger-node-meta.ts",
+          "start_line": 113,
+          "end_line": 113,
+          "symbol": "listModifiers().find(...)"
+        }
+      ],
+      "claim": "The modifiers block (index.ts:46-60) is the ONLY hand-curated block in an otherwise all-`export *` index, and 9 of its 14 names have zero references outside packages/core: getModifier, modifierIds, tryGetModifier, ModifierDef, ModifierContext, ModifierCategory, ModifierCategoryGroup, MODIFIER_CATEGORY_ORDER, MODIFIER_CATEGORY_LABEL. getModifier appears only in two core test files; modifierIds appears nowhere at all. Meanwhile every web consumer that needs a modifier by id writes listModifiers().find(m => m.id === X) \u2014 three production sites plus two more in graphs.ts \u2014 re-implementing by linear scan the Map lookup that registry.ts already owns. The registry's four accessors are not a middle-man in themselves (the constructor does duplicate-id detection and getModifier throws), but the curated index block is: it publishes an accessor set nobody asked for while the shape callers actually want (id -> def, non-throwing, cross-package) is the one they end up hand-rolling.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "python3 extraction of the 14 named exports in packages/core/src/index.ts followed by a cross-grep of apps/web/src, apps/server/src, packages/io/src, packages/protocol/src reported 'unused outside core: 9' with the exact list above."
+        },
+        {
+          "kind": "grep",
+          "detail": "grep for getModifier|modifierIds|listModifiers across apps and packages: getModifier appears only at modifiers.s31.test.ts:257 and voice/modulation.test.ts:269; modifierIds has no call site anywhere; tryGetModifier is used only inside packages/core (chain.ts:48, modifier-graph.ts:33)."
+        },
+        {
+          "kind": "grep",
+          "detail": "Five listModifiers().find(m => m.id === \u2026) sites: apps/web/src/lib/app/views/trigger-node-meta.ts:113, apps/web/src/lib/trigger-lab/store/graphs.ts:66, apps/web/src/lib/trigger-lab/store/mod-graph.ts:29, plus packages/core/src/modifiers/slice.test.ts:31 and modifiers.s32.test.ts:187."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/modifiers/registry.ts:56-60 builds a Map and throws on duplicate ids \u2014 genuine behaviour, so the registry module itself survives the deletion test; only the index-level curation and two of the four accessors do not."
+        }
+      ],
+      "proposed_fix": "Narrow index.ts:53 to `export { tryGetModifier, listModifiers } from './modifiers/registry'` \u2014 drop getModifier and modifierIds from the package surface (keep getModifier module-local for the two core tests, which import from './registry' directly anyway). Drop the four unused type/constant names from the block, or delete the curation entirely and add `export * from './modifiers/registry'` to match the rest of the file's style. Separately, replace the five listModifiers().find() sites with tryGetModifier(), which is already exported and is a Map hit.",
+      "interface_delta": {
+        "exported_symbols_removed": 9,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "getModifier's throw-on-unknown branch stays in registry.ts and is still exercised by modifiers.s31.test.ts; it simply stops being package API. Swapping .find() for tryGetModifier() preserves the undefined-on-miss semantics the call sites already handle."
+      },
+      "fix_size_loc": 25,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Narrow the index.ts:46-60 block and run `pnpm typecheck` across the workspace \u2014 any consumer that actually needed a dropped name fails to compile.",
+          "Swap the three production .find() sites for tryGetModifier and run `pnpm test` in apps/web; mod-graph.test.ts:44 ('reads a modifier node purely from listModifiers()') will need its name updated, which is itself a signal the test was asserting the workaround."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "middle-man-0007",
+      "dedup_key": "117f275fa49ccedf",
+      "lens": "middle-man",
+      "criterion": "deletion-test",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/Overlays.svelte",
+          "start_line": 1,
+          "end_line": 15,
+          "symbol": "Overlays"
+        },
+        {
+          "path": "apps/web/src/App.svelte",
+          "start_line": 107,
+          "end_line": 107,
+          "symbol": "<Overlays {store} />"
+        }
+      ],
+      "claim": "Overlays.svelte's whole body is three sibling mounts (EffectGallery, ClipSettings, EnvelopeEditor), each of which reads its own open state off the store, so the component adds no state, no conditional, and no layout. Its stated justification \u2014 'this is just a single mount point shared by both shells' \u2014 is stale: there is exactly one consumer, App.svelte:107. The component exists to save two lines in App.svelte and in exchange adds an indirection hop and a prop-forward that must be kept in sync whenever an overlay's props change.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/Overlays.svelte is 15 lines: 4-line comment, 3 imports, one $props(), three self-closing component tags. No markup, no conditionals, no styles."
+        },
+        {
+          "kind": "grep",
+          "detail": "grep -rn 'Overlays' apps/web/src returns App.svelte:13 (import), App.svelte:107 (the sole usage), and an unrelated string literal in lib/styleguide/sections/SectionPrimitives.svelte:435. Zero second shell."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "Bash",
+          "detail": "A repo-wide scan for .svelte files whose markup is <=6 lines and entirely child-component tags returned 5 hits; Overlays is the only one that is a pure fan-out with no derivation, no styling and no framework-registry obligation."
+        }
+      ],
+      "proposed_fix": "Inline the three tags into App.svelte where <Overlays {store} /> sits today and delete the file, moving the (corrected) comment with them. If the 'both shells' plan is still live, keep the file but fix the comment to say it is anticipatory \u2014 a wrong rationale is worse than no rationale, because the next reader treats it as a constraint.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "No guard, condition or error branch exists in the component; the three overlays keep their own open-state reads."
+      },
+      "fix_size_loc": 6,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Inline the three tags into App.svelte and delete Overlays.svelte.",
+          "`pnpm typecheck` and `pnpm build` must be clean.",
+          "`pnpm ui-shot` capturing the Effect Gallery, Clip Settings and Envelope Editor open states \u2014 all three must still mount and the console must be clean."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "middle-man",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

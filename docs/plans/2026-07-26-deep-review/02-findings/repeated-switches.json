@@ -1,0 +1,810 @@
+{
+  "artifact": "02-findings/repeated-switches",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "repeated-switches",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "Phase 1 core-geom lead: packages/core/src/canvas/elements.ts elementAt and lenses.ts applyLens are parallel switch dispatch over the CanvasElement and Lens unions; adding a variant requires edits in several switches plus types.ts and presets.ts.",
+      "why_rejected": "Rejected on both counts. grep across the whole repo for the element/lens discriminants (`el.kind|element.kind|lens.kind`, plus literal searches for 'checker' and 'kaleido') returns exactly ONE dispatch site per union: elements.ts:148 and lenses.ts:34. There is no web-side per-kind editor \u2014 apps/web only constructs elements literally in store/canvas-scenes.ts:34. And elementAt is compiler-enforced: declared return `ElementSample | null`, no default arm, so a missing case is TS2366 under strict. types.ts and presets.ts are the union declaration and data literals, not switches. Below the >=3 threshold and safe by construction."
+    },
+    {
+      "candidate": "Phase 1 web-rest lead: the @ledrums/protocol ServerMessage union is duplicated alongside ws/client.ts dispatch(), so adding a message means three coordinated edits.",
+      "why_rejected": "Half rejected. There is no duplicated union: packages/protocol/src/schemas.ts is explicitly the single source (header comment lines 1-3) and ClientMessage/ServerMessage are z.infer'red from the zod discriminated unions \u2014 `grep -c '  | {' packages/protocol/src/index.ts` returns 0, so no hand-written TS mirror exists. Only the two CLIENT-side mirrors (WSCallbacks + dispatch) are real; I filed that as a reduced-severity finding rather than the three-way duplication alleged."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/views/node-options.ts KIND_OPTS as a fourth independent node-kind enumeration (named in the web-app Phase 1 suspicion alongside kindIcon/kindLabel/tint).",
+      "why_rejected": "node-options.ts:61 is `NODE_KINDS.filter(...).map(...)` \u2014 fully derived, adding no independent enumeration. Likewise kindIcon/tint/kindLabel (trigger-node-meta.ts:32/63/87) are Record<NodeKind, \u2026> and therefore compiler-enforced; they are the SAFE pattern in this repo, not defects. The real unenforced root is NODE_KINDS itself, which I filed instead."
+    },
+    {
+      "candidate": "Phase 1 web-triggerlab lead: the five predicates nodeHasInput/nodeHasOutput/nodeHasModInput/nodeHasParams/nodeIsModSource in sim.graph-compilation.ts:57-68 each decide node-kind capability separately.",
+      "why_rejected": "Read them: one-line total functions over NodeKind with no per-kind enumeration to keep in step. nodeHasOutput/nodeHasInput are `kind !== X && !voice.isModSourceKind(kind)` and nodeIsModSource just delegates to core \u2014 already routed through the shared helper. nodeHasModInput/nodeHasParams name three kinds each, which is a capability predicate, not a discriminant switch that must grow with the union. Not a repeated-discriminant defect."
+    },
+    {
+      "candidate": "apps/web/src/lib/app/docks/patch-inspector.ts PatchEditor union (10 variants) decoded in patchEditorFor:43 and mirrored by the 8-arm editor.kind ladder in Inspector.svelte:154-184.",
+      "why_rejected": "Only two sites, and they are producer/consumer rather than parallel switches \u2014 patchEditorFor is the sole decoder of the id grammar and Inspector.svelte its sole consumer. Below the >=3 threshold. The ladder's thin handling of the 'unknown' variant may interest a different lens, but it is not mine."
+    },
+    {
+      "candidate": "packages/io/src/osc.ts:35 readArg switching over the OSC 1.0 type-tag character set (14 tags).",
+      "why_rejected": "grep for `switch (` across packages/io/src, workers/error-ingest/src, packages/protocol/src, scripts and apps/desktop returns this as the only genuine hit in all five unmapped units. It is a single dispatch with no second enumeration of the tag set anywhere, and its `default: return null` is a deliberate documented fail-open for unknown tags (comment at osc.ts:20-26). Single site \u2014 not a repeated discriminant."
+    }
+  ],
+  "items": [
+    {
+      "id": "repeated-switches-0001",
+      "dedup_key": "1633387093ddfff8",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+          "start_line": 31,
+          "end_line": 52,
+          "symbol": "triggerNodeSignature"
+        }
+      ],
+      "claim": "Every other NodeKind discriminant site in the web app spells the effect node as the PAIR `kind === 'play' || kind === 'effect'` (22 non-test occurrences under apps/web/src/lib, e.g. store.svelte.ts:2568, 2790, 2842, TriggerNode.svelte:60, Inspector.svelte:132). trigger-flow-projection.ts:34 writes only `case 'play'`. Graphs reaching the store are normalised by voice.normalizeTriggerGraphToGen3 (hydrate.ts:400/418/455), which rewrites every `play` node to `effect` (graph-integrity.ts:148/154), so the `play` arm is dead and every real effect node falls to `default: return base` \u2014 its playType/effectId/canvasScene never enter the signature the projection cache compares.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/trigger-flow-projection.ts:34 is `case 'play': return `${base}:playType=\u2026:effect=${n.effectId}:canvas=\u2026`;` with no `case 'effect'`, and line 50 is `default: return base`."
+        },
+        {
+          "kind": "grep",
+          "detail": "packages/core/src/voice/graph-integrity.ts:148 `addNode(node.kind === 'play' ? { ...node, id, kind: 'effect' } : { ...node, id });` and :154 the same \u2014 normalisation converts play to effect."
+        },
+        {
+          "kind": "grep",
+          "detail": "apps/web/src/lib/trigger-lab/store/hydrate.ts:400,418,455 all call `voice.normalizeTriggerGraphToGen3(graph)`, so store graphs contain no `play` nodes.",
+          "command": "grep -n normalizeTriggerGraphToGen3 apps/web/src/lib/trigger-lab/store/hydrate.ts"
+        },
+        {
+          "kind": "grep",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:2574/3241/3256 mint nodes with makeNode('effect', \u2026); nothing mints kind 'play'.",
+          "command": "grep -n \"makeNode('effect'\" apps/web/src/lib/trigger-lab/store.svelte.ts"
+        },
+        {
+          "kind": "grep",
+          "detail": "22 non-test occurrences of the `=== 'play' || ` pair idiom under apps/web/src/lib; trigger-flow-projection.ts is the single site using only 'play'.",
+          "command": "grep -rn \"=== 'play' || \" apps/web/src/lib | grep -v test | wc -l"
+        }
+      ],
+      "proposed_fix": "Change line 34 to `case 'play': case 'effect':` so the arm actually runs. Better: replace the switch with a `Record<NodeKind, (n: GraphNode) => string>` so TypeScript demands an entry per kind and the drift cannot recur.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adding a case arm to a signature builder removes no guard, retry, timeout or validation; it makes an existing arm reachable."
+      },
+      "fix_size_loc": 1,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Read apps/web/src/lib/app/views/trigger-flow-projection.ts:31-52 and confirm no `case 'effect'` exists.",
+          "grep packages/core/src/voice/graph-integrity.ts for the play->effect rewrite to confirm the arm is dead.",
+          "Add a unit test: triggerNodeSignature({kind:'effect',effectId:'a',\u2026}) vs effectId:'b' must differ \u2014 it currently does not."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0002",
+      "dedup_key": "c7c50a480d30b9cd",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/modulation-graph.ts",
+          "start_line": 30,
+          "end_line": 35,
+          "symbol": "MOD_SOURCE_KINDS / isModSourceKind"
+        },
+        {
+          "path": "packages/core/src/voice/modulation-graph.ts",
+          "start_line": 50,
+          "end_line": 77,
+          "symbol": "nodeModSource"
+        },
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 582,
+          "end_line": 588,
+          "symbol": "evalGraphGen3FromPlan mod-source no-op arms"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/TriggerNode.svelte",
+          "start_line": 127,
+          "end_line": 127,
+          "symbol": "isSourceKind"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+          "start_line": 88,
+          "end_line": 91,
+          "symbol": "buildAddGroups Modulate items"
+        },
+        {
+          "path": "packages/core/src/voice/render-plan.ts",
+          "start_line": 70,
+          "end_line": 76,
+          "symbol": "nodeCategory modulation-source arms"
+        }
+      ],
+      "claim": "The set {envelope, lfo, cc, note, osc, randomMod} is written out longhand in six independent places. Only render-plan.ts:70-76 is compiler-enforced (nodeCategory falls off the end with a non-undefined return type under `strict`). MOD_SOURCE_KINDS is a plain `as const` array with no exhaustiveness link to NodeKind; nodeModSource ends in `default: return null`; eval-graph's arm list is a void switch; TriggerNode.svelte:127 hardcodes the six literals inline even though the shared helper is already re-exported next door (nodeIsModSource, sim.graph-compilation.ts:68). Adding a seventh source kind compiles clean and yields a node that is unaddable from the palette, renders no source thumbnail, and resolves to no ModSource.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/modulation-graph.ts:30 `export const MOD_SOURCE_KINDS = ['envelope','lfo','cc','note','osc','randomMod'] as const;` \u2014 no `satisfies readonly NodeKind[]`, no link back to the union."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/modulation-graph.ts:74-75 `default: return null;` \u2014 nodeModSource silently yields null for an unlisted kind."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/TriggerNode.svelte:127 `const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'note' || kind === 'osc' || kind === 'randomMod');` \u2014 a literal sixth copy."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:68 already exports `nodeIsModSource = (kind) => voice.isModSourceKind(kind)`, so the shared helper exists and TriggerNode simply does not use it."
+        },
+        {
+          "kind": "grep",
+          "detail": "grep -rn \"'randomMod'\" over packages/core/src + apps/web/src (non-test) returns 18 sites; the six above are those enumerating the mod-source SET rather than handling one kind.",
+          "command": "grep -rn \"'randomMod'\" packages/core/src apps/web/src | grep -v .test."
+        }
+      ],
+      "proposed_fix": "Replace TriggerNode.svelte:127 with `nodeIsModSource(kind)` and do the same at NodeSignalPreview.svelte:169/176. Declare `MOD_SOURCE_KINDS = [...] as const satisfies readonly NodeKind[]` and derive nodeModSource's dispatch from a `Record<ModSourceKindName, (n: GraphNode) => ModSource>`, replacing `default: return null` with a `kind in MAP` guard so the fail-open behaviour is preserved.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Removing `default: return null` from nodeModSource removes an explicit fallback that today keeps a stray non-source wire from throwing; a record-lookup guard must be kept in its place."
+      },
+      "fix_size_loc": 25,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a temporary 7th member to CanonicalGraphNodeKind in packages/core/src/voice/types.ts.",
+          "Run pnpm typecheck: render-plan.ts nodeCategory should be the ONLY error, proving the other five sites are unenforced.",
+          "Apply the `satisfies` + Record fix and re-run the mutation; every site should now error."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0003",
+      "dedup_key": "a1114f4890f0a86a",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "start_line": 54,
+          "end_line": 54,
+          "symbol": "NODE_KINDS"
+        },
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 200,
+          "end_line": 240,
+          "symbol": "CanonicalGraphNodeKind / NodeKind"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/node-options.ts",
+          "start_line": 61,
+          "end_line": 61,
+          "symbol": "KIND_OPTS"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+          "start_line": 30,
+          "end_line": 92,
+          "symbol": "ROUTE_KINDS / buildAddGroups"
+        }
+      ],
+      "claim": "`NODE_KINDS: Array<Exclude<NodeKind,'trigger'>>` lists 18 literals by hand. The annotation constrains membership but not COVERAGE \u2014 a new NodeKind type-checks while being absent from the array, hence absent from KIND_OPTS (node-options.ts:61 derives from it) and from the kind-change dropdown. add-node-taxonomy.ts:30 then keeps a THIRD partial list (ROUTE_KINDS, 8 literals) plus four hand-written Modulate items at :88-91. The palette taxonomy is spread over three unenforced enumerations of one discriminant.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:54 \u2014 `export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['effect','all',\u2026,'randomMod'];` The type annotation permits a SHORT array."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/node-options.ts:61 \u2014 `export const KIND_OPTS = NODE_KINDS.filter(...)` so the dropdown inherits any omission."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/add-node-taxonomy.ts:30 \u2014 `const ROUTE_KINDS = ['random','sequence','switch','chance','toggle','delay','scope','mix'] as const satisfies readonly NodeKind[];` \u2014 `satisfies` checks membership, not coverage."
+        },
+        {
+          "kind": "read",
+          "detail": "Contrast packages/core/src/voice/render-plan.ts:49-78 nodeCategory and apps/web/src/lib/app/views/trigger-node-meta.ts:32/63/87 (Record<NodeKind, \u2026>) \u2014 those ARE compiler-enforced, so the repo already has the safe pattern to hand."
+        }
+      ],
+      "proposed_fix": "Derive NODE_KINDS from an exhaustive `Record<NodeKind, true>` (or from `Object.keys(kindLabel)`, already a Record<NodeKind,\u2026>) minus 'trigger'/'play', so a new kind is present by construction. Fold ROUTE_KINDS into the same derivation by tagging each kind with its palette group in one `Record<NodeKind, PaletteGroup>`.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Deriving a list from an exhaustive record removes no guard, retry, timeout, fallback or validation."
+      },
+      "fix_size_loc": 30,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a 21st member to CanonicalGraphNodeKind in packages/core/src/voice/types.ts.",
+          "Run pnpm typecheck and confirm NO error at sim.graph-compilation.ts:54 or add-node-taxonomy.ts:30, while trigger-node-meta.ts's Records DO error.",
+          "Apply the derivation and repeat; the derivation site must now error."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0004",
+      "dedup_key": "6778d9eca0788769",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 2561,
+          "end_line": 2599,
+          "symbol": "TriggerLabStore.addNode"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 2780,
+          "end_line": 2833,
+          "symbol": "TriggerLabStore.changeKind"
+        }
+      ],
+      "claim": "Both methods walk the same NodeKind discriminant through the same eight arms (play/effect, modifier, envelope, lfo, cc, note, osc, randomMod) seeding the same defaults. They have already drifted: changeKind's `cc` arm at :2816 sets `node.ccSource = 'midi'` while addNode's `cc` arm at :2584 does not, so a node created as CC and a node changed to CC carry different fields. Neither ladder is compiler-enforced (both end in a bare `else`), so a new kind silently gets bare makeNode defaults from both paths.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:2582-2584 \u2014 addNode `else if (kind === 'cc') { node = makeNode('cc', nodeId, x, y, { ccController: 1, ccChannel: null }); }` \u2014 no ccSource."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:2813-2817 \u2014 changeKind `else if (kind === 'cc') { node.ccController = 1; node.ccChannel = null; node.ccSource = 'midi'; \u2026 }`."
+        },
+        {
+          "kind": "read",
+          "detail": "addNode ends `} else { node = makeNode(kind, nodeId, x, y); }` at :2591; changeKind's chain simply ends at :2832. No exhaustiveness check in either."
+        }
+      ],
+      "proposed_fix": "Extract one `kindDefaults(kind: NodeKind, options: AddNodeOptions): Partial<GraphNode>` built as a `Record<NodeKind, (o: AddNodeOptions) => Partial<GraphNode>>` so TypeScript demands an entry per kind. addNode spreads it into makeNode; changeKind Object.assigns it, keeping its separate edge-pruning branch, which is genuinely different behaviour.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The extraction keeps the isViewer guards, anchor guards and pruneEdgesForModSource calls in place; only the default-value literals move."
+      },
+      "fix_size_loc": 70,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Read store.svelte.ts:2561-2599 and 2780-2833 side by side and diff the arms.",
+          "Add a test asserting addNode('cc') and changeKind(node,'cc') produce nodes with identical field sets \u2014 it fails today on ccSource."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0005",
+      "dedup_key": "6ffb804d02c4d7d1",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/docks/Inspector.svelte",
+          "start_line": 73,
+          "end_line": 141,
+          "symbol": "node-kind inspector ladder"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/TriggerNode.svelte",
+          "start_line": 183,
+          "end_line": 199,
+          "symbol": "source-thumbnail ladder"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/AddPalette.svelte",
+          "start_line": 85,
+          "end_line": 129,
+          "symbol": "preview-node ladder"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+          "start_line": 64,
+          "end_line": 93,
+          "symbol": "buildAddGroups Modulate group"
+        }
+      ],
+      "claim": "Adding a node kind requires coordinated edits to at least four UI enumerations of the same discriminant, none checked by the compiler: the Inspector's 12-branch `{#if node.kind === \u2026}` ladder (73-141), TriggerNode's 6-branch source-thumbnail ladder (183-199), AddPalette's preview ladder (85-129), and add-node-taxonomy's palette items (64-93). Svelte `{#if}` chains carry no exhaustiveness obligation, so a missed arm renders nothing at all \u2014 the node appears in the graph with no inspector and no preview, with no build or test error.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "detail": "apps/web/src/lib/app/docks/Inspector.svelte lines 73,75,83,91,99,106,113,120,132,134,136,138 \u2014 twelve `node.kind === '<literal>'` branches over the node-kind discriminant.",
+          "command": "grep -n \"kind ===\" apps/web/src/lib/app/docks/Inspector.svelte"
+        },
+        {
+          "kind": "grep",
+          "detail": "apps/web/src/lib/app/views/TriggerNode.svelte lines 183,191,193,195,197,199 \u2014 the same six modulation-source literals again.",
+          "command": "grep -n \"kind ===\" apps/web/src/lib/app/views/TriggerNode.svelte"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/AddPalette.svelte:85-91 and :114-129 branch on `kind` / `it.previewKind` literals to build preview nodes."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/docks/inspectors/ contains one <Kind>NodeInspector.svelte per kind (Cc, Delay, Envelope, Lfo, Modifier, Note, Osc, Output, Play, RandomMod, Scope, Container) \u2014 the components exist; only the mapping is hand-wired."
+        },
+        {
+          "kind": "read",
+          "detail": "Contrast apps/web/src/lib/app/views/trigger-node-meta.ts:32/63/87 which already maps kind -> icon/tint/label through `Record<NodeKind, \u2026>` and IS enforced."
+        }
+      ],
+      "proposed_fix": "Add one `Record<NodeKind, { inspector: Component | null; preview: PreviewKind | null }>` next to the existing kindIcon/tint/kindLabel Records in trigger-node-meta.ts, and drive the Inspector, TriggerNode thumbnail and AddPalette preview off it. The compiler then rejects a new kind with no entry, and four ladders collapse to one table.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The ladders are pure rendering dispatch; no guard, validation, retry or fallback branch is removed. Trailing {:else} fallbacks are preserved as null entries in the table."
+      },
+      "fix_size_loc": 120,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a 21st NodeKind member and run pnpm typecheck + svelte-check: today nothing in Inspector.svelte/TriggerNode.svelte/AddPalette.svelte errors.",
+          "After the table refactor, repeat: trigger-node-meta.ts must error with a missing Record key."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0006",
+      "dedup_key": "6155f77045163666",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/handlers/client-message.ts",
+          "start_line": 21,
+          "end_line": 28,
+          "symbol": "ENGINE_INPUTS"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 373,
+          "end_line": 418,
+          "symbol": "monitorInput"
+        },
+        {
+          "path": "apps/server/src/handlers/voice-input.ts",
+          "start_line": 115,
+          "end_line": 123,
+          "symbol": "voice-only tag list"
+        },
+        {
+          "path": "apps/server/src/handlers/client-message.ts",
+          "start_line": 507,
+          "end_line": 507,
+          "symbol": "markInput tag test"
+        }
+      ],
+      "claim": "`ClientMessage['t']` is partitioned into input vs authoring by four independent hand-written lists. ENGINE_INPUTS (client-message.ts:21) holds six tags; monitorInput (main.ts:375-417) switches over eight, adding `fireGraph`; voice-input.ts:117-122 lists six again with different membership; client-message.ts:507 tests just `midi|osc` for latency stamping. None is derived from another, so a new input message must be added in four places and a miss is silent \u2014 the message ends up unmonitored, unstamped, or accidentally editor-gated. The fireGraph divergence is the live symptom: main.ts monitors it as an input while ENGINE_INPUTS omits it, so requiresEditor('fireGraph') is true.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/handlers/client-message.ts:21-28 \u2014 `const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set(['midi','osc','cc','programChange','key','recallSection']);` (no fireGraph)."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/main.ts:411-414 \u2014 `case 'fireGraph': monitor({ type: 'graph', direction: 'in', \u2026 })` alongside the midi/cc/programChange/osc/key arms; the switch has no default."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/handlers/client-message.ts:55-57 \u2014 `requiresEditor(t) { return !ENGINE_INPUTS.has(t) && !UNGATED_NON_INPUTS.has(t); }`; the comment at :49-54 documents the deny-by-default intent, so the omission is security-relevant."
+        },
+        {
+          "kind": "grep",
+          "detail": "apps/server/src/handlers/voice-input.ts:117-122 lists setShow|key|fireGraph|recallSection|cc|programChange \u2014 a fourth, differently-shaped membership test.",
+          "command": "grep -n \"msg.t ===\" apps/server/src/handlers/voice-input.ts"
+        }
+      ],
+      "proposed_fix": "Declare ONE `Record<ClientMessage['t'], 'engine-input'|'authoring'|'read'|'voice-only'>` (apps/server/src/handlers/message-taxonomy.ts) so TypeScript demands a role per tag, and derive ENGINE_INPUTS, the voice-only test and the monitor label table from it. Encode fireGraph's CURRENT role ('authoring') so behaviour is preserved; raise the gating question separately rather than folding it into the mechanical unification.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "ENGINE_INPUTS feeds requiresEditor, the deny-by-default editor gate. A naive unification that adds fireGraph to the input set would let a viewer fire graphs, so any fix here touches a security guard and must not be auto-applied."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server",
+          "packages/protocol"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a new ClientMessage variant to packages/protocol/src/schemas.ts clientMessageSchema.",
+          "Run pnpm typecheck: no error appears at ENGINE_INPUTS, monitorInput or voice-input.ts, proving all four are unenforced.",
+          "Introduce the Record and repeat: it must error with a missing key.",
+          "Assert requiresEditor('fireGraph') === true before and after the fix."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0007",
+      "dedup_key": "049a6820fae59362",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/trigger-node-meta.ts",
+          "start_line": 118,
+          "end_line": 158,
+          "symbol": "kindSummary"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/trigger-node-meta.ts",
+          "start_line": 32,
+          "end_line": 108,
+          "symbol": "kindIcon / tint / kindLabel"
+        }
+      ],
+      "claim": "One file maps NodeKind four times. kindIcon (:32), tint (:63) and kindLabel (:87) are `Record<NodeKind, \u2026>` and therefore compiler-enforced; kindSummary (:118) is a switch ending in `default: return ''` at :156-157. A new kind is forced into the three Records but silently drops out of the fourth, shipping a node card with an icon, a tint and a title but a blank sub line. The fourth map is the only one that can go stale and the only one written as a defaulted switch.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/trigger-node-meta.ts:32 `export const kindIcon: Record<NodeKind, Component> = {\u2026}` \u2014 20 keys, enforced."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/trigger-node-meta.ts:118-158 `export function kindSummary(node: GraphNode): string { switch (node.kind) { \u2026 default: return ''; } }` \u2014 14 arms plus a silent default."
+        },
+        {
+          "kind": "type-check",
+          "detail": "tsconfig.base.json sets `strict: true` and `noFallthroughCasesInSwitch: true` but NOT `noImplicitReturns`; a defaulted switch therefore carries no exhaustiveness obligation while a Record<NodeKind,\u2026> does.",
+          "command": "cat tsconfig.base.json"
+        }
+      ],
+      "proposed_fix": "Convert kindSummary to `const KIND_SUMMARY: Record<NodeKind, (n: GraphNode) => string>` alongside the other three maps and look it up, so all four fail the build together when a kind is added. Kinds with genuinely no summary get an explicit `() => ''` entry, documenting the intent instead of hiding it in a default arm.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The `default: return ''` is a display-text fallback, not a guard, validation, retry or error branch; every kind that reaches it gets an explicit '' entry in the Record."
+      },
+      "fix_size_loc": 20,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a new NodeKind member and run pnpm typecheck: three errors in trigger-node-meta.ts (the Records) and none at kindSummary.",
+          "After the Record conversion, repeat and confirm four errors."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0008",
+      "dedup_key": "5f1071cbf90f178b",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ws/client.ts",
+          "start_line": 244,
+          "end_line": 286,
+          "symbol": "WSClient.dispatch"
+        },
+        {
+          "path": "apps/web/src/lib/ws/client.ts",
+          "start_line": 39,
+          "end_line": 82,
+          "symbol": "WSCallbacks"
+        },
+        {
+          "path": "packages/protocol/src/schemas.ts",
+          "start_line": 390,
+          "end_line": 428,
+          "symbol": "serverMessageSchema"
+        }
+      ],
+      "claim": "The 13 ServerMessage variants declared once in packages/protocol/src/schemas.ts:390 are mirrored by 13 `on<X>?` fields in WSCallbacks (client.ts:39-82) and 13 arms in `private dispatch(msg: ServerMessage): void` (client.ts:244-285). Because dispatch returns void and has no default, omitting an arm is not a type error \u2014 a new server message decodes successfully and is then discarded with no log and no error.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/client.ts:244-285 \u2014 `switch (msg.t)` over state/stats/input/monitor/projects/backups/presence/showLibrary/songLibrary/controllerDiscovery/controllerStatus/networkAdapters/error, no default and no exhaustiveness assertion."
+        },
+        {
+          "kind": "grep",
+          "detail": "packages/protocol/src/schemas.ts:390 serverMessageSchema is a z.discriminatedUnion with exactly 13 `t: z.literal(...)` members \u2014 currently in sync with the 13 dispatch arms.",
+          "command": "sed -n '390,470p' packages/protocol/src/schemas.ts | grep -n 't: z.literal'"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/client.ts:39-82 \u2014 WSCallbacks declares one optional callback per variant; `this.cb.onX?.(\u2026)` means a missing callback is also silent, compounding the drop."
+        }
+      ],
+      "proposed_fix": "Add `default: { const _never: never = msg; void _never; break; }` to dispatch so the compiler rejects an unhandled ServerMessage variant. Optionally reshape WSCallbacks as `Partial<{ [K in ServerMessage['t']]: (msg: Extract<ServerMessage,{t:K}>) => void }>` so the callback surface is generated from the union rather than restated.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adding a never-check default arm adds a compile-time obligation; it removes no runtime guard, retry, timeout, fallback or validation."
+      },
+      "fix_size_loc": 4,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a 14th variant to serverMessageSchema in packages/protocol/src/schemas.ts.",
+          "Run pnpm typecheck: no error at apps/web/src/lib/ws/client.ts today.",
+          "Add the never-default and repeat: dispatch must now error."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "repeated-switches-0009",
+      "dedup_key": "4f2ec54a461e29fe",
+      "lens": "repeated-switches",
+      "criterion": "repeated-discriminant",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 389,
+          "end_line": 589,
+          "symbol": "evalGraphGen3FromPlan traversal switch"
+        },
+        {
+          "path": "packages/core/src/voice/render-plan.ts",
+          "start_line": 49,
+          "end_line": 78,
+          "symbol": "nodeCategory"
+        }
+      ],
+      "claim": "The Phase 1 lead is half right. render-plan.ts:49 nodeCategory IS compiler-enforced (no default, non-undefined declared return type under `strict`), so plan categorisation cannot silently miss a kind. The traversal switch at eval-graph.ts:389 sits in a void while-loop with no default and no never-assertion, so it is NOT enforced: a new NodeKind gets a plan category but no traversal arm and becomes an invisible dead end \u2014 a route that reaches it produces no light and raises no issue. The two must be edited in lockstep and only one of them tells you.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/eval-graph.ts:389 `switch (node.kind) {` \u2026 final arm at :582-588 `case 'randomMod': case 'envelope': case 'lfo': case 'cc': case 'note': case 'osc': break;` then `}` at :589 \u2014 no default, no exhaustiveness assertion."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/render-plan.ts:49-78 `export function nodeCategory(kind: NodeKind): RenderPlanNodeCategory { switch (kind) { \u2026 } }` \u2014 every NodeKind covered, no default; under strictNullChecks a missing arm is TS2366."
+        },
+        {
+          "kind": "type-check",
+          "detail": "tsconfig.base.json sets strict:true (hence strictNullChecks) and noFallthroughCasesInSwitch:true, but no noImplicitReturns \u2014 confirming the asymmetry: value-returning switches are enforced, void ones are not.",
+          "command": "cat tsconfig.base.json"
+        }
+      ],
+      "proposed_fix": "Add `default: { const _never: never = node.kind; void _never; break; }` to the eval-graph.ts:389 switch. The compiler then flags the traversal site whenever nodeCategory must change, restoring lockstep at zero runtime cost. Deliberately-inert kinds keep their explicit no-op arms at :582-588, which documents the intent.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "A never-typed default is a compile-time assertion only; it removes no runtime guard, retry, timeout, fallback or validation and cannot alter eval behaviour for any existing kind."
+      },
+      "fix_size_loc": 4,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a temporary member to CanonicalGraphNodeKind in packages/core/src/voice/types.ts.",
+          "Run pnpm typecheck: render-plan.ts:49 errors, eval-graph.ts:389 does not.",
+          "Add the never-default and repeat: both must error.",
+          "Run pnpm test to confirm the eval suite is unchanged."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "repeated-switches",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}
