@@ -1,0 +1,17 @@
+{
+  "id": "bad",
+  "lens": "not-a-lens",
+  "criterion": "deletion-test",
+  "severity": "minor",
+  "confidence": "high",
+  "locations": [],
+  "claim": "too short",
+  "evidence": [],
+  "proposed_fix": "x",
+  "interface_delta": {"exported_symbols_removed": 0, "exported_symbols_added": 0, "net_interface_change": "reduces"},
+  "removes_failure_path": {"value": false, "justification": "no"},
+  "fix_size_loc": 1,
+  "blast_radius": {"files_touched": 1, "packages_touched": [], "touches_core": false},
+  "verification_plan": {"mechanically_verifiable": false, "steps": []},
+  "provenance": {"phase": "2", "lane": "x", "model": "m", "effort": "medium", "run_id": "r"}
+}

@@ -1,0 +1,119 @@
+{
+  "reviewer": "claude-fable-5(medium)",
+  "target": "docs/plans/2026-07-26-deep-review/SPEC.md",
+  "verdict": "REVISE",
+  "verdict_rationale": "Two checkable safety/tooling claims are contradicted by the repository, and the deletion test — the arbiter for the whole pipeline — is undefined for most of the finding types Phase 2 is instructed to produce. Not BLOCK because the transport, the core mechanism, is genuinely proven; not PROCEED_WITH_CHANGES because the verification criterion gap requires rework of the gate's design, not a listed patch.",
+  "strongest_objection": "The spec's objective function and its verification gate do not connect. Phase 2's eleven lenses are Fowler smells — Duplicated Code, Primitive Obsession, Data Clumps, Shotgun Surgery — which produce consolidation and restructuring findings, not module-deletion findings. The deletion test as stated ('imagine the module gone; if complexity vanishes it was a pass-through, if complexity reappears across N callers it was earning its keep') yields no verdict at all for 'these two functions are duplicated' or 'this parameter list is a data clump'. Phase 3's refuters are instructed to apply this criterion and to default to refuted under uncertainty, so for the majority of finding types the gate either kills valid findings mechanically (criterion inapplicable → uncertain → refuted) or the refuters silently improvise their own criteria, which is exactly the unanchored aesthetic judgment the spec set out to eliminate. The gate that decides what is real has a defined criterion for only a minority of what reaches it.",
+  "scores": {
+    "D1_soundness":    {"score": 2, "why": "Transport and phase mechanics work in the common case (probe-proven), but the verification criterion has an unaddressed failure path for non-deletion finding types."},
+    "D2_completeness": {"score": 2, "why": "Phase 0 consumes tooling no step installs or configures, and Phase 3's input volume has no cap or gate — a downstream phase cannot rely on the budget the spec projects."},
+    "D3_cost_realism": {"score": 2, "why": "The 25–45 refuter range rests on the unstated assumption that 11 lenses over 70k LOC emit few enough deduped findings, with a knob on votes-per-finding but none on findings admitted."},
+    "D4_failure_modes":{"score": 2, "why": "Failure modes are named well, but the Phase 5 machine-wedge mitigation is asserted and factually absent from the repo, and the wrapper answers-itself mitigation is a prompt line tested at n=3."},
+    "D5_evidence":     {"score": 1, "why": "Scope table, tier map, and core purity verify cleanly, but two checkable operational claims (test serialisation, vitest worker cap) are contradicted by the repository and not flagged as unverified."},
+    "D6_scope":        {"score": 3, "why": "Each phase has an identified consumer via the seam artifacts, and the spec shows removal (two rejected transports, excluded build output, execution out of scope)."}
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "dimension": "D1",
+      "severity": "critical",
+      "confidence": "medium",
+      "spec_section": "Solution / Phase 3 — Verify",
+      "quote": "attacked by Opus 5 at high effort, prompted to refute, defaulting to refuted under uncertainty, applying the deletion test as the criterion",
+      "claim": "The deletion test is only defined for module/pass-through deletions, but most Phase 2 lenses (Duplicated Code, Primitive Obsession, Data Clumps, Repeated Switches, Shotgun Surgery, the resilience counter-lens) produce findings for which 'imagine the module gone' yields no verdict.",
+      "failure_scenario": "Phase 2's Duplicated Code lane reports 'renderHoop() in apps/web duplicates compositor logic in packages/core'. The Phase 3 refuter applies the deletion test: no module is proposed for deletion, the criterion returns nothing, uncertainty is the honest state, and the default-refute rule discards a true finding. Multiplied across the majority of lenses, the ledger systematically under-reports the duplication the pipeline was commissioned to find — or refuters quietly substitute their own criteria, reintroducing the unanchored judgment the gate exists to remove. Either way the output looks clean and complete.",
+      "would_change_my_mind": "A per-finding-type verification criterion in the spec (e.g. for duplication: prove the two sites can diverge legitimately; for data clumps: prove the fields travel independently), or evidence the deletion test as written was applied to duplication findings in a calibration sample and produced correct verdicts.",
+      "recommendation": "Define the refutation criterion per finding type in the Phase 2 finding schema, with the deletion test as the criterion only for dead-code/pass-through/middle-man findings."
+    },
+    {
+      "id": "F2",
+      "dimension": "D5",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Testing Decisions",
+      "quote": "`pnpm test` is serialised behind `scripts/test-lock.sh` with vitest capped at 2 workers; concurrent sweeps have previously wedged this machine, so fix lanes must not run the suite in parallel.",
+      "claim": "This claim is false in the current repository: `scripts/test-lock.sh` does not exist, root `pnpm test` is `pnpm -r run test` with no lock, the only lock wrapper is `scripts/with-gate-lock.mjs` wired solely to `pnpm gates`, and no vitest config caps workers at 2 (no vitest config files are tracked at all).",
+      "failure_scenario": "Ten Phase 5 fix lanes each run `pnpm test` in their worktree as final verification, believing the spec's claim that serialisation is in place. Nothing serialises them; the concurrent vitest fleets exhaust memory and wedge the machine — the exact prior incident the spec cites as mitigated — mid-run-B, with agent state and worktrees in unknown condition.",
+      "failure_scenario_verified": "git ls-files scripts → no test-lock.sh; package.json test script and gates script inspected directly.",
+      "would_change_my_mind": "The lock existing on a branch not yet merged to this HEAD, or an intent stated in the spec that Phase 0 will (re)install the lock before run B.",
+      "recommendation": "Change the claim to match reality: fix lanes must run verification through `node scripts/with-gate-lock.mjs`, or Phase 0 must wire the lock into `pnpm test` and verify it before run B launches."
+    },
+    {
+      "id": "F3",
+      "dimension": "D2",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Solution / Phase 0 — Baseline & instrument",
+      "quote": "Phase 0 runs `knip`, `ts-prune`, `depcheck`, `madge` and `jscpd` before any agent reads a file. Agents interpret that inventory rather than sweeping 70k lines hunting for what a tool finds deterministically and for free.",
+      "claim": "None of the five tools is installed, on PATH, or declared in any package.json in the workspace, and the spec has no install/configure step — while listing 'toolchain changes' as Out of Scope.",
+      "failure_scenario": "Phase 0 runs `npx knip` against an unconfigured pnpm monorepo containing Svelte components and a Tauri app. Without a knip config declaring entry points and the Svelte plugin, knip floods hundreds of false-positive 'unused export' reports (Svelte template usage and dynamic access are invisible to it). Phase 2's tooling-interpreter lane treats this as machine evidence, Phase 3 spends its Opus-high budget refuting tool noise, and the 'deterministic and free' inventory becomes the pipeline's largest false-positive source. The coverage snapshot has the same gap: no coverage script or config exists anywhere in the repo.",
+      "would_change_my_mind": "Tool configs existing somewhere I did not find, or an explicit Phase 0 sub-step in the spec for installing and calibrating each tool against a known-good sample before its output is admitted as evidence.",
+      "recommendation": "Add a Phase 0 step: install the five tools, write minimal configs (knip entry points + Svelte awareness, jscpd ignores), spot-check each tool's output against 10 known cases, and record the calibration in 00-baseline.md."
+    },
+    {
+      "id": "F4",
+      "dimension": "D3",
+      "severity": "major",
+      "confidence": "medium",
+      "spec_section": "Further Notes — On budget / The phases",
+      "quote": "Phase 3 is the cost centre — 25–45 Opus 5 high agents. The available knob is refuter count",
+      "claim": "The 25–45 range assumes a bound on deduped Phase 2 findings that nothing in the pipeline enforces; the only stated knob adjusts votes per finding, not findings admitted.",
+      "failure_scenario": "Eleven medium-effort lenses over 70k LOC plus an uncalibrated knip flood (F3) emit 120 deduped findings. Phase 4's split happens after Phase 3, so all 120 reach the gate: at one-to-three Opus-high refuters each, Phase 3 runs 130+ agents instead of 25–45, crossing the 70% usage ceiling mid-phase and halting run A with the ledger partially verified — the arithmetic that justified the run no longer holds, which is exactly D3's decision-changing threshold.",
+      "would_change_my_mind": "A stated cap or priority queue on findings entering Phase 3 (e.g. rank by blast radius, verify top N per run), or evidence from a calibration lens run that 11 lenses emit ~30 deduped findings on this codebase.",
+      "recommendation": "Add an admission gate between Phases 2 and 3: rank findings by estimated blast radius and verify in budget-bounded batches, carrying the remainder to a later run."
+    },
+    {
+      "id": "F5",
+      "dimension": "D4",
+      "severity": "major",
+      "confidence": "medium",
+      "spec_section": "The wrapper primitive",
+      "quote": "Without this a capable model answers the question directly and never runs the subprocess, producing a confident answer from the wrong model with no error surfaced.",
+      "claim": "The spec names its worst silent failure mode — wrapper answers itself — but the sole mitigation is a prompt line, validated on a 3-lane probe (2 codex lanes) that cannot bound the failure rate across ~23 Opus-low wrappers over three runs.",
+      "failure_scenario": "One of Phase 2's batched wrappers answers the lens brief itself instead of relaying to Sol. Its output is schema-valid, plausible, and attributed to Sol in the ledger; nothing checks provenance. The cross-vendor diversity argument for Phase 7 variants and the 'different model than the fixer' guarantee of Phase 6 both silently degrade — the property the whole transport section exists to protect fails with no signal, meeting D4's anchor-0 description for that path.",
+      "would_change_my_mind": "A cheap provenance check in the wrapper contract — e.g. the codex subprocess must echo a nonce from codex-agent.sh that the wrapper cannot know without running it, verified by the workflow script — or probe data at realistic scale showing zero self-answering.",
+      "recommendation": "Have codex-agent.sh inject a per-invocation nonce into the subprocess output and require it in the wrapper's structured return; treat a missing nonce as a failed lane."
+    },
+    {
+      "id": "F6",
+      "dimension": "D1",
+      "severity": "minor",
+      "confidence": "medium",
+      "spec_section": "Solution / Phase 3 — Verify",
+      "quote": "Findings that do not survive are discarded, not noted.",
+      "claim": "Discarding refuted findings destroys the only data that could measure the gate's false-negative rate, and with default-refute-under-uncertainty the gate is biased toward exactly the error class that is being made unmeasurable.",
+      "failure_scenario": "Run A completes with a clean, small ledger. Trent reads it as 'the codebase is mostly fine'. In fact 30% of true findings were refuted because their criterion was inapplicable (F1) or the refuter over-weighted a speculative caller; nothing in any artifact records what was killed or why, so the error is undetectable and the initiative under-delivers invisibly.",
+      "would_change_my_mind": "Evidence that a discard log conflicts with user story 4's noise concern — it does not, since a write-only refutation log in 03-verdicts.json is not a triage queue.",
+      "recommendation": "Keep discarding from the ledger, but record every refutation with its reason in 03-verdicts.json, and have Phase 10 report the survival rate per lens as a gate-health signal."
+    },
+    {
+      "id": "F7",
+      "dimension": "D3",
+      "severity": "minor",
+      "confidence": "high",
+      "spec_section": "Transport / The wrapper primitive",
+      "quote": "A three-lane probe ran one native and two proxied `gpt-5.6-luna(low)` agents concurrently ... 35s, 63,500 subagent tokens.",
+      "claim": "The probe validates the mechanism but is presented alongside cost extrapolations it cannot support: two luna-low lanes doing trivial file inventory say nothing about Opus-low wrapper token cost (~20k each, source unstated) or Sol-medium lens cost on real audit briefs.",
+      "failure_scenario": "The ~20k-per-wrapper figure is off 2× on real batched lenses (longer briefs, longer relayed outputs); 23 wrappers become ~900k native tokens, and combined with Phase 3 the run hits the 70% ceiling a phase earlier than planned. The spec does flag the projections as extrapolations, which is why this is minor rather than major.",
+      "would_change_my_mind": "The 20k figure being measured from the probe's wrapper lane specifically, stated as such.",
+      "recommendation": "State where the 20k-per-wrapper figure comes from and re-measure it during the pre-run-A probe re-run the spec already mandates."
+    }
+  ],
+  "no_findings_justification": "",
+  "checked_against_repo": [
+    "LOC table: verified via git ls-files + wc -l. packages/core 14,466 exact match; apps/server 6,511 exact; packages/io 1,402 exact; packages/protocol 777 exact; scripts 643 exact; apps/web 43,248 vs claimed 43,302 and tests ~42,373 vs 42,430 (within filter noise); apps/desktop 3,064 vs 2,894 (minor filter difference). Scope table is honest.",
+    "Phase 0 tooling: knip, ts-prune, depcheck, madge, jscpd — none on PATH, none in any package.json in the workspace. CONTRADICTS 'deterministically and for free' as an available capability (F3).",
+    "Test serialisation: scripts/test-lock.sh does not exist; only scripts/with-gate-lock.mjs, wired to `pnpm gates` not `pnpm test`; root test script is `pnpm -r run test`; no vitest config files tracked, so no 2-worker cap. CONTRADICTS the Testing Decisions claim (F2).",
+    "Coverage snapshot: no coverage script or config found anywhere in the repo — Phase 0's snapshot has no existing harness (folded into F3).",
+    "twux tier map: ~/Documents/dev/twux/lib/models.sh line 68 confirms `opus) echo \"${TWUX_CODEX_TIER_OPUS:-gpt-5.6-sol}\"` — the Sol-drives rejection rationale is accurate as claimed.",
+    "Workflow concurrency: hw.ncpu = 16, so min(16, cores-2) = 14 as claimed.",
+    "packages/core purity: no `node:` imports or require() found in packages/core/src — the prior-art claim holds.",
+    "~/.twux/proxy.json exists (133B), consistent with the credential-handling design."
+  ],
+  "coverage_gaps": [
+    "Could not re-run or inspect the three-lane probe's artifacts (transcript/journal not in this repo), so the probe's reported results (3/3, 63.5k tokens) are taken on trust; only the mechanism's plausibility was assessed.",
+    "Could not verify the ~20k-per-wrapper-boot token figure or the 460k wrapper subtotal — no measurement source is cited and none is on disk.",
+    "Did not assess whether the codex proxy's rate limits allow bash-level fan-out of N concurrent `claude -p` subprocesses per wrapper — no proxy quota documentation was available.",
+    "Prohibited from running the tools, so the predicted knip false-positive flood on Svelte (F3) is argued from tool behaviour knowledge, not demonstrated on this codebase."
+  ]
+}

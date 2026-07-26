@@ -1,0 +1,1 @@
+Read the file packages/io/src/osc.ts. Count how many top-level exported symbols it declares (lines beginning with "export "). Reply with exactly one line and nothing else: MODEL=<the exact model identifier you are running as> COUNT=<the number> NAMES=<comma-separated exported symbol names>

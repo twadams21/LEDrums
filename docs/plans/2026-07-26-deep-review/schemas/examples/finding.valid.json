@@ -1,0 +1,26 @@
+{
+  "id": "dead-code-0001",
+  "lens": "dead-code",
+  "criterion": "unreachable-and-no-dynamic-access",
+  "criterion_is_mechanical": true,
+  "severity": "minor",
+  "confidence": "high",
+  "locations": [{"path": "apps/web/src/lib/trigger-lab/clipdoc.ts", "start_line": 412, "end_line": 428, "symbol": "legacyClipMigrate"}],
+  "claim": "legacyClipMigrate is exported but unreachable from any entry point after the v2 clip format landed.",
+  "evidence": [
+    {"kind": "tool-output", "tool": "knip@5.x", "command": "pnpm dlx knip@5 --reporter json", "detail": "Reported as unused export."},
+    {"kind": "grep", "command": "rg -n 'legacyClipMigrate'", "detail": "Only the declaration and its own test reference it."}
+  ],
+  "proposed_fix": "Delete legacyClipMigrate and its dedicated test.",
+  "interface_delta": {"exported_symbols_removed": 1, "exported_symbols_added": 0, "net_interface_change": "reduces"},
+  "removes_failure_path": {"value": false, "justification": "Pure data transform; contains no guard, retry, or error branch."},
+  "fix_size_loc": 24,
+  "blast_radius": {"files_touched": 2, "packages_touched": ["apps/web"], "touches_core": false},
+  "verification_plan": {
+    "mechanically_verifiable": true,
+    "requires_mutation": true,
+    "steps": ["rg for dynamic access patterns", "remove symbol in isolated worktree from baseline sha", "pnpm gates"]
+  },
+  "initiative_id": null,
+  "provenance": {"phase": "2", "lane": "dead-code", "model": "gpt-5.6-sol", "effort": "medium", "run_id": "runA-001", "nonce_verified": true}
+}
