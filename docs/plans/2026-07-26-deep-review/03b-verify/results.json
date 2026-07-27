@@ -139,6 +139,20 @@
     "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
   },
   {
+    "finding_id": "dead-code-0014",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "drop type BackupReason",
+      "drop type MonitorEventType",
+      "drop type SerializedDrum",
+      "drop type TunnelStatus",
+      "drop type VoiceStats"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 5 deletions(-)"
+  },
+  {
     "finding_id": "dead-code-0015",
     "outcome": "verified",
     "typecheck_exit": 0,

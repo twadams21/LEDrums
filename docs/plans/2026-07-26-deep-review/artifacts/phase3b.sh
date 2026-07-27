@@ -41,6 +41,22 @@ if ! pnpm typecheck > "$OUT/_baseline.log" 2>&1; then
 fi
 echo "   baseline green at $(git rev-parse --short HEAD)"
 
+python3 - "$D" <<'COV'
+import json, sys
+D=sys.argv[1]
+F={f["id"]:f for f in json.load(open(f"{D}/02-findings/_all.json"))}
+S=json.load(open(f"{D}/03-refute/summary.json"))
+spec=json.load(open(f"{D}/artifacts/phase3b-mutations.json"))
+covered={m["id"] for m in spec["mutations"]} | set(spec.get("_excluded",{}))
+want={i for i in S["survived"] if F[i]["lens"]=="dead-code"}
+gap=sorted(want-covered)
+if gap:
+    print("SPEC COVERAGE GAP — survivors with neither a mutation nor an exclusion:", gap)
+    sys.exit(9)
+print(f"   spec covers all {len(want)} dead-code survivors")
+COV
+[ $? -ne 0 ] && { echo "aborting: fix the coverage gap first" >&2; exit 9; }
+
 python3 - "$D/artifacts/phase3b-mutations.json" "$WT" "$OUT" "$BASE" <<'PY'
 import json, subprocess, sys, os, re
 
@@ -66,6 +82,17 @@ for m in muts:
                 os.remove(p); applied.append(f"rm {f}")
             else:
                 notes.append(f"MISSING {f}")
+    elif m["kind"] == "delete-names-from-export-type":
+        p = os.path.join(WT, m["file"])
+        if not os.path.exists(p):
+            notes.append(f"MISSING {m['file']}")
+        else:
+            src = open(p).read()
+            for nm in m["names"]:
+                new, n = re.subn(rf"^\s*{re.escape(nm)},?\s*$\n", "", src, flags=re.M)
+                if n: src = new; applied.append(f"drop type {nm}")
+                else: notes.append(f"NO MATCH {nm}")
+            open(p, "w").write(src)
     elif m["kind"] == "unexport-multi":
         for t in m["targets"]:
             p = os.path.join(WT, t["file"])

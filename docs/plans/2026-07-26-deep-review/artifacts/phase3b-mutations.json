@@ -149,6 +149,18 @@
       ]
     },
     {
+      "id": "dead-code-0014",
+      "kind": "delete-names-from-export-type",
+      "file": "apps/server/src/ws-protocol.ts",
+      "names": [
+        "BackupReason",
+        "MonitorEventType",
+        "SerializedDrum",
+        "TunnelStatus",
+        "VoiceStats"
+      ]
+    },
+    {
       "id": "dead-code-0015",
       "kind": "unexport",
       "file": "apps/web/scripts/vite-plugin-source-manifest.mjs",
