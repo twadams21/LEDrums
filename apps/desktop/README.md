@@ -256,9 +256,13 @@ push, and `v0.2.2` disappeared the same way.
   release stops rather than proceeding blind — `OTA_ALLOW_UNVERIFIED_VERSION=1` overrides. A `404`
   is treated as a real answer ("nothing published yet"), not as a failure.
 - **The bump lands on `main` by itself.** `main` refuses direct pushes, so the bump is committed on
-  `chore/version-v<new>` and — only **after a successful publish** — pushed as an auto-merging PR.
+  `chore/version-v<new>` and — only **after a successful publish** — pushed as a PR and merged.
   Publish-then-PR, never the reverse: a failed build must not leave `main` claiming a version that
-  never shipped. If `gh` fails, it warns with the manual commands; the release itself still stands.
+  never shipped. Auto-merge is tried first and the script **falls back to merging outright** when the
+  repository has auto-merge disabled (as this one does — the v0.2.12 release hit exactly that and
+  left its bump PR open). The fallback still merges *through GitHub*, so the `main` ruleset is
+  enforced server-side either way. If `gh` fails entirely it warns with the manual command, and the
+  release itself still stands.
 - **`pnpm ota doctor`** prints local vs published version and branch/upstream drift. Read-only, and
   exits non-zero when the tree is stale.
 

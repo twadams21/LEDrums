@@ -210,6 +210,24 @@ export function planRelease({
 }
 
 /**
+ * Why `gh pr merge --auto` failed, so the caller can say something useful. Pure.
+ *
+ * A repository with auto-merge switched off rejects `--auto` outright — which is exactly what
+ * happened on the first live run of the v0.2.12 release: the bump PR opened but never merged, and
+ * a version bump sitting in an open PR is the same stranded-bump failure the whole guard exists to
+ * prevent. That case is not an error to report, it is a case to FALL BACK from.
+ *
+ * @param {string} stderr  combined output of the failed `gh pr merge --auto` call
+ * @returns {'auto-merge-disabled'|'unknown'}
+ */
+export function classifyAutoMergeFailure(stderr) {
+  const text = String(stderr ?? '');
+  return /enablePullRequestAutoMerge|[Aa]uto[- ]merge is not allowed/.test(text)
+    ? 'auto-merge-disabled'
+    : 'unknown';
+}
+
+/**
  * Guard a publish against the live manifest, and classify it for the Discord announcement. Pure.
  *
  * Replaces the old "same-version manifest or nothing" read, which could not tell a normal new
