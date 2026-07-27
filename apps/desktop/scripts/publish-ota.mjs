@@ -17,6 +17,9 @@
  *      minified stack trace from any released build stays symbolicatable.
  *   4. Fetch any existing latest.json from the public base, MERGE this platform's entry in (so a
  *      multi-arch release built on several machines accumulates into one manifest), and upload it.
+ *   5. Announce the release to Discord (@everyone) — AFTER the manifest is live, so the post only
+ *      ever means "installable now". Best-effort: a webhook failure warns, it never fails the
+ *      release. See ota-announce.mjs.
  *
  * !! SERIAL PUBLISHING ONLY !! latest.json is read-modify-write (fetch → merge one platform → upload).
  * Two `publish-ota.mjs` runs in flight at once can read the same manifest and clobber each other's
@@ -40,7 +43,11 @@
  *   OTA_ALLOW_VERSION_MISMATCH (default unset)    set to "1" to publish despite an OTA_VERSION
  *                                                 mismatch (emergency override; warns loudly)
  *   OTA_TARGET   (default host <os>-<arch>)        override the platform key
- *   OTA_NOTES    (default "")                      release notes string
+ *   OTA_NOTES    (default "")                      release notes string (quoted into the Discord post)
+ *   LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK            #ledrums-updates webhook; unset = no announcement
+ *                                                  (warned about, never silent)
+ *   OTA_ANNOUNCE (default unset)                   set to "0" to publish without announcing (test
+ *                                                  publishes / re-uploads)
  *
  * This is TOOLING for the release operator — it performs network side effects and is NOT run in CI
  * or by the build. `tauri build` must already have produced signed updater artifacts (i.e. it was
@@ -51,6 +58,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } fro
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { announceRelease } from './ota-announce.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
@@ -266,8 +274,13 @@ async function main() {
   // every reported stack trace. Done before the manifest so a failed map upload aborts the publish.
   uploadSourcemaps(version);
 
-  // Merge this platform into any existing same-version manifest.
+  // Merge this platform into any existing same-version manifest. The manifest we just fetched also
+  // tells us what kind of publish this is, which decides the Discord post:
+  //   no same-version manifest      → the release's FIRST platform: it owns the @everyone post
+  //   same version, new platform    → quiet follow-up, no second ping for one release
+  //   same version, same platform   → a re-publish: nothing new to announce
   const existing = await fetchExistingManifest(version);
+  const publishKind = existing === null ? 'release' : existing.platforms[target] ? 'republish' : 'platform';
   const platforms = { ...(existing?.platforms ?? {}) };
   platforms[target] = { signature, url };
 
@@ -289,6 +302,39 @@ async function main() {
       `  manifest -> r2://${BUCKET}/latest.json\n` +
       `  platforms now: ${Object.keys(platforms).join(', ')}`,
   );
+
+  // The manifest is live, so the update really is installable — only now do we tell everyone.
+  await announce({ version, target, platforms: Object.keys(platforms), publishKind });
+}
+
+/** Post the Discord release announcement. Never fails the publish — the release already landed. */
+async function announce({ version, target, platforms, publishKind }) {
+  if (process.env.OTA_ANNOUNCE === '0') {
+    console.log('[ota] OTA_ANNOUNCE=0 — skipping the Discord release announcement.');
+    return;
+  }
+  if (publishKind === 'republish') {
+    console.log(`[ota] v${version} (${target}) was already published — no Discord announcement (re-publish).`);
+    return;
+  }
+  const firstAnnouncement = publishKind === 'release';
+  const { posted, reason } = await announceRelease({
+    webhookUrl: process.env.LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK,
+    version,
+    target,
+    platforms,
+    firstAnnouncement,
+    notes: NOTES,
+  });
+  if (posted) {
+    console.log(
+      firstAnnouncement
+        ? `[ota] announced v${version} to Discord (@everyone) ✓`
+        : `[ota] posted the ${target} follow-up for v${version} to Discord ✓`,
+    );
+  } else {
+    console.warn(`[ota] WARNING: release announcement NOT posted to Discord — ${reason}`);
+  }
 }
 
 main().catch((err) => {

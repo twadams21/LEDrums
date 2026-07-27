@@ -17,6 +17,11 @@
  *   version                     print the current version (read-only)
  *   publish                     publish an already-built signed bundle (e.g. another platform's arch)
  *
+ * A successful publish announces the release to Discord (#ledrums-updates, @everyone) via
+ * ota-announce.mjs — posted only after the manifest is live, so it always means "installable now".
+ * That needs LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK in the environment (hence `--env=prod`); set
+ * OTA_ANNOUNCE=0 to publish without announcing.
+ *
  * The build signs the updater artifact inline (via with-tauri-signing-env.mjs, which prefers the
  * LEDRUMS_-namespaced key and strips any whitespace the secret store introduced). publish-ota.mjs
  * then verifies the signature was made with the key baked into the app before uploading — so a
@@ -192,6 +197,13 @@ function release(level, dryRun) {
     console.log('  4. build a signed desktop bundle (tauri build)');
     console.log("  5. verify the signature key matches the app's updater pubkey");
     console.log('  6. publish the artifact + manifest to R2');
+    console.log(
+      process.env.OTA_ANNOUNCE === '0'
+        ? '  7. (announcement skipped: OTA_ANNOUNCE=0)'
+        : `  7. announce v${next} to Discord (@everyone)${
+            process.env.LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK ? '' : ' — WEBHOOK NOT SET, would warn and skip'
+          }`,
+    );
     console.log('[ota] dry run — nothing was changed, built, or published.');
     return;
   }

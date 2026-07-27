@@ -42,7 +42,12 @@ pnpm db:init:remote          # → npx wrangler@4 d1 execute ledrums-errors --re
 
 # 3. Set secrets (prompted for the value; never committed).
 npx wrangler@4 secret put TELEMETRY_TOKEN        # a long random string
-npx wrangler@4 secret put DISCORD_WEBHOOK_URL    # your Discord channel webhook (optional)
+npx wrangler@4 secret put DISCORD_WEBHOOK_URL    # #ledrums-errors webhook (optional)
+                                                 # value is kept in Infisical (prod) as
+                                                 # LEDRUMS_ERRORS_DISCORD_WEBHOOK; wrangler secrets
+                                                 # are set by hand, not injected from Infisical.
+                                                 # (OTA release pings use a different channel +
+                                                 # webhook — see apps/desktop/README.md.)
 
 # 4. Create the R2 bucket for project backups (#123), then set its lifecycle rule (below).
 npx wrangler@4 r2 bucket create ledrums-backups
