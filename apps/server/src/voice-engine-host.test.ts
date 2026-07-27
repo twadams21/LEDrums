@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SLOT_LABELS, defaultProject, voice } from '@ledrums/core';
+import { defaultProject, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { OutputManager } from './output-manager';
 import { VoiceEngineHost } from './voice-engine-host';
@@ -18,7 +18,7 @@ class FakeOutput implements PixelOutput {
 
 /**
  * A minimal Show: one `flash` effect on a poly bus, scoped to the whole kit, fired by
- * the trigger graph registered for the `kick:center` pad. attackMs=0 so the voice
+ * the trigger graph registered for the `padKey(drumId, zone)` pad. attackMs=0 so the voice
  * reaches full level on the first tick; brightness=1 so the compositor emits light.
  */
 function makeShow(drumId: string, zone: string): voice.Show {
@@ -96,7 +96,7 @@ function frameMax(rgb: Uint8Array): number {
 describe('VoiceEngineHost', () => {
   it('starts black, then lights up after a key hit fires its graph', () => {
     const { host } = makeHost();
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.setShow(makeShow('kick', '0'));
 
     let last: Uint8Array | null = null;
     host.onFrame = (rgb) => {
@@ -111,7 +111,7 @@ describe('VoiceEngineHost', () => {
     expect(host.getStats().engine.voiceCount).toBe(0);
 
     // Native pad hit → a voice spawns and the kit-scoped flash fills the frame.
-    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
     for (let i = 0; i < 8; i++) host.step(STEP);
 
     expect(host.getStats().engine.voiceCount).toBeGreaterThan(0);
@@ -120,19 +120,37 @@ describe('VoiceEngineHost', () => {
 
   it('resolves a mapped MIDI note to its drum via the project inputMap', () => {
     const { host, project } = makeHost();
-    // defaultProject maps note 36 → kick/slot 0 (zone 'center').
+    // defaultProject maps note 36 → kick/slot 0. The pad zone is the slot index as a string,
+    // so the show must be keyed the same way the inputMap resolves it.
     const map = project.inputMap.midiNotes.find((m) => m.note === 36)!;
     expect(map.drumId).toBe('kick');
-    host.setShow(makeShow('kick', SLOT_LABELS[map.slot] ?? SLOT_LABELS[0]));
+    host.setShow(makeShow('kick', String(map.slot)));
 
     host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 });
     for (let i = 0; i < 8; i++) host.step(STEP);
     expect(host.getStats().engine.voiceCount).toBeGreaterThan(0);
   });
 
+  // Regression (the drummer's silent rig, 2026-07-26). A Sensory Percussion zone lands on a
+  // NON-ZERO slot, so this cannot pass by accident via a '0' default. The inputMap resolved
+  // the note to zone 'rim-tip' (a SLOT_LABELS label) while the authored graph was keyed
+  // 'snare:2' (slot index), so the pad lookup missed and every hit reported `no-slot-graphs`
+  // — even though the identical hit from the web UI worked, because only the MIDI/OSC path
+  // converted the slot to a label.
+  it('fires the authored pad graph for a mapped note on a non-zero zone slot', () => {
+    const { host, project } = makeHost();
+    project.inputMap.midiNotes = [{ note: 66, drumId: 'snare', slot: 2 }];
+    host.setShow(makeShow('snare', '2'));
+
+    host.applyInput({ kind: 'noteOn', note: 66, velocity: 1 });
+    for (let i = 0; i < 8; i++) host.step(STEP);
+
+    expect(host.getStats().engine.voiceCount).toBeGreaterThan(0);
+  });
+
   it('an unmapped MIDI note fires nothing (no voice) and does not throw', () => {
     const { host } = makeHost();
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.setShow(makeShow('kick', '0'));
     expect(() => host.applyInput({ kind: 'noteOn', note: 7, velocity: 1 })).not.toThrow();
     for (let i = 0; i < 8; i++) host.step(STEP);
     expect(host.getStats().engine.voiceCount).toBe(0);
@@ -154,8 +172,8 @@ describe('VoiceEngineHost', () => {
 
   it('reports voice/bus telemetry from the engine stats', () => {
     const { host } = makeHost();
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
-    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    host.setShow(makeShow('kick', '0'));
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
     const stats = host.getStats();
     expect(stats.engine.voiceCount).toBeGreaterThan(0);
@@ -165,8 +183,8 @@ describe('VoiceEngineHost', () => {
 
   it('streams per-voice detail so a connected dock can render server-truth voices (S17)', () => {
     const { host } = makeHost();
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
-    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    host.setShow(makeShow('kick', '0'));
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
 
     const { voices } = host.getStats().engine;
@@ -364,7 +382,7 @@ describe('VoiceEngineHost', () => {
     host.setShow(
       routingShow(
         {
-          [voice.padKey('kick', SLOT_LABELS[0])]: trigGraph({ kind: 'drum', drumId: 'kick', zone: SLOT_LABELS[0] }, 'pad'),
+          [voice.padKey('kick', '0')]: trigGraph({ kind: 'drum', drumId: 'kick', zone: '0' }, 'pad'),
           'graph:1': trigGraph({ kind: 'midi', note: 36 }, 'direct'),
         },
         ['pad', 'direct'],
@@ -472,9 +490,9 @@ describe('VoiceEngineHost', () => {
     const { host } = makeHost();
     const events: unknown[] = [];
     host.setMonitor((event) => events.push(event));
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.setShow(makeShow('kick', '0'));
 
-    host.applyInput({ kind: 'key', drumId: 'kick', zone: SLOT_LABELS[0], velocity: 1 });
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
 
     expect(events).toContainEqual(
@@ -482,8 +500,8 @@ describe('VoiceEngineHost', () => {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${voice.padKey('kick', SLOT_LABELS[0])}`,
-        label: `Graph fired ${voice.padKey('kick', SLOT_LABELS[0])}`,
+        destination: `graph:${voice.padKey('kick', '0')}`,
+        label: `Graph fired ${voice.padKey('kick', '0')}`,
       }),
     );
     expect(events).toContainEqual(
@@ -502,7 +520,7 @@ describe('VoiceEngineHost', () => {
     const { host } = makeHost();
     const events: unknown[] = [];
     host.setMonitor((event) => events.push(event));
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.setShow(makeShow('kick', '0'));
 
     // note 7 is in no zone-map entry and no graph source → genuinely unrouted
     host.applyInput({ kind: 'noteOn', note: 7, velocity: 1 });
@@ -524,9 +542,9 @@ describe('VoiceEngineHost', () => {
     const events: unknown[] = [];
     host.setMonitor((event) => events.push(event));
     // A show whose only graph is for a DIFFERENT drum, so a snare pad hit routes but resolves nothing.
-    host.setShow(makeShow('kick', SLOT_LABELS[0]));
+    host.setShow(makeShow('kick', '0'));
 
-    host.applyInput({ kind: 'key', drumId: 'snare', zone: SLOT_LABELS[0], velocity: 1 });
+    host.applyInput({ kind: 'key', drumId: 'snare', zone: '0', velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
 
     expect(events).toContainEqual(
