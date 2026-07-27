@@ -210,11 +210,15 @@ Infisical also injects in `prod`.
 PROJ=a7e707cd-322f-4cf1-a8ec-48da2e35fe72
 BASE=https://pub-6ba98981a8804912b9551135ba976ef4.r2.dev
 
+# 0. (optional, read-only) check this tree against what is actually published:
+#    pnpm ota doctor
+
 # 1. from a clean git working tree, bump the app version. `pnpm ota bump` updates root package.json,
 #    apps/web/package.json, apps/desktop/package.json, src-tauri/tauri.conf.json,
-#    Cargo.toml, and Cargo.lock, then commits:
+#    Cargo.toml, and Cargo.lock, then commits on a `chore/version-v<new>` branch:
 #    version bump: v<old> -> v<new>
 #    tauri.conf.json is still the OTA version clients compare against.
+#    It REFUSES to run if the tree is behind the published version (see "Version authority" below).
 
 # 2. SIGNED build. Build per platform you ship (run on an arm64 Mac for darwin-aarch64).
 infisical run --projectId "$PROJ" --env prod -- pnpm tauri:build
@@ -232,6 +236,31 @@ release built on several machines (e.g. `darwin-aarch64` + `darwin-x86_64`) accu
 manifest. Env knobs: `OTA_BUCKET` (default `ledrums-ota`), `OTA_PUBLIC_BASE` (**required**),
 `OTA_VERSION`, `OTA_TARGET`, `OTA_NOTES`. It needs `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
 (R2 read/write) — supplied by Infisical.
+
+### Version authority (why a release can't ship the same number twice)
+
+The next version is derived from the local `tauri.conf.json`, but **whether a release may happen at
+all is decided against the live `latest.json`** (`scripts/ota-version.mjs`). Git cannot be the
+authority on what has shipped — a fresh clone, a second machine, a reset, or a stranded bump commit
+all desynchronise it. This is not hypothetical: **v0.2.4 was minted twice** (`601aa55` stranded,
+`24c63b7` landed a day later) after the `main` push-protection ruleset started bouncing the manual
+push, and `v0.2.2` disappeared the same way.
+
+- **`pnpm ota bump` refuses a stale tree.** If the local version is *behind* the published one, it
+  aborts and tells you to `git pull` — it does **not** silently bump past the published number,
+  because a stale version implies stale *code*.
+- **`publish-ota.mjs` refuses to re-publish** an already-published `(version, platform)`
+  (`OTA_ALLOW_REPUBLISH=1` overrides), and refuses to overwrite a manifest that is **newer** than the
+  build, which would roll every client back (`OTA_ALLOW_VERSION_ROLLBACK=1` overrides).
+- **It fails closed.** If the manifest can't be read at all (network, bad `OTA_PUBLIC_BASE`), the
+  release stops rather than proceeding blind — `OTA_ALLOW_UNVERIFIED_VERSION=1` overrides. A `404`
+  is treated as a real answer ("nothing published yet"), not as a failure.
+- **The bump lands on `main` by itself.** `main` refuses direct pushes, so the bump is committed on
+  `chore/version-v<new>` and — only **after a successful publish** — pushed as an auto-merging PR.
+  Publish-then-PR, never the reverse: a failed build must not leave `main` claiming a version that
+  never shipped. If `gh` fails, it warns with the manual commands; the release itself still stands.
+- **`pnpm ota doctor`** prints local vs published version and branch/upstream drift. Read-only, and
+  exits non-zero when the tree is stale.
 
 ### Release announcements (Discord)
 

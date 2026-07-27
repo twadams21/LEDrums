@@ -10,6 +10,10 @@
  *   1. Resolve the version from tauri.conf.json `version` (the SOURCE OF TRUTH — it is baked into the
  *      built app). OTA_VERSION, if set, only ASSERTS that expected version; a mismatch is a hard
  *      error (unless OTA_ALLOW_VERSION_MISMATCH=1) so the manifest can never drift from the artifact.
+ *   1b. GUARD against the live manifest BEFORE uploading anything (see ota-version.mjs): refuse to
+ *      re-publish an already-published (version, platform), and refuse to overwrite a manifest that
+ *      is NEWER than this build (which would roll every client back). The live manifest — not this
+ *      working tree — is the authority on what has already shipped.
  *   2. Locate the updater artifact (e.g. `*.app.tar.gz`) + signature under
  *      src-tauri/target/release/bundle/.
  *   3. Upload the artifact to r2://<bucket>/<version>/<target>/<file>.
@@ -48,6 +52,13 @@
  *                                                  (warned about, never silent)
  *   OTA_ANNOUNCE (default unset)                   set to "0" to publish without announcing (test
  *                                                  publishes / re-uploads)
+ *   OTA_ALLOW_REPUBLISH (default unset)           set to "1" to overwrite an already-published
+ *                                                 (version, platform). Clients already on that
+ *                                                 version will NOT re-download it
+ *   OTA_ALLOW_VERSION_ROLLBACK (default unset)    set to "1" to publish over a NEWER live manifest
+ *                                                 (deliberately rolling clients back)
+ *   OTA_ALLOW_UNVERIFIED_VERSION (default unset)  set to "1" to publish when the live manifest
+ *                                                 cannot be read at all (fails closed otherwise)
  *
  * This is TOOLING for the release operator — it performs network side effects and is NOT run in CI
  * or by the build. `tauri build` must already have produced signed updater artifacts (i.e. it was
@@ -59,6 +70,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { announceRelease } from './ota-announce.mjs';
+import { assessPublish, fetchPublishedManifest } from './ota-version.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
@@ -200,17 +212,14 @@ function uploadSourcemaps(version) {
 }
 
 /** Fetch the current manifest so we can merge this platform into it (best-effort). */
-async function fetchExistingManifest(version) {
-  try {
-    const res = await fetch(`${PUBLIC_BASE}/latest.json`, { redirect: 'follow' });
-    if (!res.ok) return null;
-    const manifest = await res.json();
-    // Only merge into a manifest for the SAME version — a new version supersedes old platforms.
-    if (manifest?.version === version && manifest?.platforms) return manifest;
-    return null;
-  } catch {
-    return null;
-  }
+/**
+ * The live manifest, whatever version it carries. Unlike the old same-version-only read, this
+ * returns the manifest even when its version DIFFERS from ours — {@link assessPublish} needs to see
+ * a manifest that is AHEAD of us to refuse the publish, which the old shape silently reported as
+ * `null` (indistinguishable from a fresh release).
+ */
+async function fetchLiveManifest() {
+  return fetchPublishedManifest({ publicBase: PUBLIC_BASE });
 }
 
 async function main() {
@@ -255,6 +264,36 @@ async function main() {
   const os = target.split('-')[0];
   console.log(`[ota] publishing v${version} for ${target}`);
 
+  // Version guard, BEFORE anything is uploaded. The live manifest — not this working tree — is the
+  // authority on what has already shipped, so a stale checkout cannot overwrite a live artifact or
+  // roll clients back. Fetched once here and reused for the merge below (publishing stays
+  // serial-only: this is still a read-modify-write of latest.json).
+  const live = await fetchLiveManifest();
+  if (!live.reachable) {
+    if (process.env.OTA_ALLOW_UNVERIFIED_VERSION !== '1') {
+      console.error(
+        `error: cannot verify what is already published (${live.reason}). Publishing blind risks ` +
+          `overwriting a live release. Fix connectivity/OTA_PUBLIC_BASE, or set ` +
+          `OTA_ALLOW_UNVERIFIED_VERSION=1 to override.`,
+      );
+      process.exit(1);
+    }
+    console.warn(`[ota] WARNING: could not verify the published version (${live.reason}) — continuing unverified.`);
+  }
+
+  const assessment = assessPublish({
+    manifest: live.manifest,
+    version,
+    target,
+    allowRepublish: process.env.OTA_ALLOW_REPUBLISH === '1',
+    allowRollback: process.env.OTA_ALLOW_VERSION_ROLLBACK === '1',
+  });
+  if (!assessment.ok) {
+    console.error(`error: ${assessment.message}`);
+    process.exit(1);
+  }
+  console.log(`[ota] ${assessment.message}`);
+
   const { file, artifactPath, sigPath } = findArtifact(os);
   const signature = readFileSync(sigPath, 'utf8').trim();
 
@@ -274,19 +313,18 @@ async function main() {
   // every reported stack trace. Done before the manifest so a failed map upload aborts the publish.
   uploadSourcemaps(version);
 
-  // Merge this platform into any existing same-version manifest. The manifest we just fetched also
-  // tells us what kind of publish this is, which decides the Discord post:
-  //   no same-version manifest      → the release's FIRST platform: it owns the @everyone post
+  // Merge this platform in. `assessPublish` (above) already decided what kind of publish this is,
+  // which decides the Discord post:
+  //   no manifest / older manifest  → the release's FIRST platform: it owns the @everyone post
   //   same version, new platform    → quiet follow-up, no second ping for one release
-  //   same version, same platform   → a re-publish: nothing new to announce
-  const existing = await fetchExistingManifest(version);
-  const publishKind = existing === null ? 'release' : existing.platforms[target] ? 'republish' : 'platform';
-  const platforms = { ...(existing?.platforms ?? {}) };
+  //   same version, same platform   → a re-publish (only reachable with OTA_ALLOW_REPUBLISH=1)
+  const { publishKind, mergePlatforms } = assessment;
+  const platforms = { ...mergePlatforms };
   platforms[target] = { signature, url };
 
   const manifest = {
     version,
-    notes: NOTES || existing?.notes || `LEDrums ${version}`,
+    notes: NOTES || assessment.notes || `LEDrums ${version}`,
     pub_date: new Date().toISOString(),
     platforms,
   };

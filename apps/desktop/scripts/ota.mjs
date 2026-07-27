@@ -12,10 +12,21 @@
  * key (LEDRUMS_TAURI_SIGNING_PRIVATE_KEY) and R2 creds are present.
  *
  * Sub-commands:
- *   bump [--level] [--dry-run]  full pipeline (bump + build + sign + publish)  ← everyday release
+ *   bump [--level] [--dry-run]  full pipeline (bump + build + sign + publish + land the bump PR)
  *                               --dry-run prints the plan without changing/building/publishing
  *   version                     print the current version (read-only)
  *   publish                     publish an already-built signed bundle (e.g. another platform's arch)
+ *   doctor                      compare this tree against the published release (read-only)
+ *
+ * VERSION AUTHORITY. The next version is derived from the local tauri.conf.json, but whether a
+ * release may happen at all is decided against the LIVE MANIFEST (ota-version.mjs). A tree that is
+ * behind what is published is refused outright — that drift is what let v0.2.4 be minted twice
+ * (601aa55 stranded, 24c63b7 landed a day later). `pnpm ota doctor` shows the comparison.
+ *
+ * THE BUMP LANDS BY ITSELF. `main` is push-protected (ruleset "Block push to main"), so the bump is
+ * committed on `chore/version-vX.Y.Z` and — only after a SUCCESSFUL publish — pushed as an
+ * auto-merging PR. Publish-then-PR, never the reverse: if the build or upload fails, main must not
+ * claim a version that never shipped.
  *
  * A successful publish announces the release to Discord (#ledrums-updates, @everyone) via
  * ota-announce.mjs — posted only after the manifest is live, so it always means "installable now".
@@ -31,6 +42,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyVersionState, fetchPublishedManifest, planRelease } from './ota-version.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
@@ -112,6 +124,12 @@ function runGit(args, errorMessage) {
   }
 }
 
+/** Run a git command for its OUTPUT, returning null when it fails (for read-only probes). */
+function gitOut(args) {
+  const child = spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8' });
+  return child.status === 0 ? child.stdout.trim() : null;
+}
+
 function ensureCleanWorkingTree() {
   const child = spawnSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
   if (child.status !== 0) {
@@ -122,10 +140,109 @@ function ensureCleanWorkingTree() {
   }
 }
 
+/** The branch the operator started on — where we return once the release is out. */
+function currentBranch() {
+  return gitOut(['rev-parse', '--abbrev-ref', 'HEAD']);
+}
+
+/**
+ * How the current branch stands against its upstream, after a fetch. `behind > 0` is the condition
+ * that produced the duplicate-release incident: releasing from a branch that is missing commits
+ * (including, historically, an earlier stranded version bump) bakes a stale tree into the build.
+ */
+function upstreamDivergence() {
+  // A fetch failure is not fatal — the manifest check is the real authority; this is a hint.
+  spawnSync('git', ['fetch', 'origin', '--quiet'], { cwd: repoRoot, stdio: 'ignore' });
+  const counts = gitOut(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']);
+  if (!counts) return null;
+  const [ahead, behind] = counts.split(/\s+/).map(Number);
+  return { ahead, behind };
+}
+
+/** The version-bump branch for a release — a PR target, since `main` refuses direct pushes. */
+function versionBranchName(next) {
+  return `chore/version-v${next}`;
+}
+
 function commitVersionBump(current, next) {
   const paths = versionFiles.map(relativePath);
   runGit(['add', ...paths], 'could not stage OTA version files');
   runGit(['commit', '-m', `version bump: v${current} -> v${next}`], 'could not commit OTA version bump');
+}
+
+/**
+ * Get the version bump onto `main` WITHOUT the operator having to remember anything.
+ *
+ * `main` is push-protected (ruleset "Block push to main"), so the bump commit used to be made
+ * locally and then stranded when the manual push bounced — the exact mechanism that let v0.2.4 be
+ * minted twice. The ruleset requires a PR but zero approvals, so the script can open one and let it
+ * auto-merge.
+ *
+ * Called only AFTER a successful publish: if the build or upload fails, main must not claim a
+ * version that never shipped. Best-effort by the same logic as the Discord announcement — the
+ * release has already landed, so a `gh` failure WARNS with the manual steps rather than failing.
+ */
+function openVersionBumpPr({ current, next, branch, originalBranch }) {
+  const push = spawnSync('git', ['push', '-u', 'origin', branch], { cwd: repoRoot, stdio: 'inherit' });
+  if (push.status !== 0) {
+    console.warn(
+      `[ota] WARNING: could not push ${branch} — the v${next} bump is COMMITTED LOCALLY ONLY.\n` +
+        `      Push it and open a PR by hand, or the next release will re-mint v${next}:\n` +
+        `        git push -u origin ${branch} && gh pr create --fill && gh pr merge --auto --merge`,
+    );
+    return false;
+  }
+
+  const title = `chore: version bump v${current} -> v${next}`;
+  const body =
+    `Released v${next} over the air.\n\n` +
+    `Opened automatically by \`pnpm ota bump\` after a successful publish, so the version bump ` +
+    `cannot strand locally (\`main\` refuses direct pushes).\n`;
+  const pr = spawnSync('gh', ['pr', 'create', '--base', 'main', '--head', branch, '--title', title, '--body', body], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  });
+  if (pr.status !== 0) {
+    console.warn(
+      `[ota] WARNING: pushed ${branch} but could not open a PR. Open one to land the v${next} bump:\n` +
+        `        gh pr create --base main --head ${branch} --fill && gh pr merge --auto --merge`,
+    );
+    return false;
+  }
+
+  const merge = spawnSync('gh', ['pr', 'merge', branch, '--auto', '--merge'], { cwd: repoRoot, stdio: 'inherit' });
+  if (merge.status !== 0) {
+    console.warn(
+      `[ota] WARNING: PR opened for ${branch} but auto-merge could not be enabled. Merge it manually:\n` +
+        `        gh pr merge ${branch} --merge`,
+    );
+    return false;
+  }
+
+  console.log(`[ota] opened + auto-merging the v${next} version-bump PR (${branch}) ✓`);
+  returnToBranch(originalBranch);
+  return true;
+}
+
+/**
+ * Return to the branch the operator started on and fast-forward it, so the NEXT release does not
+ * start from a tree that is missing the bump we just landed. Advisory: a failure here is reported,
+ * never fatal — and the manifest guard catches the consequence anyway.
+ */
+function returnToBranch(originalBranch) {
+  if (!originalBranch || originalBranch === 'HEAD') return;
+  const checkout = spawnSync('git', ['checkout', originalBranch], { cwd: repoRoot, stdio: 'inherit' });
+  if (checkout.status !== 0) {
+    console.warn(`[ota] WARNING: could not switch back to ${originalBranch} — you are still on the bump branch.`);
+    return;
+  }
+  const pull = spawnSync('git', ['pull', '--ff-only'], { cwd: repoRoot, stdio: 'inherit' });
+  if (pull.status !== 0) {
+    console.warn(
+      `[ota] NOTE: back on ${originalBranch}, but it could not fast-forward yet (the bump PR may still be ` +
+        `merging). Run \`git pull\` before the next release.`,
+    );
+  }
 }
 
 /** Bump the app version across web + desktop metadata. tauri.conf.json remains OTA source of truth. */
@@ -156,14 +273,20 @@ function build() {
   }
 }
 
-/** Publish the freshly-built signed artifact + manifest. publish-ota.mjs verifies the signature
- *  key id against the app's baked-in updater pubkey before uploading anything. */
-function publish() {
+/** The R2 public base URL, from the environment or .env.local. */
+function publicBase() {
   loadEnvLocal();
-  const base = process.env.OTA_PUBLIC_BASE || process.env.BASE;
+  return process.env.OTA_PUBLIC_BASE || process.env.BASE;
+}
+
+/** Publish the freshly-built signed artifact + manifest, returning the exit status. publish-ota.mjs
+ *  guards against the live manifest and verifies the signature key id against the app's baked-in
+ *  updater pubkey before uploading anything. */
+function runPublish() {
+  const base = publicBase();
   if (!base) {
     console.error('error: set BASE or OTA_PUBLIC_BASE in .env.local (the R2 public base URL)');
-    process.exit(1);
+    return 1;
   }
   const env = { ...process.env, OTA_PUBLIC_BASE: base };
   const child = spawnSync(process.execPath, [join(desktopDir, 'scripts', 'publish-ota.mjs')], {
@@ -171,7 +294,12 @@ function publish() {
     env,
     stdio: 'inherit',
   });
-  process.exit(child.status ?? 1);
+  return child.status ?? 1;
+}
+
+/** The `publish` sub-command: publish an already-built bundle, then exit with its status. */
+function publish() {
+  process.exit(runPublish());
 }
 
 /** The current desktop version (tauri.conf.json is the source of truth). */
@@ -179,24 +307,103 @@ function currentVersion() {
   return JSON.parse(readFileSync(tauriConf, 'utf8')).version;
 }
 
+/** What is actually published right now, per the live manifest — the authority on what has shipped. */
+async function published() {
+  return fetchPublishedManifest({ publicBase: publicBase() });
+}
+
+/**
+ * Report how this tree stands against the wild: local version vs published version, and whether the
+ * branch is behind its upstream. Cheap, read-only, and it makes the drift that caused the duplicate
+ * v0.2.4 release VISIBLE before it bites.
+ */
+async function doctor() {
+  const local = currentVersion();
+  console.log(`[ota] local version (tauri.conf.json):  v${local}`);
+
+  const live = await published();
+  if (!live.reachable) {
+    console.log(`[ota] published version:                UNKNOWN — ${live.reason}`);
+  } else if (live.version === null) {
+    console.log('[ota] published version:                none (nothing released yet)');
+  } else {
+    console.log(`[ota] published version (latest.json):  v${live.version}`);
+  }
+
+  const branch = currentBranch();
+  const div = upstreamDivergence();
+  console.log(
+    `[ota] branch:                           ${branch ?? 'unknown'}` +
+      (div ? ` (${div.ahead} ahead, ${div.behind} behind upstream)` : ' (no upstream)'),
+  );
+
+  const state = live.reachable ? classifyVersionState({ localVersion: local, publishedVersion: live.version }) : null;
+  if (state === 'local-stale') {
+    console.error(
+      `\n[ota] PROBLEM: this tree (v${local}) is BEHIND the published v${live.version}. A release from here ` +
+        `would re-mint a live version number. Run \`git pull\` on main first.`,
+    );
+    return 1;
+  }
+  if (state === 'local-ahead') {
+    console.warn(
+      `\n[ota] NOTE: v${local} is bumped in the tree but never published. \`pnpm ota publish\` ships it; ` +
+        `\`pnpm ota bump\` would skip past it.`,
+    );
+  }
+  if (div && div.behind > 0) {
+    console.warn(`\n[ota] NOTE: ${branch} is ${div.behind} commit(s) behind upstream — pull before releasing.`);
+  }
+  if (state === 'in-sync' && (!div || div.behind === 0)) console.log('\n[ota] all good — ready to release.');
+  return 0;
+}
+
 /** True if any `--dry-run` / `--dryrun` flag is present. */
 function hasDryRun(args) {
   return args.some((a) => a === '--dry-run' || a === '--dryrun');
 }
 
-/** The everyday release: bump → build (sign) → publish. `--dry-run` prints the plan and exits
- *  without changing, building, or publishing anything. */
-function release(level, dryRun) {
+/**
+ * The everyday release: guard → bump → commit on a branch → build (sign) → publish → land the bump
+ * via PR. `--dry-run` prints the plan (including the live-manifest check) and changes nothing.
+ *
+ * The version number comes from the local tree, but the DECISION to release comes from the live
+ * manifest (see ota-version.mjs) — that is what stops a stale checkout re-minting a shipped version.
+ */
+async function release(level, dryRun) {
   const current = currentVersion();
-  const next = bumpVersion(current, level);
+
+  // Layer 1: the live manifest, not this tree, decides whether a release may proceed.
+  const live = await published();
+  const plan = planRelease({
+    localVersion: current,
+    publishedVersion: live.version,
+    manifestReachable: live.reachable,
+    level,
+    allowUnverified: process.env.OTA_ALLOW_UNVERIFIED_VERSION === '1',
+    unreachableReason: live.reason,
+  });
+  if (!plan.ok) {
+    console.error(`error: ${plan.message}`);
+    process.exit(1);
+  }
+  const next = plan.next;
+  const branch = versionBranchName(next);
+  const originalBranch = currentBranch();
+
   if (dryRun) {
     console.log(`[ota] DRY RUN — would release ${current} -> ${next} (${level}):`);
+    console.log(`  0. ${plan.message}`);
+    const div = upstreamDivergence();
+    if (div && div.behind > 0) {
+      console.log(`     WARNING: ${originalBranch} is ${div.behind} commit(s) behind upstream — pull first.`);
+    }
     console.log('  1. require a clean git working tree');
     console.log('  2. bump app versions in root package.json, apps/web/package.json, desktop package.json, tauri.conf.json, Cargo.toml, Cargo.lock');
-    console.log(`  3. commit: version bump: v${current} -> v${next}`);
+    console.log(`  3. commit on branch ${branch}: version bump: v${current} -> v${next}`);
     console.log('  4. build a signed desktop bundle (tauri build)');
     console.log("  5. verify the signature key matches the app's updater pubkey");
-    console.log('  6. publish the artifact + manifest to R2');
+    console.log('  6. publish the artifact + manifest to R2 (refused if that version+platform is already live)');
     console.log(
       process.env.OTA_ANNOUNCE === '0'
         ? '  7. (announcement skipped: OTA_ANNOUNCE=0)'
@@ -204,28 +411,50 @@ function release(level, dryRun) {
             process.env.LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK ? '' : ' — WEBHOOK NOT SET, would warn and skip'
           }`,
     );
+    console.log(`  8. push ${branch} + open an auto-merging PR so the bump lands on main`);
     console.log('[ota] dry run — nothing was changed, built, or published.');
     return;
   }
+
+  if (plan.message) console.log(`[ota] ${plan.message}`);
   ensureCleanWorkingTree();
+
+  // Commit the bump on its own branch: `main` refuses direct pushes, so a bump committed onto a
+  // local main can only ever strand there.
+  runGit(['checkout', '-b', branch], `could not create the version branch ${branch}`);
   bumpFiles(level);
   commitVersionBump(current, next);
+
   build();
-  publish(); // exits with publish-ota's status
+
+  const status = runPublish();
+  if (status !== 0) {
+    console.error(
+      `[ota] publish failed — v${next} was NOT released. The bump is committed on ${branch} but no PR was ` +
+        `opened, so main still reads v${current}. Fix the cause and re-run, or delete the branch.`,
+    );
+    process.exit(status);
+  }
+
+  // Only now — the release is live, so main may claim it. Layer 2: this is what stops the bump
+  // stranding locally and a later release re-minting v${next}.
+  openVersionBumpPr({ current, next, branch, originalBranch });
 }
 
 const [, , command = 'bump', ...rest] = process.argv;
 
 try {
-  if (command === 'bump') release(parseLevel(rest), hasDryRun(rest));
+  if (command === 'bump') await release(parseLevel(rest), hasDryRun(rest));
   else if (command === 'version') console.log(currentVersion());
   else if (command === 'publish') publish();
+  else if (command === 'doctor') process.exit(await doctor());
   else {
-    console.error('usage: pnpm ota <bump|version|publish> [--major|--minor|--patch] [--dry-run]');
-    console.error('  bump      bump + build + sign + publish  (run under `infisical run --env=prod`)');
+    console.error('usage: pnpm ota <bump|version|publish|doctor> [--major|--minor|--patch] [--dry-run]');
+    console.error('  bump      bump + build + sign + publish + land the bump PR  (run under `infisical run --env=prod`)');
     console.error('  bump --dry-run   print the release plan without changing anything');
     console.error('  version   print the current version');
     console.error('  publish   publish an already-built signed bundle');
+    console.error('  doctor    compare this tree against the published release (read-only)');
     process.exit(2);
   }
 } catch (err) {
