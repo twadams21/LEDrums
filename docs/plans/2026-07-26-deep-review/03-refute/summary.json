@@ -1,0 +1,970 @@
+{
+  "survived": [
+    "data-clumps-0001",
+    "data-clumps-0002",
+    "data-clumps-0003",
+    "data-clumps-0004",
+    "data-clumps-0005",
+    "data-clumps-0007",
+    "dead-code-0001",
+    "dead-code-0002",
+    "dead-code-0003",
+    "dead-code-0004",
+    "dead-code-0005",
+    "dead-code-0006",
+    "dead-code-0007",
+    "dead-code-0008",
+    "dead-code-0009",
+    "dead-code-0010",
+    "dead-code-0011",
+    "dead-code-0012",
+    "dead-code-0013",
+    "dead-code-0014",
+    "dead-code-0015",
+    "divergent-change-0001",
+    "divergent-change-0002",
+    "divergent-change-0003",
+    "divergent-change-0004",
+    "divergent-change-0005",
+    "divergent-change-0007",
+    "duplicated-code-0001",
+    "duplicated-code-0002",
+    "duplicated-code-0003",
+    "duplicated-code-0004",
+    "duplicated-code-0006",
+    "duplicated-code-0010",
+    "duplicated-code-0011",
+    "duplicated-code-0012",
+    "duplicated-code-0013",
+    "duplicated-code-0014",
+    "middle-man-0001",
+    "middle-man-0003",
+    "middle-man-0007",
+    "primitive-obsession-0001",
+    "primitive-obsession-0003",
+    "primitive-obsession-0006",
+    "primitive-obsession-0008",
+    "primitive-obsession-0009",
+    "primitive-obsession-0010",
+    "repeated-switches-0001",
+    "repeated-switches-0002",
+    "resilience-hole-0001",
+    "resilience-hole-0002",
+    "resilience-hole-0003",
+    "resilience-hole-0004",
+    "resilience-hole-0005",
+    "resilience-hole-0006",
+    "resilience-hole-0007",
+    "resilience-hole-0008",
+    "resilience-hole-0010",
+    "resilience-hole-0011",
+    "resilience-hole-0013",
+    "speculative-generality-0001",
+    "speculative-generality-0002",
+    "speculative-generality-0007",
+    "speculative-generality-0011"
+  ],
+  "refuted": [
+    "boundary-violation-0001",
+    "boundary-violation-0002",
+    "boundary-violation-0003",
+    "boundary-violation-0004",
+    "boundary-violation-0005",
+    "boundary-violation-0006",
+    "data-clumps-0006",
+    "data-clumps-0008",
+    "divergent-change-0006",
+    "divergent-change-0008",
+    "divergent-change-0009",
+    "duplicated-code-0005",
+    "duplicated-code-0007",
+    "duplicated-code-0008",
+    "duplicated-code-0009",
+    "duplicated-code-0015",
+    "middle-man-0002",
+    "middle-man-0004",
+    "middle-man-0005",
+    "middle-man-0006",
+    "primitive-obsession-0002",
+    "primitive-obsession-0004",
+    "primitive-obsession-0005",
+    "primitive-obsession-0007",
+    "primitive-obsession-0011",
+    "primitive-obsession-0012",
+    "primitive-obsession-0013",
+    "primitive-obsession-0014",
+    "repeated-switches-0003",
+    "repeated-switches-0004",
+    "repeated-switches-0005",
+    "repeated-switches-0006",
+    "repeated-switches-0007",
+    "repeated-switches-0008",
+    "repeated-switches-0009",
+    "resilience-hole-0009",
+    "resilience-hole-0012",
+    "speculative-generality-0003",
+    "speculative-generality-0004",
+    "speculative-generality-0005",
+    "speculative-generality-0006",
+    "speculative-generality-0008",
+    "speculative-generality-0009",
+    "speculative-generality-0010"
+  ],
+  "verdicts": {
+    "boundary-violation-0001": {
+      "finding_id": "boundary-violation-0001",
+      "refuted": true,
+      "reasoning": "I checked the inherited compiler libraries, all searched core references, and the actual perfNow call sites. The DOM lib does leave a potential enforcement gap, but the only production ambient usage is the cross-host Performance API, not a DOM object: performance exists in browser workers and Node as well as Window contexts, and engine.ts:814 explicitly guards its absence and falls back to 0. Rewriting the same lookup through globalThis would only change how TypeScript obtains the type; it would not remove or alter the runtime host-clock access, so the cited code does not establish packages/core reaching the DOM under the required criterion. Additionally, package typechecking includes test files with performance.now references at packages/core/src/engine/engine.test.ts:179-182 and packages/core/src/canvas/canvas-determinism.test.ts:181-187, so the claim that engine.ts is the single reference preventing a DOM-free lib setting is mechanically false.",
+      "criterion_applied": "import-boundary",
+      "counter_evidence": "packages/core/src/voice/engine.ts:814 feature-detects the cross-host performance API and falls back to 0; packages/core/src/engine/engine.test.ts:179-182 and packages/core/src/canvas/canvas-determinism.test.ts:181-187 are additional included performance references, contradicting the claimed single-reference compiler boundary.",
+      "confidence": "high"
+    },
+    "boundary-violation-0002": {
+      "finding_id": "boundary-violation-0002",
+      "refuted": true,
+      "reasoning": "I checked the cited CI workflow, package scripts, core manifest, core source imports/dynamic imports, and the reported Madge cycles. The repository does lack an automated boundary-specific CI gate, but that is a process-enforcement gap rather than the criterion\u2019s required defect: no current packages/core import reaches Node, DOM, @ledrums/io, or @ledrums/protocol, and the apparent core cycles inspected are broken at runtime by type-only imports. Because the finding identifies neither an actual forbidden dependency nor a runtime cycle that matters, it falls outside the exact import-boundary criterion and is refuted.",
+      "criterion_applied": "import-boundary",
+      "counter_evidence": "packages/core/package.json:17-19 lists only zod as a runtime dependency; packages/core/src/voice/diagnostics.ts:1 imports InputEvent type-only, and packages/core/src/voice/scope-lint.ts:22 plus packages/core/src/voice/reachability-lint.ts:22 import render-plan symbols type-only, so those reported reverse edges are erased at runtime. A targeted search of packages/core/src found no static or dynamic Node, @ledrums/io, or @ledrums/protocol import.",
+      "confidence": "high"
+    },
+    "boundary-violation-0003": {
+      "finding_id": "boundary-violation-0003",
+      "refuted": true,
+      "reasoning": "I checked the complete dependency path at the cited locations. The links from modifiers/types.ts to modulation.ts, voice/types.ts to modifiers/types.ts and modulation.ts, envelope.ts to types.ts, and easing.ts to types.ts are all `import type` declarations and are erased at runtime; the remaining runtime path modulation.ts \u2192 envelope.ts \u2192 easing.ts does not return to modulation.ts, so there is no runtime cycle that actually matters. I also found no Node, DOM, or @ledrums/io dependency in the examined core modules. Madge's reported static cycle and its repetition across compilation units may be maintainability noise, but that does not satisfy the supplied import-boundary criterion.",
+      "criterion_applied": "import-boundary",
+      "counter_evidence": "packages/core/src/modifiers/types.ts:23, packages/core/src/voice/types.ts:7 and :11, packages/core/src/voice/envelope.ts:6, and packages/core/src/voice/easing.ts:9 are type-only imports; the actual runtime imports at packages/core/src/voice/modulation.ts:17-18 and packages/core/src/voice/envelope.ts:7 form no runtime back-edge.",
+      "confidence": "high"
+    },
+    "boundary-violation-0004": {
+      "finding_id": "boundary-violation-0004",
+      "refuted": true,
+      "reasoning": "I checked the cited imports and their surrounding declarations. The only back-edges are explicit `import type` statements, so they are erased from emitted JavaScript and do not create runtime cycles; the cited modules also do not reach Node, DOM, or `@ledrums/io`. The claim may identify a type-ownership preference, but that is outside the exact criterion, which requires a forbidden core import or a runtime cycle that actually matters.",
+      "criterion_applied": "import-boundary",
+      "counter_evidence": "packages/core/src/voice/render-plan.ts:2-3 contains the runtime imports, while the reverse edges at packages/core/src/voice/reachability-lint.ts:22, packages/core/src/voice/scope-lint.ts:22, and packages/core/src/voice/diagnostics.ts:1 are all explicitly type-only; packages/core/src/voice/engine.ts:54-59 likewise imports only diagnostic types.",
+      "confidence": "high"
+    },
+    "boundary-violation-0005": {
+      "finding_id": "boundary-violation-0005",
+      "refuted": true,
+      "reasoning": "The finding fails the stated criterion: all cited imports are in apps/web, not packages/core, so they do not make core reach Node, DOM, or @ledrums/io, and no runtime cycle is identified. Its factual premise is also false for sim.envelopes.ts, which uses voice as a runtime value to export applyModulations, envelopeToMapping, envShape, sampleEnvelope, and other functions; converting that import to import type would make the module invalid. The other three imports appear type-only, but unnecessary web-to-core runtime imports are outside the exact import-boundary criterion provided.",
+      "criterion_applied": "import-boundary",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/sim.envelopes.ts:32 and apps/web/src/lib/trigger-lab/sim.envelopes.ts:36-46 destructure runtime values from voice; all cited import sites are under apps/web rather than packages/core, and packages/core/src/index.ts:73 only exports the voice namespace without importing Node, DOM, or @ledrums/io.",
+      "confidence": "high"
+    },
+    "boundary-violation-0006": {
+      "finding_id": "boundary-violation-0006",
+      "refuted": true,
+      "reasoning": "I checked the cited module and confirmed that `voice` is a runtime import used by `nodeHasOutput`, `nodeHasInput`, and `nodeIsModSource`, so the header's type-only statement is inaccurate. However, the exact criterion is not comment accuracy: it requires packages/core to reach Node/DOM/@ledrums/io or a consequential runtime cycle. This dependency runs in the permitted direction from apps/web to packages/core, and `isModSourceKind` is a pure core helper with no reverse application import, so the finding does not satisfy the import-boundary criterion.",
+      "criterion_applied": "import-boundary",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:18 imports core from the web application, not vice versa; packages/core/src/voice/modulation-graph.ts:30-34 implements the called helper using only a constant string array and `includes`, while the core search found no import of apps/web or sim.graph-compilation.",
+      "confidence": "high"
+    },
+    "data-clumps-0001": {
+      "finding_id": "data-clumps-0001",
+      "refuted": false,
+      "reasoning": "I checked the declarations and actual production call path. The same five values travel together through at least three call sites: VoiceEngine passes them positionally to applyEffectiveParams at packages/core/src/voice/engine.ts:711, passes them again within the CompositorFrame argument to compositor.render at packages/core/src/voice/engine.ts:713-717, and applyEffectiveParams forwards them in a ModSampleCtx literal to applyModulations at packages/core/src/voice/compositor.ts:71; render additionally converts the frame back into FrameModCtx at packages/core/src/voice/compositor.ts:195-201 and passes it through multiple modCtxFor calls. I found no semantic distinction that breaks the clump: this.bpm is assigned from transport.bpm at packages/core/src/voice/engine.ts:698, and the CC, OSC, and note tables are the identical engine fields in both paths.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "data-clumps-0002": {
+      "finding_id": "data-clumps-0002",
+      "refuted": false,
+      "reasoning": "I checked the cited prop declarations and actual component invocations. The exact threshold is met: `onChange`, `disabled`, `ariaLabel`, and `class` travel together at three distinct call sites\u2014both child controls inside EasePicker and the Select in ModulationParamsSection\u2014so the finding survives even though the declarations are not perfectly identical.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "EasePicker's `onChange` is required rather than optional at apps/web/src/lib/ui/EasePicker.svelte:41, and IconButton's `label` also drives its tooltip rather than merely renaming `ariaLabel` at apps/web/src/lib/ui/IconButton.svelte:34-40; neither difference defeats the criterion, because the four-member group still co-occurs at apps/web/src/lib/ui/EasePicker.svelte:61-67, apps/web/src/lib/ui/EasePicker.svelte:69-75, and apps/web/src/lib/app/docks/inspectors/ModulationParamsSection.svelte:57-64.",
+      "confidence": "high"
+    },
+    "data-clumps-0003": {
+      "finding_id": "data-clumps-0003",
+      "refuted": false,
+      "reasoning": "I checked all three cited forwarding calls. The exact criterion is satisfied: at least three parameters travel together across three call sites\u2014evalGraphGen3FromPlan at packages/core/src/voice/eval-graph.ts:259 and :274, and evalGraphGen3From at :625\u2014with the latter also receiving the same deferred-evaluation values from production callers at packages/core/src/voice/engine.ts:687 and apps/web/src/lib/trigger-lab/sim.ts:595. The claim overstates that all three functions merely forward arguments: evalGraphGen3 constructs the traversal state and evalGraphGen3From compiles and validates a render plan, but those semantic differences do not defeat the specified co-travelling-params threshold.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "evalGraphGen3 has only four declared parameters and initializes startIds/viaPrefix/seen/draft at packages/core/src/voice/eval-graph.ts:256-259; evalGraphGen3From also compiles and checks the plan before forwarding at packages/core/src/voice/eval-graph.ts:272-274. Neither difference refutes the criterion because the resulting eight arguments still co-travel at three forwarding call sites.",
+      "confidence": "high"
+    },
+    "data-clumps-0004": {
+      "finding_id": "data-clumps-0004",
+      "refuted": false,
+      "reasoning": "I checked the implementation and all three non-test callers. The exact trio model, timeMs, and dt travels together positionally at packages/core/src/voice/compositor.ts:244, packages/core/src/voice/generator-bridge.ts:152, and apps/web/src/lib/trigger-lab/render.ts:265, and packages/core/src/modifiers/chain.ts:44 immediately assembles those values into the existing ModifierContext shape, so the stated threshold of at least three parameters across at least three call sites is met.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "data-clumps-0005": {
+      "finding_id": "data-clumps-0005",
+      "refuted": false,
+      "reasoning": "I checked every production declaration and invocation returned by the repository search. The same four values travel together through classifyConnection, classifyReconnect, canConnect, canReconnect, sameSlot, the store connect/reconnect methods, canSplice, and five TriggerGraphView validation calls, comfortably satisfying the exact threshold of at least three co-travelling parameters across at least three call sites. The deliberate endpoint reversal at TriggerGraphView.svelte:565 and :573 is semantically correct, but it does not refute the data clump.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "graph-wiring.ts:78-79 distinguishes fromPort as string | undefined from the narrower ToPort, so arbitrary fromPort-to-toPort transposition is not always type-correct; directionOk at graph-wiring.ts:84 and :107 can also reject some semantic mistakes. Neither difference changes the verified co-travelling-parameter count.",
+      "confidence": "high"
+    },
+    "data-clumps-0006": {
+      "finding_id": "data-clumps-0006",
+      "refuted": true,
+      "reasoning": "I checked both dependency interfaces, every production factory invocation, the shutdown path, restore path, and the individual mutation handlers. The three values travel together across only two production call sites\u2014createClientMessageHandler at apps/server/src/main.ts:618-624 and boot at apps/server/src/main.ts:780-795\u2014while apps/server/src/boot.ts:124-128 is internal use rather than a third parameter-passing call site; moreover, the autosavers are semantically independent and are used apart for project mutations at apps/server/src/handlers/client-message.ts:471-535, show-library updates at :352-356, and song-library updates at :372-376. Therefore the exact >=3 parameters across >=3 call sites criterion is not met.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "Only two production call sites pass the trio together: apps/server/src/main.ts:618-624 and apps/server/src/main.ts:780-795. Individual consumers use them separately at apps/server/src/handlers/client-message.ts:352-376 and apps/server/src/handlers/client-message.ts:471-535.",
+      "confidence": "high"
+    },
+    "data-clumps-0007": {
+      "finding_id": "data-clumps-0007",
+      "refuted": false,
+      "reasoning": "I checked the implementations and external callers in PatchZoneInspector.svelte and DrumZonesList.svelte. The three parameters `InputMap`, `drumId`, and `slot` travel together at substantially more than three call sites, including lookups, setters, declaration, and removal operations; callers frequently source `drumId` and `slot` from the same existing zone editor or list-row context. The schemas also independently repeat the same two-field address shape, although `triggerBindingSchema.slot` is required while the input-map schemas default it; that parsing distinction constrains the proposed schema composition but does not defeat the stated co-travelling-parameter criterion.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "No refuting caller or guard found. Confirming call sites include apps/web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte:29-30,49,60 and apps/web/src/lib/app/docks/inspectors/DrumZonesList.svelte:60,64,69,75,79,85,105-106; the slot-required/default semantic difference is visible at packages/core/src/model/project-schema.ts:73-110 but does not negate the call-site clump.",
+      "confidence": "high"
+    },
+    "data-clumps-0008": {
+      "finding_id": "data-clumps-0008",
+      "refuted": true,
+      "reasoning": "I checked the GeneratorBridge declaration and implementation plus all three renderVoice call sites. The alleged clump consists only of `start` and `end`, which is two parameters, so it fails the exact criterion requiring at least three parameters travelling together across at least three call sites; additionally, the third caller computes and passes standalone bounds rather than holding a PixelRange.",
+      "criterion_applied": "co-travelling-params",
+      "counter_evidence": "packages/core/src/voice/compositor.ts:262-287 computes mutable standalone `start` and `end` bounds and passes them at line 287; only the callers at compositor.ts:230 and compositor.ts:279 destructure an actual PixelRange, and the proposed grouping contains only two parameters.",
+      "confidence": "high"
+    },
+    "dead-code-0001": {
+      "finding_id": "dead-code-0001",
+      "refuted": false,
+      "reasoning": "I checked both component bodies, all repository references to their names and unique UI strings, the application and styleguide entry points, and the web source\u2019s dynamic-import and registry patterns. PatchClipboardToolbar has no importer, while PatchDiffDialog is imported only by that unreachable toolbar; the generated design-system artifact merely contains their filenames in the build-time source-pointer manifest and neither imports nor renders either component, so it does not make the cluster reachable.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0002": {
+      "finding_id": "dead-code-0002",
+      "refuted": false,
+      "reasoning": "I checked the component itself, all repository references to its basename, the reachable PatchGraphView/AuthorShell chain, Svelte imports, dynamic imports, import.meta.glob-style loading, and the filesystem-generated source manifest. PatchMirrorControl.svelte has no importer or runtime dynamic-access path; the source-manifest plugin only records its path as string metadata, while surviving web setKitGlobal calls edit other kit-global fields and do not make this mirror control reachable.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0003": {
+      "finding_id": "dead-code-0003",
+      "refuted": false,
+      "reasoning": "I read apps/web/src/lib/trigger-lab/store/hydrate.ts and searched the repository for direct imports, namespace imports, barrel re-exports, string-keyed access, dynamic imports, import.meta.glob, and reflection-like access involving all nine names. The eight functions are referenced only inside hydrate.ts's normalizeGraphs pipeline, so removing only their export modifiers preserves behavior, while NO_SYSTEM_ACTIONS at apps/web/src/lib/trigger-lab/store/hydrate.ts:441 has no references and is deletable under the stated criterion.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0004": {
+      "finding_id": "dead-code-0004",
+      "refuted": false,
+      "reasoning": "I read apps/server/src/show-library.ts and confirmed showLibraryPath only delegates to the module-local store.path and is not used elsewhere in that module. A repository-wide symbol search found no caller beyond its declaration, and searches for namespace imports, re-export barrels, require calls, computed property access, and dynamic imports involving show-library found no route to it; apps/server is also a private package with no exported package entry point.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0005": {
+      "finding_id": "dead-code-0005",
+      "refuted": false,
+      "reasoning": "I read apps/web/src/lib/trigger-lab/sim.envelopes.ts and confirmed ENV_KINDS is a standalone exported array with no in-module consumer. A repository-wide symbol search found only its declaration plus review documentation, while searches for namespace imports, wildcard re-exports, dynamic imports, import.meta.glob access, and string-keyed ENV_KINDS access found no runtime path; sim.ts also does not re-export it, and @ledrums/web is private. The finding therefore satisfies the criterion: the value is unreachable from every discovered entry point and no dynamic-access pattern resolves to it.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0006": {
+      "finding_id": "dead-code-0006",
+      "refuted": false,
+      "reasoning": "I checked the declaration and every repository reference to isMixRowHandleId, MIX_ROW_HANDLE_PREFIX, mix-layer-rows, and the generated mix-edge: handle format. isMixRowHandleId occurs only at apps/web/src/lib/app/views/mix-layer-rows.ts:21, while all consumers use named static imports of mixLayerRowsFor or mixRowHandleId; no namespace import, barrel re-export, dynamic import, import.meta.glob, reflection, registry, or computed property access can resolve the predicate. MIX_ROW_HANDLE_PREFIX is likewise used only by mixRowHandleId and the dead predicate within its own module, so deleting the predicate and making the prefix non-exported satisfies the stated criterion.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0007": {
+      "finding_id": "dead-code-0007",
+      "refuted": false,
+      "reasoning": "I read workers/error-ingest/src/validate.ts and confirmed that all eight symbols are load-bearing only through same-module references. Repository-wide searches found no static imports of these names, namespace imports, re-exports, dynamic imports, reflection, registry lookup, or computed string-key access resolving to them; the only consumers of validate.ts import parseIngestBatch, parseBackupBatch, and ValidationError. The worker package is private and has no declaration or package-export surface requiring these exports, so removing only the eight export modifiers satisfies the criterion without deleting reachable implementation code.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0008": {
+      "finding_id": "dead-code-0008",
+      "refuted": false,
+      "reasoning": "I checked the declarations and callers in apps/web/src/lib/app/patch-topology.ts:113-117 and confirmed triggerId, zoneNodeId, and outputId are used only internally at lines 178, 189, and 217. I also checked every direct importer of patch-topology, namespace/dynamic imports, re-exports, and string-keyed references; none exposes or dynamically resolves these three exports, so removing only their export modifiers validly reduces the public interface without deleting reachable helpers or changing behavior.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0009": {
+      "finding_id": "dead-code-0009",
+      "refuted": false,
+      "reasoning": "I checked every code import of patch-graph.ts and found only named imports; neither STAGE_ORDER nor DEFAULT_OUTPUT_SCALARS is imported by any consumer, and no namespace import, computed property access, dynamic import, reflection, registry, or template-literal access resolves either export. DEFAULT_OUTPUT_SCALARS is used only as routingFromGraph's in-module default at apps/web/src/lib/app/patch-graph.ts:233, so its implementation must remain but its export can be dropped; STAGE_ORDER is used by its declaring module at apps/web/src/lib/app/patch-topology.ts:137, while the patch-graph import at :29 exists solely for the unused re-export at :337 and can be removed with that re-export.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0010": {
+      "finding_id": "dead-code-0010",
+      "refuted": false,
+      "reasoning": "I read each declaration and confirmed that reserveId, showSig, firstEffectId, OUTPUT_ANCHOR_ID, CANVAS_BUS_ID, blockChildren, and makeDefaultMint are referenced only by their declaring modules. I also checked namespace imports, re-exports, computed property access, dynamic imports, registries, and reflection patterns: the namespace consumers use other statically named members, and although blockChildren is re-exported by apps/web/src/lib/trigger-lab/sim.ts:54, no entry point imports or dynamically resolves it. Therefore the implementations remain locally reachable, but their exports are unused and can be removed under the stated criterion.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0011": {
+      "finding_id": "dead-code-0011",
+      "refuted": false,
+      "reasoning": "I checked the cited declarations and confirmed that each symbol has exactly one static use within its own module: add-node-taxonomy.ts:70/79, align-guides.ts:61, and monitor.ts:24/39. I also checked imports, re-export barrels, namespace imports, dynamic imports, and string-keyed references across the web source and found no external or dynamic access resolving to any of these exports; therefore removing only their export modifiers preserves their internal behavior while reducing the public interface.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0012": {
+      "finding_id": "dead-code-0012",
+      "refuted": false,
+      "reasoning": "I read both declarations and their call sites, then searched the repository for direct imports, re-exports, namespace access, dynamic imports, string-keyed lookups, reflection, and template-literal resolution. `lanUrls` is referenced only internally at apps/server/src/boot.ts:75, while `localNicSubnets` is referenced only as the default implementation at apps/server/src/controller-monitor.ts:170; the tests import other controller-monitor exports but not this function, and `@ledrums/server` is private with no package export map or barrel entry. Under the stated criterion, both functions must remain defined because they are internally reachable, but removing their `export` keywords is valid and reduces the interface without changing behavior.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0013": {
+      "finding_id": "dead-code-0013",
+      "refuted": false,
+      "reasoning": "I checked the declaration and confirmed that parseStatistic is called only by parseStatisticResponse within packages/io/src/pixlite/protocol.ts:182; repository-wide searches found no external caller, namespace-based access, string-keyed lookup, dynamic import, reflection, or template-literal resolution. The finding overstates its public blast radius because packages/io/src/pixlite/index.ts:43 re-exports only PixliteError from protocol.ts, so parseStatistic does not reach the @ledrums/io root barrel; nevertheless, under the stated criterion, removing the unused export remains valid and reduces protocol.ts's module interface without deleting the internally reachable function.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0014": {
+      "finding_id": "dead-code-0014",
+      "refuted": false,
+      "reasoning": "I checked every repository reference to the five names and every static, type-query, namespace, re-export, require, and dynamic-import reference to ws-protocol. None of the five names is consumed through this barrel: TunnelStatus is imported directly from @ledrums/protocol at apps/server/src/tunnel-control.ts:1, while the other server-side matches are only the re-export declaration or comments; @ledrums/server is private and exposes no package entry point for external consumers, and no string-keyed or reflective access resolves these type exports. The finding therefore survives: removing these five re-exports reduces the interface without affecting internal type dependencies such as SerializedModel referring to SerializedDrum in the source protocol package.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "dead-code-0015": {
+      "finding_id": "dead-code-0015",
+      "refuted": false,
+      "reasoning": "I read apps/web/scripts/vite-plugin-source-manifest.mjs and confirmed buildSourceManifest is called only internally by sourceManifestPlugin at line 50. Repository-wide searches found that both actual entry points, apps/web/vite.config.ts:4 and apps/web/vite.design-system.config.ts:11, import only sourceManifestPlugin; no named, namespace, re-export, reflective, string-keyed, or dynamic-import access to buildSourceManifest exists, so removing only its export preserves its internal use while reducing the public interface.",
+      "criterion_applied": "unreachable-and-no-dynamic-access",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "divergent-change-0001": {
+      "finding_id": "divergent-change-0001",
+      "refuted": false,
+      "reasoning": "I checked the runtime dispatch and both engine paths are live: apps/server/src/main.ts:70-72 defaults an unset LEDRUMS_ENGINE to legacy, apps/server/src/main.ts:157-167 always constructs EngineHost and persists host.engine.getProject(), apps/server/src/boot.ts:72-73 starts whichever engine mode is selected, and apps/server/src/handlers/client-message.ts:509-513 applies mutations through the legacy reducer before propagating them to VoiceEngineHost in voice mode. The exact change-scatter criterion is satisfied by at least three commits: 39b7d6b changed 20 files for Patch Graph v2/node-layout propagation across protocol, both server paths, core, and web; 7c89cef changed 11 files to add kit-global/color/per-hoop mutation parity across both hosts and their reducers/tests; and a8e05cd changed 8 files to keep per-hoop materialization behavior aligned across legacy Engine, VoiceEngineHost, web optimistic state, and shared geometry. The duplicated paths have already drifted, as confirmed by apps/server/src/input-router.ts:177-179, and the current comments explicitly describe mutation parity requirements rather than a guard or shared reducer that removes the scatter.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "divergent-change-0002": {
+      "finding_id": "divergent-change-0002",
+      "refuted": false,
+      "reasoning": "I inspected the current TriggerLab composition root and four distinct non-merge commits touching it. At least three independently satisfy the exact change-scatter criterion: Backups dialog commit 8787de5 changed 6 files and added backup state/callback/actions at apps/web/src/lib/trigger-lab/store.svelte.ts:552, apps/web/src/lib/trigger-lab/store.svelte.ts:1556, and apps/web/src/lib/trigger-lab/store.svelte.ts:2211; Patch Graph zone-canvas commit 39b7d6b changed 20 files and added project-layout coordination around apps/web/src/lib/trigger-lab/store.svelte.ts:2088; Mix-layer commit ba8f0df changed 11 files and added live positions and Mix mutators represented currently at apps/web/src/lib/trigger-lab/store.svelte.ts:375 and related graph-authoring methods; OSC discoverability commit c7bf94d changed 26 files and added OSC transport state and WS adoption represented currently by the OscListenInfo import at apps/web/src/lib/trigger-lab/store.svelte.ts:49. These are separate logical changes, each requiring edits across at least four files, across more than three commits, while each converges on TriggerLab, so the stated criterion is met even after excluding merge commits and without relying on the disputed raw touch count.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "divergent-change-0003": {
+      "finding_id": "divergent-change-0003",
+      "refuted": false,
+      "reasoning": "The graph-evaluation portion of the claim is stale: Sim now normalizes legacy graphs and delegates directly to core's voice.evalGraph at apps/web/src/lib/trigger-lab/sim.ts:400-405. However, the remaining offline voice lifecycle is still independently mirrored, including mono-bus stealing at apps/web/src/lib/trigger-lab/sim.ts:445-455 versus packages/core/src/voice/voice-pool.ts:103-113, and git history satisfies the exact criterion in at least three coherent logical changes: e7dbdca changed 5 files for delayed-Mix supersession, e497fd9 changed 10 files for overlap-based Mix timelines, and 0b9dd3d changed 20 files for Mix route composition, each editing both web-sim and core voice concerns.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "Trigger-graph evaluation is no longer a third implementation: apps/web/src/lib/trigger-lab/sim.ts:400-405 delegates to packages/core/src/voice/eval-graph.ts:191-193. This narrows but does not refute the finding because lifecycle parity still scatters logical changes across at least four files in three documented commits.",
+      "confidence": "high"
+    },
+    "divergent-change-0004": {
+      "finding_id": "divergent-change-0004",
+      "refuted": false,
+      "reasoning": "I read the current module-level wiring in apps/server/src/main.ts, including the live project and library slots at lines 155-209, stateMessage at lines 446-462, snapshot integration at lines 559-596, handler dependency assembly at lines 618-663, OSC state at lines 692-744, and boot dependencies at lines 780-801. The exact change-scatter criterion is met by at least three single-purpose commits touching main.ts and four or more files: e361d8a changed 7 files for fail-closed pre-risk snapshots, fbd63a2 changed 10 files for SnapshotStore wiring, 448ce81 changed 10 files for song-library persistence/messages, and e70cec9 changed 4 files for per-voice stats; therefore the finding survives even though extracted handlers and route factories provide some local seams.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "divergent-change-0005": {
+      "finding_id": "divergent-change-0005",
+      "refuted": false,
+      "reasoning": "I inspected packages/core/src/geometry/kit-schema.ts:5-542 and confirmed that it contains the schema/type declarations, cumulative migration ladder, and derived query/reconciliation helpers described. The exact change-scatter criterion is satisfied by at least three coherent logical changes that each edited at least four files: b5495d8 (expanded-output model/migration, 6 files), 85e6995 (first-class hoops, 6 files), 0491a13 (per-output RGB order, 6 files), with 6350289 (origin convention, 6 files) and 182ed74 (Output=data-run migration, 11 files) providing additional evidence; therefore the finding survives refutation.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "divergent-change-0006": {
+      "finding_id": "divergent-change-0006",
+      "refuted": true,
+      "reasoning": "I confirmed the duplicated four waveform formulas at packages/core/src/engine/modulation.ts:8-21 and packages/core/src/voice/lfo.ts:72-100, but that establishes only a two-site implementation edit; even a shared vocabulary change adds packages/core/src/model/project-schema.ts:6-14 for three production files, still below the required four-file threshold. Git history also does not provide the required evidence from three commits: the cited implementations were introduced separately in 29c9311 and aea6c0a, while the other S36 commits added web wiring and tests rather than demonstrating three historical instances of one waveform change scattered across four or more files.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "packages/core/src/model/project-schema.ts:6-14 is the legacy waveform vocabulary, so the demonstrated production scatter is three files at most; packages/core/src/engine/modulation.test.ts:43-50 only asserts range and does not pin formulas. Current-branch history has only two commits touching the cited implementation files: 29c9311 and aea6c0a.",
+      "confidence": "high"
+    },
+    "divergent-change-0007": {
+      "finding_id": "divergent-change-0007",
+      "refuted": false,
+      "reasoning": "I read the full component and inspected every cited commit. The exact change-scatter criterion is satisfied by at least three independent logical changes: 0360c10 spread test-pattern/takeover work across ControllerStatusPanel, OutputStatusPanel, PatchControllerInspector, and output-status.ts; 4731718 spread controller authentication across those three panel layers plus the store and CommitInput; and da3342d spread subnet adoption across server handlers, protocol, controller state, and the same panel chain. The current code confirms these are distinct concerns composed in ControllerStatusPanel rather than merely cosmetic variations: discovery/adoption is at lines 109-123 and 166-206, health/status at 216-278, authentication at 280-294, and test-pattern takeover at 217-239 and 310-361.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "divergent-change-0008": {
+      "finding_id": "divergent-change-0008",
+      "refuted": true,
+      "reasoning": "I inspected the component, its extracted collaborators, the eight cited commits, and the 400-commit churn histogram. The evidence shows several distinct features integrating with the graph view, not one logical change requiring edits in at least four files across at least three commits; moreover, the alleged non-rendering responsibilities are already substantially extracted, leaving the component with Svelte/xyflow binding and event coordination. The churn claim is also inaccurate at current HEAD: the file has 15 touches, not 16, and is not the repository's third-most-changed file when all repository files are counted.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "Projection logic is already pure and extracted in apps/web/src/lib/app/views/trigger-flow-projection.ts:23-119 and apps/web/src/lib/app/views/graph-to-flow.ts:21-79; splice geometry is extracted in apps/web/src/lib/app/views/splice-geometry.ts:1-107, while legality is centralized in apps/web/src/lib/trigger-lab/store/graph-wiring.ts:69-166; lint presentation/indexing is extracted in apps/web/src/lib/app/views/graph-lint.ts:1-96. TriggerGraphView.svelte retains integration-specific reactive rebuilding and xyflow callbacks at apps/web/src/lib/app/views/TriggerGraphView.svelte:190-374 and apps/web/src/lib/app/views/TriggerGraphView.svelte:423-604, rather than independently owning those domains.",
+      "confidence": "high"
+    },
+    "divergent-change-0009": {
+      "finding_id": "divergent-change-0009",
+      "refuted": true,
+      "reasoning": "The stated scatter is three edit sites across only two files: the interface is in packages/protocol/src/index.ts, while both the schema and lock assertion are in packages/protocol/src/schemas.ts:440-472. Git history contains only two post-introduction commits that add a hand-written payload, matching schema, and lock (c7bf94d for OscListenInfo and fbd63a2 for BackupSnapshotMeta); the only third commit touching both files is d5bed06, which introduced the schema system itself rather than evidencing another payload-field change. Although the two feature commits touched 26 and 10 files overall, those additional files implement the OSC and backup features and do not show that changing the payload declaration itself requires edits in four or more files. Therefore the required evidence of one logical change needing >=4 files across >=3 commits is absent.",
+      "criterion_applied": "change-scatter",
+      "counter_evidence": "packages/protocol/src/index.ts:293-303 contains OscListenInfo, while its schema and lock both remain in the single packages/protocol/src/schemas.ts file at lines 329-335 and 459; likewise BackupSnapshotMeta is declared at packages/protocol/src/index.ts:66-72 and its schema plus lock are both in packages/protocol/src/schemas.ts:229-234 and 472. Only commits c7bf94d and fbd63a2 demonstrate this pattern after d5bed06 introduced it, so neither the >=4-file requirement nor the >=3-commit evidence requirement is established.",
+      "confidence": "high"
+    },
+    "duplicated-code-0001": {
+      "finding_id": "duplicated-code-0001",
+      "refuted": false,
+      "reasoning": "I checked the actual declarations in store.controller.test.ts:14-34, store.songs.test.ts:11-31, and object-rows.test.ts:17-37, and confirmed that each exceeds 12 lines and that the first two class bodies are effectively verbatim, comfortably exceeding 90% token similarity. object-rows.test.ts:26 uses `this.m.get(k) ?? null` instead of the other sites' `has` check, but because the map is typed `Map<string, string>` and values are inserted as strings, the implementations are semantically equivalent; consolidating 37 local classes into one test-support export plus imports materially reduces the total duplicated interface rather than merely relocating it.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "duplicated-code-0002": {
+      "finding_id": "duplicated-code-0002",
+      "refuted": false,
+      "reasoning": "I checked all six cited suites and found that batch-c.test.ts:14-72 and batch-d.test.ts:14-72 duplicate the model, transport, ctx, trig, render, and litCount helpers across roughly 59 lines; these implementations are token-identical and semantically equivalent, including the same model default. The broader claim overstates uniformity because batch-a/b omit trig, batch-e uses litIds, and the finite-range helpers have different assertion/boolean contracts, but the exact criterion only requires two qualifying sites, and the batch-c/batch-d pair independently exceeds 12 lines and 90% similarity. Moving those shared pure builders into one test-only harness would replace multiple suite-local helper sets with one reusable interface rather than merely relocating an equal number of interfaces.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "Partial differences exist at packages/core/src/effects/batch-a.test.ts:64-70, packages/core/src/effects/batch-c.test.ts:74-80, packages/core/src/effects/batch-d.test.ts:74-80, and packages/core/src/effects/batch-e.test.ts:64-79, but they do not refute the qualifying duplicate block at batch-c.test.ts:14-72 and batch-d.test.ts:14-72.",
+      "confidence": "high"
+    },
+    "duplicated-code-0003": {
+      "finding_id": "duplicated-code-0003",
+      "refuted": false,
+      "reasoning": "I read both controller implementations, their serializers/deserializers, exported-plan usages, and the shared caller. The clone exceeds the stated threshold: the two classes contain matching state fields and multiple contiguous method bodies of at least 12 lines with only library type and codec identifiers substituted, and both callers apply the resulting plans with the same reconciliation sequence at apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:574-595. The codecs have different validation details, but those differences are already isolated behind equivalent serialize/deserialize contracts and do not change the controllers' reconciliation semantics; consolidating the two exported classes and two plan unions into one generic controller and one plan union would reduce rather than merely relocate the interface.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "duplicated-code-0004": {
+      "finding_id": "duplicated-code-0004",
+      "refuted": false,
+      "reasoning": "I checked the cited declarations directly. ParamSpec is a 14-line, field-for-field and comment-for-comment duplicate at apps/web/src/lib/trigger-lab/sim.envelopes.ts:59 and packages/core/src/voice/types.ts:102, while the adjacent Preset/Bus regions at apps/web/src/lib/trigger-lab/sim.ts:167 and packages/core/src/voice/types.ts:137 are each 13-line exact duplicates; these types are semantically equivalent because show-builder passes the web values into voice.Show by structural assignment. EffectDef is not itself byte-identical because the web type adds gallery/authoring metadata at apps/web/src/lib/trigger-lab/sim.ts:146-157, but that does not kill the finding: the two independent exact duplicate regions already satisfy the threshold, and aliasing them to voice types removes hand-maintained declarations without adding a new interface or dependency seam because sim.envelopes.ts already imports voice.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "EffectDef has web-only category, description, tags, playType, and deprecated fields at apps/web/src/lib/trigger-lab/sim.ts:146-157, so the claim that every listed body is byte-identical is overstated; however, ParamSpec and the contiguous Preset/Bus regions independently meet the required threshold.",
+      "confidence": "high"
+    },
+    "duplicated-code-0005": {
+      "finding_id": "duplicated-code-0005",
+      "refuted": true,
+      "reasoning": "The repeated default-field block is structurally similar and long enough, but the cited functions are not semantically equivalent under the required criterion. `makeNode` is a general authored-node factory for every `NodeKind`, arbitrary IDs, and caller overrides, whereas `anchorNode` can only synthesize reserved trigger/output anchors with `id === kind`; normalization preserves authored nodes rather than recreating them with these defaults, so the claimed two constructions of the same authored object do not occur. The proposed shared exported factory would also retain the web-facing factory while adding a core interface, relocating or increasing interface rather than reducing it.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:77-103 accepts every NodeKind, an independent id, and post-default `...over`; packages/core/src/voice/graph-integrity.ts:42-67 restricts construction to trigger/output anchors and binds id to kind. packages/core/src/voice/graph-integrity.ts:125-155 preserves or minimally migrates existing authored nodes, while anchorNode is used only when the trigger is missing at line 101 and to create the canonical reserved output at lines 157-162.",
+      "confidence": "high"
+    },
+    "duplicated-code-0006": {
+      "finding_id": "duplicated-code-0006",
+      "refuted": false,
+      "reasoning": "I read both handlers and checked their server wiring and route tests. The blocks at apps/server/src/http/host-event.ts:91-120 and apps/server/src/http/native-midi.ts:48-77 each exceed 12 lines and contain the same path ownership, POST gate, isTrustedHost authorization, UTF-8 accumulation, overflow destruction, request-error response, and end-callback structure; the path, cap, and diagnostic strings are parameters rather than semantic differences in that scaffolding. Both handlers are independently instantiated in apps/server/src/main.ts:675-685 with the same captured hostToken model, and their tests confirm matching route/method/trust/body-limit behavior. A shared trusted-POST route would replace two request-lifecycle implementations with one configuration boundary plus route-specific body callbacks, reducing rather than merely moving the duplicated behavioral interface.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "duplicated-code-0007": {
+      "finding_id": "duplicated-code-0007",
+      "refuted": true,
+      "reasoning": "I checked both cited implementations and the claimed catch-up drift is intentional proportional behavior, not accidental divergence: EngineHost runs at 60 fps with a six-step budget, while VoiceEngineHost runs at 120 fps with a twelve-step budget, so each can consume the same clamped 100 ms wall-time interval. The full step regions also fail the >=90% token-similarity and semantic-equivalence requirements because VoiceEngineHost advances time before computing transport and calls tick with absolute time plus transport, while EngineHost directly ticks before advancing time; their frame and DMX-map access paths also differ. Only smaller pacing/throttle fragments are equivalent, and extracting them behind advance/tickWall/stats plus callback hooks would introduce a new host-to-helper interface rather than reduce total interface.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "apps/server/src/engine-host.ts:22-24,128-135 uses a 16.67 ms tick and six catch-up steps; apps/server/src/voice-engine-host.ts:54-56,470-478 uses an 8.33 ms tick and explicitly documents twelve steps as the equivalent 100 ms budget. The step semantics differ at apps/server/src/engine-host.ts:142-145 versus apps/server/src/voice-engine-host.ts:481-496, and frame/output access differs at apps/server/src/engine-host.ts:158-176 versus apps/server/src/voice-engine-host.ts:510-527.",
+      "confidence": "high"
+    },
+    "duplicated-code-0008": {
+      "finding_id": "duplicated-code-0008",
+      "refuted": true,
+      "reasoning": "I checked both cited pairs against the full functions, not just the matching assignments. The Mix fragments are embedded in semantically different constructors: the web version spreads the entire host voice, while core explicitly selects fields, consumes input.liveParams/specs, forces active/level/deckGain values, and does not inherit every host field; the generator paths also obtain effective parameters at different lifecycle layers. Most decisively, the proposed consolidation adds three exported cross-package helpers and their parameter contracts, so it relocates and enlarges the interface rather than reducing total interface as the criterion requires.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/render.ts:79 inherits the complete host via `...host`, including fields such as pad/originNodeId, whereas packages/core/src/voice/compositor.ts:92-124 explicitly constructs a different branch voice, uses input.liveParams/specs, and resets active/level/deckGain. apps/web/src/lib/trigger-lab/render.ts:215 computes frame-effective params locally with effectiveParams(v, sim), while packages/core/src/voice/generator-bridge.ts:97 consumes v.liveParams already prepared through packages/core/src/voice/compositor.ts:61-74 and :222-225. Exporting the proposed three helpers would add public interfaces rather than reduce them.",
+      "confidence": "high"
+    },
+    "duplicated-code-0009": {
+      "finding_id": "duplicated-code-0009",
+      "refuted": true,
+      "reasoning": "I compared the complete methods and their queue representations, not just the clone detector's overlapping window. Only the five-line early-out/partition/sort skeleton at apps/web/src/lib/trigger-lab/sim.ts:588-592 and packages/core/src/voice/engine.ts:680-684 is semantically equivalent; the remaining method bodies differ in queue shape, evaluator state/pad semantics, and action application, so there are not two semantically equivalent blocks of at least 12 lines with at least 90% token similarity. The reported 17-line jscpd ranges begin in unrelated preceding code and mostly include comments and structural boilerplate, rather than two equivalent executable units. Exporting a helper for the five shared lines would also introduce a new core API for behavior currently private, relocating or increasing interface rather than satisfying the required interface-reduction condition.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "The web queue flattens PendingDescriptor fields at apps/web/src/lib/trigger-lab/sim.ts:312-321 and apps/web/src/lib/trigger-lab/sim.ts:430-440, then evaluates with the fixed 'preview' pad and applies actions through preview-specific release/spawn logic at apps/web/src/lib/trigger-lab/sim.ts:594-604. Core stores the descriptor as a nested object at packages/core/src/voice/engine.ts:221-225, preserves its authored pad during evaluation, and delegates to engine-specific applyActions at packages/core/src/voice/engine.ts:685-688. Therefore only apps/web/src/lib/trigger-lab/sim.ts:588-592 and packages/core/src/voice/engine.ts:680-684 form an equivalent shared fragment, below the 12-line threshold.",
+      "confidence": "high"
+    },
+    "duplicated-code-0010": {
+      "finding_id": "duplicated-code-0010",
+      "refuted": false,
+      "reasoning": "I checked both cited implementations directly. EffectThumb.svelte:85-124 and SignalFace.svelte:34-67 each contain more than 12 lines implementing the same two behaviors with effectively identical control flow, guards, state transitions, browser feature checks, listener setup, and teardown; the only material differences are comments and formatting, so the clone satisfies the >=90% token-similarity and semantic-equivalence requirements. Repository-wide search found no additional implementation or existing shared guard that changes this assessment, and consolidating four local effect blocks behind two shared reactive helpers would reduce the duplicated behavioral surface rather than merely rename or relocate it.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "duplicated-code-0011": {
+      "finding_id": "duplicated-code-0011",
+      "refuted": false,
+      "reasoning": "I checked both cited implementations and their call sites. The hash2, fade, and valueNoise functions are semantically identical across packages/core/src/canvas/elements.ts:30-53 and packages/core/src/effects/impl/perlin-clouds.ts:7-32, while the fbm bodies are equivalent when the parameterized implementation receives the constant octave count 3 used by perlin-clouds; consolidating them into one implementation would remove the duplicated callable surface rather than merely wrap or relocate both copies.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "duplicated-code-0012": {
+      "finding_id": "duplicated-code-0012",
+      "refuted": false,
+      "reasoning": "I checked both cited blocks and their callers: apps/server/src/network-adapters.ts:32-46 and packages/io/src/pixlite/sweep.ts:28-42 contain the same two implementations, spanning 15 lines at each site with effectively 100% token similarity and identical validation, conversion, errors, and unsigned arithmetic. Their different callers do not impose different semantics, and apps/server/package.json:15-19 already establishes the dependency on @ledrums/io; replacing four private declarations with two shared implementations reduces the total helper interface rather than merely relocating duplicate wrappers.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "duplicated-code-0013": {
+      "finding_id": "duplicated-code-0013",
+      "refuted": false,
+      "reasoning": "I checked the cited style blocks and markup. Inspector.svelte:218-239, SectionInspector.svelte:92-113, and TriggerSourceInspector.svelte:258-279 contain the same 22-line four-rule block byte-for-byte, exceeding the required two sites, 12 lines, and 90% token similarity; the rules also serve the same semantic purpose of laying out and styling an inspector title, subtitle, and optional adjacent controls. PanelHeader.svelte:31-66 is not itself equivalent because it uses a fixed-height uppercase panel-bar treatment and has no subtitle or leading-content contract, but that does not refute the duplicated inspector-header variant: one focused component can own the repeated structure and styling while exposing only the genuinely varying title, subtitle, leading, eyebrow, and trailing content, reducing five local styling contracts to one.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "PanelHeader.svelte:31-66 differs visually and structurally from the cited inspector headers, and the five call sites vary in eyebrow, thumbnail/chip, and trailing controls; however, these variations do not negate the exact semantically equivalent core duplicated at Inspector.svelte:218-239, SectionInspector.svelte:92-113, and TriggerSourceInspector.svelte:258-279.",
+      "confidence": "high"
+    },
+    "duplicated-code-0014": {
+      "finding_id": "duplicated-code-0014",
+      "refuted": false,
+      "reasoning": "I checked the rendered button markup and the complete scoped CSS at all three cited locations. The 29-line `.note-row`/`.learn` blocks are identical and describe the same MIDI-learn control contract: an input beside a pill button that toggles an active listening state; the differing learn targets and disabled conditions are caller-provided state, not semantic differences in the control, so a shared component would remove three style interfaces rather than merely relocate them.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "none found; DrumZonesList.svelte:121-142, TriggerSourceInspector.svelte:180-202, and PatchZoneInspector.svelte:66-89 use equivalent controls, while their style blocks at DrumZonesList.svelte:218-246, TriggerSourceInspector.svelte:289-317, and PatchZoneInspector.svelte:147-175 are identical and each exceeds 12 lines"
+    },
+    "duplicated-code-0015": {
+      "finding_id": "duplicated-code-0015",
+      "refuted": true,
+      "reasoning": "I checked both complete style blocks and confirmed that several long sequences exceed 12 lines and are effectively identical, especially the textarea rules and button-state rules. However, the required consolidation criterion is conjunctive, and the proposed DialogShell/DialogActions/Button extraction would introduce three component interfaces for two callers rather than reduce total interface; moreover, the repository already defines and documents the shared text-button vocabulary globally, so a new Button primitive would relocate an existing interface rather than eliminate duplication. The remaining dialog chrome is not wholly semantically equivalent: PasteFallbackDialog capitalizes its dynamic heading, while PasteSongDialog deliberately does not, and PasteSongDialog adds action spacing for its field-based layout.",
+      "criterion_applied": "duplication-threshold",
+      "counter_evidence": "The shared primary/ghost/disabled/active button contract already exists in apps/web/src/app.css:64-113 and is explicitly documented as the base button vocabulary in apps/web/src/lib/styleguide/sections/SectionPrimitives.svelte:123-131. The dialog-specific differences are apps/web/src/lib/app/views/PasteFallbackDialog.svelte:55-62 (`text-transform: capitalize`) versus apps/web/src/lib/app/views/PasteSongDialog.svelte:94-100, and apps/web/src/lib/app/views/PasteSongDialog.svelte:144-149 (`margin-top`) versus apps/web/src/lib/app/views/PasteFallbackDialog.svelte:92-96.",
+      "confidence": "high"
+    },
+    "middle-man-0001": {
+      "finding_id": "middle-man-0001",
+      "refuted": false,
+      "reasoning": "I checked the cited delegators and searched the repository for direct construction or use of all five controllers. Every controller is instantiated only once inside TriggerLab, while the tests exercise their behavior exclusively through TriggerLab; deleting the flat forwarders would remove the delegation layer without forcing controller logic or guards to reappear across callers, only requiring callers to use a named collaborator path. The controller modules contain real implementation logic, but they currently have only one adapter and the store's forwarding methods add no semantic transformation, validation, or policy, so under the deletion test the claimed boundary remains hypothetical and the finding stands.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found; repository-wide construction search found only apps/web/src/lib/trigger-lab/store.svelte.ts:386, apps/web/src/lib/trigger-lab/store.svelte.ts:481, apps/web/src/lib/trigger-lab/store.svelte.ts:490, apps/web/src/lib/trigger-lab/store.svelte.ts:519, and apps/web/src/lib/trigger-lab/store.svelte.ts:805, while apps/web/src/lib/trigger-lab/store.controller.test.ts:64-69 constructs TriggerLab rather than any collaborator",
+      "confidence": "high"
+    },
+    "middle-man-0002": {
+      "finding_id": "middle-man-0002",
+      "refuted": true,
+      "reasoning": "The deletion test does not support this finding: deleting either cited app-local module would force its runtime adapter behavior to reappear elsewhere\u2014server decoding, encoding, model serialization, effect serialization, and frame conversion in apps/server/src/ws-protocol.ts:38-113, and validated inbound-frame decoding in apps/web/src/lib/ws/protocol-types.ts:31-68. There are two concrete adapters, not a hypothetical seam, and central callers deliberately consume each adapter's runtime operation and associated contract types through one cohesive local import; the non-identical type lists match different server/web responsibilities rather than proving required lockstep duplication.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "apps/server/src/main.ts:56-65 imports decodeClient/effectSpecs/encodeServer/serializeModel together with the contract types they consume, and those helpers are actively used at apps/server/src/main.ts:239-240,449-452,499-506; apps/web/src/lib/ws/client.ts:3-20 similarly imports decodeServer with its client-facing contract types and calls it at apps/web/src/lib/ws/client.ts:235-238. Deleting these modules therefore redistributes adapter complexity and splits cohesive imports across callers; deleting only their export blocks is not the required module deletion test.",
+      "confidence": "high"
+    },
+    "middle-man-0003": {
+      "finding_id": "middle-man-0003",
+      "refuted": false,
+      "reasoning": "I checked the cited module, both test consumers, the core root and voice barrels, the package export map, and repository-wide symbol references. Deleting the re-export block makes this production-facing complexity vanish: there are no production callers, the same-package test already imports the fixture directly, and only the web migration test requires a test-only package seam; that is one adapter, not the two adapters required to establish a real production seam. The current root namespace also causes the parity tables and legacy formula to appear in the shipped desktop sidecar bundle despite having no runtime caller, confirming that the barrel is publishing test-harness implementation rather than earning its keep across callers.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "middle-man-0004": {
+      "finding_id": "middle-man-0004",
+      "refuted": true,
+      "reasoning": "I checked the actual package boundary and callers rather than treating zero direct imports of selected symbols as proof that the barrel is unnecessary. Deleting packages/core/src/voice/index.ts would not make complexity vanish: @ledrums/core exposes only its root entry point, which deliberately publishes voice as a namespace, and both the server runtime adapter and the web/offline adapter consume that namespace across many underlying voice modules; removing the barrel would reproduce deep-module import and API-selection complexity across those callers. The unused-symbol evidence may justify a separate export-hygiene review, but under the required deletion test this module is earning its keep, and the server plus web implementations satisfy the two-adapter real-seam rule.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "packages/core/package.json:6-8 exposes only the package root; packages/core/src/index.ts:71-73 deliberately establishes `voice` as the deep-module namespace seam; apps/server/src/voice-engine-host.ts:59-69 and :119-124 consume it as the production RenderEngine adapter; apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:9-18 and :45-68 consume the same seam for canonical graph types and behavior in the web/offline adapter. The namespace has 263 `voice.*` occurrences across 53 web files and 59 occurrences across 6 server files, so deletion redistributes rather than removes its boundary complexity.",
+      "confidence": "high"
+    },
+    "middle-man-0005": {
+      "finding_id": "middle-man-0005",
+      "refuted": true,
+      "reasoning": "I applied the deletion test to the package entry point rather than treating re-export syntax itself as evidence of a middle-man. Deleting packages/io/src/index.ts would not make complexity vanish: the package has no exported subpaths, so imports currently spread across server production and test files would need to be rewritten and package.json would need multiple new entry points; moreover, the root joins a real two-adapter seam, with ArtNetOutput and SacnOutput both implementing PixelOutput. The blanket surface may independently merit API curation, but that is not evidence that the package boundary is a deletion-test middle-man, and the proposed fix itself retains that boundary as another barrel.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "apps/server/src/output-manager.ts:9 consumes PixelOutput together with its two concrete adapters from one package boundary; packages/io/src/interfaces.ts:1-9 defines the shared seam, implemented by ArtNetOutput at packages/io/src/artnet.ts:38 and SacnOutput at packages/io/src/sacn.ts:85. Other callers consume different IO families through the same boundary, including PixLite plus OSC at apps/server/src/main.ts:14 and PixLite orchestration types/functions at apps/server/src/controller-monitor.ts:22-28, so deletion redistributes import and export-path complexity across multiple callers.",
+      "confidence": "high"
+    },
+    "middle-man-0006": {
+      "finding_id": "middle-man-0006",
+      "refuted": true,
+      "reasoning": "I checked the cited barrel, registry, production lookup sites, and all modifier API consumers. Deleting the modifiers export block does not make complexity vanish: because @ledrums/core exposes only its root entry point, multiple web callers would need replacement package exports, forbidden deep imports, or duplicated registry/chain behavior; the unused individual names may be dead exports, but that is not evidence that the block is a deletion-test middle-man. The suggested listModifiers().find() to tryGetModifier() cleanup is valid, but it strengthens rather than eliminates this cross-package seam.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "packages/core/package.json:6-9 exposes only '.', while the curated block supplies independently used APIs to multiple adapters: apps/web/src/lib/trigger-lab/render.ts:9,265 consumes applyModifierChain for the offline renderer; apps/web/src/lib/app/views/add-node-taxonomy.ts:2,99 consumes listModifiersByCategory for authoring UI; apps/web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte:10,22 consumes listModifiers; and apps/web/src/lib/trigger-lab/sim.ts:24,208 consumes ResolvedModifier. Core runtime separately consumes the same underlying modifier seam at packages/core/src/voice/compositor.ts:24,244 and packages/core/src/modifiers/chain.ts:20,48, satisfying the two-adapter test.",
+      "confidence": "high"
+    },
+    "middle-man-0007": {
+      "finding_id": "middle-man-0007",
+      "refuted": false,
+      "reasoning": "I checked the current caller graph, the wrapper, and each mounted child. Overlays.svelte has only one consumer at apps/web/src/App.svelte:107, merely forwards the same store prop, and contributes no state, condition, layout, styling, or API adaptation; the children independently derive visibility from store state at EffectGallery.svelte:37/149, ClipSettings.svelte:20-23/35, and EnvelopeEditor.svelte:20-27/54. Under the deletion test, removing the wrapper moves three imports and three mounts into the sole caller without causing complexity to reappear across multiple callers, and there is only one hypothetical mount-point seam rather than two adapters demonstrating a real seam.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "primitive-obsession-0001": {
+      "finding_id": "primitive-obsession-0001",
+      "refuted": false,
+      "reasoning": "I checked the actual GraphNode definition and its authoring/runtime callers. The criterion is satisfied: NodeKind represents the domain concept of a graph node role, while multiple kind-dependent invariants are enforced procedurally at call sites\u2014wiring legality is derived from source and target kinds in apps/web/src/lib/trigger-lab/store/graph-wiring.ts:20-24 and mutation methods repeatedly reject fields on incompatible kinds in apps/web/src/lib/trigger-lab/store.svelte.ts:2840-2875; protected anchor kinds are also separately guarded during add, remove, and kind changes at apps/web/src/lib/trigger-lab/store.svelte.ts:2561-2565,2653-2659,2779-2783. Central helpers and the exhaustive category switch in packages/core/src/voice/render-plan.ts:49-77 reduce some duplication, but they do not tie kind-specific payload fields to the kind at the GraphNode type boundary, so they confirm rather than refute the presence of at least two call-site-enforced invariants.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "Centralized kind helpers exist at apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:56-68 and nodeCategory is exhaustive at packages/core/src/voice/render-plan.ts:49-77, but neither prevents constructing or mutating a node with fields inconsistent with its kind; no counter-evidence sufficient to refute the criterion was found.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0002": {
+      "finding_id": "primitive-obsession-0002",
+      "refuted": true,
+      "reasoning": "I checked the resolver, its production callers, the authoring controls, and its tests. The alleged membership and prefix-grammar invariants are not two independent invariants: membership in the nine canonical values fully subsumes the spelling/prefix form, while authoring call sites already restrict choices to options generated directly from DELAY_DIVISIONS; moreover, accepting unknown persisted strings and degrading to a quarter note is explicitly documented and regression-tested behavior rather than an unguarded accidental fallthrough. Therefore the primitive does not satisfy the exact criterion of a domain concept with at least two independent invariants enforced at call sites.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "apps/web/src/lib/app/views/node-options.ts:97-101 derives the only authoring options directly from DELAY_DIVISIONS; DelayNodeInspector.svelte:40-45 and LfoNodeInspector.svelte:59-64 use that closed Select option set. packages/core/src/voice/delay.ts:33 and packages/core/src/voice/delay.test.ts:85-87 explicitly specify and test unknown-value fallback to a quarter note.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0003": {
+      "finding_id": "primitive-obsession-0003",
+      "refuted": false,
+      "reasoning": "I checked the model, parser, authoring path, store mutators, and migration. The exact criterion is satisfied: callers enforce at least two invariants around the primitive\u2014scope and target shape must agree (`commitSelection` selects the matching scope before encoding, while `setScope` clears stale `targetId`), and hoop targets must contain unique, sorted, integer, 1-based indices (`encodeHoopTarget`). The three parser options represent deliberate differences in malformed/backward-compatible input handling rather than three invariants by themselves, and the claimed clipdoc string-rewrite duplication is inaccurate because clipdoc reuses the persistence walker; neither point eliminates the independently verified call-site invariants.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "Partial only: apps/web/src/lib/trigger-lab/clipdoc.ts:334-344 reuses migrateGraphHoopTargets/migrateGraphsHoopTargets rather than duplicating the string rewrite, and packages/core/src/voice/scope.parse.test.ts:29-58 documents deliberate consumer-specific ordering/fallback semantics. However, apps/web/src/lib/app/docks/inspectors/scope-inspector.ts:33-56 enforces integer/positive/deduplicated/sorted hoop indices and scope/encoding agreement, while apps/web/src/lib/trigger-lab/store.svelte.ts:2847-2863 clears stale targets on scope changes.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0004": {
+      "finding_id": "primitive-obsession-0004",
+      "refuted": true,
+      "reasoning": "The cited shapes are not identical domain concepts: the voice/UI ParamSpec adds the envelope-authoring invariant `envable`, and `mapParamSpec` is a semantic adapter that marks only numeric parameters envelope-able while normalizing defaults according to the source discriminant. The widened ModParamSpec is an internal structural compatibility view, and every production call site supplies either the required, closed-union voice ParamSpec or effects/modifier ParamSpec; no production caller constructs a spec with neither discriminator, a typo, or conflicting discriminators. Therefore the hypothetical malformed states are admitted by the compatibility interface but are not invariants repeatedly enforced at call sites, so the exact domain-concept-with-at-least-two-call-site-invariants criterion is not satisfied.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/fixtures.ts:84-112 performs a non-identity conversion, adding numeric-only `envable` semantics and type-specific default normalization; packages/core/src/voice/compositor.ts:61-72 passes `Voice.specs`, typed as the closed-union voice ParamSpec[] at packages/core/src/voice/types.ts:560-561; packages/core/src/modifiers/chain.ts:48-55 and packages/core/src/voice/modifier-graph.ts:32-47 pass registry `paramSpec`, typed as effects ParamSpec[] with required `type: ParamType` at packages/core/src/effects/types.ts:6-21,57.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0005": {
+      "finding_id": "primitive-obsession-0005",
+      "refuted": true,
+      "reasoning": "I confirmed that the percentage caller at apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte:75 produces the claimed incorrect \"0.5 50%\" readout through the fallback at apps/web/src/lib/ui/Slider.svelte:70. However, the exact primitive-obsession criterion is not met: `format` does not consistently represent a (numeric value, unit) domain concept, because shipped callers also use it for transformed numeric displays and non-measurement status text such as `swept`, and I found no pair of measurement invariants enforced across call sites. This is a real Slider formatting-contract/correctness defect, but not evidence that a primitive is standing in for a domain concept with at least two call-site-enforced invariants.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "apps/web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte:74 uses `format` to return the non-measurement status `swept`; apps/web/src/lib/ui/Slider.test.ts:91-98 establishes that formatting may change numeric presentation without introducing a unit; apps/web/src/lib/ui/Slider.svelte:16 documents `format` as formatting the whole trailing readout rather than accepting a value/unit pair.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0006": {
+      "finding_id": "primitive-obsession-0006",
+      "refuted": false,
+      "reasoning": "I checked every PixelOutput.send caller and both transport implementations. OutputManager passes patch.universe unchanged at apps/server/src/output-manager.ts:211 and :241; the default/flat DMX map deliberately begins at zero in packages/core/src/geometry/dmx-map.ts:99-102; and SacnOutput writes that same value into both the E1.31 framing field and multicast address at packages/io/src/sacn.ts:113-115. The schema and UI enforce that authored startUniverse values are nonnegative integers, but neither performs the protocol-specific 0-based-to-1-based conversion or enforces the sACN 1..63999 range, so they do not refute the finding; the code elsewhere explicitly converts the same internal zero-based universe to a one-based PixLite device value at apps/web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:59-62, confirming that the base-offset invariant is real and boundary-specific.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "No sACN conversion or guard found. The only related guards are the protocol-independent nonnegative-integer schema at packages/core/src/geometry/kit-schema.ts:105-108 and UI min=0 at apps/web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:68-77; neither prevents universe 0 from reaching sACN. The explicit +1 conversion at apps/web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:59-62 applies only to the PixLite display boundary.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0007": {
+      "finding_id": "primitive-obsession-0007",
+      "refuted": true,
+      "reasoning": "The claimed transport failure is not reachable through the actual desktop call path: the shell always creates its initial token as 64 lowercase hexadecimal characters and overwrites LEDRUMS_HOST_TOKEN when spawning the sidecar, while the server\u2019s own fallback generator also produces hexadecimal. Arbitrary tokens injected when running the server independently do not pass through Rust\u2019s raw HTTP request builder; the web client transports them with URLSearchParams, which encodes reserved characters symmetrically. HostToken::set is permissive, but its production correction source is the token banner from that same shell-injected or server-minted sidecar, so no concrete caller supplying a reserved-character token was found; consequently the asserted second call-site-enforced invariant and failure scenario do not satisfy the criterion.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "apps/desktop/src-tauri/src/lib.rs:54-64 mints exactly 64 lowercase hex characters; apps/desktop/src-tauri/src/lib.rs:389-394 overwrites the sidecar's LEDRUMS_HOST_TOKEN with that value; apps/server/src/pin-gate.ts:130-132 mints the fallback as hex; apps/web/src/lib/ws/client.ts:145-152 encodes independently injected server tokens with URLSearchParams before transmission.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0008": {
+      "finding_id": "primitive-obsession-0008",
+      "refuted": false,
+      "reasoning": "I checked the cited builders, their production callers, the Inspector decoder, and the graph-to-routing/wiring adapters. Although buildPatchTopology and its positional outputId builder appear to be legacy code with no production caller outside tests, the string primitive still represents patch-node identity and carries at least two invariants enforced across call sites: output payloads must round-trip an OutputConfig.id through buildZoneGraph/routingFromGraph/patchEditorFor, and prefixes plus payload shapes determine node stage, legal chain-wire source type, and decoded domain references such as 1-based hoop indices. The active graph also demonstrates the claimed presentation mismatch: output nodes are labelled by array position in patch-zones.ts, while describePatchNode reconstructs the Inspector title from the raw id payload.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "The positional outputId builder is confined to the apparently legacy buildPatchTopology path, which has no production caller found outside apps/web/src/lib/app/patch-topology.test.ts; the active view instead calls buildZoneGraph at apps/web/src/lib/app/views/PatchGraphView.svelte:105-112 and builds output IDs from OutputConfig.id at apps/web/src/lib/app/patch-zones.ts:210-212. This narrows the alleged runtime collision but does not defeat the criterion.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0009": {
+      "finding_id": "primitive-obsession-0009",
+      "refuted": false,
+      "reasoning": "I checked the projection helper, its view-level caller, the flow converter, and the live TriggerNode component. The finding overstates the specific omissions: `TriggerNode` reads the current store node reactively, so `modifier.bypass`, `ccSource`, and `oscAddress` can update displayed content without rebuilding the xyflow object, while `graphToFlowNodes` snapshots only kind and position; nevertheless, the string still represents the domain concept of projection-reuse identity, and callers enforce multiple invariants around it\u2014reuse is graph-scoped, requires both a previous object and signature equality, preserves the previous object for selection-only changes, and writes the cache only after successful projection\u2014so the exact criterion is satisfied.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "The cited omitted fields are not themselves proof of stale handles: TriggerNode reads the live model from the store at apps/web/src/lib/app/views/TriggerNode.svelte:58-59, uses bypass only for reactive text/class state at apps/web/src/lib/app/views/TriggerNode.svelte:89-95 and apps/web/src/lib/app/views/TriggerNode.svelte:321, and graphToFlowNodes snapshots only kind and position at apps/web/src/lib/app/views/graph-to-flow.ts:21-29. This narrows the alleged correctness risk but does not refute the criterion because graph scoping, signature equality, selection preservation, and exception-safe cache write-through are enforced at apps/web/src/lib/app/views/trigger-flow-projection.ts:95-107 and apps/web/src/lib/app/views/TriggerGraphView.svelte:262-273.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0010": {
+      "finding_id": "primitive-obsession-0010",
+      "refuted": false,
+      "reasoning": "I checked both credential paths, their callers, and the focused tests. The room PIN and host-session token are semantically distinct\u2014the PIN is a human-entered, optionally disabled sharing code, while the host token is a machine-generated proof used only with loopback and non-Cloudflare guards\u2014but the criterion still holds because each string represents a credential domain concept and the host token alone has at least two invariants enforced outside its type: minimum injected strength in resolveHostToken and constant-time comparison in isTrustedHost. The tests also confirm that short explicit room PINs are currently intentional behavior, but that semantic difference only challenges the proposed single shared parser and six-character rule; it does not refute the primitive-obsession finding under the supplied criterion.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "apps/server/src/pin-gate.test.ts:242-277 explicitly accepts arbitrary explicit PIN strings and preserves a four-character PIN, while apps/server/src/pin-gate.ts:121-126 and apps/server/src/pin-gate.ts:190-200 give the host token additional loopback/non-Cloudflare semantics; this weakens the proposed unified Credential abstraction but does not defeat the criterion.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0011": {
+      "finding_id": "primitive-obsession-0011",
+      "refuted": true,
+      "reasoning": "The asserted domain distinction no longer exists in the current model: the store explicitly defines pad-keyed and generated-key graphs as generic graphs that rename, duplicate, and delete uniformly, and those operations contain no key-kind branch. Physical triggering is determined by the graph trigger node's editable TriggerSource rather than its record key, while unionTriggerSources uses the fixture-derived pad set only to back-fill missing sources during legacy hydration; therefore the string key does not stand for a domain concept with two or more call-site-enforced invariants.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:350-357 explicitly removes the authored/pad distinction; apps/web/src/lib/trigger-lab/store.svelte.ts:2387-2431 permits rename, duplicate, and delete for ANY graph, including pad graphs; apps/web/src/lib/trigger-lab/store.svelte.ts:2441-2453 permits rebinding any graph's TriggerSource; apps/web/src/lib/trigger-lab/show-builder.ts:109-127 derives pad binding from TriggerSource rather than key grammar; apps/web/src/lib/trigger-lab/store.graphs.test.ts:94-99 and :166-175 verify pad graphs are renamable and deletable.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0012": {
+      "finding_id": "primitive-obsession-0012",
+      "refuted": true,
+      "reasoning": "I checked every repository caller of lfoValue: the only production caller is sourceValue at packages/core/src/engine/modulation.ts:38, where source.shape is inferred from the four-member Zod enum at packages/core/src/model/project-schema.ts:13; the other direct caller is the bounded four-shape test loop at packages/core/src/engine/modulation.test.ts:44-46. More importantly, the cited declarations represent distinct LFO models rather than one shared waveform concept: the legacy clip LFO is a four-waveform, fixed-Hz source, while the voice LFO adds phase, tempo-synchronised rate modes, and deterministic sample-and-hold semantics at packages/core/src/voice/lfo.ts:24-41 and 93-100. For the exact criterion, the shape string has only one call-site invariant\u2014membership in the legacy four-shape vocabulary\u2014not at least two invariants enforced at call sites, so the primitive-obsession finding does not qualify.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "packages/core/src/engine/modulation.ts:38 receives the schema-narrowed legacy shape from packages/core/src/model/project-schema.ts:10-14; packages/core/src/voice/lfo.ts:24-41 and 93-100 defines a semantically richer voice-LFO model with rate mode, phase, BPM handling, and sample-hold behavior absent from the clip LFO.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0013": {
+      "finding_id": "primitive-obsession-0013",
+      "refuted": true,
+      "reasoning": "The criterion is not satisfied: the domain concept already exists as the named, discriminated `state` member of `ServerMessage`, and every field is validated by a strict Zod object before dispatch. The sole production callback merely assigns independent fields and passes the two libraries to reconciliation; it does not enforce two or more cross-field invariants at the call site, so the positional signature may be less maintainable but is not primitive obsession under the specified criterion.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "packages/protocol/src/schemas.ts:390-402 defines the state as a strict named object; apps/web/src/lib/ws/protocol-types.ts:48-56 validates it before use; apps/web/src/lib/ws/client.ts:235-248 only adapts that validated object to callbacks; apps/web/src/lib/trigger-lab/store.svelte.ts:1322-1339 performs assignments/reconciliation without enforcing >=2 cross-field invariants.",
+      "confidence": "high"
+    },
+    "primitive-obsession-0014": {
+      "finding_id": "primitive-obsession-0014",
+      "refuted": true,
+      "reasoning": "I checked the actual producers and consumers of both fields. `OscEvent.address` has only one independently enforced domain invariant: the OSC parser rejects values not beginning with `/` at packages/io/src/osc.ts:81-83; case sensitivity and exact `Map` lookup at packages/core/src/voice/modulation.ts:92-95 are ordinary string-comparison semantics, not additional invariants enforced at call sites. The authored `GraphNode.oscAddress` validation gap is real, but it is a separate model field and does not establish that either primitive at the cited locations carries at least two enforced invariants; renaming `OscInputStatus.address` would not fix that gap.",
+      "criterion_applied": "domain-concept-with-invariants",
+      "counter_evidence": "packages/io/src/osc.ts:79-101 is the production path for OscEvent and enforces only the leading-slash rule; packages/io/src/osc.ts:237-249 constructs OscInputStatus.address exclusively from the configured interface or Node socket bind result; packages/core/src/voice/modulation.ts:92-95 performs an exact lookup but validates no address invariant; apps/web/src/lib/trigger-lab/store.svelte.ts:3591-3594 mutates a distinct GraphNode.oscAddress field.",
+      "confidence": "high"
+    },
+    "repeated-switches-0001": {
+      "finding_id": "repeated-switches-0001",
+      "refuted": false,
+      "reasoning": "I checked the canonical NodeKind definition, the normalization boundary, the cited projection switch, and the other web discriminant sites. Gen3 normalization rewrites `play` to `effect`, while `triggerNodeSignature` handles only `play`; NodeKind is independently discriminated in well over three web locations, and defaults or ad hoc conditionals mean TypeScript does not enforce lockstep handling of a new canonical variant at this switch. TriggerNode does read the live store node reactively, which may reduce some visible stale-data consequences, but it does not refute the exact repeated-discriminant criterion or make the projection signature include the canonical effect fields.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "repeated-switches-0002": {
+      "finding_id": "repeated-switches-0002",
+      "refuted": false,
+      "reasoning": "I checked the cited implementations and the canonical NodeKind union. The same node.kind classification is independently repeated in MOD_SOURCE_KINDS/isModSourceKind (packages/core/src/voice/modulation-graph.ts:30-35), nodeModSource (packages/core/src/voice/modulation-graph.ts:49-76), the evaluator\u2019s inert arms (packages/core/src/voice/eval-graph.ts:582-588), nodeCategory (packages/core/src/voice/render-plan.ts:49-77), TriggerNode\u2019s preview classification and dispatch (apps/web/src/lib/app/views/TriggerNode.svelte:127 and 182-201), and the add taxonomy (apps/web/src/lib/app/views/add-node-taxonomy.ts:64-92). Although render-plan.ts and the UI metadata Records force some edits when NodeKind expands, nothing enforces that a newly categorized modulation-source kind is also present in MOD_SOURCE_KINDS, nodeModSource, TriggerNode\u2019s preview dispatch, and the Modulate palette; the taxonomy test at apps/web/src/lib/app/views/add-node-taxonomy.test.ts:17-33 merely hardcodes the current list rather than deriving or parity-checking it, so the repeated-discriminant criterion is satisfied.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "repeated-switches-0003": {
+      "finding_id": "repeated-switches-0003",
+      "refuted": true,
+      "reasoning": "I checked the cited definitions and the alleged third enumeration is not independent: KIND_OPTS is derived directly from NODE_KINDS, so it requires no lockstep edit of its own. ROUTE_KINDS and the Modulate items are mutually exclusive semantic palette groups inside one taxonomy; a new kind is placed in one applicable group, not edited across both, while the exhaustive Record<NodeKind, ...> metadata maps force the compiler to flag any newly added NodeKind. The cited evidence therefore establishes at most two unenforced independent sites\u2014NODE_KINDS and one palette-group placement\u2014not the required three.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "apps/web/src/lib/app/views/node-options.ts:61 derives KIND_OPTS from NODE_KINDS; apps/web/src/lib/app/views/add-node-taxonomy.ts:30-91 defines disjoint Route versus Modulate groups rather than two lockstep copies; apps/web/src/lib/app/views/trigger-node-meta.ts:32,63,87 uses exhaustive Record<NodeKind, ...> maps that compiler-enforce new variants",
+      "confidence": "high"
+    },
+    "repeated-switches-0004": {
+      "finding_id": "repeated-switches-0004",
+      "refuted": true,
+      "reasoning": "I checked both cited ladders and searched the NodeKind handling sites for a third kind-default dispatch. Only addNode and changeKind repeat this default-seeding discrimination, so the required >=3-place threshold is not met; other NodeKind switches classify, render, or label nodes rather than seed these defaults. The alleged CC drift is also not behavioral: ccSource is explicitly optional with absence defined as MIDI, the store getter applies `node.ccSource ?? 'midi'`, and core resolves a `cc` node directly as MIDI CC regardless of that field.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "Only two default-seeding ladders exist at apps/web/src/lib/trigger-lab/store.svelte.ts:2568 and apps/web/src/lib/trigger-lab/store.svelte.ts:2790; absent ccSource means MIDI by contract at packages/core/src/voice/types.ts:311-313, is normalized by apps/web/src/lib/trigger-lab/store.svelte.ts:3576-3578, and core resolves `cc` identically at packages/core/src/voice/modulation-graph.ts:55-56.",
+      "confidence": "high"
+    },
+    "repeated-switches-0005": {
+      "finding_id": "repeated-switches-0005",
+      "refuted": true,
+      "reasoning": "I checked all four cited locations. Only Inspector.svelte and TriggerNode.svelte switch directly on the runtime `node.kind` discriminant; AddPalette.svelte switches on the separate optional presentation field `AddItem.previewKind`, while add-node-taxonomy.ts is a curated catalog of user-addable items rather than a switch over NodeKind. The claimed lockstep failure also does not occur generically: Inspector.svelte:124-141 has a catch-all node branch that renders ContainerNodeInspector, TriggerNode.svelte:329 renders thumbnails only for independently classified source/state kinds, and AddPalette.svelte:82-107 generically constructs non-special preview nodes. Protected or migration-only kinds are intentionally absent from the palette, so these surfaces have different coverage obligations and do not satisfy the criterion of the same discriminant being switched in at least three places.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "Inspector.svelte:124-141 catches otherwise-unlisted runtime node kinds and renders ContainerNodeInspector; AddPalette.svelte:21-34 defines `previewKind` as optional presentation metadata distinct from the runtime node discriminant, and add-node-taxonomy.ts:30-31,64-93 defines curated addable subsets rather than exhaustively switching NodeKind.",
+      "confidence": "high"
+    },
+    "repeated-switches-0006": {
+      "finding_id": "repeated-switches-0006",
+      "refuted": true,
+      "reasoning": "I checked all four cited sites and they do not implement the same partition of ClientMessage['t']. ENGINE_INPUTS is an authorization allowlist; monitorInput is optional ingress presentation invoked before authorization; handleVoiceInput is mode-dependent dispatch whose legacy branch deliberately consumes voice-only messages while allowing midi/osc to fall through; and the midi|osc check is reached only after voice dispatch returns false, making it specifically the legacy reducer latency seam. Adding a variant therefore does not inherently require the same lockstep membership in three or more places, and fireGraph being monitored while remaining editor-gated is a semantic difference rather than evidence of taxonomy drift.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "apps/server/src/main.ts:508-509 monitors every decoded message before createClientMessageHandler applies requiresEditor at apps/server/src/handlers/client-message.ts:205-208, so monitor membership does not imply ungated engine-input status. apps/server/src/handlers/voice-input.ts:36-44 explicitly defines its discriminant checks as mode-dependent dispatch/fallthrough, and apps/server/src/handlers/client-message.ts:502-507 places latency stamping after that dispatch, where only legacy midi/osc proceed.",
+      "confidence": "high"
+    },
+    "repeated-switches-0007": {
+      "finding_id": "repeated-switches-0007",
+      "refuted": true,
+      "reasoning": "I checked the cited metadata maps, the summary function, its caller, and the other NodeKind switches. The three Records are exhaustive visual metadata, but kindSummary is deliberately a partial, semantically different operation: TriggerNode handles trigger, play/effect, and modifier summaries before calling it, while kinds such as output intentionally have no summary; the other NodeKind switches likewise cover purpose-specific subsets, so adding a variant does not require lockstep edits across them. Therefore the exact repeated-discriminant criterion is not met.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "apps/web/src/lib/app/views/trigger-node-meta.ts:116-118 documents kindSummary as applying to container/modifier cards; apps/web/src/lib/app/views/TriggerNode.svelte:75-95 explicitly handles trigger, play/effect, and modifier before delegating to kindSummary; apps/web/src/lib/app/views/NodeStatePreview.svelte:189-220 and apps/web/src/lib/app/views/trigger-flow-projection.ts:31-51 are intentionally partial switches with unrelated responsibilities, not lockstep copies.",
+      "confidence": "high"
+    },
+    "repeated-switches-0008": {
+      "finding_id": "repeated-switches-0008",
+      "refuted": true,
+      "reasoning": "I checked all cited locations and searched the repository for switches on a `.t` discriminant. Only `WSClient.dispatch` switches on `ServerMessage.t`; `serverMessageSchema` declares the discriminated union and `WSCallbacks` declares named callback fields, so neither is another switch on the same discriminant, while the other repository switches operate on `ClientMessage.t`. The alleged silent-drop hazard may exist, but it does not satisfy the exact criterion requiring the same discriminant to be switched in at least three places.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "apps/web/src/lib/ws/client.ts:244-285 is the sole switch on ServerMessage.t; packages/protocol/src/schemas.ts:390-429 is a schema declaration, and apps/web/src/lib/ws/client.ts:39-82 is an interface without discriminant switching. Other `.t` switches, such as apps/server/src/input-router.ts:133-134 and apps/web/src/lib/trigger-lab/store.svelte.ts:1478-1479, switch on ClientMessage.t instead.",
+      "confidence": "high"
+    },
+    "repeated-switches-0009": {
+      "finding_id": "repeated-switches-0009",
+      "refuted": true,
+      "reasoning": "I checked both cited switches and confirmed the claimed exhaustiveness asymmetry: nodeCategory covers the full NodeKind union through a value-returning switch, while the traversal switch has no exhaustiveness assertion. However, the exact criterion requires the same discriminant to require lockstep edits in at least three switch sites, and this finding establishes only two; the other core switch on GraphNode.kind is deliberately a partial classifier whose default handles every non-modulation kind, so adding a flow-node variant does not require editing it. The two-site issue may be independently valid, but it does not satisfy the repeated-discriminant threshold and is therefore refuted under the required criterion.",
+      "criterion_applied": "repeated-discriminant",
+      "counter_evidence": "packages/core/src/voice/modulation-graph.ts:50-76 is the only additional core switch on GraphNode.kind found; its default returns null for all non-modulation nodes, so a new traversal/flow variant is already intentionally handled and needs no lockstep arm. Likewise, apps/web/src/lib/app/views/trigger-node-meta.ts:118-158 and apps/web/src/lib/app/views/trigger-flow-projection.ts:28-52 have deliberate generic defaults rather than requiring every NodeKind variant.",
+      "confidence": "high"
+    },
+    "resilience-hole-0001": {
+      "finding_id": "resilience-hole-0001",
+      "refuted": false,
+      "reasoning": "I checked the timer callback, engine/compositor/generator call chain, process-fatal handling, graceful-shutdown hooks, desktop sidecar supervision, and authored Canvas validation. The render path has no exception boundary: apps/server/src/voice-engine-host.ts:455-459 invokes loop from setTimeout, packages/core/src/voice/engine.ts:694-719 reaches compositor.render, and packages/core/src/voice/generator-bridge.ts:78-141 directly invokes gen.render. A plausible trigger exists through the shipped Canvas JSON editor: apps/web/src/lib/trigger-lab/store/canvas-scenes.ts:126-139 validates only that elements is an array and sampler is an object, so an element such as {\"kind\":\"gradient\"} is accepted; packages/core/src/canvas/elements.ts:97-100 then dereferences the missing stops field during rendering. The protocol's show validation is intentionally shallow at packages/protocol/src/schemas.ts:62-75, so it does not close that path. The resulting uncaught exception exits at apps/server/src/process-errors.ts:42-58; main's fatal hook only flushes reports at apps/server/src/main.ts:259-263, while blackout occurs only through VoiceEngineHost.stop at apps/server/src/voice-engine-host.ts:446-452. SIGINT/SIGTERM cleanup is irrelevant to process.exit(1), and the desktop merely surfaces a terminated sidecar without restarting it at apps/desktop/src-tauri/src/lib.rs:495-506.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "resilience-hole-0002": {
+      "finding_id": "resilience-hole-0002",
+      "refuted": false,
+      "reasoning": "I verified that `initialProject()` synchronously calls `loadProject()` during module evaluation before `installProcessErrorCapture()` is installed, and neither path catches JSON, schema-validation, or referential-integrity exceptions (`apps/server/src/main.ts:137-155`, `apps/server/src/main.ts:259-263`, `apps/server/src/projects.ts:54-63`). Atomic temp-file replacement prevents the claimed disk-full truncation mechanism, but plausible invalid persisted state remains: `setInputMap` is schema-checked only for shape and is applied without `assertProjectIntegrity`, so a schema-valid mapping containing a nonexistent drum ID can be autosaved at `apps/server/src/handlers/client-message.ts:509-535` and then terminate the next boot. Existing snapshots cannot handle that boot failure because `snapshotStore` is not created until after successful project and host initialization (`apps/server/src/main.ts:580-590`).",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "Autosaves use same-directory temp-file writes followed by atomic rename, so disk-full failure should preserve the previous final file (`apps/server/src/atomic-file.ts:33-41`); bulk `setProject` and `setKitOutputs` also reject dangling routing references (`apps/server/src/handlers/client-message.ts:395-435`, `apps/server/src/handlers/client-message.ts:475-499`). These guards do not cover invalid boot files or dangling references accepted through `setInputMap`.",
+      "confidence": "high"
+    },
+    "resilience-hole-0003": {
+      "finding_id": "resilience-hole-0003",
+      "refuted": false,
+      "reasoning": "I checked both UDP adapters and their actual caller. ArtNetOutput and SacnOutput swallow socket error events and ignore send-callback errors at packages/io/src/artnet.ts:49-74 and packages/io/src/sacn.ts:95-115; a bind error therefore leaves ready false indefinitely, causing every later send to return silently. OutputManager's guards at apps/server/src/output-manager.ts:107-115 and apps/server/src/output-manager.ts:201-229 handle only synchronous constructor/send throws, while still incrementing packetsSent and emitting packet summaries after the adapter silently drops work, so they do not handle these asynchronous failures. A stale configured interface is a plausible EADDRNOTAVAIL trigger, and PixelOutput provides no status channel at packages/io/src/interfaces.ts:3-9 through which the manager could learn of it.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "resilience-hole-0004": {
+      "finding_id": "resilience-hole-0004",
+      "refuted": false,
+      "reasoning": "I checked the complete client socket lifecycle, the store's authority gates, the server connection handler, the broadcast loop, and the client registry. WSClient changes connection state only from onopen/onclose and has no message-age or heartbeat watchdog (apps/web/src/lib/ws/client.ts:198-218); during a half-open connection, readyState can remain OPEN and send() can successfully enqueue into the browser rather than throw, while hit() returns without firing the offline simulation because store.link remains 'open' (apps/web/src/lib/ws/client.ts:298-307; apps/web/src/lib/trigger-lab/store.svelte.ts:1708-1737). The server's 10 ms stats broadcasts generate traffic that should eventually make TCP/ws report close or error, and those handlers remove the peer, but there is no bounded application-level timeout; until the transport stack reports failure, the stale editor remains registered and the browser continues displaying an open link. A Wi-Fi interruption or suspended network path is a plausible trigger for a live-performance outage lasting through that detection window, so the unhandled failure path survives.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "The server actively writes stats every 10 ms at apps/server/src/main.ts:748-772, and eventual ws close/error removes the peer at apps/server/src/main.ts:521-532; however, neither provides a bounded staleness check or changes the browser's authority state before transport-level failure detection.",
+      "confidence": "high"
+    },
+    "resilience-hole-0005": {
+      "finding_id": "resilience-hole-0005",
+      "refuted": false,
+      "reasoning": "I checked the cited broadcast, connection-admission, stats-production, preview-stream, and disconnect paths. `statsTimer` broadcasts every 10ms, `broadcastJson` and `broadcastBinary` gate only on OPEN state, and the server contains no `bufferedAmount`, ping/pong heartbeat, termination, or slow-consumer handling; close/error cleanup therefore does not prevent an OPEN but non-draining socket from accumulating queued data. The trigger is plausible without an attack: voice telemetry can contain up to 256 active voice summaries, and an authenticated remote phone or temporarily stalled TCP connection receives that 100 Hz JSON stream alongside the approximately 30 fps binary preview. `ClientRegistry.admit` is intentionally additive and has no capacity limit, while the PIN gate performs only equality checking and supplies no admission-rate or connection-count control.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "none found; apps/server/src/main.ts:239-244 and apps/server/src/main.ts:429-432 send without backpressure checks, apps/server/src/main.ts:748-772 emits stats at 100 Hz, apps/server/src/client-registry.ts:45-54 admits additively without a cap, and packages/core/src/voice/voice-pool.ts:15 bounds voices at 256 but does not prevent a substantial repeated payload",
+      "confidence": "high"
+    },
+    "resilience-hole-0006": {
+      "finding_id": "resilience-hole-0006",
+      "refuted": false,
+      "reasoning": "I checked the WebSocket admission path, both PIN-gate implementations, the tunnel manager, client registry, and message authorization. A tunnel request with an incorrect PIN is only closed with code 4401 at apps/server/src/main.ts:486-490; no server-side attempt accounting, throttling, lockout, or refusal monitoring exists, while apps/server/src/pin-gate.ts:68-84 generates a six-digit PIN and the quick tunnel adds no application-level access control. The trigger is plausible once an attacker knows the intentionally shared tunnel URL: repeated independent WebSocket handshakes can search the 1,000,000-value space, and a successful client can claim the editor role through the ungated takeover path at apps/server/src/handlers/client-message.ts:179-186. Plain equality at apps/server/src/pin-gate.ts:35 and apps/server/src/pin-gate.ts:58 is also confirmed, although remote timing exploitation is substantially less compelling than the unthrottled finite-space guessing path.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "none found; apps/server/src/main.ts:228 creates the WebSocketServer without an admission limiter, apps/server/src/main.ts:486-490 only closes refusals, and apps/server/src/tunnel-manager.ts:60-65 starts an unrestricted Cloudflare tunnel to the origin",
+      "confidence": "high"
+    },
+    "resilience-hole-0007": {
+      "finding_id": "resilience-hole-0007",
+      "refuted": false,
+      "reasoning": "I checked the local writers, autosave status controller, server-sync gates, WebSocket send behavior, and visible indicator. The path is unhandled: localStorage failures are swallowed, server synchronization is skipped when the link is offline, and scheduleSave still calls saved() unconditionally, causing the UI to claim persistence even though the only current copy may remain in memory; quota exhaustion, blocked storage, or private-mode storage failure are plausible triggers. The beforeunload and stopAutosave paths likewise make unchecked last-chance local writes, although they do not themselves transition the indicator.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "none found; apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:88-106 swallows storage failures, apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:632-656 skips server pushes when offline, apps/web/src/lib/trigger-lab/store.svelte.ts:1294-1308 reports Saved without checking either path, and apps/web/src/lib/ws/client.ts:298-307 provides no delivery acknowledgement or offline queue",
+      "confidence": "high"
+    },
+    "resilience-hole-0008": {
+      "finding_id": "resilience-hole-0008",
+      "refuted": false,
+      "reasoning": "I checked the transport, queue, production wiring, Worker routes, and Monitor integration. The finding survives because a plausible token rotation produces a persistent 401: the token is captured once at boot in apps/server/src/main.ts:287-297, every non-2xx becomes an untyped error in apps/server/src/telemetry/transport.ts:21, and apps/server/src/telemetry/ship-queue.ts:147-174 retains and retries the complete batch without status-specific handling; queue failures use the local logger rather than the Monitor bus, as explicitly established at apps/server/src/telemetry/ship-queue.ts:21-23. A schema-incompatible item can likewise make the Worker's whole-batch parser return 400 at workers/error-ingest/src/index.ts:77-89, while the append-only backups queue eventually evicts oldest entries under its caps at apps/server/src/telemetry/ship-queue.ts:118-126 and apps/server/src/main.ts:321-326. The 413 example is overstated specifically for backups because that queue is capped at 8,000,000 serialized item bytes while the Worker permits 16,000,000 bytes, but this partial counterexample does not eliminate the realistic unhandled 401 and 400 paths.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "The backups queue's maxBytes is 8,000,000 at apps/server/src/main.ts:321-326, below the /backups request cap of 16,000,000 at workers/error-ingest/src/index.ts:12 and workers/error-ingest/src/index.ts:74-76, so a normal capped backups batch should not trigger 413; no guard or recovery was found for the plausible 401/400 paths.",
+      "confidence": "high"
+    },
+    "resilience-hole-0009": {
+      "finding_id": "resilience-hole-0009",
+      "refuted": true,
+      "reasoning": "I checked the production socket construction and the sole production onFrame callback. The default factory creates a native WebSocket and sets binaryType to \"arraybuffer\" before installing the message handler, so compliant browser and Tauri WebView sockets deliver binary messages through the synchronous ArrayBuffer branch; the only alternate factory usages are test fakes, and none emits Blob data. I also checked the allegedly more likely callback failure: the production callback only assigns the received Uint8Array to a $state field, with no decoding, indexing, or other realistically throwing operation. A rejection is theoretically possible if a non-production/custom WSLike supplies a Blob whose arrayBuffer() rejects, but no realistic application trigger was found, so the proposed added handling fails the plausible-trigger requirement.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "apps/web/src/lib/ws/client.ts:106-107 creates the native WebSocket; apps/web/src/lib/ws/client.ts:196 sets binaryType='arraybuffer' before apps/web/src/lib/ws/client.ts:218 installs onmessage; apps/web/src/lib/trigger-lab/store.svelte.ts:1433-1435 shows the sole production onFrame callback is only `this.serverFrame = frame`; repository factory call sites outside client.ts are confined to apps/web/src/lib/ws/client.test.ts:48-51 and do not emit Blob payloads.",
+      "confidence": "high"
+    },
+    "resilience-hole-0010": {
+      "finding_id": "resilience-hole-0010",
+      "refuted": false,
+      "reasoning": "I checked every route in the Worker entry point and the concrete D1/R2 adapters. Storage rejections propagate through ingestBatch, listReports, ingestBackups, listBackups, and getBackup without any response-producing catch, and D1/R2 service faults or schema drift are plausible triggers; Cloudflare observability being enabled may record an uncaught exception, but it does not turn that failure into the structured HTTP response required by the criterion. I also confirmed that both POST routes fully await req.text() before checking raw.length, which measures UTF-16 code units rather than the request body's UTF-8 byte size, so those guards do not enforce their declared byte limits.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "resilience-hole-0011": {
+      "finding_id": "resilience-hole-0011",
+      "refuted": false,
+      "reasoning": "I checked both cited render paths, the active voice generator bridge, registry behavior, show construction, and authored modifier handling. Effect renames are partially protected by the permanent alias policy and alias rewriting in packages/core/src/effects/aliases.ts:1-6 and apps/web/src/lib/trigger-lab/show-builder.ts:52-54, but unknown effect ids still pass through unchanged, modifiers have no equivalent alias or validation, and the authoring store explicitly permits unresolved modifier ids at apps/web/src/lib/trigger-lab/store.svelte.ts:2618-2629; those ids are then silently skipped at packages/core/src/modifiers/chain.ts:48-49 with no diagnostic. The trigger is plausible because the chain documentation itself identifies stale authored data as expected input, and the active voice path likewise silently drops an unknown generator at packages/core/src/voice/generator-bridge.ts:79-80, so the failure remains unhandled even if the legacy Engine.renderLayer path is not the primary runtime.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "Effect aliases mitigate known effect retirements at packages/core/src/effects/aliases.ts:25-42 and are applied at apps/web/src/lib/trigger-lab/show-builder.ts:82-98, but unknown ids pass through unchanged at packages/core/src/effects/aliases.ts:44-57 and there is no corresponding modifier alias, validation, ledger, callback, or Monitor emission.",
+      "confidence": "high"
+    },
+    "resilience-hole-0012": {
+      "finding_id": "resilience-hole-0012",
+      "refuted": true,
+      "reasoning": "The claimed abandoned-trigger loss mechanism is incorrect: the legacy engine retains and re-presents recent triggers for up to 6000 ms, so triggers after the one that encounters the cap are eligible for processing on later frames rather than being irretrievably discarded. In the primary voice host, each generator instance receives exactly one synthetic trigger, making the 64-emission cap unreachable; where a live stream can reach it, the cap is an explicit handled degradation policy, not an unhandled failure path. Advancing lastSeq for an already-expired trigger is also intentional consumption of a trigger that can no longer produce a live emission; moving the assignment after that check would repeatedly reconsider stale triggers. A drop counter could be an observability enhancement, but its absence does not establish the required unhandled failure path, and adding a field to internal EmitterState would not itself surface host statistics.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "packages/core/src/engine/engine.ts:194-198 retains triggers until age exceeds MAX_TRIGGER_AGE_MS=6000 rather than using a per-frame-only list; packages/core/src/voice/generator-bridge.ts:11-13,51-52,103-114 supplies one stable synthetic trigger per generator voice, so MAX_EMISSIONS cannot be reached in that host; packages/core/src/effects/emitter.ts:46 explicitly defines cap behavior as deliberate degradation.",
+      "confidence": "high"
+    },
+    "resilience-hole-0013": {
+      "finding_id": "resilience-hole-0013",
+      "refuted": false,
+      "reasoning": "I checked the WebSocket catch, protocol decoder, project-message handler, Monitor bus, and Reporter. The path is real: any PIN-admitted socket can repeatedly send malformed frames before the editor gate, and an editor\u2014including one that claimed the role through `takeover`\u2014can trigger synchronous `loadProject` filesystem or validation failures whose raw messages are returned by the outer catch; there is no per-socket response or Monitor-event rate limit. The Reporter does deduplicate identical errors into one queued record with an increasing count, so the finding overstates queue-entry multiplication, and decode validation is flattened into a single-line message rather than returning a raw multiline ZodError; however, every occurrence still emits an error frame, broadcasts a Monitor event, invokes `Reporter.observe`, increments the report count, and upserts the queue, while handler failures can expose filesystem paths or validation details. Those partial mitigations do not handle the plausible disclosure and amplification path, so the finding survives.",
+      "criterion_applied": "unhandled-failure-path",
+      "counter_evidence": "Partial mitigation only: `apps/server/src/telemetry/reporter.ts:65-87` deduplicates repeated errors by key, and `apps/server/src/ws-protocol.ts:52-55` formats decode failures into one line. Neither redacts handler exceptions nor rate-limits `apps/server/src/main.ts:510-517`; `apps/server/src/handlers/projects.ts:33-34` lets `loadProject` filesystem/schema exceptions reach that catch.",
+      "confidence": "high"
+    },
+    "speculative-generality-0001": {
+      "finding_id": "speculative-generality-0001",
+      "refuted": false,
+      "reasoning": "I checked all five controller definitions and searched the repository for their classes, Host interfaces, constructors, and imports. The only production constructions are the inline hosts in apps/web/src/lib/trigger-lab/store.svelte.ts:386-397, apps/web/src/lib/trigger-lab/store.svelte.ts:481-494, apps/web/src/lib/trigger-lab/store.svelte.ts:519-538, and apps/web/src/lib/trigger-lab/store.svelte.ts:805-811; no second adapter or independent caller exists. The controllers contain real state and behavior, so deleting them would reconcentrate that logic in the store rather than erase it, but under the specified deletion test it reappears in only one composition root\u2014not across N callers\u2014and the duplicated store forwarding surface remains. Therefore these are hypothetical one-adapter seams and the finding stands.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "speculative-generality-0002": {
+      "finding_id": "speculative-generality-0002",
+      "refuted": false,
+      "reasoning": "I checked every createClientMessageHandler and handleProjectMessage caller, the production wiring, both test harnesses, and the risky mutation branches. Deleting the optional configurations makes their branching complexity vanish rather than reappear across multiple real adapters: main.ts has the only production construction and supplies all six collaborators, while handleProjectMessage has only the client-message handler as its production caller; the test-only disabled-backup case is an intentional fake configuration, not a second runtime adapter, and can use an explicit stub. The omission hazard is real because both loadProject and setProject proceed when backups is absent, so removing backups from the sole production object literal would compile and silently bypass the pre-risk snapshot guard.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "speculative-generality-0003": {
+      "finding_id": "speculative-generality-0003",
+      "refuted": true,
+      "reasoning": "I checked the actual launch scripts and found a missed official product entry point: the documented production-style `pnpm start` command invokes the server directly without setting `LEDRUMS_ENGINE`, so `main.ts` selects and starts the legacy `EngineHost`. The deletion test therefore fails the finding: deleting `EngineHost` removes behavior used by that entry point, and preserving it would require its distinct layer/clip engine, reducer, lifecycle, input, and output responsibilities to reappear elsewhere; moreover, `EngineHost` and `VoiceEngineHost` are two concrete, semantically different adapters rather than a single hypothetical seam.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "package.json:16 defines `pnpm start` as a direct `@ledrums/server` start; apps/server/package.json:8 runs `tsx src/main.ts` without setting `LEDRUMS_ENGINE`; README.md:44-49 documents this as the production-style product launch; apps/server/src/main.ts:70-72 consequently defaults that launch to legacy, and apps/server/src/boot.ts:72-73 starts `deps.host`. The adapters also implement different engines and behavior: apps/server/src/engine-host.ts:26-33 owns the legacy layer/clip `Engine`, while apps/server/src/voice-engine-host.ts:58-68 owns the distinct trigger-graph/voice-bus engine.",
+      "confidence": "high"
+    },
+    "speculative-generality-0004": {
+      "finding_id": "speculative-generality-0004",
+      "refuted": true,
+      "reasoning": "I confirmed the rescaling-percent defect: Slider.svelte:43-44 passes display=\"60%\" and inputValue=\"0.6\" to inferUnit, whose fallback at Slider.svelte:70 returns the entire \"60%\" string, so the rendered control shows a raw 0.6 input beside 60%. However, under the required deletion test this speculative-generality finding falls: deleting inference does not make the formatting complexity vanish; it redistributes explicit unit/status/numeric-format decisions across multiple live caller families, including raw-preserving suffix formatting, numeric-only precision formatting, dynamic ParamSpec units, and the disabled \"swept\" state. The percent behavior is a real correctness/API-contract defect, but it does not establish that the shared formatting seam is unearned.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "LayersDock.svelte:87-94 supplies a raw-preserving millisecond formatter; PlayNodeInspector.svelte:178-184 supplies dynamic spec-driven units such as ms, mm/s, and degrees; SectionPrimitives.svelte:257-258 and SectionComposites.svelte:422 supply numeric-only fixed-decimal formatters that must not become units; ClipSettings.svelte:64-74 and ModifierNodeInspector.svelte:67-75 supply a distinct disabled-state adapter returning \"swept\". Removing the shared interpretation forces these semantics back into multiple callers, satisfying the criterion's real-seam side despite the confirmed pct bug.",
+      "confidence": "high"
+    },
+    "speculative-generality-0005": {
+      "finding_id": "speculative-generality-0005",
+      "refuted": true,
+      "reasoning": "The preset-only analysis missed the generic dynamic dispatch in scripts/ui-shot/ui-shot.mjs:151-156 and documented ad hoc captures that invoke every disputed mechanism through external aliases. Under the deletion test, removing these stores and DEV branches loses the demonstrated ability to hold otherwise-transient invalid-wire, splice, canvas-drop, lint, and section-drag states; reproducing those captures would require equivalent complexity in interaction automation or another synthetic-state adapter, so the capability is neither uncalled nor hypothetical.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "apps/web/src/lib/app/shot-seam.ts:411-427 dynamically maps external aliases to all five preview mechanisms. Actual callers are recorded at docs/reports/2026-07-09-gen3-r03.md:45 (`wire-invalid`), docs/reports/2026-07-09-gen3-r08.md:56-57 (`splice-armed`), docs/reports/2026-07-09-gen3-r12.md:46 (`canvas-drop`), docs/reports/2026-07-09-gen3-r05.md:50 (`lint-issues`), and docs/reports/2026-07-09-gen3-r11.md:63-64 plus docs/reports/2026-07-09-gen3-r11b.md:56-57 (`sections-insert`/`sections-reorder`).",
+      "confidence": "high"
+    },
+    "speculative-generality-0006": {
+      "finding_id": "speculative-generality-0006",
+      "refuted": true,
+      "reasoning": "I confirmed there are no production callers, but the exact deletion test still defeats the finding: deleting modulation-parity.ts would force its parity cases, phase matrix, and frozen historical formula to reappear across two independent callers\u2014the core modulation regression suite and the web hydration-migration suite. Those suites exercise different adapters/paths (`mappingEnvValue` through the modulation model versus `migrateGraphEnvMaps` through graph hydration), so this is a real shared seam rather than a pass-through whose complexity vanishes; moving it may change API hygiene, but the specified criterion does not justify deleting or condemning the module.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "packages/core/src/voice/modulation.test.ts:219-238 and apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:25-47 independently reuse the shared oracle against different execution paths; packages/core/package.json:6-8 also exposes only the root entry point, so the suggested testing subpath would add package-boundary machinery rather than eliminate the abstraction.",
+      "confidence": "high"
+    },
+    "speculative-generality-0007": {
+      "finding_id": "speculative-generality-0007",
+      "refuted": false,
+      "reasoning": "I checked the reducer, its wrapper, its tests, and all production references. The transition functions have exactly one production adapter in ShellStore at apps/web/src/lib/app/shell-store.svelte.ts:43-55; deleting them would move the same state transitions into that class without reproducing complexity across multiple callers, while App.svelte's direct shell-nav import is only for parseSearch and does not establish a second transition adapter. The deletion test therefore supports the finding: this is a hypothetical one-adapter seam rather than a boundary earning its keep across two implementations.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    },
+    "speculative-generality-0008": {
+      "finding_id": "speculative-generality-0008",
+      "refuted": true,
+      "reasoning": "The deletion test fails: removing these forwarding exports does not make the dependency complexity vanish; it redistributes it across multiple callers that currently consume one cohesive web-simulation API. For example, store.svelte.ts imports Sim and numerous web-local graph types together with defaultAdsr, adsrToPoints, and the envelope types from './sim', while render.ts imports the web-local Sim/Voice types together with core-backed applyModulations; deletion forces both callers to split their imports and expose the core voice namespace directly. The two-adapter condition is also satisfied: the core compositor applies the canonical modulation implementation for the real engine, while the web renderer applies it for the offline simulation, and the facade preserves a stable web-domain boundary between them. ENV_KINDS itself appears dead and may be deleted independently, but that does not establish that the enclosing forwarding seam fails the specified criterion.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:12-42 combines web-local Sim/graph symbols and forwarded envelope symbols behind one API; apps/web/src/lib/trigger-lab/render.ts:18-24 combines Sim/Voice with applyModulations; packages/core/src/voice/compositor.ts:71 and apps/web/src/lib/trigger-lab/render.ts:43 are two actual adapters using the canonical modulation behavior.",
+      "confidence": "high"
+    },
+    "speculative-generality-0009": {
+      "finding_id": "speculative-generality-0009",
+      "refuted": true,
+      "reasoning": "I checked both barrels and their callers. Under the deletion test, removing the re-exports does not make the boundary complexity vanish: it redistributes direct `@ledrums/protocol` knowledge across dozens of server and web callers and splits cohesive imports that currently obtain a side-specific codec and its associated wire types from one module, as shown in `apps/server/src/main.ts:56-65` and `apps/web/src/lib/ws/client.ts:3-20`. The server and web modules are two real consumer adapters with opposite-direction decoding/encoding responsibilities, and their differing export lists match differing consumer needs rather than proving erroneous contract drift; therefore the forwarding is earning its keep as each adapter's local type surface.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "Deleting the forwarding fans protocol imports back out across many callers; mixed runtime-and-type imports demonstrate the earned local seams at apps/server/src/main.ts:56-65, apps/server/src/handlers/client-message.ts:7, and apps/web/src/lib/ws/client.ts:3-20. The supposedly drifted web-only types are actually consumed through that web surface, e.g. VoiceStat at apps/web/src/lib/trigger-lab/store.svelte.ts:49, while server-specific types are consumed through the server surface.",
+      "confidence": "high"
+    },
+    "speculative-generality-0010": {
+      "finding_id": "speculative-generality-0010",
+      "refuted": true,
+      "reasoning": "The deletion test does not support the finding: removing FakePixliteClient would not make the controller-monitor testing complexity vanish; its controllable identity, statistics, failures, delays, and call recording would have to be recreated in apps/server/src/controller-monitor.test.ts, which exercises the PixliteClient boundary directly. The criterion explicitly says two adapters make a real seam, and PixliteClient has exactly two implementations\u2014HttpPixliteClient and FakePixliteClient\u2014while HttpTransport is a distinct lower-level seam that tests HTTP serialization, authentication, queueing, response handling, and timeout behavior without duplicating socket-server scaffolding; deleting either layer merely relocates its complexity rather than eliminating it.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "packages/io/src/pixlite/types.ts:97-115 defines the client boundary used by apps/server/src/controller-monitor.ts:59-65; production supplies HttpPixliteClient at apps/server/src/main.ts:602-604 while tests supply FakePixliteClient at apps/server/src/controller-monitor.test.ts:37-67. The transport seam independently supports numerous protocol/client tests at packages/io/src/pixlite/client.test.ts:14-131, whereas real node:http integration requires the materially heavier server lifecycle scaffolding at packages/io/src/pixlite/client.test.ts:134-197.",
+      "confidence": "high"
+    },
+    "speculative-generality-0011": {
+      "finding_id": "speculative-generality-0011",
+      "refuted": false,
+      "reasoning": "I checked all code references, barrel exports, registry consumers, graph-integrity consumers, and the cited pixel-grid tests. `nearestPixelWithin` is referenced only by tests for itself, while production effects use `nearestPixelIdWithin`; `assertTriggerGraphIntegrity` and `listCanvasScenes` have no callers at all, and `@ledrums/core` is private, so there is no supported external-consumer uncertainty. Under the deletion test, removing these functions does not redistribute meaningful complexity across callers: the object allocation and distance recomputation disappear, the unused throwing policy disappears, and the unused registry enumeration disappears. No second adapter or real seam was found.",
+      "criterion_applied": "deletion-test",
+      "counter_evidence": "none found",
+      "confidence": "high"
+    }
+  }
+}

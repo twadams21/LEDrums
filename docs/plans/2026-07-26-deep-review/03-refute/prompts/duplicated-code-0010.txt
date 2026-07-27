@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   >=2 sites, >=12 lines each, >=90% token similarity, SEMANTICALLY equivalent. Consolidation must REDUCE total interface, not relocate it.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: duplicated-code-0010
+lens: duplicated-code
+criterion: duplication-threshold
+severity: minor (author confidence: high)
+locations:
+  apps/web/src/lib/trigger-lab/EffectThumb.svelte:81-122 (IntersectionObserver + matchMedia $effects)
+  apps/web/src/lib/trigger-lab/SignalFace.svelte:30-65 (IntersectionObserver + matchMedia $effects)
+
+claim: The two canvas components carry identical copies of two `$effect` blocks: the IntersectionObserver visibility gate with the `hasBeenVisible` pre-layout guard (so a portaled panel's spurious `false` cannot kill the ticker subscription) and the `prefers-reduced-motion` matchMedia subscription with its handler + teardown. SignalFace's comment says "Same guard as EffectThumb". This is the largest non-test clone in the repo at 52 lines / 198 tokens, and it duplicates a subtle correctness guard rather than boilerplate — the pre-layout-false trap is exactly the kind of fix that gets applied to one copy only.
+
+evidence the author gave:
+  [read]  :: Read apps/web/src/lib/trigger-lab/EffectThumb.svelte:81-122 and SignalFace.svelte:32-65 — the observer callback body (`hasBeenVisible = true; isVisible = true; … else if (hasBeenVisible) isVisible = false;`), the `typeof IntersectionObserver !== 'undefined'` feature test, the disconnect teardown, an
+  [tool-output]  :: jscpd-report.json: EffectThumb.svelte:typescript 79-130 vs SignalFace.svelte:typescript 29-73 = 52 lines / 198 tokens — the largest non-test clone in the report.
+  [grep] grep -rln IntersectionObserver apps/web/src/lib; grep -rln "matchMedia('(prefers-reduced-motion" apps/web/src/lib :: IntersectionObserver: EffectThumb.svelte, SignalFace.svelte (+ effect-thumb-ticker.ts, + their tests). reduced-motion: EffectThumb.svelte, SignalFace.svelte, ToastHost.svelte. Exactly two sites duplicate the pair.
+
+proposed fix: Add apps/web/src/lib/trigger-lab/canvas-visibility.svelte.ts exporting `elementVisibility(getEl)` and `prefersReducedMotion()` rune helpers (next to the existing effect-thumb-ticker.ts), and have both components consume them. The pre-layout guard then exists once.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"duplicated-code-0010",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"duplication-threshold",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

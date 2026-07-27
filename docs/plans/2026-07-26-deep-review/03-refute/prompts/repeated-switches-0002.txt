@@ -1,0 +1,46 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The SAME discriminant switched in >=3 places, so adding a variant needs lockstep edits with nothing enforcing it.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: repeated-switches-0002
+lens: repeated-switches
+criterion: repeated-discriminant
+severity: major (author confidence: high)
+locations:
+  packages/core/src/voice/modulation-graph.ts:30-35 (MOD_SOURCE_KINDS / isModSourceKind)
+  packages/core/src/voice/modulation-graph.ts:50-77 (nodeModSource)
+  packages/core/src/voice/eval-graph.ts:582-588 (evalGraphGen3FromPlan mod-source no-op arms)
+  apps/web/src/lib/app/views/TriggerNode.svelte:127 (isSourceKind)
+  apps/web/src/lib/app/views/add-node-taxonomy.ts:88-91 (buildAddGroups Modulate items)
+  packages/core/src/voice/render-plan.ts:70-76 (nodeCategory modulation-source arms)
+
+claim: The set {envelope, lfo, cc, note, osc, randomMod} is written out longhand in six independent places. Only render-plan.ts:70-76 is compiler-enforced (nodeCategory falls off the end with a non-undefined return type under `strict`). MOD_SOURCE_KINDS is a plain `as const` array with no exhaustiveness link to NodeKind; nodeModSource ends in `default: return null`; eval-graph's arm list is a void switch; TriggerNode.svelte:127 hardcodes the six literals inline even though the shared helper is already re-exported next door (nodeIsModSource, sim.graph-compilation.ts:68). Adding a seventh source kind compiles clean and yields a node that is unaddable from the palette, renders no source thumbnail, and resolves to no ModSource.
+
+evidence the author gave:
+  [read]  :: packages/core/src/voice/modulation-graph.ts:30 `export const MOD_SOURCE_KINDS = ['envelope','lfo','cc','note','osc','randomMod'] as const;` — no `satisfies readonly NodeKind[]`, no link back to the union.
+  [read]  :: packages/core/src/voice/modulation-graph.ts:74-75 `default: return null;` — nodeModSource silently yields null for an unlisted kind.
+  [read]  :: apps/web/src/lib/app/views/TriggerNode.svelte:127 `const isSourceKind = $derived(kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'note' || kind === 'osc' || kind === 'randomMod');` — a literal sixth copy.
+  [read]  :: apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:68 already exports `nodeIsModSource = (kind) => voice.isModSourceKind(kind)`, so the shared helper exists and TriggerNode simply does not use it.
+  [grep] grep -rn "'randomMod'" packages/core/src apps/web/src | grep -v .test. :: grep -rn "'randomMod'" over packages/core/src + apps/web/src (non-test) returns 18 sites; the six above are those enumerating the mod-source SET rather than handling one kind.
+
+proposed fix: Replace TriggerNode.svelte:127 with `nodeIsModSource(kind)` and do the same at NodeSignalPreview.svelte:169/176. Declare `MOD_SOURCE_KINDS = [...] as const satisfies readonly NodeKind[]` and derive nodeModSource's dispatch from a `Record<ModSourceKindName, (n: GraphNode) => ModSource>`, replacing `default: return null` with a `kind in MAP` guard so the fail-open behaviour is preserved.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"repeated-switches-0002",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"repeated-discriminant",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

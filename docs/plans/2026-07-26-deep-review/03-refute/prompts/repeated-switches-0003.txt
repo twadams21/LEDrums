@@ -1,0 +1,43 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The SAME discriminant switched in >=3 places, so adding a variant needs lockstep edits with nothing enforcing it.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: repeated-switches-0003
+lens: repeated-switches
+criterion: repeated-discriminant
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:54 (NODE_KINDS)
+  packages/core/src/voice/types.ts:200-240 (CanonicalGraphNodeKind / NodeKind)
+  apps/web/src/lib/app/views/node-options.ts:61 (KIND_OPTS)
+  apps/web/src/lib/app/views/add-node-taxonomy.ts:30-92 (ROUTE_KINDS / buildAddGroups)
+
+claim: `NODE_KINDS: Array<Exclude<NodeKind,'trigger'>>` lists 18 literals by hand. The annotation constrains membership but not COVERAGE — a new NodeKind type-checks while being absent from the array, hence absent from KIND_OPTS (node-options.ts:61 derives from it) and from the kind-change dropdown. add-node-taxonomy.ts:30 then keeps a THIRD partial list (ROUTE_KINDS, 8 literals) plus four hand-written Modulate items at :88-91. The palette taxonomy is spread over three unenforced enumerations of one discriminant.
+
+evidence the author gave:
+  [read]  :: apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:54 — `export const NODE_KINDS: Array<Exclude<NodeKind, 'trigger'>> = ['effect','all',…,'randomMod'];` The type annotation permits a SHORT array.
+  [read]  :: apps/web/src/lib/app/views/node-options.ts:61 — `export const KIND_OPTS = NODE_KINDS.filter(...)` so the dropdown inherits any omission.
+  [read]  :: apps/web/src/lib/app/views/add-node-taxonomy.ts:30 — `const ROUTE_KINDS = ['random','sequence','switch','chance','toggle','delay','scope','mix'] as const satisfies readonly NodeKind[];` — `satisfies` checks membership, not coverage.
+  [read]  :: Contrast packages/core/src/voice/render-plan.ts:49-78 nodeCategory and apps/web/src/lib/app/views/trigger-node-meta.ts:32/63/87 (Record<NodeKind, …>) — those ARE compiler-enforced, so the repo already has the safe pattern to hand.
+
+proposed fix: Derive NODE_KINDS from an exhaustive `Record<NodeKind, true>` (or from `Object.keys(kindLabel)`, already a Record<NodeKind,…>) minus 'trigger'/'play', so a new kind is present by construction. Fold ROUTE_KINDS into the same derivation by tagging each kind with its palette group in one `Record<NodeKind, PaletteGroup>`.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"repeated-switches-0003",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"repeated-discriminant",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

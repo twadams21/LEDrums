@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   packages/core reaching Node/DOM/@ledrums/io, or a runtime (not type-only) cycle that actually matters.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: boundary-violation-0003
+lens: boundary-violation
+criterion: import-boundary
+severity: minor (author confidence: high)
+locations:
+  packages/core/src/modifiers/types.ts:23 (import type { Mapping })
+  packages/core/src/voice/modulation.ts:175 (Mapping)
+  packages/core/src/voice/types.ts:7-11 (imports)
+
+claim: madge cycles #1 and #2 (reported four times over, once per unit that compiles core) both exist only because the pure data interface `Mapping` lives in `voice/modulation.ts`, a module that also holds runtime code and pulls in envelope → easing → types. `voice/types.ts:7` imports `ResolvedModifier` from `../modifiers/types`, and `modifiers/types.ts:23` imports `Mapping` back out of `../voice/modulation`, closing the loop. The cycle is type-only in both back-edges so it is harmless at runtime (see coverage notes), but it makes the generic modifier layer look like it depends on the voice engine, and it is the single largest contributor to the repo's reported cycle count.
+
+evidence the author gave:
+  [grep] grep -nE "^\\s*(import|export)\\b.*from" packages/core/src/modifiers/types.ts packages/core/src/voice/types.ts packages/core/src/voice/modulation.ts :: modifiers/types.ts:23 `import type { Mapping } from '../voice/modulation';`  voice/types.ts:7 `import type { ResolvedModifier } from '../modifiers/types';`  voice/types.ts:11 `import type { Mapping } from './modulation';`  voice/modulation.ts:17-20 imports sampleEnvelope (runtime) from ./envelope, s
+  [grep] grep -n "export interface Mapping" packages/core/src/voice/modulation.ts :: Line 175 — `Mapping` is a plain interface with no runtime counterpart, sitting in the runtime module rather than in voice/types.ts where every other shared voice type lives.
+  [tool-output] cat docs/plans/2026-07-26-deep-review/00-raw/madge-cycles.txt :: Cycles 1 and 2 of packages/core, repeated as cycles 1-2 of protocol, server and web (8 of the 24 reported cycles trace to this one declaration site).
+
+proposed fix: Move `interface Mapping` (and any purely-type companions it needs) from voice/modulation.ts into voice/types.ts, then have voice/modulation.ts `export type { Mapping } from './types';` so every existing import path keeps working. modifiers/types.ts:23 can then import it from '../voice/types', a leaf type module, and madge cycles #1 and #2 disappear with zero runtime change.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"boundary-violation-0003",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"import-boundary",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

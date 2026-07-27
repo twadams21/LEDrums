@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The primitive stands for a domain concept with >=2 invariants enforced at call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: primitive-obsession-0008
+lens: primitive-obsession
+criterion: domain-concept-with-invariants
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/app/patch-topology.ts:113-117 (outputId)
+  apps/web/src/lib/app/patch-graph.ts:64-72 (outputNodeId / parseOutputNodeId)
+  apps/web/src/lib/app/patch-topology.ts:261-287 (describePatchNode)
+
+claim: Patch node identity is a stringly-typed grammar `<kind>:<a>[:<b>]` (patch-topology.ts:110) with builders scattered across three modules, and the `output:` prefix is claimed by TWO builders with different payload semantics. `patch-topology.ts:117` builds `output:${index}` from a POSITIONAL index (used at line 217), while `patch-graph.ts:66` builds `OUTPUT_PREFIX + outputId` from an `OutputConfig.id` for round-trip decoding by `parseOutputNodeId` (line 71). Nothing distinguishes the two at the type level or at runtime: `parseOutputNodeId('output:0')` produced by the topology builder returns `"0"` as if it were a config id, and conversely `describePatchNode` (patch-topology.ts:282-283) renders any output node's payload as the human-facing number — so a v2 output node keyed by its config id displays a raw id where the operator expects "Output 2". The same duplication exists for other kinds: `drumNodeId` (patch-topology.ts:115) and `drumZoneId` (patch-zones.ts:48) are two independent definitions of the identical string, as are `triggerId` (topology:113) and `triggerNodeId` (zones:50). `describePatchNode`'s `default:` arm (line 285) then classifies any unrecognised prefix as stage `'input'` rather than erroring, so a mismatched encoding surfaces as a wrongly-staged node, never as a failure.
+
+evidence the author gave:
+  [read]  :: apps/web/src/lib/app/patch-topology.ts:113-117 — five id builders including `outputId = (index: number) => `output:${index}``, used at line 217 `const oId = outputId(index)`.
+  [read]  :: apps/web/src/lib/app/patch-graph.ts:46 `const OUTPUT_PREFIX = 'output:'`; :64-72 `outputNodeId(outputId: string)` / `parseOutputNodeId` round-trip an OutputConfig.id; used at patch-graph.ts:149 `outputNodeId(output.id)`.
+  [read]  :: apps/web/src/lib/app/patch-topology.ts:282-285 — `case 'output': return { stage:'output', title: `Output ${a ?? ''}` }` then `default: return { stage: 'input', title: id }`.
+  [grep]  :: Duplicate builders confirmed: patch-topology.ts:115 `drumNodeId` vs patch-zones.ts:48 `drumZoneId`; patch-topology.ts:113 `triggerId` vs patch-zones.ts:50 `triggerNodeId` — same output strings, separate declarations, and patch-zones.ts:42's comment reasons about collisions by hand.
+
+proposed fix: Make the node-id grammar one module with one encoder and one total decoder returning a discriminated `PatchNodeRef` union (`{kind:'hoop'; drumId; hoop} | {kind:'output'; outputId} | {kind:'drum'; drumId} | …`). Delete the duplicate builders in patch-zones.ts and settle the `output:` payload on `OutputConfig.id` everywhere, giving describePatchNode the display index from the outputs array rather than from the id string. Replace describePatchNode's `default: stage 'input'` with an explicit `'unknown'` stage so a bad encoding is visible rather than mis-classified.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"primitive-obsession-0008",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"domain-concept-with-invariants",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

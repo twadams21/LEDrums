@@ -1,0 +1,537 @@
+[
+  {
+    "id": "dead-code-0001",
+    "prompt": "03-refute/prompts/dead-code-0001.txt",
+    "out": "03-refute/out/dead-code-0001.json"
+  },
+  {
+    "id": "dead-code-0002",
+    "prompt": "03-refute/prompts/dead-code-0002.txt",
+    "out": "03-refute/out/dead-code-0002.json"
+  },
+  {
+    "id": "dead-code-0003",
+    "prompt": "03-refute/prompts/dead-code-0003.txt",
+    "out": "03-refute/out/dead-code-0003.json"
+  },
+  {
+    "id": "dead-code-0004",
+    "prompt": "03-refute/prompts/dead-code-0004.txt",
+    "out": "03-refute/out/dead-code-0004.json"
+  },
+  {
+    "id": "dead-code-0005",
+    "prompt": "03-refute/prompts/dead-code-0005.txt",
+    "out": "03-refute/out/dead-code-0005.json"
+  },
+  {
+    "id": "dead-code-0006",
+    "prompt": "03-refute/prompts/dead-code-0006.txt",
+    "out": "03-refute/out/dead-code-0006.json"
+  },
+  {
+    "id": "dead-code-0007",
+    "prompt": "03-refute/prompts/dead-code-0007.txt",
+    "out": "03-refute/out/dead-code-0007.json"
+  },
+  {
+    "id": "dead-code-0008",
+    "prompt": "03-refute/prompts/dead-code-0008.txt",
+    "out": "03-refute/out/dead-code-0008.json"
+  },
+  {
+    "id": "dead-code-0009",
+    "prompt": "03-refute/prompts/dead-code-0009.txt",
+    "out": "03-refute/out/dead-code-0009.json"
+  },
+  {
+    "id": "dead-code-0010",
+    "prompt": "03-refute/prompts/dead-code-0010.txt",
+    "out": "03-refute/out/dead-code-0010.json"
+  },
+  {
+    "id": "dead-code-0011",
+    "prompt": "03-refute/prompts/dead-code-0011.txt",
+    "out": "03-refute/out/dead-code-0011.json"
+  },
+  {
+    "id": "dead-code-0012",
+    "prompt": "03-refute/prompts/dead-code-0012.txt",
+    "out": "03-refute/out/dead-code-0012.json"
+  },
+  {
+    "id": "dead-code-0013",
+    "prompt": "03-refute/prompts/dead-code-0013.txt",
+    "out": "03-refute/out/dead-code-0013.json"
+  },
+  {
+    "id": "dead-code-0014",
+    "prompt": "03-refute/prompts/dead-code-0014.txt",
+    "out": "03-refute/out/dead-code-0014.json"
+  },
+  {
+    "id": "dead-code-0015",
+    "prompt": "03-refute/prompts/dead-code-0015.txt",
+    "out": "03-refute/out/dead-code-0015.json"
+  },
+  {
+    "id": "duplicated-code-0001",
+    "prompt": "03-refute/prompts/duplicated-code-0001.txt",
+    "out": "03-refute/out/duplicated-code-0001.json"
+  },
+  {
+    "id": "duplicated-code-0002",
+    "prompt": "03-refute/prompts/duplicated-code-0002.txt",
+    "out": "03-refute/out/duplicated-code-0002.json"
+  },
+  {
+    "id": "duplicated-code-0003",
+    "prompt": "03-refute/prompts/duplicated-code-0003.txt",
+    "out": "03-refute/out/duplicated-code-0003.json"
+  },
+  {
+    "id": "duplicated-code-0004",
+    "prompt": "03-refute/prompts/duplicated-code-0004.txt",
+    "out": "03-refute/out/duplicated-code-0004.json"
+  },
+  {
+    "id": "duplicated-code-0005",
+    "prompt": "03-refute/prompts/duplicated-code-0005.txt",
+    "out": "03-refute/out/duplicated-code-0005.json"
+  },
+  {
+    "id": "duplicated-code-0006",
+    "prompt": "03-refute/prompts/duplicated-code-0006.txt",
+    "out": "03-refute/out/duplicated-code-0006.json"
+  },
+  {
+    "id": "duplicated-code-0007",
+    "prompt": "03-refute/prompts/duplicated-code-0007.txt",
+    "out": "03-refute/out/duplicated-code-0007.json"
+  },
+  {
+    "id": "duplicated-code-0008",
+    "prompt": "03-refute/prompts/duplicated-code-0008.txt",
+    "out": "03-refute/out/duplicated-code-0008.json"
+  },
+  {
+    "id": "duplicated-code-0009",
+    "prompt": "03-refute/prompts/duplicated-code-0009.txt",
+    "out": "03-refute/out/duplicated-code-0009.json"
+  },
+  {
+    "id": "duplicated-code-0010",
+    "prompt": "03-refute/prompts/duplicated-code-0010.txt",
+    "out": "03-refute/out/duplicated-code-0010.json"
+  },
+  {
+    "id": "duplicated-code-0011",
+    "prompt": "03-refute/prompts/duplicated-code-0011.txt",
+    "out": "03-refute/out/duplicated-code-0011.json"
+  },
+  {
+    "id": "duplicated-code-0012",
+    "prompt": "03-refute/prompts/duplicated-code-0012.txt",
+    "out": "03-refute/out/duplicated-code-0012.json"
+  },
+  {
+    "id": "duplicated-code-0013",
+    "prompt": "03-refute/prompts/duplicated-code-0013.txt",
+    "out": "03-refute/out/duplicated-code-0013.json"
+  },
+  {
+    "id": "duplicated-code-0014",
+    "prompt": "03-refute/prompts/duplicated-code-0014.txt",
+    "out": "03-refute/out/duplicated-code-0014.json"
+  },
+  {
+    "id": "duplicated-code-0015",
+    "prompt": "03-refute/prompts/duplicated-code-0015.txt",
+    "out": "03-refute/out/duplicated-code-0015.json"
+  },
+  {
+    "id": "boundary-violation-0001",
+    "prompt": "03-refute/prompts/boundary-violation-0001.txt",
+    "out": "03-refute/out/boundary-violation-0001.json"
+  },
+  {
+    "id": "boundary-violation-0002",
+    "prompt": "03-refute/prompts/boundary-violation-0002.txt",
+    "out": "03-refute/out/boundary-violation-0002.json"
+  },
+  {
+    "id": "boundary-violation-0003",
+    "prompt": "03-refute/prompts/boundary-violation-0003.txt",
+    "out": "03-refute/out/boundary-violation-0003.json"
+  },
+  {
+    "id": "boundary-violation-0004",
+    "prompt": "03-refute/prompts/boundary-violation-0004.txt",
+    "out": "03-refute/out/boundary-violation-0004.json"
+  },
+  {
+    "id": "boundary-violation-0005",
+    "prompt": "03-refute/prompts/boundary-violation-0005.txt",
+    "out": "03-refute/out/boundary-violation-0005.json"
+  },
+  {
+    "id": "boundary-violation-0006",
+    "prompt": "03-refute/prompts/boundary-violation-0006.txt",
+    "out": "03-refute/out/boundary-violation-0006.json"
+  },
+  {
+    "id": "speculative-generality-0001",
+    "prompt": "03-refute/prompts/speculative-generality-0001.txt",
+    "out": "03-refute/out/speculative-generality-0001.json"
+  },
+  {
+    "id": "speculative-generality-0002",
+    "prompt": "03-refute/prompts/speculative-generality-0002.txt",
+    "out": "03-refute/out/speculative-generality-0002.json"
+  },
+  {
+    "id": "speculative-generality-0003",
+    "prompt": "03-refute/prompts/speculative-generality-0003.txt",
+    "out": "03-refute/out/speculative-generality-0003.json"
+  },
+  {
+    "id": "speculative-generality-0004",
+    "prompt": "03-refute/prompts/speculative-generality-0004.txt",
+    "out": "03-refute/out/speculative-generality-0004.json"
+  },
+  {
+    "id": "speculative-generality-0005",
+    "prompt": "03-refute/prompts/speculative-generality-0005.txt",
+    "out": "03-refute/out/speculative-generality-0005.json"
+  },
+  {
+    "id": "speculative-generality-0006",
+    "prompt": "03-refute/prompts/speculative-generality-0006.txt",
+    "out": "03-refute/out/speculative-generality-0006.json"
+  },
+  {
+    "id": "speculative-generality-0007",
+    "prompt": "03-refute/prompts/speculative-generality-0007.txt",
+    "out": "03-refute/out/speculative-generality-0007.json"
+  },
+  {
+    "id": "speculative-generality-0008",
+    "prompt": "03-refute/prompts/speculative-generality-0008.txt",
+    "out": "03-refute/out/speculative-generality-0008.json"
+  },
+  {
+    "id": "speculative-generality-0009",
+    "prompt": "03-refute/prompts/speculative-generality-0009.txt",
+    "out": "03-refute/out/speculative-generality-0009.json"
+  },
+  {
+    "id": "speculative-generality-0010",
+    "prompt": "03-refute/prompts/speculative-generality-0010.txt",
+    "out": "03-refute/out/speculative-generality-0010.json"
+  },
+  {
+    "id": "speculative-generality-0011",
+    "prompt": "03-refute/prompts/speculative-generality-0011.txt",
+    "out": "03-refute/out/speculative-generality-0011.json"
+  },
+  {
+    "id": "middle-man-0001",
+    "prompt": "03-refute/prompts/middle-man-0001.txt",
+    "out": "03-refute/out/middle-man-0001.json"
+  },
+  {
+    "id": "middle-man-0002",
+    "prompt": "03-refute/prompts/middle-man-0002.txt",
+    "out": "03-refute/out/middle-man-0002.json"
+  },
+  {
+    "id": "middle-man-0003",
+    "prompt": "03-refute/prompts/middle-man-0003.txt",
+    "out": "03-refute/out/middle-man-0003.json"
+  },
+  {
+    "id": "middle-man-0004",
+    "prompt": "03-refute/prompts/middle-man-0004.txt",
+    "out": "03-refute/out/middle-man-0004.json"
+  },
+  {
+    "id": "middle-man-0005",
+    "prompt": "03-refute/prompts/middle-man-0005.txt",
+    "out": "03-refute/out/middle-man-0005.json"
+  },
+  {
+    "id": "middle-man-0006",
+    "prompt": "03-refute/prompts/middle-man-0006.txt",
+    "out": "03-refute/out/middle-man-0006.json"
+  },
+  {
+    "id": "middle-man-0007",
+    "prompt": "03-refute/prompts/middle-man-0007.txt",
+    "out": "03-refute/out/middle-man-0007.json"
+  },
+  {
+    "id": "data-clumps-0001",
+    "prompt": "03-refute/prompts/data-clumps-0001.txt",
+    "out": "03-refute/out/data-clumps-0001.json"
+  },
+  {
+    "id": "data-clumps-0002",
+    "prompt": "03-refute/prompts/data-clumps-0002.txt",
+    "out": "03-refute/out/data-clumps-0002.json"
+  },
+  {
+    "id": "data-clumps-0003",
+    "prompt": "03-refute/prompts/data-clumps-0003.txt",
+    "out": "03-refute/out/data-clumps-0003.json"
+  },
+  {
+    "id": "data-clumps-0004",
+    "prompt": "03-refute/prompts/data-clumps-0004.txt",
+    "out": "03-refute/out/data-clumps-0004.json"
+  },
+  {
+    "id": "data-clumps-0005",
+    "prompt": "03-refute/prompts/data-clumps-0005.txt",
+    "out": "03-refute/out/data-clumps-0005.json"
+  },
+  {
+    "id": "data-clumps-0006",
+    "prompt": "03-refute/prompts/data-clumps-0006.txt",
+    "out": "03-refute/out/data-clumps-0006.json"
+  },
+  {
+    "id": "data-clumps-0007",
+    "prompt": "03-refute/prompts/data-clumps-0007.txt",
+    "out": "03-refute/out/data-clumps-0007.json"
+  },
+  {
+    "id": "data-clumps-0008",
+    "prompt": "03-refute/prompts/data-clumps-0008.txt",
+    "out": "03-refute/out/data-clumps-0008.json"
+  },
+  {
+    "id": "primitive-obsession-0001",
+    "prompt": "03-refute/prompts/primitive-obsession-0001.txt",
+    "out": "03-refute/out/primitive-obsession-0001.json"
+  },
+  {
+    "id": "primitive-obsession-0002",
+    "prompt": "03-refute/prompts/primitive-obsession-0002.txt",
+    "out": "03-refute/out/primitive-obsession-0002.json"
+  },
+  {
+    "id": "primitive-obsession-0003",
+    "prompt": "03-refute/prompts/primitive-obsession-0003.txt",
+    "out": "03-refute/out/primitive-obsession-0003.json"
+  },
+  {
+    "id": "primitive-obsession-0004",
+    "prompt": "03-refute/prompts/primitive-obsession-0004.txt",
+    "out": "03-refute/out/primitive-obsession-0004.json"
+  },
+  {
+    "id": "primitive-obsession-0005",
+    "prompt": "03-refute/prompts/primitive-obsession-0005.txt",
+    "out": "03-refute/out/primitive-obsession-0005.json"
+  },
+  {
+    "id": "primitive-obsession-0006",
+    "prompt": "03-refute/prompts/primitive-obsession-0006.txt",
+    "out": "03-refute/out/primitive-obsession-0006.json"
+  },
+  {
+    "id": "primitive-obsession-0007",
+    "prompt": "03-refute/prompts/primitive-obsession-0007.txt",
+    "out": "03-refute/out/primitive-obsession-0007.json"
+  },
+  {
+    "id": "primitive-obsession-0008",
+    "prompt": "03-refute/prompts/primitive-obsession-0008.txt",
+    "out": "03-refute/out/primitive-obsession-0008.json"
+  },
+  {
+    "id": "primitive-obsession-0009",
+    "prompt": "03-refute/prompts/primitive-obsession-0009.txt",
+    "out": "03-refute/out/primitive-obsession-0009.json"
+  },
+  {
+    "id": "primitive-obsession-0010",
+    "prompt": "03-refute/prompts/primitive-obsession-0010.txt",
+    "out": "03-refute/out/primitive-obsession-0010.json"
+  },
+  {
+    "id": "primitive-obsession-0011",
+    "prompt": "03-refute/prompts/primitive-obsession-0011.txt",
+    "out": "03-refute/out/primitive-obsession-0011.json"
+  },
+  {
+    "id": "primitive-obsession-0012",
+    "prompt": "03-refute/prompts/primitive-obsession-0012.txt",
+    "out": "03-refute/out/primitive-obsession-0012.json"
+  },
+  {
+    "id": "primitive-obsession-0013",
+    "prompt": "03-refute/prompts/primitive-obsession-0013.txt",
+    "out": "03-refute/out/primitive-obsession-0013.json"
+  },
+  {
+    "id": "primitive-obsession-0014",
+    "prompt": "03-refute/prompts/primitive-obsession-0014.txt",
+    "out": "03-refute/out/primitive-obsession-0014.json"
+  },
+  {
+    "id": "repeated-switches-0001",
+    "prompt": "03-refute/prompts/repeated-switches-0001.txt",
+    "out": "03-refute/out/repeated-switches-0001.json"
+  },
+  {
+    "id": "repeated-switches-0002",
+    "prompt": "03-refute/prompts/repeated-switches-0002.txt",
+    "out": "03-refute/out/repeated-switches-0002.json"
+  },
+  {
+    "id": "repeated-switches-0003",
+    "prompt": "03-refute/prompts/repeated-switches-0003.txt",
+    "out": "03-refute/out/repeated-switches-0003.json"
+  },
+  {
+    "id": "repeated-switches-0004",
+    "prompt": "03-refute/prompts/repeated-switches-0004.txt",
+    "out": "03-refute/out/repeated-switches-0004.json"
+  },
+  {
+    "id": "repeated-switches-0005",
+    "prompt": "03-refute/prompts/repeated-switches-0005.txt",
+    "out": "03-refute/out/repeated-switches-0005.json"
+  },
+  {
+    "id": "repeated-switches-0006",
+    "prompt": "03-refute/prompts/repeated-switches-0006.txt",
+    "out": "03-refute/out/repeated-switches-0006.json"
+  },
+  {
+    "id": "repeated-switches-0007",
+    "prompt": "03-refute/prompts/repeated-switches-0007.txt",
+    "out": "03-refute/out/repeated-switches-0007.json"
+  },
+  {
+    "id": "repeated-switches-0008",
+    "prompt": "03-refute/prompts/repeated-switches-0008.txt",
+    "out": "03-refute/out/repeated-switches-0008.json"
+  },
+  {
+    "id": "repeated-switches-0009",
+    "prompt": "03-refute/prompts/repeated-switches-0009.txt",
+    "out": "03-refute/out/repeated-switches-0009.json"
+  },
+  {
+    "id": "divergent-change-0001",
+    "prompt": "03-refute/prompts/divergent-change-0001.txt",
+    "out": "03-refute/out/divergent-change-0001.json"
+  },
+  {
+    "id": "divergent-change-0002",
+    "prompt": "03-refute/prompts/divergent-change-0002.txt",
+    "out": "03-refute/out/divergent-change-0002.json"
+  },
+  {
+    "id": "divergent-change-0003",
+    "prompt": "03-refute/prompts/divergent-change-0003.txt",
+    "out": "03-refute/out/divergent-change-0003.json"
+  },
+  {
+    "id": "divergent-change-0004",
+    "prompt": "03-refute/prompts/divergent-change-0004.txt",
+    "out": "03-refute/out/divergent-change-0004.json"
+  },
+  {
+    "id": "divergent-change-0005",
+    "prompt": "03-refute/prompts/divergent-change-0005.txt",
+    "out": "03-refute/out/divergent-change-0005.json"
+  },
+  {
+    "id": "divergent-change-0006",
+    "prompt": "03-refute/prompts/divergent-change-0006.txt",
+    "out": "03-refute/out/divergent-change-0006.json"
+  },
+  {
+    "id": "divergent-change-0007",
+    "prompt": "03-refute/prompts/divergent-change-0007.txt",
+    "out": "03-refute/out/divergent-change-0007.json"
+  },
+  {
+    "id": "divergent-change-0008",
+    "prompt": "03-refute/prompts/divergent-change-0008.txt",
+    "out": "03-refute/out/divergent-change-0008.json"
+  },
+  {
+    "id": "divergent-change-0009",
+    "prompt": "03-refute/prompts/divergent-change-0009.txt",
+    "out": "03-refute/out/divergent-change-0009.json"
+  },
+  {
+    "id": "resilience-hole-0001",
+    "prompt": "03-refute/prompts/resilience-hole-0001.txt",
+    "out": "03-refute/out/resilience-hole-0001.json"
+  },
+  {
+    "id": "resilience-hole-0002",
+    "prompt": "03-refute/prompts/resilience-hole-0002.txt",
+    "out": "03-refute/out/resilience-hole-0002.json"
+  },
+  {
+    "id": "resilience-hole-0003",
+    "prompt": "03-refute/prompts/resilience-hole-0003.txt",
+    "out": "03-refute/out/resilience-hole-0003.json"
+  },
+  {
+    "id": "resilience-hole-0004",
+    "prompt": "03-refute/prompts/resilience-hole-0004.txt",
+    "out": "03-refute/out/resilience-hole-0004.json"
+  },
+  {
+    "id": "resilience-hole-0005",
+    "prompt": "03-refute/prompts/resilience-hole-0005.txt",
+    "out": "03-refute/out/resilience-hole-0005.json"
+  },
+  {
+    "id": "resilience-hole-0006",
+    "prompt": "03-refute/prompts/resilience-hole-0006.txt",
+    "out": "03-refute/out/resilience-hole-0006.json"
+  },
+  {
+    "id": "resilience-hole-0007",
+    "prompt": "03-refute/prompts/resilience-hole-0007.txt",
+    "out": "03-refute/out/resilience-hole-0007.json"
+  },
+  {
+    "id": "resilience-hole-0008",
+    "prompt": "03-refute/prompts/resilience-hole-0008.txt",
+    "out": "03-refute/out/resilience-hole-0008.json"
+  },
+  {
+    "id": "resilience-hole-0009",
+    "prompt": "03-refute/prompts/resilience-hole-0009.txt",
+    "out": "03-refute/out/resilience-hole-0009.json"
+  },
+  {
+    "id": "resilience-hole-0010",
+    "prompt": "03-refute/prompts/resilience-hole-0010.txt",
+    "out": "03-refute/out/resilience-hole-0010.json"
+  },
+  {
+    "id": "resilience-hole-0011",
+    "prompt": "03-refute/prompts/resilience-hole-0011.txt",
+    "out": "03-refute/out/resilience-hole-0011.json"
+  },
+  {
+    "id": "resilience-hole-0012",
+    "prompt": "03-refute/prompts/resilience-hole-0012.txt",
+    "out": "03-refute/out/resilience-hole-0012.json"
+  },
+  {
+    "id": "resilience-hole-0013",
+    "prompt": "03-refute/prompts/resilience-hole-0013.txt",
+    "out": "03-refute/out/resilience-hole-0013.json"
+  }
+]

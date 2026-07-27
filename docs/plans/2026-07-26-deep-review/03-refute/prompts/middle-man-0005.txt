@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   THE DELETION TEST: imagine the module gone. If complexity VANISHES it was a pass-through (finding stands). If complexity REAPPEARS across N callers it was earning its keep (finding falls). Also: one adapter = hypothetical seam, TWO adapters = real seam.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: middle-man-0005
+lens: middle-man
+criterion: deletion-test
+severity: major (author confidence: high)
+locations:
+  packages/io/src/index.ts:1-5 (export * from './interfaces'|'./artnet'|'./sacn'|'./osc'|'./pixlite')
+  packages/io/src/pixlite/index.ts:8-44 (curated pixlite barrel)
+
+claim: packages/io/src/index.ts is the only pure-re-export module in the repo (verified by a whole-repo barrel scan) and is the package's single declared export (package.json exports: {'.': './src/index.ts'}). Four of its five lines are `export *`, which republishes every top-level symbol in artnet.ts, sacn.ts and osc.ts. The one consumer, apps/server, imports 17 names; the blanket republishes at least 12 more that no file outside packages/io references — ARTNET_PORT, SACN_PORT, ROOT_VECTOR_DATA, FRAMING_VECTOR_DATA, DMP_VECTOR_SET_PROPERTY, encodeArtDmx, encodeE131, sacnMulticastAddress, encodeOsc, parseOsc, expandCidr, expandTargets, nodeHttpTransport — plus the fake-client fixtures defaultIdentity and defaultStats (zero external references; FakePixliteClient and makeFakeProber have exactly one, a server test). The fifth line re-exports pixlite/index.ts, which already did the curation job properly, so the root barrel is a middle-man in front of a module that had already made the decision.
+
+evidence the author gave:
+  [tool-output]  :: Repo-wide scan for modules whose non-comment lines are >90% re-export syntax returned exactly one hit: 'packages/io/src/index.ts (5 lines, pure-barrel)'.
+  [read]  :: packages/io/package.json declares exports {'.': './src/index.ts'} only — there is no subpath, so every consumer must go through the blanket barrel.
+  [tool-output]  :: Per-symbol grep across apps and packages excluding packages/io: FakePixliteClient=1 file, makeFakeProber=1 file, and defaultIdentity, defaultStats, expandCidr, expandTargets, nodeHttpTransport, encodeOsc, parseOsc, encodeArtDmx, encodeE131, sacnMulticastAddress, ROOT_VECTOR_DATA, FRAMING_VECTOR_DATA
+  [grep]  :: Actual @ledrums/io imports from apps/server: OscEvent, PixelOutput, HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe, authHash, sweep, FakePixliteClient, makeFakeProber, ArtNetOutput, SacnOutput, ControllerIdentity, ControllerStats, PixliteClient, UniverseRx — 16 names across 12 files.
+  [read]  :: packages/io/src/pixlite/index.ts:1-7 describes itself as 'A deep module: a small PixliteClient interface with two adapters … the strict-order JSON / auth / sequential-queue machinery hidden inside' — the curation the root barrel then undoes for its siblings.
+
+proposed fix: Rewrite packages/io/src/index.ts as a curated named barrel in the style of pixlite/index.ts, listing only the 16 names apps/server consumes. Move FakePixliteClient/makeFakeProber/defaultIdentity/defaultStats behind a second entry point ('@ledrums/io/testing') so production callers cannot reach the fakes. The encoders (encodeArtDmx, encodeE131, encodeOsc, parseOsc) and the protocol constants stay exported from their own modules for their own unit tests but leave the package surface.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"middle-man-0005",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"deletion-test",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

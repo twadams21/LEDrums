@@ -29,7 +29,15 @@
 # Reads base_url/token from ~/.twux/proxy.json. The token is never echoed.
 # Mirrors twux lib/models.sh codex_env_prefix() + model_boot_arg().
 #
-# usage: codex-agent.sh '<model(effort)>' <prompt-file> [allowed-tools] [cwd]
+# usage: codex-agent.sh '<model(effort)>' <prompt-file> [allowed-tools] [cwd] [out-file]
+#
+# WITH out-file (strongly preferred): the child's output is written THERE and
+# stdout carries ONLY the provenance line. The wrapper relays nonce + path; the
+# orchestrator reads the file itself. This closes the last hole in the guard:
+# with the body on stdout, a wrapper could run the script correctly, obtain a
+# genuinely valid nonce, and STILL relay a body of its own invention. The nonce
+# proved the child ran; it did not prove the child's words survived the relay.
+# Taking the body out of the wrapper's hands is what proves that.
 #
 # stdout on success: provenance line, blank line, child output with the echo line stripped:
 #   CODEX-PROVENANCE nonce=<hex32> model=<spec> prompt_sha=<hex64> exit=<code>
@@ -42,6 +50,7 @@ MODEL="${1:?usage: codex-agent.sh '<model(effort)>' <prompt-file> [allowed-tools
 PROMPT_FILE="${2:?prompt file required}"
 TOOLS="${3:-Read,Grep,Glob}"
 WORKDIR="${4:-$PWD}"
+OUTFILE="${5:-}"
 
 [ -r "$CONF" ]        || { echo "codex-agent: no readable proxy config at $CONF" >&2; exit 2; }
 [ -r "$PROMPT_FILE" ] || { echo "codex-agent: no readable prompt file at $PROMPT_FILE" >&2; exit 2; }
@@ -111,7 +120,23 @@ mkdir -p "$(dirname "$RECEIPTS")" 2>/dev/null || true
 printf '%s\t%s\t%s\t%s\t%s\n' \
   "$NONCE" "$MODEL" "$PROMPT_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >> "$RECEIPTS"
 
-printf 'CODEX-PROVENANCE nonce=%s model=%s prompt_sha=%s exit=%s\n\n' \
-  "$NONCE" "$MODEL" "$PROMPT_SHA" "$RC"
-printf '%s\n' "$OUT" | grep -vF "NONCE-ECHO $NONCE"
+if [ -n "$OUTFILE" ]; then
+  mkdir -p "$(dirname "$OUTFILE")" 2>/dev/null || true
+  # Strip the nonce echo AND the CLI's own stderr banners. We capture 2>&1 to
+  # keep real errors, but that also drags in the "claude.ai connectors are
+  # disabled" warning and the stdin-timeout notice, which prepend non-JSON to
+  # the child's answer and make every output file unparseable. Observed on the
+  # first real run: 0 of 16 output files were valid JSON.
+  printf '%s\n' "$OUT" \
+    | grep -vF "NONCE-ECHO $NONCE" \
+    | grep -v '^⚠' \
+    | grep -v '^Warning: no stdin data received' \
+    > "$OUTFILE"
+  printf 'CODEX-PROVENANCE nonce=%s model=%s prompt_sha=%s exit=%s out=%s bytes=%s\n' \
+    "$NONCE" "$MODEL" "$PROMPT_SHA" "$RC" "$OUTFILE" "$(wc -c < "$OUTFILE" | tr -d ' ')"
+else
+  printf 'CODEX-PROVENANCE nonce=%s model=%s prompt_sha=%s exit=%s\n\n' \
+    "$NONCE" "$MODEL" "$PROMPT_SHA" "$RC"
+  printf '%s\n' "$OUT" | grep -vF "NONCE-ECHO $NONCE"
+fi
 exit "$RC"

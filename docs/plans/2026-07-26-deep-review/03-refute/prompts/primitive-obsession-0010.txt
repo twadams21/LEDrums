@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The primitive stands for a domain concept with >=2 invariants enforced at call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: primitive-obsession-0010
+lens: primitive-obsession
+criterion: domain-concept-with-invariants
+severity: major (author confidence: high)
+locations:
+  apps/server/src/pin-gate.ts:30-37 (createPinGate.check)
+  apps/server/src/pin-gate.ts:81-85 (resolvePin)
+  apps/server/src/pin-gate.ts:165-172 (safeEqual)
+
+claim: pin-gate.ts holds two credentials, both typed `string | null`, and enforces their invariants asymmetrically because nothing in the type says they are the same kind of thing. The host token gets a minimum-strength gate (`MIN_HOST_TOKEN_LENGTH`, line 136, fail-closed at line 153) and a constant-time comparison (`safeEqual` via `timingSafeEqual`, lines 165-172, used at line 199). The room PIN — the credential that actually gates every remote client over a public Cloudflare tunnel — gets neither: `resolvePin` (line 82) accepts any non-empty `LEDRUMS_PIN` including a single character, and `check` compares with plain `===` (line 35, and again in the mutable gate at line 58), which is not constant-time. A `Secret`/`Credential` value type with `parse` (strength) and `equals` (constant-time) as its only operations would make the two paths identical by construction; as bare strings, the discipline has to be remembered twice and was only remembered once.
+
+evidence the author gave:
+  [read]  :: apps/server/src/pin-gate.ts:30-37 and 50-64 — both PinGate implementations use `supplied === pin`, a short-circuiting comparison.
+  [read]  :: apps/server/src/pin-gate.ts:81-85 — `resolvePin` returns `env.LEDRUMS_PIN?.trim()` if truthy, with no length or digit check, in contrast to resolveHostToken's `injected.length >= MIN_HOST_TOKEN_LENGTH` at line 152.
+  [read]  :: apps/server/src/pin-gate.ts:165-172 `safeEqual` exists in the same file and is used only for the host token (line 199), never for the PIN.
+  [read]  :: apps/server/src/pin-gate.ts:9-19 header comment establishes the PIN as the sole gate for tunnel-origin (remote) clients, so it is the more exposed of the two credentials.
+
+proposed fix: Introduce a single `Credential` value type in pin-gate.ts with `Credential.parse(raw, {minLength})` and `Credential.equals(a, b)` implemented over `timingSafeEqual`, and express both the PIN and the host token as `Credential`. Give the PIN a minimum length (a generated PIN is 6 digits; an explicit LEDRUMS_PIN shorter than that should be rejected loudly at boot rather than silently accepted) and route `PinGate.check` through `Credential.equals`. One type, one place the invariants live, both credentials covered.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"primitive-obsession-0010",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"domain-concept-with-invariants",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

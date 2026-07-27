@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   An unhandled failure path with a PLAUSIBLE trigger. INVERSE POLARITY — this finding proposes ADDING code. Refute it if the path is already handled, or if no realistic trigger exists.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: resilience-hole-0010
+lens: resilience-hole
+criterion: unhandled-failure-path
+severity: minor (author confidence: high)
+locations:
+  workers/error-ingest/src/index.ts:32-108 (default.fetch)
+  workers/error-ingest/src/store.ts:68-140 (d1Store)
+
+claim: The Worker's `fetch` has no try/catch anywhere. Every `d1Store` method awaits a raw D1 call, and every `r2Store` method a raw R2 call, so a D1 rate-limit, a schema mismatch after a migration, or an R2 outage throws out of `fetch` and the Cloudflare runtime returns a bare 500 with no JSON body. That is invisible to the operator (nothing is logged in a shape the /reports API can show) and, per the ShipQueue finding, indistinguishable to the client from a transient failure — so the server retries indefinitely. The error-reporting pipeline is the thing you rely on precisely when everything else is broken, so it needs to fail legibly. Note also that `MAX_BODY_BYTES` is checked as `raw.length` AFTER `await req.text()` fully buffers the body, and `.length` counts UTF-16 code units rather than bytes, so the cap is both post-hoc and off by up to 3× for non-ASCII stack traces.
+
+evidence the author gave:
+  [read]  :: workers/error-ingest/src/index.ts:32-108 — the whole `fetch` body; the only try/catch blocks wrap `JSON.parse` and `parseIngestBatch`. Every `await ingestBatch(...)`, `await listReports(...)`, `await ingestBackups(...)` and `await getBackup(...)` is unguarded.
+  [read]  :: workers/error-ingest/src/store.ts:70-140 — `d1Store` methods call `db.prepare(...).bind(...).first()/.run()/.all()` with no error handling; a D1 fault propagates straight out.
+  [read]  :: workers/error-ingest/src/index.ts:38-40 — `const raw = await req.text(); if (raw.length > MAX_BODY_BYTES) return error(413, ...)` — the body is fully materialised before the cap is applied, and `.length` is code units, not bytes.
+
+proposed fix: Wrap the routing body of `fetch` in a try/catch that returns `json({ status: 503, body: { error: 'storage unavailable', detail: <message> } })` for store faults, so the client can distinguish a retryable backend fault from a permanent 4xx (pairs with the ShipQueue classification fix). Log the fault via `console.error` so it lands in Worker tail logs. Move the size cap ahead of buffering by reading `content-length` first, and compare against a byte count.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"resilience-hole-0010",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"unhandled-failure-path",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

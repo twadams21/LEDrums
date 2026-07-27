@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   One logical change requires edits in >=4 files, evidenced from >=3 commits in git log.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: divergent-change-0003
+lens: divergent-change
+criterion: change-scatter
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/trigger-lab/sim.ts:280-702 (Sim)
+  packages/core/src/voice/eval-graph.ts:1-637 (evalGraph)
+  packages/core/src/voice/voice-pool.ts:1-252 (VoicePool)
+
+claim: Beyond the engine/voice duplication, the web app carries a THIRD implementation of the same semantics: `Sim` (sim.ts:280-702) owns voice lifecycle, bus polyphony/voice-stealing (`sim.ts:451`, `sim.ts:692`) and trigger-graph evaluation (`sim.ts:376`), which `packages/core/src/voice/voice-pool.ts` and `packages/core/src/voice/eval-graph.ts` also implement. Its own header (sim.ts:2-14) declares it "throwaway … NOT the engine … Delete this whole directory once the branches are decided", yet it was edited in 12 of the last 400 commits and still feeds the visualiser whenever the WS link is closed. A change to polyphony, voice-stealing or graph evaluation therefore has to be made in core voice/ AND in web sim.ts, and the repo's own docs record a rendering divergence traced to exactly this fork.
+
+evidence the author gave:
+  [grep] grep -n "class Sim|evaluate|voiceSteal|polyphony|Math.random" apps/web/src/lib/trigger-lab/sim.ts :: grep on sim.ts shows `export class Sim` (280), `/** Fire a freeform trigger graph: evaluate from the trigger node, spawn/stop. */` (376), `if (bus.polyphony === 'mono')` (451) and `if (bus?.polyphony === 'mono') return Math.max(...)` (692) — the same concerns core's voice-pool.ts/eval-graph.ts own.
+  [git-history] git log --format='%h' -400 | while read c; do git show --name-only --format=''; done | sort | uniq -c | sort -rn :: The 400-commit churn histogram ranks apps/web/src/lib/trigger-lab/sim.ts at 12 touches — a file explicitly marked for deletion is among the top dozen most-changed files in the repo.
+  [read]  :: docs/plans/2026-07-03-phase2-review/PHASE0-RECONCILIATION.md:41 attributes 'identical settings render differently' to this fork: "That throwaway layer is still what the visualiser renders from whenever the app isn't adopting server frames."
+
+proposed fix: Retire the fork rather than maintaining it. `render.ts` already proves the pattern — it delegates to core generators so 'the preview can never silently diverge from real output'. Do the same for evaluation: have the local preview drive `packages/core/src/voice`'s `evalGraph` + `VoicePool` directly (they are pure and platform-agnostic, so the browser can run them), and reduce sim.ts to the web-only view types it still exports. If a local preview engine must remain, it must be constructed from core, not reimplemented.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"divergent-change-0003",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"change-scatter",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The primitive stands for a domain concept with >=2 invariants enforced at call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: primitive-obsession-0005
+lens: primitive-obsession
+criterion: domain-concept-with-invariants
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/ui/Slider.svelte:40-71 (inferUnit)
+  apps/web/src/lib/ui/Slider.svelte:160-162 (unit span)
+
+claim: A displayed measurement is the pair (numeric value, unit). Slider throws the pair away and tries to recover the unit by string-diffing the caller's `format(value)` output against its own `formatNumber` output (Slider.svelte:44, 65-71). When neither `startsWith` nor `endsWith` matches, `inferUnit` returns the ENTIRE formatted string as the "unit" (line 70), which is then rendered in a `<span class="unit">` next to the number input (lines 160-162). This fires on a shipped call: `apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte:75` passes `format={pct}` where `pct = (v) => `${Math.round(v*100)}%`` (node-options.ts:116) with `min=0 max=1 step=0.01`. At value 0.5 the input shows "0.5" and the unit span shows "50%" — the control renders "0.5 50%". Same for ContainerNodeInspector.svelte:92/113/140, ModulationParamsSection.svelte:110 and EnvelopeEditor.svelte:67, i.e. every percentage slider in the app. The clean source of truth already exists one layer up: `ParamSpec.unit?: string`.
+
+evidence the author gave:
+  [read]  :: apps/web/src/lib/ui/Slider.svelte:40-44 — `inputValue = formatNumber(normalizedValue, precision)`, `display = format ? format(normalizedValue) : inputValue`, `unit = inferUnit(display, inputValue)`; lines 65-71 show the four-branch string diff ending in `return formatted`.
+  [read]  :: apps/web/src/lib/ui/Slider.svelte:160-162 renders `{#if unit}<span class="unit">{unit}</span>{/if}` alongside the numeric input, so the fallback string is displayed verbatim.
+  [read]  :: apps/web/src/lib/app/views/node-options.ts:116 `export const pct = (v: number): string => `${Math.round(v * 100)}%``; consumed at ContainerNodeInspector.svelte:75 with step=0.01 → inputValue '0.5', display '50%', neither prefix nor suffix match → unit = '50%'.
+  [grep]  :: `grep -rn 'format={' apps/web/src/lib --include=*.svelte` lists 15 call sites; the `pct`-style ones (0..1 domain, percent display) all hit the fallback branch, as does `format={(v) => enveloped ? 'swept' : ...}` at ModifierNodeInspector.svelte:74.
+
+proposed fix: Delete `inferUnit`. Give Slider an explicit `unit?: string` prop and let callers pass the unit they already have (`ParamSpec.unit` at PlayNodeInspector/ModifierNodeInspector; a literal '%' / 'ms' / '°' elsewhere), with `format` responsible only for the numeric text. That makes the value/unit pair a declared contract instead of something guessed from a rendered string, and removes 7 lines of heuristics from a design-system primitive. Add the `unit` prop to the styleguide entry in the same change per AGENTS.md.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"primitive-obsession-0005",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"domain-concept-with-invariants",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

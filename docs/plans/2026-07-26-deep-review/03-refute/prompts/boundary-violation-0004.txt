@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   packages/core reaching Node/DOM/@ledrums/io, or a runtime (not type-only) cycle that actually matters.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: boundary-violation-0004
+lens: boundary-violation
+criterion: import-boundary
+severity: minor (author confidence: high)
+locations:
+  packages/core/src/voice/render-plan.ts:1-3 (imports)
+  packages/core/src/voice/reachability-lint.ts:22 (import type { RenderPlanChild, RenderPlanIssue })
+  packages/core/src/voice/scope-lint.ts:22 (import type { RenderPlanChild, RenderPlanIssue })
+  packages/core/src/voice/diagnostics.ts:1 (import type { InputEvent })
+
+claim: madge cycles #3, #4 and #5 all have the same shape: a big runtime module (render-plan.ts, engine.ts) calls into a helper, and the helper imports its own result/argument types straight back out of the caller. render-plan.ts:2-3 runtime-imports detectEmptyScopes and detectUnreachable; both lint files then type-import RenderPlanChild/RenderPlanIssue from './render-plan'. diagnostics.ts:1 type-imports InputEvent from './engine', which engine.ts:59 runtime-imports back. All four back-edges are `import type` so nothing is load-order fragile, but the type declarations are living in the wrong modules: RenderPlanIssue/RenderPlanChild and InputEvent are contract types, not implementation details of the modules that happen to produce them.
+
+evidence the author gave:
+  [grep] grep -nE "^\\s*(import|export)\\b.*from" packages/core/src/voice/render-plan.ts packages/core/src/voice/reachability-lint.ts packages/core/src/voice/scope-lint.ts packages/core/src/voice/diagnostics.ts :: render-plan.ts:2 `import { detectEmptyScopes } from './scope-lint';` :3 `import { detectUnreachable } from './reachability-lint';` — value imports. reachability-lint.ts:22 and scope-lint.ts:22 both `import type { RenderPlanChild, RenderPlanIssue } from './render-plan';` — type-only. diagnostics.ts:1
+  [tool-output] cat docs/plans/2026-07-26-deep-review/00-raw/madge-cycles.txt :: packages/core cycles 3) voice/engine.ts > voice/diagnostics.ts, 4) voice/render-plan.ts > voice/reachability-lint.ts, 5) voice/render-plan.ts > voice/scope-lint.ts — repeated per consuming unit (12 of the 24 reported cycles).
+
+proposed fix: Move RenderPlanChild / RenderPlanIssue / RenderPlanIssueCode into voice/types.ts (or a new voice/render-plan-types.ts leaf) and re-export them from render-plan.ts; do the same for InputEvent, moving it from voice/engine.ts into voice/types.ts and re-exporting. All three cycles collapse with no runtime change and no import-path churn for consumers.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"boundary-violation-0004",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"import-boundary",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

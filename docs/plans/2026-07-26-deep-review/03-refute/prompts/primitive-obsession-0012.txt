@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The primitive stands for a domain concept with >=2 invariants enforced at call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: primitive-obsession-0012
+lens: primitive-obsession
+criterion: domain-concept-with-invariants
+severity: minor (author confidence: high)
+locations:
+  packages/core/src/engine/modulation.ts:7-21 (lfoValue)
+  packages/core/src/voice/lfo.ts:21-22 (LFO_WAVEFORMS)
+  packages/core/src/model/project-schema.ts:13 (lfo shape enum)
+
+claim: The same domain concept — an LFO waveform — is declared three times with two different vocabularies. `voice/lfo.ts:21` exports `LFO_WAVEFORMS = ['sine','triangle','saw','square','sample-hold']` and a derived `LfoWaveform` type. `model/project-schema.ts:13` declares a zod enum with only the first four. `engine/modulation.ts:8` declares `lfoValue(shape: string, …)` — bare `string`, four cases, `case 'sine': default:` (line 19) so ANY unrecognised shape silently renders a sine. The Phase-1 hunch that the call site is untyped is a partial false positive: `sourceValue` (modulation.ts:38) passes the zod-validated `source.shape`, so today nothing bad reaches it. But `lfoValue` is an exported core function whose signature invites the failure, and the vocabularies have already diverged — `sample-hold` exists in the voice path and not in the clip path, so the two LFO subsystems cannot be reconciled or shared without discovering that by hand.
+
+evidence the author gave:
+  [read]  :: packages/core/src/engine/modulation.ts:8-21 — `export function lfoValue(shape: string, …)` with `case 'sine': default: return 0.5 + 0.5*Math.sin(...)`.
+  [read]  :: packages/core/src/voice/lfo.ts:21-22 — `LFO_WAVEFORMS = ['sine','triangle','saw','square','sample-hold'] as const; export type LfoWaveform = …` — five members, and a separate sampler implementation.
+  [read]  :: packages/core/src/model/project-schema.ts:13 — `shape: z.enum(['sine','triangle','square','saw']).default('sine')` — four members, so the call at modulation.ts:38 is in fact type-safe today.
+
+proposed fix: Declare the waveform vocabulary once. Export a single `LfoWaveform` union from voice/lfo.ts (or a shared vocabulary module), derive the zod enum from it (`z.enum(LFO_WAVEFORMS)`), and retype `lfoValue(shape: LfoWaveform, …)` with an exhaustive switch and no `default` arm — which will immediately surface whether the legacy clip path needs a `sample-hold` case or whether that path should be deleted. That decision is exactly the one the current bare `string` is hiding.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"primitive-obsession-0012",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"domain-concept-with-invariants",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   THE DELETION TEST: imagine the module gone. If complexity VANISHES it was a pass-through (finding stands). If complexity REAPPEARS across N callers it was earning its keep (finding falls). Also: one adapter = hypothetical seam, TWO adapters = real seam.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: speculative-generality-0009
+lens: speculative-generality
+criterion: deletion-test
+severity: minor (author confidence: high)
+locations:
+  apps/server/src/ws-protocol.ts:6-31 (export type { … } from '@ledrums/protocol')
+  apps/web/src/lib/ws/protocol-types.ts:5-26 (export type { … } from '@ledrums/protocol')
+
+claim: When the wire contract was consolidated into @ledrums/protocol, neither consumer was retargeted. Instead each grew a re-export barrel with the same stated reason — server: "Re-export the types here so the server's existing `./ws-protocol` import paths keep working"; web: "re-exports those types for the web's existing import paths". These are twenty-two and twenty-one symbol names respectively, hand-listed and therefore hand-maintained: the two lists have already drifted (the server list carries MonitorEventType and TunnelStatus; the web list carries ControllerTestPattern, OscListenInfo and VoiceStat — each has entries the other lacks), and adding a protocol type means editing up to three files. The back-compat generality is aimed at a caller that does not exist: every importer is inside this monorepo and can be retargeted mechanically. Deletion test: remove the barrels and the real content of each file — decodeClient/encodeServer/serializeModel/frameToRgbBytes on the server, decodeServer on the web — remains and is genuinely earned; only the identity forwarding disappears.
+
+evidence the author gave:
+  [read]  :: apps/server/src/ws-protocol.ts:6-31 (22 re-exported names) and apps/web/src/lib/ws/protocol-types.ts:5-26 (21 names), both read in full alongside their stated rationale comments.
+  [read]  :: Comparing the two lists shows drift: server-only entries MonitorEventType, TunnelStatus; web-only entries ControllerTestPattern, OscListenInfo, VoiceStat, DiscoveredController. Neither list is derivable from the other, so both must be updated by hand as the protocol grows.
+  [read]  :: The non-forwarding content is real and stays: ws-protocol.ts:47-58 decodeClient, :66-68 encodeServer, :71-95 serializeModel, :102-112 frameToRgbBytes; protocol-types.ts:50-68 decodeServer with its dev-warn silent-drop contract.
+
+proposed fix: Rewrite consumer imports to take types from '@ledrums/protocol' directly (a find-replace on the type-only import specifiers), delete both re-export blocks, and keep each file as what it actually is: the server-side and web-side runtime codecs. Adding a protocol type then touches one file.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"speculative-generality-0009",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"deletion-test",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

@@ -1,0 +1,45 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   THE DELETION TEST: imagine the module gone. If complexity VANISHES it was a pass-through (finding stands). If complexity REAPPEARS across N callers it was earning its keep (finding falls). Also: one adapter = hypothetical seam, TWO adapters = real seam.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: speculative-generality-0005
+lens: speculative-generality
+criterion: deletion-test
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/app/shot-seam.ts:21-24 (preview store imports)
+  apps/web/src/lib/app/views/TriggerGraphView.svelte:106-415 (dropActive / spliceArmedPreview / wireInvalidPreview / lintPreview DEV branches)
+  apps/web/src/lib/app/views/SectionsView.svelte:45 (preview $derived)
+  apps/web/src/lib/app/views/wire-preview.svelte.ts:24-43 (wireInvalidPreview / spliceArmedPreview)
+  apps/web/src/lib/app/views/lint-preview.svelte.ts:28 (lintPreview)
+  apps/web/src/lib/app/views/canvas-drop-preview.svelte.ts:27 (canvasDropPreview)
+  apps/web/src/lib/app/views/sections-dnd-preview.svelte.ts:28 (sectionsDndPreview)
+
+claim: shot-seam.ts declares ~20 operations, but parsing every `state` spec in scripts/ui-shot/shots.json yields only five verbs actually driven by a preset: view, add, select, gallery, settings. The other fifteen — previewSectionsDnd, previewWireInvalid, previewSpliceArmed, previewCanvasDrop, previewLintIssues, previewBackups, previewToasts, mockController, mixWithLayers, emptyScope, notReachingOutput, setSearch, newGraph, openGraph — are carried for hypothetical captures. That would be cheap if it stayed in the dev-only module, but five of them required a *production* mechanism: four standalone override-store modules (wire-preview, lint-preview, canvas-drop-preview, sections-dnd-preview) plus five `import.meta.env.DEV && …Preview.current` branches wired into the real render paths of TriggerGraphView (dropActive at :106, splice arming at :342, an entire synthetic-wire `$derived` at :386-390, the lint strip source at :415) and SectionsView (:45). The screenshot tool's speculative op set has leaked into the components' live derivations. Deletion test: remove the unused ops and their override stores and the production views get simpler with no capability lost — nothing calls them.
+
+evidence the author gave:
+  [tool-output] python3 - <<'EOF' … parse shots.json, collect the verb before ':' in every state spec … EOF :: Printed ['add', 'gallery', 'select', 'settings', 'view'] — the complete set of ops any preset drives. Every preview*/mock* op in shot-seam.ts is unreferenced by the preset file.
+  [grep] rg -n "sectionsDndPreview|wireInvalidPreview|spliceArmedPreview|lintPreview|canvasDropPreview" apps/web/src -g '!*.test.ts' :: Only two consumers exist per store: shot-seam.ts (set/clear) and a production view. TriggerGraphView.svelte:106/342/372/390/415 and SectionsView.svelte:45 each gate real render logic on a DEV-only preview override.
+  [read]  :: shot-seam.ts:1-14 states the intent ("To teach ui-shot a new app state, add ONE method here") and :100-296 shows the preview ops, several of which — previewBackups (:203-227) and mockController (:283-300) — run 30-frame requestAnimationFrame re-assert loops to fight the live dev server's own state e
+
+proposed fix: Split the seam by cost. Ops that only call existing public store methods (newGraph, openGraph, setSearch, emptyScope, mixWithLayers) are free — keep them. Ops that required a production override store are not: delete previewWireInvalid/previewSpliceArmed/previewCanvasDrop/previewLintIssues plus the four *-preview.svelte.ts modules and the five DEV branches in TriggerGraphView/SectionsView, unless a named, checked-in preset needs each one — in which case add that preset to shots.json in the same change so the affordance has a live caller. The rule to adopt: a shot-seam op may not introduce a branch into a production component; if the state cannot be reached through the real store, that is a signal the state is not reachable by users either.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"speculative-generality-0005",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"deletion-test",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

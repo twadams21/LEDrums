@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   THE DELETION TEST: imagine the module gone. If complexity VANISHES it was a pass-through (finding stands). If complexity REAPPEARS across N callers it was earning its keep (finding falls). Also: one adapter = hypothetical seam, TWO adapters = real seam.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: speculative-generality-0003
+lens: speculative-generality
+criterion: deletion-test
+severity: critical (author confidence: high)
+locations:
+  apps/server/src/main.ts:71-72 (VOICE_MODE)
+  apps/server/src/main.ts:157-163 (host = new EngineHost(project0) / voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null)
+  apps/server/src/boot.ts:70-110 (boot() — `if (deps.voiceHost) … else deps.host.…`)
+  apps/server/src/voice-engine-host.ts:1-648 (VoiceEngineHost)
+
+claim: `VOICE_MODE` (main.ts:72) defaults to LEGACY when LEDRUMS_ENGINE is unset, yet every path that actually launches the product sets it to voice: scripts/dev.mjs:32 (`process.env.LEDRUMS_ENGINE ??= 'voice'`) and apps/desktop/src-tauri/src/lib.rs:380-386 (which explicitly defaults it to "voice" precisely because the server would otherwise pick legacy). So the legacy `EngineHost` render path is unreachable in dev, unreachable in the desktop app, and reachable only by a human typing LEDRUMS_ENGINE=legacy. The cost is not the dead path itself but the branch matrix it imposes on live code: 29 `voiceHost ?? host` / `if (voiceHost)` / `voiceHost?.` sites across non-test server source, a `voiceHost: VoiceEngineHost | null` field threaded through BootDeps and ClientMessageDeps, and a subtle split of authority — `host.engine.getProject()` remains the project-state owner (controller-monitor.ts:605-611, client-message.ts:346) even in voice mode, so the legacy host is half-alive rather than cleanly off. Every server feature must now be reasoned about twice, and history shows the branch is where bugs hide (docs/prompts/s1-patch-core-seam.md records kit/output mutations being dispatched to the legacy host only, never the voice host).
+
+evidence the author gave:
+  [grep] rg -n "LEDRUMS_ENGINE" -g '!node_modules' -g '!dist' :: scripts/dev.mjs:32 sets voice by default; apps/desktop/src-tauri/src/lib.rs:385-386 sets voice by default with a comment saying the server 'defaults to the legacy engine unless LEDRUMS_ENGINE=voice, so set it here'; main.ts:72 is the only reader. No shipping entry point leaves it unset.
+  [grep] rg -n "voiceHost \?\? host|if \(voiceHost\)|voiceHost\?\.|host\.engine" apps/server/src -g '!*.test.ts' | wc -l :: 29 dual-host branch sites in non-test server source.
+  [read]  :: apps/server/src/boot.ts:72 `if (deps.voiceHost) deps.voiceHost.start(); else deps.host.start();` and :108 the mirrored stop — the mode fork reaches all the way into lifecycle orchestration; BootDeps carries both `host` and `voiceHost: VoiceEngineHost | null` (boot.ts:16-17).
+
+proposed fix: Retire the mode flag: make VoiceEngineHost the only render host, delete `VOICE_MODE`, `EngineHost`'s render/output responsibilities and the 29 `voiceHost ?? host` branches, and give the project-state ownership currently sitting on `host.engine` an explicit home (either move it onto VoiceEngineHost or extract a small ProjectStore that both the handler and the controller monitor read). This is a structural call for a human — the legacy engine may still be someone's fallback plan — but the current state is the worst of both: the legacy path is untested by any real run, yet still owns live project state.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"speculative-generality-0003",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"deletion-test",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

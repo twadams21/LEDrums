@@ -1,0 +1,43 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   >=3 parameters travelling together across >=3 call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: data-clumps-0001
+lens: data-clumps
+criterion: co-travelling-params
+severity: major (author confidence: high)
+locations:
+  packages/core/src/voice/compositor.ts:61 (applyEffectiveParams)
+  packages/core/src/voice/compositor.ts:77-92 (FrameModCtx / modCtxFor)
+  packages/core/src/voice/compositor.ts:154-166 (CompositorFrame)
+  packages/core/src/voice/modulation.ts:191-204 (ModSampleCtx)
+  packages/core/src/voice/engine.ts:711 (VoiceEngine tick sweep)
+
+claim: The tuple {timeMs, bpm, cc, osc, notes} travels through the voice path under three names and one un-named positional spread. compositor.ts:80 already declares `type FrameModCtx = Omit<ModSampleCtx,'phase'>` — exactly this tuple — and modCtxFor() consumes it, yet the sibling export applyEffectiveParams (line 61) takes the same five members as bare positional params (v, timeMs, bpm, cc?, osc?, notes?) and re-bundles them internally. CompositorFrame (line 154) carries the same live-table trio (cc/osc/notes) plus transport, and render() at line 180 hand-copies it into a FrameModCtx literal. The clump has a name; three of four sites refuse to use it.
+
+evidence the author gave:
+  [read]  :: packages/core/src/voice/compositor.ts:61 — `export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ParamValues`; line 80 in the SAME file — `type FrameModCtx = Omit<ModSampleCtx, 'phase'>` which is precisely {timeMs,bpm,cc,osc,no
+  [grep] grep -rn "notes?: NoteTable|osc?: OscTable|cc?: CcTable" packages apps :: Only 3 declaration sites, and they are the three names of the same tuple: compositor.ts:61 (positional), compositor.ts:160-164 (CompositorFrame), modulation.ts:198-203 (ModSampleCtx).
+  [read]  :: packages/core/src/voice/engine.ts:711 — `applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable)` — the engine holds all five as sibling fields and explodes them at the call.
+
+proposed fix: Export FrameModCtx from compositor.ts (or better, move it beside ModSampleCtx in modulation.ts as the canonical 'frame-wide modulation context'). Change applyEffectiveParams to `(v: Voice, frame: FrameModCtx)`. Have VoiceEngine hold one FrameModCtx field it mutates in place per tick (zero-alloc, same as today's scratch discipline) and pass it to both applyEffectiveParams and the compositor. Make CompositorFrame embed it: `{ dt, transport, mod: FrameModCtx }` or leave CompositorFrame as the host-facing shape and have render() keep its single conversion.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"data-clumps-0001",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"co-travelling-params",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The primitive stands for a domain concept with >=2 invariants enforced at call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: primitive-obsession-0009
+lens: primitive-obsession
+criterion: domain-concept-with-invariants
+severity: major (author confidence: medium)
+locations:
+  apps/web/src/lib/app/views/trigger-flow-projection.ts:28-57 (triggerNodeSignature)
+  apps/web/src/lib/app/views/trigger-flow-projection.ts:97-110 (projectTriggerFlowNodes)
+
+claim: "Has this node structurally changed?" is a domain question answered by string concatenation. `triggerNodeSignature` (line 28) builds a `${id}:${kind}:pos=…:mod=…` base and then appends kind-specific fields for exactly 9 of the union's 19 kinds; everything else falls to `default: return base` (line 51). `projectTriggerFlowNodes` (line 102) uses signature equality to REUSE the previous flow-node object verbatim — so any field not in the signature can never trigger a rebuild of xyflow's measured handle bounds. The correctness of the whole memoisation therefore rests on a human keeping the concatenation in sync with a growing union, with no compiler help: adding a kind, or adding a handle-affecting field to an existing kind (e.g. `ccSource` and `oscAddress` are absent from the `cc` arm at line 40, `bypass` is absent from `modifier` at line 37), produces a stale node rather than an error. This is the R01/GH#80 "vanishing wire" class of bug the function's own comment describes it as fixing.
+
+evidence the author gave:
+  [read]  :: apps/web/src/lib/app/views/trigger-flow-projection.ts:30-52 — switch covers switch/play/modifier/mix/cc/note/osc/randomMod/lfo; `default: return base` at line 51 catches trigger, effect, all, random, sequence, chance, toggle, delay, scope, output, envelope.
+  [read]  :: apps/web/src/lib/app/views/trigger-flow-projection.ts:101-108 — `if (prev && cache.nodeSigs.get(fn.id) === sig) return … prev` reuses the previous object, so a signature miss means no rebuild.
+  [read]  :: packages/core/src/voice/types.ts:200-219 lists 19 canonical kinds; the `cc` arm omits `ccSource`/`oscAddress` (types.ts:313, 316) and the `modifier` arm omits `bypass` (types.ts:291).
+
+proposed fix: Replace the concatenation with a structural comparison derived from the node itself. Once GraphNode is a discriminated union (see the GraphNode finding), the signature becomes an exhaustive `switch` with no `default`, so the compiler names every kind that must be handled; or better, drop the signature entirely and compare the small set of fields that actually affect xyflow handle identity (kind, modInputs params, mix row edge ids, switch band count) via a typed `handleIdentity(node, graph): string[]` that a test can enumerate per kind. Either way the extension point must be compiler-enforced, not comment-enforced.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"primitive-obsession-0009",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"domain-concept-with-invariants",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

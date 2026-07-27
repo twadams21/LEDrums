@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   >=2 sites, >=12 lines each, >=90% token similarity, SEMANTICALLY equivalent. Consolidation must REDUCE total interface, not relocate it.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: duplicated-code-0006
+lens: duplicated-code
+criterion: duplication-threshold
+severity: major (author confidence: high)
+locations:
+  apps/server/src/http/host-event.ts:91-120 (handleHostEventHttp)
+  apps/server/src/http/native-midi.ts:48-77 (handleNativeMidiHttp)
+
+claim: createHostEventHandler and createNativeMidiHandler open with the same ~28-line preamble: path match, 405 on non-POST, `isTrustedHost({remoteAddress, headers, url, hostToken})` → 401, `req.setEncoding('utf8')`, chunk accumulation with a byte cap that `req.destroy()`s on overflow, and a `req.on('error')` → 400 handler. Only the constants differ (`MAX_BODY` vs the literal `4096`) and the message text. native-midi.ts's header comment states it "mirrors the inlined server route exactly". This is duplicated security scaffolding: a hardening change to the trust check or the body cap must be applied twice, and one of the two sites has already drifted (named constant vs magic number).
+
+evidence the author gave:
+  [read]  :: Read apps/server/src/http/host-event.ts:91-118 and apps/server/src/http/native-midi.ts:48-75 — identical statement-for-statement apart from the path constant, `MAX_BODY` vs `4096`, and the destroy() message.
+  [tool-output]  :: jscpd-report.json: host-event.ts:93-115 vs native-midi.ts:50-72 = 23 lines / 109 tokens.
+  [grep] grep -rln isTrustedHost apps/server/src :: Four non-test call sites (host-event.ts, native-midi.ts, main.ts, pin-gate.ts); the two http/ routes are the pair that re-implements the full request scaffolding around it.
+
+proposed fix: Add apps/server/src/http/trusted-post.ts exporting `createTrustedPostRoute({ path, hostToken, maxBody, onBody(raw, res) })` that owns the path/method/trust/body-cap/error handling, and reduce both handlers to their decode+dispatch bodies. Use one shared MAX_BODY constant so the 4096 literal disappears.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"duplicated-code-0006",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"duplication-threshold",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

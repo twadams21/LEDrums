@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   An unhandled failure path with a PLAUSIBLE trigger. INVERSE POLARITY — this finding proposes ADDING code. Refute it if the path is already handled, or if no realistic trigger exists.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: resilience-hole-0001
+lens: resilience-hole
+criterion: unhandled-failure-path
+severity: critical (author confidence: high)
+locations:
+  apps/server/src/voice-engine-host.ts:455-530 (VoiceEngineHost.scheduleNext / loop / step)
+  apps/server/src/process-errors.ts:44-60 (onUncaught)
+  packages/core/src/voice/generator-bridge.ts:141 (gen.render)
+
+claim: `scheduleNext()` calls `this.loop()` inside a bare `setTimeout` callback with no try/catch, and nothing between it and `gen.render(...)`/`compositor.render(...)` catches. A grep for `try {` across packages/core/src/voice/*.ts and engine/*.ts returns exactly two hits, both unrelated (`buildMapSafe` and interface declarations). So any throw inside an authored effect — including `canvas:` generator effects the web client pushes over `setShow` — escapes to `uncaughtException`, whose handler (`process-errors.ts:57`) calls `exit(1)`. `onFatal` only flushes the report queue; it never calls `output.blackout(this.dmxMap)` (only `dispose()` at line 451 does, and dispose is not on the fatal path). Net effect for a drummer mid-show: the process dies, the Art-Net/sACN stream stops, and the LEDs latch on whatever frame was last transmitted — a frozen lit rig with no recovery short of relaunching the app.
+
+evidence the author gave:
+  [read]  :: apps/server/src/voice-engine-host.ts:455-460 — `private scheduleNext(): void { this.timer = setTimeout(() => { this.loop(); if (this.timer) this.scheduleNext(); }, TICK_MS); }` — no try/catch; a throw also prevents rescheduling.
+  [grep] grep -rn "try {" packages/core/src/voice/*.ts packages/core/src/engine/*.ts :: `grep -rn "try {" packages/core/src/voice/*.ts packages/core/src/engine/*.ts` → 3 hits, only one real try (engine.ts:84 buildMapSafe). No per-effect or per-voice guard anywhere on the render path.
+  [read]  :: apps/server/src/process-errors.ts:53-58 — uncaughtException path: monitor, log, `deps.onFatal?.()`, `exit(1)`. apps/server/src/main.ts:263 wires onFatal to `flushReportsSync()` only — no output blackout, no engine restart.
+  [read]  :: apps/server/src/voice-engine-host.ts:451-452 — the only `output.blackout(this.dmxMap)` call lives in `dispose()`, which the fatal path never reaches.
+
+proposed fix: Wrap `step()`'s engine tick in a try/catch inside `loop()` so a fault is contained to one frame: on catch, emit an `error` Monitor event carrying the offending voice/effect id, quarantine that voice/effect (skip it on subsequent frames after N consecutive throws) and keep the loop scheduled. Separately, add an output blackout to the fatal path so a hard crash darkens the rig rather than freezing it lit — pass a `beforeExit` hook from main.ts into `installProcessErrorCapture` that calls `voiceHost?.dispose()`.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"resilience-hole-0001",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"unhandled-failure-path",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}
