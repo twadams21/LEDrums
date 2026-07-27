@@ -1,0 +1,151 @@
+[
+  {
+    "finding_id": "dead-code-0001",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "rm apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
+      "rm apps/web/src/lib/app/views/PatchDiffDialog.svelte"
+    ],
+    "notes": [],
+    "diff": "2 files changed, 383 deletions(-)"
+  },
+  {
+    "finding_id": "dead-code-0003",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport withDrumSource (x1)",
+      "unexport unionTriggerSources (x1)",
+      "unexport hydratePadNames (x1)",
+      "unexport resolveGraphAliases (x1)",
+      "unexport splitModulationSources (x1)",
+      "unexport migrateGen3Graphs (x1)",
+      "unexport sanitizeGraphsIntegrity (x1)",
+      "unexport sanitizeGraphsIntegrityWithActions (x1)",
+      "unexport NO_SYSTEM_ACTIONS (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 9 insertions(+), 9 deletions(-)"
+  },
+  {
+    "finding_id": "dead-code-0004",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport showLibraryPath (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "finding_id": "dead-code-0005",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport ENV_KINDS (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "finding_id": "dead-code-0006",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport isMixRowHandleId (x1)",
+      "unexport MIX_ROW_HANDLE_PREFIX (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 2 insertions(+), 2 deletions(-)"
+  },
+  {
+    "finding_id": "dead-code-0007",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport MAX_REPORTS_PER_BATCH (x1)",
+      "unexport safeKeySegment (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 2 insertions(+), 2 deletions(-)"
+  },
+  {
+    "finding_id": "dead-code-0008",
+    "outcome": "falsified",
+    "typecheck_exit": 1,
+    "applied": [
+      "unexport triggerId (x1)",
+      "unexport zoneNodeId (x1)",
+      "unexport drumNodeId (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 3 insertions(+), 3 deletions(-)"
+  },
+  {
+    "finding_id": "dead-code-0009",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport DEFAULT_OUTPUT_SCALARS (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "finding_id": "dead-code-0010",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport reserveId",
+      "unexport showSig",
+      "unexport OUTPUT_ANCHOR_ID",
+      "unexport firstEffectId",
+      "unexport CANVAS_BUS_ID",
+      "unexport blockChildren",
+      "unexport makeDefaultMint"
+    ],
+    "notes": [],
+    "diff": "6 files changed, 7 insertions(+), 7 deletions(-)"
+  },
+  {
+    "finding_id": "dead-code-0011",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport ALIGN_THRESHOLD (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "finding_id": "dead-code-0012",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport lanUrls (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "finding_id": "dead-code-0013",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport parseStatistic (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  },
+  {
+    "finding_id": "dead-code-0015",
+    "outcome": "verified",
+    "typecheck_exit": 0,
+    "applied": [
+      "unexport buildSourceManifest (x1)"
+    ],
+    "notes": [],
+    "diff": "1 file changed, 1 insertion(+), 1 deletion(-)"
+  }
+]
