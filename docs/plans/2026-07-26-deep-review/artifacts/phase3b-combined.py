@@ -19,8 +19,19 @@ WT = sys.argv[1] if len(sys.argv) > 1 else "/Users/trent/.twux/worktrees/rev3b"
 BASE = "3708648"
 
 res = {r["finding_id"]: r for r in json.load(open(f"{D}/03b-verify/results.json"))}
-muts = json.load(open(f"{D}/artifacts/phase3b-mutations.json"))["mutations"]
-todo = [m for m in muts if res.get(m["id"], {}).get("outcome") == "verified"]
+spec = json.load(open(f"{D}/artifacts/phase3b-mutations.json"))
+muts = spec["mutations"]
+# _excluded outranks 'verified'. dead-code-0001 verifies cleanly (nothing imports
+# the components) but is HELD on a product decision — deleting it would remove a
+# feature that may have been meant to be fixed rather than dropped. A mutation
+# being mechanically safe is not the same as it being wanted.
+held = set(spec.get("_excluded", {}))
+todo = [m for m in muts
+        if res.get(m["id"], {}).get("outcome") == "verified" and m["id"] not in held]
+skipped = [m["id"] for m in muts
+           if res.get(m["id"], {}).get("outcome") == "verified" and m["id"] in held]
+if skipped:
+    print(f"HELD (verified but excluded by decision): {', '.join(skipped)}")
 
 subprocess.run(f"git reset --hard {BASE} --quiet && git clean -fd --quiet",
                shell=True, cwd=WT)
