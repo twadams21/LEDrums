@@ -2,7 +2,10 @@
 
 **From:** Opus 5 orchestrator, sessions of 2026-07-26 → 2026-07-29
 **To:** fresh orch (Fable, high)
-**Repo:** `/Users/trent/Documents/dev/ledrums` · branch `feat/ota-discord-announce`
+**Work here:** `/Users/trent/.twux/worktrees/review` — a standing worktree on `feat/ota-discord-announce`.
+**Do NOT use the main checkout** at `/Users/trent/Documents/dev/ledrums`; it is on `fix/ota-automerge-fallback`
+with someone else's OTA work, and the review artifacts do not exist on that branch. The branch moved under the
+previous orchestrator mid-command and stranded a commit — verify your branch before every commit.
 **All artifacts:** `docs/plans/2026-07-26-deep-review/` — committed, nothing in scratch
 **Baseline sha:** `3708648` (every finding is measured against this; do not re-baseline without regenerating)
 
