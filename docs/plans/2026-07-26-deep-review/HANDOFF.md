@@ -89,11 +89,25 @@ Assert counts against expectations. `phase3b.sh` now aborts if the mutation spec
 
 **Coverage gates deletion claims.** A finding removing *executable* code in a 0%-coverage region cannot be verified by a green suite — the suite never ran it. `PatchClipboardToolbar` and `PatchDiffDialog` are 0/80 and 0/20 statements. For those, the evidence is the import graph and git history, not the tests. Trent raised this and he is right.
 
-## Codex / Sol via the proxy
+## Models: CLAUDE ONLY from 2026-07-29
 
-`artifacts/codex-agent.sh` + `verify-nonce.sh` are the wrapper-fidelity guard. Four properties, each earned by an attack the previous version failed: runtime nonce · nonce injected into the child's prompt and echoed back · single-use receipts (anti-replay) · child writes to a file so the wrapper never handles the body. `artifacts/NONCE-TEST.md` has the verbatim proof.
+**Trent's instruction: Claude models only from here on.** Do not launch Sol/codex agents and do
+not use the proxy path for new work.
 
-**Known trap:** after a reboot `cliproxyapi` can come up with no codex credential — `/v1/models` returns 200 and *lists* the models, but calls fail `503 auth_not_found`. The token file is fine. Fix is `brew services restart cliproxyapi` (Trent's call, it's his machine). Also: `twux`'s `EFFORT` column shows the launch flag, not the live tier — read the pane footer via `twux capture`.
+Existing artifacts are unaffected — Phase 3a's 107 refutations were produced by `gpt-5.6-sol(medium)`
+and their provenance is recorded in `03-verdicts.json`. That history stands; it just is not how you
+generate anything new.
+
+`artifacts/codex-agent.sh` and `verify-nonce.sh` stay in the repo for provenance and because their
+design lesson generalises: a wrapper relaying another model's output can silently substitute its own
+answer, and the guard needs four properties to close it — runtime nonce · nonce injected into the
+child's prompt and echoed back · single-use receipts (anti-replay) · child writes to a file so the
+wrapper never handles the body. `artifacts/NONCE-TEST.md` has the verbatim proof of all four. **You
+should not need any of it.** Native `agent()` calls return schema-validated objects directly, which
+is why Phases 1 and 2 needed none of this machinery.
+
+Also still true and worth knowing: `twux`'s `EFFORT` column reports the launch flag, not the live
+tier — read the pane footer via `twux capture` if effort matters.
 
 ## Trent's working preferences observed this session
 
