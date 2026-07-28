@@ -1,0 +1,191 @@
+{
+  "artifact": "05-fixes/batch-03",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "05-fixes",
+    "lane": "batch-03",
+    "model": "claude-sonnet-5",
+    "effort": "medium",
+    "nonce_verified": true
+  },
+  "items": [
+    {
+      "finding_id": "dead-code-0003",
+      "files_touched": [
+        "apps/web/src/lib/trigger-lab/store/hydrate.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "1 declaration deleted (NO_SYSTEM_ACTIONS, 2 lines). Whole-batch diffstat: 9 files changed, 12 insertions(+), 30 deletions(-)."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Phase 6 review of batch-01 (06-fix-reviews/batch-01.json) found this symbol had only been unexported, not deleted, leaving it module-private with zero references anywhere. Independently re-verified via repo-wide rg (source only, no test/doc hits) immediately before mutating: still zero references. Deleted the declaration outright. No export was present so exported_symbols_removed is 0 for this item (the earlier unexport already accounted for that delta in batch-01)."
+    },
+    {
+      "finding_id": "dead-code-0004",
+      "files_touched": [
+        "apps/server/src/show-library.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "1 declaration deleted (showLibraryPath, 5 lines including its doc comment)."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Same residue pattern as dead-code-0003: batch-01 dropped `export`, leaving a zero-reference module-private function. Re-verified zero references repo-wide before deleting the function and its doc comment."
+    },
+    {
+      "finding_id": "dead-code-0005",
+      "files_touched": [
+        "apps/web/src/lib/trigger-lab/sim.envelopes.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "1 declaration deleted (ENV_KINDS, 3 lines including its doc comment)."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Re-verified zero references repo-wide before deleting. Its doc comment claimed 'the editor seeds from these' — stale intent for a symbol nothing reads — so the comment was deleted along with the declaration per the brief. The unrelated `EnvKind` type (same file, still exported and used elsewhere) was left untouched."
+    },
+    {
+      "finding_id": "dead-code-0006",
+      "files_touched": [
+        "apps/web/src/lib/app/views/mix-layer-rows.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "1 declaration deleted (isMixRowHandleId, 4 lines). MIX_ROW_HANDLE_PREFIX (the other symbol batch-01 unexported from this file) still has an in-file caller (mixRowHandleId) and was left alone — it is not dead."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Re-verified zero references repo-wide before deleting the function."
+    },
+    {
+      "finding_id": "dead-code-0007",
+      "files_touched": [
+        "workers/error-ingest/src/validate.ts"
+      ],
+      "mutations_applied": 6,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "6 exports dropped (MAX_MESSAGE_LEN, MAX_STACK_LEN, MAX_BREADCRUMBS, MAX_STR, MAX_BACKUPS_PER_BATCH, MAX_KEY_SEGMENT_LEN)."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 6,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Under-applied remainder identified by Phase 6's review of batch-01: these 6 constants were flagged as still-exported, in-file-only, but Phase 3b's mechanical verification set (which batch-01 mirrored) had missed them. Independently re-verified each via repo-wide rg before touching: every one has an in-file caller only (str()'s default param, breadcrumb-length checks, backup-batch/key-segment checks) and zero external or test references, so unexport (not delete) is correct — matching the constants' Phase 2 proposed_fix intent."
+    },
+    {
+      "finding_id": "dead-code-0009",
+      "files_touched": [
+        "apps/web/src/lib/app/patch-graph.ts"
+      ],
+      "mutations_applied": 2,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Removed `export { STAGE_ORDER };` re-export at :337 and the now-pointless `STAGE_ORDER` import at :29."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Under-applied remainder from Phase 6's review of batch-01. Re-verified before touching: STAGE_ORDER's own module (patch-topology.ts) already exports it directly and every external consumer of patch-graph.ts (patch-graph.test.ts, PatchGraphView.svelte, patch-inspector.ts, and others) imports STAGE_ORDER, if at all, from patch-topology, never from patch-graph — the patch-graph re-export had zero consumers. Removing it also let the otherwise-unused `STAGE_ORDER` import at :29 go; DEFAULT_OUTPUT_SCALARS (batch-01's other symbol in this file) still backs routingFromGraph's in-module default and was left alone."
+    },
+    {
+      "finding_id": "dead-code-0011",
+      "files_touched": [
+        "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+        "apps/web/src/lib/app/monitor.ts"
+      ],
+      "mutations_applied": 4,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "4 exports dropped: ENVELOPE_PRESETS, LFO_PRESETS (add-node-taxonomy.ts); MONITOR_RETENTION_LIMIT, monitorSearchText (monitor.ts)."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 4,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "Under-applied remainder from Phase 6's review of batch-01. Re-verified each symbol repo-wide before touching: ENVELOPE_PRESETS/LFO_PRESETS are consumed only by buildAddGroups in the same file; MONITOR_RETENTION_LIMIT only backs appendMonitorEvent's own default param; monitorSearchText is only called from filterMonitorEvents in the same file. All four unexported, none deleted (all have in-file callers). SERVER_MONITOR_RETENTION_LIMIT was explicitly out of scope per the brief (live test importer) and was not touched or even searched for beyond confirming it is a distinct symbol in a different file."
+    },
+    {
+      "finding_id": "dead-code-0012",
+      "files_touched": [
+        "apps/server/src/controller-monitor.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "1 export dropped (localNicSubnets) plus its doc-comment's now-false 'Exported for direct testing' clause removed."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "notes": "DEVIATION FROM BRIEF'S STATED PATH: the brief named this symbol at apps/web/src/lib/trigger-lab/controller-monitor.svelte.ts:96, but no such symbol exists there (that file has no `localNicSubnets` or subnet logic at all — it is the client-side WS wrapper). The batch-01 review's actual evidence, confirmed independently via repo-wide rg, points to apps/server/src/controller-monitor.ts:96, matching dead-code-0012's original finding location and the ledger's reasoning (04-ledger.json:372). Treated the task brief's path as a typo and fixed the real symbol at the server path. Verified apps/server/src/controller-monitor.test.ts uses a DI override object (`localSubnets: () => []`) and never imports `localNicSubnets` directly, so the test is untouched and the symbol's only remaining reference is its own module's DI default at :170 — unexport, not delete, is correct. Its doc comment's 'Exported for direct testing' clause was removed since it is no longer exported."
+    }
+  ]
+}

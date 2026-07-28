@@ -438,8 +438,6 @@ export interface SystemActionSummary {
   autoWiredNodes: number;
 }
 
-const NO_SYSTEM_ACTIONS: SystemActionSummary = { migratedGraphs: 0, autoWiredNodes: 0 };
-
 /** Sanitize/migrate every graph to Gen3 AND report the batched system actions performed. The
     Gen3 normalize is the single seam where migration + auto-wire happen, so the actions are read
     straight off it — no guessing from before/after diffs. Used at the FIRST integrity pass of

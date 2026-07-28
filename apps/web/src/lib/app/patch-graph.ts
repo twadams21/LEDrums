@@ -26,7 +26,6 @@ import {
   CONTROLLER_ID,
   NODE_H,
   NODE_W,
-  STAGE_ORDER,
   hoopId,
   type PatchFlowEdge,
   type PatchFlowNode,
@@ -332,6 +331,3 @@ export function defaultRouting(
   }
   return { outputs };
 }
-
-/** The full set of left→right stages, re-exported for the view's keep/drop partition. */
-export { STAGE_ORDER };

@@ -92,8 +92,8 @@ export interface AdoptResult {
 }
 
 /** Local NIC /24 subnets (non-internal IPv4), the discovery fallback when the output host is
- * broadcast/multicast/unset. Exported for direct testing. */
-export function localNicSubnets(): string[] {
+ * broadcast/multicast/unset. */
+function localNicSubnets(): string[] {
   const out = new Set<string>();
   for (const addrs of Object.values(networkInterfaces())) {
     for (const a of addrs ?? []) {

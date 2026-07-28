@@ -18,10 +18,6 @@ export function mixRowHandleId(edgeId: string): string {
   return `${MIX_ROW_HANDLE_PREFIX}${edgeId}`;
 }
 
-function isMixRowHandleId(handleId: string | null | undefined): boolean {
-  return !!handleId && handleId.startsWith(MIX_ROW_HANDLE_PREFIX);
-}
-
 function edgeOpacity(value: number | undefined): number {
   return Math.max(0, Math.min(1, value ?? 1));
 }

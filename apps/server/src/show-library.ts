@@ -22,11 +22,6 @@ const store = createNamedBlobStore<ShowLibraryBlob>(SHOW_LIBRARY_FILE);
 /** Back-compat alias for the shared {@link BlobLoadSource}. */
 export type ShowLibraryLoadSource = BlobLoadSource;
 
-/** Resolve the final path for the machine-local show library file. */
-function showLibraryPath(dir: string = PROJECTS_DIR): string {
-  return store.path(dir);
-}
-
 export function inspectShowLibraryFile(dir: string = PROJECTS_DIR): { path: string; source: ShowLibraryLoadSource } {
   return store.inspect(dir);
 }
