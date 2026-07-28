@@ -25,8 +25,9 @@ const DECISIONS = {
   'dead-code-0002': {
     decision:
       "Trent 2026-07-28: kit mirror is REMOVED by intent (option b of the finding's two fixes). " +
-      'Delete PatchMirrorControl.svelte + unreachable setKitGlobal client path. Server half stays ' +
-      'pending a separate call (tracked ask to Trent).',
+      'Delete PatchMirrorControl.svelte + unreachable setKitGlobal client path. ' +
+      'Trent 2026-07-29: the SERVER half goes too — input-router.ts:186 path, handlers/voice-input.ts:149, ' +
+      'handlers/client-message.ts:524, kit-global-forwarding.test.ts, and any protocol setKitGlobal message type.',
   },
 };
 
@@ -193,42 +194,44 @@ for (const fid of Object.keys(HOLDS)) assert(autoFixIds.has(fid), `hold ${fid} i
 const landNow = autoFix.filter((i) => !(i.finding_id in HOLDS));
 assert(landNow.length === 12, `expected 12 land-now auto-fixes, got ${landNow.length}`);
 
-// ---- Emit ledger ----
-const triage = {};
-for (const it of verdicts.items) {
-  const f = byId.get(it.finding_id);
-  const t = {
-    track: it.disposition === 'auto-fix' ? (it.finding_id in HOLDS ? 'held' : 'trivial') : 'structural',
-    severity: f.severity,
-    fix_size_loc: f.fix_size_loc,
-    lens: f.lens,
-  };
-  if (assigned.has(it.finding_id)) t.initiative_id = assigned.get(it.finding_id);
-  if (it.finding_id in HOLDS) t.hold_reason = HOLDS[it.finding_id].reason;
-  if (it.finding_id in DECISIONS) t.decision = DECISIONS[it.finding_id].decision;
-  triage[it.finding_id] = t;
-}
-
+// ---- Emit ledger + initiatives (both strict collection.schema.json envelopes) ----
+// 04-ledger.json: the 62 actionable verdict items verbatim (12 trivial + 50 structural);
+// the held finding is retained IN FULL under `dropped` — the envelope's mechanism for
+// exactly this. 04-initiatives.json: the initiative map Phase 7 consumes.
+const producedBy = {
+  phase: '4',
+  lane: 'triage',
+  model: 'none-deterministic-script',
+  effort: 'none',
+  nonce_verified: false,
+};
 const ledger = {
   artifact: '04-ledger',
-  schema_version: 1,
+  schema_version: '3',
   baseline_sha: verdicts.baseline_sha,
-  produced_by: { phase: 4, generator: 'artifacts/phase4-triage.mjs', deterministic: true },
-  dropped: [],
-  counts: {
-    total_findings: 107,
-    refuted: refuted.items.length,
-    auto_fix: autoFix.length,
-    auto_fix_land_now: landNow.length,
-    auto_fix_held: Object.keys(HOLDS).length,
-    structural: structural.length,
-    initiatives: Object.keys(INITIATIVES).length,
-  },
-  initiatives: INITIATIVES,
-  triage,
-  items: verdicts.items, // verbatim; each validates against schemas/verdict.schema.json
+  produced_by: producedBy,
+  dropped: verdicts.items
+    .filter((i) => i.finding_id in HOLDS)
+    .map((item) => ({ reason: `HELD: ${HOLDS[item.finding_id].reason}`, item })),
+  items: verdicts.items.filter((i) => !(i.finding_id in HOLDS)), // each validates against verdict.schema.json
 };
 writeFileSync(join(ROOT, '04-ledger.json'), JSON.stringify(ledger, null, 1) + '\n');
+
+const initiativesArtifact = {
+  artifact: '04-initiatives',
+  schema_version: '3',
+  baseline_sha: verdicts.baseline_sha,
+  produced_by: producedBy,
+  dropped: [],
+  items: Object.entries(INITIATIVES).map(([initiative_id, init]) => ({
+    initiative_id,
+    title: init.title,
+    priority: init.priority,
+    findings: init.findings,
+    decisions: init.findings.filter((fid) => fid in DECISIONS).map((fid) => DECISIONS[fid].decision),
+  })),
+};
+writeFileSync(join(ROOT, '04-initiatives.json'), JSON.stringify(initiativesArtifact, null, 1) + '\n');
 
 // ---- Rendered md view ----
 const sevOrder = { critical: 0, major: 1, minor: 2 };
@@ -255,6 +258,6 @@ for (const [initId, init] of inits) {
 writeFileSync(join(ROOT, '04-ledger.md'), md);
 
 console.log(
-  `Phase 4 OK: 04-ledger.json + 04-ledger.md written. ` +
-    `${landNow.length} land-now, ${Object.keys(HOLDS).length} held, ${structural.length} structural in ${Object.keys(INITIATIVES).length} initiatives.`
+  `Phase 4 OK: 04-ledger.json + 04-initiatives.json + 04-ledger.md written. ` +
+    `${landNow.length} land-now, ${Object.keys(HOLDS).length} held (in dropped), ${structural.length} structural in ${Object.keys(INITIATIVES).length} initiatives.`
 );

@@ -1,0 +1,171 @@
+{
+ "artifact": "04-initiatives",
+ "schema_version": "3",
+ "baseline_sha": "3708648",
+ "produced_by": {
+  "phase": "4",
+  "lane": "triage",
+  "model": "none-deterministic-script",
+  "effort": "none",
+  "nonce_verified": false
+ },
+ "dropped": [],
+ "items": [
+  {
+   "initiative_id": "INIT-01-single-render-stack",
+   "title": "One render stack: retire legacy engine/, absorb sim.ts voice semantics into core",
+   "priority": 1,
+   "findings": [
+    "divergent-change-0001",
+    "divergent-change-0003",
+    "duplicated-code-0004",
+    "resilience-hole-0011",
+    "duplicated-code-0011"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-02-store-decomposition",
+   "title": "TriggerLab store god-object: real extraction (kill forwarders), web state architecture",
+   "priority": 2,
+   "findings": [
+    "divergent-change-0002",
+    "middle-man-0001",
+    "speculative-generality-0001",
+    "duplicated-code-0003",
+    "resilience-hole-0007",
+    "data-clumps-0005",
+    "speculative-generality-0007"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-03-io-output-resilience",
+   "title": "Art-Net/sACN silent-failure closure: error surfacing, ready-flag lifecycle, send seam",
+   "priority": 1,
+   "findings": [
+    "resilience-hole-0003",
+    "primitive-obsession-0006",
+    "duplicated-code-0012"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-04-server-runtime-hardening",
+   "title": "Server main.ts decomposition + fault containment (render loop, boot, WS liveness)",
+   "priority": 1,
+   "findings": [
+    "divergent-change-0004",
+    "resilience-hole-0001",
+    "resilience-hole-0002",
+    "resilience-hole-0004",
+    "resilience-hole-0005",
+    "resilience-hole-0013",
+    "speculative-generality-0002",
+    "duplicated-code-0006"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-05-pin-auth-hardening",
+   "title": "Tunnel PIN gate: credential types + brute-force resistance",
+   "priority": 3,
+   "findings": [
+    "resilience-hole-0006",
+    "primitive-obsession-0010"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-06-graph-node-type-model",
+   "title": "GraphNode/NodeKind discriminated-union redesign + voice ctx/param clumps",
+   "priority": 2,
+   "findings": [
+    "primitive-obsession-0001",
+    "primitive-obsession-0003",
+    "primitive-obsession-0009",
+    "repeated-switches-0001",
+    "repeated-switches-0002",
+    "data-clumps-0001",
+    "data-clumps-0003",
+    "data-clumps-0004",
+    "middle-man-0003"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-07-patch-node-identity",
+   "title": "Patch node id grammar → typed identity; {drumId,slot} trigger address object",
+   "priority": 3,
+   "findings": [
+    "primitive-obsession-0008",
+    "dead-code-0008",
+    "data-clumps-0007"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-08-kit-schema-split",
+   "title": "kit-schema.ts: split schema surface / migration ladder / defaults",
+   "priority": 3,
+   "findings": [
+    "divergent-change-0005"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-09-ui-component-dedup",
+   "title": "Design-system dedup: control contract, inspector chrome, MIDI-learn, ControllerStatusPanel split",
+   "priority": 4,
+   "findings": [
+    "data-clumps-0002",
+    "duplicated-code-0010",
+    "duplicated-code-0013",
+    "duplicated-code-0014",
+    "divergent-change-0007",
+    "middle-man-0007"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-10-test-helper-dedup",
+   "title": "Shared test harness: in-memory Storage (×37) + effects test helpers (×6)",
+   "priority": 4,
+   "findings": [
+    "duplicated-code-0001",
+    "duplicated-code-0002"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-11-telemetry-resilience",
+   "title": "Telemetry transport + ingest Worker fault handling",
+   "priority": 3,
+   "findings": [
+    "resilience-hole-0008",
+    "resilience-hole-0010"
+   ],
+   "decisions": []
+  },
+  {
+   "initiative_id": "INIT-12-kit-mirror-removal",
+   "title": "Kit mirror removal (decided): client path deletion; server half pending Trent",
+   "priority": 3,
+   "findings": [
+    "dead-code-0002"
+   ],
+   "decisions": [
+    "Trent 2026-07-28: kit mirror is REMOVED by intent (option b of the finding's two fixes). Delete PatchMirrorControl.svelte + unreachable setKitGlobal client path. Trent 2026-07-29: the SERVER half goes too — input-router.ts:186 path, handlers/voice-input.ts:149, handlers/client-message.ts:524, kit-global-forwarding.test.ts, and any protocol setKitGlobal message type."
+   ]
+  },
+  {
+   "initiative_id": "INIT-13-core-surface-trims",
+   "title": "Small core API trims (pixel-grid wrappers, graph-integrity throwing form, listCanvasScenes)",
+   "priority": 4,
+   "findings": [
+    "speculative-generality-0011"
+   ],
+   "decisions": []
+  }
+ ]
+}

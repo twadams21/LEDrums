@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/plan.schema.json",
+  "title": "Deep Review Structural Plan",
+  "description": "One plan for one structural initiative. PRODUCERS: Phase 7, which emits three independent variants per initiative (07-plans/<initiative>/{opus,sonnet,fable}.json), and Phase 9, which emits one synthesised plan per initiative (09-synthesis/<initiative>.json, variant='synthesis') built from the variants AND the Phase 8 refutations against them. CONSUMERS: Phase 8 (attacks a variant), Phase 9 (synthesises), Phase 10 (reads estimated_loc, dependencies_on_other_initiatives and the design's risk levels to rank). FILE SHAPE: a plan artifact is ONE bare plan object per file — like map.schema.json, not the collection envelope. Three variants means three files, not three items. Nothing here executes: Phases 0-10 end at a ranked table.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "initiative_id",
+    "variant",
+    "provenance",
+    "summary",
+    "design",
+    "sequencing",
+    "interface_deltas",
+    "behaviour_parity_evidence_plan",
+    "rollback_strategy",
+    "estimated_loc",
+    "dependencies_on_other_initiatives",
+    "open_questions"
+  ],
+  "properties": {
+    "initiative_id": {
+      "type": "string",
+      "pattern": "^INIT-[0-9]{2}-[a-z0-9-]+$",
+      "description": "Joins to the key in 04-ledger.json `initiatives`, e.g. 'INIT-03-io-output-resilience'. All three variants and the synthesis carry the same value."
+    },
+    "variant": {
+      "type": "string",
+      "enum": [
+        "opus",
+        "sonnet",
+        "fable",
+        "synthesis"
+      ],
+      "description": "Which of the three independent Phase 7 designs this is, or 'synthesis' for the Phase 9 output. DESIGN-IT-TWICE: the variants are authored by different models so diversity is real rather than three samples from one prior. The value names the DESIGN SLOT, not the runtime model — the model actually used is in provenance."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "effort"
+      ],
+      "description": "Who authored this plan. Stamped by the ORCHESTRATOR from the runtime pane footer, never self-reported — twux's EFFORT column records the launch flag, not the live tier.",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 40,
+      "description": "What this plan does and why this shape rather than another. The one paragraph a reviewer reads before the steps."
+    },
+    "findings_addressed": {
+      "type": "array",
+      "description": "The finding ids from 04-ledger.json this plan resolves. A plan that leaves an initiative's findings unaddressed is incomplete; a plan addressing findings outside its initiative is scope creep.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]+-[0-9]{4}$"
+      }
+    },
+    "design": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The ordered steps. Each is independently reviewable and independently verifiable — a step whose verification is 'the suite passes' is not a step, it is a hope.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "intent",
+          "files",
+          "risk",
+          "verification"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^S[0-9]{1,3}$",
+            "description": "Step id, 'S1'..'S999'. Referenced by `sequencing`."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 8
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 20,
+            "description": "What changes and why — in deep-module terms: which interface shrinks, which behaviour moves behind it."
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Repo-relative paths this step touches. This is the scope fence an implementer would be handed.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "risk": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "low = mechanical, file-local, behaviour-preserving by construction. medium = crosses a module boundary or changes a call graph. high = touches the render loop, packages/core, or a live output path."
+          },
+          "verification": {
+            "type": "string",
+            "minLength": 15,
+            "description": "The specific evidence that this step is correct — a named test, a command, a measurable. Non-model evidence outranks a reading."
+          },
+          "reverses": {
+            "type": "string",
+            "description": "How to undo just this step, when it differs from the plan-level rollback_strategy."
+          }
+        }
+      }
+    },
+    "sequencing": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Execution waves: each element is an array of step ids that may run CONCURRENTLY, and waves run in order. Steps sharing a mutation seam belong in different waves whatever the schedule pressure. Every id in `design` must appear exactly once across all waves.",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "pattern": "^S[0-9]{1,3}$"
+        }
+      }
+    },
+    "interface_deltas": {
+      "type": "array",
+      "description": "The objective function made explicit: less interface per unit of behaviour. One entry per module whose public surface changes. An empty array is legitimate (a purely internal plan, or a resilience initiative that adds code) but says the plan does not score on interface reduction.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "at",
+          "removed",
+          "added",
+          "net_interface_change"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "description": "The module or path whose public interface changes."
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exported symbols this plan removes from that surface."
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exported symbols this plan adds. Relocating an interface is not reducing it."
+          },
+          "net_interface_change": {
+            "type": "string",
+            "enum": [
+              "reduces",
+              "neutral",
+              "increases"
+            ],
+            "description": "'reduces' is the only value that scores under the objective function. Deliberate 'increases' is allowed — say why in `note`."
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "behaviour_parity_evidence_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checks",
+        "known_gaps"
+      ],
+      "description": "How this plan would PROVE it changed no behaviour, measured against Phase 0's baseline rather than intuition. This is the counterweight to 'smaller is better': a plan that cannot show parity is a plan that cannot be safely approved.",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Each a runnable command or a named test/measurement. `pnpm gates`, never `pnpm test` — only gates takes the machine-wide lock."
+        },
+        "known_gaps": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Where a green suite would NOT prove parity — 0%-coverage regions, untested IO paths, timing-dependent render behaviour. Claiming 'none' is itself a claim and must be justified here."
+        },
+        "baseline_reference": {
+          "type": "string",
+          "description": "What the checks are compared against, e.g. the Phase 0 baseline test count and sha."
+        }
+      }
+    },
+    "rollback_strategy": {
+      "type": "string",
+      "minLength": 20,
+      "description": "How the whole initiative is backed out after landing — revert boundaries, feature flags, data migrations that cannot be reversed. 'git revert' is only an answer when the plan is one commit."
+    },
+    "estimated_loc": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated total lines changed (added + removed). Joins to ranked.schema.json estimated_loc. An estimate, not a measurement — it feeds ranking, not acceptance."
+    },
+    "dependencies_on_other_initiatives": {
+      "type": "array",
+      "description": "Initiative ids that must land BEFORE this one. Phase 10 turns these into the approval order; a cycle here is a planning defect, not a schedule.",
+      "items": {
+        "type": "string",
+        "pattern": "^INIT-[0-9]{2}-[a-z0-9-]+$"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "What this plan could not settle. Architecture-shaping reframes, product taste and domain-model calls are Trent's — surface them here rather than guessing.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "blocks_execution",
+          "owner"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 15
+          },
+          "blocks_execution": {
+            "type": "boolean",
+            "description": "True if no step can start until this is answered."
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "trent",
+              "synthesis",
+              "implementer"
+            ],
+            "description": "trent = product/taste/architecture call. synthesis = Phase 9 should resolve it from the other variants. implementer = decidable at build time."
+          }
+        }
+      }
+    },
+    "synthesis_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variants_considered",
+        "refutations_consumed",
+        "rationale"
+      ],
+      "description": "REQUIRED when variant is 'synthesis', forbidden in spirit otherwise. Phase 9 must build from what SURVIVED, not from what was proposed — so it names both the variants it read and the Phase 8 attacks it read against them.",
+      "properties": {
+        "variants_considered": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string",
+            "enum": [
+              "opus",
+              "sonnet",
+              "fable"
+            ]
+          },
+          "description": "Fewer than two and this is a copy, not a synthesis."
+        },
+        "refutations_consumed": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths to the 08-refutations artifacts read. A synthesis that ignored the attacks is the failure this field exists to catch."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 40,
+          "description": "What was taken from which variant, what was dropped, and which surviving attack forced each change."
+        },
+        "attacks_addressed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The specific Phase 8 attack claims this plan answers."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "ENFORCED: a synthesis must declare what it synthesised from. Otherwise 'synthesis' is indistinguishable from a fourth opinion.",
+      "if": {
+        "type": "object",
+        "required": [
+          "variant"
+        ],
+        "properties": {
+          "variant": {
+            "const": "synthesis"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "synthesis_inputs"
+        ]
+      }
+    },
+    {
+      "description": "ENFORCED: a high-risk step needs a rollback of its own. The plan-level strategy is too coarse for the steps that can take the render loop down.",
+      "if": {
+        "type": "object",
+        "required": [
+          "design"
+        ],
+        "properties": {
+          "design": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": [
+                "risk"
+              ],
+              "properties": {
+                "risk": {
+                  "const": "high"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "design": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "properties": {
+                    "risk": {
+                      "enum": [
+                        "low",
+                        "medium"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "reverses"
+                  ],
+                  "properties": {
+                    "reverses": {
+                      "type": "string",
+                      "minLength": 15
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/ranked.schema.json",
+  "title": "Deep Review Ranked Initiative",
+  "description": "One row of the Phase 10 approval table. PRODUCER: Phase 10 (10-ranked.json, plus a generated .md view — the JSON is canonical). CONSUMER: TRENT. This is the pipeline's terminal artifact: Phases 0-10 end here and nothing structural executes until he approves a sequence. FILE SHAPE: the artifact is a collection.schema.json envelope whose `items` are these objects, ordered by `rank` — this schema validates one row, not the table. Every row must point at a synthesised plan, so approving a row approves a specific, adversarially-reviewed design rather than a title.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rank",
+    "initiative_id",
+    "title",
+    "criticals",
+    "estimated_loc",
+    "risk",
+    "payoff",
+    "depends_on",
+    "recommended_order_reason",
+    "plan_ref",
+    "status"
+  ],
+  "properties": {
+    "rank": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based position in the recommended order. Unique across the table. Rank is a recommendation, not a decision — Trent reorders."
+    },
+    "initiative_id": {
+      "type": "string",
+      "pattern": "^INIT-[0-9]{2}-[a-z0-9-]+$",
+      "description": "Joins to plan.schema.json initiative_id and the key in 04-ledger.json `initiatives`."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 10,
+      "description": "The initiative's title from 04-ledger.json, verbatim. Restating it differently here would make the two artifacts disagree."
+    },
+    "criticals": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many severity='critical' findings this initiative resolves, counted from the ledger. The single strongest ranking input."
+    },
+    "estimated_loc": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated total lines changed, copied from the synthesised plan's estimated_loc. An estimate that feeds ranking, never an acceptance criterion — no row is scored on lines removed."
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "description": "The highest step risk in the synthesised plan. low = mechanical and behaviour-preserving by construction. medium = crosses module boundaries. high = touches the render loop, packages/core, or a live output path."
+    },
+    "payoff": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "Expected reduction in interface per unit of behaviour, plus resilience gained. high = removes a whole duplicated subsystem or closes a silent-failure path. medium = meaningful surface reduction in one module. low = tidy-up worth doing when it is cheap."
+    },
+    "depends_on": {
+      "type": "array",
+      "description": "Initiative ids that must land first, from the plan's dependencies_on_other_initiatives. A row whose dependency ranks below it is a sequencing defect in this table.",
+      "items": {
+        "type": "string",
+        "pattern": "^INIT-[0-9]{2}-[a-z0-9-]+$"
+      }
+    },
+    "recommended_order_reason": {
+      "type": "string",
+      "minLength": 20,
+      "description": "Why HERE and not elsewhere, in terms of dependency, risk and payoff. The one line that makes the ordering arguable rather than asserted."
+    },
+    "plan_ref": {
+      "type": "string",
+      "pattern": "^docs/plans/2026-07-26-deep-review/09-synthesis/.+\\.json$",
+      "description": "Repo-relative path to the Phase 9 synthesised plan this row approves. Pinning the path is what makes approval concrete: a row without a surviving plan behind it is a wish."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "blocked",
+        "queued",
+        "executing",
+        "done"
+      ],
+      "description": "ready = approved-eligible, no unmet dependency. blocked = cannot start (unmet dependency or an open question owned by Trent). queued = approved and waiting on capacity. executing = in flight. done = landed on committed HEAD and pushed. Execution states are out of scope for this spec and exist so the table can be reused as the tracker."
+    },
+    "blocked_reason": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Why this row is blocked when no initiative dependency explains it — typically an open question the plan flagged as owned by Trent."
+    },
+    "open_questions_for_trent": {
+      "type": "array",
+      "description": "The plan's blocking open_questions with owner='trent', surfaced here so the approval gate shows what he must decide before this row can move.",
+      "items": {
+        "type": "string",
+        "minLength": 15
+      }
+    },
+    "findings_resolved": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total ledger findings this initiative closes, criticals included. Lets the table reconcile against 04-ledger.json counts."
+    }
+  },
+  "allOf": [
+    {
+      "description": "ENFORCED: a blocked row must say what blocks it — either a named dependency or a written reason. 'blocked' with neither is unactionable at the approval gate.",
+      "if": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "blocked"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "anyOf": [
+          {
+            "required": [
+              "depends_on"
+            ],
+            "properties": {
+              "depends_on": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "required": [
+              "blocked_reason"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "ENFORCED: a 'ready' row has no unmet initiative dependency. Anything with a dependency is blocked or queued until that dependency is done, which this table cannot assert on its own.",
+      "if": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "depends_on": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

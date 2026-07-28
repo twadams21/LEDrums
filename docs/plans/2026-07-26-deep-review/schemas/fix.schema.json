@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/fix.schema.json",
+  "title": "Deep Review Fix",
+  "description": "One finding fixed inside a Phase 5 batch, plus the Phase 6 review that was appended to it. PRODUCER: Phase 5 fix lanes (05-fixes/<batch>.json), which write everything EXCEPT `review`; Phase 6 reviewers (06-fix-reviews/<batch>.json) re-emit the same object with `review` populated. CONSUMERS: Phase 6 (reads finding_id, files_touched, pre_fix_sha to compute the diff it reviews), Phase 10 (reads review verdicts when ranking what already landed). FILE SHAPE: both artifacts are collection.schema.json envelopes whose `items` are these objects — this schema validates one element, not the file. A fixer never writes `review`; a reviewer never edits the fields below it. That split is what stops an agent marking its own homework.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "finding_id",
+    "files_touched",
+    "mutations_applied",
+    "pre_fix_sha",
+    "verification",
+    "commit_sha"
+  ],
+  "properties": {
+    "finding_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+-[0-9]{4}$",
+      "description": "Joins to finding.schema.json id and verdict.schema.json finding_id. The verdict MUST have disposition 'auto-fix'; Phase 5 fixing anything else is a protocol violation."
+    },
+    "files_touched": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Repo-relative paths this fix actually modified. MUST be a subset of the lane's scope fence — a path outside it is scope creep and fails Phase 6.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "mutations_applied": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many discrete edits the lane made for this finding. 0 means the lane changed nothing and MUST say why in `notes` — a silent no-op is the failure mode where a batch reports green having done nothing."
+    },
+    "pre_fix_sha": {
+      "type": "string",
+      "minLength": 7,
+      "description": "The commit this fix was applied on top of. Phase 6 diffs against exactly this, so it reviews what changed rather than the whole file."
+    },
+    "worktree_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The isolated worktree this lane ran in. Phase 5 lanes are file-disjoint AND worktree-isolated; two lanes sharing a checkout can each attribute a green suite to the other's patch."
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "typecheck_errors",
+        "gates_tests",
+        "gates_pass"
+      ],
+      "description": "Machine evidence, not a claim. Counts are asserted against Phase 0's baseline: a batch that changes the test count without a stated reason fails Phase 6.",
+      "properties": {
+        "typecheck_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Errors reported by `pnpm typecheck` after the fix. Anything above 0 blocks the commit."
+        },
+        "gates_tests": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total tests the run reported. Compared against the baseline count — a drop is behaviour loss until justified in `notes`."
+        },
+        "gates_pass": {
+          "type": "boolean",
+          "description": "Whether `pnpm gates` came back green. MUST be produced by `pnpm gates`, never `pnpm test`: only gates takes the machine-wide mutex at ~/.ledrums/locks/gates.lock, and concurrent unlocked sweeps have wedged this machine."
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exactly what was run, so the evidence is reproducible. Verify the artifact, never the exit code."
+        },
+        "detail": {
+          "type": "string",
+          "description": "e.g. '3 files changed, 12 insertions(+), 118 deletions(-)'."
+        }
+      }
+    },
+    "interface_delta_actual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exported_symbols_removed",
+        "exported_symbols_added"
+      ],
+      "description": "What the fix REALLY did to the public surface, measured after the fact. Phase 6 compares it against the finding's predicted interface_delta; a mismatch means the fix was not the fix that was approved.",
+      "properties": {
+        "exported_symbols_removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exported_symbols_added": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "commit_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Null until the batch is committed. Non-null asserts committed-HEAD green — the schema enforces that below. Presence on the remote is checked separately with `git ls-remote`, never from an agent's report."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anything a reviewer needs that the fields above do not carry — a deviation from the proposed fix, a zero-mutation no-op, a changed test count."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "effort"
+      ],
+      "description": "Who applied the fix. Stamped by the ORCHESTRATOR from the runtime pane footer, never self-reported — twux's EFFORT column records the launch flag, not the live tier.",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        }
+      }
+    },
+    "review": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Null while the fix is unreviewed; populated by Phase 6 ONLY. Two axes, from /code-review: Standards (does it follow this repo's documented standards?) and Spec (does it match what the finding asked for?). The reviewer MUST be a different model than provenance.model.",
+      "additionalProperties": false,
+      "required": [
+        "standards_verdict",
+        "spec_verdict",
+        "findings",
+        "reviewer"
+      ],
+      "properties": {
+        "standards_verdict": {
+          "type": "string",
+          "enum": [
+            "clean",
+            "findings",
+            "blocking"
+          ],
+          "description": "clean = follows repo standards. findings = non-blocking issues worth recording. blocking = must not land as-is."
+        },
+        "spec_verdict": {
+          "type": "string",
+          "enum": [
+            "clean",
+            "findings",
+            "blocking"
+          ],
+          "description": "clean = the diff is the finding's proposed_fix and nothing else. findings = drift worth recording. blocking = the fix does not do what was approved, or does more."
+        },
+        "findings": {
+          "type": "array",
+          "description": "Reviewer observations. A non-clean verdict with an empty array is invalid — the schema enforces it, so 'blocking' cannot be asserted without saying what blocks.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "severity",
+              "note",
+              "location"
+            ],
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "blocking",
+                  "major",
+                  "minor",
+                  "nit"
+                ]
+              },
+              "note": {
+                "type": "string",
+                "minLength": 15,
+                "description": "What is wrong and why it matters."
+              },
+              "location": {
+                "type": "string",
+                "description": "Repo-relative path, optionally with :line."
+              }
+            }
+          }
+        },
+        "parity_check": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "baseline_test_count",
+            "post_fix_test_count",
+            "accepted"
+          ],
+          "description": "Behaviour parity against Phase 0's baseline, not against intuition. Note that a green suite does NOT prove parity in a 0%-coverage region — for those the evidence is the import graph and git history.",
+          "properties": {
+            "baseline_test_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "post_fix_test_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "accepted": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        },
+        "reviewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "effort"
+          ],
+          "description": "Reviewer provenance. Stamped by the orchestrator from the runtime footer.",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            },
+            "run_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "ENFORCED: a committed fix asserts committed-HEAD green. Done = committed-HEAD green, not a lane's report.",
+      "if": {
+        "type": "object",
+        "required": [
+          "commit_sha"
+        ],
+        "properties": {
+          "commit_sha": {
+            "type": "string",
+            "minLength": 7
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "verification"
+        ],
+        "properties": {
+          "verification": {
+            "type": "object",
+            "properties": {
+              "gates_pass": {
+                "const": true
+              },
+              "typecheck_errors": {
+                "type": "integer",
+                "maximum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: a non-clean review verdict must name at least one finding. Agreeing must not be the cheapest path, and 'blocking' with no reason is unactionable.",
+      "if": {
+        "type": "object",
+        "required": [
+          "review"
+        ],
+        "properties": {
+          "review": {
+            "type": "object",
+            "anyOf": [
+              {
+                "required": [
+                  "standards_verdict"
+                ],
+                "properties": {
+                  "standards_verdict": {
+                    "enum": [
+                      "findings",
+                      "blocking"
+                    ]
+                  }
+                }
+              },
+              {
+                "required": [
+                  "spec_verdict"
+                ],
+                "properties": {
+                  "spec_verdict": {
+                    "enum": [
+                      "findings",
+                      "blocking"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "review": {
+            "type": "object",
+            "required": [
+              "findings"
+            ],
+            "properties": {
+              "findings": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: a blocking review must name a blocking finding. A 'blocking' verdict whose worst finding is a nit is a mislabelled verdict.",
+      "if": {
+        "type": "object",
+        "required": [
+          "review"
+        ],
+        "properties": {
+          "review": {
+            "type": "object",
+            "anyOf": [
+              {
+                "required": [
+                  "standards_verdict"
+                ],
+                "properties": {
+                  "standards_verdict": {
+                    "const": "blocking"
+                  }
+                }
+              },
+              {
+                "required": [
+                  "spec_verdict"
+                ],
+                "properties": {
+                  "spec_verdict": {
+                    "const": "blocking"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "review": {
+            "type": "object",
+            "properties": {
+              "findings": {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "severity"
+                  ],
+                  "properties": {
+                    "severity": {
+                      "const": "blocking"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

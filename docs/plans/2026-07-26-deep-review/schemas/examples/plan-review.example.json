@@ -1,0 +1,40 @@
+{
+  "initiative_id": "INIT-03-io-output-resilience",
+  "variant_reviewed": "opus",
+  "reviewer": {
+    "phase": "8",
+    "lane": "INIT-03/attack-a",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "run_id": "runC-021"
+  },
+  "attacks": [
+    {
+      "claim": "S2 changes the send gate in both adapters in one wave, so a regression cannot be attributed to Art-Net or sACN without bisecting inside the step.",
+      "severity": "major",
+      "evidence": "design[1].files lists packages/io/src/artnet.ts and sacn.ts in a single step, and sequencing puts S2 alone in wave 2.",
+      "survives": false,
+      "repair": "Split S2 into S2a (Art-Net) and S2b (sACN) in consecutive waves; the sink from S1 already makes them independent.",
+      "targets_step": "S2"
+    },
+    {
+      "claim": "Replacing the ready flag could add an await to the send path and block the render loop.",
+      "severity": "fatal",
+      "evidence": "AGENTS.md forbids blocking the render loop; output adapters must be fire-and-forget.",
+      "survives": true,
+      "plan_response": "S2's verification explicitly asserts no await is added to the render path, and the state read is synchronous.",
+      "targets_step": "S2"
+    }
+  ],
+  "rubric_scores": {
+    "correctness_risk": 4,
+    "parity_preservation": 4,
+    "sequencing_realism": 2,
+    "blast_radius_honesty": 4,
+    "verification_strength": 3
+  },
+  "overall": "sound-with-repairs",
+  "required_repairs": [
+    "Split S2 into two single-adapter steps so a regression is attributable without bisecting inside the step."
+  ]
+}
