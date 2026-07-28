@@ -1,0 +1,213 @@
+{
+  "artifact": "08-refutations/INIT-01-single-render-stack.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-01-single-render-stack/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-01-single-render-stack",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-01-single-render-stack/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "Transport authority is left aliasing-dependent for the whole plan: no step ever gives the voice stack a transport reducer, so after loadProject (S4b) a live setTransport lands in a Project object the voice render loop no longer reads — the BPM edit is silently inert on the lights.",
+          "severity": "major",
+          "evidence": "apps/server/src/voice-engine-host.ts:278-288 adoptPatch replaces this.project with a NEW object via spread (composition carried by reference from the OLD project), and :482-484 the loop reads this.project's composition.transport via advanceTransport. S4's fix calls adoptPatch({name,kit,inputMap,output}) — composition/transport is not carried. handlers/projects.ts:44 then has the legacy engine (later ProjectStore, S7) holding the LOADED project while the voice host's composition still aliases the pre-load one. propagateToVoiceHost (apps/server/src/handlers/voice-input.ts) has no setTransport arm, and no opus step adds one. The S3 harness even lists setTransport among its discriminants, so the harness would pin this drift as KNOWN DRIFT — but S4 closes only the two named divergences and nothing else ever closes this one.",
+          "survives": false,
+          "repair": "Add to S4: carry transport into the voice host on load (extend adoptPatch or add VoiceEngineHost.setTransport writing project.composition.transport, as the fable variant's S2 does) and give propagateToVoiceHost a setTransport arm; flip the corresponding S3 KNOWN DRIFT assertion to agreement in the same commit.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S9's own acceptance bar is unsatisfiable: it demands 'pnpm typecheck clean with ZERO edits outside the deleted files and index.ts', but the S3 parity harness (engine-parity.test.ts) constructs `new Engine(pA)` and no earlier step retargets or deletes that file — S9 cannot be typecheck-clean and edit-free at the same time.",
+          "severity": "major",
+          "evidence": "Plan's own text: S3 intent says the harness drives 'applyClientMessage(new Engine(pA), msg, 0)'; S7 verification says 'engine-parity.test.ts (S3/S4) re-run: the store arm must still agree' but S7's file list does not include engine-parity.test.ts, and neither S8's nor S9's file list names it. S9 deletes packages/core/src/engine/engine.ts, the class the harness imports.",
+          "survives": false,
+          "repair": "Add an explicit harness-retarget step (or fold into S7): swap the harness's legacy arm from Engine to ProjectStore when the store becomes authoritative, and list engine-parity.test.ts in S7's files; alternatively S8 deletes the harness once both arms are the same object, with a stated rationale.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S8's instruction for the fourteen deleted reducer arms is not executable as written: 'a message the server now ignores must be a decode-level rejection or an explicit no-op, never a silent drop' names two mutually exclusive behaviours and never picks one, and S6's ProjectStore carries all fourteen mutators VERBATIM that S8 then orphans — dead code introduced by the same plan that is deleting dead code.",
+          "severity": "minor",
+          "evidence": "S8 intent text (the disjunction is unresolved) versus S6 intent, which copies Engine's full mutator section including setParam/addLayer/setBinding/addSong etc. into ProjectStore; after S8 deletes their dispatch arms nothing calls those ProjectStore methods, and no later step trims them.",
+          "survives": false,
+          "repair": "Pick the behaviour in S8's text (explicit no-op + one monitor warn is the safe choice for old clients) and add to S8 or a follow-on: delete the fourteen now-uncalled ProjectStore mutators, with `npx knip` as the check — the S9 knip run would otherwise flag them.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S13 changes what the offline preview renders (voice cap, canvas-scene resolution, mixInput seeds) in a region with zero rendered-byte coverage — render.ts has no test file — so the suite cannot catch a preview regression outside the three enumerated deltas.",
+          "severity": "minor",
+          "evidence": "apps/web/src/lib/trigger-lab/render.ts has no sibling test; apps/web sits at 57.8% line coverage per the plan's own baseline_reference.",
+          "survives": true,
+          "plan_response": "behaviour_parity_evidence_plan.known_gaps (1) names exactly this: 'apps/web/src/lib/trigger-lab/render.ts has NO test file at all', substitutes the S13-prep golden fixture pinned to full float precision plus before/after ui-shot captures, states the human-comparison weakness explicitly, and confines S13 to its own wave with a single-file revert."
+        },
+        {
+          "claim": "Flipping the shipped default (S2) and deleting the fallback (S8/S9) is a removes-failure-path call the finding itself says must be human, and the plan executes it anyway.",
+          "severity": "minor",
+          "evidence": "divergent-change-0001 removes_failure_path.justification: 'This must be a human/product decision, not an auto-fix.'",
+          "survives": true,
+          "plan_response": "open_questions[0] puts exactly this to Trent ('Has the legacy engine ever been run deliberately… S2 flips the shipped default and S8/S9 remove the fallback entirely, and that is a removes-failure-path call the finding itself says must be human'), owner trent, and S2 is deliberately a single-commit revert boundary (rollback_strategy boundary A) if the answer comes back wrong."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Give the voice stack a transport carrier: setTransport arm in propagateToVoiceHost + transport carried on loadProject adoption, closing the aliasing-dependent transport authority the plan leaves open across S4-S9.",
+        "Name the step that retargets or retires engine-parity.test.ts before S9; S9's 'zero edits outside deletions' bar is impossible while the harness constructs `new Engine`.",
+        "Resolve S8's decode-rejection-vs-explicit-no-op disjunction and trim the fourteen ProjectStore mutators S8 orphans."
+      ]
+    },
+    {
+      "initiative_id": "INIT-01-single-render-stack",
+      "variant_reviewed": "sonnet",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-01-single-render-stack/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "The plan blocks its own execution (OQ1, blocks_execution=true) on a factually false premise: LayersDock.svelte does NOT author Project.composition.layers/clips via legacy messages — it is a display dock over Gen3 buses that sends nothing from the legacy family — and S5 builds a whole legacy-content.ts module to preserve a surface that does not exist.",
+          "severity": "major",
+          "evidence": "apps/web/src/lib/app/docks/LayersDock.svelte (233 lines) contains zero ws sends: its only store calls are store.setPolyphony/store.stopBus/store.setCrossfade over store.buses and store.dockVoicesDisplay (lines 30-92) — Gen3 bus surface, not composition layers/clips. Grep across apps/web/src for `t: '<name>'` on all fourteen legacy-composition discriminants (setParam, setLayer, addLayer, removeLayer, addClip, removeClip, setActiveSection, setBinding, removeBinding, addSong, removeSong, addSection, removeSection, setSectionLayerClip) returns ZERO non-test hits — matching the opus and fable variants' independent greps.",
+          "survives": false,
+          "repair": "Drop OQ1 as a blocker (downgrade to the out-of-repo-client question the fable variant asks), delete the fourteen arms instead of extracting them into legacy-content.ts, and remove legacy-content.ts from S5's file list — the extraction preserves nothing any client can reach.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "setTransport — the one message from the 'legacy content' family the web actually sends — is parked in legacy-content.ts 'operating directly on Project' with no voice-side reducer, so after S6 a live BPM edit reaches the voice render loop only through hidden object aliasing that breaks on the first loadProject.",
+          "severity": "major",
+          "evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:1392 and :1555 send `{ t: 'setTransport', ... }`. apps/server/src/voice-engine-host.ts:482-484 reads its OWN project.composition.transport via advanceTransport each tick, and adoptPatch (:278-288) replaces this.project with a new object, splitting any shared reference. S5 explicitly lists setTransport among the types 'deliberately NOT touched' and moved to legacy-content.ts; no step in the plan adds a VoiceEngineHost transport path or names which Project instance legacy-content.ts mutates after EngineHost is deleted in S6.",
+          "survives": false,
+          "repair": "Pull setTransport out of the legacy-content set: add a VoiceEngineHost.setTransport (writes project.composition.transport, which :483 already reads) wired from the message handler, plus a test that a BPM edit after a loadProject changes the voice loop's transport.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S8's acceptance bar — the 14 sim.*.test.ts suites pass UNMODIFIED — cannot be met as written: swapping Sim's internals for the core engine is known to change at least mix-input seed derivation (sim's `seed ^ imul(index+1, 0x9e3779b9)` vs core's deriveSeed) and imposes core's 256-voice cap, so suites pinning current seeds/unbounded behaviour must go red, and the plan gives no disposition for that outcome beyond 'the failure identifies a semantic gap'.",
+          "severity": "major",
+          "evidence": "The opus variant enumerates the same migration's three guaranteed behaviour deltas with file:line evidence (sim.ts:692 seed formula vs core deriveSeed; unbounded voices vs VoicePool's cap; canvas-scene resolution), and sim-determinism.test.ts exists precisely to pin such values. A verification bar that is expected to fail with no decision procedure is not a verification.",
+          "survives": false,
+          "repair": "Pre-enumerate the known deltas (seed derivation, voice cap, canvas-scene resolution) as the opus variant does, give each an explicit pinned assertion recording intentional convergence on the live engine, and restrict the 'unmodified' bar to the suites outside those deltas.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "Risk ratings are inverted flattery: S2 (a mechanical 3-file noise-helper move covered by per-pixel determinism suites) is rated 'high' while S8 (replacing the entire Sim lifecycle with a hosted core engine, in a region whose rendered output has no byte-level coverage) is rated 'medium'.",
+          "severity": "minor",
+          "evidence": "Plan's own risk fields: S2 risk=high with verification 'canvas determinism and effects/batch-*.test.ts assert per-pixel output… any formula drift fails immediately' (i.e. fully fenced), versus S8 risk=medium while its own known_gaps admits WebMIDI/preview feel cannot be replayed under vitest and the visual evidence is a human-audited capture.",
+          "survives": false,
+          "repair": "Re-rate S2 low (its failure mode is fully mechanically fenced) and S8 high; risk ordering should drive wave isolation the way opus isolates its S13.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S4's pre-deletion dual-apply parity assertion could pass vacuously against a gutted or partial voice arm, proving nothing about the seven discriminants' field-level completeness.",
+          "severity": "minor",
+          "evidence": "A deep-equal diff of kit/output after both applies only fails if the voice arm drops a field the test fixture actually sets; the historical pixelsPerHoop drop (input-router.ts:177-179) survived precisely because nothing set that field in tests.",
+          "survives": true,
+          "plan_response": "S4 intent explicitly runs the assertion 'across every one of setKitTransform/setKitGlobal/setHoopConfig/setKitOutputs/setKitNodeLayout/setOutput/setInputMap — the 7 types propagateToVoiceHost already handles — BEFORE either path is deleted', and its verification adds an integration test driving all 7 through createClientMessageHandler with a live voiceHost; combined with S5's manual exercise of each surface via ui-shot, a stubbed arm would surface. The residual fixture-completeness risk is real but the plan's layered checks address it as well as any variant's."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 3,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 3,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Remove the false LayersDock premise: OQ1 must not block execution, and S5's legacy-content.ts extraction should be replaced by deletion of the fourteen sender-less arms (gated only on the out-of-repo-client question).",
+        "Give setTransport a real voice-side reducer instead of parking it on an aliased Project object.",
+        "Rewrite S8's acceptance bar around the known semantic deltas (seed derivation, voice cap, canvas resolution) with pinned-intentional assertions."
+      ]
+    },
+    {
+      "initiative_id": "INIT-01-single-render-stack",
+      "variant_reviewed": "fable",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-01-single-render-stack/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S5 deletes packages/core/src/engine/transport.ts while the voice stack's OWN render loop imports advanceTransport from it — the step's stated import audit ('voice imports only Framebuffer/RenderContext/TransportState/Trigger') is factually wrong, so the deletion set is over-broad and the wave cannot typecheck.",
+          "severity": "major",
+          "evidence": "apps/server/src/voice-engine-host.ts:2 imports `advanceTransport` (barrel-exported at packages/core/src/index.ts:66 from './engine/transport') and calls it at :484 inside the voice loop's transport() — a live consumer in the surviving stack. The opus variant keeps transport.ts for exactly this reason (its S9: 'KEEP transport.ts, whose advanceTransport is called by apps/server/src/voice-engine-host.ts:484'). TransportState itself lives in render-context.ts, which is why the audit missed it.",
+          "survives": false,
+          "repair": "Remove transport.ts (and its barrel line index.ts:66) from S5's deletion set — keep it alongside framebuffer.ts/render-context.ts — or move advanceTransport into the voice namespace in the same commit with the import retargeted.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S2 re-points the authoritative store to voiceHost but omits handlers/projects.ts entirely: loadProject still calls deps.host.engine.setProject(loaded) and saveProject still reads deps.host.engine.getProject(), so in the S2-S3 window loading a project mutates the write-never legacy engine while the state broadcast and autosaver read voiceHost — project load becomes a visible no-op, and Save persists the wrong (pre-load) project. S3 then deletes EngineHost with projects.ts absent from its file list too, though ProjectHandlerDeps.host is typed EngineHost.",
+          "severity": "major",
+          "evidence": "apps/server/src/handlers/projects.ts:1-2 imports EngineHost; :44-47 loadProject path is deps.host.engine.setProject(loaded) + deps.host.reloadOutputSettings(); :51 saveProject(msg.name, deps.host.engine.getProject()). Neither S2's nor S3's file list contains handlers/projects.ts or projects.test.ts. S2's verification (state-message byte-diff, setTransport test, forwarding tests) never exercises loadProject/saveProject, so the wave lands green while the load path is broken.",
+          "survives": false,
+          "repair": "Add handlers/projects.ts (+ its test) to S2: retarget ProjectHandlerDeps to the voice host, replacing engine.setProject with an adoption that carries kit/inputMap/output AND composition.transport (adoptPatch as-is drops composition — voice-engine-host.ts:278-288 spreads only name/kit/inputMap/output), and assert post-load that voiceHost.getProject() deep-equals the loaded file.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S7's acceptance bar contradicts known semantics: it requires all existing sim suites green UNMODIFIED after adopting core VoicePool, but the adoption is known to change mix-input seed derivation (sim's `seed ^ imul` vs core's deriveSeed) and to impose core's voice cap, so suites pinning those values must go red; the tabulate-first gate surfaces the drift to Trent but the step still has no landing disposition for the red suites.",
+          "severity": "major",
+          "evidence": "Opus's S13 analysis of the identical migration enumerates three guaranteed deltas with file:line evidence (sim.ts:692 seed formula; unbounded array vs VoicePool cap; canvas-scene resolution) and gives each a pinned assertion; fable's S7 verification instead asserts 'All existing sim suites green UNMODIFIED' with no branch for the case the tabulation finds real drift — which it will.",
+          "survives": false,
+          "repair": "Adopt opus's shape for this step: enumerate the expected deltas up front, pin each with its own intentional-convergence assertion in a new parity test, and scope the 'unmodified' bar to suites outside the deltas; keep the surface-to-Trent gate for any UNexpected cell.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S1 flips bare `pnpm start` onto the voice loop before S2 gives the voice path setTransport or the dropped kit-transform fields, widening the window in which the shipped default runs a stack with known field drops the plan itself documents.",
+          "severity": "minor",
+          "evidence": "S2's own intent text documents that propagateToVoiceHost 'drops hoopSpacingMm/diameterIn on setKitTransform … and has no setTransport case'; sequencing lands S1 in wave 1 and S2 in wave 2, so between them the only mode is the one with the documented drops.",
+          "survives": true,
+          "plan_response": "The window is not a regression: scripts/dev.mjs and the desktop shell already force voice today (S1 intent: 'flips from the legacy loop to the voice loop, which is what every shipping path already runs'), so bare `pnpm start` merely joins the behaviour every real user already has; S2 is the very next wave and the sequencing is strictly serial ('waves land in order', rollback_strategy). The drops predate the plan and are named as S2's deliverable, not hidden."
+        },
+        {
+          "claim": "S8's noise consolidation could silently change deterministic pixel output if the move introduces any formula drift (e.g. the fbm octaves parameterisation).",
+          "severity": "minor",
+          "evidence": "Both copies feed deterministic render paths (canvas/elements.ts:30-53, effects/impl/perlin-clouds.ts:7-31); the fbm bodies differ in parameterised-vs-hardcoded octaves.",
+          "survives": true,
+          "plan_response": "S8 verification: 'canvas-determinism.test.ts and effect conformance batches (batch-a..e, effects.test.ts) assert per-pixel output, so any change to the noise formula fails immediately', plus the `grep -rn '127.1'` single-definition check; the refuter for duplicated-code-0011 independently confirmed fbm equivalence at octaves=3, and fire.ts's different hash is explicitly left alone."
+        },
+        {
+          "claim": "S9 threads the unresolved-id set into chain.ts and generator-bridge.ts 'by parameter/reference' without naming the call-path files between VoiceBusEngine and applyModifierChain (voice/compositor.ts is absent from the file list), so an implementer cannot execute the plumbing unambiguously and the listed files are incomplete.",
+          "severity": "minor",
+          "evidence": "S9's file list names voice/engine.ts, modifiers/chain.ts, voice/generator-bridge.ts, voice/index.ts, apps/server/src/main.ts, modifiers/slice.test.ts — but applyModifierChain is invoked from the compositor layer (opus's equivalent step S15 lists packages/core/src/voice/compositor.ts:244/279/287 as the pass-through sites), which fable's list omits.",
+          "survives": false,
+          "repair": "Add packages/core/src/voice/compositor.ts to S9's file list and state the threading explicitly (engine-owned set passed into the compositor's render call, then into applyModifierChain's optional parameter).",
+          "targets_step": "S9"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 3,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 2,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Keep engine/transport.ts (or relocate advanceTransport) — S5's deletion set breaks the voice loop's own import at voice-engine-host.ts:2/:484.",
+        "Bring handlers/projects.ts into S2/S3: retarget loadProject/saveProject to the voice host with transport carried, and test the post-load state; as written the S2 wave lands green with project loading visibly broken.",
+        "Re-shape S7's acceptance bar around the known VoicePool adoption deltas (seed derivation, voice cap) with pinned intentional assertions instead of an unmeetable 'all suites green unmodified'.",
+        "Add voice/compositor.ts to S9's file list with the explicit ledger threading path."
+      ]
+    }
+  ]
+}
