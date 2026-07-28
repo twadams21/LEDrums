@@ -81,16 +81,6 @@ describe('setDrumTransform', () => {
   });
 });
 
-describe('setKitMirror', () => {
-  it('sets the kit-global mirror live — writes kit.global.mirror locally and sends setKitGlobal', () => {
-    const sent: ClientMessage[] = [];
-    const store = connected(sent);
-    store.setKitMirror('x');
-    expect(store.project!.kit.global.mirror).toBe('x');
-    expect(sent).toContainEqual({ t: 'setKitGlobal', mirror: 'x' });
-  });
-});
-
 describe('setKitGlobal (C1/C2 kit-global config — expanded / density / hoopCount / spacing / cap)', () => {
   it('optimistically writes kit.global and forwards only the edited fields', () => {
     const sent: ClientMessage[] = [];
@@ -100,13 +90,14 @@ describe('setKitGlobal (C1/C2 kit-global config — expanded / density / hoopCou
     expect(sent).toContainEqual({ t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, maxPixelsPerOutput: 300 });
   });
 
-  it('carries hoopCount + defaultHoopSpacingMm and leaves mirror untouched', () => {
+  it('carries hoopCount + defaultHoopSpacingMm and leaves the other globals untouched', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
+    const capBefore = store.project!.kit.global.maxPixelsPerOutput;
     store.setKitGlobal({ hoopCount: 5, defaultHoopSpacingMm: 45 });
     expect(store.project!.kit.global.hoopCount).toBe(5);
     expect(store.project!.kit.global.defaultHoopSpacingMm).toBe(45);
-    expect(store.project!.kit.global.mirror).toBe('none'); // unrelated field preserved
+    expect(store.project!.kit.global.maxPixelsPerOutput).toBe(capBefore); // unrelated field preserved
     expect(sent).toContainEqual({ t: 'setKitGlobal', hoopCount: 5, defaultHoopSpacingMm: 45 });
   });
 
@@ -275,28 +266,28 @@ describe('undo restores the project slice and resyncs the engine (S3)', () => {
     expect(sent.some((m) => m.t === 'setKitTransform' && m.drumId === drumId)).toBe(true);
   });
 
-  it('undoes a mirror edit — restores kit.global.mirror and re-sends setKitGlobal', () => {
+  it('undoes a kit-global edit — restores kit.global.expanded and re-sends setKitGlobal', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
-    store.setKitMirror('x');
-    expect(store.project!.kit.global.mirror).toBe('x');
+    store.setKitGlobal({ expanded: true });
+    expect(store.project!.kit.global.expanded).toBe(true);
 
     sent.length = 0;
     expect(store.undo()).toBe(true);
-    expect(store.project!.kit.global.mirror).toBe('none');
-    expect(sent).toContainEqual({ t: 'setKitGlobal', mirror: 'none' });
+    expect(store.project!.kit.global.expanded).toBe(false);
+    expect(sent).toContainEqual({ t: 'setKitGlobal', expanded: false });
   });
 
   it('interleaves cleanly — undo peels the last edit first regardless of trigger/patch kind', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
-    store.setKitMirror('x');
+    store.setKitGlobal({ expanded: true });
     store.setOutput({ fps: 33 });
     expect(store.undo()).toBe(true); // peels the fps edit
     expect(store.project!.output.fps).not.toBe(33);
-    expect(store.project!.kit.global.mirror).toBe('x'); // the mirror edit still stands
-    expect(store.undo()).toBe(true); // peels the mirror edit
-    expect(store.project!.kit.global.mirror).toBe('none');
+    expect(store.project!.kit.global.expanded).toBe(true); // the kit-global edit still stands
+    expect(store.undo()).toBe(true); // peels the kit-global edit
+    expect(store.project!.kit.global.expanded).toBe(false);
   });
 });
 

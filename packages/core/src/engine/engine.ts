@@ -309,11 +309,11 @@ export class Engine {
     this.rebuild();
   }
 
-  /** Update KIT-GLOBAL fields (mirror + the Advatek/kit config: expanded output mode, LED
-   * density, hoop count, default hoop spacing, per-output pixel cap) and rebuild geometry.
+  /** Update KIT-GLOBAL fields (the Advatek/kit config: expanded output mode, LED density,
+   * hoop count, default hoop spacing, per-output pixel cap) and rebuild geometry.
    * Unlike setKitTransform (per-drum carrier), this targets kit.global — the whole model
    * reflects (density/hoopCount/expanded change the pixel model AND the DMX patch). */
-  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.project.kit.global, partial);
     // Outputs are a static port set sized by `expanded` (4 normal / 8 expanded): flipping the mode
     // must immediately yield that many ports. Reconcile is a no-op when `expanded` is unchanged

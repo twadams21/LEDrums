@@ -1854,20 +1854,9 @@ export class TriggerLab {
     this.client.send({ t: 'setKitTransform', drumId, ...partial });
   }
 
-  /** Set the kit-global mirror (S11): a geometry-only world reflection (none/x/y). Kit-wide,
-   * not per-drum — applies live to the whole model and persists with the project. */
-  setKitMirror(mirror: 'none' | 'x' | 'y'): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (this.project) {
-      this.pushUndoSnapshot();
-      this.project = routing.applyKitGlobal(this.project, { mirror });
-    }
-    this.client.send({ t: 'setKitGlobal', mirror });
-  }
-
   /** Edit any kit-global field (C1/C2): expanded output mode, LED density, hoop count, default
-   * hoop spacing, max pixels/output — and mirror. Kit-wide; optimistic-writes kit.global and
-   * forwards only the edited fields over WS. (setKitMirror is the mirror-only convenience form.) */
+   * hoop spacing, max pixels/output. Kit-wide; optimistic-writes kit.global and forwards only
+   * the edited fields over WS. */
   setKitGlobal(partial: routing.KitGlobalPartial): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (this.project) {

@@ -79,7 +79,6 @@ export const showSchema = z.custom<voice.Show>((v) => showBusesShape.safeParse(v
 // ---------------------------------------------------------------------------
 const blendModeSchema = z.enum(BLEND_MODES);
 const outputProtocolSchema = outputSettingsSchema.shape.protocol;
-const mirrorSchema = kitGlobalSchema.shape.mirror;
 // The setKitGlobal message carries kit-global fields as an OPTIONAL partial (only the edited
 // field is sent), so each is the core field's constraint with its schema DEFAULT stripped —
 // `.removeDefault()` keeps single-sourcing (int/positive bounds) while `.optional()` means an
@@ -124,13 +123,11 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     // Per-drum swatch (`DrumConfig.color`, hex) — the drum inspector's Color control (C3).
     color: z.string().optional(),
   }).strict(),
-  // Kit-global geometry/hardware edit (partial): `mirror` (world reflection) plus the four
-  // Advatek/kit config fields the kit inspector edits (C1/C2) — `expanded` output mode (B2),
-  // LED density, hoop count, default hoop spacing, and the per-output pixel cap. All optional;
-  // only the edited field is present.
+  // Kit-global geometry/hardware edit (partial): the Advatek/kit config fields the kit
+  // inspector edits (C1/C2) — `expanded` output mode (B2), LED density, hoop count, default
+  // hoop spacing, and the per-output pixel cap. All optional; only the edited field is present.
   z.object({
     t: z.literal('setKitGlobal'),
-    mirror: mirrorSchema.optional(),
     expanded: kitGlobalShape.expanded.removeDefault().optional(),
     ledDensityPxPerM: kitGlobalShape.ledDensityPxPerM.removeDefault().optional(),
     hoopCount: kitGlobalShape.hoopCount.removeDefault().optional(),

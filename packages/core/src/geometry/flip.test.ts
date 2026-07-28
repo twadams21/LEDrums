@@ -6,9 +6,7 @@ import { buildDmxMap } from './dmx-map';
 /* S10 golden suite — per-drum flip is a GEOMETRY-ONLY transform. It reflects the drum
    along its local Z (skins swap) and negates the angular sweep (chase/wind direction),
    but leaves pixel INDEX order, hoop indices, and the DMX byte stream untouched: a flip
-   never re-patches hardware. Byte-exact literal pixel counts keep the goldens exact.
-   S11 (kit mirror) mirrors this file: it composes a FINAL world-space reflection on top,
-   under the same "positions change, dmxMap does not" invariant. */
+   never re-patches hardware. Byte-exact literal pixel counts keep the goldens exact. */
 
 function kit(flip: boolean, overrides: Record<string, unknown> = {}): KitConfig {
   return parseKit({

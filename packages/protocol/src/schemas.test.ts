@@ -56,7 +56,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'removeClip', layerId: 'base', clipId: 'c1' },
   { t: 'setTransport', bpm: 128, playing: false, beatsPerBar: 4 },
   { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true, color: '#ff8800' },
-  { t: 'setKitGlobal', mirror: 'x', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 },
+  { t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 },
   { t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: 196, reverse: true },
   { t: 'setKitOutputs', outputs: [output] },
   { t: 'setKitNodeLayout', nodeLayout: { 'output:1': { x: 40, y: 120 }, 'hoop:kick:1': { x: 360, y: 120 } } },

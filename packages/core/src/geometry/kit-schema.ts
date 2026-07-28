@@ -153,11 +153,6 @@ export const kitGlobalSchema = z.object({
   defaultHoopSpacingMm: z.number().positive().default(50),
   /** Max pixels a single physical output may carry (Advatek PixLite ≈ 304). */
   maxPixelsPerOutput: z.number().int().positive().default(304),
-  /** Kit-wide mirror: a geometry-only FINAL world-space reflection applied to every pixel
-   * (positions + tangents/normals) in buildPixelModel. 'x' negates world X, 'y' negates
-   * world Y, 'none' is identity. Drums keep their identities — only coordinates reflect.
-   * Pixel index order + DMX bytes are unchanged; a mirror never re-patches hardware. */
-  mirror: z.enum(['none', 'x', 'y']).default('none'),
   /** Advatek PixLite **expanded output mode** (B2). OFF = normal: the {@link
    * PIXLITE_PHYSICAL_OUTPUTS} physical ports ARE the logical outputs. ON = expanded: each
    * physical port n exposes two logical outputs (2n-1 and 2n), for double the count — see

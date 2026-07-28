@@ -17,19 +17,6 @@ import { classifyZone, type Zone } from './zones';
 
 const MM_PER_INCH = 25.4;
 
-/**
- * Kit-wide mirror (S11): a GEOMETRY-ONLY final reflection in WORLD space. 'x' negates the
- * world X component, 'y' negates world Y, 'none' is identity. Applied identically to positions
- * AND to direction vectors (tangent/normal) so orientation stays consistent under the mirror.
- * It composes cleanly on top of S10's per-drum flip (already baked into local→world) and never
- * touches pixel index order or the DMX byte stream — a mirror never re-patches hardware.
- */
-function reflectWorld(v: Vec3, mirror: 'none' | 'x' | 'y'): Vec3 {
-  if (mirror === 'x') return { x: -v.x, y: v.y, z: v.z };
-  if (mirror === 'y') return { x: v.x, y: -v.y, z: v.z };
-  return v;
-}
-
 export interface Pixel {
   /** Global, stable index into the frame buffer. */
   id: number;
@@ -143,10 +130,6 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
   const drums: DrumInfo[] = [];
   const drumById = new Map<string, DrumInfo>();
 
-  // Kit-global mirror is a FINAL world-space reflection (S11), applied to every pixel's world
-  // position + direction vectors after localToWorld. Read once — it's the same for all drums.
-  const mirror = kit.global.mirror;
-
   let id = 0;
   for (const drum of kit.drums) {
     const hoops = resolveDrumHoops(kit, drum);
@@ -190,18 +173,10 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
           y: radiusMm * Math.sin(a),
           z: localZ,
         };
-        // Position in world space, then the kit mirror's final world-space reflection.
-        const world = reflectWorld(localToWorld(local, drum.rotation, drum.origin), mirror);
-        // Tangent (along hoop) and outward radial normal, rotated into world space then
-        // reflected identically so orientation stays consistent under the mirror.
-        const tangent = reflectWorld(
-          eulerXYZApply({ x: -Math.sin(a), y: Math.cos(a), z: 0 }, drum.rotation),
-          mirror,
-        );
-        const normal = reflectWorld(
-          eulerXYZApply({ x: Math.cos(a), y: Math.sin(a), z: 0 }, drum.rotation),
-          mirror,
-        );
+        const world = localToWorld(local, drum.rotation, drum.origin);
+        // Tangent (along hoop) and outward radial normal, rotated into world space.
+        const tangent = eulerXYZApply({ x: -Math.sin(a), y: Math.cos(a), z: 0 }, drum.rotation);
+        const normal = eulerXYZApply({ x: Math.cos(a), y: Math.sin(a), z: 0 }, drum.rotation);
         const wrappedAngle = ((angleDeg % 360) + 360) % 360;
         pixels.push({
           id,
@@ -239,15 +214,11 @@ export function buildPixelModel(kit: KitConfig): PixelModel {
       radiusMm,
       // Effect/hit origin = the CENTRE OF THE FIRST HOOP (the skin) — where radial/3D effects
       // emanate from (B3). In the centred local frame the first hoop sits at local z = −halfStack
-      // (flip: +halfStack), so the skin follows the drum when it's flipped. Reflected identically
-      // to the pixel world positions so it stays consistent under the kit mirror.
-      effectOriginWorld: reflectWorld(
-        localToWorld(
-          { x: 0, y: 0, z: drum.flip ? halfStack : -halfStack },
-          drum.rotation,
-          drum.origin,
-        ),
-        mirror,
+      // (flip: +halfStack), so the skin follows the drum when it's flipped.
+      effectOriginWorld: localToWorld(
+        { x: 0, y: 0, z: drum.flip ? halfStack : -halfStack },
+        drum.rotation,
+        drum.origin,
       ),
     };
     drums.push(info);
