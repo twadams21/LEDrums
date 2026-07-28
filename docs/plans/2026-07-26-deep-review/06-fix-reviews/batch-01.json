@@ -1,0 +1,535 @@
+{
+  "artifact": "06-fix-reviews/batch-01",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "6",
+    "lane": "fix-review/batch-01",
+    "model": "claude-opus",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "finding_id": "dead-code-0003",
+      "files_touched": [
+        "apps/web/src/lib/trigger-lab/store/hydrate.ts"
+      ],
+      "mutations_applied": 9,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "18 lines changed in hydrate.ts (9 exports dropped); whole-tree diffstat 17 files changed, 27 insertions(+), 32 deletions(-)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 9,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "The finding's proposed_fix (and the Phase 3a vote) called for DELETING this symbol, but the applied mutation only dropped its `export` keyword. It is now a module-private declaration with ZERO references anywhere in the repo \u2014 still dead, but no longer visible to knip, so a future dead-code sweep will not re-surface it. No behaviour change; tsconfig has no noUnusedLocals, which is why typecheck stayed green. Residual work, not a blocker.",
+            "location": "apps/web/src/lib/trigger-lab/store/hydrate.ts:441"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0004",
+      "files_touched": [
+        "apps/server/src/show-library.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (showLibraryPath)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "The finding's proposed_fix (and the Phase 3a vote) called for DELETING this symbol, but the applied mutation only dropped its `export` keyword. It is now a module-private declaration with ZERO references anywhere in the repo \u2014 still dead, but no longer visible to knip, so a future dead-code sweep will not re-surface it. No behaviour change; tsconfig has no noUnusedLocals, which is why typecheck stayed green. Residual work, not a blocker.",
+            "location": "apps/server/src/show-library.ts:26"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0005",
+      "files_touched": [
+        "apps/web/src/lib/trigger-lab/sim.envelopes.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (ENV_KINDS)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "The finding's proposed_fix (and the Phase 3a vote) called for DELETING this symbol, but the applied mutation only dropped its `export` keyword. It is now a module-private declaration with ZERO references anywhere in the repo \u2014 still dead, but no longer visible to knip, so a future dead-code sweep will not re-surface it. No behaviour change; tsconfig has no noUnusedLocals, which is why typecheck stayed green. Residual work, not a blocker.",
+            "location": "apps/web/src/lib/trigger-lab/sim.envelopes.ts:49"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0006",
+      "files_touched": [
+        "apps/web/src/lib/app/views/mix-layer-rows.ts"
+      ],
+      "mutations_applied": 2,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "2 exports dropped (isMixRowHandleId, MIX_ROW_HANDLE_PREFIX)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "The finding's proposed_fix (and the Phase 3a vote) called for DELETING this symbol, but the applied mutation only dropped its `export` keyword. It is now a module-private declaration with ZERO references anywhere in the repo \u2014 still dead, but no longer visible to knip, so a future dead-code sweep will not re-surface it. No behaviour change; tsconfig has no noUnusedLocals, which is why typecheck stayed green. Residual work, not a blocker.",
+            "location": "apps/web/src/lib/app/views/mix-layer-rows.ts:21"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0007",
+      "files_touched": [
+        "workers/error-ingest/src/validate.ts"
+      ],
+      "mutations_applied": 2,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "2 exports dropped (MAX_REPORTS_PER_BATCH, safeKeySegment)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "Under-application versus the finding: interface_delta predicted 8 exported symbols removed, interface_delta_actual is 2. Still exported and still used only in-file: MAX_MESSAGE_LEN:9, MAX_STACK_LEN:10, MAX_BREADCRUMBS:11, MAX_STR:12, MAX_BACKUPS_PER_BATCH:82, MAX_KEY_SEGMENT_LEN:83. The applied set exactly matches the mutation set Phase 3b mechanically verified, so this drift originated upstream in Phase 3b, not in the Phase 5 lane \u2014 but per fix.schema.json the predicted-vs-actual mismatch must be recorded, and the residual unexports remain open for a later batch.",
+            "location": "workers/error-ingest/src/validate.ts"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0009",
+      "files_touched": [
+        "apps/web/src/lib/app/patch-graph.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (DEFAULT_OUTPUT_SCALARS)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "Under-application versus the finding: interface_delta predicted 2 exported symbols removed, interface_delta_actual is 1. Still exported and still used only in-file: the `export { STAGE_ORDER };` re-export at patch-graph.ts:337, together with the import at patch-graph.ts:29 that exists solely to feed it. The applied set exactly matches the mutation set Phase 3b mechanically verified, so this drift originated upstream in Phase 3b, not in the Phase 5 lane \u2014 but per fix.schema.json the predicted-vs-actual mismatch must be recorded, and the residual unexports remain open for a later batch.",
+            "location": "apps/web/src/lib/app/patch-graph.ts:337"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0010",
+      "files_touched": [
+        "apps/web/src/lib/trigger-lab/store/ids.ts",
+        "apps/web/src/lib/trigger-lab/store/transport.ts",
+        "apps/web/src/lib/trigger-lab/store/graphs.ts",
+        "apps/web/src/lib/trigger-lab/store/canvas-scenes.ts",
+        "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+        "apps/web/src/lib/trigger-lab/clipdoc.ts"
+      ],
+      "mutations_applied": 7,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "7 exports dropped across 6 files (reserveId, showSig, OUTPUT_ANCHOR_ID, firstEffectId, CANVAS_BUS_ID, blockChildren, makeDefaultMint)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 7,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0011",
+      "files_touched": [
+        "apps/web/src/lib/app/views/align-guides.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (ALIGN_THRESHOLD)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "Under-application versus the finding: interface_delta predicted 5 exported symbols removed, interface_delta_actual is 1. Still exported and still used only in-file: ENVELOPE_PRESETS and LFO_PRESETS in apps/web/src/lib/app/views/add-node-taxonomy.ts (:14, :22) and MONITOR_RETENTION_LIMIT / monitorSearchText in apps/web/src/lib/app/monitor.ts (:3, :47). The applied set exactly matches the mutation set Phase 3b mechanically verified, so this drift originated upstream in Phase 3b, not in the Phase 5 lane \u2014 but per fix.schema.json the predicted-vs-actual mismatch must be recorded, and the residual unexports remain open for a later batch.",
+            "location": "apps/web/src/lib/app/views/add-node-taxonomy.ts"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0012",
+      "files_touched": [
+        "apps/server/src/boot.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (lanUrls)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "minor",
+            "note": "Under-application versus the finding: interface_delta predicted 2 exported symbols removed, interface_delta_actual is 1. Still exported and still used only in-file: localNicSubnets at apps/server/src/controller-monitor.ts:96, whose only use is the DI default at :170. The applied set exactly matches the mutation set Phase 3b mechanically verified, so this drift originated upstream in Phase 3b, not in the Phase 5 lane \u2014 but per fix.schema.json the predicted-vs-actual mismatch must be recorded, and the residual unexports remain open for a later batch.",
+            "location": "apps/server/src/controller-monitor.ts:96"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0013",
+      "files_touched": [
+        "packages/io/src/pixlite/protocol.ts"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (parseStatistic)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0014",
+      "files_touched": [
+        "apps/server/src/ws-protocol.ts"
+      ],
+      "mutations_applied": 5,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "5 names dropped from an export type union (BackupReason, MonitorEventType, SerializedDrum, TunnelStatus, VoiceStats)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 5,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    },
+    {
+      "finding_id": "dead-code-0015",
+      "files_touched": [
+        "apps/web/scripts/vite-plugin-source-manifest.mjs"
+      ],
+      "mutations_applied": 1,
+      "pre_fix_sha": "3708648",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2981,
+        "gates_pass": true,
+        "commands": [
+          "pnpm typecheck",
+          "pnpm gates"
+        ],
+        "detail": "1 export dropped (buildSourceManifest)"
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": null,
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2981,
+          "accepted": true,
+          "reason": "Diff touches zero test files and every hunk is an export-modifier removal or a name removed from an export type block, so no runtime behaviour can change. Phase 0 recorded no test count directly; 2981 is corroborated by schemas/examples/plan.example.json ('Phase 0 baseline sha 3708648, 2981 tests passing') and matches the batch's post-fix count."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    }
+  ]
+}
