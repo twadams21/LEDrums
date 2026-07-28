@@ -12,13 +12,13 @@ export type MixLayerRow = {
   y: number;
 };
 
-export const MIX_ROW_HANDLE_PREFIX = 'mix-edge:';
+const MIX_ROW_HANDLE_PREFIX = 'mix-edge:';
 
 export function mixRowHandleId(edgeId: string): string {
   return `${MIX_ROW_HANDLE_PREFIX}${edgeId}`;
 }
 
-export function isMixRowHandleId(handleId: string | null | undefined): boolean {
+function isMixRowHandleId(handleId: string | null | undefined): boolean {
   return !!handleId && handleId.startsWith(MIX_ROW_HANDLE_PREFIX);
 }
 

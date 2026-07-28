@@ -14,7 +14,7 @@ export interface TransportState {
 
 /** Signature of an authored Show that is INSENSITIVE to node x/y positions — so a layout drag
     doesn't count as a content change (which would reseed engine voices). */
-export function showSig(show: unknown): string {
+function showSig(show: unknown): string {
   return JSON.stringify(show, (k, v) => (k === 'x' || k === 'y' ? 0 : v));
 }
 

@@ -21,7 +21,7 @@ import type { Block, BlockKind } from './sim';
 
 // ---- Block-tree traversal ---------------------------------------------------
 
-export function blockChildren(b: Block): Block[] {
+function blockChildren(b: Block): Block[] {
   switch (b.kind) {
     case 'all':
     case 'random':

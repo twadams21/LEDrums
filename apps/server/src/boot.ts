@@ -57,7 +57,7 @@ export function lanAddresses(): string[] {
 }
 
 /** Every non-internal IPv4 address as an http URL on port `p` (for the boot LAN banner). */
-export function lanUrls(p: number): string[] {
+function lanUrls(p: number): string[] {
   return lanAddresses().map((a) => `http://${a}:${p}`);
 }
 

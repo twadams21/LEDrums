@@ -144,7 +144,7 @@ function numAt(a: unknown, i: number): number {
 }
 
 /** Parse a `statistic` object (whole or partial) into the typed {@link ControllerStats} view. */
-export function parseStatistic(statistic: Record<string, unknown>): ControllerStats {
+function parseStatistic(statistic: Record<string, unknown>): ControllerStats {
   const ethProt = (statistic.ethProt ?? {}) as Record<string, unknown>;
   const inUni = (ethProt.inUni ?? {}) as Record<string, unknown>;
   const pixData = (statistic.pixData ?? {}) as Record<string, unknown>;

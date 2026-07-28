@@ -214,7 +214,7 @@ export type OutputScalars = { startUniverse?: number; channelsPerPixel: number; 
 
 /** Sensible defaults for an output the project hasn't seen yet (a fresh palette node):
     3 channels/pixel, dense (no universe snap), default rgb order. */
-export const DEFAULT_OUTPUT_SCALARS: OutputScalars = { channelsPerPixel: 3 };
+const DEFAULT_OUTPUT_SCALARS: OutputScalars = { channelsPerPixel: 3 };
 
 /**
  * Read the live flow graph's output half back into a `PatchRouting`. Each Output's hoop chain

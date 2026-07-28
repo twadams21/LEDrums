@@ -23,7 +23,7 @@ const store = createNamedBlobStore<ShowLibraryBlob>(SHOW_LIBRARY_FILE);
 export type ShowLibraryLoadSource = BlobLoadSource;
 
 /** Resolve the final path for the machine-local show library file. */
-export function showLibraryPath(dir: string = PROJECTS_DIR): string {
+function showLibraryPath(dir: string = PROJECTS_DIR): string {
   return store.path(dir);
 }
 

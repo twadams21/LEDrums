@@ -36,7 +36,7 @@ export interface AlignResult {
 }
 
 /** Default snap distance (flow px) — how close an edge must come before it locks. */
-export const ALIGN_THRESHOLD = 6;
+const ALIGN_THRESHOLD = 6;
 
 interface AxisMatch {
   dist: number;

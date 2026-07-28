@@ -17,7 +17,7 @@ export function nid(prefix: string): string {
 }
 
 /** Reserve a persisted generated id so later nid() calls cannot reuse it after reload. */
-export function reserveId(id: string): void {
+function reserveId(id: string): void {
   const match = GENERATED_ID_RE.exec(id);
   if (!match) return;
   const next = Number(match[2]) + 1;
