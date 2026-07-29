@@ -1,12 +1,11 @@
 import { DEG2RAD, type Vec3 } from '../math';
 import { eulerXYZApply, localToWorld } from './euler';
 import {
-  drumDensity,
-  drumHoopCount,
   type DrumConfig,
   type HoopConfig,
   type KitConfig,
 } from './kit-schema';
+import { drumDensity, drumHoopCount } from './kit-queries';
 
 /** One hoop's resolved render attributes: its pixel count and whether the strip is reversed. */
 interface ResolvedHoop {

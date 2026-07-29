@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PIXLITE_PHYSICAL_OUTPUTS,
-  logicalOutputCount,
-  logicalOutputsForPhysical,
   parseKit,
   type KitConfig,
 } from './kit-schema';
+import {
+  PIXLITE_PHYSICAL_OUTPUTS,
+  logicalOutputCount,
+  logicalOutputsForPhysical,
+} from './kit-queries';
 import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
 
 // B2: the Advatek `expanded` output flag. New kits default OFF (4 physical outputs);

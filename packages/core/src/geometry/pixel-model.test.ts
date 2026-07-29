@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { drumHoopCount, parseKit } from './kit-schema';
+import { parseKit } from './kit-schema';
+import { drumHoopCount } from './kit-queries';
 import { buildPixelModel, materializeHoops } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
 

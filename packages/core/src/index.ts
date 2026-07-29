@@ -7,6 +7,7 @@ export * from './math';
 // Geometry
 export * from './geometry/kit-schema';
 export * from './geometry/kit-migrations';
+export * from './geometry/kit-queries';
 export * from './geometry/euler';
 export * from './geometry/zones';
 export * from './geometry/pixel-model';

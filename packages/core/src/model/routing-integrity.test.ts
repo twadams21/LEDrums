@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseKit, drumHoopCount, type OutputConfig } from '../geometry/kit-schema';
+import { parseKit, type OutputConfig } from '../geometry/kit-schema';
+import { drumHoopCount } from '../geometry/kit-queries';
 import { buildPixelModel } from '../geometry/pixel-model';
 import { buildDmxMap } from '../geometry/dmx-map';
 import {

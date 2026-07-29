@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  drumHoopCount,
   parseKit,
   type HoopConfig,
   type KitConfig,
 } from './kit-schema';
+import { drumHoopCount } from './kit-queries';
 import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
 import { buildPixelModel, getHoopPixelRange, type Pixel } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
