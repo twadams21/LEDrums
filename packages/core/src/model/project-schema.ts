@@ -90,11 +90,6 @@ export const oscMapSchema = z.object({
   ...zoneRefSchema.shape,
 });
 
-/** A zone slot DECLARED on a drum but not (yet) bound to any MIDI note or OSC address — so an
-    added-but-unbound zone persists (the note/osc arrays only represent BOUND slots). A bound slot
-    is a zone too and need not be listed here; the effective zone set is the union of this list and
-    the bound slots. */
-export const declaredZoneSchema = zoneRefSchema;
 
 export const inputMapSchema = z.object({
   midiNotes: z.array(midiNoteMapSchema).default([]),
@@ -102,8 +97,11 @@ export const inputMapSchema = z.object({
   midiChannel: z.number().int().min(1).max(16).nullable().default(null),
   /** OSC addresses that fire a drum/slot trigger. */
   oscMap: z.array(oscMapSchema).default([]),
-  /** Zone slots declared with no binding yet (see {@link declaredZoneSchema}). */
-  zones: z.array(declaredZoneSchema).default([]),
+  /** Zone slots DECLARED on a drum but not (yet) bound to any MIDI note or OSC address — so an
+      added-but-unbound zone persists (the note/osc arrays only represent BOUND slots). A bound
+      slot is a zone too and need not be listed here; the effective zone set is the union of
+      this list and the bound slots. */
+  zones: z.array(zoneRefSchema).default([]),
   /** OSC address that drives the master `volume` control. */
   volumeOscAddress: z.string().optional(),
 });
@@ -222,7 +220,7 @@ export type Transport = z.infer<typeof transportSchema>;
 export type Composition = z.infer<typeof compositionSchema>;
 export type MidiNoteMap = z.infer<typeof midiNoteMapSchema>;
 export type OscMap = z.infer<typeof oscMapSchema>;
-export type DeclaredZone = z.infer<typeof declaredZoneSchema>;
+export type DeclaredZone = ZoneRef;
 export type InputMap = z.infer<typeof inputMapSchema>;
 export type TriggerBinding = z.infer<typeof triggerBindingSchema>;
 export type SectionLayerClip = z.infer<typeof sectionLayerClipSchema>;
