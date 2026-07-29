@@ -164,6 +164,19 @@ describe('backpressure guard (S14 — resilience-hole-0005)', () => {
     expect(sockets[1]!.types()).toContain('projects');
   });
 
+  it('a peer that disconnects mid-strike is dropped from the strikes map on the next sweep (review N5)', () => {
+    const { clients, sockets, sweepSlowPeers, stats } = harness(2);
+    const slow = sockets[0]!;
+    slow.bufferedAmount = 2_000_000;
+    sweepSlowPeers();
+    sweepSlowPeers(); // 2 strikes held
+    expect(stats().strikedPeers).toBe(1);
+    clients.remove(slow); // normal close path — this module is never told directly
+    sweepSlowPeers();
+    expect(stats().strikedPeers).toBe(0); // not pinned forever
+    expect(slow.terminated).toBe(false); // and never struck out post-disconnect
+  });
+
   it('the monitor sink gets exactly one error event naming the dropped peer', () => {
     const { sockets, errors, sweepSlowPeers } = harness(2);
     sockets[1]!.bufferedAmount = 2_000_000;

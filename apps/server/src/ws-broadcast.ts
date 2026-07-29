@@ -64,8 +64,9 @@ export interface Broadcaster<S extends BroadcastSocket> {
   /** Advance slow-peer strikes — called once per keepalive sweep, NEVER per broadcast.
    * A peer over-threshold for {@link SLOW_PEER_SWEEPS} consecutive sweeps is terminated. */
   sweepSlowPeers(): void;
-  /** Observability for the guard: how many high-rate sends were skipped. */
-  stats(): { skipped: number };
+  /** Observability for the guard: skipped high-rate sends + live strike entries
+   * (the latter so tests can prove disconnected peers are not pinned — review N5). */
+  stats(): { skipped: number; strikedPeers: number };
 }
 
 export function createBroadcaster<S extends BroadcastSocket>(deps: BroadcasterDeps<S>): Broadcaster<S> {
@@ -115,6 +116,13 @@ export function createBroadcaster<S extends BroadcastSocket>(deps: BroadcasterDe
   }
 
   function sweepSlowPeers(): void {
+    // Drop strike entries for sockets no longer in the registry (review N5): the
+    // close/error path removes a peer from `clients` without telling this module,
+    // and a Map keyed by socket would otherwise pin every disconnected peer forever.
+    if (strikes.size > 0) {
+      const live = new Set<S>(clients);
+      for (const ws of strikes.keys()) if (!live.has(ws)) strikes.delete(ws);
+    }
     for (const ws of clients) {
       if (!overThreshold(ws)) {
         strikes.delete(ws); // recovered — the count is CONSECUTIVE sweeps
@@ -139,5 +147,5 @@ export function createBroadcaster<S extends BroadcastSocket>(deps: BroadcasterDe
     }
   }
 
-  return { broadcastJson, broadcastBinary, broadcastPresence, relayToOthers, sweepSlowPeers, stats: () => ({ skipped }) };
+  return { broadcastJson, broadcastBinary, broadcastPresence, relayToOthers, sweepSlowPeers, stats: () => ({ skipped, strikedPeers: strikes.size }) };
 }
