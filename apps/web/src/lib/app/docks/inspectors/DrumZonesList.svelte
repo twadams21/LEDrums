@@ -57,32 +57,32 @@
 
   function addZone(): void {
     if (!project || freeSlots.length === 0) return;
-    store.setInputMap(addDeclaredZone(project.inputMap, drumId, SLOTS.indexOf(freeSlots[0]!)));
+    store.setInputMap(addDeclaredZone(project.inputMap, { drumId, slot: SLOTS.indexOf(freeSlots[0]!) }));
   }
 
   function removeZone(slot: number): void {
-    if (project) store.setInputMap(removeZoneFromMap(project.inputMap, drumId, slot));
+    if (project) store.setInputMap(removeZoneFromMap(project.inputMap, { drumId, slot }));
   }
 
   /** Move a zone (its note + address) from `oldSlot` to the chosen slot (a re-label). */
   function changeSlot(oldSlot: number, v: string): void {
-    if (project) store.setInputMap(moveZoneSlot(project.inputMap, drumId, oldSlot, Number(v)));
+    if (project) store.setInputMap(moveZoneSlot(project.inputMap, { drumId, slot: oldSlot }, { drumId, slot: Number(v) }));
   }
 
   function commitZoneNote(slot: number, v: string): void {
     if (!project) return;
     if (v === '') {
-      store.setInputMap(setZoneMidiNote(project.inputMap, drumId, slot, null));
+      store.setInputMap(setZoneMidiNote(project.inputMap, { drumId, slot }, null));
       return;
     }
     const parsed = parseMidiNote(v);
-    if (parsed !== null) store.setInputMap(setZoneMidiNote(project.inputMap, drumId, slot, parsed));
+    if (parsed !== null) store.setInputMap(setZoneMidiNote(project.inputMap, { drumId, slot }, parsed));
   }
 
   function commitZoneOsc(slot: number, v: string): void {
     if (!project) return;
     const trimmed = v.trim();
-    store.setInputMap(setZoneOscAddress(project.inputMap, drumId, slot, trimmed ? v : null));
+    store.setInputMap(setZoneOscAddress(project.inputMap, { drumId, slot }, trimmed ? v : null));
   }
 
   function zoneLearning(slot: number): boolean {
@@ -102,8 +102,8 @@
   {:else}
     <div class="zonelist">
       {#each zoneSlots as slot (slot)}
-        {@const note = project ? zoneMidiNote(project.inputMap, drumId, slot) : null}
-        {@const addr = project ? zoneOscAddress(project.inputMap, drumId, slot) : null}
+        {@const note = project ? zoneMidiNote(project.inputMap, { drumId, slot }) : null}
+        {@const addr = project ? zoneOscAddress(project.inputMap, { drumId, slot }) : null}
         {@const heardNote = store.inputBadge(note !== null ? { kind: 'midi', note } : null)}
         {@const heardOsc = store.inputBadge(addr ? { kind: 'osc', address: addr } : null)}
         {@const armed = zoneLearning(slot)}

@@ -8,7 +8,7 @@
    the S3 store mutators — so each Patch node becomes the editor of the device setting it
    represents. */
 
-import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice } from '@ledrums/core';
+import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice, type ZoneRef } from '@ledrums/core';
 import { parsePatchNodeId, type PatchNodeRef } from '../patch-node-id';
 import type { HoopRef, PatchRouting, PixelSpan } from '../patch-routing';
 
@@ -59,30 +59,30 @@ export function hoopPixelSpan(
 }
 
 // --- input-map editing (zone node MIDI / OSC) ----------------------------------------
-// Pure, immutable updates keyed by (drumId, slot). The store optimistic-writes the result
-// and forwards `setInputMap` over WS.
+// Pure, immutable updates addressed by a core `ZoneRef` (the named `(drumId, slot)`
+// pair). The store optimistic-writes the result and forwards `setInputMap` over WS.
 
-/** The MIDI note mapped to `(drumId, slot)`, or null. */
-export function zoneMidiNote(map: InputMap, drumId: string, slot: number): number | null {
-  return map.midiNotes.find((n) => n.drumId === drumId && n.slot === slot)?.note ?? null;
+/** The MIDI note mapped to a zone ref, or null. */
+export function zoneMidiNote(map: InputMap, ref: ZoneRef): number | null {
+  return map.midiNotes.find((n) => n.drumId === ref.drumId && n.slot === ref.slot)?.note ?? null;
 }
 
-/** The OSC address mapped to `(drumId, slot)`, or null. */
-export function zoneOscAddress(map: InputMap, drumId: string, slot: number): string | null {
-  return map.oscMap.find((o) => o.drumId === drumId && o.slot === slot)?.address ?? null;
+/** The OSC address mapped to a zone ref, or null. */
+export function zoneOscAddress(map: InputMap, ref: ZoneRef): string | null {
+  return map.oscMap.find((o) => o.drumId === ref.drumId && o.slot === ref.slot)?.address ?? null;
 }
 
-/** Immutably set (or clear, when null) the MIDI note for `(drumId, slot)`. */
-export function setZoneMidiNote(map: InputMap, drumId: string, slot: number, note: number | null): InputMap {
-  const rest = map.midiNotes.filter((n) => !(n.drumId === drumId && n.slot === slot));
-  return { ...map, midiNotes: note === null ? rest : [...rest, { note, drumId, slot }] };
+/** Immutably set (or clear, when null) the MIDI note for a zone ref. */
+export function setZoneMidiNote(map: InputMap, ref: ZoneRef, note: number | null): InputMap {
+  const rest = map.midiNotes.filter((n) => !(n.drumId === ref.drumId && n.slot === ref.slot));
+  return { ...map, midiNotes: note === null ? rest : [...rest, { note, drumId: ref.drumId, slot: ref.slot }] };
 }
 
-/** Immutably set (or clear, when null / blank) the OSC address for `(drumId, slot)`. */
-export function setZoneOscAddress(map: InputMap, drumId: string, slot: number, address: string | null): InputMap {
-  const rest = map.oscMap.filter((o) => !(o.drumId === drumId && o.slot === slot));
+/** Immutably set (or clear, when null / blank) the OSC address for a zone ref. */
+export function setZoneOscAddress(map: InputMap, ref: ZoneRef, address: string | null): InputMap {
+  const rest = map.oscMap.filter((o) => !(o.drumId === ref.drumId && o.slot === ref.slot));
   const trimmed = address?.trim();
-  return { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId, slot }] : rest };
+  return { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId: ref.drumId, slot: ref.slot }] : rest };
 }
 
 // --- pixel-count read-outs (C2 kit, C5 hoop) -----------------------------------------
@@ -219,28 +219,32 @@ export function zoneSlotsForDrum(map: InputMap, drumId: string): number[] {
 
 /** Declare a zone slot on a drum (immutably) — persists an added zone before it carries any MIDI/OSC
     binding. Idempotent: a slot already declared (or already bound, hence already a zone) is a no-op. */
-export function addDeclaredZone(map: InputMap, drumId: string, slot: number): InputMap {
+export function addDeclaredZone(map: InputMap, ref: ZoneRef): InputMap {
   const zones = map.zones ?? [];
-  if (zones.some((z) => z.drumId === drumId && z.slot === slot)) return map;
-  return { ...map, zones: [...zones, { drumId, slot }] };
+  if (zones.some((z) => z.drumId === ref.drumId && z.slot === ref.slot)) return map;
+  return { ...map, zones: [...zones, { drumId: ref.drumId, slot: ref.slot }] };
 }
 
 /** Remove a zone from a drum ENTIRELY — drops its declaration and any MIDI-note / OSC binding, so
     the slot is no longer a zone. The inverse of {@link addDeclaredZone} + the per-binding setters. */
-export function removeZone(map: InputMap, drumId: string, slot: number): InputMap {
-  const cleared = setZoneOscAddress(setZoneMidiNote(map, drumId, slot, null), drumId, slot, null);
-  return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === drumId && z.slot === slot)) };
+export function removeZone(map: InputMap, ref: ZoneRef): InputMap {
+  const cleared = setZoneOscAddress(setZoneMidiNote(map, ref, null), ref, null);
+  return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === ref.drumId && z.slot === ref.slot)) };
 }
 
-/** Move a zone (declaration + MIDI/OSC bindings) from `oldSlot` to `newSlot` — a re-label. */
-export function moveZoneSlot(map: InputMap, drumId: string, oldSlot: number, newSlot: number): InputMap {
-  if (oldSlot === newSlot) return map;
-  const note = zoneMidiNote(map, drumId, oldSlot);
-  const addr = zoneOscAddress(map, drumId, oldSlot);
-  let m = removeZone(map, drumId, oldSlot);
-  m = addDeclaredZone(m, drumId, newSlot);
-  m = setZoneMidiNote(m, drumId, newSlot, note);
-  m = setZoneOscAddress(m, drumId, newSlot, addr);
+/** Move a zone (declaration + MIDI/OSC bindings) from one slot to another — a RE-LABEL
+    WITHIN ONE DRUM, exactly the domain the old `(map, drumId, oldSlot, newSlot)` signature
+    made structurally inexpressible. The wider two-ref type does NOT widen the domain:
+    a cross-drum move (`from.drumId !== to.drumId`) returns `map` unchanged, as does a
+    same-slot move. Cross-drum zone moves are explicitly out of scope. */
+export function moveZoneSlot(map: InputMap, from: ZoneRef, to: ZoneRef): InputMap {
+  if (from.drumId !== to.drumId || from.slot === to.slot) return map;
+  const note = zoneMidiNote(map, from);
+  const addr = zoneOscAddress(map, from);
+  let m = removeZone(map, from);
+  m = addDeclaredZone(m, to);
+  m = setZoneMidiNote(m, to, note);
+  m = setZoneOscAddress(m, to, addr);
   return m;
 }
 

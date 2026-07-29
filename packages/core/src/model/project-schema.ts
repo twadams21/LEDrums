@@ -69,28 +69,32 @@ export const SLOT_LABELS = [
 ] as const;
 export const slotSchema = z.number().int().min(0).max(TRIGGER_SLOT_COUNT - 1);
 
+/** The repo's trigger-zone address: a drum + one of its trigger slots. The shared base of
+    the three input-map address schemas below, and the parameter object of the web layer's
+    zone editors — one name for the `(drumId, slot)` pair everywhere. */
+export const zoneRefSchema = z.object({
+  drumId: z.string(),
+  slot: slotSchema.default(0),
+});
+export type ZoneRef = z.infer<typeof zoneRefSchema>;
+
 /** Maps a MIDI note to a drum + trigger slot (velocity control + section routing). */
 export const midiNoteMapSchema = z.object({
   note: z.number().int().min(0).max(127),
-  drumId: z.string(),
-  slot: slotSchema.default(0),
+  ...zoneRefSchema.shape,
 });
 
 /** Maps an incoming OSC address to a drum + trigger slot (Sensory Percussion / Ableton). */
 export const oscMapSchema = z.object({
   address: z.string(),
-  drumId: z.string(),
-  slot: slotSchema.default(0),
+  ...zoneRefSchema.shape,
 });
 
 /** A zone slot DECLARED on a drum but not (yet) bound to any MIDI note or OSC address — so an
     added-but-unbound zone persists (the note/osc arrays only represent BOUND slots). A bound slot
     is a zone too and need not be listed here; the effective zone set is the union of this list and
     the bound slots. */
-export const declaredZoneSchema = z.object({
-  drumId: z.string(),
-  slot: slotSchema.default(0),
-});
+export const declaredZoneSchema = zoneRefSchema;
 
 export const inputMapSchema = z.object({
   midiNotes: z.array(midiNoteMapSchema).default([]),
@@ -106,6 +110,9 @@ export const inputMapSchema = z.object({
 
 /** A (drum, slot) trigger → the clip/layer it activates within a section. */
 export const triggerBindingSchema = z.object({
+  // Deliberately NOT rebased on zoneRefSchema: its `slot` is REQUIRED where the
+  // input-map schemas default it to 0 — sharing the base would change what a
+  // malformed persisted section parses to. A data-semantics call, not a refactor.
   drumId: z.string(),
   slot: slotSchema,
   layerId: z.string(),

@@ -130,13 +130,13 @@ describe('input-map zone editing', () => {
   const base: InputMap = { midiChannel: null, zones: [], midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
 
   it('reads the note / address for a (drumId, slot)', () => {
-    expect(zoneMidiNote(base, 'kick', 0)).toBe(36);
-    expect(zoneMidiNote(base, 'kick', 1)).toBeNull();
-    expect(zoneOscAddress(base, 'kick', 0)).toBeNull();
+    expect(zoneMidiNote(base, { drumId: 'kick', slot: 0 })).toBe(36);
+    expect(zoneMidiNote(base, { drumId: 'kick', slot: 1 })).toBeNull();
+    expect(zoneOscAddress(base, { drumId: 'kick', slot: 0 })).toBeNull();
   });
 
   it('sets a note immutably and preserves siblings', () => {
-    const next = setZoneMidiNote(base, 'snare', 2, 40);
+    const next = setZoneMidiNote(base, { drumId: 'snare', slot: 2 }, 40);
     expect(next.midiNotes).toContainEqual({ note: 40, drumId: 'snare', slot: 2 });
     expect(next.midiNotes).toContainEqual({ note: 36, drumId: 'kick', slot: 0 });
     expect(next.volumeOscAddress).toBe('/vol');
@@ -144,22 +144,22 @@ describe('input-map zone editing', () => {
   });
 
   it('replaces an existing note rather than duplicating it', () => {
-    const next = setZoneMidiNote(base, 'kick', 0, 38);
+    const next = setZoneMidiNote(base, { drumId: 'kick', slot: 0 }, 38);
     expect(next.midiNotes.filter((n) => n.drumId === 'kick' && n.slot === 0)).toEqual([
       { note: 38, drumId: 'kick', slot: 0 },
     ]);
   });
 
   it('clears a note when passed null', () => {
-    const next = setZoneMidiNote(base, 'kick', 0, null);
-    expect(zoneMidiNote(next, 'kick', 0)).toBeNull();
+    const next = setZoneMidiNote(base, { drumId: 'kick', slot: 0 }, null);
+    expect(zoneMidiNote(next, { drumId: 'kick', slot: 0 })).toBeNull();
   });
 
   it('sets / trims / clears an OSC address', () => {
-    const set = setZoneOscAddress(base, 'kick', 0, '  /snare/edge  ');
-    expect(zoneOscAddress(set, 'kick', 0)).toBe('/snare/edge');
-    const cleared = setZoneOscAddress(set, 'kick', 0, '   ');
-    expect(zoneOscAddress(cleared, 'kick', 0)).toBeNull();
+    const set = setZoneOscAddress(base, { drumId: 'kick', slot: 0 }, '  /snare/edge  ');
+    expect(zoneOscAddress(set, { drumId: 'kick', slot: 0 })).toBe('/snare/edge');
+    const cleared = setZoneOscAddress(set, { drumId: 'kick', slot: 0 }, '   ');
+    expect(zoneOscAddress(cleared, { drumId: 'kick', slot: 0 })).toBeNull();
   });
 });
 
@@ -298,9 +298,9 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
   const empty: InputMap = { midiChannel: null, zones: [], midiNotes: [], oscMap: [] };
 
   it('addDeclaredZone persists a slot with no binding (idempotent)', () => {
-    const m = addDeclaredZone(empty, 'kick', 2);
+    const m = addDeclaredZone(empty, { drumId: 'kick', slot: 2 });
     expect(m.zones).toEqual([{ drumId: 'kick', slot: 2 }]);
-    expect(addDeclaredZone(m, 'kick', 2)).toBe(m); // no-op when already declared
+    expect(addDeclaredZone(m, { drumId: 'kick', slot: 2 })).toBe(m); // no-op when already declared
     expect(zoneSlotsForDrum(m, 'kick')).toEqual([2]);
   });
 
@@ -321,17 +321,24 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
       midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }],
       oscMap: [{ address: '/k', drumId: 'kick', slot: 1 }],
     };
-    const out = removeZone(m, 'kick', 1);
+    const out = removeZone(m, { drumId: 'kick', slot: 1 });
     expect(zoneSlotsForDrum(out, 'kick')).toEqual([]);
     expect(out.midiNotes).toEqual([]);
     expect(out.oscMap).toEqual([]);
   });
 
   it('moveZoneSlot carries the declaration + note + address to the new slot', () => {
-    const m = addDeclaredZone(setZoneMidiNote(empty, 'kick', 0, 42), 'kick', 0);
-    const out = moveZoneSlot(m, 'kick', 0, 3);
+    const m = addDeclaredZone(setZoneMidiNote(empty, { drumId: 'kick', slot: 0 }, 42), { drumId: 'kick', slot: 0 });
+    const out = moveZoneSlot(m, { drumId: 'kick', slot: 0 }, { drumId: 'kick', slot: 3 });
     expect(zoneSlotsForDrum(out, 'kick')).toEqual([3]);
-    expect(zoneMidiNote(out, 'kick', 3)).toBe(42);
-    expect(zoneMidiNote(out, 'kick', 0)).toBeNull();
+    expect(zoneMidiNote(out, { drumId: 'kick', slot: 3 })).toBe(42);
+    expect(zoneMidiNote(out, { drumId: 'kick', slot: 0 })).toBeNull();
+  });
+
+  it('moveZoneSlot refuses a cross-drum move — a re-label within ONE drum only', () => {
+    const m = addDeclaredZone(setZoneMidiNote(empty, { drumId: 'kick', slot: 0 }, 42), { drumId: 'kick', slot: 0 });
+    // Identity, not merely deep-equal: the widened two-ref signature must not widen
+    // the domain the old (map, drumId, oldSlot, newSlot) shape enforced structurally.
+    expect(moveZoneSlot(m, { drumId: 'kick', slot: 0 }, { drumId: 'snare', slot: 1 })).toBe(m);
   });
 });
