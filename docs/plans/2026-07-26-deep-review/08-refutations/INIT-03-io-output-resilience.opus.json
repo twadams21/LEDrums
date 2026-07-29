@@ -1,0 +1,278 @@
+{
+  "artifact": "08-refutations/INIT-03-io-output-resilience",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-03-io-output-resilience/opus",
+    "model": "claude-opus-5[1m]",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-03-io-output-resilience",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-03-io-output-resilience/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S4/S5's rate limiter does not bound a flapping link: the 1000ms floor only suppresses an error whose code equals lastStatus.code, but a successful send between two failures latches state 'ready', so the next error's code differs from the latch and emits immediately — an alternating loss pattern at 44Hz produces up to 44 error emissions per second straight through S6 into the Monitor bus.",
+          "severity": "major",
+          "evidence": "S4 verification: \"for `state: 'error'` skips the emit when `s.code === lastStatus?.code` AND `Date.now() - lastEmitMs < 1000`\" — lastStatus is overwritten by the ready emission from the send-completion path, defeating the code comparison. Real send loop is 44Hz (S9(d) measures 44 successive send() calls).",
+          "survives": false,
+          "repair": "Apply the 1000ms floor to every error emission unconditionally (track lastErrorEmitMs separately from the latch), or suppress 'ready' re-emission entirely for post-bind recoveries so the latch cannot be reset by a single lucky packet.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S9(b)'s verification is not executable as written: it offers two mutually exclusive assertions and defers the choice to the implementer ('if the rate limiting is proven to live entirely in the adapters ... assert instead ... state which of the two holds in the commit message'), and the adapter-side limiter uses Date.now() with no injectable clock, so the '<= 2 monitor events per fake-clock second' assertion cannot be made deterministic.",
+          "severity": "major",
+          "evidence": "S9 verification text (b); S4 verification specifies `Date.now() - lastEmitMs < 1000` inside ArtNetOutput with no clock parameter, while OutputManager is the only component with the 'existing injectable now'.",
+          "survives": false,
+          "repair": "Give the adapters' emitStatus an injectable now (default Date.now) as part of S4/S5, then fix S9(b) to a single assertion against the adapter with a fake clock; delete the 'state which holds in the commit message' branch.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S3 understates the blast radius of the interface change: it names 'the FakeOutput classes inside apps/server/src/output-manager.test.ts' but there are four `implements PixelOutput` fakes, in output-manager.test.ts, engine-host.test.ts, voice-engine-host.test.ts and handlers/voice-input.test.ts.",
+          "severity": "minor",
+          "evidence": "grep 'implements PixelOutput' apps packages: apps/server/src/{output-manager,engine-host,voice-engine-host}.test.ts and apps/server/src/handlers/voice-input.test.ts, plus packages/io/src/{artnet,sacn}.ts.",
+          "survives": false,
+          "repair": "Name all four fake implementers in S3's note; the optional-method design means no edit is required, but the reader must be able to verify that claim from the plan.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S1's 'a bind failure is currently silent' test asserts 'the receiver gets nothing within 300ms', a fixed wall-clock wait in the same file whose design claims 'no fixed sleeps' — on a loaded CI box this is both a flake source and a proof-by-timeout that can pass for the wrong reason.",
+          "severity": "minor",
+          "evidence": "S1 verification: '(no fixed sleeps; vitest timeout 2000ms)' in test (a) versus 'assert the receiver gets nothing within 300ms' in test (b).",
+          "survives": false,
+          "repair": "State the negative test as a bounded race with a generous budget (e.g. 1000ms) and label it explicitly as a timing-bounded negative assertion, so a future reader does not mistake it for a deterministic proof.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S10 edits apps/web/src/lib/app/chrome/output-pill.ts, which puts a web-app file in the change set; AGENTS.md requires any change that touches UI to run the polish pass and be verified with `pnpm ui-shot`, and the plan's verification for S10 is only `pnpm gates` plus a reviewer reading diffs.",
+          "severity": "minor",
+          "evidence": "AGENTS.md non-negotiables: 'Any change that touches UI must apply /make-interfaces-feel-better' and 'UI changes must be verified with pnpm ui-shot captures'. S10 files list includes apps/web/src/lib/app/chrome/output-pill.ts.",
+          "survives": false,
+          "repair": "State in S10 that the web edit is comment-only (zero rendered output, `git diff` shows only comment lines) and therefore outside the ui-shot rule — or move the pill comment to a follow-up so the initiative touches no apps/web file.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "The plan adds status emission inside dgram callbacks that fire on the same event-loop turn as the render tick, so a slow subscriber could stall the loop — a non-negotiable violation.",
+          "severity": "major",
+          "evidence": "AGENTS.md: 'Never block the render loop with sync IO; output adapters must be fire-and-forget.' Emission sites are socket 'error' and send-completion callbacks in packages/io/src/artnet.ts:49,74.",
+          "survives": true,
+          "plan_response": "S4 intent: 'the emit happens inside dgram's asynchronous callbacks — off the render loop's stack — so the fire-and-forget non-negotiable holds', plus S9(a) 'sendFrame performs no work proportional to status subscribers' (100 handlers, 100 sendFrame calls, zero invocations) and S9(d)'s 44-send/50ms real-socket timing lock.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S6 lets an asynchronous transport status clobber lastError for a transport that OutputManager has already torn down and replaced, corrupting the current instance's fault state.",
+          "severity": "major",
+          "evidence": "output-manager.ts:106 tears down before line 108 reassigns this.output; a dead socket can still fire callbacks afterwards.",
+          "survives": true,
+          "plan_response": "S6 verification: 'take a monotonically increasing `const gen = ++this.transportGen;` ... `if (gen !== this.transportGen) return;`', called out as 'the parity-critical detail', with a named test for a torn-down transport's late emit.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S8's universe audit runs per settings apply but nothing stops a caller applying settings at frame rate, so the audit could spam the Monitor bus.",
+          "severity": "minor",
+          "evidence": "OutputManager already carries a dedup mechanism at output-manager.ts:286 (settingsMonitorSignature) which the audit must reuse or bypass.",
+          "survives": true,
+          "plan_response": "S8 verification: 'Emit at most once per settings+topology signature by folding the check into the existing `settingsMonitorSignature` dedup (extend that signature string with `|${bad.length}`), so a 44Hz caller cannot spam.' The mechanism it names exists at output-manager.ts:286.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "The plan claims parity for a 0-coverage region on the strength of a green suite that never touched a socket.",
+          "severity": "major",
+          "evidence": "packages/io/src/artnet.test.ts and sacn.test.ts exercise only encodeArtDmx/encodeE131/sacnMulticastAddress; the classes owning the sockets have no coverage at 3708648.",
+          "survives": true,
+          "plan_response": "S1 exists precisely for this — 'Nothing may be changed in a 0%-coverage region until a net exists under it' — and known_gaps states 'A green 2968-test suite at HEAD therefore proves nothing whatsoever about bind', with S4/S5 byte-comparing the 530-byte Art-Net and 638-byte E1.31 packets against the S1 pre-change captures.",
+          "targets_step": "S1"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 5,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Make the adapter error-emission floor unconditional (separate lastErrorEmitMs from the status latch) so an error/ready flap cannot bypass the 1000ms rate limit.",
+        "Give emitStatus an injectable clock in S4/S5 and rewrite S9(b) as a single deterministic assertion, deleting the implementer-choice branch.",
+        "Name all four `implements PixelOutput` fakes (output-manager, engine-host, voice-engine-host, handlers/voice-input tests) in S3's inertness claim.",
+        "Restate S1's negative bind test as an explicitly timing-bounded assertion rather than presenting the file as sleep-free.",
+        "Declare S10's apps/web edit comment-only (or drop it) so the AGENTS.md ui-shot rule is explicitly discharged."
+      ]
+    },
+    {
+      "initiative_id": "INIT-03-io-output-resilience",
+      "variant_reviewed": "sonnet",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-03-io-output-resilience/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S6 cannot be executed as written: its governing open question carries blocks_execution true, and the behaviour it ships refuses to arm every sACN project whose map is the default 0-based one — a hard live-show regression from 'transmits to a dead group' to 'will not arm at all', decided by the plan rather than by Trent.",
+          "severity": "major",
+          "evidence": "sonnet open_questions[0] blocks_execution: true; S6 verification itself has to rewrite the pre-existing test 'keeps output monitor destination and source fields filterable' because the default fixture arms sACN on universe 0.",
+          "survives": false,
+          "repair": "Split S6 into a warn-only diagnostic (parity-preserving, landable now) and a separately-gated fail-closed switch that does not start until Trent answers the blocking question.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S6 adds `if (!checkUniverse(protocol, universe).ok) return;` to ArtNetOutput.send and SacnOutput.send — a per-universe call allocating a `{ok, error?, code?}` object on every send at 44Hz x N universes, and a silent early return, which contradicts the step's own claim that 'sendFrame's hot loop is untouched' and reintroduces exactly the undiagnosable silent drop the initiative exists to remove.",
+          "severity": "major",
+          "evidence": "S6 intent: 'ArtNetOutput.send()/SacnOutput.send() each gain a silent `if (!checkUniverse(protocol, universe).ok) return;` guard ... a plain early return with no new status emission'; send() is the render-loop transmit path (packages/io/src/artnet.ts:70-76).",
+          "survives": false,
+          "repair": "Drop the adapter-level send guard entirely (the arm-time check already covers the real path), or make it a boolean predicate with no allocation AND emit a one-shot status so the drop is never silent.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S5 clears lastError on any 'ready' status, which wipes fault state written by unrelated paths — a synchronous 'Output send failed' (output-manager.ts:226) or 'Output blackout failed' (:256) disappears from the UI the moment the transport emits ready, so the operator loses a real error the plan never intended to clear.",
+          "severity": "major",
+          "evidence": "S5 intent: \"On `state==='ready'` it clears `lastError` (silently...)\"; output-manager.ts:226 and :256 set lastError from send/blackout throws with no ownership tag.",
+          "survives": false,
+          "repair": "Track transport-origin fault state in its own field and only clear that one on ready; compose it into status().lastError rather than overwriting the shared slot.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S4 rewrites the socket lifecycle in a region with zero baseline coverage and adds only failure-path tests — there is no golden-packet loopback assertion anywhere in the plan, so the claim that transmit bytes are unchanged after replacing the ready flag with a latched status object is asserted, not evidenced.",
+          "severity": "major",
+          "evidence": "S4 verification lists only EADDRNOTAVAIL, EADDRINUSE and late-subscriber-replay tests; behaviour_parity_evidence_plan lists filter-level test runs plus `pnpm gates`, and its known_gaps concedes 'A green suite before this plan proves nothing about the resilience hole because nothing exercises the socket at all'.",
+          "survives": false,
+          "repair": "Add a loopback receive test in S4 that byte-compares the received Art-Net and E1.31 packets against encodeArtDmx/encodeE131 output, captured before the adapter edit.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S5's Monitor dedup keys on 'the message actually changed from the current lastError', which a flapping link defeats: error -> ready (lastError cleared) -> error emits a fresh row every cycle, so a partially-failing NIC at 44Hz floods the Monitor bus that the dedup was written to protect.",
+          "severity": "minor",
+          "evidence": "S5 intent: 'dedupes: only calls `monitorError` when the message actually changed from the current `lastError`'; S4 intent deliberately self-heals to ready on the next successful send.",
+          "survives": false,
+          "repair": "Add a time floor (e.g. one row per fault-code per second) on top of the message comparison, independent of the ready transitions.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "Making onStatus a required member of PixelOutput breaks every fake implementer in apps/server, so S4 cannot land green.",
+          "severity": "major",
+          "evidence": "Four `implements PixelOutput` fakes exist: apps/server/src/output-manager.test.ts:16, engine-host.test.ts:7, voice-engine-host.test.ts:7, handlers/voice-input.test.ts:15.",
+          "survives": true,
+          "plan_response": "S4's files list names all four (output-manager.test.ts, engine-host.test.ts, voice-engine-host.test.ts, handlers/voice-input.test.ts) and its verification names '`pnpm typecheck` (the mechanical backstop that catches any FakeOutput implementer this list missed)'.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "The plan claims it closes the headline stale-iface scenario, which no CI suite can actually reproduce.",
+          "severity": "minor",
+          "evidence": "Node's dgram does not surface a post-bind interface deprecation as an 'error' event on all platforms; loopback tests cannot force it.",
+          "survives": true,
+          "plan_response": "known_gaps states it outright: 'What remains genuinely unprovable by any CI suite: ... an ethernet-to-wifi interface switch mid-show ... No portable unit test can force that OS-level condition, so this plan closes every failure the dgram API DOES report and is explicit that it does not close the interface-flap case fully.'",
+          "targets_step": "S4"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 2,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 4,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Split S6: land a warn-only sACN universe diagnostic; hold the fail-closed refusal behind Trent's blocking decision.",
+        "Remove the per-send checkUniverse guard from ArtNetOutput/SacnOutput, or make it allocation-free and never silent.",
+        "Stop clearing the shared lastError on a transport 'ready'; give transport faults their own slot.",
+        "Add a golden-packet loopback byte-parity test in S4 so the wire-unchanged claim is evidenced, not asserted.",
+        "Add a per-code time floor to the Monitor dedup so an error/ready flap cannot flood the bus."
+      ]
+    },
+    {
+      "initiative_id": "INIT-03-io-output-resilience",
+      "variant_reviewed": "fable",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-03-io-output-resilience/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S2 adds PixelOutput.onStatus to packages/io/src/interfaces.ts without declaring it optional and without touching any apps/server file, so the S2 commit fails typecheck against four `implements PixelOutput` fakes — the wave cannot land green as scoped.",
+          "severity": "major",
+          "evidence": "S2 files list is packages/io only (udp.ts, interfaces.ts, artnet.ts, sacn.ts, artnet.test.ts, sacn.test.ts); the fakes are at apps/server/src/output-manager.test.ts:16, engine-host.test.ts:7, voice-engine-host.test.ts:7, handlers/voice-input.test.ts:15. S3 then calls `this.output.onStatus(...)` unconditionally, which only typechecks if the member is required.",
+          "survives": false,
+          "repair": "Declare onStatus optional and have S3 call it as `this.output.onStatus?.(...)`, or add the four fake test files to S2's file list and update each fake in that commit.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S3 clears this.lastError on a 'ready' status, destroying fault state written by the unrelated synchronous paths at output-manager.ts:226 ('Output send failed') and :256 ('Output blackout failed') — a real error vanishes from the pill the moment the socket reports ready.",
+          "severity": "major",
+          "evidence": "S3 intent: \"On state 'ready' after a previous error, clear this.lastError and emit one 'Output transport recovered' monitor row\"; lastError is a single shared slot (output-manager.ts:80, 226, 256, 267).",
+          "survives": false,
+          "repair": "Store transport status in a dedicated field and compose it into status().lastError, so 'recovered' only clears what the transport itself set.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "The claim 'latching IS the rate limiter, so no rate-limiter abstraction is added' is false for the failure mode most likely on a degraded NIC: an alternating success/failure send pattern flips the latch every frame, so each of 44 frames per second is a state change and emits — the exact Monitor flood the plan says it has designed away.",
+          "severity": "major",
+          "evidence": "S2 intent: 'EMITTED ONLY WHEN IT DIFFERS FROM THE LATCH — so a 44Hz stream of identical EADDRNOTAVAIL send failures produces one emission'; the reasoning holds only for an unbroken run of identical failures, and S3 forwards every emission it receives to monitorError.",
+          "survives": false,
+          "repair": "Add a minimum interval (e.g. 1s per fault code) on the error side of BoundUdpSocket's emit, independent of the latch, and require N consecutive successes before emitting recovery.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S1 exports generic IPv4 codecs out of the PixLite controller-client namespace, so packages/io's public surface gains `ipToInt`/`intToIp` from a module whose own doc scopes it to 'PixLite Mk3 controller client (HTTP-only v1)' — a placement that will read as accidental to the next caller and undoes the intent of duplicated-code-0012's own interface delta.",
+          "severity": "minor",
+          "evidence": "packages/io/src/pixlite/index.ts header: 'PixLite Mk3 controller client (HTTP-only v1). A deep module...'; it re-exports by explicit named lists, so the plan's `export *` fallback does not apply and a named re-export must be added there.",
+          "survives": false,
+          "repair": "Move the pair to packages/io/src/net/ipv4.ts (one file move, still one surviving definition) so the export sits where its name says it does.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S2 rewrites both adapters onto a shared BoundUdpSocket in a region with zero baseline coverage, and the only parity evidence is a loopback comparison against the pure encoders — which cannot observe reuseAddr, setBroadcast, setMulticastInterface or setMulticastTTL, i.e. precisely the socket options the collapse must reproduce.",
+          "severity": "major",
+          "evidence": "packages/io/src/sacn.ts:93-102 (reuseAddr + setMulticastInterface + setMulticastTTL inside a bare catch) versus packages/io/src/artnet.ts:48-56 (setBroadcast); loopback unicast exercises none of them.",
+          "survives": true,
+          "plan_response": "known_gaps (b) names exactly this: 'what loopback cannot reach — setMulticastInterface/TTL on a real NIC, setBroadcast on the wire, and the actual ethernet-to-wifi iface-stale scenario — needs a one-time manual rig check before sign-off: arm output against the PixLite and confirm pixels', and makes that check the acceptance scenario.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S4 leaves a sACN rig on universe 0 transmitting into a dead multicast group and only prints a row, so the initiative's universe finding is not actually closed.",
+          "severity": "minor",
+          "evidence": "S4 intent: 'Warn-only: packets still transmit exactly as at baseline (parity-preserving)'.",
+          "survives": true,
+          "plan_response": "The choice is deliberate, parity-argued and escalated: open_questions[0] asks 'Should a sACN map containing universe 0 hard-block arming (refuse + error) instead of warn-only?' with owner trent, and open_questions[1] escalates the protocol-aware buildDmxMap alternative as a hardware call.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S2 is a single commit that creates udp.ts and rewrites both adapters, making rollback all-or-nothing on the riskiest change in the initiative.",
+          "severity": "minor",
+          "evidence": "fable sequencing [[S1],[S2],[S3],[S4]] — one wave per step, S2 marked risk high.",
+          "survives": true,
+          "plan_response": "rollback_strategy addresses it: 'S2 reverts as one commit (udp.ts is imported only by artnet.ts/sacn.ts, and onStatus's only consumer is S3, which must be reverted first)', and S3/S4 are server-local and revert independently — so the blast of an S2 revert is bounded and stated.",
+          "targets_step": "S2"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 3,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 2,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Declare PixelOutput.onStatus optional (and call it optionally in S3) or bring the four FakeOutput test files into S2's scope, so the commit typechecks.",
+        "Give transport status its own fault field instead of clearing the shared lastError on recovery.",
+        "Add an explicit time floor on error emissions in BoundUdpSocket; the latch alone does not bound a flapping link.",
+        "Place the shared ipToInt/intToIp in packages/io/src/net/ipv4.ts rather than exporting them from the PixLite namespace."
+      ]
+    }
+  ]
+}

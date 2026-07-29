@@ -1,0 +1,268 @@
+{
+  "artifact": "08-refutations/INIT-02-store-decomposition.opus",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-02-store-decomposition/opus",
+    "model": "claude-opus-5[1m]",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-02-store-decomposition",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-02-store-decomposition/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S12's diff-shape gate is unsatisfiable as written: `git diff -U0 | rg '^[+-]' | rg -v 'store\\.library\\.'` can never print nothing, because every REMOVED line in a rename from `store.newShow()` to `store.library.newShow()` contains `store.newShow(` and matches no `store\\.library\\.` pattern, so the filter emits the entire minus-side of a 323-hit diff. The single largest test-retarget commit therefore ships with a verification step that either always fails or gets silently waived — exactly where the plan itself says green is weakest evidence.",
+          "severity": "major",
+          "evidence": "opus.json S12 verification: \"`git diff -U0 | rg '^[+-]' | rg -v 'store\\.library\\.'` prints nothing outside the renamed accessor paths\". Contrast S8, whose filter DOES whitelist the old member names (`\\.activeSectionId|\\.sectionClipboard|...`) and so can pass.",
+          "survives": false,
+          "repair": "Give S12 the same whitelist shape S8 already has: `rg -v 'store\\.library\\.|store\\.(activeShowId|songs|songRefs|activeSongId|songLibrary|shows|activeShow|activeSong|resolvedView|resolvedSongs|songLibraryList|newShow|openShow|saveShow|saveShowAs|renameShow|deleteShow|closeShow|exportSongToLibrary|importSongReference|removeSongReference|detachSongReference|renameLibrarySong|deleteLibrarySong|showsUsingSong|setActiveSong|createSong|renameSong|duplicateSong|removeSong)\\b'. Better still, make it a normalized-file comparison (sed the old paths to the new ones in the pre-image and require a zero diff), which cannot rot as the member list changes.",
+          "targets_step": "S12"
+        },
+        {
+          "claim": "S1's instrument is non-hermetic: `new TriggerLab()` uses the constructor's DEFAULT client factory, which builds a real `WSClient({ pin: readStoredPin(), hostToken: readHostToken() })` and opens a socket. Every existing store suite constructs `new TriggerLab(fakeClient)` precisely to avoid that. The surface/ratchet test that every later step reads for its parity proof would be the one flaky, network-touching test in the suite.",
+          "severity": "minor",
+          "evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:876-879 — `constructor(makeClient: () => WSClient = () => new WSClient({ pin: readStoredPin(), hostToken: readHostToken() }))`; apps/web/src/lib/trigger-lab/store.shows.test.ts:67 — `const store = new TriggerLab(fakeClient);`. opus.json S1 intent: \"constructs `new TriggerLab()`\".",
+          "survives": false,
+          "repair": "S1 must construct with the same fake client the other store suites use (`new TriggerLab(fakeClient)`), and the step text should say so explicitly since the whole plan's parity evidence hangs off this file.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S21's quantifier is wrong in the lossy direction: `saved()` when AT LEAST ONE local write succeeded means a quota failure on `writeStoredSongLibrary` while `writeStoredLibrary` succeeds still shows 'Saved' — and the song library is exactly the payload most likely to be the one that tips over quota. The plan closes the both-failed hole and leaves a partial-loss hole open under the same lie.",
+          "severity": "major",
+          "evidence": "opus.json S21 intent: \"call `this.saveStatusCtl.saved()` only when at least one local write succeeded, else `failed()`\". The two writers are independent (shows-controller.svelte.ts:88-106) and are called back-to-back in scheduleSave (store.svelte.ts:1296-1308), so their results are independent failure events.",
+          "survives": false,
+          "repair": "Require ALL attempted local writes to return ok before `saved()`; on a mixed result call `failed()` naming which library failed. Add a store.persistence.test.ts case with only the song-library setItem throwing.",
+          "targets_step": "S21"
+        },
+        {
+          "claim": "The initiative's highest-severity finding (divergent-change-0002, critical) is left ~10% resolved — the store ends at ~3,250 lines with node/graph authoring, undo, clipboard, WS link, persistence, transport, backups and OSC still converging on it — and the plan's only closing artifact is a comment in a test file header, not a tracked follow-on.",
+          "severity": "minor",
+          "evidence": "opus.json S22 intent: the remaining axes list \"is the input to a follow-on initiative, not a\" [step here]; open_questions[2] states the plan \"deliberately STOPS after two facades\". Phase 9 has no mechanism to pick up a scorecard living in a test file header.",
+          "survives": false,
+          "repair": "S22 should emit a named follow-on initiative record (id, the enumerated remaining change axes, the measured post-migration LOC/member numbers) into the review artifacts, not only into the test file's header comment — otherwise the critical finding closes with no owner.",
+          "targets_step": "S22"
+        },
+        {
+          "claim": "The plan's parity story rests on a green suite for regions with zero coverage — 19 of 22 touched .svelte files have no test — and the ratchet cannot prove a member was removed rather than relocated behind a differently-named accessor.",
+          "severity": "major",
+          "evidence": "The claim is the standard 0-coverage attack; opus.json's own known_gaps enumerates the 19 uncovered components by name and states what replaces the missing tests.",
+          "survives": true,
+          "plan_response": "behaviour_parity_evidence_plan.known_gaps (1): \"19 of the 22 .svelte files this plan edits have zero test importing them — verified for TopBar, ObjectsView, ... What replaces the missing tests is the diff shape itself: every edit to those files in S3-S13 is a pure accessor-path rename with no logic touched\"; plus S2, which closes the four missing ui-shot presets and records a `--strict` baseline every later step is compared against, and known_gaps (4), which explicitly refuses to claim the ratchet proves separation."
+        },
+        {
+          "claim": "Twenty-two single-step waves each gated on a full `pnpm gates` run cannot land green because the intermediate states strand callers between an accessor deletion and its retarget.",
+          "severity": "minor",
+          "evidence": "Attempted against the sequencing array [['S1','S2'],['S3'],...,['S22']] and the S6/S10 additive-publish steps; the shape is add-accessor -> migrate production -> migrate tests -> delete, so both paths exist at every boundary.",
+          "survives": true,
+          "plan_response": "rollback_strategy: \"the plan is deliberately shaped so there are DURABLE RESTING STATES: after S6 and after S10 the tree carries both the forwarders and the new collaborator accessor, so a migration abandoned mid-way (S7 or S11 landed, S9/S13 not) is a perfectly shippable tree\"; and S6/S10 verification requires `pnpm gates` green with ZERO test-file edits."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 5,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 5,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Fix S12's diff-shape gate so it whitelists the OLD member names as well as `store.library.` (or switch to a normalized-file comparison); as written it can never pass.",
+        "S1 must construct `new TriggerLab(fakeClient)`, not `new TriggerLab()`, so the surface/ratchet instrument does not open a real WebSocket.",
+        "S21 must gate `saved()` on ALL local writes succeeding, not at least one, and add a mixed-result (song-library-only quota failure) test case.",
+        "S22 must emit a tracked follow-on initiative for the remaining change axes rather than recording them only in a test file header comment."
+      ]
+    },
+    {
+      "initiative_id": "INIT-02-store-decomposition",
+      "variant_reviewed": "sonnet",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-02-store-decomposition/sonnet",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S8 and S9 are literally unexecutable: the plan tells the implementer to choose the public name at the point of highest cost and never decides. `store.shows` is ALREADY a `{id;name}[]` getter and `store.sections` is ALREADY a `Section[]` getter, so publishing the controllers under a facade whose property is also `shows`/`sections` collides — and the step text says 'rename the view-list getter to `library.shows.list` or keep it as `library.showsList` — pick one and use it consistently'. Two implementers running S8 and S9 produce two incompatible public surfaces across ~40 files.",
+          "severity": "major",
+          "evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:577 `get shows(): { id: string; name: string }[]` and :925 `get sections(): Section[]`. sonnet.json S8 intent contains the verbatim bracketed indecision, repeated in S9 (\"via a `.list` sub-accessor or a rename, avoid the same collision noted in S8\").",
+          "survives": false,
+          "repair": "Decide the names in the plan, before execution, exactly as the opus variant does (publish under `library`/`arrangement`, which are free, and leave `shows`/`sections` alone until the forwarders that own them are deleted). The naming open question is already marked blocks_execution=true — resolve it into the step text rather than into the implementer's lap.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S10 cannot land green as one step: it moves the graph/node/edge/undo/clipboard document — the render-feeding state — off TriggerLab across ~100 consumer files in a single commit, with no durable resting state and no strangler intermediate. Its own rollback answer is 'revert the single commit wholesale', which means a half-migrated tree is unshippable, and its own open question asks whether the step belongs in this initiative at all.",
+          "severity": "major",
+          "evidence": "sonnet.json S10 intent: \"retarget every non-test caller across apps/web/src/lib/app/views, docks, and inspectors -- realistically most of the app's authoring UI\"; rollback_strategy: \"S10 is the one step large enough that a genuinely partial land is a real risk ... the correct move is to revert S10's single commit wholesale\"; open_questions[0] asks whether S10 should ship at all in this pass. estimated_loc 4900 with ~3000 in this one step.",
+          "survives": false,
+          "repair": "Split S10 into the same add-accessor -> migrate production -> migrate tests -> delete-forwarders strangler used for the controllers, one authoring cluster at a time (graphs/nodes, then undo/clipboard, then wiring), or cut it from this initiative and ticket it separately once the two facades are proven — the option the plan's own open question already offers.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S5-S9 reproduce the exact defect this initiative exists to correct: DeviceLinkStore and LibraryStore are new classes with exactly one construction site, zero behaviour of their own, and no second implementation — they hold references to controllers that already exist. By the deletion test the findings applied, they are one-adapter seams, and they add a third level to every call path (`store.device.controllerTest.setTestData`) with no substitutability bought.",
+          "severity": "major",
+          "evidence": "sonnet.json S5: \"Create ... DeviceLinkStore, constructed once by TriggerLab as `readonly device = new DeviceLinkStore(...)` and owning `readonly controllerTest = new ControllerTest(host)` (host wiring unchanged, just relocated)\". speculative-generality-0001's criterion is one-implementation-seams; the verdict's refuter reasoning applies verbatim to the new wrappers.",
+          "survives": false,
+          "repair": "Drop the DeviceLinkStore/LibraryStore wrappers for S5-S9 and publish the five controllers directly on TriggerLab (`store.controllerTest`, `store.midi`, `store.controllerMonitor`, `store.library`, `store.arrangement`). Introduce a facade only if and when it acquires behaviour of its own — otherwise it is a forwarder layer with an extra dot.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S10's machine-readable blast radius is five files while its own prose says ~100 consumer files, and it lists render.ts among the files it touches while asserting it will not touch per-frame logic. That is the exact combination AGENTS.md's deterministic-render-loop non-negotiable exists to catch.",
+          "severity": "major",
+          "evidence": "sonnet.json S10 files: ['authoring-store.svelte.ts','store.svelte.ts','store/graph-wiring.ts','store/graphs.ts','render.ts'] vs the intent's \"~100+ consumer files\" and the verification's \"this step must not touch render.ts's actual per-frame logic, only where TriggerLab sources the data render.ts already consumes\".",
+          "survives": false,
+          "repair": "Enumerate the real file set (svelte-check output at the time of planning, as the opus variant does for its steps) and either remove render.ts from the touched set or state precisely which lines change and how sim-determinism.test.ts covers them.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "There is no baseline instrument, so the plan's own headline claim ('339 members shrinking to a ~300-line composition root') is unverifiable at every checkpoint. `pnpm typecheck` proves no caller was stranded; it cannot prove a forwarder was removed rather than relocated under a new name, nor detect a member silently ADDED during a 300-line test retarget.",
+          "severity": "minor",
+          "evidence": "sonnet.json behaviour_parity_evidence_plan.checks lists only gates/typecheck/named suites/ui-shot; S9's closest thing is a manual 'grep to confirm zero remaining forwarder members', run once at the end rather than as a checked-in ratchet.",
+          "survives": false,
+          "repair": "Add a Step 0 surface-inventory test (constructed with the fake client) asserting an EXPECTED_MEMBERS array plus a LOC cap, so each forwarder-deletion step shows an exact reviewable removal count — the instrument the opus variant lands as its S1.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S4 adds a new user-visible failure affordance ('Saving failed -- export your show') to SaveIndicator.svelte without touching apps/web/src/lib/styleguide/ or regenerating docs/design-system.html, which AGENTS.md requires in the same change for anything new and reusable.",
+          "severity": "minor",
+          "evidence": "sonnet.json S4 files list ends at 'apps/web/src/lib/app/chrome/SaveIndicator.svelte' — no styleguide entry, no `pnpm design-system`. AGENTS.md: \"anything new and reusable gets added to the styleguide entry (apps/web/src/lib/styleguide/ ...) and the file regenerated in the same change\".",
+          "survives": false,
+          "repair": "Add apps/web/src/lib/styleguide/ (an error-state SaveIndicator sample) and a `pnpm design-system` regeneration to S4's files and verification.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "The autosave fix repeats the finding's own error of showing 'Saved' when the server link merely happens to be open, since `client.send` is unacked.",
+          "severity": "minor",
+          "evidence": "Attempted against S4's scheduleSave rule; store.svelte.ts:1534-1536 shows syncShowToServer returns early when link !== 'open' and the send carries no ack.",
+          "survives": true,
+          "plan_response": "S4 intent: \"In scheduleSave, call `saveStatusCtl.saved()` only when the local write succeeded; call `saveStatusCtl.error(...)` when it failed, naming the cause.\" The rule is local-write-only, so the unacked-send trap is avoided by construction."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 3,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 2,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Resolve the `library.shows` / `library.showsList` and `sections` naming collisions IN the plan text before execution; S8/S9 as written are ambiguous across ~40 files.",
+        "Split or defer S10 (AuthoringStore, ~3000 LOC / ~100 files in one commit) into strangler-shaped sub-steps with durable resting states.",
+        "Drop the DeviceLinkStore/LibraryStore wrapper classes for S5-S9 and publish the controllers directly, so the fix does not recreate a one-implementation seam.",
+        "Enumerate S10's real file set from svelte-check and justify or remove render.ts, given the deterministic-render-loop non-negotiable.",
+        "Add a checked-in store surface/member inventory instrument before the first forwarder deletion, so removals are provable rather than asserted.",
+        "Add the styleguide entry plus `pnpm design-system` regeneration to S4's SaveIndicator error affordance."
+      ]
+    },
+    {
+      "initiative_id": "INIT-02-store-decomposition",
+      "variant_reviewed": "fable",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-02-store-decomposition/fable",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "Un-exporting the *Host interfaces breaks store.svelte.ts, which IMPORTS two of them and uses them as `satisfies` constraints on its inline host literals. Removing the export forces deleting the `satisfies` clauses, which silently removes the excess-property and shape checking on those literals — a real loss of static parity the plan never names, on the exact objects that wire the controllers.",
+          "severity": "major",
+          "evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:77 `type ShowsControllerHost,`, :79 `import { SectionsController, type SectionsControllerHost }`, :397 `} satisfies SectionsControllerHost);`, :538 `} satisfies ShowsControllerHost);`. fable.json S4/S5 intent: \"un-export SectionsControllerHost\" / \"un-export ShowsControllerHost\".",
+          "survives": false,
+          "repair": "Leave the Host interfaces exported (the export costs nothing once the forwarders are gone), or keep the type local to the controller file AND keep a `satisfies` by exporting it as `@internal`. Deleting the `satisfies` clauses is not an acceptable side effect of an interface-count cosmetic.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S1, S2 and S3 do not compile as written: they add `get controllerTest()`, `get monitor()` and `get midi()` to TriggerLab while the private fields of exactly those names still exist, which is a duplicate class member in TypeScript.",
+          "severity": "minor",
+          "evidence": "apps/web/src/lib/trigger-lab/store.svelte.ts:490 `private readonly controllerTest = new ControllerTest({`, :481 `private readonly monitor = new ControllerMonitor({`, :805 `private readonly midi = new MidiController({`. fable.json S1: \"expose `get controllerTest(): ControllerTest` on TriggerLab\"; S2: \"add `get monitor(): ControllerMonitor`\"; S3: \"add `get midi(): MidiController`\".",
+          "survives": false,
+          "repair": "Say 'drop `private` from the existing field' rather than 'add a getter' for these three. Also rename `monitor` -> `controllerMonitor`: a public `store.monitor` sits beside the unrelated `monitorEvents`/`monitorTypeFilter` trigger-log cluster and will be misread.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S8 deletes `canConnect`/`canReconnect` outright, but graph-wiring.test.ts calls them 53 times — so the plan's smallest-looking step forces rewriting 53 assertion call shapes into `classify*(...) === null` at the same time as the signature change to WireEnds, with no characterization pass first and no diff-shape rule. Its own verification is self-contradictory: it demands `rg -n \"canConnect|canReconnect\" apps/web/src` return nothing while the step's file list contains the test file that must then be rewritten wholesale.",
+          "severity": "major",
+          "evidence": "`rg -c \"canConnect|canReconnect\" apps/web/src/lib/trigger-lab/store/graph-wiring.test.ts` = 53. fable.json S8 verification: \"rg -n \\\"canConnect|canReconnect\\\" apps/web/src returns nothing outside the test file history\".",
+          "survives": false,
+          "repair": "Keep `canConnect`/`canReconnect` as the boolean verdicts (they are the tested surface and cost 2 lines), change only their parameter shape to WireEnds, and land the reverse-drag characterization cases BEFORE the signature change — the two-commit shape the opus variant uses at S18/S19. Deleting two 1-line wrappers is not worth churning 53 assertions in the same commit as a positional-to-named transposition.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S8's WireEnds declares `toPort?: string`, but the real parameter type is the `ToPort` union threaded into `directionOk`. Widening to `string` either fails typecheck at the call into `directionOk` or forces a cast that erases the port-kind check that distinguishes a `mod` input from a flow input.",
+          "severity": "minor",
+          "evidence": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts:74-80 `toPort?: ToPort` in classifyConnection, consumed by `directionOk(from.kind, to.kind, toPort)`. fable.json S8: \"`export interface WireEnds { from: string; to: string; fromPort?: string; toPort?: string }`\".",
+          "survives": false,
+          "repair": "Declare `toPort?: ToPort` in WireEnds (both the sonnet and opus variants get this right).",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S9 re-introduces the lie the finding is about: it calls `saved()` when the local writes succeeded OR `this.link === 'open'`. The WS push is fire-and-forget with no ack, so 'link open' is not evidence of persistence; a user whose localStorage is full but whose socket is up still sees 'Saved' with no server confirmation that anything landed.",
+          "severity": "major",
+          "evidence": "fable.json S9 intent: \"calls saveStatusCtl.saved() only when the local writes returned true OR the server sync path actually ran (this.link === 'open')\". store.svelte.ts:1534-1536 shows syncShowToServer only early-returns on a closed link — nothing downstream confirms delivery.",
+          "survives": false,
+          "repair": "Gate `saved()` on the local writes alone (all of them, not any), as sonnet's S4 does; if server-confirmed saving is wanted, that needs an ack on setShowLibrary/setSongLibrary, which is a protocol change outside this initiative.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S1-S5's file lists name zero test files, yet the large majority of the ~580 store-qualified call sites being retargeted live in test files (store.shows/sections/controller/cc/echo-gate/song-library/server-library/clipboard/graphs/persistence suites). The plan's verification asks for suites 'green with only mechanical repoints' but supplies no mechanical check of that claim — retargeted tests are the cheapest thing in the repo to accidentally weaken, and the plan lands all five retargets in five commits that each mix production and test churn.",
+          "severity": "major",
+          "evidence": "fable.json S1-S5 files each end with the placeholder \"apps/web/src/lib/app/ (call sites enumerated by pnpm typecheck)\" and name no *.test.ts; S4's verification says store.sections.test.ts is \"green unmodified except mechanical store.sections.* repoints\" with no check backing 'mechanical'. store.shows.test.ts alone constructs the store 3x in its first 30 lines and is one of eight affected suites.",
+          "survives": false,
+          "repair": "Split each controller step into a production-retarget commit (forwarders alive, so red = real break) and a test-retarget commit carrying a diff-shape gate (`git diff --numstat` balanced per file; `git diff -U0` shows no `expect`/`it`/`describe`/fixture text change), and name the actual test files per step.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S9 adds a new user-visible 'error' save state and tooltip to the TopBar indicator without a styleguide entry or a design-system regeneration, which AGENTS.md requires in the same change.",
+          "severity": "minor",
+          "evidence": "fable.json S9 files: save-status.ts, save-status.test.ts, store.svelte.ts, shows-controller.svelte.ts, store.autosave.test.ts — no apps/web/src/lib/styleguide/, no `pnpm design-system`, and no ui-shot of the indicator's error state in its verification (only a live-console smoke).",
+          "survives": false,
+          "repair": "Add the styleguide sample plus `pnpm design-system` and a `pnpm ui-shot` of the error indicator to S9.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "The plan's refusal to build the three-facade split leaves divergent-change-0002 (critical) unaddressed, and 'delete the forwarders' does not by itself stop unrelated concerns converging on store.svelte.ts.",
+          "severity": "minor",
+          "evidence": "Attempted against the summary's explicit rejection of the facade architecture; the counter-argument is that the finding's own interface_delta says 'increases'.",
+          "survives": true,
+          "plan_response": "summary: \"We explicitly REJECT the additive three-facade architecture proposed in divergent-change-0002 (its own interface_delta says 'increases') ... re-measure churn before adding any new layer\", and open_questions[1] puts the re-measurement question to Trent as a follow-on initiative rather than silently dropping it."
+        },
+        {
+          "claim": "The sequencing pairs steps that share a mutation seam: wave 2 runs S2 and S7 concurrently and wave 3 runs S3 and S6 concurrently, all inside apps/web.",
+          "severity": "minor",
+          "evidence": "Checked the file lists: S2 touches store.svelte.ts + controller-monitor.svelte.ts while S7 touches only apps/web/src/lib/app/shell-{nav,store}*.ts; S3 touches store.svelte.ts + midi-controller.svelte.ts while S6 touches store/library-sync*.ts + shows-controller.svelte.ts.",
+          "survives": true,
+          "plan_response": "The sequencing array [['S1'],['S2','S7'],['S3','S6'],['S4'],['S5'],['S8'],['S9']] is genuinely file-disjoint within each wave, and rollback_strategy states \"later waves touch disjoint files from earlier ones by construction\" — the pairings hold on inspection of the per-step `files` lists."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 2,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 2,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Stop un-exporting ShowsControllerHost/SectionsControllerHost, or the `satisfies` checks at store.svelte.ts:397 and :538 are lost along with them.",
+        "Rewrite S1/S2/S3 to drop `private` from the existing controller fields instead of adding same-named getters (duplicate member = compile error), and rename `monitor` to `controllerMonitor`.",
+        "Keep canConnect/canReconnect (53 test call sites) and change only their parameter shape; land reverse-drag characterization cases in a separate commit BEFORE the WireEnds transposition.",
+        "Declare WireEnds.toPort as `ToPort`, not `string`.",
+        "Gate saved() on the local writes alone — `link === 'open'` is not evidence of persistence because the WS push is unacked.",
+        "Name the real test files per controller step and split each retarget into production and test commits with a mechanical diff-shape gate on the test commit.",
+        "Add a styleguide entry, `pnpm design-system`, and a ui-shot of the new error save state to S9."
+      ]
+    }
+  ]
+}

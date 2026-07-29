@@ -1,0 +1,436 @@
+{
+  "initiative_id": "INIT-01-single-render-stack",
+  "variant": "synthesis",
+  "provenance": {
+    "phase": "9",
+    "lane": "synthesis/INIT-01-single-render-stack",
+    "model": "claude-opus-5[1m]",
+    "effort": "high"
+  },
+  "summary": "Opus's strangler skeleton — fifteen independently-green commits, evidence before deletion — with the store seam resolved fable's way, because that is precisely where both reviewers broke opus. Opus proposed a new core ProjectStore to carry Engine's mutator half; the opus reviewer landed two majors on it: after S7 every kit message would STILL be applied twice (applyClientMessage + propagateToVoiceHost), so divergent-change-0001's actual mechanism survives the initiative, and a separate store object destroys the shared-`project0`-by-reference invariant that main.ts:157-163 documents as what makes autosave correct. Fable's shape has no such seam: there is exactly ONE project object, owned by VoiceEngineHost, and propagateToVoiceHost is the only reducer — so ProjectStore, applyClientMessage's widened ProjectMutations parameter, and the fourteen orphaned mutators all disappear from this plan, and with them three landed attacks. What survives from opus is everything the reviewers scored 4s on: the testable engine-mode function, the differential parity harness that licenses every later deletion, the golden-fixture treatment of the sim migration with its three enumerated behaviour deltas (the bar both reviewers called unattainable in sonnet's and fable's versions of the same step), the split of pool-adoption from envelope-tick adoption, the honest known_gaps, and the deliberate LIFO revert boundaries. Grafted from fable: the single-reducer collapse, VoiceEngineHost.setTransport (no variant except fable gave transport a voice-side writer, and the fable reviewer landed that as a major against opus), the protocol-variant deletion, and the math.ts noise consolidation that opus listed under findings_addressed and then refused to implement. Repaired against reviewers on all three variants: engine/transport.ts is KEPT (voice-engine-host.ts:2/:484 calls advanceTransport — the attack that killed sonnet's and fable's deletion sets), handlers/projects.ts is brought into the retarget (fable's omission left project loading a silent no-op), the fourteen dead composition messages die together with their protocol variants in one Trent-gated commit rather than leaving a wave of decoded-but-ignored messages, the parity harness gets a named retirement step so the core deletion's 'zero edits outside deletions' bar is achievable, the src-tauri edit gets a cargo check because `pnpm gates` is typecheck+test only, and the unresolved-id diagnostic rides the EXISTING VoiceDiagnostic union rather than widening the RenderEngine interface (which would have obliged createNullEngine and left the browser preview with no sink). Sonnet's skeleton is not used: the opus reviewer rated it unsound, its one blocks_execution question rested on a premise both reviewers independently disproved (LayersDock.svelte sends nothing — verified again here: zero ws sends in the file), and its full-RenderEngine-in-the-browser step drew a fatal.",
+  "findings_addressed": [
+    "divergent-change-0001",
+    "divergent-change-0003",
+    "duplicated-code-0004",
+    "duplicated-code-0011",
+    "resilience-hole-0011"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Extract the engine-mode decision into a testable pure function (default unchanged)",
+      "intent": "Today `const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice'` sits inline at apps/server/src/main.ts:72 inside a side-effecting entry module no test can import, so nothing can assert what the shipped default IS. Add apps/server/src/engine-mode.ts exporting `type EngineMode = 'voice' | 'legacy'` and `resolveEngineMode(env: NodeJS.ProcessEnv): EngineMode`, reproducing today's semantics exactly (only the literal 'voice', case-insensitive, selects voice; unset or anything else -> 'legacy'). main.ts:72 becomes `const VOICE_MODE = resolveEngineMode(process.env) === 'voice';`. Zero behaviour change — this step exists so S7 is provable rather than asserted.",
+      "files": [
+        "apps/server/src/engine-mode.ts",
+        "apps/server/src/engine-mode.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "low",
+      "verification": "New apps/server/src/engine-mode.test.ts asserts the full truth table: unset -> 'legacy', '' -> 'legacy', 'voice' -> 'voice', 'VOICE' -> 'voice', 'legacy' -> 'legacy', 'garbage' -> 'legacy'. `pnpm gates` green with test count = this step's parent count + 6."
+    },
+    {
+      "id": "S2",
+      "title": "Differential parity harness: every structural ClientMessage through both stacks, Projects deep-equal",
+      "intent": "The evidence gate that licenses every later deletion, and the answer to the opus reviewer's attack on fable's collapse-with-no-harness. New apps/server/src/engine-parity.test.ts builds TWO independent `defaultProject()` clones, drives one through `applyClientMessage(new Engine(pA), msg, 0)` and the other through `propagateToVoiceHost(new VoiceEngineHost(pB), msg)` for every structural discriminant the shipped client actually sends (verified by grep: setKitTransform, setKitGlobal, setHoopConfig, setKitNodeLayout, setKitOutputs, setOutput, setInputMap, setTransport), asserting `expect(pA).toEqual(pB)`. Where the paths disagree TODAY the test asserts the divergence explicitly under a `// KNOWN DRIFT (S5 closes this)` comment, so the harness lands GREEN and records the drift rather than lying about it. Two drifts are already known by reading and must appear as KNOWN DRIFT here: propagateToVoiceHost's setKitTransform arm drops hoopSpacingMm and diameterIn (voice-input.ts:139-147 vs input-router.ts:171-185), and propagateToVoiceHost has no setTransport arm at all. This file is explicitly TEMPORARY scaffolding; S12 retires it — that retirement is named now so the deletion steps can be edit-free later.",
+      "files": [
+        "apps/server/src/engine-parity.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm gates` green. The harness must FAIL against a gutted arm or it proves nothing: temporarily delete the `setHoopConfig` case from propagateToVoiceHost, confirm red, restore. Fixture completeness is the second bar — the historical pixelsPerHoop drop survived precisely because no fixture set that field, so every fixture must set EVERY optional field of its message (assert this by construction: build each message from a full-field literal, not a partial)."
+    },
+    {
+      "id": "S3",
+      "title": "Alias sim's duplicated Preset/Bus/Polyphony/ParamSpec to core voice types",
+      "intent": "duplicated-code-0004. apps/web/src/lib/trigger-lab/sim.ts:167-179 re-declares `Preset` and `Bus` byte-identically to packages/core/src/voice/types.ts:137-149, sim.ts:133 re-declares `Polyphony`, and sim.envelopes.ts:31-44 re-declares `ParamSpec` as a comment-for-comment copy of types.ts:102-115. sim.envelopes.ts already sets the in-repo precedent (`export type Envelope = voice.Envelope;`). Replace each local declaration with `export type X = voice.X;`. `EffectDef` is NOT byte-identical (the refuter confirmed the web adds gallery metadata at sim.ts:146-157), so it becomes an intersection: `export type EffectDef = voice.EffectDef & { category?: EffectCategory; description?: string; tags?: readonly EffectTag[]; playType?: PlayType; deprecated?: { replacedBy: string; note?: string } }` — the shared core is imported, only the gallery tail stays local. Delete the 'the shapes must stay byte-identical' hand-sync invariant comment at core/voice/types.ts:117-149: the compiler enforces it now. The `./sim` and `./sim.envelopes` export surfaces keep every name, so no importer changes.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/sim.ts",
+        "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+        "packages/core/src/voice/types.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm typecheck` is the acceptance test, not a formality: any structural drift between the web shapes and core's now fails to compile, which is the whole point. Then `pnpm gates` green with an UNCHANGED test count — this is a type-only change, and a changed count means something ran differently."
+    },
+    {
+      "id": "S4",
+      "title": "One noise implementation: hash2/fade/valueNoise/fbm move into packages/core/src/math.ts",
+      "intent": "duplicated-code-0011, grafted in because the opus variant listed this finding under findings_addressed and then declined to implement it — the opus reviewer landed that as an inconsistency, and the step is a file-disjoint 60-LOC leaf that costs the strangler nothing. hash2, fade and valueNoise are byte-identical at packages/core/src/canvas/elements.ts:30-53 and packages/core/src/effects/impl/perlin-clouds.ts:7-31; the fbm bodies differ only in parameterised-vs-hardcoded octaves (the refuter confirmed equivalence at octaves=3). Two definitions of the same hash feeding two deterministic render paths is a live drift hazard. Move the quartet into math.ts (already home to clamp01/lerp/wrap/mulberry32/hashString) with `fbm(x, y, octaves)`; delete both private copies; perlin-clouds calls `fbm(x, y, 3)`. effects/impl/fire.ts's hash2 has a DIFFERENT body (imul avalanche) and is deliberately untouched. Risk is rated medium, not high: it is in packages/core, but its failure mode is fully fenced by per-pixel assertions — both reviewers landed the 'inverted risk ratings' attack on sonnet for rating this high while rating a preview rewrite medium, and risk here is a scheduling signal, not a genuflection.",
+      "files": [
+        "packages/core/src/math.ts",
+        "packages/core/src/canvas/elements.ts",
+        "packages/core/src/effects/impl/perlin-clouds.ts"
+      ],
+      "risk": "medium",
+      "verification": "`pnpm gates` green — the canvas determinism suite and the effect conformance batches (batch-a..e, effects.test.ts) assert per-pixel output, so any formula drift during the move fails immediately. `grep -rn '127.1' packages/core/src` returns exactly TWO hits after the move: math.ts's definition and fire.ts's unrelated constant if present — confirm by name that no second `valueNoise` definition survives (`grep -rn 'function valueNoise' packages/core/src` returns one hit)."
+    },
+    {
+      "id": "S5",
+      "title": "Close the pinned divergences and give the voice stack transport + project-load authority",
+      "intent": "Fix the drift while BOTH stacks still exist, so the fixes are diffable against the legacy reference and cannot later be blamed on a deletion. Three parts, all forced by landed attacks. (a) propagateToVoiceHost's setKitTransform arm (voice-input.ts:139-147) silently drops `hoopSpacingMm` and `diameterIn`, both forwarded by the legacy arm (input-router.ts:178-179) and both already accepted by VoiceEngineHost.setKitTransform's signature (voice-engine-host.ts:204-208) — add the two spread lines. (b) TRANSPORT AUTHORITY, the fable reviewer's major against opus: the web really does send setTransport (4 sites in apps/web/src), propagateToVoiceHost has no arm for it, and the voice loop reads its OWN `this.project.composition.transport` via advanceTransport at voice-engine-host.ts:484 — so today a BPM edit reaches the voice loop only through the shared project0 reference, which splits on the first adoptPatch (:278-288 rebuilds this.project by spread and carries composition by reference from the OLD object). Add `VoiceEngineHost.setTransport(partial)` writing project.composition.transport, and a `setTransport` arm in propagateToVoiceHost. (c) LOAD AUTHORITY, the fable reviewer's major against fable: handlers/projects.ts:44 calls `deps.host.engine.setProject(loaded)` and never touches the voice host, so in voice mode loading a project rebroadcasts a `state` describing a kit the live engine is not rendering. Add `VoiceEngineHost.adoptProject(project: Project)` — adoptPatch's whole-project sibling, carrying composition (hence transport) as well as kit/inputMap/output, followed by reloadKit — add `voiceHost` to ProjectHandlerDeps, and call it in the loadProject path. Then flip the corresponding KNOWN DRIFT assertions in engine-parity.test.ts to agreement.",
+      "files": [
+        "apps/server/src/handlers/voice-input.ts",
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/handlers/projects.ts",
+        "apps/server/src/handlers/projects.test.ts",
+        "apps/server/src/engine-parity.test.ts",
+        "apps/server/src/kit-transform-forwarding.test.ts",
+        "apps/server/src/voice-engine-host.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "engine-parity.test.ts asserts deep-equal for setKitTransform with hoopSpacingMm+diameterIn set, and for setTransport (both KNOWN DRIFT comments deleted, not weakened). New voice-engine-host.test.ts case: after `adoptPatch`, a setTransport message changes `voiceHost.getProject().composition.transport.bpm` AND the value the loop reads via advanceTransport — i.e. assert through `getStats().engine.beat` advancing at the new rate over a fixed dt, not just the field write, because the field write is exactly what already looked right while being inert. New projects.test.ts case: with a voiceHost present, `loadProject` leaves `voiceHost.getProject()` deep-equal to the loaded file INCLUDING composition.transport, AND `voiceHost.getModel().pixelCount` equal to a fresh `buildPixelModel(loaded.kit).pixelCount` (proves the rebuild ran). `pnpm gates` green."
+    },
+    {
+      "id": "S6",
+      "title": "Alias sim's Voice interface to core voice.Voice",
+      "intent": "sim.ts:185-236 declares a ~50-field `Voice` whose field comments literally say 'Mirrors the core Voice field' — a hand-maintained clone. Replace with `export type Voice = voice.Voice;`. This forces sim-side voices to carry the fields core's shape has and sim's lacks (`active`, `liveParams`, `specs`, and the playType/canvasScene pair); `Sim.spawn` sets them (`active: true`, `liveParams: {}`, `specs: effect.params`, `playType: a.playType`, `canvasScene: a.canvasScene`), and `Sim.voices` stays a plain array here so no consumer changes yet. This is the compile-time gate that makes S9 a swap rather than a rewrite — without it, adopting VoicePool would be a type rewrite and a semantics change in one commit.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/sim.ts",
+        "apps/web/src/lib/trigger-lab/render.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/dock-voices.ts"
+      ],
+      "risk": "medium",
+      "verification": "`pnpm typecheck` (sim/render/store/dock all narrow through the new shape). All apps/web/src/lib/trigger-lab/sim*.test.ts suites plus generator-bridge.test.ts, dock-voices.test.ts and store.lfo.test.ts green UNMODIFIED — if a sim test needs editing to pass, the shape changed semantically and this step is wrong. `pnpm gates` green."
+    },
+    {
+      "id": "S7",
+      "title": "Flip the default: unset LEDRUMS_ENGINE means voice; legacy is the explicit opt-out",
+      "intent": "divergent-change-0001's sharpest edge: `pnpm start` — the shipped prod-server script — leaves LEDRUMS_ENGINE unset and therefore runs the LEGACY loop, while scripts/dev.mjs:32 and apps/desktop/src-tauri/src/lib.rs:386 both force voice. Invert `resolveEngineMode` so only the literal 'legacy' selects legacy and everything else (including unset) is voice. Delete the now-redundant `process.env.LEDRUMS_ENGINE ??= 'voice'` at scripts/dev.mjs:32 and the `.env(\"LEDRUMS_ENGINE\", ...)` block at src-tauri/lib.rs:386, keeping each comment's intent as one line of docs. Kept as its own commit deliberately: it is the smallest change that makes every shipping path run one engine, it is a clean single-commit revert, and the legacy stack is still fully present behind the explicit opt-out for a soak period before anything is deleted.",
+      "files": [
+        "apps/server/src/engine-mode.ts",
+        "apps/server/src/engine-mode.test.ts",
+        "scripts/dev.mjs",
+        "apps/desktop/src-tauri/src/lib.rs",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "engine-mode.test.ts truth table inverted and green (unset -> 'voice', 'legacy' -> 'legacy', 'garbage' -> 'voice'). RUST BUILD CHECK — `pnpm gates` is `typecheck && test` (package.json:22-23) and cannot compile the src-tauri edit, so add `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` and confirm the removed `.env(...)` block carried nothing else the shell depends on. LIVE-PATH PROOF, not a reading: `pnpm --filter @ledrums/server run start` with LEDRUMS_ENGINE unset prints the boot.ts:74 banner WITH the ' [voice engine]' suffix; with LEDRUMS_ENGINE=legacy, without it. `pnpm gates` green.",
+      "reverses": "Single-commit `git revert` — resolveEngineMode's default returns to 'legacy' and the two forcing sites come back. Nothing landed before it depends on the flip, and S8 (which does) is a full wave later."
+    },
+    {
+      "id": "S8",
+      "title": "One reducer, one project object: VoiceEngineHost becomes the authoritative store",
+      "intent": "The seam swap divergent-change-0001 is actually about, taken in fable's shape because the opus reviewer landed two majors on opus's ProjectStore route — it left applyClientMessage AND propagateToVoiceHost both live (two reducers per message: the finding's mechanism surviving the initiative) and it broke the object-identity invariant main.ts:157-163 documents verbatim. This step introduces no third object. (1) Construct `voiceHost = new VoiceEngineHost(project0)` UNCONDITIONALLY; when the explicit legacy opt-out is set, construct the legacy `EngineHost` over `voiceHost.getProject()` — the SAME object — so the shared-reference invariant is preserved by construction rather than assumed, and the legacy Engine becomes write-never. (2) Make propagateToVoiceHost the SOLE reducer for the live structural messages: rename it `applyStructuralMessage`, call it unconditionally from handlers/client-message.ts, and DELETE the `applyClientMessage(host.engine, msg, ...)` call at client-message.ts:509 (the function and its dead arms are removed later, in S11/S12). (3) Retarget every authoritative READ from `host.engine.getProject()` to `voiceHost.getProject()`: the autosaver (main.ts:167), stateMessage's project (main.ts:450), readCurrent (main.ts:583), getOutputSettings/getController (main.ts:605-606), the controller write at main.ts:610, the stats transport read (main.ts:758), handlers/projects.ts's save/load, and the setProject patch path at client-message.ts:452-459 (which already calls voiceHost.adoptPatch at :460 — the legacy half above it goes). midi/osc input stamping (`host.markInput()`) moves to `voiceHost.markInput()`, which already exists (voice-engine-host.ts:395).",
+      "files": [
+        "apps/server/src/main.ts",
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/voice-input.ts",
+        "apps/server/src/handlers/projects.ts",
+        "apps/server/src/boot.ts",
+        "apps/server/src/handlers/client-message.test.ts",
+        "apps/server/src/handlers/projects.test.ts",
+        "apps/server/src/kit-global-forwarding.test.ts",
+        "apps/server/src/hoop-config-forwarding.test.ts"
+      ],
+      "risk": "high",
+      "verification": "OBJECT IDENTITY IS AN ASSERTION, not a comment: a new main-wiring test asserts `legacyHost.engine.getProject() === voiceHost.getProject()` when the legacy opt-out is set, and re-asserts it AFTER a loadProject and after an adoptPatch — the swap is exactly where identity is lost. SINGLE-REDUCER PROOF: `grep -rn 'applyClientMessage(' apps/server/src --include='*.ts' | grep -v '\\.test\\.'` returns ZERO hits — the mechanical proof the double-apply is gone, not merely quieter. engine-parity.test.ts (S2/S5) still green — the two arms still agree, which is what licenses S11-S13. handlers/client-message.test.ts (the densest server suite), projects.test.ts and the three *-forwarding.test.ts suites green with only wiring lines changed. STATE-MESSAGE PARITY: serialize the `state` ServerMessage from the same LIVE_PROJECT fixture before and after this step; the JSON diff must be empty. LIVE-PATH PROOF: boot with LEDRUMS_ENGINE unset, edit a drum's pixelsPerHoop and a hoop's pixelCount from the Patch surface, confirm via `pnpm ui-shot` that the counts change on screen AND that the autosaved data/projects/<live>.json carries the new values, then restart and confirm the round trip survived.",
+      "reverses": "`git revert` restores the `applyClientMessage` call, the conditional voiceHost, and the five read sites pointed at host.engine.getProject(). Nothing is deleted in this commit — EngineHost, applyClientMessage and the mode branch all still exist on disk and still pass their own tests — so this is a wiring rollback, not a code loss. Verify a revert by asserting the autosaved file is byte-identical before and after, for a fixed edit sequence."
+    },
+    {
+      "id": "S9",
+      "title": "Sim adopts core VoicePool for spawn/release",
+      "intent": "divergent-change-0003's surviving half — the refuter established that the graph-evaluation part of the finding is STALE (sim.ts:404-405 already calls voice.evalGraph), so only the voice lifecycle is still forked. `Sim.spawn` (sim.ts:445-529) and `Sim.release` re-implement packages/core/src/voice/voice-pool.ts's `VoicePool.spawn` + `releaseVoice`, including the mono-bus steal (sim.ts:451 vs voice-pool.ts:103-113) and the B1 supersede rule, whose comments are copies of each other. Give `Sim` a `private pool = new VoicePool()` plus a `private busById = new Map<string, Bus>()`; `spawn` becomes one `this.pool.spawn(a, sourceDrumId, velocity, { effectsById, busById, latched, timeMs, pad: 'preview' })`; `release` becomes `releaseVoice(v, this.timeMs)`; `stopBus`/`stopAll`/`isLayerLive`/`coreEvalState().isVoiceAlive` delegate to the pool's own predicates; `get voices(): Voice[] { return this.pool.pool.filter(v => v.active); }` keeps every consumer working (store.svelte.ts already `.slice()`s each frame, so the allocation profile is unchanged). FIRST IMPLEMENTATION ACT (fable's discipline, kept): tabulate sim's steal/supersede semantics against voice-pool.ts cell by cell; any cell that differs BEYOND the three enumerated deltas below is live drift and is surfaced to Trent before porting, not silently unified.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/sim.ts",
+        "apps/web/src/lib/trigger-lab/sim.voice-pool-parity.test.ts",
+        "apps/web/src/lib/trigger-lab/__fixtures__/sim-golden.json"
+      ],
+      "risk": "high",
+      "verification": "'All suites green unmodified' is NOT the bar — both reviewers landed that attack on sonnet's and fable's versions of this step, because the adoption provably changes behaviour. THREE DELTAS ARE EXPECTED and each gets its own pinning assertion in the new sim.voice-pool-parity.test.ts, recording intentional convergence on the live engine: (1) the preview gains core's 256-slot cap (voice-pool.ts:15) with oldest-releasing-first stealing where sim's array was unbounded (sim.ts:290) — assert voice 257 steals rather than growing the array; (2) canvas-scene play nodes now resolve through `canvasEffectId(a.canvasScene)` as the live engine does, where sim dropped mix inputs lacking `generatorId` (sim.ts:488-489) — assert a canvas mix input now renders; (3) mix-input seeds change from sim.ts:496 `(seed ^ Math.imul(index+1, 0x9e3779b9)) >>> 0` to voice-pool.ts:172 `deriveSeed(slot.seed, index+1)` — assert the new value equals `deriveSeed`. GOLDEN FIXTURE, captured at this step's parent commit and committed as __fixtures__/sim-golden.json: for a fixed authored graph and a fixed 4000ms input script, the per-frame tuple (voice count; each voice's id/effectId/busId/phase/level to full float precision; each voice's seed and mixInput seeds). This step must replay it and match OUTSIDE the three deltas. All other sim*.test.ts suites green unmodified. `pnpm gates` green.",
+      "reverses": "`git revert` this commit alone: sim.ts returns to its local array plus spawn/release, and the parity test is removed (the golden fixture stays — S10 replays it). Deliberately confined to ONE production file so the revert is a single-file restore, and deliberately landed as its own commit even though it shares a wave with a file-disjoint server step."
+    },
+    {
+      "id": "S10",
+      "title": "Sim adopts core advanceEnvelopes + reapDeadVoices for its per-frame tick",
+      "intent": "The last lifecycle fork, split from S9 exactly as opus split it — the opus reviewer's fatal against sonnet was that swapping pool AND tick AND engine in one step leaves no green path. sim.ts:618-643's envelope loop is a line-for-line copy of packages/core/src/voice/envelope-tick.ts's `advanceEnvelopes` (identical attack ramp, identical `0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480))` loop wobble, identical `Math.max(60, ...crossfadeMs...)` release ramp) followed by a copy of `reapDeadVoices` (identical `level <= 0.001` threshold and identical latch clearing at sim.ts:638-642). After S9 the pool IS core's, so `tick()` becomes `advanceEnvelopes(this.pool.pool, this.timeMs, this.busById); reapDeadVoices(this.pool.pool, this.latched);` and the two local loops are deleted. sim.ts's voice-lifecycle section is then empty of logic and the fork is closed.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/sim.ts"
+      ],
+      "risk": "medium",
+      "verification": "Byte-identical behaviour is the claim here (unlike S9), so prove it with numbers: replay S9's golden fixture and match to FULL float equality, not toBeCloseTo — every voice level at every sampled frame. sim-determinism.test.ts, sim.delay-overlap.test.ts and sim.delay-timeline.test.ts green UNMODIFIED. `pnpm gates` green."
+    },
+    {
+      "id": "S11",
+      "title": "Delete the fourteen dead composition messages — reducer arms AND protocol variants in one commit",
+      "intent": "The web sends ZERO of setParam, setLayer, addLayer, removeLayer, addClip, removeClip, setActiveSection, setBinding, removeBinding, addSong, removeSong, addSection, removeSection, setSectionLayerClip (re-verified here: `grep -rn \"t: '<name>'\" apps/web/src` returns 0 for each; only setTransport, 4 hits, survives from that family). Delete each one's `case` arm from applyClientMessage (input-router.ts) AND its variant from packages/protocol's ClientMessage union AND its type in the web ws client, IN THE SAME COMMIT. The single-commit rule is a landed repair, not tidiness: the opus reviewer showed that fable's plan asked the gating question a wave AFTER deleting the reducer, leaving a window where the messages decode but nothing applies them — a silent drop, which is the exact class of defect this initiative exists to remove. Deleting the protocol variant at the same time makes an old client's message a DECODE-LEVEL REJECTION with an `error` reply, which is the disposition this plan picks (opus left the choice as an unresolved disjunction and the fable reviewer landed it). GATED on open question 2: if Trent names any out-of-repo client that sends one of the fourteen, that message is kept and gets a voice-side reducer on VoiceEngineHost instead of being deleted — which is why the reducer and the variant must be decided together.",
+      "files": [
+        "packages/protocol/src/schemas.ts",
+        "apps/server/src/input-router.ts",
+        "apps/server/src/input-router.test.ts",
+        "apps/web/src/lib/ws/client.ts",
+        "apps/server/src/handlers/client-message.ts"
+      ],
+      "risk": "medium",
+      "verification": "Per-message zero-sender proof re-run immediately before the commit: `grep -rn \"t: '<name>'\" apps scripts packages` for each of the fourteen returns only protocol/type declarations and the tests of the arms being deleted. DECODE REJECTION PROVED, not assumed: a new protocol test sends one deleted discriminant through the real decoder and asserts it is rejected with an `error` reply — never accepted-and-ignored. `pnpm gates` green; the test-count drop must equal exactly the count in the deleted input-router.test.ts cases. LIVE-PATH PROOF: `pnpm dev`, edit a kit transform and fire a trigger from the web UI — both round-trip, proving the surviving message set drives the shipped client."
+    },
+    {
+      "id": "S12",
+      "title": "Delete the legacy server runtime and retire the parity harness into a voice-side suite",
+      "intent": "With the store severed (S8), voice the default (S7) and the dead messages gone (S11), the legacy runtime has no consumer. Delete apps/server/src/engine-host.ts and engine-host.test.ts; delete engine-mode.ts and its test plus the VOICE_MODE constant (there is no mode left to resolve, and voiceHost is now non-nullable); collapse boot.ts's `if (deps.voiceHost) ... else deps.host ...` arms and drop `host`/`voiceMode` from BootDeps; delete handlers/voice-input.ts's legacy no-op block (the `// These only apply to the voice engine; ignore in legacy mode` arm) and make VoiceInputDeps.voiceHost non-nullable; delete what remains of `applyClientMessage` in input-router.ts, keeping the pure input-translation and recall helpers voice-input.ts imports (zoneForNote, zoneForOsc, midiToEvent, oscToEvent, programChangeRecall, sectionIndexRecall, oscRecall). HARNESS RETIREMENT — the fable reviewer's landed attack that opus's core-deletion step demanded 'zero edits outside the deleted files' while engine-parity.test.ts still constructed `new Engine`: engine-parity.test.ts is deleted HERE, and its per-discriminant assertions are migrated first into a new apps/server/src/structural-forwarding.test.ts that drives every live structural discriminant through the sole reducer and asserts the resulting Project field-by-field. The coverage survives; only the legacy arm it was diffed against goes.",
+      "files": [
+        "apps/server/src/engine-host.ts",
+        "apps/server/src/engine-host.test.ts",
+        "apps/server/src/engine-mode.ts",
+        "apps/server/src/engine-mode.test.ts",
+        "apps/server/src/engine-parity.test.ts",
+        "apps/server/src/structural-forwarding.test.ts",
+        "apps/server/src/boot.ts",
+        "apps/server/src/main.ts",
+        "apps/server/src/input-router.ts",
+        "apps/server/src/input-router.test.ts",
+        "apps/server/src/handlers/voice-input.ts",
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/client-message.test.ts"
+      ],
+      "risk": "high",
+      "verification": "`grep -rn 'LEDRUMS_ENGINE\\|EngineHost' apps packages scripts` returns ZERO hits outside docs (grep for `EngineHost` must exclude `VoiceEngineHost` by word boundary) — the mechanical proof the branch is gone, not merely unused. `pnpm typecheck` enumerates every remaining consumer; each break is a live legacy consumer to be re-pointed, never deleted blind. structural-forwarding.test.ts must contain an assertion for EVERY discriminant engine-parity.test.ts covered — assert this by comparing the two files' discriminant lists in the same commit's review, since a silently narrowed suite is exactly how coverage is lost during a deletion. LIVE-PATH PROOF: full `pnpm dev`, fire a pad, confirm Art-Net/sACN frames still transmit and a `pnpm ui-shot` capture of the Trigger Lab and Patch surfaces shows zero console errors. `pnpm gates` green.",
+      "reverses": "`git revert` restores every deleted file, the mode branch and the harness in one commit — this step is kept to deletions plus the wiring collapses they force, with NO refactors mixed in, so the revert is mechanical. Land it alone in its own wave. If a field problem appears after S13 has also landed, revert S13 first: they are strictly ordered server-then-core."
+    },
+    {
+      "id": "S13",
+      "title": "Delete the legacy core engine modules and their barrel exports — KEEPING transport.ts",
+      "intent": "divergent-change-0001's fix (a), now safe because nothing constructs an Engine. Delete packages/core/src/engine/engine.ts (438 LOC), compositor.ts, control-state.ts, modulation.ts and their tests (engine.test.ts, modulation.test.ts), and remove packages/core/src/index.ts's barrel lines for control-state (65), modulation (67), compositor (68) and engine (69). KEEP framebuffer.ts and render-context.ts (lines 63-64, 30+ import sites across effects/, modifiers/, canvas/, voice/) AND KEEP engine/transport.ts with its barrel line 66 — this is the attack that broke BOTH the sonnet and fable variants and was landed by both reviewers: apps/server/src/voice-engine-host.ts:2 imports `advanceTransport` and calls it at :484 inside the LIVE voice loop, so transport.ts is a surviving-stack dependency, not legacy. This step resolves the engine/modulation.ts vs voice/lfo.ts LFO duplication by DELETION rather than unification — lfoValue/sourceValue/applyCurve/resolveParams have exactly one production consumer (engine.ts:232) plus their own test, so voice/lfo.ts is simply the survivor and no LFO code is written at all. It likewise resolves the engine.ts:230-231 half of resilience-hole-0011: that silent tryGetEffect skip ceases to exist, leaving only modifiers/chain.ts and voice/generator-bridge.ts for S14. Project/Clip/Layer/Section/TriggerBinding in model/project-schema.ts are explicitly OUT OF SCOPE — they are the persisted file schema and deleting them would break every saved project.",
+      "files": [
+        "packages/core/src/engine/engine.ts",
+        "packages/core/src/engine/engine.test.ts",
+        "packages/core/src/engine/compositor.ts",
+        "packages/core/src/engine/modulation.ts",
+        "packages/core/src/engine/modulation.test.ts",
+        "packages/core/src/engine/control-state.ts",
+        "packages/core/src/index.ts"
+      ],
+      "risk": "high",
+      "verification": "`pnpm typecheck` across the workspace must be clean with ZERO edits outside the deleted files and index.ts — achievable now only because S12 retired the parity harness that constructed `new Engine`; any break means a consumer was missed and the step is not ready. `grep -rn 'advanceTransport' apps packages` must still return the voice-engine-host.ts hits — a green typecheck with transport.ts deleted is impossible, and this grep is the positive check that it was KEPT rather than accidentally swept. `npx knip` reports no new unused exports in packages/core. `pnpm gates` green; the test-count drop must equal exactly the count in engine.test.ts + modulation.test.ts — a larger drop means an unrelated suite stopped running. Coverage sanity: packages/core line coverage must not FALL (deleting ~590 lines of tested code with its tests should leave it flat or higher; a drop means live code lost its tests).",
+      "reverses": "`git revert` restores all four files and the four barrel lines. Deletion-only commit with no accompanying edits, so the revert cannot conflict with anything landed after it. Recovery order if the whole retirement must go: revert S13, then S12, then S11, then S8, then S7 — strictly reverse landing order, because S8's wiring assumes one store and S12's collapse assumes the flip."
+    },
+    {
+      "id": "S14",
+      "title": "Unresolved-id diagnostic on the existing VoiceDiagnostic channel (server-scoped)",
+      "intent": "resilience-hole-0011, reshaped to ride an existing surface rather than widen an interface. Render-path behaviour is preserved byte-for-byte (skip, never throw); what is added is one observation. After S13 the surviving silent skips are modifiers/chain.ts:48-49 (`if (!def) continue`) and voice/generator-bridge.ts:79-80 (`if (!gen) return`). packages/core/src/voice/diagnostics.ts already carries a `VoiceDiagnostic` union that createVoiceBusEngine already drains via `onDiagnostic` (voice-engine-host.ts:124) and maps onto the Monitor stream (:565), so the fix is ONE new arm — `{ kind: 'unresolved-id'; idKind: 'modifier' | 'generator'; id: string }` — plus one OPTIONAL trailing callback param on the two skip sites: `applyModifierChain(..., onUnresolved?: (id: string) => void)` and the same on generator-bridge's renderVoice guard. VoiceBusEngine (voice/engine.ts) owns a `private unresolvedIds = new Set<string>()`, threads a bound `noteUnresolved` through voice/compositor.ts:244 (its single applyModifierChain call site — verified) and into the generator bridge, and emits the diagnostic ONLY on first sight; cleared on `setShow` so authored-content changes re-arm the report. This shape deliberately does NOT add `getUnresolvedIds()` to the `RenderEngine` interface: both reviewers landed that attack on the sonnet and fable variants, because widening the interface obliges the second implementation (createNullEngine, voice/engine.ts:821) and leaves the browser-hosted path with no sink. SCOPE IS EXPLICIT: the diagnostic is server-side only. The web preview also calls applyModifierChain (render.ts:265) and simply omits the optional callback, so the preview keeps today's silent skip — stated here rather than left as an implied gap.",
+      "files": [
+        "packages/core/src/voice/diagnostics.ts",
+        "packages/core/src/modifiers/chain.ts",
+        "packages/core/src/voice/generator-bridge.ts",
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/engine.ts",
+        "packages/core/src/voice/unresolved-id.test.ts",
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/voice-engine-host.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New packages/core/src/voice/unresolved-id.test.ts: (1) render a chain containing an unregistered modifierId and assert the framebuffer bytes are IDENTICAL to the same render without the callback wired — behaviour preservation is the FIRST assertion, not an afterthought; (2) the diagnostic fires exactly once across 100 frames for the same id; (3) two distinct unknown ids produce two diagnostics; (4) `setShow` re-arms. Same pattern for an unknown generator id through generator-bridge. `createNullEngine()` still typechecks with no edit — the positive check that the RenderEngine interface was not widened. packages/core/src/voice/determinism.test.ts green UNMODIFIED (the ledger must not perturb the deterministic frame stream). voice-engine-host.test.ts asserts the Monitor receives one `error` event carrying the offending id."
+    },
+    {
+      "id": "S15",
+      "title": "Rename packages/core/src/engine/ to render/ now that only render primitives live there",
+      "intent": "After S13 the directory named `engine` holds framebuffer.ts, render-context.ts and transport.ts — three shared render primitives and no engine. The name is now a lie that will mislead every future reader into thinking a legacy engine survives. Move the three files to packages/core/src/render/ and rewrite the ~40 relative import lines across canvas/, effects/, modifiers/ and voice/, plus index.ts's three surviving barrel lines. No symbol renames, no signature changes. Deliberately LAST and deliberately separable: pure cosmetics with a wide import-line blast radius, and the one step that can be dropped from the initiative without weakening any other.",
+      "files": [
+        "packages/core/src/engine/framebuffer.ts",
+        "packages/core/src/engine/render-context.ts",
+        "packages/core/src/engine/transport.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/effects/types.ts",
+        "packages/core/src/modifiers/types.ts",
+        "packages/core/src/canvas/sampler.ts",
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/engine.ts",
+        "packages/core/src/voice/generator-bridge.ts"
+      ],
+      "risk": "low",
+      "verification": "`git diff --stat` shows ONLY import-path lines changed outside the three moved files, and `git log --follow` confirms the moves recorded as renames rather than delete+add. `pnpm typecheck` clean. `pnpm gates` green with an UNCHANGED test count — a mechanical move that changes the count changed behaviour and must be reverted."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2", "S3", "S4"],
+    ["S5", "S6"],
+    ["S7", "S9"],
+    ["S8", "S10"],
+    ["S11"],
+    ["S12"],
+    ["S13"],
+    ["S14"],
+    ["S15"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/core (barrel index.ts)",
+      "removed": [
+        "Engine",
+        "InputEvent",
+        "EngineStats",
+        "ControlState",
+        "composite",
+        "CompositeLayer",
+        "lfoValue",
+        "sourceValue",
+        "applyCurve",
+        "resolveParams"
+      ],
+      "added": [
+        "hash2",
+        "fade",
+        "valueNoise",
+        "fbm"
+      ],
+      "net_interface_change": "reduces",
+      "note": "Ten legacy-engine symbols out; the four that come in are the noise quartet consolidated from two private copies (S4) and are a deliberate, bounded increase in one file against a ten-symbol removal. `advanceTransport` and the transport types are NOT removed — engine/transport.ts is KEPT because apps/server/src/voice-engine-host.ts:2/:484 calls advanceTransport on the live voice loop; the sonnet and fable variants both put it in the deletion set and both reviewers landed that as a major."
+    },
+    {
+      "at": "apps/server/src",
+      "removed": [
+        "EngineHost",
+        "HostStats",
+        "PartialInput",
+        "applyClientMessage",
+        "resolveEngineMode",
+        "EngineMode"
+      ],
+      "added": [
+        "VoiceEngineHost.setTransport",
+        "VoiceEngineHost.adoptProject",
+        "applyStructuralMessage (renamed propagateToVoiceHost)"
+      ],
+      "net_interface_change": "reduces",
+      "note": "resolveEngineMode/EngineMode are added by S1 and removed by S12 — the mode abstraction exists only long enough to make the flip provable, then dies with the branch it described. setTransport and adoptProject are not new surface in spirit: they replace legacy reducer arms that were the only writers of transport and of a whole-project load, and without them those two messages have no reducer at all once the legacy path goes. applyStructuralMessage is a rename, not an addition."
+    },
+    {
+      "at": "packages/protocol (ClientMessage union)",
+      "removed": [
+        "setParam",
+        "setLayer",
+        "addLayer",
+        "removeLayer",
+        "addClip",
+        "removeClip",
+        "setActiveSection",
+        "setBinding",
+        "removeBinding",
+        "addSong",
+        "removeSong",
+        "addSection",
+        "removeSection",
+        "setSectionLayerClip"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Zero senders in-repo (re-verified by grep in this synthesis). Deleted in the SAME commit as their reducer arms so an old client's message becomes a decode-level rejection rather than a silent no-op. Gated on open question 2."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab/sim.ts + sim.envelopes.ts",
+      "removed": [
+        "Preset",
+        "Bus",
+        "Polyphony",
+        "Voice",
+        "ParamSpec"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "The names stay on the ./sim surface as aliases to voice.*, so no importer changes; what is removed is five hand-maintained DECLARATIONS whose drift was previously invisible and is now a compile error, plus the 'must stay byte-identical' invariant comment in core/voice/types.ts that documented the hand-sync. EffectDef survives as an intersection because the gallery metadata is genuinely web-only."
+    },
+    {
+      "at": "packages/core/src/voice/diagnostics.ts",
+      "removed": [],
+      "added": [
+        "VoiceDiagnostic 'unresolved-id' arm"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate and minimised: one arm on an existing union plus two OPTIONAL callback params, rather than the finding's proposed getUnresolvedIds() accessor. The RenderEngine INTERFACE is deliberately not widened — widening it obliges createNullEngine (voice/engine.ts:821) and leaves the browser-hosted path with no sink, which is the attack both reviewers landed on the sonnet and fable variants. The diagnostic sink that carries this already exists and already reaches the Monitor and the #122 reporter."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "`pnpm gates` after EVERY step (machine-mutex, typecheck + full suite). A step is not landed until gates is green on the committed HEAD, not the working tree.",
+      "apps/server/src/engine-parity.test.ts (S2): every live structural ClientMessage discriminant driven through the legacy reducer and through propagateToVoiceHost against two clones of the same project, asserting deep-equal Projects, with today's two known drifts recorded as explicit KNOWN DRIFT assertions and closed in S5. This harness licenses S8/S11/S12/S13 and must be green before any deletion lands. Fixture rule: every message is built from a FULL-field literal, because the historical pixelsPerHoop drop survived precisely by nobody setting that field.",
+      "Anti-vacuity check on the harness (S2): delete one arm from propagateToVoiceHost, confirm the harness goes red, restore. A harness that passes against a gutted arm is not a harness.",
+      "apps/server/src/structural-forwarding.test.ts (S12): the harness's per-discriminant assertions migrated onto the sole reducer, so the coverage outlives the legacy arm it was diffed against.",
+      "Object-identity assertion (S8): `legacyHost.engine.getProject() === voiceHost.getProject()` holds at construction, after a loadProject, and after an adoptPatch — the invariant main.ts:157-163 documents, made a test instead of a comment.",
+      "Single-reducer grep (S8): `grep -rn 'applyClientMessage(' apps/server/src --include='*.ts' | grep -v '\\.test\\.'` returns zero hits.",
+      "State-message byte-diff (S8): serialize the `state` ServerMessage from the same LIVE_PROJECT fixture before and after the store re-pointing; the JSON diff must be empty.",
+      "Golden fixture apps/web/src/lib/trigger-lab/__fixtures__/sim-golden.json, captured at S9's parent commit: for a fixed authored graph and a fixed 4000ms input script, the per-frame tuple (voice count; each voice's id/effectId/busId/phase/level to full float precision; each voice's seed and mixInput seeds). S9 replays it and must match OUTSIDE its three enumerated deltas, each of which carries its own assertion; S10 must match EXACTLY, to full float equality.",
+      "`cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` at S7 — `pnpm gates` is `typecheck && test` (package.json:22-23) and cannot compile the src-tauri edit.",
+      "Live-path proof at S7: `pnpm --filter @ledrums/server run start` with LEDRUMS_ENGINE unset prints the boot banner WITH ' [voice engine]'; with LEDRUMS_ENGINE=legacy, without.",
+      "Live-path proof at S8: edit pixelsPerHoop and a per-hoop pixelCount from the running app, confirm on screen via `pnpm ui-shot` AND in the autosaved data/projects/<live>.json on disk, then restart and confirm it survived.",
+      "Decode-rejection proof at S11: a deleted discriminant sent through the real protocol decoder is rejected with an `error` reply, never accepted-and-ignored.",
+      "Live-path proof at S12: full `pnpm dev`, fire a pad, confirm Art-Net/sACN frames still transmit and `pnpm ui-shot` of the Trigger Lab + Patch surfaces shows zero console errors; `grep -rn 'LEDRUMS_ENGINE\\|\\bEngineHost\\b' apps packages scripts` returns zero non-doc hits.",
+      "Positive keep-check at S13: `grep -rn 'advanceTransport' apps packages` still returns the voice-engine-host.ts hits, proving engine/transport.ts was kept rather than swept with the rest of the directory.",
+      "`npx knip` at S13 (no orphaned exports left in packages/core) and `pnpm -r run test:coverage` (packages/core line coverage must not fall).",
+      "Per-pixel determinism at S4 and S14: the canvas determinism suite, the effect conformance batches (batch-a..e, effects.test.ts) and packages/core/src/voice/determinism.test.ts green UNMODIFIED."
+    ],
+    "known_gaps": "Four regions where a green suite proves nothing, and what stands in for it. (1) THE OFFLINE PREVIEW'S PIXELS. apps/web/src/lib/trigger-lab/render.ts has NO test file at all; the sim.*.test.ts suites assert voice bookkeeping (which voices exist, which effectId, which level), never rendered bytes, and apps/web sits at 57.8% line coverage. S9 changes what the preview renders in at least two ways (canvas-scene generator resolution, mixInput seed derivation) and no suite in the repo would notice. Substitute evidence: the golden fixture pins voice-level numbers to full float precision, and `pnpm ui-shot` captures of the Trigger Lab preview before and after S9/S10 are compared by eye against the same authored graph — a human looking at two screenshots is weaker than an assertion, which is stated plainly and is exactly why S9 lands as its own single-file-revert commit with the three deltas enumerated up front rather than discovered. (2) CROSS-STACK FRAME PARITY IS NOT DEFINABLE. Nothing anywhere asserts the legacy and voice stacks produce the same FRAMES for the same input, and they cannot: they use different content models (layers/clips vs shows/graphs). This plan does not claim it. The S2 harness proves PROJECT-STATE parity — the thing that actually diverged, per the drift record at input-router.ts:177-179 — and the flip to voice-by-default is justified by every human-facing path already forcing voice, not by a frame diff. If Trent has ever deliberately run the legacy renderer, that assumption is wrong and S7 must be reconsidered; that is open question 1. (3) THE SERVER BOOT PATH. apps/server sits at 72.3% line coverage and main.ts (~800 lines) plus boot.ts are almost entirely untested side-effecting wiring; S8 and S12 edit exactly there. Substitute evidence: the named live-path proofs, the object-identity assertion, the state-message byte-diff, and the on-disk autosave round-trip — a unit test cannot observe that the autosaver persisted the right object, but the file on disk can. (4) THE DESKTOP SHELL. S7 edits apps/desktop/src-tauri/src/lib.rs, which `pnpm gates` cannot compile. `cargo check` is added as substitute evidence, but a compiling Rust shell is not a launched app: nothing in this plan boots the packaged desktop build and confirms the server child process comes up in voice mode with the forcing env removed. That residual gap is real and is called out rather than papered over — a one-off manual desktop launch after S7 is the honest close.",
+    "baseline_reference": "Phase 0 baseline sha 3708648 (branch feat/ota-discord-announce), 2968 tests green under `pnpm gates`, coverage core 97.0% / server 72.3% / web 57.8% lines. Fix batches 1-3 have landed since (the 12 dead-code auto-fixes, the dead-code residue, and the kit-mirror removal at every layer — the mirror FIELD is gone while the setKitGlobal message survives carrying live kit config), so each step compares against the test count at ITS OWN parent commit and states its expected delta rather than re-asserting 2968."
+  },
+  "rollback_strategy": "Fifteen commits, each independently green and each reverting on its own — that is the point of the shape. Four revert boundaries matter. (A) S7, the default flip, is a single commit over three files plus one Rust line; reverting it puts every shipping path back on the legacy loop and nothing landed before it depends on the flip. (B) S8, the store/reducer collapse, DELETES NOTHING — EngineHost, applyClientMessage and the mode branch all still exist and still pass their own tests — so its revert is a wiring rollback, verified by asserting the autosaved file is byte-identical before and after for a fixed edit sequence. (C) S11/S12/S13 are the irreversible-feeling ones and are therefore kept to deletions plus the wiring collapses they force, with NO refactors mixed in, landed alone in their own waves, strictly ordered protocol-then-server-then-core; recovery is exact reverse order (S13, S12, S11, S8, S7). (D) On the web side S9 is the only high-risk step and touches exactly one production file, so its revert is a single-file restore; S10 reverts independently on top of it. No feature flag gates any of this: a flag would be a fourth engine mode, and re-creating the exact defect this initiative exists to remove would be absurd. No data migration occurs — the persisted project schema (model/project-schema.ts, including composition and setlist) is explicitly untouched, so any revert reads the same files back with no conversion; the S8 state-message byte-diff is the evidence. If the initiative must be abandoned midway, the natural stopping points are after wave 2 (drift closed, transport and load authority fixed, nothing flipped or deleted) and after wave 4 (one engine everywhere, one reducer, sim fork closed, legacy still present but inert).",
+  "estimated_loc": 2450,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Has the legacy engine ever been run deliberately — is there a live show, a rig, or a fallback drill that depends on LEDRUMS_ENGINE=legacy? Everything in the repo says no (every shipping path forces voice; the web sends zero of the fourteen legacy composition messages), but S7 flips the shipped default and S11-S13 remove the fallback entirely, and divergent-change-0001 itself says a removes-failure-path call must be human, not automated. Both refutation passes recorded this as answered-by-asking rather than resolved.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Does any out-of-repo client — a DAW bridge, a TouchOSC layout, a personal script, saved tooling — send any of the fourteen legacy-composition messages (setParam/setLayer/addLayer/removeLayer/addClip/removeClip/setActiveSection/setBinding/removeBinding/addSong/removeSong/addSection/removeSection/setSectionLayerClip)? In-repo grep says only the web client exists and it sends none of them. This gates S11 ONLY, and it must be answered BEFORE S11 rather than after, because S11 deliberately deletes the reducer arm and the protocol variant in the same commit — if any message is live it is kept and gets a voice-side reducer on VoiceEngineHost instead.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "The persisted Project still carries `composition` (layers/clips) and `setlist` (songs/sections/bindings) — the legacy content model — which S11 stops being able to mutate over the wire even though the schema keeps round-tripping them, and which VoiceEngineHost only ever reads for composition.transport. Should those slices be frozen as read-only legacy payload (this plan's assumption), migrated into the Show/song-library model, or dropped from the schema in a separate initiative? Note for the record: the sonnet variant made a version of this question blocking on the premise that LayersDock.svelte authors layers/clips — both reviewers disproved that (the file contains zero ws sends; re-verified in this synthesis), so nothing here blocks execution.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S9 changes what the offline preview renders in three enumerated ways, the sharpest being mixInput seed derivation (sim's `seed ^ imul(index+1, 0x9e3779b9)` vs core's `deriveSeed(slot.seed, index+1)`) — RNG-backed Mix members will look different in the preview afterwards. That is convergence on what the live engine already does, so it is arguably a fix, but it is a visible change to authored content's appearance and a taste call, not a correctness one. Accept the convergence, or preserve sim's seeds by passing a preview-specific seed derivation into VoicePool?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "sim.ts's own header says 'Delete this whole directory once the branches are decided'. This plan keeps Sim alive as a thin core-delegating preview — the offline fallback the visualiser renders from when the WS link is closed. Should the offline preview capability itself be retired instead, i.e. the visualiser shows 'disconnected' rather than simulating locally? That would delete roughly another 400 lines but changes what a user sees when the server is down. S9/S10 are the safe subset either way.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "INIT-04-server-runtime-hardening decomposes the same apps/server/src/main.ts this plan rewires at S8 and collapses at S12. Phase 9 resolves the ordering as INIT-01 FIRST — decomposing main.ts around a two-engine branch would bake that branch into the new modules, and S12 removes ~150 lines of branch from the file INIT-04 wants to split — so no dependency is declared here. Confirm this ordering at Phase 10 ranking rather than letting the two initiatives race on main.ts.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S9's first implementation act is a cell-by-cell table of Sim's steal/supersede semantics against core VoicePool's. If any cell differs BEYOND the three enumerated deltas (256-slot cap, canvas-scene resolution, mixInput seed derivation), which side is correct? Core is presumed authoritative because it drives the real lights — but surface the cell to Trent before porting rather than silently unifying.",
+      "blocks_execution": false,
+      "owner": "implementer"
+    },
+    {
+      "question": "After S13 the surviving Engine-era types in model/project-schema.ts (ControlSource, Curve, Modulation) are referenced only by the persisted schema, not by any running code. Delete them from the schema in a follow-up, or keep them so old project files still parse without a migration?",
+      "blocks_execution": false,
+      "owner": "implementer"
+    }
+  ],
+  "synthesis_inputs": {
+    "variants_considered": ["opus", "sonnet", "fable"],
+    "refutations_consumed": [
+      "docs/plans/2026-07-26-deep-review/08-refutations/INIT-01-single-render-stack.fable.json",
+      "docs/plans/2026-07-26-deep-review/08-refutations/INIT-01-single-render-stack.opus.json"
+    ],
+    "rationale": "SKELETON: opus. It scored highest with both reviewers (fable-reviewer 4/4/3/4/4; opus-reviewer 3/4/4/4/4, both 'sound-with-repairs') and it is the only variant whose evidence machinery survived intact — the testable engine-mode function, the differential parity harness, the golden fixture, the pool/envelope split, the honest known_gaps and the LIFO revert boundaries are all carried over unchanged. SONNET IS NOT USED: the opus reviewer rated it 'unsound' (2s across the rubric) with a FATAL on its all-in-one RenderEngine-in-the-browser step, both reviewers independently disproved the LayersDock premise its only blocking question rested on, and its deletion set killed engine/transport.ts. GRAFTS FROM FABLE, each forced by a landed attack on opus: (1) the store seam. The opus reviewer landed two majors — opus's S7 left applyClientMessage AND propagateToVoiceHost both live (two reducers per kit message, i.e. divergent-change-0001's mechanism surviving the initiative), and its new ProjectStore object destroyed the shared-project0-by-reference invariant documented at main.ts:157-163 that makes autosave correct. Fable's shape has neither defect, so opus's S5 (ProjectMutations widening), S6 (ProjectStore) and S7 (store swap) are REPLACED by one step, S8, in which VoiceEngineHost is the sole store, the legacy host (when explicitly opted into) is constructed over the SAME object, and applyStructuralMessage is the only reducer — with object identity asserted rather than commented. That deletion also disposes of two further landed attacks for free: the fourteen ProjectStore mutators S8 would have orphaned (fable-reviewer, minor) and the untested verbatim mutator copy (opus-reviewer, minor). (2) VoiceEngineHost.setTransport, from fable's S2 — the fable reviewer's major against opus was that no opus step ever gives the voice stack a transport reducer, so a BPM edit survives only by object aliasing that splits on the first adoptPatch. Grafted into S5, with a beat-advance assertion rather than a field-write assertion, because the field write is exactly what already looked right while being inert. (3) protocol-variant deletion, from fable's S4 — but sequenced the way the opus reviewer's repair demanded: the reducer arm and the protocol variant die in the SAME commit (S11), and the Trent gate sits before it, so there is never a wave of decoded-but-ignored messages. This also resolves the decode-rejection-vs-explicit-no-op disjunction the fable reviewer landed against opus's S8: this plan picks decode-level rejection and proves it with a test. (4) the math.ts noise consolidation, from fable's S8 — the opus reviewer landed that opus listed duplicated-code-0011 in findings_addressed and then refused to implement it; it is a file-disjoint 60-LOC leaf and now rides in wave 1 as S4. REPAIRS APPLIED FROM ATTACKS ON ALL THREE VARIANTS: engine/transport.ts is explicitly KEPT with a positive grep check, because voice-engine-host.ts:2/:484 calls advanceTransport on the live loop (the major that broke both sonnet and fable, landed by both reviewers, verified again here); handlers/projects.ts joins the retarget in S5 with an adoptProject that carries composition, because the fable reviewer showed fable's wave would land green with project loading visibly broken; engine-parity.test.ts gets a NAMED retirement in S12 with its assertions migrated into structural-forwarding.test.ts, because the fable reviewer showed opus's core-deletion bar ('zero edits outside deletions') was unsatisfiable while the harness constructed `new Engine`; `cargo check` is added to S7 because `pnpm gates` is typecheck+test and cannot compile the src-tauri edit (opus-reviewer, minor); S9's acceptance bar is the enumerated-deltas-plus-golden-fixture shape rather than 'all suites green unmodified', which both reviewers proved unattainable in sonnet's and fable's versions of the same step; the unresolved-id diagnostic rides the existing VoiceDiagnostic union with optional callbacks instead of widening the RenderEngine interface, because both reviewers landed that widening obliges createNullEngine and leaves the browser path with no sink — and the browser preview's continued silent skip at render.ts:265 is stated explicitly rather than implied; risk ratings are set by actual danger rather than by which package a file lives in, because both reviewers landed 'inverted risk ratings' against sonnet. SURVIVING-BUT-UNREPAIRABLE attacks (both reviewers marked survives:true) are carried as stated gaps, not silently absorbed: the preview has no rendered-byte coverage and its final evidence is a human comparing two screenshots (known_gaps 1), and flipping the default plus deleting the fallback is a removes-failure-path call that belongs to Trent (open question 1).",
+    "attacks_addressed": [
+      "fable-on-opus/S4: transport authority left aliasing-dependent — no step gives the voice stack a transport reducer -> S5(b) adds VoiceEngineHost.setTransport + a propagate arm; S5(c) carries composition on load; S2 pins it as KNOWN DRIFT first",
+      "fable-on-opus/S9: 'zero edits outside deletions' unsatisfiable while engine-parity.test.ts constructs `new Engine` -> S12 explicitly retires the harness into structural-forwarding.test.ts before S13",
+      "fable-on-opus/S8: decode-rejection-vs-explicit-no-op disjunction unresolved; ProjectStore's fourteen mutators orphaned -> S11 picks decode-level rejection and proves it; ProjectStore is dropped entirely so nothing is orphaned",
+      "opus-on-opus/S7: the double-apply seam survives the initiative (two reducers per kit message) -> S8 makes applyStructuralMessage the sole reducer and deletes the applyClientMessage call, with a zero-hit grep as proof",
+      "opus-on-opus/S7: a separate ProjectStore breaks the shared-project0 identity invariant that keeps autosave correct -> ProjectStore dropped; S8 constructs the legacy host over voiceHost.getProject() and asserts `===` at construction, after loadProject and after adoptPatch",
+      "opus-on-opus/S9: duplicated-code-0011 listed in findings_addressed but refused in the body -> S4 implements it as a wave-1 leaf",
+      "opus-on-opus/S2: src-tauri edit unverified because `pnpm gates` cannot compile Rust -> S7 adds `cargo check`, and known_gaps 4 states the residual packaged-shell gap",
+      "opus-on-opus/S6: verbatim mutator copy never differentially tested -> ProjectStore dropped, so the copy never exists",
+      "opus-on-sonnet/S7 and fable-on-fable/S5: engine/transport.ts deleted although voice-engine-host.ts:484 calls advanceTransport -> S13 keeps transport.ts and barrel line 66, with a positive grep check that it survived",
+      "opus-on-sonnet/S5 and fable-on-sonnet/S5: the blocking LayersDock premise is false -> that question is reframed as the non-blocking persisted-composition question (open question 3), with the disproof recorded",
+      "opus-on-sonnet/S8 (fatal) and both reviewers on fable/S7: 'all suites green unmodified' is an unattainable bar for the VoicePool adoption -> S9 enumerates the three deltas with pinning assertions and a golden fixture; S10 is split out and carries the exact-match bar",
+      "opus-on-fable/S3: the Q1 gate sequenced after the reducer deletion leaves a wave of decoded-but-ignored messages -> S11 deletes reducer arm and protocol variant in one commit, with the gate before it",
+      "opus-on-fable/S2: the single-reducer collapse had no pre-deletion differential harness -> opus's harness (S2) lands in wave 1 and licenses S8",
+      "fable-on-fable/S2 and opus-on-fable/S2: handlers/projects.ts omitted from the retarget, so project loading would break silently -> S5(c) brings projects.ts and projects.test.ts in, with a post-load deep-equal + pixelCount assertion",
+      "opus-on-sonnet/S3 and opus-on-fable/S9: getUnresolvedIds on the RenderEngine interface obliges createNullEngine and leaves the browser with no sink -> S14 rides the existing VoiceDiagnostic union with optional callbacks, names compositor.ts:244 as the single threading site, scopes the diagnostic to the server, and asserts createNullEngine still typechecks unedited",
+      "both reviewers on sonnet: inverted risk ratings make risk useless as a scheduling signal -> risk here tracks actual danger (S4 medium, S9 high, S15 low), not which package the file lives in",
+      "fable-on-sonnet/S4: a dual-apply parity assertion can pass vacuously against a partial fixture -> S2 requires full-field message literals and an anti-vacuity check that deleting an arm turns the harness red",
+      "SURVIVES (carried, not repaired) — both reviewers on the preview's rendered bytes: render.ts has no test file and the final evidence is a human eyeballing screenshots -> stated in known_gaps 1; S9 lands as its own single-file-revert commit with its deltas enumerated in advance",
+      "SURVIVES (carried, not repaired) — fable-on-opus: flipping the default and deleting the fallback is a removes-failure-path call the finding says must be human -> open question 1, owner trent, with S7 kept as a clean single-commit revert boundary"
+    ]
+  }
+}

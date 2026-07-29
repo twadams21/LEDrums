@@ -1,0 +1,272 @@
+{
+  "artifact": "08-refutations/INIT-06-graph-node-type-model",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-06-graph-node-type-model/opus",
+    "model": "claude-opus-5[1m]",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-06-graph-node-type-model",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-06-graph-node-type-model/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "The plan's own success gate for the headline finding is unreachable by its own steps: open_question 2 defers flipping GraphNode until '>=5 consumers have adopted NodeView', but only two steps (S11, S12) adopt it, so the plan schedules 2 of the 5 it demands and terminates.",
+          "severity": "major",
+          "evidence": "opus.json open_questions[1]: 'proposes the flip be reconsidered only after >=5 consumers have adopted NodeView'; design steps S10-S12 are the only NodeView work and yield exactly two consumers (trigger-flow-projection.ts KIND_SIG, modulation-graph.ts nodeModSource).",
+          "survives": false,
+          "repair": "Either lower the gate to 'two adopted consumers plus the S13 probe delta' or schedule three more cheap adoptions (graph-to-flow.ts, trigger-node-meta.ts, render-plan.ts nodeCategory) so the plan can actually reach its own decision point.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S10's soundness assertion is vacuous: `GraphNode & {kind:K} extends Extract<NodeView,{kind:K}>` is trivially true for ANY field partition, because the flat record is a structural supertype of every Pick-based arm, so the assertion cannot detect a mis-assigned or missing field and the claimed 'proof the cast can never lie' is not a proof of anything the plan cares about.",
+          "severity": "major",
+          "evidence": "opus.json S10 verification defines `_Sound = { [K in NodeKind]: GraphNode & { kind: K } extends Extract<NodeView,{kind:K}> ? true : never }`. TypeScript's extends is width-subtyping: GraphNode has all 40 fields, every arm Picks a subset, so the relation holds for every possible arm definition including an empty one.",
+          "survives": false,
+          "repair": "Drop the _Sound assertion's marketing and keep only _Total and _Orphans (which do bite), and add a per-kind USAGE test instead: for each kind, assert the arm's key set equals the set of GraphNode fields that site-level code actually reads for that kind (enumerated once, test-owned), so an omission like the cc arm's missing ccSource fails the test rather than silently narrowing.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S6's parity requirement is internally contradictory and an implementer cannot execute it as written: it says 'the eight kinds that legitimately contribute nothing' and then lists TEN kinds; the real count after S1 is ten (19 canonical minus the nine arms plus the effect fallthrough).",
+          "severity": "minor",
+          "evidence": "opus.json S6: 'the eight `() => base` entries must be exactly the kinds S1's switch reached via default (trigger, all, random, sequence, chance, toggle, delay, scope, output, envelope)' — that list has 10 members. Source: trigger-flow-projection.ts:32-51 has arms for switch, play, modifier, mix, cc, note, osc, randomMod, lfo (9 arms, 8 canonical kinds after play->effect).",
+          "survives": false,
+          "repair": "Replace the hardcoded count with 'every canonical kind not named in the post-S1 switch', and let the S6 golden table (already specified) be the authority on which those are.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S2 claims to collapse the hoop-target grammar to one module but its file set excludes persistence.ts, which the step's own intent names as one of the four grammar sites — so after S2 the grammar is spelled in two places, not one, and the step's stated deliverable is not delivered.",
+          "severity": "minor",
+          "evidence": "opus.json S2 intent: 'spelled in four places (scope.ts:41 parse, scope.ts:90 fromPixelSet encode, scope-inspector.ts:33 encodeHoopTarget, persistence.ts:171 shiftHoopTargetTo1Based)'; S2 files list omits apps/web/src/lib/trigger-lab/persistence.ts.",
+          "survives": false,
+          "repair": "Either add persistence.ts to S2 and route shiftHoopTargetTo1Based through the shared parse/format pair, or restate the step's claim as 'three of four sites; the migration walker stays a deliberate string rewrite' and record it as a known residue.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S8 makes VoiceEngine hold ONE mutable FrameModCtx reused across every voice in the tick sweep; any consumer that retains the reference beyond the call (a modulation smoother, a deferred/delay-drained evaluation) will observe later-frame values, an aliasing class no test in the named suites is designed to catch.",
+          "severity": "minor",
+          "evidence": "opus.json S8: 'VoiceEngine gains ONE private mutable `frameMod: FrameModCtx` field, refreshed at the top of tick()'. determinism.test.ts is seeded and would catch a cross-frame leak only if the retained reference changes output in the same seeded run.",
+          "survives": true,
+          "plan_response": "S8's verification explicitly requires 'compositor.test.ts (40KB — the densest suite on this path), engine.test.ts, modulation-cc/lfo/osc/random-note.test.ts and determinism.test.ts green UNCHANGED — determinism.test.ts is the one that would catch a mis-threaded bpm or a dropped table', and S8 deliberately leaves CompositorFrame's shape alone so the mutable object never crosses the host seam: 'Leave CompositorFrame's shape ALONE: it is the host-facing seam and render() keeps its single conversion at compositor.ts:193-199'.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "The plan bills itself as addressing primitive-obsession-0001 (severity: critical) but leaves every call-site-enforced invariant the verdict cited untouched — graph-integrity.ts's 13-field default fill, makeNode's filler, store.svelte.ts:2840-2875's hand-guarded mutators, graph-wiring.ts:20-24's kind-derived legality — because GraphNode itself never changes.",
+          "severity": "major",
+          "evidence": "03-verdicts.json primitive-obsession-0001 refutation cites graph-wiring.ts:20-24 and store.svelte.ts:2840-2875,2561-2565 as the enforcement sites; opus.json summary: 'GraphNode's flat 40-field interface STAYS as the persisted/authoring record, untouched, migration-free', and no step touches graph-wiring.ts, store.svelte.ts or sim.graph-compilation.ts.",
+          "survives": true,
+          "plan_response": "The plan names this trade explicitly rather than hiding it: the summary states 'Flipping GraphNode itself is explicitly deferred to a follow-up gated on >=5 adopted consumers and a Trent decision', and S13 is designed to MEASURE the residue rather than claim it away — 'EXPECTED STILL SILENT (and therefore documented as remaining gaps, not claimed as fixed): eval-graph.ts's void switch, add-node-taxonomy.ts's palette groups, TriggerNode.svelte's isStateKind ladder'.",
+          "targets_step": "S13"
+        },
+        {
+          "claim": "S3 registers a new package subpath export as a bare .ts source path and asserts no build-tool change is needed, but the desktop sidecar/Tauri bundle and any non-Bundler consumer resolve packages/core through its build output, so a subpath pointing at src/ can resolve under vitest and still break the shipped bundle — and the step never builds.",
+          "severity": "minor",
+          "evidence": "opus.json S3 verification: 'Add \"./test-fixtures\": \"./src/test-fixtures.ts\" ... moduleResolution:Bundler ... so no build-tool change is needed — confirm by running `pnpm typecheck`'. S3's verification runs typecheck and gates but never `pnpm build`; sonnet.json's parity plan by contrast requires 'pnpm build for both apps/web and the Tauri desktop sidecar bundle after S3'.",
+          "survives": false,
+          "repair": "Add `pnpm build` for apps/web and the Tauri sidecar to S3's verification, and assert via grep on the built bundle that legacyEnvValue is absent (which is also the only real evidence for S3's stated tree-shaking win).",
+          "targets_step": "S3"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 5,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Make the NodeView adoption gate reachable: either lower it to two consumers plus the S13 probe delta, or schedule three more cheap adoptions.",
+        "Replace S10's vacuous _Sound assertion with a per-kind field-usage test that can actually fail when an arm omits a field the kind's code reads.",
+        "Fix S6's eight-versus-ten contradiction by deriving the no-op kind list from the post-S1 switch rather than hardcoding a count.",
+        "Add persistence.ts to S2 or downgrade S2's 'one grammar site' claim to a stated residue.",
+        "Add `pnpm build` (apps/web + Tauri sidecar) to S3's verification so the new subpath export is proven outside the Bundler-resolution path."
+      ]
+    },
+    {
+      "initiative_id": "INIT-06-graph-node-type-model",
+      "variant_reviewed": "sonnet",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-06-graph-node-type-model/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "Wave 3 cannot land green. S6 retypes core's dispatch parameters from the flat GraphNode to GraphNodeUnion, but a flat GraphNode value has `kind: NodeKind` (the whole union) and is therefore NOT assignable to a discriminated union requiring a specific kind literal — so every apps/web call into those core functions becomes a root typecheck error at S6, while the web migration (S9, S13) is two waves later and the flip (S14) is four.",
+          "severity": "fatal",
+          "evidence": "sonnet.json S6 retypes graph-integrity.ts, render-plan.ts, modulation-graph.ts and eval-graph.ts to GraphNodeUnion; apps/web reaches those same functions (sim.ts calls evalChildren at sim.ts:595 per the finding, sim.graph-compilation.ts re-exports voice.isModSourceKind/nodeIsModSource, hydrate.ts calls normalizeTriggerGraphToGen3 at hydrate.ts:400/418/455). sonnet.json parity check 2 demands 'pnpm typecheck at the monorepo root after every wave ... zero errors required' — the plan contradicts itself.",
+          "survives": false,
+          "repair": "Keep every CROSS-PACKAGE core signature on the flat GraphNode until S14 and narrow only inside function bodies (`const u = node as GraphNodeUnion` at one documented seam per file), so S6 is internal-only; or merge S6, S9 and S13 into the flip commit and accept one large step rather than a wave that cannot typecheck.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "The plan is not executable as written: two of its open questions carry blocks_execution:true and are owned by Trent, and its dependencies_on_other_initiatives names INIT-01 and INIT-02 — so dispatching this plan requires decisions the plan does not have.",
+          "severity": "major",
+          "evidence": "sonnet.json open_questions[0] and [1] both 'blocks_execution': true, 'owner': 'trent'; dependencies_on_other_initiatives: ['INIT-01-single-render-stack','INIT-02-store-decomposition'].",
+          "survives": false,
+          "repair": "Split the plan at the dependency line: waves 1-3 minus S6's cross-package retype are INIT-01/02-independent and can dispatch now; everything from S9 onward becomes a second plan gated on the two answers.",
+          "targets_step": "S13"
+        },
+        {
+          "claim": "S14 creates a forward-compat hazard the rollback strategy denies: after the flip, newly minted nodes omit the 13 previously-always-present fields, so a build reverted to before S14 reads shows whose chance nodes have no `division` and whose trigger nodes have no `effectId` — flat-interface code that assumes those fields present. The plan asserts revert safety without ever testing a reverted read.",
+          "severity": "major",
+          "evidence": "sonnet.json S14 intent: 'a chance node no longer carries division:\\'1/8\\', a trigger node no longer carries effectId:\\'\\''. rollback_strategy: 'No step in this plan performs an irreversible data migration'. known_gaps concedes 'there is NO zod or runtime schema validating a persisted GraphNode's shape anywhere in this codebase today'. Contrast fable.json, which does test this: 'Forward-compat proof BEFORE S4 merges: a filler-stripped show fixture loads green at the pre-S4 sha'.",
+          "survives": false,
+          "repair": "Adopt fable's forward-compat gate verbatim: before S14 merges, check out the pre-S14 sha and load a filler-stripped fixture show, asserting green. If it is not green, keep writing the filler fields on the save path (compile-time union, on-disk superset) and record it as the deliberate asymmetry.",
+          "targets_step": "S14"
+        },
+        {
+          "claim": "S15 contradicts itself and the rollback strategy on the persisted format: it says it 'changes the on-disk/clipboard string format' yet rollback claims 'S15's persisted-format change is additive'. If the codec still writes the string form, nothing on disk changes and the step's own framing is wrong; if it writes structured targets, a reverted build cannot read them.",
+          "severity": "major",
+          "evidence": "sonnet.json S15 intent: 'This lands LAST and alone because it changes the on-disk/clipboard string format'; rollback_strategy: 'S15's persisted-format change is additive ... a version-gated codec, not a one-way rewrite'.",
+          "survives": false,
+          "repair": "Pin the decision in the step: encodeScopeTarget MUST emit the existing `\"<drumId>#<h,h>\"` string (so on disk nothing changes and S15 is purely an in-memory type promotion), and delete the 'changes the on-disk format' framing plus the version-gating language.",
+          "targets_step": "S15"
+        },
+        {
+          "claim": "S11's risk rating is flattery: rewriting the node factory in 21 packages/core test files — the files that constitute the parity oracle for the whole initiative — is rated 'low' while S13's single-file store migration is rated 'high'. If the shared testNode helper silently supplies a different default than a local helper did, the suite goes green on changed semantics.",
+          "severity": "major",
+          "evidence": "sonnet.json S11 risk: 'low', files: 21 entries including determinism.test.ts, compositor.test.ts, engine.delay-overlap.test.ts and canvas-determinism.test.ts — the exact files the plan elsewhere nominates as its strongest parity oracles ('pin exact per-voice render/eval output and R13/R14 fan-in/delay-drain semantics').",
+          "survives": false,
+          "repair": "Rate S11 high and gate it on a mechanical equivalence proof: for each replaced local helper, assert deep-equality of the node object it produced before and after the swap for every kind/over combination the file uses, in a throwaway test that runs at the parent commit and the child commit.",
+          "targets_step": "S11"
+        },
+        {
+          "claim": "S13's method ('grep for every `node: GraphNode` parameter, work through them method by method, fix each by adding the missing guard') gives an implementer no stopping condition and no expected error count for a 3630-line file, so 'done' is unfalsifiable except by typecheck-silence, which the plan elsewhere says will still be dirty until S14.",
+          "severity": "minor",
+          "evidence": "sonnet.json S13 intent and verification; S14 intent then says 'Any file this plan's waves missed will fail typecheck HERE ... fix stragglers as they surface rather than treating a clean flip on the first attempt as the bar'.",
+          "survives": true,
+          "plan_response": "S13 does name a concrete non-model gate beyond typecheck: 'Full `pnpm test --filter @ledrums/web` (store.svelte.ts is imported by nearly every web test) — pass count equals baseline exactly. `pnpm ui-shot` against the full authoring flow: add one node of each kind via the palette, edit it via its inspector, undo/redo', which is a reproducible completion criterion independent of the grep sweep.",
+          "targets_step": "S13"
+        },
+        {
+          "claim": "The plan understates its own reach in the opposite direction from most: at 2400 LOC over 15 steps with a 21-file test sweep and a repo-wide rename it is the largest variant, yet it lists no wave as file-overlapping with INIT-01/INIT-02 despite naming both as hard dependencies — the overlap is acknowledged only in prose questions, never in the wave structure.",
+          "severity": "minor",
+          "evidence": "sonnet.json sequencing has 7 waves and no coordination markers; open_questions[0] states INIT-01 touches 'eval-graph.ts, types.ts, sim.ts and chain.ts — the exact same files S4, S5, S6, S7 and S15 restructure here'.",
+          "survives": true,
+          "plan_response": "The plan does encode this as an execution blocker rather than burying it: dependencies_on_other_initiatives lists both initiatives and open_questions[0] carries 'blocks_execution': true, so Phase 10 cannot schedule the waves without resolving the overlap first.",
+          "targets_step": "S5"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 3,
+        "sequencing_realism": 1,
+        "blast_radius_honesty": 4,
+        "verification_strength": 3
+      },
+      "overall": "unsound",
+      "required_repairs": [
+        "Restructure the union migration so no wave leaves the monorepo root typecheck red: keep cross-package core signatures flat until the flip, or merge the core+web+flip steps.",
+        "Resolve or remove the two blocks_execution open questions before dispatch, splitting the plan at the INIT-01/INIT-02 dependency line.",
+        "Add a pre-flip forward-compat read test (filler-stripped show loaded at the pre-flip sha) before S14 may merge.",
+        "Pin S15's codec to emit the existing string form so no on-disk format change occurs, and delete the contradictory rollback language.",
+        "Re-rate S11 high and gate the 21-file test-factory sweep on a per-kind deep-equality proof of the produced node objects."
+      ]
+    },
+    {
+      "initiative_id": "INIT-06-graph-node-type-model",
+      "variant_reviewed": "fable",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-06-graph-node-type-model/opus",
+        "model": "claude-opus-5[1m]",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S4's blast radius is understated by roughly half the affected files: `Partial<GraphNode>` collapses to the union's common fields (id/kind/x/y) the moment GraphNode becomes a union, and the repo has 46 occurrences of `Partial<GraphNode>` across 26 files — S4 names 14 files and not one test file.",
+          "severity": "major",
+          "evidence": "`grep -rn 'Partial<GraphNode>' apps packages | wc -l` = 46 across 26 files at HEAD. fable.json S4 files: 14 entries, all production. sonnet.json by contrast budgets S11 (21 core test files) and S12 (5 web test files) for exactly this cascade.",
+          "survives": false,
+          "repair": "Add an explicit pre-step introducing `NodeOfKind<K> = Extract<GraphNode,{kind:K}>` plus a shared kind-generic testNode factory, and enumerate the 26 `Partial<GraphNode>` files as part of S4's scope; the estimated_loc of 1050 must rise accordingly.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S3 removes 'play' from NodeKind but only introduces a widened KIND alias, not a widened NODE or GRAPH type — yet hydrate's pre-normalisation migrations operate on whole TriggerGraph/GraphNode values containing legacy play nodes, so those values become untypeable and the step silently requires PersistedGraphNode/PersistedTriggerGraph variants threaded through every migration signature, persistence.ts's `as Record<string,TriggerGraph>` cast and clipdoc's load path.",
+          "severity": "major",
+          "evidence": "fable.json S3: 'keep LegacyGraphNodeKind only as part of a widened ingress alias PersistedNodeKind = NodeKind | LegacyGraphNodeKind consumed solely by normalizeTriggerGraphToGen3'; then 'Pair-sites in hydrate.ts's pre-normalisation migrations (143/191/257/263/324/348) are the codec boundary and KEEP their play handling, typed against PersistedNodeKind' — a node-kind alias cannot type a GraphNode-shaped value whose kind is 'play'.",
+          "survives": false,
+          "repair": "Define the codec-side types explicitly in S3 — `PersistedGraphNode = Omit<GraphNode,'kind'> & {kind: PersistedNodeKind}` and `PersistedTriggerGraph` — and name every signature they must thread through (hydrate migrations, persistence.ts's cast, clipdoc load) as part of the step, not as a consequence.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S10 is not executable as written: it instructs the implementer to delete each parseHoopTarget flag 'that turns out to have a single caller or a single live value', but all three flags demonstrably carry three distinct live option sets across three callers, so the honest outcome of the audit is zero deletions and the step's only stated success measure ('flag count in the signature reduced') cannot be met.",
+          "severity": "major",
+          "evidence": "packages/core/src/voice/scope.ts:34-38 documents 'the compositor, the lab renderer, and the scope inspector all decode this same grammar but diverge on three deliberate points — sort order, the empty-hoop fallback, and how a hash-less id is treated'; scope.ts:64-68 uses {sourceDrumOnNoHash:false, emptyFallback:'sentinel', sort:true} while opus.json S2 enumerates two further distinct literals at compositor.ts:35 and scope-inspector.ts:25.",
+          "survives": false,
+          "repair": "Replace the conditional deletion with opus's deterministic version: export named policy presets (`HOOP_TARGET_POLICIES.compositor/.inspector/.resolver`) satisfying the existing options type, repoint the three callers, and keep the drum-id integrity diagnostic — the readability win without a behaviour-changing flag removal.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S10 names a file that does not exist, so an implementer following the step literally either creates a duplicate module or stalls: the scope inspector lives at apps/web/src/lib/app/docks/inspectors/scope-inspector.ts, not apps/web/src/lib/app/views/scope-inspector.ts.",
+          "severity": "minor",
+          "evidence": "`ls apps/web/src/lib/app/views/scope-inspector.ts` -> No such file or directory; `apps/web/src/lib/app/docks/inspectors/scope-inspector.ts:33 export function encodeHoopTarget` exists.",
+          "survives": false,
+          "repair": "Correct the path in S10's files list to apps/web/src/lib/app/docks/inspectors/scope-inspector.ts.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S8 proposes the engine's single mutable FrameModCtx be shared with compositor.render's frameCtx ('can now reuse rather than hand-copy'), which turns a per-frame copy into cross-seam aliasing — the compositor and any deferred/delay-drained evaluation then read whatever the engine last wrote, and the plan's only evidence for this is a reviewer's eyeball, not a test.",
+          "severity": "major",
+          "evidence": "fable.json S8: 'have VoiceEngine hold a single FrameModCtx field mutated in place per tick ... passed to both applyEffectiveParams and compositor.render's frameCtx construction at compositor.ts:195-201 — which can now reuse rather than hand-copy'. known_gaps: 'The zero-alloc claims in S7/S8 are asserted by no test; the replacing evidence is the reviewer's grep-verified check'.",
+          "survives": false,
+          "repair": "Keep render()'s single conversion (as opus S8 does) so the engine's mutable scratch never crosses into compositor state, and add the heap-delta harness opus specifies (node --expose-gc, 10k render calls, heapUsed delta at HEAD vs branch) as the zero-alloc evidence instead of a grep.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "The kind-count arithmetic drifts between steps, so the mutation probe an implementer is told to run is ambiguous: S4 says 'temporarily add a 20th kind', S6 says 'Adding a 21st kind now fails typecheck' and 'temporary 20th kind', while S3 has just reduced NodeKind to the 19 canonical members.",
+          "severity": "minor",
+          "evidence": "fable.json S3 sets NodeKind = CanonicalGraphNodeKind (19 members); S4 verification: 'temporarily add a 20th kind to CanonicalGraphNodeKind'; S6 intent: 'Adding a 21st kind now fails typecheck', S6 verification: 'temporary 20th kind in NodeKind'.",
+          "survives": false,
+          "repair": "State the probe once, as '+1 synthetic kind `__probe` appended to CanonicalGraphNodeKind', and reference it from every step rather than restating an ordinal.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S4 changes what the save path writes (filler fields stripped) with no migration, which is a one-way format ratchet against a persistence layer the plan concedes has no runtime schema — a rolled-back build reads shows whose nodes lack the 13 previously-required fields.",
+          "severity": "major",
+          "evidence": "fable.json S4: 'Save path serialises the narrowed node as-is — a strict subset of the old flat shape ... so no migration is written'; sonnet.json known_gaps confirms 'there is NO zod or runtime schema validating a persisted GraphNode's shape anywhere in this codebase today'.",
+          "survives": true,
+          "plan_response": "This is the one hazard fable actually gates: rollback_strategy names it — 'The only one-way ratchet is S4's save-path field-stripping (post-S4 saves omit filler fields); it is de-fanged before S4 merges by the forward-compat fixture test proving a filler-stripped show loads green at the pre-S4 sha' — and the parity plan lists 'Forward-compat proof BEFORE S4 merges' as a required check.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S3 is scheduled as its own wave immediately after S1, but S1's fix lives in the very line S3 deletes ('S1's `case 'play':` label goes away'), so the live-bug fix's regression test is rewritten one wave after it lands and the plan's claim that S1 survives an S6 backout does not extend to an S3 backout.",
+          "severity": "minor",
+          "evidence": "fable.json S3 intent lists trigger-flow-projection.ts among its files and says the case label goes away; rollback_strategy: 'S1 is deliberately independent of S6 so the live-bug fix survives even if the Record refactor is backed out' — S3 is not mentioned.",
+          "survives": true,
+          "plan_response": "S1's durable artifact is its committed test, not the case label: S1 specifies 'Add a unit test in a new apps/web/src/lib/app/views/trigger-flow-projection.test.ts: triggerNodeSignature({kind:'effect', effectId:'a', ...}) !== same node with effectId:'b'', and S6's verification carries it forward — 'tests from S1 still green plus new cases' — so reverting S3 restores the label the test still pins.",
+          "targets_step": "S3"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 4,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 2,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Expand S4's scope to the 26 files using Partial<GraphNode> and introduce a kind-generic NodeOfKind + shared test factory; raise the LOC estimate to match.",
+        "Define PersistedGraphNode/PersistedTriggerGraph in S3 and enumerate every migration/persistence signature that must thread them.",
+        "Replace S10's conditional flag deletion with named policy presets; all three parseHoopTarget flags have distinct live callers per scope.ts:34-38.",
+        "Correct S10's scope-inspector path to apps/web/src/lib/app/docks/inspectors/scope-inspector.ts.",
+        "Stop sharing the engine's mutable FrameModCtx with compositor.render; keep render()'s single conversion and prove zero-alloc with a heap-delta harness rather than a grep.",
+        "State the kind mutation probe once as a single named synthetic kind instead of drifting ordinals across S4 and S6."
+      ]
+    }
+  ]
+}

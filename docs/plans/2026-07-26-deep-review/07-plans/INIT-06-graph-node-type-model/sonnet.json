@@ -1,0 +1,334 @@
+{
+  "initiative_id": "INIT-06-graph-node-type-model",
+  "variant": "sonnet",
+  "provenance": {
+    "model": "claude-sonnet-5",
+    "effort": "medium",
+    "phase": "7"
+  },
+  "summary": "GraphNode is a 40-field flat interface (27 optional, 13 unconditionally required regardless of kind) behind a 19-member NodeKind union; this plan replaces it with a real discriminated union — GraphNodeBase plus 18 canonical per-kind interfaces sharing two composable traits (ScopeRouting, ModTargetRows) — introduced as a shadow type (GraphNodeUnion) that coexists with the flat interface, migrated into every consumer one seam at a time, then flipped to be the only GraphNode in one final rename-and-delete commit. The end state deletes: the flat 40-field interface itself; the hand-maintained 13-field default-fill blocks in graph-integrity.ts's anchorNode and sim.graph-compilation.ts's makeNode; the silent `default: return base`/`default: return null` fallback arms in trigger-flow-projection.ts and modulation-graph.ts that let repeated-switches-0001's live bug (the 'effect' kind never hitting its signature arm) exist in the first place; and, in a final wave, parseHoopTarget's three ambiguity-resolution flags once scope/targetId becomes a real ScopeTarget union. Three smaller, independently-shippable findings (the two data-clumps parameter clumps and the modulation-parity test-fixture barrel) ride along in their own early, low-conflict waves because they touch the same file neighborhood and are otherwise easy to lose track of once the big union migration starts. The true blast radius is larger than the finding's own 40-file estimate once ~25 duplicated test-node-factory functions across packages/core and apps/web are counted — this plan surfaces that honestly rather than hiding it, and spends two whole waves consolidating those factories before the final flip forces them to comply.",
+  "findings_addressed": [
+    "primitive-obsession-0001",
+    "primitive-obsession-0003",
+    "primitive-obsession-0009",
+    "repeated-switches-0001",
+    "repeated-switches-0002",
+    "data-clumps-0001",
+    "data-clumps-0003",
+    "data-clumps-0004",
+    "middle-man-0003"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Hotfix the live repeated-switches-0001 bug: effect nodes never hit their signature arm",
+      "intent": "trigger-flow-projection.ts:34 spells `case 'play':` while every other NodeKind discriminant site in the app spells the pair (`kind === 'play' || kind === 'effect'`); graph-integrity.ts's normalizeTriggerGraphToGen3 rewrites every persisted `play` to `effect` before it reaches the store, so the arm is dead and real effect nodes fall to `default: return base` — playType/effectId/canvasScene never enter the projection cache's comparison, which is the vanishing-wire bug class the function's own doc comment says it fixes. Land the one-line correctness fix now, independent of the larger union work, so the bug stops shipping while the durable fix (S10) is still several waves away.",
+      "files": ["apps/web/src/lib/app/views/trigger-flow-projection.ts"],
+      "risk": "low",
+      "verification": "Add a unit test in trigger-flow-projection.test.ts: triggerNodeSignature({kind:'effect', effectId:'a', ...}) vs effectId:'b' must differ — currently does not, must pass after the fix. `pnpm test --filter @ledrums/web -- trigger-flow-projection`."
+    },
+    {
+      "id": "S2",
+      "title": "repeated-switches-0002: make MOD_SOURCE_KINDS type-linked and collapse the sixth hardcoded copy",
+      "intent": "MOD_SOURCE_KINDS (modulation-graph.ts:30) is a plain `as const` array with no compile-time link back to NodeKind, so a 7th mod-source kind compiles clean and silently fails to reach the palette/dispatch/preview. Change it to `as const satisfies readonly NodeKind[]`, replace nodeModSource's `default: return null` with a Record<ModSourceKindName, (n: GraphNode) => ModSource> lookup (keeping the same fail-open null for a genuinely non-source kind — the removed default must be replaced by an explicit `kind in MAP` guard, not silently dropped), and replace TriggerNode.svelte:127's inline six-literal `isSourceKind` and the duplicate at NodeSignalPreview.svelte with calls to the already-exported `nodeIsModSource` (sim.graph-compilation.ts:68 already wraps voice.isModSourceKind — TriggerNode simply doesn't use it today).",
+      "files": [
+        "packages/core/src/voice/modulation-graph.ts",
+        "apps/web/src/lib/app/views/TriggerNode.svelte",
+        "apps/web/src/lib/app/views/NodeSignalPreview.svelte"
+      ],
+      "risk": "medium",
+      "verification": "Temporarily add a 7th member to CanonicalGraphNodeKind, run `pnpm typecheck` and confirm render-plan.ts's nodeCategory is no longer the ONLY error (modulation-graph.ts's Record must now also fail closed on the missing member). Revert the temp member. `pnpm test --filter @ledrums/core -- modulation-graph` and `pnpm test --filter @ledrums/web -- TriggerNode` stay green."
+    },
+    {
+      "id": "S3",
+      "title": "middle-man-0003: move the modulation-parity test fixtures off the public core barrel",
+      "intent": "voice/index.ts:20-26 re-exports MODULATION_PARITY_CASES/PARITY_PHASES/legacyEnvValue/mappingEnvValue/ParityCase through @ledrums/core's public `voice` namespace, but the only two consumers are packages/core/src/voice/modulation.test.ts (same package, doesn't need the barrel) and apps/web's hydrate.envmap.test.ts (needs a real cross-package seam). legacyEnvValue is deliberately-superseded pre-migration envelope math that a production caller could plausibly reach through `voice.legacyEnvValue` today. Add a new package entry point packages/core/src/test-fixtures.ts re-exporting modulation-parity's five symbols, register it in packages/core/package.json's `exports` map as `\"./test-fixtures\": \"./src/test-fixtures.ts\"`, drop voice/index.ts:20-26, and repoint both test files at the new import path.",
+      "files": [
+        "packages/core/src/voice/index.ts",
+        "packages/core/src/test-fixtures.ts",
+        "packages/core/package.json",
+        "packages/core/src/voice/modulation.test.ts",
+        "apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm typecheck` clean at both packages/core and apps/web (confirms the new subpath export resolves through Vite/vitest's workspace resolution — this is a novel pattern in this repo, no existing second entry point to copy). `pnpm test --filter @ledrums/core -- modulation` and `pnpm test --filter @ledrums/web -- hydrate.envmap` stay green with the same assertion counts. `grep -rn 'voice.legacyEnvValue|voice\\.MODULATION_PARITY_CASES' apps packages --include=*.ts` returns zero hits."
+    },
+    {
+      "id": "S4",
+      "title": "Design the target GraphNode discriminated union as a shadow type alongside the flat interface",
+      "intent": "Add, WITHOUT touching the existing exported `GraphNode` name or any consumer, the target shape in packages/core/src/voice/types.ts: `interface GraphNodeBase { id: string; kind: NodeKind; x: number; y: number }`; two composable traits reused by more than one kind — `interface ScopeRouting { scope: Scope; targetId?: string }` (used by play/effect, scope, and output — the three kinds setScope/setTargetId in store.svelte.ts already guard together) and `interface ModTargetRows { modInputs?: { param: string }[] }` (used by play/effect and modifier); 18 per-kind interfaces (PlayNode for both legacy 'play' and canonical 'effect' — keep a `LegacyPlayNode` arm with kind:'play' and the identical field set as PlayNode, since normalizeTriggerGraphToGen3 must keep narrowing real persisted 'play' nodes — ModifierNode, MixNode, LfoNode, CcNode, NoteNode, RandomModNode, RandomNode, SwitchNode, ChanceNode, DelayNode, TriggerAnchorNode, ScopeNode, OutputNode, EnvelopeNode, AllNode, SequenceNode, ToggleNode), each extending GraphNodeBase plus whichever traits it needs, carrying only its own kind's fields as required (not optional) and dropping every field the flat interface forced it to also carry; `type GraphNodeUnion = PlayNode | LegacyPlayNode | ModifierNode | ...`; and `type NodeOfKind<K extends NodeKind> = Extract<GraphNodeUnion, { kind: K }>` — the generic helper every later kind-aware factory/test-fixture step needs, because `Partial<GraphNode>` on a union only exposes fields common to ALL members (effectively just id/kind/x/y), so `Partial<NodeOfKind<K>>` is the replacement pattern for every `over: Partial<GraphNode>` parameter in the codebase (found at makeNode in sim.graph-compilation.ts and in ~25 test-node-factory helpers). This step changes nothing else — the flat `GraphNode` interface stays exported and used by everyone until S14.",
+      "files": [
+        "packages/core/src/voice/types.ts",
+        "packages/core/src/voice/graph-node-union.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New test packages/core/src/voice/graph-node-union.test.ts: for each of the 19 kinds, construct a NodeOfKind<K> fixture and assert its keys are exactly GraphNodeBase's keys plus that kind's documented extra fields (mechanical, enumerable per the flat interface's existing `// kind` comment groups). `pnpm typecheck` — must be clean (pure addition, no existing signature changed). Confirm zero other files changed via `git diff --stat`."
+    },
+    {
+      "id": "S5",
+      "title": "data-clumps-0003: package eval-graph's 8-slot forwarding tuple into an EvalCursor",
+      "intent": "evalGraphGen3 -> evalGraphGen3FromPlan (line 269), evalChildren -> evalGraphGen3From -> evalGraphGen3FromPlan (lines 625, 274) all carry the identical (state, graph|plan, pad, startIds|childIds, ctx, viaPrefix, seen, draft) 8-tuple; six of eight slots (state, pad, ctx, viaPrefix, seen — plus graph/plan which differs by variant) are one traversal cursor, only startIds and draft vary per hop. Introduce `interface EvalCursor { state: EvalState; pad: string; ctx: TriggerCtx; viaPrefix: string; seen: Set<string> }` local to eval-graph.ts; reshape the three internal functions to `(cursor: EvalCursor, plan: RenderPlan, startIds: readonly string[], draft: PlayDraft | null)`; keep the exported `evalChildren` signature unchanged as the public seam (called from the engine's pending-fire drain) and have it construct the cursor internally, confining all churn to this one file. Land this BEFORE S6's kind-exhaustive switch rewrite of the same file so the two changes don't collide in one commit.",
+      "files": ["packages/core/src/voice/eval-graph.ts"],
+      "risk": "high",
+      "reverses": "git revert this commit; S4's shadow union type is untouched and independent, so nothing downstream depends on this step landing.",
+      "verification": "`pnpm typecheck`. `pnpm test --filter @ledrums/core -- eval-graph eval-graph.mix eval-graph.playtype eval-graph.delay-timeline eval-graph.fanin-coalescing determinism engine engine.delay-overlap` — these pin R13/R14 fan-in coalescing and delay-drain semantics; a transposed cursor member breaks them. Assertion count must equal baseline (2968-test suite, this file's share unchanged)."
+    },
+    {
+      "id": "S6",
+      "title": "Migrate packages/core's internal NodeKind dispatch to the discriminated union, deleting the dead-default fallbacks",
+      "intent": "Four files change together as one commit because they are the actual per-kind dispatch surface: (a) graph-integrity.ts's anchorNode (lines 42-67) currently hand-fills all 13 globally-required fields (mode, scope, effectId, presetId, busId, params, env, noRepeat, on, valueMode, threshold, invert, bands, p, mixBlendMode, delayMode, ms, division) for a 'trigger' or 'output' anchor that needs almost none of them — rewrite it to build a `NodeOfKind<'trigger'>` / `NodeOfKind<'output'>` directly (trigger needs only the base + optional `source`; output needs base + ScopeRouting), deleting ~20 lines of placeholder defaults; addNode's `node.kind === 'play' ? {...node, kind:'effect'} : node` spreads (lines 148, 154) stay as-is since they operate on the LegacyPlayNode->PlayNode arm pair, which share identical fields by construction in S4. (b) render-plan.ts's nodeCategory is ALREADY an exhaustive switch with no default arm under strict — just swap its `NodeKind` param usage to confirm it still typechecks against the union's kind literals (should be a no-op; this is the pattern every other switch in this step is being rewritten to match). (c) modulation-graph.ts: nodeModSource's switch narrows `node: GraphNode` to `node: GraphNodeUnion`, so `node.env?.[ENVELOPE_NODE_KEY]` etc. are now compiler-verified as only reachable on the EnvelopeNode/LfoNode/CcNode/etc. arms rather than optional-everywhere fields. (d) eval-graph.ts's per-NodeKind switch (lines ~390-588, already exhaustive in practice) narrows its `node: GraphNode` parameters to `GraphNodeUnion` throughout, built on S5's EvalCursor. Do NOT flip the exported `GraphNode` name itself yet — all four files import `GraphNodeUnion` explicitly.",
+      "files": [
+        "packages/core/src/voice/graph-integrity.ts",
+        "packages/core/src/voice/render-plan.ts",
+        "packages/core/src/voice/modulation-graph.ts",
+        "packages/core/src/voice/eval-graph.ts"
+      ],
+      "risk": "high",
+      "reverses": "git revert this commit; S4 and S5 remain valid and independently green, nothing later in the plan has landed yet that depends on this specific commit's internal dispatch rewrite (S7 touches disjoint files; S8 depends only on S4).",
+      "verification": "`pnpm typecheck`. `pnpm test --filter @ledrums/core` full package suite (not just the touched files — graph-integrity/render-plan/modulation-graph/eval-graph are imported transitively by nearly everything in voice/) — must match baseline pass count exactly. Manually confirm anchorNode's LOC delta by reading the diff: the 13-field default block for 'trigger' should be gone entirely, 'output' should retain only ScopeRouting's `scope:'kit'`."
+    },
+    {
+      "id": "S7",
+      "title": "data-clumps-0001 + data-clumps-0004: consolidate the frame-modulation-context and modifier-context parameter clumps",
+      "intent": "Two overlapping clumps in the same file neighborhood, fixed together. (1) applyEffectiveParams (compositor.ts:61) takes (v, timeMs, bpm, cc?, osc?, notes?) positionally even though the SAME file already declares `type FrameModCtx = Omit<ModSampleCtx,'phase'>` for exactly this tuple and the render loop already builds one `frameCtx: FrameModCtx` per frame (compositor.ts:195-201) — change the signature to `applyEffectiveParams(v: Voice, frame: FrameModCtx): ParamValues` and update its one production call site (engine.ts:711, which already holds all five values as engine fields) to build/reuse a FrameModCtx instead of exploding them positionally. (2) applyModifierChain (modifiers/chain.ts:34) takes 8 params, three of which (model, timeMs, dt) it immediately re-bundles into the ALREADY-exported `ModifierContext` on its own first line — change the signature to `applyModifierChain(chain, state, fb, range, ctx: ModifierContext, modCtx?: ModSampleCtx)` (8 params to 6, zero new exported symbols) and update its three non-test callers: compositor.ts:244 (which must now build one ModifierContext per voice/range from values it already holds, not per-frame-alloc — the compositor's existing per-frame FrameModCtx from (1) is a DIFFERENT object and must not be conflated with ModifierContext), generator-bridge.ts:152, and the apps/web sim mirror at trigger-lab/render.ts:265 (a third, independent copy of the same call shape — the mirror must be updated in the SAME commit or it silently diverges from core).",
+      "files": [
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/engine.ts",
+        "packages/core/src/modifiers/chain.ts",
+        "packages/core/src/modifiers/types.ts",
+        "packages/core/src/voice/generator-bridge.ts",
+        "apps/web/src/lib/trigger-lab/render.ts"
+      ],
+      "risk": "high",
+      "reverses": "git revert this commit; disjoint from S5/S6's file set (no NodeKind dispatch touched here), so reverting cannot re-open the union migration.",
+      "verification": "`pnpm typecheck` across core and web. `pnpm test --filter @ledrums/core -- modulation modulation-graph compositor engine engine.delay-overlap` plus the modifiers.s30/s31/s32 suites and any slice/trail suite exercising applyModifierChain — all pin exact per-voice output and must stay green unchanged. Explicit allocation check: read the diff and confirm the compositor still builds at most one ModifierContext per voice per frame (not per range) — the render loop's zero-alloc-on-the-hot-path contract (AGENTS.md) is a code-review item here, not something the suite measures numerically; call this out again in behaviour_parity_evidence_plan.known_gaps."
+    },
+    {
+      "id": "S8",
+      "title": "Make the web mint site (makeNode) kind-generic so it stops synthesizing 13 irrelevant defaults",
+      "intent": "sim.graph-compilation.ts's makeNode (line 77) is the ONE node-construction function for the entire web app (store.svelte.ts calls it for every new node; nodeFromBlock calls it internally for legacy block-tree conversion) and duplicates graph-integrity.ts's anchorNode default-fill almost verbatim. Rewrite it to `function makeNode<K extends NodeKind>(kind: K, id: string, x = 0, y = 0, over: Partial<NodeOfKind<K>> = {}): NodeOfKind<K>` using S4's generic extract helper, building only the fields that kind's per-kind interface actually declares (a small per-kind literal-building switch, or a `Record<NodeKind, () => object>` defaults table). Fix nodeFromBlock's `const over: Partial<GraphNode> = { on: b.on }` (line 132) to `Partial<NodeOfKind<'switch'>>` at its one use site. This step does NOT yet touch store.svelte.ts's ~30 mutator methods (S13) — makeNode's external call signature `(kind, id, x, y, over)` stays source-compatible with every existing caller, so this is a self-contained, single-file change.",
+      "files": ["apps/web/src/lib/trigger-lab/sim.graph-compilation.ts"],
+      "risk": "medium",
+      "verification": "`pnpm typecheck` for apps/web. `pnpm test --filter @ledrums/web -- sim.graph-compilation` and any block-tree conversion test (treeToGraph). Manually confirm the diff: makeNode('trigger', 'trigger', 0, y) should no longer need `over` at all; makeNode('chance', id, x, y, {p}) should build exactly {id,kind,x,y,p}, not 17 other fields."
+    },
+    {
+      "id": "S9",
+      "title": "Migrate apps/web inspectors and node-metadata views to the discriminated union",
+      "intent": "Each *NodeInspector.svelte already gates its body on `{#if node.kind === 'x'}` — with `node` typed as GraphNodeUnion this guard now genuinely narrows and the compiler catches any field access outside a kind's actual field set (previously papered over by the flat interface's 27 optional fields). Change the `node` prop type on every listed inspector from GraphNode to GraphNodeUnion (or the specific NodeOfKind<'x'> where the inspector is already kind-specific by filename), and update trigger-node-meta.ts, add-node-taxonomy.ts, graph-to-flow.ts, Inspector.svelte (the dispatcher that picks which *NodeInspector to render), and scope-inspector.ts's `selectionFromNode(node: Pick<GraphNode,'scope'|'targetId'>, ...)` helper similarly. Expect real compile errors here, not just import renames — these are exactly the 'places the flat record was hiding a kind assumption' the finding predicts; fix each by adding or tightening the missing kind guard, never by widening the type back.",
+      "files": [
+        "apps/web/src/lib/app/docks/inspectors/CcNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/LfoNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ScopeNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/OutputNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/EnvelopeNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/NoteNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/RandomModNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/OscNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/DelayNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ModulationParamsSection.svelte",
+        "apps/web/src/lib/app/docks/inspectors/scope-inspector.ts",
+        "apps/web/src/lib/app/docks/Inspector.svelte",
+        "apps/web/src/lib/app/views/trigger-node-meta.ts",
+        "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+        "apps/web/src/lib/app/views/graph-to-flow.ts",
+        "apps/web/src/lib/app/views/NodeStatePreview.svelte"
+      ],
+      "risk": "medium",
+      "verification": "`pnpm --filter @ledrums/web run check` (svelte-check) — zero new type errors. `pnpm ui-shot` against the Patch/Trigger graph view with one node of each of the 19 kinds selected, capturing each inspector — this is the real parity evidence for the Svelte-template layer since svelte-check is weaker than plain .ts narrowing (see known_gaps). `pnpm test --filter @ledrums/web -- add-node-taxonomy scope-inspector`."
+    },
+    {
+      "id": "S10",
+      "title": "primitive-obsession-0009: rewrite triggerNodeSignature as an exhaustive per-kind builder",
+      "intent": "S1 patched the immediate 'effect' omission; this step removes the underlying defect class permanently. Replace the switch's `default: return base` (line 51) with either an exhaustive switch (no default arm — TypeScript now errors if a kind is unhandled, since `node` is typed GraphNodeUnion) or the finding's stronger alternative: drop the string-concatenation signature entirely in favor of a typed `handleIdentity(node: GraphNodeUnion, graph: TriggerGraph): string[]` that a test enumerates per kind. Either way, add the two cases the current arms silently miss today: the `cc` arm must include ccSource/oscAddress (types.ts:313,316), the `modifier` arm must include bypass (types.ts:291).",
+      "files": ["apps/web/src/lib/app/views/trigger-flow-projection.ts"],
+      "risk": "medium",
+      "verification": "Toggle a `cc` node's ccSource from 'midi' to 'osc' and assert the signature (or handleIdentity output) changes — currently does not (the finding's own regression test). Add a temporary 20th dummy NodeKind member and confirm `pnpm typecheck` now fails at THIS file (proving the exhaustiveness is compiler-enforced, not comment-enforced); revert the temp member. `pnpm test --filter @ledrums/web -- trigger-flow-projection`."
+    },
+    {
+      "id": "S11",
+      "title": "Consolidate ~20 duplicated packages/core test-node-factory helpers into one shared, kind-generic fixture",
+      "intent": "Roughly 20 packages/core test files (scope-lint.test.ts, render-plan.test.ts, engine.test.ts, engine.delay-overlap.test.ts, modifier-graph.test.ts, graph-integrity.test.ts, canvas-show.test.ts, compositor.test.ts, eval-graph.mix.test.ts, eval-graph.playtype.test.ts, eval-graph.delay-timeline.test.ts, eval-graph.fanin-coalescing.test.ts, modulation-cc.test.ts, modulation-osc.test.ts, modulation-graph.test.ts, reachability-lint.test.ts, determinism.test.ts, enum-params.test.ts, modifiers/modifiers.s30.test.ts, canvas/canvas-determinism.test.ts) each define a local `function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode` that duplicates the SAME 13-field default-fill pattern anchorNode/makeNode had — none of these compile once `Partial<GraphNode>` means the narrow union (Partial of a union only exposes fields common to every member). Create `packages/core/src/test-utils/graph-node.ts` exporting one `testNode<K extends NodeKind>(kind: K, id: string, over: Partial<NodeOfKind<K>> = {}): NodeOfKind<K>` built the same way as S8's web makeNode, then repoint every listed test file's local `node()` calls at it (delete the local helper, import the shared one). This is real duplicated-code cleanup discovered as a forcing function of the union migration, not scope creep — without it S14's flip cannot land without breaking ~20 test files simultaneously in one commit.",
+      "files": [
+        "packages/core/src/test-utils/graph-node.ts",
+        "packages/core/src/voice/scope-lint.test.ts",
+        "packages/core/src/voice/render-plan.test.ts",
+        "packages/core/src/voice/engine.test.ts",
+        "packages/core/src/voice/engine.delay-overlap.test.ts",
+        "packages/core/src/voice/modifier-graph.test.ts",
+        "packages/core/src/voice/graph-integrity.test.ts",
+        "packages/core/src/voice/canvas-show.test.ts",
+        "packages/core/src/voice/compositor.test.ts",
+        "packages/core/src/voice/eval-graph.mix.test.ts",
+        "packages/core/src/voice/eval-graph.playtype.test.ts",
+        "packages/core/src/voice/eval-graph.delay-timeline.test.ts",
+        "packages/core/src/voice/eval-graph.fanin-coalescing.test.ts",
+        "packages/core/src/voice/modulation-cc.test.ts",
+        "packages/core/src/voice/modulation-osc.test.ts",
+        "packages/core/src/voice/modulation-graph.test.ts",
+        "packages/core/src/voice/reachability-lint.test.ts",
+        "packages/core/src/voice/determinism.test.ts",
+        "packages/core/src/voice/enum-params.test.ts",
+        "packages/core/src/modifiers/modifiers.s30.test.ts",
+        "packages/core/src/canvas/canvas-determinism.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm typecheck`. `pnpm test --filter @ledrums/core` full suite — pass count must equal baseline exactly (mechanical import-swap, zero behavior change expected; any test that now fails to construct a fixture reveals that test was relying on an accidental cross-kind default, which is exactly the bug class this initiative targets and must be fixed, not worked around)."
+    },
+    {
+      "id": "S12",
+      "title": "Repoint the apps/web test-node-factory duplicates at the S8 kind-generic makeNode",
+      "intent": "Five apps/web test files (OutputNodeInspector.test.ts, sim.value-switch.test.ts, sim.modifiers.test.ts, store.value-switch.test.ts, store/canvas-scenes.test.ts) define their own local node/playNode/modNode factories using `Partial<GraphNode>`, and some directly `delete (sw as Partial<GraphNode>).valueMode` to simulate an older persisted blob missing value-switch fields. Repoint each at S8's already-kind-generic `makeNode`; for the `delete`-based back-compat simulations, keep them but retype the local variable through `NodeOfKind<'switch'>` with an explicit cast at the deletion site only (deleting a required field to simulate legacy data is intentionally type-unsafe and should stay a visible, commented cast, not silently absorbed into the factory).",
+      "files": [
+        "apps/web/src/lib/app/docks/inspectors/OutputNodeInspector.test.ts",
+        "apps/web/src/lib/trigger-lab/sim.value-switch.test.ts",
+        "apps/web/src/lib/trigger-lab/sim.modifiers.test.ts",
+        "apps/web/src/lib/trigger-lab/store.value-switch.test.ts",
+        "apps/web/src/lib/trigger-lab/store/canvas-scenes.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm typecheck` and `pnpm test --filter @ledrums/web -- OutputNodeInspector sim.value-switch sim.modifiers store.value-switch canvas-scenes` — pass counts equal baseline."
+    },
+    {
+      "id": "S13",
+      "title": "Migrate store.svelte.ts's ~30 kind-guarded mutator methods to the discriminated union",
+      "intent": "store.svelte.ts (3630 lines, the single largest and most state-dense file in the app) already hand-guards most of its GraphNode mutators by kind before mutating — e.g. setScope/setTargetId (lines 2838-2853) check `node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output'` before touching node.scope/node.targetId (which is exactly S4's ScopeRouting trait's membership, confirming the trait boundary was derived correctly from real code, not guessed), and setNoRepeat/setChance/setSwitchOn/setDivision similarly guard on a single kind. Changing the file's `GraphNode` references to `GraphNodeUnion` should make MOST of these guards compile unchanged, because TypeScript narrows a discriminated union through chained `!==` early-return guards. Expect the real compile errors to cluster in methods that mutate a field WITHOUT a preceding kind guard (trusting the flat interface's always-present fields) — each one is a genuine site primitive-obsession-0001 predicted; fix by adding the missing guard, matching the pattern already used ten lines above it. Do this file in isolation, in its own wave, given its size — grep for every `node: GraphNode` parameter first and work through them method by method, running `pnpm typecheck` after each cluster rather than attempting one pass over the whole file.",
+      "files": ["apps/web/src/lib/trigger-lab/store.svelte.ts"],
+      "risk": "high",
+      "reverses": "git revert this commit. Every other consumer migrated so far (S6, S8, S9) references GraphNodeUnion independently and does not depend on store.svelte.ts's internal type usage, so reverting this one file cannot break them; store.svelte.ts simply falls back to importing the still-present flat GraphNode name.",
+      "verification": "`pnpm --filter @ledrums/web run check`. Full `pnpm test --filter @ledrums/web` (store.svelte.ts is imported by nearly every web test) — pass count equals baseline exactly. `pnpm ui-shot` against the full authoring flow: add one node of each kind via the palette, edit it via its inspector, undo/redo — this exercises the mutator methods end-to-end in the running app, which unit tests alone do not (see AGENTS.md's UI-change verification requirement)."
+    },
+    {
+      "id": "S14",
+      "title": "The flip: delete the flat GraphNode interface, rename GraphNodeUnion to GraphNode",
+      "intent": "Every production and test consumer now references GraphNodeUnion explicitly (S6, S8, S9, S11, S12, S13) or doesn't touch node internals at all. Delete the flat GraphNode interface body (types.ts:246-358 — the 40-field, 27-optional interface this whole initiative exists to remove), then mechanically rename GraphNodeUnion to GraphNode everywhere it's referenced (repo-wide, since GraphNodeUnion was only ever an internal migration name, never meant to ship). This is the moment the 13 previously-globally-required fields (mode, scope, effectId, presetId, busId, params, env, noRepeat, on, valueMode, threshold, invert, bands, p, delayMode, ms, division) stop being present on kinds that never used them — a chance node no longer carries `division:'1/8'`, a trigger node no longer carries `effectId:''`. Any file this plan's waves missed will fail typecheck HERE, which is the honest expectation given the finding's own blast-radius estimate (40 files) undercounts what was actually found (~60-70 once the test-fixture factories in S11/S12 are counted) — fix stragglers as they surface rather than treating a clean flip on the first attempt as the bar.",
+      "files": ["packages/core/src/voice/types.ts"],
+      "risk": "high",
+      "reverses": "git revert this single commit. It is a pure rename + one deletion with no new runtime logic of its own — every behavioral fix from S1-S13 already landed and was independently verified before this step; reverting S14 alone restores the flat interface's name while all of S1-S13's real fixes keep working under the (now again shadow-named) GraphNodeUnion, so a revert does NOT resurrect repeated-switches-0001's bug or any of the other 8 findings' original defects.",
+      "verification": "`pnpm typecheck` at the monorepo root — MUST be zero errors; every error surfaced is a genuine straggler consumer this plan's waves did not reach and must be fixed inline before this step is considered done, not deferred. `pnpm gates` (full suite, machine-mutex) — pass count must equal the Phase 0 baseline (2968) plus only the net-new tests this plan intentionally added (S4's graph-node-union.test.ts, S1/S10's signature regression tests). `pnpm build` for both apps/web and the Tauri desktop sidecar bundle."
+    },
+    {
+      "id": "S15",
+      "title": "primitive-obsession-0003: promote scope+targetId into a real ScopeTarget union, deleting parseHoopTarget's ambiguity flags",
+      "intent": "GraphNode.targetId encodes a structured value (a drum + a set of 1-based hoop indices) as the string `\"<drumId>#<hoop>[,<hoop>]\"`, and the structured type already exists two lines away in scope.ts as the unexported PixelSet. parseHoopTarget needs three behavior flags (sourceDrumOnNoHash, emptyFallback, sort) purely because callers disagree on how to disambiguate the same ambiguous string. Note the verdict's refutation correction: the finding's claim that the hoop-index migration is 'duplicated across persistence.ts:171 and clipdoc.ts:334' is INACCURATE — clipdoc.ts:33 imports and calls persistence.ts's migrateGraphHoopTargets directly, there is only one migration walker, not two; do not re-introduce a second copy while fixing this. Export PixelSet as `ScopeTarget = {scope:'kit'} | {scope:'drum';drumId:string} | {scope:'hoop';drumId:string;hoopIndices:number[]}`, add `encodeScopeTarget`/`decodeScopeTarget` codec functions applied ONLY at the persistence boundary (persistence.ts's serialize/deserialize) and the clipboard boundary (clipdoc.ts, via its existing persistence.ts import), and change ScopeRouting's shape from `{scope: Scope; targetId?: string}` to embed the decoded ScopeTarget directly so every in-memory consumer (scope-inspector.ts, OutputNodeInspector.svelte, ScopeNodeInspector.svelte, ScopeHoopPreview.svelte, store.svelte.ts's setScope/setTargetId, store/graph-wiring.ts) reads/writes an unambiguous structured value instead of re-parsing a string with caller-specific policy flags. This lands LAST and alone because it changes the on-disk/clipboard string format and touches the compositor's per-frame parseHoopTarget call (compositor.ts:35-37) — do not run concurrently with any other wave.",
+      "files": [
+        "packages/core/src/voice/scope.ts",
+        "packages/core/src/voice/types.ts",
+        "packages/core/src/voice/compositor.ts",
+        "apps/web/src/lib/trigger-lab/persistence.ts",
+        "apps/web/src/lib/trigger-lab/clipdoc.ts",
+        "apps/web/src/lib/app/docks/inspectors/scope-inspector.ts",
+        "apps/web/src/lib/app/docks/inspectors/OutputNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ScopeNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ScopeHoopPreview.svelte",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/graph-wiring.ts"
+      ],
+      "risk": "high",
+      "reverses": "git revert this commit. It lands after S14 and touches no file S1-S14 depend on continuing to exist, so a revert only restores the string-encoded targetId form (with all of S1-S14's kind-union fixes still intact).",
+      "verification": "First add the finding's own regression test — a drum literally named `a#b` round-trips through fromPixelSet -> parseHoopTarget correctly; it fails today (no escaping) and must pass after. `pnpm test --filter @ledrums/core -- scope` and the persistence.hoop-migration / clipdoc.hoop-migration suites stay green with the SAME behavior for existing v1/v2 blobs (this is the persisted-data compatibility bar, not just a type change). `pnpm --filter @ledrums/web run check`. `pnpm ui-shot` against ScopeNodeInspector/OutputNodeInspector with a kit/drum/hoop selection each."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2", "S3", "S4"],
+    ["S5"],
+    ["S6", "S7", "S8"],
+    ["S9", "S10", "S11", "S12"],
+    ["S13"],
+    ["S14"],
+    ["S15"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/core/src/voice/types.ts (GraphNode)",
+      "removed": ["GraphNode (flat 40-field interface, 27 optional, 13 unconditionally required across all 19 kinds)"],
+      "added": ["GraphNode (discriminated union: GraphNodeBase + 18 per-kind interfaces + LegacyPlayNode)", "NodeOfKind<K>", "GraphNodeBase", "ScopeRouting", "ModTargetRows"],
+      "net_interface_change": "reduces",
+      "note": "More type NAMES are exported, but each is a narrow enumerable subtype, not new independent public API surface; the thing actually deleted is the 40-field/27-optional flat shape every consumer had to defensively re-derive which fields applied to its kind. Per-kind field count drops from 40 (always) to 3-9 (typical)."
+    },
+    {
+      "at": "packages/core/src/voice/index.ts (voice namespace)",
+      "removed": ["MODULATION_PARITY_CASES", "PARITY_PHASES", "legacyEnvValue", "mappingEnvValue", "type ParityCase"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Relocated to the new packages/core/src/test-fixtures.ts entry point (S3), not deleted — see the companion entry below. Production bundles importing @ledrums/core no longer pull in the deliberately-superseded legacy envelope math."
+    },
+    {
+      "at": "packages/core/src/test-fixtures.ts (new entry point)",
+      "removed": [],
+      "added": ["MODULATION_PARITY_CASES", "PARITY_PHASES", "legacyEnvValue", "mappingEnvValue", "type ParityCase"],
+      "net_interface_change": "neutral",
+      "note": "The counterpart relocation to the voice/index.ts reduction above — same five symbols, moved to a test-only subpath so they no longer ship in the default @ledrums/core surface."
+    },
+    {
+      "at": "packages/core/src/voice/compositor.ts (applyEffectiveParams)",
+      "removed": ["applyEffectiveParams(v, timeMs, bpm, cc?, osc?, notes?) 6-arg positional form"],
+      "added": ["applyEffectiveParams(v, frame: FrameModCtx) 2-arg form (FrameModCtx already existed as an internal type; now the parameter type of a public function)"],
+      "net_interface_change": "reduces",
+      "note": "Same exported function name, narrower call surface; FrameModCtx becomes exported where it was previously file-local."
+    },
+    {
+      "at": "packages/core/src/modifiers/chain.ts (applyModifierChain)",
+      "removed": ["applyModifierChain(chain, state, fb, range, model, timeMs, dt, modCtx?) 8-arg form"],
+      "added": ["applyModifierChain(chain, state, fb, range, ctx: ModifierContext, modCtx?) 6-arg form"],
+      "net_interface_change": "reduces",
+      "note": "ModifierContext was already exported (modifiers/types.ts) and already what the function built internally on its first line; no new exported symbol."
+    },
+    {
+      "at": "packages/core/src/voice/scope.ts (ScopeTarget, S15 only)",
+      "removed": ["ParseHoopTargetOptions (3-flag ambiguity-resolution surface: sourceDrumOnNoHash, emptyFallback, sort)", "EmptyHoopFallback"],
+      "added": ["ScopeTarget (discriminated union)", "encodeScopeTarget", "decodeScopeTarget"],
+      "net_interface_change": "neutral",
+      "note": "Symbol count is roughly flat, but the thing that actually shrinks is caller-supplied POLICY (three flags a caller had to get right) replaced by an unambiguous value type — the finding itself scores this 'unknown' rather than a clean reduction, and this plan agrees that raw symbol count is the wrong measure here."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates (machine-mutex, full suite) after S6, S7, S13, S14, S15 — pass count compared to the Phase 0 baseline of 2968, allowing only this plan's own intentionally-added regression tests (S1, S4, S10, S15) to grow the count",
+      "pnpm typecheck at the monorepo root after every wave, and specifically as the primary gate for S14 — zero errors required; any error is a straggler consumer this plan's waves missed and must be fixed before the step is done",
+      "pnpm test --filter @ledrums/core -- eval-graph modulation-graph modulation-cc modulation-osc engine engine.delay-overlap compositor graph-integrity reachability-lint canvas-show determinism after S5, S6, S7, S11 — these pin exact per-voice render/eval output and R13/R14 fan-in/delay-drain semantics",
+      "pnpm --filter @ledrums/web run check (svelte-check) after S8, S9, S12, S13 — catches inspector-layer type errors, though see known_gaps for its limits",
+      "pnpm build for both apps/web and the Tauri desktop sidecar bundle after S3 (new subpath export must resolve through bundling) and S14 (final flip must not break tree-shaking)",
+      "pnpm ui-shot against the Patch/Trigger graph view and every *NodeInspector, one node per kind, after S9, S13, S15 — screenshots plus the tool's console-error surfacing are the actual parity evidence for the Svelte-template field-access layer, which the type system checks less strictly than plain .ts",
+      "The three regression tests the individual findings themselves specify, added as part of this plan rather than left as future work: (S1) a ccSource/effectId-vs-effectId signature-must-differ test that fails today; (S10) a temporary 20th-dummy-kind compile-fail probe proving exhaustiveness is real; (S15) a drum literally named 'a#b' round-tripping through fromPixelSet/parseHoopTarget, which fails today due to no escaping"
+    ],
+    "known_gaps": "apps/web/src/lib/trigger-lab/persistence.ts:121 and :461 cast raw JSON straight to `Record<string, TriggerGraph>` with a bare `as` — there is NO zod or runtime schema validating a persisted GraphNode's shape anywhere in this codebase today, and this plan does not add one (that would be a separate schema-hardening initiative; flagged in open_questions). Tightening the COMPILE-TIME type from flat to discriminated union changes what the compiler assumes about in-memory nodes but proves nothing about a malformed real-world localStorage blob at runtime — the only actual defense there is normalizeTriggerGraphToGen3's `??` fallback discipline, which every step in this plan must preserve behaviorally even as it tightens types around it. A real user's multi-year-old show blob is never exercised by CI; only persistence.test.ts's synthetic v1/v2 fixtures are. Svelte template type-checking inside an `{#if node.kind === 'x'}` guard is caught by svelte-check less reliably than plain TypeScript narrowing in a .ts file, which is why the ui-shot screenshots are listed as the real evidence for the inspector layer rather than svelte-check alone. Finally, S7's zero-per-frame-allocation claim for the consolidated ModifierContext/FrameModCtx objects is a code-review assertion backed by the existing informal budget comment in compositor.ts, not a number any test in the suite measures — there is no allocation-profiling harness in this repo to point to.",
+    "baseline_reference": "Phase 0 baseline: sha 3708648, 2968 tests green via `pnpm gates`."
+  },
+  "rollback_strategy": "Each step lands as its own commit; `git revert` any single commit to back it out. Steps S1-S13 are all structurally compatible with the pre-existing flat GraphNode interface (the union types they build on, GraphNodeUnion, coexist under a different name than the shipped GraphNode until S14), so reverting an early step after a later one has landed requires reverting in REVERSE wave order back through any step that imports symbols the earlier step introduced (e.g. reverting S4 after S6 has landed also requires reverting S6, S8, S9, S11-S13, since they all import NodeOfKind/GraphNodeUnion from S4). S14 (the flip) is the psychologically 'point of no return' step but is safe to revert in isolation: it is a pure rename-and-delete with no new runtime logic, so reverting it just restores the flat interface's name while every real behavioral fix from S1-S13 keeps working under the (again shadow-named) GraphNodeUnion — a revert of S14 alone cannot resurrect any of the 9 findings' original defects. S15 (ScopeTarget) is fully independent of S14 continuing to exist and reverts cleanly on its own, restoring the string-encoded targetId form and the old persistence migration path. No step in this plan performs an irreversible data migration: S15's persisted-format change is additive (decode accepts both the old string form and, going forward, whatever encodeScopeTarget produces going forward — a version-gated codec, not a one-way rewrite), so no user data can be stranded by a rollback after S15.",
+  "estimated_loc": 2400,
+  "dependencies_on_other_initiatives": [
+    "INIT-01-single-render-stack",
+    "INIT-02-store-decomposition"
+  ],
+  "open_questions": [
+    {
+      "question": "INIT-01-single-render-stack's own findings touch packages/core/src/voice/eval-graph.ts, packages/core/src/voice/types.ts, apps/web/src/lib/trigger-lab/sim.ts and packages/core/src/modifiers/chain.ts — the exact same files S4, S5, S6, S7 and S15 restructure here. Should this plan hard-wait for INIT-01 to land first (this plan's dependencies_on_other_initiatives assumes yes), or is running both in the same fleet with explicit file-level coordination (never scheduling both initiatives' waves on the same file concurrently) an acceptable alternative given schedule pressure?",
+      "blocks_execution": true,
+      "owner": "trent"
+    },
+    {
+      "question": "INIT-02-store-decomposition is presumably splitting store.svelte.ts (3630 lines) into smaller files. S13 of this plan rewrites store.svelte.ts's ~30 mutator methods in place. Should S13 wait for INIT-02's decomposition to land first so the union-typing work only has to happen once, in the file(s)' final resting place, rather than being redone across a subsequent split?",
+      "blocks_execution": true,
+      "owner": "trent"
+    },
+    {
+      "question": "Should this initiative also add zod (or equivalent) runtime validation for a persisted GraphNode's shape at the persistence.ts/clipdoc.ts boundary, given the known_gaps finding that today's `as Record<string, TriggerGraph>` cast validates nothing at runtime — or is that intentionally a separate, later schema-hardening initiative (possibly INIT-08-kit-schema-split's sibling for the trigger-graph side)?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should the LegacyPlayNode arm (kind:'play') be kept in the GraphNode union indefinitely for back-compat, or should this initiative also add a hydrate-time hard rejection of persisted 'play' nodes older than some cutoff version, letting the RUNTIME union eventually drop the legacy arm entirely?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "This plan's own file audit (S11/S12) found roughly 60-70 files touched once test-node-factory duplication is counted, well above the finding's stated blast_radius of 40 files. Is that acceptable as one initiative's scope, or should S1-S7 (the hotfixes, the shadow-type addition, and the two data-clumps/middle-man findings) ship as a first PR while S8-S15 (the actual consumer migration and the flip) become a separate, explicitly-scheduled follow-on?",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ]
+}

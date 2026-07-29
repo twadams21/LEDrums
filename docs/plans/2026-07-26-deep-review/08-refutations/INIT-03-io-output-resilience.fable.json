@@ -1,0 +1,236 @@
+{
+  "artifact": "08-refutations/INIT-03-io-output-resilience",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-03-io-output-resilience/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-03-io-output-resilience",
+      "variant_reviewed": "opus",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-03-io-output-resilience/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S1's characterization assertion `expect('onStatus' in out).toBe(false)` becomes false the moment S3 adds the optional method to the interface prototype chain via implementation in S4, so the S1 suite goes red mid-initiative.",
+          "severity": "minor",
+          "evidence": "S1 verification: \"assert the object exposes no status channel ('onStatus' in out).toBe(false)\"; S4 adds onStatus to ArtNetOutput.",
+          "survives": true,
+          "plan_response": "S1 verification says this is \"the assertion S4 inverts\", and S4 test (a) explicitly \"INVERT S1's silent-bind assertion\" — the flip is a planned, recorded behaviour-change diff, not an accident.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S4 test (e) cannot fail for the reason it exists: asserting 'no uncaughtException' via `process.listeners` count unchanged is ineffectual — an uncaught exception does not change the listener count, so a throwing subscriber that crashes the process in production would still pass this assertion in a vitest worker that traps it.",
+          "severity": "minor",
+          "evidence": "S4 verification text: \"assert via `process.listeners` count unchanged and `expect(() => out.send(1, bytes)).not.toThrow()`\" — process.listeners('uncaughtException').length is invariant under an exception being thrown; only the not-throw half tests anything, and the dgram callback throw happens off the send() stack anyway.",
+          "survives": false,
+          "repair": "Install a temporary process.once('uncaughtException'/'unhandledRejection') sentinel (or vitest's onUnhandledError hook) for the test's duration and assert it never fires after the socket callback runs the throwing subscriber.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S9(d)'s wall-clock lock — 44 send() calls complete in under 50ms — is a machine-load assertion, not a synchronous-IO detector: it flakes on a loaded CI/mutex machine and passes even if someone adds a 1ms sync syscall per send (44ms < 50ms), so it can both false-fail and false-pass.",
+          "severity": "minor",
+          "evidence": "S9 verification (d): \"measure that 44 successive `send()` calls return in under 50ms total\"; pnpm gates runs the full 2968-test suite under a machine mutex where wall-clock timing is noisy (memory: test sweeps wedged the machine before serialization).",
+          "survives": false,
+          "repair": "Keep the bound but make it generous (e.g. 250ms) as a smoke check, and add the real guard structurally: assert ArtNetOutput.send's source contains no await/Atomics.wait/execSync (or assert via a spy that socket.send is called with a callback and nothing awaits it).",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S8's dedup key `|${bad.length}` misses a transition where the SET of bad universes changes but the count does not (e.g. [0] fixed and [64000] introduced in one edit), so the operator gets no fresh Monitor row for a new dark universe.",
+          "severity": "minor",
+          "evidence": "S8 verification: \"extend that signature string with `|${bad.length}`\"; settingsMonitorSignature at apps/server/src/output-manager.ts:285 already omits universe identities, so equal-length bad sets collide.",
+          "survives": false,
+          "repair": "Use `|${bad.join(',')}` (bounded — bad lists are short) instead of the length in the signature extension.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "The plan's zero-UI/zero-protocol claim depends on OutputStatus.lastError actually reaching the pill; if the pill gated LIVE before ERR the fault would be invisible mid-show.",
+          "severity": "major",
+          "evidence": "Verified against source: packages/protocol/src/index.ts declares `lastError: string | null` on OutputStatus, and apps/web/src/lib/app/chrome/output-pill.ts:64 branches `if (output.lastError)` into the pulsing ERR pill BEFORE the LIVE branch, exactly as S6 claims.",
+          "survives": true,
+          "plan_response": "S6 intent cites both facts with file:line (\"packages/protocol/src/index.ts:110\", \"output-pill.ts already branches on it BEFORE the LIVE branch\") and they check out against the worktree — the reuse claim is evidence-backed, not asserted.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "A late status emission from a torn-down transport would corrupt the new transport's lastError, since dgram sockets can fire callbacks after close.",
+          "severity": "major",
+          "evidence": "OutputManager.teardown (output-manager.ts:125-132) drops this.output but the closed socket's queued callbacks can still run.",
+          "survives": true,
+          "plan_response": "S6 verification wires a generation guard (`const gen = ++this.transportGen; ... if (gen !== this.transportGen) return;`) and pins it with test (d) 'a status from a torn-down transport is ignored'.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "The sACN headline scenario (stale iface) never goes through bind — SacnOutput binds ephemerally with no address and the iface only enters via setMulticastInterface — so a plan that only fixes bind/send-callback errors would miss the initiative's actual dark-rig path on sACN.",
+          "severity": "major",
+          "evidence": "packages/io/src/sacn.ts:96-104 — `this.socket.bind(() => { try { if (opts.iface) this.socket.setMulticastInterface(opts.iface); ... } catch { /* ignore */ } ... })`; the bind itself takes no address.",
+          "survives": true,
+          "plan_response": "S5 names exactly this hole (\"sacn.ts:97-102 wraps setMulticastInterface... in a bare catch\") and emits an error status from that catch while still setting ready — the one variant that closes the sACN-specific swallow.",
+          "targets_step": "S5"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 5,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 5,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S4 test (e): replace the ineffectual process.listeners-count assertion with a real uncaughtException/unhandledRejection sentinel for the test's duration.",
+        "S9(d): widen the 50ms wall-clock bound (flake risk under the gates mutex) and add a structural no-sync-IO assertion alongside it.",
+        "S8: dedup on the bad-universe list (`bad.join(',')`), not `bad.length`, so an equal-count change in which universes are dark still emits a fresh Monitor row."
+      ]
+    },
+    {
+      "initiative_id": "INIT-03-io-output-resilience",
+      "variant_reviewed": "sonnet",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-03-io-output-resilience/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S4's self-heal is unreachable and the design regresses live-show behaviour: send() 'keeps gating on state === \"ready\"', so the first send-callback error latches state 'error', every subsequent send() early-returns, and the 'later successful send self-heals back to ready' can never execute — a single transient EHOSTUNREACH permanently darkens the rig until re-arm, whereas baseline keeps transmitting through transient send errors.",
+          "severity": "major",
+          "evidence": "S4 intent contains both halves of the contradiction: \"the dgram send() completion callback ... becomes (err) => { if (err) emit 'error'; else if (lastStatus was 'error') emit 'ready' }\" AND \"send() keeps gating on state === 'ready'\". Baseline gates only on the bind-set boolean (artnet.ts:72, sacn.ts:112), which never flips back to false on a send error — so baseline transmits through transients and sonnet's version does not.",
+          "survives": false,
+          "repair": "Keep the transmit gate on a separate `bound` flag (bind success only), and use the status latch purely as observability — send() must never be gated on a send-error status. Then the self-heal emit in the success callback actually becomes reachable, and open_questions[1] (latch vs self-heal) stays a pure UX choice with no transmit-path consequence.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S4's sACN verification cannot pass as written: 'construct the real class with iface set to an address not bound to any local NIC and assert onStatus delivers EADDRNOTAVAIL' — SacnOutput never binds to opts.iface (bind() takes no address); a bad iface surfaces only inside the setMulticastInterface try/catch at sacn.ts:97-102, which S4 never says it changes, so no socket 'error' event and no bind failure occur and the test hangs to timeout. The initiative's headline stale-iface scenario on sACN therefore remains swallowed.",
+          "severity": "major",
+          "evidence": "packages/io/src/sacn.ts:96-104: `this.socket.bind(() => { try { if (opts.iface) this.socket.setMulticastInterface(opts.iface); this.socket.setMulticastTTL(16); } catch { /* ignore */ } this.ready = true; })` — no address argument, and the catch is a bare swallow S4's file list edits but whose handling S4's text never mentions. S4 enumerates only socket.on('error') and the send completion callback.",
+          "survives": false,
+          "repair": "Add to S4 (or a new sub-step): the setMulticastInterface/setMulticastTTL catch in SacnOutput emits {state:'error', error:'multicast interface ... unavailable', code} while still proceeding to ready, and the sACN iface test asserts THAT emission rather than a bind-time EADDRNOTAVAIL.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S6's in-adapter guard `if (!checkUniverse(protocol, universe).ok) return;` is a silent drop — the exact pattern this initiative exists to kill — and it is an unacknowledged wire-behaviour change: sACN unicast (opts.host set) with universe 0 delivers packets today (encodeE131 masks & 0xffff, the unicast host bypasses sacnMulticastAddress), and after S6 those packets silently stop with no status, no monitor row, and packetsSent still incrementing in OutputManager.",
+          "severity": "major",
+          "evidence": "sacn.ts:111-115: `const host = this.opts.host ?? sacnMulticastAddress(universe)` — with an explicit host, universe 0 frames reach a real receiver today. S6 intent: \"a plain early return with no new status emission\". OutputManager.sendFrame (output-manager.ts:211-212) increments packetsSent unconditionally after calling send, so the UI reports packets-out while the adapter drops them — the finding's original symptom, reintroduced by the fix.",
+          "survives": false,
+          "repair": "Delete the adapter-level silent guard; keep enforcement solely at the applySettings pre-flight (which is loud and torn-down). If defense-in-depth is wanted, the adapter drop must at minimum latch a one-shot diagnostic status, and the unicast-universe-0 parity break must be named and accepted explicitly.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S6's fail-closed refusal to arm breaks every default/fresh sACN project (universe 0, no startUniverse) on upgrade, and the pre-existing 'filterable' test exercises exactly that combination, so the step cannot land without a product decision.",
+          "severity": "major",
+          "evidence": "apps/server/src/output-manager.test.ts:361 arms `protocol: 'sacn'` against the default fixture() dmxMap (universe-0 fixtures throughout the file); default map seeds cursor 0 (dmx-map.ts:102).",
+          "survives": true,
+          "plan_response": "The plan owns this fully: S6 verification names the exact test and calls the fixture update 'a deliberate, called-out fixture fix', and open_questions[0] escalates the fail-closed-vs-auto-correct choice to Trent with blocks_execution: true — the step is explicitly gated on his call.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "Making onStatus a required interface method breaks every FakeOutput test double in apps/server, so the S4 wave lands red unless all implementers are edited atomically.",
+          "severity": "major",
+          "evidence": "grep: `implements PixelOutput` in apps/server/src/output-manager.test.ts, engine-host.test.ts, voice-engine-host.test.ts, handlers/voice-input.test.ts.",
+          "survives": true,
+          "plan_response": "S4 intent enumerates all four fake-implementer files by name and requires the step to 'land as one atomic change ... or the build is red'; its files list includes them and the verification names `pnpm typecheck` as 'the mechanical backstop that catches any FakeOutput implementer this list missed'.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S5's ready-clears-lastError convention lets an asynchronous 'ready' wipe a fault latched by a synchronous send/blackout throw, silently un-reporting a real error the existing contract keeps sticky until re-arm.",
+          "severity": "minor",
+          "evidence": "S5 intent: \"On state==='ready' it clears lastError (silently...)\"; baseline clears lastError only at transport re-construction (output-manager.ts:110). With S4's send-success ready emission (if made reachable per the S4 repair), a sync throw in sendFrame's monitor path followed by one good packet erases the evidence.",
+          "survives": false,
+          "repair": "Only clear lastError on 'ready' when the latched error itself came from the transport-status channel (tag the source), or drop the ready-clears behaviour and keep the existing re-arm-clears contract.",
+          "targets_step": "S5"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 2,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 4,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S4: decouple the transmit gate from the status latch — gate send() on a bind-success flag only, never on a send-error status — so a transient send error cannot permanently darken the rig and the self-heal path is actually reachable.",
+        "S4: handle the SacnOutput setMulticastInterface catch (emit error status, still proceed to ready) and retarget the sACN iface test at that emission; as written the EADDRNOTAVAIL bind assertion cannot pass because SacnOutput never binds to iface.",
+        "S6: remove (or make loudly diagnostic) the adapter-level silent checkUniverse early-return; it reintroduces the silent-drop pattern and changes sACN-unicast universe-0 wire behaviour without naming the parity break.",
+        "S5: do not let an async 'ready' clear a lastError latched by a synchronous send/blackout throw."
+      ]
+    },
+    {
+      "initiative_id": "INIT-03-io-output-resilience",
+      "variant_reviewed": "fable",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-03-io-output-resilience/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S2 cannot land green: it makes onStatus a REQUIRED method on PixelOutput ('required, not optional — an optional status channel is a fail-open guard') but its files list contains only packages/io files, while four apps/server test files declare `class FakeOutput implements PixelOutput` — pnpm typecheck/gates goes red in the S2 wave with none of those files in scope.",
+          "severity": "major",
+          "evidence": "grep `implements PixelOutput` → apps/server/src/output-manager.test.ts, apps/server/src/engine-host.test.ts, apps/server/src/voice-engine-host.test.ts, apps/server/src/handlers/voice-input.test.ts. S2 files: only udp.ts, interfaces.ts, artnet.ts, sacn.ts, artnet.test.ts, sacn.test.ts. S2's own verification demands 'pnpm gates green'.",
+          "survives": false,
+          "repair": "Add the four server test files to S2's file list with a no-op `onStatus(): void {}` on each fake (the sonnet variant's enumeration is correct here), or declare onStatus optional in S2 and tighten to required in a later step after the fakes are updated.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S4's warn never fires on the transition it exists for: it coalesces 'via the existing settingsMonitorSignature mechanism', but that signature (state|protocol|host|broadcast|port|fps|universes.length) contains universe COUNT, not identities — editing startUniverse from 1 to 0 changes the map from [1,2] to [0,1], same length, same settings, signature unchanged, so no diagnostic is emitted precisely when the operator introduces the dead universe.",
+          "severity": "major",
+          "evidence": "apps/server/src/output-manager.ts:285: `${settings.state}|${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}|${settings.fps}|${dmxMap.universes.length}` — no universe identities. S4 intent: 'coalesced via the existing settingsMonitorSignature mechanism so it fires once per settings/map change' — the mechanism does not detect this map change.",
+          "survives": false,
+          "repair": "Give the S4 diagnostic its own dedup key that includes the out-of-range universe list (e.g. `${sig}|${bad.join(',')}`), rather than piggybacking on settingsMonitorSignature.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S2's lifecycle enumeration omits ArtNet's setBroadcast(true) branch ('create/error-swallow/bind-ready/gated-send/close-try-catch') and no listed test covers broadcast mode, so an implementer can drop the setBroadcast call from BoundUdpSocket's migration, every stated verification stays green (loopback unicast, greps, gates), and every broadcast-configured rig ships broken.",
+          "severity": "major",
+          "evidence": "artnet.ts:51-57: `if (opts.broadcast) { try { this.socket.setBroadcast(true); } ... }` inside onBound; defaultFactory passes settings.broadcast (output-manager.ts:65). S2's udp.ts spec names only 'optional reuseAddr/multicast setup hook'; S2 verification tests are all 127.0.0.1 unicast.",
+          "survives": false,
+          "repair": "Name the bind-callback setup hook's full contents per adapter in S2 — artnet: setBroadcast(true) when opts.broadcast; sacn: reuseAddr at creation, setMulticastInterface/TTL in the hook — and add a unit assertion (spy on socket.setBroadcast) that the broadcast option still reaches the socket.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "The 'latching IS the rate limiter' claim is ambiguous: 'EMITTED ONLY WHEN IT DIFFERS from the latch' does not define the equality key, and if the implementer compares whole status objects while error strings carry variable detail (dgram messages can embed addresses/ports), a 44Hz stream of textually-distinct-but-same-code errors floods the Monitor bus with no floor behind it.",
+          "severity": "minor",
+          "evidence": "S2 intent: 'EMITTED ONLY WHEN IT DIFFERS from the latch — so a 44Hz stream of identical EADDRNOTAVAIL send failures produces one emission, and no separate rate-limiter type exists' — 'identical' is doing unstated work; the opus variant needed a 1000ms floor for exactly this reason.",
+          "survives": false,
+          "repair": "Define latch equality as (state, code) — not the message string — and state it in S2 so the dedup is deterministic; optionally add a time floor for distinct-code storms.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S1's export path is blocked: packages/io/src/pixlite/index.ts uses NAMED exports only (no `export *` from sweep.ts), so simply marking ipToInt/intToIp as export in sweep.ts does not surface them through '@ledrums/io' and the S1 import in network-adapters.ts fails to compile.",
+          "severity": "minor",
+          "evidence": "packages/io/src/pixlite/index.ts is a curated named-export barrel (export type {...} / export {...} lists); packages/io/src/index.ts line 5 does `export * from './pixlite'` — the chain only carries what pixlite/index.ts names.",
+          "survives": true,
+          "plan_response": "S1 text pre-answers it: 'confirm they surface through packages/io/src/pixlite/index.ts and packages/io/src/index.ts re-export chains (add the named re-export only if `export *` does not already carry them)' — the conditional branch applies and is executable.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S2 claims parity for a 0-coverage region — the adapters' socket lifecycle has no baseline tests, so 'pnpm gates green' proves nothing about the collapse into BoundUdpSocket.",
+          "severity": "major",
+          "evidence": "packages/io tests exercise only the pure encoders at baseline; the plan itself concedes 'ZERO behavioural coverage at baseline'.",
+          "survives": true,
+          "plan_response": "behaviour_parity_evidence_plan.known_gaps names the gap and replaces it: S2's golden-packet loopback tests against real dgram sockets on 127.0.0.1 (byte-equal to encodeArtDmx/encodeE131), plus the one-time manual rig check for what loopback cannot reach — evidence, not suite-trust. (The broadcast-branch omission is attacked separately above.)",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "Routing status through OutputManager instead of main.ts could strand the recovered/error state without a UI push until the next periodic broadcast, unlike the OSC path which pushes stateMessage immediately.",
+          "severity": "minor",
+          "evidence": "apps/server/src/main.ts:705 — oscInput.onStatus pushes fresh state to clients; fable S3 adds no equivalent push.",
+          "survives": true,
+          "plan_response": "open_questions[3] names exactly this ('Should the S3 recovered row also broadcast a fresh stateMessage ... or is the next periodic status broadcast soon enough'), scoped to the implementer with the deciding datum identified — an acknowledged, bounded latency question, not a missed coupling.",
+          "targets_step": "S3"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 3,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 3,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S2: extend the file list to the four apps/server test files whose FakeOutput doubles implement PixelOutput (or stage onStatus as optional first) — as written the wave lands typecheck-red.",
+        "S4: give the sACN range diagnostic its own dedup key including the bad-universe list; settingsMonitorSignature cannot see a same-count map change, so the warn misses the exact valid→invalid transition it exists for.",
+        "S2: enumerate the per-adapter bind-callback setup (artnet setBroadcast, sacn reuseAddr + multicast iface/TTL) in the BoundUdpSocket contract and pin setBroadcast with a spy test — no listed verification currently fails if broadcast support is dropped.",
+        "S2: define status-latch equality as (state, code) so the 'latching is the rate limiter' claim is deterministic against variable error strings."
+      ]
+    }
+  ]
+}

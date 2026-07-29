@@ -1,0 +1,377 @@
+{
+  "initiative_id": "INIT-04-server-runtime-hardening",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-04-server-runtime-hardening",
+    "model": "claude-opus-5[1m]",
+    "effort": "high"
+  },
+  "summary": "Nineteen independently-green commits, ordered so the two things that can ruin a live show land first and the god-file decomposition lands last. The fact that governs every decision here: apps/server/src/main.ts is imported by ZERO tests. It is the only file in the initiative whose 801 lines are 0%-covered, and four of the eight findings live inside it. So a green `pnpm gates` proves nothing about any edit to main.ts — which means the FIRST step is not a code change at all, it is `scripts/server-smoke.mjs`, a harness that boots the real server against a temp projects dir in BOTH engine modes, records a normalised digest of the boot banner + the first `state` message + the first stats frames + every Monitor event, and is proven stable by producing byte-identical digests on two runs at unmodified HEAD. Every main.ts-touching commit afterwards diffs its digest against that baseline; that diff is the parity evidence a green suite cannot give. From there the shape is strangler, never rewrite. I explicitly REJECT divergent-change-0004's proposed `createServerApp(deps)` + `PersistedSlots` registry: a 600-LOC re-wiring of an untested module is exactly the change whose defect is found by a drummer rather than a test. Instead main.ts is drained one leaf at a time — fatal handler, trusted-POST route, broadcast, connection handler, stats adapter, persisted slots — and each extraction is a VERBATIM move in its own commit, with the behaviour change that motivated it landing in a SEPARATE later commit against the now-testable module. That move-then-change discipline is what makes the WS findings (0004 server half, 0005, 0013) provable at all: today they cannot be tested, after the move they can. Two consequences of the stance are deliberate and worth naming. First, packages/core is never touched: the render-loop exception boundary (resilience-hole-0001) lives in VoiceEngineHost.loop(), not in the engine, because a per-effect quarantine set inside core would be precisely the hidden global state AGENTS.md forbids in a deterministic render loop. Second, the 100 Hz stats cadence is NOT lowered here — the resilience fix is the backpressure check and the peer reaper; the cadence is a visible-to-the-drummer taste call and goes to Trent as an open question with the constant named and ready. The one place I split a finding's own fix in half is speculative-generality-0002: making the six collaborators required is a typecheck-only commit with zero runtime delta, and deleting the `?? true` fail-open fallbacks is a second commit, because the finding itself flags that as removes-failure-path and it deserves its own revert boundary.",
+  "findings_addressed": [
+    "resilience-hole-0001",
+    "resilience-hole-0002",
+    "resilience-hole-0004",
+    "resilience-hole-0005",
+    "resilience-hole-0013",
+    "speculative-generality-0002",
+    "divergent-change-0004",
+    "duplicated-code-0006"
+  ],
+  "design": [
+    {
+      "id": "S0",
+      "title": "Boot-parity smoke harness for the 0%-coverage entry module",
+      "intent": "main.ts has no seam and no test, so nothing downstream can claim parity. Build the instrument first: a harness that boots the real process and reduces its observable startup behaviour to a stable digest. This is the evidence that replaces a green suite for every later main.ts commit, and it is also the wired-end-to-end proof that the server still actually serves.",
+      "files": [
+        "scripts/server-smoke.mjs",
+        "docs/plans/2026-07-26-deep-review/artifacts/smoke-baseline-voice.json",
+        "docs/plans/2026-07-26-deep-review/artifacts/smoke-baseline-legacy.json"
+      ],
+      "risk": "low",
+      "verification": "`node scripts/server-smoke.mjs --engine voice --out /tmp/a.json` then again to /tmp/b.json; `diff /tmp/a.json /tmp/b.json` must be EMPTY at unmodified HEAD — that is the harness-proving gate, run before the harness is trusted for anything. Repeat with --engine legacy. The harness spawns `tsx apps/server/src/main.ts` with LEDRUMS_PROJECTS_DIR=$(mktemp -d), PORT/OSC_PORT from an ephemeral-port probe, LEDRUMS_TELEMETRY=off; waits for the 'LEDrums server listening' line; opens a ws to WS_PATH; records (a) every stdout line, (b) the first `state` message, (c) the first 3 `stats` messages, (d) every `monitor` event received including the replay; SIGTERMs; then normalises out volatile fields (ids, `time`, `createdAt`, ports, hostnames, randomUUIDs, absolute paths, `latencyMs`, `fps`, `timeMs`, `beat`, `uptimeMs`, host token, PIN) before writing JSON with sorted keys. Non-negotiable acceptance: the two identical runs must be byte-identical, otherwise the normaliser is incomplete and no later step may cite it.",
+      "reverses": "Delete scripts/server-smoke.mjs and the two baseline digests. Nothing in apps/ or packages/ is touched, so this step cannot regress the product."
+    },
+    {
+      "id": "S1",
+      "title": "Characterization tests for the native-MIDI route's unpinned guards",
+      "intent": "Before duplicated-code-0006's extraction moves the trusted-POST scaffolding, pin the guards that are about to move. host-event.test.ts already asserts its 2048-byte cap (line 205) and its 405/401 branches; native-midi.test.ts asserts 405 and 401 but has NO test for the 4096-byte cap or the `req.on('error')` → 400 branch. Moving an unpinned guard is how a security regression ships green.",
+      "files": [
+        "apps/server/src/http/native-midi.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm --filter @ledrums/server exec vitest run src/http/native-midi.test.ts` — two new cases green against UNMODIFIED native-midi.ts: (1) a body of 'x'.repeat(4097) causes `req.destroy` with message 'native MIDI payload too large' and no 204; (2) emitting 'error' on the fake request before 'end' yields status 400 body 'bad request'. Both must fail if the cap constant is changed to 2048, proving they actually pin the value.",
+      "reverses": "Revert the test file. Added coverage only; no source change."
+    },
+    {
+      "id": "S2",
+      "title": "Per-frame exception boundary in VoiceEngineHost.loop()",
+      "intent": "resilience-hole-0001: `scheduleNext()` calls `loop()` in a bare setTimeout and nothing between it and gen.render() catches, so one throw in an authored effect kills the process and freezes the rig lit. Contain the fault at the HOST boundary — the outermost place that is still ours and still testable — rather than inside packages/core, where a quarantine counter would be exactly the hidden global state the deterministic-render-loop rule forbids. The step buys survival of the loop; it deliberately does NOT attempt per-effect quarantine.",
+      "files": [
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/voice-engine-host.test.ts"
+      ],
+      "risk": "high",
+      "verification": "New cases in voice-engine-host.test.ts driving the host with an injected `voice.RenderEngine` fake (the constructor already accepts one) whose `tick()` throws on the 5th call: (1) `host.start()` under `vi.useFakeTimers()`, advance 10 ticks, assert the host is still scheduled (`vi.getTimerCount() > 0`) and that ticks 6..10 happened; (2) assert the injected monitor sink (via `setMonitor`) received exactly ONE `error` event with label 'Render frame faulted' on the first throw and a second only after the 120th consecutive throw — the emit is rate-limited so a 120 Hz fault cannot flood the Monitor bus and the #122 Reporter; (3) assert `step(dt)` called DIRECTLY still throws, so the catch is in `loop()` only and existing tests that drive `step` keep their raw failure semantics. Implementation: wrap the `while (this.accumulator >= TICK_MS …)` drain body in try/catch inside `loop()`, and additionally wrap the `this.loop()` call inside `scheduleNext`'s setTimeout so a throw in loop()'s own bookkeeping still reschedules. On catch: bump `consecutiveFrameFaults`, emit the rate-limited monitor event, `break` out of the catch-up drain for that frame, reset `this.accumulator = 0`, and reset the counter to 0 on the next clean frame.",
+      "reverses": "`git revert` the single commit. The change is additive inside one class with no interface change and no persisted state, so reverting restores the exact prior crash semantics. If reverted after later steps land, nothing depends on it — S3's fatal handler is independent."
+    },
+    {
+      "id": "S3",
+      "title": "Extract createFatalHandler: darken the rig, then flush reports",
+      "intent": "resilience-hole-0001's second half. main.ts:263 wires `onFatal: () => flushReportsSync()` — no blackout, so a hard crash leaves the Art-Net/sACN stream stopped mid-frame and the LEDs latched on. The fix is one line of wiring, but a one-line change inside a 0%-coverage module is unprovable, so extract it into a named module whose ORDER (darken first, flush second) and whose fault isolation are both testable.",
+      "files": [
+        "apps/server/src/fatal-shutdown.ts",
+        "apps/server/src/fatal-shutdown.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "New fatal-shutdown.test.ts: `createFatalHandler({ darken, flushReports, log })` returns `() => void`; assert (1) call order is darken then flushReports (push to a shared array); (2) a `darken` that throws does not prevent `flushReports` from running and does not rethrow; (3) a `flushReports` that throws does not rethrow. Then `pnpm --filter @ledrums/server exec vitest run src/process-errors.test.ts` unchanged and green. main.ts change is exactly: `onFatal: createFatalHandler({ darken: () => (voiceHost ?? host).stop(), flushReports: () => flushReportsSync() })`. Parity evidence for the main.ts edit: `node scripts/server-smoke.mjs --engine voice|legacy` digest must equal the S0 baseline (the fatal path is never entered on a clean boot, so the digest must be unchanged — a changed digest means the wiring edit had a side effect and the step is wrong).",
+      "reverses": "Revert to the literal `onFatal: () => flushReportsSync()` and delete the two new files. Note the ordering choice — blackout before report flush — prioritises the rig over telemetry; if a blackout is ever observed to hang the exit, swap the order in fatal-shutdown.ts rather than reverting the module."
+    },
+    {
+      "id": "S4",
+      "title": "Extract createTrustedPostRoute; both HTTP routes on one owner, caps kept per-route",
+      "intent": "duplicated-code-0006: host-event.ts:91-120 and native-midi.ts:48-77 are the same 28-line security preamble (path match, 405, isTrustedHost→401, setEncoding, byte-capped accumulation with req.destroy, error→400). One owner means a hardening change is applied once. Parity paranoia: the two caps (2048 vs the 4096 literal) and the two destroy messages stay DIFFERENT parameters in this commit — unifying them is a guard-value decision, not an extraction, and must not ride along.",
+      "files": [
+        "apps/server/src/http/trusted-post.ts",
+        "apps/server/src/http/trusted-post.test.ts",
+        "apps/server/src/http/host-event.ts",
+        "apps/server/src/http/native-midi.ts"
+      ],
+      "risk": "medium",
+      "verification": "`pnpm --filter @ledrums/server exec vitest run src/http/` — host-event.test.ts and native-midi.test.ts must pass UNMODIFIED (they are the parity oracle; if either needs an edit the extraction is not behaviour-preserving and the step must be redone). S1's new cases pin native-midi's 4096 cap and 400-on-error through the move. New trusted-post.test.ts covers the shared surface directly: wrong path → returns false (fall-through), non-POST → 405, untrusted → 401, over-cap → destroy with the caller's message, request 'error' → 400, happy path → onBody(raw, res) invoked once with the accumulated string. `createTrustedPostRoute({ path, hostToken, maxBody, tooLargeMessage, onBody })`; host-event passes maxBody 2048, native-midi passes 4096 — verified by grepping the diff for `2048` and `4096` still present exactly once each.",
+      "reverses": "`git revert`; both handlers return to their inlined preambles. Because the guard values were passed through rather than unified, the revert is a pure structural undo with no value drift to reconcile."
+    },
+    {
+      "id": "S5",
+      "title": "Client-side liveness watchdog in WSClient",
+      "intent": "resilience-hole-0004, browser half: `link` is driven only by onopen/onclose, so a half-open TCP link (wifi drop, laptop sleep, dead tunnel) leaves store.link === 'open' forever; hit() then sends into a socket that silently discards, and the offline local sim is deliberately skipped because the server 'owns' resolution. The drummer hits pads and nothing lights. No new protocol is needed — the server already emits traffic continuously, so message-age is a sufficient signal, and it must be message-age rather than ws-level pong because a browser answers pings invisibly at the transport layer.",
+      "files": [
+        "apps/web/src/lib/ws/client.ts",
+        "apps/web/src/lib/ws/client.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New/extended client.test.ts using the injected `WSFactory` fake and `vi.useFakeTimers()`: (1) open the socket, deliver NO messages, advance past the watchdog window → assert `ws.close()` was called, `onConnection('closed')` fired, and `scheduleReconnect` armed (assert via `reconnectAttempt` incrementing); (2) deliver a message every window/2 → assert no forced close after 10 windows; (3) after a 4401 auth close the watchdog must be disarmed (assert no timer fires while `hasAuthError`); (4) `close()` clears the watchdog timer (assert `vi.getTimerCount()` returns to 0). Implementation: record `lastMessageAt` at the TOP of `handleMessage` (before decode, so a malformed frame still counts as liveness), arm an interval in `openSocket` and clear it in `onclose`/`close`; `WSClientOptions` gains `watchdogMs` (default 5000 — chosen to sit far above any plausible server cadence, NOT derived from the stats period, so a later cadence change cannot silently break it) and `now` (default Date.now) for tests.",
+      "reverses": "`git revert`. The watchdog only ever forces a close that the existing reconnect ladder already handles, so reverting restores exactly today's behaviour. If the watchdog proves too aggressive on a slow tunnel, raise `watchdogMs` rather than reverting."
+    },
+    {
+      "id": "S6",
+      "title": "Late-bind the monitor sink so process-error capture installs before the project load",
+      "intent": "resilience-hole-0002's second aggravating factor: `installProcessErrorCapture` is wired at main.ts:263 but `initialProject()` runs at line 155, so a boot crash is not captured, not reported, not even logged to the Monitor — the drummer just sees the process die. The capture cannot simply be hoisted, because `monitor` → `monitorBus` → `broadcastJson` → `clients` is a TDZ chain back to the WebSocketServer. Break the chain with a mutable sink instead of reordering the whole construction — a 3-line change that unblocks the hoist without moving any collaborator.",
+      "files": [
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "Parity: `node scripts/server-smoke.mjs --engine voice` and `--engine legacy` digests must equal the S0 baselines EXACTLY — including the Monitor replay ordering, which is the thing this step is most likely to perturb (the bus retains 300 events and replays on connect, so an event emitted before `clients` exists must still reach the first client in the same position). A digest diff in the monitor array means the step is wrong. Additionally, an injected-fault check that cannot be automated in the suite: temporarily add `throw new Error('boot-probe')` immediately after the hoisted `installProcessErrorCapture` call, run the smoke harness, and confirm stdout carries '[process] uncaught exception: boot-probe' — then remove the probe before committing (record the captured stdout in the PR body as the evidence). Implementation: `let broadcastSink: (msg: ServerMessage) => void = () => {};` then `const monitorBus = createMonitorBus((m) => broadcastSink(m));` at the top of the file (above initialProject), `installProcessErrorCapture({ monitor, onFatal })` immediately after, and `broadcastSink = broadcastJson;` at the current site of the monitorBus construction.",
+      "reverses": "`git revert` restores the original construction order. No file other than main.ts changes, and the sink indirection leaves no persisted trace."
+    },
+    {
+      "id": "S7",
+      "title": "Make the six ClientMessageDeps collaborators required — types only, zero runtime delta",
+      "intent": "speculative-generality-0002, first half. Six collaborators are optional for a configuration that has never occurred (main.ts:618-663 is the only production wiring and supplies all six), and one of them, `backups`, guards a fail-CLOSED data-loss snapshot whose absent-branch default is `?? true`. Dropping a field from that object literal today compiles and silently disables the pre-risk snapshot. This commit drops the `?` and fixes the resulting test harnesses ONLY — every `?.` and `?? true` fallback stays in place, so the runtime is provably byte-identical and the commit's whole content is a compile-time tightening.",
+      "files": [
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/projects.ts",
+        "apps/server/src/handlers/client-message.test.ts",
+        "apps/server/src/handlers/voice-input.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm typecheck` — after dropping `?` from tunnelControl, isTunnelClient, monitor, listNetworkAdapters, backups, controller on ClientMessageDeps and from ProjectHandlerDeps.snapshotPreRisk, every error must be a TEST harness; a single non-test error falsifies the finding's single-wiring premise and the step stops. Confirm that premise mechanically first: `rg -n 'createClientMessageHandler|handleProjectMessage' apps/server/src --glob '!*.test.ts'` must return exactly the main.ts call site plus the definition and the internal call. Test harnesses gain EXPLICIT no-op stubs (e.g. `backups: { list: () => [], restore: () => false, snapshotPreRisk: () => true }`) so 'backups disabled' becomes a stated intent. Then `pnpm gates`. Because no runtime expression changes, `git diff -U0 | grep '^[+-]' | grep -v '?'` on the two source files should show only signature lines.",
+      "reverses": "`git revert`. Purely a type change; reverting restores optionality and the stubs become redundant but harmless."
+    },
+    {
+      "id": "S8",
+      "title": "Export createSnapshotReader from snapshot-store.ts",
+      "intent": "The boot-recovery ladder (S10) needs to read the newest snapshot BEFORE `createSnapshotStore` can exist — the store requires `readCurrent`/`applyRestored`, which at boot depend on the very engine that has not been constructed. Rather than duplicating the store's 15-line list/gunzip/parse path into the boot module, split the store's read half into a `createSnapshotReader({ dir })` returning `{ list, read }` and have `createSnapshotStore` delegate to it.",
+      "files": [
+        "apps/server/src/backups/snapshot-store.ts",
+        "apps/server/src/backups/snapshot-store.test.ts"
+      ],
+      "risk": "low",
+      "verification": "`pnpm --filter @ledrums/server exec vitest run src/backups/snapshot-store.test.ts` — the existing 11.9K suite must pass UNMODIFIED; it is the oracle that the delegation preserved listing order (newest-first by the numeric createdAt prefix), stem parsing (split on the FIRST dash so 'pre-risk' survives), and the corrupt-bundle → null contract. Add two cases against the reader directly: `list()` on a dir containing a non-snapshot filename ignores it; `read()` on a truncated .gz returns null rather than throwing.",
+      "reverses": "`git revert`; the store re-absorbs its read half. Must be reverted together with S10, which imports the reader."
+    },
+    {
+      "id": "S9",
+      "title": "Delete the now-unreachable absent-collaborator fallbacks",
+      "intent": "speculative-generality-0002, second half — and the half the finding itself flags as removes_failure_path, so it gets its own commit and its own revert boundary. With the fields required (S7), roughly twenty `deps.x?.` no-op branches and three data-loss-guard defaults are unreachable by type: `snapshotPreRisk: () => deps.backups?.snapshotPreRisk() ?? true` (client-message.ts:342), `if (deps.backups && !deps.backups.snapshotPreRisk())` (:441) and `if ((deps.snapshotPreRisk?.() ?? true) === false)` (projects.ts:40). Removing them turns a dropped `backups` field from a silent fail-open into a compile error.",
+      "files": [
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/projects.ts",
+        "apps/server/src/handlers/client-message.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Mutation probe, run BEFORE and AFTER: delete the `backups:` key from main.ts:645-652 in a scratch edit and run `pnpm typecheck` — before this step it compiles (that is the bug), after this step it must ERROR. Restore the key. Then a new test asserting the fail-closed direction survives the deletion: with `snapshotPreRisk: () => false`, a `loadProject` message must reply `{t:'error'}` and must NOT call `host.engine.setProject` (assert with a spy). Then `pnpm gates`. Grep gate: `rg -n '\\?\\? true' apps/server/src/handlers/` must return zero hits.",
+      "reverses": "`git revert` restores the fallbacks. This is the one step in the plan that DELETES guard branches, so it is deliberately the smallest possible commit and depends on S7 having already landed — revert S9 alone to restore the tolerant runtime while keeping the type tightening."
+    },
+    {
+      "id": "S10",
+      "title": "boot-project.ts: recovery ladder for an unloadable live project",
+      "intent": "resilience-hole-0002: `initialProject()` runs at module scope and unconditionally calls `loadProject(LIVE_PROJECT)`, which throws on a ZodError or a ReferentialIntegrityError with no catch anywhere in the chain. The refuters sharpened the trigger: `setInputMap` is shape-checked but never integrity-checked, so a mapping naming a nonexistent drum can be autosaved and then bricks the next boot. The app already holds recoverable state in projects/backups, but the restore path needs a running WS server and a connected client — which by definition cannot exist. Extract the decision into a testable module with an injected filesystem seam and give it a ladder: file → newest snapshot → seed, quarantining the bad file on the way.",
+      "files": [
+        "apps/server/src/boot-project.ts",
+        "apps/server/src/boot-project.test.ts",
+        "apps/server/src/main.ts",
+        "apps/server/src/diagnostics.ts",
+        "apps/server/src/diagnostics.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New boot-project.test.ts against a real temp dir (the ladder is filesystem behaviour; faking it would prove nothing): (1) no file → `source: 'seed'`, outputs reconciled to the canonical port count; (2) valid file → `source: 'file'`, byte-identical Project to today's `loadProject` result; (3) truncated JSON + one valid snapshot in `<dir>/backups` → `source: 'snapshot'`, the bad file renamed to `default.local.corrupt-<ts>.json`, and the original filename now absent; (4) schema-valid-but-dangling-drum-ref file (built by taking defaultProject() and pointing an inputMap entry at 'nope') + NO snapshot → `source: 'recovered-seed'`, bad file quarantined, and a returned `recovery.reason` naming ReferentialIntegrityError; (5) a corrupt SNAPSHOT plus a corrupt file → still `recovered-seed`, never a throw. `startupDiagnostics` input widens `project.source` to `'seed' | 'file' | 'snapshot' | 'recovered-seed'` — `pnpm typecheck` catches every consumer, and diagnostics.test.ts gains a case asserting the recovered-seed row is a `type: 'error'` Monitor event, not a quiet `persistence` row. End-to-end: `node scripts/server-smoke.mjs --engine voice --seed-corrupt` (harness flag added here: writes a truncated default.local.json into the temp dir before boot) must produce a server that LISTENS — today it exits — and a digest whose monitor array contains the recovery event. The clean-boot digest must still equal the S0 baseline.",
+      "reverses": "`git revert` the commit; main.ts returns to the throwing `initialProject()`. IRREVERSIBLE RESIDUE: any file already quarantined to `default.local.corrupt-<ts>.json` stays renamed after a revert — the rollback runbook must include `mv projects/default.local.corrupt-*.json projects/default.local.json` (newest first) to restore the pre-recovery state."
+    },
+    {
+      "id": "S11",
+      "title": "Extract ws-broadcast.ts from main.ts — verbatim, no behaviour change",
+      "intent": "divergent-change-0004, first drain. `broadcastJson`, `broadcastBinary`, `broadcastPresence` and `relayToOthers` (main.ts:239-244, 423-433, 540-545) are the four socket-iterating closures over `clients`; they are also where resilience-hole-0005's backpressure fix must go, and they are 0%-covered. Move them into `createBroadcaster({ clients, encode })` with the bodies byte-identical, and pin the current behaviour with tests. NO guard is added in this commit.",
+      "files": [
+        "apps/server/src/ws-broadcast.ts",
+        "apps/server/src/ws-broadcast.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "The commit must be a provable pure move: `git show HEAD~1:apps/server/src/main.ts | sed -n '239,244p;423,433p;540,545p'` compared against the corresponding bodies in ws-broadcast.ts — only the closure→parameter rebinding of `clients`/`encodeServer` may differ, reviewed line by line. New ws-broadcast.test.ts with fake sockets pins today's contract: only `readyState === OPEN` sockets receive; the payload is encoded ONCE and the same string handed to every socket; `broadcastBinary` passes `{ binary: true }`; `relayToOthers` excludes the sender and only the sender; `broadcastPresence` sends a per-socket payload (assert two sockets get different `youAreEditor`). Parity: smoke digests in both engine modes equal the S0 baselines.",
+      "reverses": "`git revert`; the four closures return to main.ts. S12 depends on this module existing and must be reverted first."
+    },
+    {
+      "id": "S12",
+      "title": "Backpressure check + slow-peer termination in ws-broadcast.ts",
+      "intent": "resilience-hole-0005: `broadcastJson` gates only on readyState, so a peer that cannot drain 100 messages/second (a phone over the Cloudflare tunnel, a collapsed TCP window) accumulates undeliverable frames inside the Node process for as long as the socket stays technically OPEN — which, per resilience-hole-0004, is forever on a half-open link. Now that the broadcaster is a tested module, the guard is provable: skip any socket over a bufferedAmount threshold, count the skip, and terminate a socket that stays over it across N consecutive sweeps.",
+      "files": [
+        "apps/server/src/ws-broadcast.ts",
+        "apps/server/src/ws-broadcast.test.ts"
+      ],
+      "risk": "high",
+      "verification": "New cases with a fake socket exposing a settable `bufferedAmount`: (1) a socket reporting 2_000_000 is skipped while its OPEN sibling still receives, and the skip is counted on the returned `stats()`; (2) a socket that drops back under the threshold resumes receiving and its consecutive-over counter resets to 0; (3) a socket over threshold for N consecutive broadcasts has `terminate()` called exactly once, is removed from the registry via the injected `onDrop`, and receives no further sends; (4) an injected monitor sink got exactly one `error` event naming the dropped peer. Threshold and N are named constants in the module (`BACKPRESSURE_BYTES = 1_000_000`, `SLOW_PEER_SWEEPS = 30`), asserted by the tests so a value change is a visible test change. Live check before merge: run `pnpm dev`, open two browser tabs plus one tab throttled to 'Slow 3G' in devtools, drive input for 60s, and confirm from the Monitor panel that no healthy peer was dropped — the failure mode this step can actually cause is disconnecting a legitimate client, and no unit test can rule that out.",
+      "reverses": "`git revert` the commit; ws-broadcast.ts returns to the readyState-only gate from S11. Because S11 is a separate commit, this revert restores exactly today's broadcast semantics without undoing the extraction or the tests. If only the termination is too aggressive, raise SLOW_PEER_SWEEPS or drop the terminate branch while keeping the skip."
+    },
+    {
+      "id": "S13",
+      "title": "Connection cap in the WS connection path",
+      "intent": "resilience-hole-0005's amplifier: `clients.admit(ws)` is additive with no maximum, so a shared room link multiplies the per-client stats stream without limit on the machine driving a live show. Deliberately sequenced LAST, after the connection handler is extracted (S14) and testable, and deliberately a plain constant with no env knob — an env knob here would be the exact speculative generality this review is punishing elsewhere.",
+      "files": [
+        "apps/server/src/ws-connection.ts",
+        "apps/server/src/ws-connection.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New cases: with `MAX_CLIENTS = 32`, the 33rd connection is closed with a distinct close code (4429) and reason, is never passed to `clients.admit`, never receives `state`, and never triggers `broadcastPresence`; the 33rd connection succeeds again after one of the 32 closes. Assert the cap is checked AFTER the PIN/host-token admit decision, so an unauthorised connection can never consume a slot — a test with 32 admitted clients plus one wrong-PIN dial must still return close code 4401, not 4429.",
+      "reverses": "`git revert`; admission returns to unbounded. Isolated to one branch in one function."
+    },
+    {
+      "id": "S14",
+      "title": "Extract ws-connection.ts from main.ts — verbatim, no behaviour change",
+      "intent": "divergent-change-0004, second drain, and the enabling move for resilience-hole-0013 and the server half of resilience-hole-0004. The entire `wss.on('connection')` body (main.ts:470-533) — admit decision, tunnelClients tagging, presence, initial state, monitor replay, the message try/catch, close/error cleanup — is 0%-covered and is where three findings must be fixed. Move it behind `createWsConnectionHandler(deps)` with bodies byte-identical.",
+      "files": [
+        "apps/server/src/ws-connection.ts",
+        "apps/server/src/ws-connection.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "Pure-move proof: `git show HEAD~1:apps/server/src/main.ts | sed -n '470,533p'` diffed against the new handler body — only closure→deps rebinding may differ. New ws-connection.test.ts with fake sockets and fake `IncomingMessage`s pins today's contract exactly: a wrong PIN closes with the decision's code/reason and never admits; a cf-forwarded connection is tagged as a tunnel client; ORDER is presence-then-state-then-replay (assert with a single ordered log array — the comment at main.ts:492-494 says this ordering is load-bearing and nothing currently proves it); a binary frame is ignored; a decode failure emits a 'WebSocket decode error' monitor event AND an error frame while keeping the socket open; a handler throw emits 'WebSocket handler error'; close and error both call `clients.remove`, `controllerMonitor.dropWatcher` and `broadcastPresence`. Parity: smoke digests in both engine modes equal the S0 baselines — this is the largest single move in the plan and the digest is the only end-to-end check on it.",
+      "reverses": "`git revert`; the connection body returns inline to main.ts. S13/S15/S16 all live in this module and must be reverted first."
+    },
+    {
+      "id": "S15",
+      "title": "Error-frame redaction + per-socket rate limit",
+      "intent": "resilience-hole-0013: the message catch sends `err.message` verbatim to the client — for a ZodError a schema path dump, for a filesystem fault an absolute path on the drummer's machine, handed to whoever holds the room PIN over a public Cloudflare tunnel. It is also the only unrate-limited error surface, and each frame also emits a Monitor event feeding the #122 Reporter. The server already knows which sockets are remote (`tunnelClients`), so the redaction branch has the information it needs.",
+      "files": [
+        "apps/server/src/ws-connection.ts",
+        "apps/server/src/ws-connection.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New cases: (1) a handler throw carrying `/Users/someone/projects/default.local.json` on a socket tagged as a tunnel client produces an error frame whose message matches /^Could not apply that change \\(ref [0-9a-f]{8}\\)$/ and contains no '/' — assert with `expect(frame.message).not.toContain('/')`; (2) the SAME correlation ref appears in the Monitor event, whose `detail` still carries the full message and stack (the diagnostic must not be degraded, only the outbound frame); (3) 50 malformed messages in one second yield at most 5 error frames while all 50 still emit Monitor events, and the 6th..50th are silently dropped; (4) after the rate window elapses, error frames resume. Redaction applies unconditionally to tunnel clients; for local clients keep the message but still route it through the same rate limiter.",
+      "reverses": "`git revert`; the catch returns to sending `err.message` verbatim with no limit. Isolated to one catch block."
+    },
+    {
+      "id": "S16",
+      "title": "Server-side ws ping/pong reaper",
+      "intent": "resilience-hole-0004, server half: the connection handler installs only `close` and `error` listeners, so a dead peer is never reaped and stays in the broadcast registry — which is also what lets resilience-hole-0005's buffer grow forever. Use the standard `ws` keepalive (interval pings, terminate any peer that did not pong since the previous sweep) rather than a protocol-level message, so packages/protocol is untouched and browsers answer automatically at the transport layer.",
+      "files": [
+        "apps/server/src/ws-connection.ts",
+        "apps/server/src/ws-connection.test.ts",
+        "apps/server/src/boot.ts"
+      ],
+      "risk": "high",
+      "verification": "New cases with fake sockets and `vi.useFakeTimers()`: (1) a socket that never emits 'pong' is `terminate()`d on the second sweep and is removed from `clients` with `broadcastPresence` re-broadcast; (2) a socket that emits 'pong' after each ping survives 10 sweeps; (3) a socket admitted mid-sweep is not terminated on the immediately following sweep (the alive flag is initialised true at admit — the classic off-by-one that reaps healthy newcomers); (4) the sweep interval is `unref()`d so it never keeps the process alive, and boot.ts's shutdown clears it (assert the returned disposer is called). Sweep period is a named constant `HEARTBEAT_MS = 15_000` asserted by the tests. Live check before merge, since no unit test covers a real half-open socket: run `pnpm dev`, connect a phone over the LAN, put the phone in airplane mode mid-session, and confirm from the server Monitor that the peer is reaped within two sweeps and the headcount drops.",
+      "reverses": "`git revert`; no keepalive, peers linger exactly as today. This is the step most able to disconnect a healthy client (a browser that stops answering pings under heavy main-thread load), so if a false reap is observed, raise HEARTBEAT_MS or require three missed sweeps before reverting the module."
+    },
+    {
+      "id": "S17",
+      "title": "Extract stats-frame.ts — pure stats adaptation + named cadence constant",
+      "intent": "divergent-change-0004, third drain. main.ts:748-772 adapts the voice engine's stats onto the legacy `stats` shape (including a bar computed from beatsPerBar off the OTHER host) inside a setInterval callback — real policy, zero coverage, and the site of the cadence decision. Extract `buildStatsMessage({ voiceHost, host, beatsPerBar })` as a pure function and name the cadence `STATS_INTERVAL_MS = 10`. The VALUE is unchanged in this commit; see the open question.",
+      "files": [
+        "apps/server/src/stats-frame.ts",
+        "apps/server/src/stats-frame.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "low",
+      "verification": "New stats-frame.test.ts with stub hosts: voice mode maps timeMs/beat/voiceCount→activeTriggers/pixelCount and computes `bar = Math.floor(beat / beatsPerBar)` — assert the exact floor behaviour at beat 7.9 with beatsPerBar 4 (bar 1), and assert `tickCount` is still the literal 0 the current code emits; legacy mode returns `{t:'stats', stats: s.engine, …}` with no `voice` key at all (assert `'voice' in msg === false`, since an added key would change the wire payload). Parity: the smoke digest's first three stats frames — after normalisation strips latencyMs/fps/timeMs/beat — must equal the S0 baselines in BOTH engine modes; that is what proves the adaptation moved without drift.",
+      "reverses": "`git revert`; the adaptation returns inline. Pure move plus a constant, no behaviour surface."
+    },
+    {
+      "id": "S18",
+      "title": "Collapse the show/song persisted-slot duplication into createPersistedSlot",
+      "intent": "divergent-change-0004's actual day-to-day pain: adding a persisted slot today means five separate edits to main.ts (loader, live `let`, autosaver with its three near-identical monitor hooks, stateMessage field, shutdown flush). liveShowLibrary/liveSongLibrary are the same five lines twice, and the three createAutosaver calls differ only in a destination string. `createPersistedSlot({ label, destination, load, inspect, save, monitor })` returns `{ get, set, autosaver, loadInfo }` so a new slot is one registration. Deliberately LAST and deliberately NOT the finding's full `createServerApp` + registry rewrite.",
+      "files": [
+        "apps/server/src/persisted-slot.ts",
+        "apps/server/src/persisted-slot.test.ts",
+        "apps/server/src/main.ts",
+        "apps/server/src/boot.ts"
+      ],
+      "risk": "medium",
+      "verification": "New persisted-slot.test.ts: `set()` marks the autosaver dirty exactly once per call; a null slot's save sink is a no-op (today's `liveShowLibrary ? save… : Promise.resolve()` behaviour) and does NOT emit an onSaved monitor event; the three monitor hooks emit `persistence`/`persistence`/`error` with the slot's destination string — assert the exact label strings 'Show library autosave scheduled'/'saved'/'failed' so the wire-visible Monitor rows are pinned. Then `pnpm --filter @ledrums/server exec vitest run src/show-library.test.ts src/song-library.test.ts src/autosave.test.ts` unmodified and green. Parity: smoke digests equal the S0 baselines, with special attention to the monitor array — these three autosavers emit named rows the digest captures, so a renamed label shows up as a digest diff. The project slot keeps its own autosaver in this commit (it reads through `host.engine.getProject()`, not a stored blob) — folding it in is not attempted.",
+      "reverses": "`git revert`; the two library slots return to their duplicated form. Because the Monitor label strings are pinned by tests and by the digest, a revert cannot silently change what the drummer sees in the Monitor panel."
+    }
+  ],
+  "sequencing": [
+    ["S0"],
+    ["S1", "S2"],
+    ["S3", "S4", "S5"],
+    ["S6", "S7", "S8"],
+    ["S9", "S10"],
+    ["S11"],
+    ["S12"],
+    ["S14"],
+    ["S15", "S17"],
+    ["S16", "S18"],
+    ["S13"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/server/src/handlers/client-message.ts + handlers/projects.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "No exported symbol changes. The reduction is in the deps CONTRACT: six optional collaborators become required and ~20 absent-collaborator branches plus three `?? true` data-loss-guard defaults are deleted, so the number of configurations the module claims to support drops from 2^7 to 1 — the one that actually ships. Fewer states per unit of behaviour is the reduction being claimed."
+    },
+    {
+      "at": "apps/server/src/http/ (native-midi.ts, host-event.ts, new trusted-post.ts)",
+      "removed": [],
+      "added": ["createTrustedPostRoute", "TrustedPostRouteDeps"],
+      "net_interface_change": "increases",
+      "note": "Deliberate. Two independent implementations of the same 28-line security preamble become one owner plus two configurations; the per-module export count rises by two while the duplicated BEHAVIOUR surface halves. The alternative — leaving it duplicated — has already drifted once (named MAX_BODY vs the 4096 literal)."
+    },
+    {
+      "at": "apps/server/src (composition root: main.ts drained into ws-broadcast / ws-connection / stats-frame / boot-project / fatal-shutdown / persisted-slot)",
+      "removed": [],
+      "added": [
+        "createBroadcaster",
+        "createWsConnectionHandler",
+        "buildStatsMessage",
+        "resolveInitialProject",
+        "createFatalHandler",
+        "createPersistedSlot"
+      ],
+      "net_interface_change": "increases",
+      "note": "Unavoidable and stated honestly: main.ts is a side-effecting entry module that exports NOTHING, so any decomposition of it can only add exported symbols — there is no symbol count to reduce. The objective here is change-locality and testability, measured by two numbers rather than by interface size: main.ts drops from 801 lines to roughly 350, and the extracted logic goes from 0% covered to covered by six new suites. I am not claiming an interface win; I am claiming the finding's real cost (every feature edits the root) is paid down."
+    },
+    {
+      "at": "apps/server/src/backups/snapshot-store.ts",
+      "removed": [],
+      "added": ["createSnapshotReader", "SnapshotReader"],
+      "net_interface_change": "increases",
+      "note": "+2 exports to avoid duplicating the list/gunzip/parse path into the boot-recovery module. The store's own SnapshotStore interface is unchanged and now delegates to the reader — one implementation, two entry points, instead of two implementations."
+    },
+    {
+      "at": "apps/web/src/lib/ws/client.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "increases",
+      "note": "No new exports; WSClientOptions gains two optional fields (`watchdogMs`, `now`). `now` exists solely so the watchdog is testable with fake timers — a seam I am adding knowingly, and the one place in this plan where a field exists for tests rather than for production."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "`pnpm gates` (machine-mutex, typecheck + full suite) green on committed HEAD after EVERY step — 2968 tests at baseline, monotonically rising as each step adds its own suite; a step that leaves the count flat added no evidence and has not met its own verification bar.",
+      "`node scripts/server-smoke.mjs --engine voice --out /tmp/step.json && diff /tmp/step.json docs/plans/2026-07-26-deep-review/artifacts/smoke-baseline-voice.json` — required on every step whose files include apps/server/src/main.ts (S3, S6, S10, S11, S14, S17, S18). An empty diff is the parity proof for the 0%-coverage entry module.",
+      "The same smoke diff against smoke-baseline-legacy.json with `--engine legacy`. Both modes are run because main.ts:72 still defaults to LEGACY when LEDRUMS_ENGINE is unset while every shipping path forces voice — a change proven only in voice mode would silently break `pnpm start`.",
+      "Pure-move proof for each verbatim extraction (S11, S14, S17): `git show HEAD~1:apps/server/src/main.ts | sed -n '<range>p'` diffed against the new module body, reviewed line by line; only closure→parameter rebinding may differ. An extraction commit containing any logic edit is rejected and split.",
+      "`pnpm --filter @ledrums/server exec vitest run src/http/` with host-event.test.ts and native-midi.test.ts UNMODIFIED across S4 — the pre-existing route tests are the oracle for the trusted-POST extraction; needing to edit them falsifies the extraction.",
+      "Mutation probe for S9: scratch-delete the `backups:` key from main.ts:645-652, run `pnpm typecheck`, confirm it compiles BEFORE the step and ERRORS after, then restore. This is the only check that proves the fail-open hole is actually closed rather than merely relocated.",
+      "`rg -n 'createClientMessageHandler|handleProjectMessage' apps/server/src --glob '!*.test.ts'` before S7 — the single-production-wiring premise the whole speculative-generality fix rests on, re-confirmed at execution time rather than trusted from the Phase 2 read.",
+      "Manual live checks recorded in the PR body, for the two steps that can disconnect a healthy client: S12 (three tabs, one throttled to Slow 3G, 60s of input, no healthy peer dropped) and S16 (a LAN phone put into airplane mode mid-session, reaped within two sweeps, headcount drops).",
+      "Injected-fault check for S6: a temporary `throw` immediately after the hoisted `installProcessErrorCapture`, run under the smoke harness, must produce '[process] uncaught exception: boot-probe' on stdout; probe removed before commit, captured stdout pasted into the PR."
+    ],
+    "known_gaps": "Four regions where a green `pnpm gates` proves nothing, and what stands in for it. (1) apps/server/src/main.ts is imported by no test — it is a side-effecting entry module and the server package's 72.31% line coverage excludes it entirely. Substitute: the S0 smoke digest, which is a real boot of the real process in both engine modes; its weakness is that it only observes STARTUP behaviour, so a fault that needs a connected editor and a mutation is outside it. (2) The uncaughtException path (S2/S3) cannot be exercised by vitest without killing the runner, so process-errors.ts injects `proc`/`exit` and the tests prove the handler's contract, not that Node actually routes a render-loop throw into it. Substitute: the S6 injected-fault probe proves the wiring for a boot-time throw; a render-loop throw reaching the same handler is inferred, not observed, and I am flagging that as an inference. (3) No test touches a real Art-Net/sACN socket or a real half-open TCP connection — S12's backpressure and S16's reaper are proven against fake sockets with a settable bufferedAmount and a controllable pong. The failure they can cause (dropping a client that was actually fine) is exactly the one a fake socket cannot reproduce, hence the two mandatory manual live checks. (4) Timing: S2's per-frame catch and the 120 fps catch-up drain are tested under `vi.useFakeTimers()`, which proves the control flow and not the real-time budget; the added try/catch is zero-cost on the happy path in V8 but that is a claim from the language, not a measurement. If a measurement is wanted, the smoke harness's stats frames carry `fps` — compare the median of 100 frames before and after S2 with normalisation disabled. Explicitly NOT claimed: that the plan preserves behaviour for LEDRUMS_ENGINE=legacy beyond what the smoke digest observes, since the legacy path has no dedicated suite either.",
+    "baseline_reference": "Phase 0 baseline sha 3708648 (feat/ota-discord-announce), 2968 tests green at HEAD, apps/server line coverage 72.31% / branches 83.12% (00-coverage.json). Smoke digests are captured at the HEAD that S0 lands on — which is AFTER fix batches 1-3 (dead-code auto-fixes, dead-code residue, kit-mirror removal) — not at 3708648, and both digest files record the sha they were taken at so a stale baseline is detectable."
+  },
+  "rollback_strategy": "Nineteen commits, nineteen revert boundaries, and no commit depends on a later one — that is the point of the shape. Three ordered pairs must be reverted together or in the stated order: S8 before S10 (the snapshot reader is imported by the boot ladder); S7 before S9 in landing order and S9 before S7 in revert order (the fallback deletion assumes the types are required); S11 before S12 and S14 before S13/S15/S16 (the guards live inside the extracted modules). Reverting a guard step alone is always safe and always restores today's behaviour, because every extraction is a separate commit from the change it enables — that separation is the plan's main rollback asset. There are no feature flags and no runtime kill switches: a flag on a render-loop catch or a broadcast guard would itself be a new untested branch in the hot path, which is the wrong trade for code this small. There is exactly ONE irreversible residue in the whole plan: S10 renames an unloadable project to `default.local.corrupt-<ts>.json`, and reverting the code leaves that file renamed — the runbook step is `mv projects/default.local.corrupt-*.json projects/default.local.json` (newest timestamp first), and it is called out in S10's own `reverses`. No schema migration, no wire-protocol change, no persisted-format change occurs anywhere in this plan, so a full `git revert` of all nineteen commits leaves disk state loadable by the reverted code. Panic path: `git revert --no-commit <S18>..<S0-parent>` reverts the whole initiative in one commit, then `pnpm gates`; the smoke digests must return to the S0 baselines, which is how you confirm the revert was complete rather than assuming it.",
+  "estimated_loc": 2350,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "INIT-01-single-render-stack's plan asserts it must land BEFORE this one, on the grounds that decomposing main.ts around a two-engine branch bakes that branch into the new modules. I disagree and have built this plan to be independent — every extraction moves the `voiceHost ?? host` branch verbatim into its new home, where INIT-01's deletion becomes a smaller and better-tested edit than deleting it from an 801-line untested file. But the two initiatives rewrite the same file and MUST NOT run concurrently under any schedule pressure. Which lands first is Trent's call; my recommendation is INIT-04 first, because its steps S2/S3/S10 are the ones that stop a live show from dying and they are cheap, whereas INIT-01 is a 15-step 3150-LOC strangler that this plan's smoke harness would materially de-risk.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should the 100 Hz stats broadcast cadence (main.ts:772, `}, 10);`) be lowered? A UI cannot render 100 updates/second and the preview stream is already throttled to 30 fps, so this is 10x the useful rate on every connected socket including remote phones. But it is directly visible to the drummer — the latency readout, the fps number and the per-voice meters all get less responsive — and that is a taste call, not a correctness one. This plan does NOT change it: S17 names the constant `STATS_INTERVAL_MS = 10` and leaves the value, so the change is a one-line follow-up once Trent has looked at the meters at 20 Hz and 30 Hz.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should a render-loop fault escalate beyond surviving the frame? S2 contains the throw and keeps ticking, which means a permanently-broken authored effect produces a rate-limited error stream and a rig that renders everything EXCEPT that effect, forever, with no UI signal beyond the Monitor panel. The finding proposes quarantining the offending voice/effect after N consecutive throws, which requires packages/core to expose effect identity at throw time — and a quarantine set living inside core is precisely the hidden global state AGENTS.md forbids in a deterministic render loop. So the options are: (a) leave it as S2 ships it; (b) surface a persistent UI banner naming the faulting frame; (c) push identity out of core through the existing `onDiagnostic` seam so the HOST can quarantine, keeping core pure. I lean (c) as a follow-up initiative, but it is an architecture-shaping call about what core is allowed to know.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "When S10's boot recovery quarantines an unloadable project and falls back to a snapshot or the seed, is a Monitor `error` row sufficient, or must the app show a blocking 'we recovered your project from a backup — your last edits may be missing' banner requiring acknowledgement? This matters because the silent-recovery failure mode is worse than the crash it replaces: a drummer who does not notice can author on top of a week-old snapshot. The plan implements the Monitor row and returns the recovery outcome in the widened `source` field so a banner is a small web-side follow-up, but whether recovery is allowed to be quiet is a product call.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "What connection cap value, and should it be configurable? S13 ships `MAX_CLIENTS = 32` as a plain constant with no env knob, on the grounds that an env knob for a guard is the same speculative generality this review is punishing in ClientMessageDeps. But 32 is a guess: I do not know the largest rehearsal/venue scenario, and a cap that locks out a legitimate viewer during a show is worse than no cap. If Trent knows the real ceiling, the constant should be that number; if it genuinely varies by venue, then it needs to be configurable and I would rather it be a project setting than an env var.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "After S4, host-event keeps a 2048-byte cap and native-midi keeps 4096, passed as explicit parameters — I kept them different on purpose so the extraction is provably behaviour-identical. Should they then be unified to one shared MAX_BODY (the finding's proposal), or are the two values deliberate (short status lines vs MIDI payloads)? Rival variants may unify them in the extraction itself; Phase 9 should decide whether unification is part of the extraction or a separate guard-value commit. My position is separate, and only if there is a reason beyond tidiness.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    },
+    {
+      "question": "Does the `scripts/server-smoke.mjs` harness belong to this initiative or to the review programme as a whole? It is the only mechanism in any plan I have seen that produces parity evidence for a 0%-coverage entry module, and INIT-01, INIT-03 and INIT-11 all touch server boot paths that would benefit. If it is shared, its normaliser and digest schema become a cross-initiative contract and S0 should land as its own change ahead of every initiative rather than inside this one.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    }
+  ]
+}

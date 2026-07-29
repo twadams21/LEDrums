@@ -1,0 +1,316 @@
+{
+  "artifact": "08-refutations/INIT-04-server-runtime-hardening",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-04-server-runtime-hardening/opus",
+    "model": "claude-opus-5[1m]",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-04-server-runtime-hardening",
+      "variant_reviewed": "opus",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-04-server-runtime-hardening/opus", "model": "claude-opus-5[1m]", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S1's premise is factually false: it says native-midi.test.ts 'has NO test for the 4096-byte cap', but apps/server/src/native-midi.test.ts:145 already pins it, so S1 is a step whose stated justification does not exist and whose own falsification criterion is unachievable.",
+          "severity": "minor",
+          "evidence": "apps/server/src/http/native-midi.test.ts:145 'destroys the request when the body exceeds the 4KB cap' sends 'x'.repeat(5000) and asserts req.destroyed + 400. S1's verification demands both new cases 'must fail if the cap constant is changed to 2048' — a 5000-byte body is still destroyed at a 2048 cap, so that gate cannot be met by a cap-pinning test written this way.",
+          "survives": false,
+          "repair": "Reduce S1 to the one guard that is genuinely unpinned — the req.on('error') -> 400 branch in native-midi.ts (no such case exists in its test file) — and drop the false cap claim. If a value-pinning test is wanted, it must assert the boundary (4096 passes, 4097 destroys), which is what actually fails when the constant moves.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S0 is the linchpin of the entire plan (every main.ts commit's parity rests on digest equality) but its normalisation contract is unspecified, so an implementer cannot execute it unambiguously and the cheapest path to an empty diff is to normalise away exactly the fields that would have detected a regression.",
+          "severity": "major",
+          "evidence": "S0's verification names only that the harness 'records a normalised digest' and S17 mentions stripping latencyMs/fps/timeMs/beat. But the boot output it digests contains inherently unstable data at HEAD: monitor events carry timestamps, the boot snapshot id is `${Date.now()}-boot` (snapshot-store.ts:110 stemFor), clients get monotonic opaque ids (client-registry.ts:49 `c${nextId}`), and the state message carries project ids/paths from a mktemp dir. Nothing in S0 says which of those are normalised and which are load-bearing.",
+          "survives": false,
+          "repair": "S0 must ship an explicit normalisation spec as part of the step: an allow-list of keys retained in the digest, a fixed redaction list (timestamps, temp paths, port numbers, snapshot ids, client ids), and a negative control — a deliberately-injected behaviour change (e.g. drop one Monitor event, reorder presence/state) that MUST produce a digest diff. Without the negative control the oracle is unproven and S6/S11/S14/S17's parity claims are unbacked.",
+          "targets_step": "S0"
+        },
+        {
+          "claim": "S3's blackout-on-fatal is unlikely to reach the wire: output.blackout() enqueues datagrams via an async dgram send and is immediately followed by output.close() and then process.exit(1), so the darkening frame is discarded and the rig stays latched lit — the exact failure the step exists to fix.",
+          "severity": "major",
+          "evidence": "packages/io/src/artnet.ts:74 `this.socket.send(pkt, port, host, () => {})` (same shape at sacn.ts:115) is asynchronous; output-manager.ts:233-241 blackout() calls send per patch and voice-engine-host.ts:446-453 stop() calls blackout then output.close(); process-errors.ts:53-58 runs onFatal then `exit(1)` synchronously. S3's tests assert only ordering of darken-vs-flush against fakes, never that the datagram left the socket.",
+          "survives": false,
+          "repair": "Give the fatal path a bounded drain: have blackout return a promise/callback count and hold the exit for it (installProcessErrorCapture already injects `exit`, so delay it via setImmediate + a short bounded timer, or use a synchronous-write path), and add a test with a fake socket whose send callback is deferred asserting exit(1) is not called before the callbacks fire. Alternatively state honestly in the step that best-effort blackout may not transmit.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "Wave ['S16','S18'] is not file-disjoint: both steps edit apps/server/src/boot.ts, so the plan's own concurrency claim breaks at its last wave.",
+          "severity": "minor",
+          "evidence": "S16 files = ['apps/server/src/ws-connection.ts','apps/server/src/ws-connection.test.ts','apps/server/src/boot.ts']; S18 files = ['apps/server/src/persisted-slot.ts','apps/server/src/persisted-slot.test.ts','apps/server/src/main.ts','apps/server/src/boot.ts']. Both add/modify shutdown-teardown lines in the same function.",
+          "survives": false,
+          "repair": "Split the wave: land S16 then S18 serially, or move S18's boot.ts flush change into its own follow-up commit after S16 lands.",
+          "targets_step": "S16"
+        },
+        {
+          "claim": "S12's backpressure skip starves the very liveness signal S5's client watchdog depends on, so a slow-but-alive peer (phone over the tunnel) is force-closed by its own client and then terminated by the server — degrading a recoverable slow link into a reconnect loop.",
+          "severity": "major",
+          "evidence": "S5 defines liveness as message-age at the browser ('the server already emits traffic continuously, so message-age is a sufficient signal'). S12 skips sends to any socket over the bufferedAmount threshold — including the stats stream that is the only continuous traffic (main.ts:239 broadcastJson is the sole 10ms emitter). A browser cannot observe ws-level pings (S16's reaper), so nothing else resets the client's timer while it is being skipped.",
+          "survives": false,
+          "repair": "Exempt a tiny keepalive frame from the backpressure skip (e.g. still send a 30-byte `{t:'ping'}` when the full stats payload is skipped), or make the client watchdog treat 'socket open + skipped' as a distinct degraded state rather than dead. Add a test in ws-broadcast.test.ts asserting the keepalive is sent to an over-threshold socket.",
+          "targets_step": "S12"
+        },
+        {
+          "claim": "S13 hard-codes MAX_CLIENTS = 32 with a deliberate refusal of any env override, so a venue that exceeds it can only be fixed by cutting a release — a support incident on an OTA-shipped desktop app.",
+          "severity": "minor",
+          "evidence": "S13 intent: 'deliberately a plain constant with no env knob — an env knob here would be the exact speculative generality this review is punishing elsewhere.' The cap is an operational limit, not an abstraction; the repo already reads LEDRUMS_* env for engine, ports, projects dir.",
+          "survives": false,
+          "repair": "Keep the constant as the DEFAULT but allow a LEDRUMS_MAX_CLIENTS override read once at boot. A single env-read is configuration, not speculative generality.",
+          "targets_step": "S13"
+        },
+        {
+          "claim": "S10's snapshot rung recovers only the project from a bundle that also contains showLibrary and songLibrary, so a recovered boot pairs a rolled-back project with the current on-disk libraries — a state combination the existing restore path never produces.",
+          "severity": "major",
+          "evidence": "snapshot-store.ts:41 SnapshotBundle carries project + showLibrary + songLibrary; main.ts:583 readCurrent captures all three and applyRestoredSnapshot (main.ts:~560-577) applies all three together. S10's verification asserts only `source: 'snapshot'` and the quarantine rename; nothing about the libraries.",
+          "survives": false,
+          "repair": "Have boot-project.ts return the whole bundle (project + optional libraries) and let the boot wiring seed liveShowLibrary/liveSongLibrary from it when the snapshot rung is taken, with a test asserting all three come from the same bundle — or explicitly restrict the snapshot rung to bundles whose libraries match the on-disk ones.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S10 quarantines (renames aside) the drummer's live project on ANY throw from loadProject, so a transient IO fault — EACCES, EMFILE, a locked file during a sync — permanently displaces a perfectly good project file and the next autosave writes a fresh seed over the name.",
+          "severity": "major",
+          "evidence": "S10 intent: 'try loadProject(...); on throw, quarantineProjectFile(...)'. loadProject (projects.ts:54-63) does readFileSync + JSON.parse + parseProject + assertProjectIntegrity — the readFileSync throws are IO-class errors indistinguishable from corruption at that catch site.",
+          "survives": false,
+          "repair": "Discriminate: quarantine only on parse/schema/integrity errors (SyntaxError, ZodError, ReferentialIntegrityError). On an IO-class error, retry once and then fail loudly WITHOUT renaming — the file may be fine.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S2 contains the render-loop throw but leaves the rig latched on the last good frame indefinitely, with no policy for a permanently-throwing effect; the plan never states this end state as a decision for the human.",
+          "severity": "minor",
+          "evidence": "S2 intent: 'The step buys survival of the loop; it deliberately does NOT attempt per-effect quarantine.' voice-engine-host.ts:493-537 shows output.sendFrame is inside step(), so a throw before it means no new frame is transmitted — the rig holds the last transmitted values.",
+          "survives": true,
+          "plan_response": "S2's intent names the trade explicitly ('contain the fault at the HOST boundary ... deliberately does NOT attempt per-effect quarantine') and its verification pins the rate-limited Monitor error so the fault is visible; the frozen-lit end state is the same one the finding's own proposed_fix accepts as the first line of defence."
+        },
+        {
+          "claim": "The plan is 19 commits and ~2350 LOC for a P1 fault-containment initiative, so the two show-ruining fixes (render-loop throw, corrupt-boot) ship behind a large decomposition programme whose middle waves (S11/S14/S17/S18) carry no user-visible fault-containment value.",
+          "severity": "minor",
+          "evidence": "sequencing has 11 waves; S2 (render-loop boundary) is wave 2 and S10 (boot ladder) is wave 5, but S15/S16 (redaction, server reaper) do not land until waves 9-10, behind two verbatim-move extractions (S11, S14) totalling several hundred LOC.",
+          "survives": true,
+          "plan_response": "The summary states the ordering rationale directly — 'ordered so the two things that can ruin a live show land first and the god-file decomposition lands last' — and S2/S10 do land in waves 2 and 5; the extractions before S14/S15 are argued as the precondition that makes those findings testable at all ('today they cannot be tested, after the move they can')."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 3,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S0 must ship an explicit digest normalisation allow-list plus a negative-control injected change that MUST diff, otherwise every downstream main.ts parity claim rests on an unproven oracle.",
+        "S3 must bound the process exit until the blackout datagrams are actually flushed (or state that blackout is best-effort and may not transmit) — dgram send is async and exit(1) follows synchronously.",
+        "S10 must discriminate corruption errors from IO errors before quarantining the live project file, and must recover libraries from the same snapshot bundle as the project.",
+        "S12 must keep a minimal keepalive flowing to a backpressure-skipped socket, or S5's message-age watchdog will force-close slow-but-alive peers.",
+        "Split wave ['S16','S18'] — both edit apps/server/src/boot.ts.",
+        "S1's cap-pinning premise is false (native-midi.test.ts:145 pins it); reduce S1 to the genuinely unpinned req.on('error') -> 400 branch."
+      ]
+    },
+    {
+      "initiative_id": "INIT-04-server-runtime-hardening",
+      "variant_reviewed": "sonnet",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-04-server-runtime-hardening/opus", "model": "claude-opus-5[1m]", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S2 relocates ~800 lines of module-scope wiring in a single high-risk commit whose only parity evidence is a suite that, by the plan's own admission, covers none of it — so the plan's largest change is unfalsifiable at the moment it lands, and every step from S4 onward is written against it.",
+          "severity": "major",
+          "evidence": "S2 verification: 'Full existing server suite green ... with ZERO test-file changes' plus a construction-only server-app.test.ts that never calls .listen(). The plan's own known_gaps concedes 'until S2 lands, \"the suite is green\" says nothing about the composition root itself'. Confirmed at HEAD: no test imports apps/server/src/main.ts. The rollback strategy admits S2 can only be reverted by first unwinding every later wave.",
+          "survives": false,
+          "repair": "Build a boot-parity instrument BEFORE S2 (spawn the real server in both engine modes against a temp projects dir, digest the boot banner + first state message + first stats frames + Monitor events, prove it stable across two runs at unmodified HEAD), and diff it after S2. Independently, move the fault-containment steps that do not need the extraction (S4 render-loop catch, S5 ladder, S10 required deps) ahead of S2 so a P1 show-stopper fix is not gated on the riskiest commit in the plan.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S4 calls this.stop() after 5 consecutive faults, which blacks out AND closes the output transport with nothing anywhere that restarts it — converting a per-frame glitch into a permanently dead rig mid-show, and at 120fps the threshold trips in ~42ms for any deterministically-throwing effect.",
+          "severity": "major",
+          "evidence": "voice-engine-host.ts:446-453 stop() does clearTimeout + output.blackout + output.close and sets timer=null; nothing in main.ts or the WS handlers calls start() again after a fault. TICK_MS drives a 120fps loop, so 5 consecutive throws is well under one frame of human time. The verdict's own trigger (a canvas element missing `stops`, elements.ts:97-100) throws on EVERY frame, so it trips immediately on first play.",
+          "survives": false,
+          "repair": "Do not call stop() from the fault counter. Either keep looping with a rate-limited Monitor error (fable/opus posture), or if auto-dark is wanted, blackout WITHOUT closing the transport and keep the timer scheduled so a fixed show recovers, and expose a restart control. Any auto-stop behaviour must be routed to Trent as a stage-behaviour decision before implementation, not chosen in the step.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S4's onFatal ordering runs flushReportsSync() BEFORE voiceHost?.stop(), so a throwing or slow report flush means the rig is never darkened — the exact opposite of the failure this half of the step exists to fix.",
+          "severity": "major",
+          "evidence": "S4 intent: \"widen the onFatal hook ... to `() => { flushReportsSync(); voiceHost?.stop(); }`\". process-errors.ts:53-58 wraps the whole onFatal in one try/catch, so a throw inside flushReportsSync aborts the callback before stop() ever runs, then exit(1) proceeds.",
+          "survives": false,
+          "repair": "Darken first, flush second, and isolate each in its own try/catch: `() => { try { (voiceHost ?? host).stop(); } catch {} try { flushReportsSync(); } catch {} }`.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S5 requires constructing snapshotStore before initialProject() by turning host / liveShowLibrary / liveSongLibrary into forward-declared `let`s, which changes their types to possibly-undefined across the whole module — a ripple through hundreds of main.ts references that the step's file list and LOC estimate never account for.",
+          "severity": "major",
+          "evidence": "main.ts:583 `readCurrent: () => ({ project: host.engine.getProject(), showLibrary: liveShowLibrary, songLibrary: liveSongLibrary })` — `host` is a const used throughout the file. S5's files are only ['server-app.ts','projects.ts','projects.test.ts','diagnostics.ts'], and its verification tests only the projects.ts ladder, not the reordered wiring.",
+          "survives": false,
+          "repair": "Do not move snapshotStore. Split the store's read half into a `createSnapshotReader({ dir })` (list/read need only the directory) and give the boot ladder that reader, leaving createSnapshotStore where it is. This removes the forward-reference entirely.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S7's 500ms client stale-timeout will false-positive on ordinary main-thread jank and on browser background-tab timer throttling, force-closing healthy links mid-show and dropping the drummer to local sim for no reason.",
+          "severity": "major",
+          "evidence": "S7 chooses 'a fixed STALE_MS constant (e.g. 500ms)'. The web client renders 3D preview and decodes binary frames on the same main thread; a single GC pause or route transition exceeding 500ms trips it. Browsers also clamp setInterval in background tabs (>=1s), so a backgrounded editor tab evaluates staleness only after the deadline has already passed. The step's own second test ('deliver a frame just under the boundary') proves the state machine, not the threshold.",
+          "survives": false,
+          "repair": "Use a multi-second window (3-5s), measure staleness against the last message rather than the last tick so a throttled interval cannot manufacture a false positive, and disarm the watchdog when document.visibilityState is 'hidden' or immediately after a visibility change. S7's own open question already flags the tuning — but the value must not ship at 500ms.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S8's backpressure skip starves the traffic S7's watchdog uses as its liveness signal, so a slow phone over the tunnel is skipped by the server, declared dead by its own client, and reconnects in a loop.",
+          "severity": "major",
+          "evidence": "S7 defines liveness as inbound-message age; S8 skips the 10ms stats broadcast — the only continuous inbound traffic (main.ts:239 broadcastJson) — for any socket over 1MB buffered. Browsers cannot observe S6's ws-level pings, so nothing resets the client timer during the skip.",
+          "survives": false,
+          "repair": "Send a minimal keepalive frame to skipped sockets, or have the client distinguish 'degraded' from 'dead'. Add a test asserting a skipped socket still receives the keepalive.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S8's verification is untestable as written: it says to unit-test 'the extracted broadcastJson' and the connection cap, but S8's file list contains only server-app.ts and server-app.test.ts — the extraction of broadcastJson into a testable unit is asserted, not planned, and the connection-cap case requires driving wss.on('connection') which the plan never gives a seam.",
+          "severity": "major",
+          "evidence": "S8 files: ['apps/server/src/server-app.ts','apps/server/src/server-app.test.ts']. Its intent says 'Pull broadcastJson out as its own small testable unit (today it is a main.ts-local closure with no seam at all)' but names no module for it; S2's ServerApp surface list does not include a broadcaster or a connection handler.",
+          "survives": false,
+          "repair": "Name the extraction explicitly: a ws-broadcast.ts module with createBroadcaster({clients, encode}) and a ws-connection.ts with createWsConnectionHandler(deps), each landed as a verbatim move with its own tests, before the guard is added. Otherwise the guard is added inside an untestable closure and the step's verification cannot run.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S5 quarantines the live project on any loadProject throw, so a transient IO error permanently displaces a healthy file.",
+          "severity": "major",
+          "evidence": "S5 intent: 'try loadProject(LIVE_PROJECT); on throw, quarantineProjectFile(...)'. projects.ts:54-63 mixes readFileSync IO faults with parse/schema/integrity faults at the same catch site.",
+          "survives": false,
+          "repair": "Quarantine only on SyntaxError/ZodError/ReferentialIntegrityError; on IO errors retry once then fail loudly without renaming.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S1 builds createPersistedSlot as a generic primitive with ZERO callers in the same commit — a speculative abstraction shipped in the same plan that deletes speculative optionality in S10.",
+          "severity": "minor",
+          "evidence": "S1 files are only ['persisted-slots.ts','persisted-slots.test.ts'] and its intent states 'Purely additive: no existing file is touched yet'. Its justification is a hypothetical future slot ('e.g. a rig-presets library'). Meanwhile S10 deletes six optional collaborators precisely because 'the configuration the optionality exists for has never occurred'.",
+          "survives": true,
+          "plan_response": "S2 is the caller and lands in the very next wave — S2's intent explicitly moves 'the three PersistedSlot instances built from S1 for project/showLibrary/songLibrary' into the factory, so the primitive has three real callers one commit later, and S1's own interface_delta concedes it 'is a net addition today'."
+        },
+        {
+          "claim": "S4's blackout-on-fatal is not proven to reach the rig: blackout enqueues async dgram sends and process.exit(1) follows synchronously.",
+          "severity": "major",
+          "evidence": "packages/io/src/artnet.ts:74 and sacn.ts:115 use the asynchronous socket.send; process-errors.ts:53-58 calls onFatal then exit(1) with no drain. S4's verification asserts only that stop() was invoked.",
+          "survives": false,
+          "repair": "Hold the injected exit until the send callbacks fire (bounded), and test with a fake socket whose callback is deferred that exit is not called first.",
+          "targets_step": "S4"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 2,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 2,
+        "verification_strength": 2
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Build a boot-parity instrument for main.ts BEFORE S2, and move the render-loop catch + boot ladder ahead of the composition-root extraction so P1 fixes are not gated on the riskiest commit.",
+        "S4 must not call stop() on a fault counter (dead rig, no restart path); reverse onFatal ordering to darken-then-flush with per-call try/catch; and bound the exit so the blackout datagrams actually flush.",
+        "S5 must not move snapshotStore ahead of host (it forces host/liveShowLibrary/liveSongLibrary to possibly-undefined across main.ts); split a dir-only createSnapshotReader instead, and discriminate IO errors from corruption before quarantining.",
+        "S7's 500ms stale window must be raised to multiple seconds and made robust to background-tab timer throttling and visibility changes.",
+        "S8 must name the ws-broadcast / ws-connection extractions it depends on (its verification cannot run against main.ts-local closures) and must keep a keepalive flowing to backpressure-skipped sockets."
+      ]
+    },
+    {
+      "initiative_id": "INIT-04-server-runtime-hardening",
+      "variant_reviewed": "fable",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-04-server-runtime-hardening/opus", "model": "claude-opus-5[1m]", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S2 contradicts itself on the body cap and the contradiction breaks its own zero-test-edit parity proof: unifying the two caps to one shared MAX_BODY at 4096 makes host-event.test.ts's oversize case stop failing, because that test sends exactly 4096 bytes against a `>` comparison.",
+          "severity": "major",
+          "evidence": "S2 intent says both 'The 4096 magic number becomes a named per-route maxBody argument' AND 'the drifted constants unify' / 'Use one shared MAX_BODY constant'. At HEAD host-event.ts:9 MAX_BODY = 2048 and native-midi.ts:72 caps at 4096; host-event.test.ts:205 sends 'x'.repeat(4096) and asserts req.destroyed. Under a unified 4096 cap, 4096 > 4096 is false and that test fails — falsifying the step's stated parity evidence ('zero test edits is the parity proof'). Unifying downward to 2048 instead silently tightens native-MIDI's guard.",
+          "survives": false,
+          "repair": "Keep the caps as two per-route parameters (2048 for host-event, 4096 for native-midi) and name both constants; changing a guard VALUE is a separate decision that must not ride an extraction commit. Then the zero-test-edit parity claim actually holds.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S4's blackout-on-fatal will very likely not reach the rig: stop() enqueues asynchronous dgram sends and then closes the socket, and process.exit(1) runs synchronously after onFatal returns — so the crash still leaves the LEDs latched lit, which is the entire point of the step.",
+          "severity": "major",
+          "evidence": "packages/io/src/artnet.ts:74 `this.socket.send(pkt, this.port, this.host, () => {})` (sacn.ts:115 identical shape); output-manager.ts:233-241 blackout() -> send per patch; voice-engine-host.ts:446-453 stop() -> blackout then output.close(); process-errors.ts:53-58 -> onFatal then exit(1). S4's own verification concedes it is only '(b) a new voice-engine-host.test.ts assertion that stop() invokes output.blackout then output.close on a fake output'.",
+          "survives": false,
+          "repair": "Bound the exit on the send callbacks (installProcessErrorCapture already injects `exit`, so the drain is testable), and do NOT call output.close() on the fatal path before the blackout datagrams flush. Add a deferred-callback fake-socket test asserting exit is withheld.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S5 quarantines the drummer's live project on ANY throw from loadProject, so a transient IO fault (EACCES, EMFILE, a file locked by a sync client) permanently renames a perfectly good project aside and the app boots the seed, whose autosaver then writes a fresh default.local.json.",
+          "severity": "major",
+          "evidence": "S5 intent: 'if the file exists, try loadProject; on ANY throw (JSON/Zod/ReferentialIntegrityError), rename the bad file'. projects.ts:54-63 does readFileSync + JSON.parse + parseProject + assertProjectIntegrity behind one call, so IO faults are indistinguishable at that catch site. The verification only covers truncated JSON, a valid file, and no file — no IO-fault case.",
+          "survives": false,
+          "repair": "Discriminate the error class: quarantine only on SyntaxError / ZodError / ReferentialIntegrityError; on an IO-class error retry once and then fail loudly WITHOUT renaming. Add a fourth test case: readFileSync throws EACCES -> no rename, boot reports the fault.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S8's backpressure skip starves the traffic S7's watchdog measures, so a slow-but-alive peer force-closes itself from the client side while the server strikes it out — turning a degraded link into a reconnect loop and a terminated peer.",
+          "severity": "major",
+          "evidence": "S7 forces ws.close() after 5000ms with no inbound frame; S8 skips broadcastJson (main.ts:239 — the only continuous 10ms emitter) and broadcastBinary for any socket over 1MB buffered, for up to 3 sweeps. Browsers cannot see S6's ws-level pings, so nothing else refreshes lastServerMessageAt during the skip window.",
+          "survives": false,
+          "repair": "Exempt a minimal keepalive frame from the skip (send a tiny `{t:'ping'}` when the full stats payload is skipped), and assert it in the client-registry backpressure tests. Alternatively raise the terminate threshold so the server never reaps a peer the client would have recovered.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S6 puts installWsKeepalive in client-registry.ts, whose documented contract is a socket surface with close() only — ping/pong/terminate are not on CloseableSocket, so the step either widens that interface (an interface delta the plan does not declare) or plants ws-specific code in the module explicitly designed to be ws-decoupled.",
+          "severity": "minor",
+          "evidence": "apps/server/src/client-registry.ts:1-6 — 'Minimal socket surface the registry needs — just a graceful close. Keeps the registry decoupled from `ws` so it is trivially unit-testable' with `interface CloseableSocket { close(...) }`. The plan's interface_deltas entry for client-registry.ts lists only added exports, no change to CloseableSocket.",
+          "survives": false,
+          "repair": "Put installWsKeepalive in its own apps/server/src/ws-keepalive.ts generic over a `{ ping(); terminate(); on('pong', cb) }` shape, leaving client-registry.ts's ws-decoupling intact. backpressureVerdict is pure and can stay wherever it is tested.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S4 is the plan's only main.ts-only step and it has no executable verification: its stated evidence is 'code order in the diff' plus tests of collaborators, and main.ts is covered by zero tests at HEAD, so a mis-wired late-bound onFatalCleanup ships green.",
+          "severity": "major",
+          "evidence": "S4 verification: '(a) code order: capture install line number < initialProject call line number in the diff ... main.ts has no unit harness by design'. Confirmed at HEAD: no test file imports apps/server/src/main.ts. Hoisting installProcessErrorCapture above line 155 also crosses the monitor/monitorBus construction at main.ts:246-256, which the step's late-binding must handle correctly and nothing checks.",
+          "survives": false,
+          "repair": "Either extract the fatal wiring into a tiny testable module (createFatalHandler({darken, flushReports}) asserted for order and fault isolation), or add a minimal boot smoke that spawns the server with an injected boot fault and asserts the Monitor/report path fired. Diff line order is not evidence.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "The plan claims to address divergent-change-0004 but ships no structural change to main.ts's god-file problem, deferring the substance to INIT-01 with no declared dependency — so the initiative can be marked done with its named finding materially unaddressed.",
+          "severity": "minor",
+          "evidence": "dependencies_on_other_initiatives is []. The summary says 'the honest bulk of its shrink ... is INIT-01's deletion to make', and open_questions #3 asks Trent whether a structural extraction should be a follow-up if INIT-01 is deferred. The verdict's mechanical check records 39 commits touching main.ts co-changing 242 files.",
+          "survives": true,
+          "plan_response": "The plan states the refusal by name in its summary ('divergent-change-0004 is treated by shrinking main.ts through the deletions above and by noting that the honest bulk of its shrink ... is INIT-01's deletion to make — duplicating it here would be scope creep') and escalates the residual explicitly to Trent in open_questions #3 rather than silently dropping it; S5 also physically moves bootProject out of main.ts."
+        },
+        {
+          "claim": "S3 contains a render throw but leaves the rig latched lit indefinitely under a deterministically-throwing effect, and the plan never gets that stage behaviour approved before implementing it.",
+          "severity": "minor",
+          "evidence": "S3 intent chooses no quarantine and no auto-dark; voice-engine-host.ts:493-537 shows output.sendFrame lives inside step(), so a pre-send throw means no new frame is transmitted at all.",
+          "survives": true,
+          "plan_response": "open_questions #2 puts exactly this to Trent — 'Confirm frozen-lit-but-recoverable is the right stage behaviour; if you want auto-dark after N seconds of continuous faulting, that is a ~5-line addition to the same catch' — and S3's rate-limited Monitor error makes the fault visible rather than silent."
+        },
+        {
+          "claim": "S1 makes six deps required AND deletes ~20 branches in one commit, so the type tightening and the removal of failure paths share a revert boundary — a regression in either forces reverting both.",
+          "severity": "minor",
+          "evidence": "S1 files include both handlers and both test files; its intent covers dropping the `?` and deleting `?? true` at client-message.ts:342, the short-circuit at :441 and projects.ts:40 in the same step. speculative-generality-0002's fix flags the deletion half as removes_failure_path.",
+          "survives": false,
+          "repair": "Split into two commits: (a) drop the `?` and fix test harnesses with explicit stubs — provably zero runtime delta; (b) delete the now-unreachable fallbacks, gated by a mutation probe (remove the `backups:` key from the production wiring and assert typecheck ERRORS after (a)). Same total LOC, two revert boundaries, and the probe is real evidence that the fail-open is closed.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S7's 5000ms stale window is chosen without stating what it costs the drummer: up to five seconds of dead pads before the client falls back to local sim, on a fix whose whole justification is that the drummer hits pads that produce nothing.",
+          "severity": "minor",
+          "evidence": "S7 sets STALE_MS=5000 against a server that emits stats every 10ms — a ~500x margin. The known_gaps section acknowledges the threshold is only proven against fakes ('observe the client flip to reconnecting within ~7s').",
+          "survives": true,
+          "plan_response": "The plan's known_gaps names this exact limit honestly — '(a) real half-open TCP behaviour — S6/S7 are verified against fakes with fake timers; the actual wifi-drop recovery is evidenced only by a manual check ... observe the client flip to reconnecting within ~7s' — and 5000ms is a conservative choice that cannot false-positive on ordinary main-thread jank, which is the failure mode that would actively harm a show."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 4,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 4,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S2 must keep two per-route body caps (2048 / 4096) as named constants — unifying them to 4096 breaks host-event.test.ts:205 and falsifies the step's zero-test-edit parity proof.",
+        "S4 must bound process exit on the blackout datagram flush (and not close the socket first), and must gain executable verification — diff line order is not evidence for a change in a 0%-coverage module.",
+        "S5 must discriminate IO errors from corruption before renaming the live project aside.",
+        "S8 must keep a minimal keepalive flowing to backpressure-skipped sockets so S7's message-age watchdog does not force-close slow-but-alive peers.",
+        "Move installWsKeepalive out of client-registry.ts (its CloseableSocket contract is close()-only and deliberately ws-decoupled) into its own module.",
+        "Split S1 into a zero-runtime-delta type tightening and a separate branch-deletion commit gated by a mutation probe."
+      ]
+    }
+  ]
+}
