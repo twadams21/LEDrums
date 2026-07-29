@@ -12,7 +12,7 @@
      button, scale(0.96) on press, balanced/pretty text wrapping, ≥40px hit area on the action, and
      a reduced-motion path that drops every animation. */
   import type { BootRecoveryInfo } from '../../ws/protocol-types';
-  import { acknowledge, isAcknowledged, recoveryBannerView, sessionAckStore, type AckStore } from './recovery-banner';
+  import { acknowledge, isAcknowledged, recoveryAckToken, recoveryBannerView, sessionAckStore, type AckStore } from './recovery-banner';
   import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
 
   let {
@@ -36,8 +36,10 @@
   let ackedToken = $state<string | null>(null);
 
   const view = $derived(recovery ? recoveryBannerView(recovery) : null);
+  // Same identity as the persisted ack (review N10): recoveryAckToken keys on source AND
+  // reason, so a LATER recovery on a different rung with the same reason re-raises the banner.
   const dismissed = $derived(
-    recovery !== null && (ackedToken === recovery.reason || isAcknowledged(recovery, ackStore)),
+    recovery !== null && (ackedToken === recoveryAckToken(recovery) || isAcknowledged(recovery, ackStore)),
   );
   const open = $derived(view !== null && !dismissed);
 
@@ -50,7 +52,7 @@
   function ack(): void {
     if (!recovery) return;
     acknowledge(recovery, ackStore);
-    ackedToken = recovery.reason;
+    ackedToken = recoveryAckToken(recovery);
     onAck?.();
   }
 </script>

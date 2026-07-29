@@ -59,6 +59,18 @@ describe('RecoveryBanner', () => {
     expect(container.querySelector('.recovery-scrim')).not.toBeNull();
   });
 
+  it('a LIVE source change re-raises the banner even mid-session after an in-page ack (review N10)', async () => {
+    // Same reason string, different rung: the in-page ack must key on recoveryAckToken
+    // (source:reason) exactly like the persisted ack, or the later recovery is swallowed.
+    const sameReasonSeed: BootRecoveryInfo = { source: 'recovered-seed', reason: SNAPSHOT.reason };
+    const store = memoryStore();
+    const { container, rerender } = render(RecoveryBanner, { props: { recovery: SNAPSHOT, ackStore: store } });
+    await fireEvent.click(container.querySelector('.ack')!);
+    expect(container.querySelector('.recovery-scrim')).toBeNull();
+    await rerender({ recovery: sameReasonSeed, ackStore: store });
+    expect(container.querySelector('.recovery-scrim')).not.toBeNull();
+  });
+
   it('focuses the acknowledge action so the only way out is reachable from the keyboard', () => {
     const { container } = render(RecoveryBanner, { props: { recovery: SNAPSHOT, ackStore: memoryStore() } });
     expect(document.activeElement).toBe(container.querySelector('.ack'));
