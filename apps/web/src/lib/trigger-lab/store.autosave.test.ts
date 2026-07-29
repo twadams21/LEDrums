@@ -10,27 +10,7 @@ import type { WSClient } from '../ws/client';
    path is untested. jsdom gives an effect scheduler flushSync can drive; we install a full
    localStorage mock (jsdom's stub here lacks removeItem/clear). */
 
-class MemStorage {
-  m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.has(k) ? this.m.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient =>
   ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;

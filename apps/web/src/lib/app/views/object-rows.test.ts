@@ -14,27 +14,7 @@ import PresetRow from './PresetRow.svelte';
    gating + effect non-deletability — by driving each row over a real store. Pure view-model
    joins/sorting stay in objects-view.test.ts; layout parity is the owed live spot-check. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.get(k) ?? null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../../test-support/mem-storage';
 
 const fakeClient = (): WSClient =>
   ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
