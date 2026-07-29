@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_KIT_VERSION, migrateKit, parseKit } from './kit-schema';
+import { parseKit } from './kit-schema';
+import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
 import { buildPixelModel } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
 

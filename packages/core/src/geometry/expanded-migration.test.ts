@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CURRENT_KIT_VERSION,
   PIXLITE_PHYSICAL_OUTPUTS,
   logicalOutputCount,
   logicalOutputsForPhysical,
-  migrateKit,
   parseKit,
   type KitConfig,
 } from './kit-schema';
+import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
 
 // B2: the Advatek `expanded` output flag. New kits default OFF (4 physical outputs);
 // projects predating the flag (kit version < 3) migrate to ON (8 logical outputs) so an

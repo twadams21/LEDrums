@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_KIT_VERSION, parseKit, type OutputConfig } from './kit-schema';
+import { parseKit, type OutputConfig } from './kit-schema';
+import { CURRENT_KIT_VERSION } from './kit-migrations';
 import { buildPixelModel } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
 import { parseProject, parseProjectPatch } from '../model/project-schema';

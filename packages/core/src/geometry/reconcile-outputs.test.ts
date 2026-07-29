@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CURRENT_KIT_VERSION,
   logicalOutputCount,
   parseKit,
   reconcileOutputs,
   type KitConfig,
   type OutputConfig,
 } from './kit-schema';
+import { CURRENT_KIT_VERSION } from './kit-migrations';
 
 // Outputs are a STATIC rig shape: exactly `logicalOutputCount` physical ports (4 normal /
 // 8 expanded), driven solely by the controller `expanded` toggle — never freely add/deleted.

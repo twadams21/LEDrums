@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { eulerXYZApply } from './euler';
-import { CURRENT_KIT_VERSION, migrateKit, parseKit, type KitConfig } from './kit-schema';
+import { parseKit, type KitConfig } from './kit-schema';
+import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
 import { buildPixelModel, type PixelModel } from './pixel-model';
 import type { Vec3 } from '../math';
 

@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CURRENT_KIT_VERSION,
   drumHoopCount,
-  migrateKit,
   parseKit,
   type HoopConfig,
   type KitConfig,
 } from './kit-schema';
+import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
 import { buildPixelModel, getHoopPixelRange, type Pixel } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
 

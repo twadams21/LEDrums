@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BLEND_MODES } from '../color/blend';
-import { kitSchema, migrateKit, rgbOrderSchema } from '../geometry/kit-schema';
+import { kitSchema, rgbOrderSchema } from '../geometry/kit-schema';
+import { migrateKit } from '../geometry/kit-migrations';
 
 /** A control source feeds a live value (0..1 conceptually) into a parameter. */
 export const controlSourceSchema = z.discriminatedUnion('type', [
