@@ -4,6 +4,7 @@ import type { ClientRegistry } from './client-registry';
 import type { MonitorDraft } from './monitor';
 import { decodeClient, encodeServer, type ClientMessage, type ServerMessage } from './ws-protocol';
 import type { BroadcastSocket } from './ws-broadcast';
+import { createWsKeepalive, type KeepaliveSocket } from './ws-keepalive';
 
 /**
  * The WS connection handler, drained verbatim from main.ts (S12, divergent-change-0004):
@@ -14,9 +15,9 @@ import type { BroadcastSocket } from './ws-broadcast';
  */
 
 /** The socket surface the connection handler drives (structural for tests). */
-export interface ConnectionSocket extends BroadcastSocket {
+export interface ConnectionSocket extends BroadcastSocket, KeepaliveSocket {
   on(event: 'message', cb: (raw: { toString(): string }, isBinary: boolean) => void): void;
-  on(event: 'close' | 'error', cb: () => void): void;
+  on(event: 'close' | 'error' | 'pong', cb: () => void): void;
 }
 
 /** The request surface the admit decision reads (structural for tests). */
@@ -44,15 +45,33 @@ export interface WsConnectionDeps<S extends ConnectionSocket> {
   dropWatcher(ws: S): void;
   /** Local-only logger; defaults to `console.error`. */
   log?(message: string, detail: string): void;
+  /** Keepalive sweep period override (tests). */
+  heartbeatMs?: number;
 }
+
+/** The connection handler plus the keepalive disposer boot.ts calls on shutdown. */
+export type WsConnectionHandler<S extends ConnectionSocket> = ((ws: S, req: ConnectionRequest) => void) & {
+  disposeKeepalive(): void;
+};
 
 export function createWsConnectionHandler<S extends ConnectionSocket>(
   deps: WsConnectionDeps<S>,
-): (ws: S, req: ConnectionRequest) => void {
+): WsConnectionHandler<S> {
   const { hostToken, pinGate, clients, tunnelClients, monitor, broadcastPresence, stateMessage, replayMonitor, monitorInput, handleClientMessage, dropWatcher } = deps;
   const log = deps.log ?? ((message: string, detail: string): void => console.error(message, detail));
 
-  return function handleConnection(ws: S, req: ConnectionRequest): void {
+  /** Reap wired to the exact body of the close handler below, so a reaped peer is
+   * indistinguishable from a normal disconnect to every other subsystem (S13). */
+  const keepalive = createWsKeepalive<S>({
+    heartbeatMs: deps.heartbeatMs,
+    onDead: (ws) => {
+      clients.remove(ws);
+      dropWatcher(ws);
+      broadcastPresence();
+    },
+  });
+
+  function handleConnection(ws: S, req: ConnectionRequest): void {
     // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
     // registry or sent any presence/state/frames — so an un-authed client can neither view nor
     // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
@@ -78,6 +97,7 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
     // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
     // the `state` below — messages are ordered on the socket), then ship its initial state.
     clients.admit(ws);
+    keepalive.admit(ws);
     if (isViaCloudflare(req.headers)) tunnelClients.add(ws);
     monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
     broadcastPresence();
@@ -106,14 +126,20 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
     // On disconnect, drop the socket and re-broadcast presence (headcount changed, and the editor
     // slot may have moved per the registry's election rule).
     ws.on('close', () => {
+      keepalive.forget(ws);
       clients.remove(ws);
       dropWatcher(ws);
       broadcastPresence();
     });
     ws.on('error', () => {
+      keepalive.forget(ws);
       clients.remove(ws);
       dropWatcher(ws);
       broadcastPresence();
     });
-  };
+  }
+
+  const handler = handleConnection as WsConnectionHandler<S>;
+  handler.disposeKeepalive = () => keepalive.dispose();
+  return handler;
 }

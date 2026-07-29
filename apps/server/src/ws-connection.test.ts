@@ -13,6 +13,15 @@ class FakeSocket implements ConnectionSocket {
   readonly sent: { data: string | Uint8Array; binary: boolean }[] = [];
   closed: { code?: number; reason?: string } | null = null;
   handlers: Record<string, (...args: unknown[]) => void> = {};
+  pings = 0;
+  terminated = false;
+  ping(): void {
+    this.pings++;
+  }
+  terminate(): void {
+    this.terminated = true;
+    this.readyState = 3;
+  }
   send(data: string | Uint8Array, opts?: { binary?: boolean }): void {
     this.sent.push({ data, binary: opts?.binary ?? false });
   }

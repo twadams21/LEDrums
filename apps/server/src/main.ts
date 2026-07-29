@@ -472,9 +472,7 @@ voiceHost?.setOutputMonitor(monitor);
 voiceHost?.setMonitor(monitor);
 
 // The connection body lives in ws-connection.ts (S12); main.ts only supplies the wiring.
-wss.on(
-  'connection',
-  createWsConnectionHandler<WebSocket>({
+const wsConnectionHandler = createWsConnectionHandler<WebSocket>({
     hostToken,
     pinGate,
     clients,
@@ -485,9 +483,9 @@ wss.on(
     replayMonitor: (sendOne) => monitorBus.replay(sendOne),
     monitorInput: (msg) => monitorInput(msg, 'ws'),
     handleClientMessage: (msg, ws) => handleClientMessage(msg, ws),
-    dropWatcher: (ws) => controllerMonitor.dropWatcher(ws),
-  }),
-);
+  dropWatcher: (ws) => controllerMonitor.dropWatcher(ws),
+});
+wss.on('connection', wsConnectionHandler);
 
 // Shared collaborators handed to the extracted message handler. The broadcast/relay closures
 // capture the wiring so the handler stays free of module-level state + socket plumbing.
@@ -730,6 +728,7 @@ boot({
   server,
   wss,
   clients,
+  wsKeepalive: wsConnectionHandler,
   host,
   voiceHost,
   oscInput,
