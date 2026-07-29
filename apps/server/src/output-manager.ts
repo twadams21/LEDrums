@@ -6,7 +6,7 @@ import {
   type RgbOrder,
   type UniversePatch,
 } from '@ledrums/core';
-import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
+import { ArtNetOutput, SacnOutput, isUniverseValid, type PixelOutput } from '@ledrums/io';
 import { createOutputMonitorCoalescer, outputDestination, universeRangeLabel } from './output-monitor';
 import type { MonitorEvent } from './ws-protocol';
 import type { OutputStatus } from './ws-protocol';
@@ -88,6 +88,10 @@ export class OutputManager {
   private transportGen = 0;
   private universeCount = 0;
   private settingsMonitorSignature = '';
+  /** Dedup key for the universe-domain audit. Its OWN key, carrying WHICH universes are
+   * bad — settingsMonitorSignature only sees universes.length, which misses an
+   * equal-count valid→invalid transition (e.g. startUniverse 1→0 turns [1,2] into [0,1]). */
+  private universeAuditSignature = '';
   private readonly now: () => number;
   private readonly outputDiag: ReturnType<typeof createOutputMonitorCoalescer>;
   /** Active hoop-identify override (E1): pixels [start,end) are forced full-on until `expiresAt`
@@ -136,6 +140,32 @@ export class OutputManager {
     }
     this.settings = settings;
     this.monitorSettings(settings, dmxMap);
+    this.auditUniverseDomain(settings, dmxMap);
+  }
+
+  /** Warn-only sACN/Art-Net universe-domain audit at the arm seam. With buildDmxMap now
+   * protocol-aware (Decision 7) this fires only on a real mismatch — a map built for the
+   * wrong protocol, or an operator-set startUniverse outside the domain. Informational
+   * monitor row only: never type 'error', never lastError/transportError, and emitted
+   * AFTER the settings row (ordering is load-bearing for the pre-existing filterable-fields
+   * test). Transmitted bytes are never touched. */
+  private auditUniverseDomain(settings: OutputSettings, dmxMap: DmxMap): void {
+    const protocol = settings.protocol === 'sacn' ? 'sacn' : 'artnet';
+    const bad = dmxMap.universes.filter((u) => !isUniverseValid(protocol, u.universe)).map((u) => u.universe);
+    const signature = `${settings.protocol}|${settings.state}|${bad.join(',')}`;
+    if (signature === this.universeAuditSignature) return;
+    this.universeAuditSignature = signature;
+    if (bad.length === 0) return;
+    this.onMonitor?.({
+      type: 'output',
+      direction: 'out',
+      source: 'server/output',
+      destination: outputDestination(settings),
+      label: 'Universes outside protocol range',
+      detail:
+        `${protocol} universes ${bad.join(',')} are outside the protocol domain — ` +
+        `universe 0 multicasts to 239.255.0.0, a dead group; set startUniverse on the output`,
+    });
   }
 
   private teardown(dmxMap: DmxMap, settings: OutputSettings): void {

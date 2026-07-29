@@ -384,6 +384,67 @@ describe('OutputManager monitor diagnostics', () => {
   });
 });
 
+describe('OutputManager universe-domain audit (S9)', () => {
+  /** A hand-built map whose universe numbers are exact — the audit only reads them. */
+  const mapWith = (...universes: number[]): DmxMap => ({
+    perPixel: [],
+    universes: universes.map((universe) => ({ universe, channelCount: 3, pixels: [] })),
+  });
+  const sacn = (): OutputSettings => ({ ...settings('armed'), protocol: 'sacn' });
+
+  it('sACN with a 0-based map emits one informational row and never touches lastError', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings(sacn(), mapWith(0, 1));
+    const audits = events.filter((e) => e.label === 'Universes outside protocol range');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ type: 'output', source: 'server/output' });
+    expect(audits[0]!.detail).toContain('0');
+    expect(m.status().lastError).toBeNull();
+  });
+
+  it('does not fire twice for an unchanged map', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings(sacn(), mapWith(0, 1));
+    m.applySettings(sacn(), mapWith(0, 1));
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(1);
+  });
+
+  it('an equal-count change of WHICH universes are bad re-fires (dedup-key regression lock)', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings(sacn(), mapWith(0, 1)); // bad: [0]
+    m.applySettings(sacn(), mapWith(64000, 1)); // bad: [64000] — same count, different set
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(2);
+  });
+
+  it('Art-Net universe 0 is legal and stays silent', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture(); // artnet default map, universe 0
+    m.applySettings(settings('armed'), dmxMap);
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(0);
+  });
+
+  it('the audit changes no transmitted bytes', () => {
+    const { dmxMap, fb } = fixture();
+    const audited = new FakeOutput();
+    const silent = new FakeOutput();
+    const mAudited = new OutputManager(() => audited);
+    const mSilent = new OutputManager(() => silent);
+    mAudited.applySettings(sacn(), dmxMap); // universe 0 under sacn — audit fires
+    mSilent.applySettings(settings('armed'), dmxMap); // artnet — no audit
+    mAudited.sendFrame(fb.rgba, dmxMap);
+    mSilent.sendFrame(fb.rgba, dmxMap);
+    expect(audited.sends).toEqual(silent.sends);
+  });
+});
+
 describe('OutputManager transport status (S7)', () => {
   it('a transport error reaches lastError', () => {
     const fake = new FakeOutput();
