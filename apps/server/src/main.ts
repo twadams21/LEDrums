@@ -462,6 +462,12 @@ function stateMessage(): ServerMessage {
     // Where to point Sensory Percussion / a Max device, and whether the socket is actually
     // bound (#139). Read at send time, so a client always gets the settled truth.
     osc: oscListen,
+    // Decision 8: how this server booted, when it did NOT boot cleanly. Every client — including
+    // one that connects hours later — learns the live project was recovered and shows the blocking
+    // acknowledgement banner. Boot-time truth, so it is constant for the process' lifetime.
+    recovery: projectLoad.recovery
+      ? { source: projectLoad.source === 'snapshot' ? 'snapshot' : 'recovered-seed', reason: projectLoad.recovery.reason }
+      : null,
   };
 }
 

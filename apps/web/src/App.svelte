@@ -15,6 +15,8 @@
   // S08: the single app-root desktop-bridge start + the boot overlay it drives.
   import { desktopBridge } from './lib/app/desktop-bridge.svelte';
   import BootOverlay from './lib/app/chrome/BootOverlay.svelte';
+  // Decision 8: the blocking boot-recovery acknowledgement banner, raised off the server's `state`.
+  import RecoveryBanner from './lib/app/chrome/RecoveryBanner.svelte';
 
   const store = new TriggerLab();
   const shell = new ShellStore(parseSearch(typeof location !== 'undefined' ? location.search : ''));
@@ -110,6 +112,11 @@
 
 <!-- S08: desktop boot/update takeover — renders only inside the shell, nothing in a plain browser. -->
 <BootOverlay status={desktopBridge.bootStatus} active={desktopBridge.isDesktop} />
+
+<!-- Decision 8: blocking acknowledgement banner when the server booted through the recovery ladder.
+     Mounted at the app root beside the other chrome-level takeovers so it covers every view; it
+     renders nothing on a clean boot (store.bootRecovery === null). -->
+<RecoveryBanner recovery={store.bootRecovery} />
 
 <style>
   .shell-root {

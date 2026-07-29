@@ -18,8 +18,8 @@ digest; anything listed under "Retained" is never redacted.
   field that pins the load-bearing presence → state → monitor-replay ordering
   (main.ts connect handler).
 - **state** — the first `state` message's `project` / `model` / `effects` /
-  `projects` / `output` / `showLibrary` / `songLibrary` / `tunnel` / `osc`
-  members reduced to recursive KEY SHAPES (objects → sorted key map, arrays →
+  `projects` / `output` / `showLibrary` / `songLibrary` / `tunnel` / `osc` /
+  `recovery` members reduced to recursive KEY SHAPES (objects → sorted key map, arrays →
   length + first-element shape, scalars → typeof; depth-limited), plus the one
   retained VALUE `osc.statusValue` (bound vs error is boot behaviour).
 - **statsKeySets** — the first 3 `stats` frames' sorted key sets (top-level

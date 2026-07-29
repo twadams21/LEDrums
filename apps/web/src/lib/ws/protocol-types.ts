@@ -5,6 +5,7 @@
 export type {
   BackupReason,
   BackupSnapshotMeta,
+  BootRecoveryInfo,
   ClientMessage,
   ControllerStatus,
   ControllerTestPattern,

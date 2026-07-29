@@ -15,6 +15,7 @@
   import OutputPill from '../../app/chrome/OutputPill.svelte';
   import OscInputPanel from '../../app/chrome/OscInputPanel.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
+  import RecoveryBanner from '../../app/chrome/RecoveryBanner.svelte';
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
   import ControllerStatusPanel from '../../app/docks/inspectors/ControllerStatusPanel.svelte';
@@ -451,6 +452,22 @@
         <div class="boot-frame"><BootOverlay active status={boot({ stage: 'updating', progressPct: 62 })} /></div>
         <div class="boot-frame">
           <BootOverlay active status={boot({ stage: 'error', message: 'The server failed to start. Quit and reopen the app.' })} />
+        </div>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Recovery banner"
+      src={['lib/app/chrome/RecoveryBanner', 'lib/app/chrome/recovery-banner']}
+      note="Blocking acknowledgement banner shown when the server's boot ladder had to recover the live project (Decision 8). Warn-toned, top-anchored over a scrim; no Esc / outside-click exit — the single Got it action is the only way out and dismisses it for the browser session. Both rungs shown: recovered from a backup snapshot, and started from a fresh default when no snapshot was readable. Framed here; in the app it covers the whole viewport."
+      wide
+    >
+      <div class="boot-row">
+        <div class="boot-frame">
+          <RecoveryBanner recovery={{ source: 'snapshot', reason: 'SyntaxError: Unexpected end of JSON input' }} ackStore={null} autofocus={false} />
+        </div>
+        <div class="boot-frame">
+          <RecoveryBanner recovery={{ source: 'recovered-seed', reason: 'ZodError: kit.hoops — expected array' }} ackStore={null} autofocus={false} />
         </div>
       </div>
     </DemoCard>

@@ -14,7 +14,7 @@
 //   - the ordered sequence of WS message types from connect ("messageOrder"),
 //     binary frames as "binary", truncated once 3 stats frames are seen.
 //   - the first `state` message's project/model/effects/output/showLibrary/
-//     songLibrary/tunnel/osc SHAPES (recursive key structure, depth-limited).
+//     songLibrary/tunnel/osc/recovery SHAPES (recursive key structure, depth-limited).
 //   - the first 3 `stats` frames' key sets (top-level, stats, voice).
 //   - the ordered list of monitor events as {type,source,destination,label} —
 //     both the live-received and the replayed stream.
@@ -229,6 +229,11 @@ const wsDone = new Promise((res, rej) => {
         songLibrary: shapeOf(msg.songLibrary, 1),
         tunnel: shapeOf(msg.tunnel, 1),
         osc: { ...shapeOf(msg.osc, 1), statusValue: msg.osc?.status ?? null },
+        // Decision 8: whether this boot came through the recovery ladder is boot BEHAVIOUR, not
+        // volatile detail — a clean boot must digest as null, so a regression that starts silently
+        // claiming recovery (or stops reporting it) shows up as a baseline diff. The reason string
+        // carries a filesystem-flavoured error message, so only its shape is retained.
+        recovery: shapeOf(msg.recovery, 1),
       };
     } else if (msg.t === 'stats' && statsSeen < 3) {
       statsSeen += 1;

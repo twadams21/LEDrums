@@ -20,7 +20,7 @@ export {
   showSchema,
   songLibraryBlobSchema,
 } from './schemas';
-export type { ClientMessage, ServerMessage } from './schemas';
+export type { BootRecoveryInfo, ClientMessage, ServerMessage } from './schemas';
 
 // ---------------------------------------------------------------------------
 // Transport-level constants

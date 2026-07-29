@@ -91,16 +91,21 @@ describe('WSClient', () => {
       songLibrary: null,
       tunnel: null,
       osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
+      // Decision 8: the boot-recovery outcome rides `state`; null = this server booted cleanly.
+      recovery: { source: 'snapshot', reason: 'SyntaxError: bad json' },
     };
     ws.emitText(JSON.stringify(msg));
 
     expect(onState).toHaveBeenCalledTimes(1);
-    const [, model, , projects, , , , , osc] = onState.mock.calls[0]!;
+    const [, model, , projects, , , , , osc, recovery] = onState.mock.calls[0]!;
     expect(model.count).toBe(2);
     expect(projects).toEqual(['default']);
     // The OSC listen surface (#139) rides `state` — it is what the Settings panel reads to tell a
     // user which host:port to type into Sensory Percussion.
     expect(osc).toEqual({ status: 'listening', port: 9000, hosts: ['192.168.1.20'] });
+    // Decision 8: the boot-recovery outcome must reach the app — it is what raises the blocking
+    // acknowledgement banner, so a dropped argument here would silently hide real data loss.
+    expect(recovery).toEqual({ source: 'snapshot', reason: 'SyntaxError: bad json' });
   });
 
   it('decodes a binary frame into a Uint8Array and invokes onFrame', () => {

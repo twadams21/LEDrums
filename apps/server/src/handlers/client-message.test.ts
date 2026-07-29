@@ -98,6 +98,7 @@ function harness(opts: TunnelHarnessOpts = {}) {
     songLibrary: slot.songLib,
     tunnel: null,
     osc: { status: 'listening', port: 9000, hosts: [] },
+    recovery: null,
   });
   const broadcastState = (): void => broadcastJson(stateMessage());
   const relayToOthers = (sender: FakeSocket, msg: ServerMessage): void => {
@@ -173,6 +174,7 @@ function voiceHarness() {
       songLibrary: base.slot.songLib,
       tunnel: null,
       osc: { status: 'listening', port: 9000, hosts: [] },
+      recovery: null,
     }),
     setShowLibrary: (lib) => {
       base.slot.lib = lib;

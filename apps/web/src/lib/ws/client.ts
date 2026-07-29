@@ -3,6 +3,7 @@ import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
   decodeServer,
   type BackupSnapshotMeta,
+  type BootRecoveryInfo,
   type ClientMessage,
   type ControllerStatus,
   type DiscoveredController,
@@ -49,6 +50,10 @@ export interface WSCallbacks {
     /** OSC listen surface (#139): the host:port a third-party sender should target, plus
      * whether the socket actually bound. */
     osc: OscListenInfo,
+    /** Boot-recovery outcome (Decision 8): non-null when this server's live project was recovered
+     * by the boot ladder, which is what raises the blocking acknowledgement banner. Optional in the
+     * callback signature so a caller that does not care about it needs no argument. */
+    recovery?: BootRecoveryInfo | null,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
@@ -266,7 +271,7 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc, msg.recovery);
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
