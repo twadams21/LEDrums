@@ -6,6 +6,7 @@
 
 import type { Edge, Node } from '@xyflow/svelte';
 import { drumHoopCount, type KitConfig } from '@ledrums/core';
+import { parsePatchNodeId } from './patch-node-id';
 
 /** The left→right stages of the device-routing topology (D1: no Data Line stage). */
 export type PatchStage =
@@ -54,12 +55,6 @@ export interface TopologyDrum {
 export const NODE_W = 176;
 export const NODE_H = 48;
 
-// --- node id grammar --------------------------------------------------------
-// Every id is `<kind>` or `<kind>:<a>[:<b>]`, so describePatchNode can decode it.
-export const INPUT_ID = 'input';
-export const CONTROLLER_ID = 'controller';
-export const hoopId = (drumId: string, hoop: number): string => `hoop:${drumId}:${hoop}`;
-
 /**
  * Resolve the input half's `TopologyDrum[]` from a kit + the lab's drum list. The hoop
  * count for each drum derives from the SUPPLIED kit (per-drum override or the kit global)
@@ -93,25 +88,26 @@ export function describePatchNode(
   drums: ReadonlyArray<{ id: string; label: string }> = [],
 ): PatchNodeDescription {
   const labelOf = (drumId: string): string => drums.find((d) => d.id === drumId)?.label ?? drumId;
-  if (id === INPUT_ID) return { stage: 'input', title: 'Sensory Percussion', sub: 'trigger input' };
-  if (id === CONTROLLER_ID) return { stage: 'controller', title: 'Controller', sub: 'Art-Net / sACN pixel controller' };
-  // D1 holder zones (patch-graph v2 container nodes)
-  if (id === 'kit') return { stage: 'drum', title: 'Drum Kit', sub: 'kit globals' };
-  if (id === 'triggers') return { stage: 'trigger', title: 'Drum Triggers', sub: 'trigger inputs' };
-
-  const [kind, a, b] = id.split(':');
-  switch (kind) {
+  const ref = parsePatchNodeId(id);
+  switch (ref.kind) {
+    case 'input':
+      return { stage: 'input', title: 'Sensory Percussion', sub: 'trigger input' };
+    case 'controller':
+      return { stage: 'controller', title: 'Controller', sub: 'Art-Net / sACN pixel controller' };
+    // D1 holder zones (patch-graph v2 container nodes)
+    case 'kit':
+      return { stage: 'drum', title: 'Drum Kit', sub: 'kit globals' };
+    case 'triggers':
+      return { stage: 'trigger', title: 'Drum Triggers', sub: 'trigger inputs' };
     case 'trigger':
-      return { stage: 'trigger', title: `${labelOf(a ?? '')} Trigger`, sub: 'input → trigger' };
-    case 'zone':
-      return { stage: 'zone', title: `${labelOf(a ?? '')} · ${b ?? ''}`, sub: 'sensor zone' };
+      return { stage: 'trigger', title: `${labelOf(ref.drumId)} Trigger`, sub: 'input → trigger' };
     case 'drum':
-      return { stage: 'drum', title: `${labelOf(a ?? '')} Drum`, sub: 'zones converge → hoops' };
+      return { stage: 'drum', title: `${labelOf(ref.drumId)} Drum`, sub: 'zones converge → hoops' };
     case 'hoop':
-      return { stage: 'hoop', title: `${labelOf(a ?? '')} Hoop ${b ?? ''}`, sub: 'LED hoop' };
+      return { stage: 'hoop', title: `${labelOf(ref.drumId)} Hoop ${ref.hoop}`, sub: 'LED hoop' };
     case 'output':
-      return { stage: 'output', title: `Output ${a ?? ''}`, sub: 'physical data run' };
-    default:
+      return { stage: 'output', title: `Output ${ref.outputId}`, sub: 'physical data run' };
+    case 'unknown':
       return { stage: 'input', title: id, sub: 'patch node' };
   }
 }

@@ -22,11 +22,10 @@
    just format/parse the shared 1-based number. */
 
 import type { OutputConfig } from '@ledrums/core';
+import { CONTROLLER_ID, hoopNodeId, outputNodeId, parsePatchNodeId } from './patch-node-id';
 import {
-  CONTROLLER_ID,
   NODE_H,
   NODE_W,
-  hoopId,
   type PatchFlowEdge,
   type PatchFlowNode,
   type PatchStage,
@@ -39,37 +38,6 @@ import {
   type PatchOutput,
   type PatchRouting,
 } from './patch-routing';
-
-// --- node-id grammar (kept decodable by patch-topology's describePatchNode) --------
-
-const OUTPUT_PREFIX = 'output:';
-
-/** Flow-node id for a hoop ref. Both `HoopRef.hoop` and the topology node id are 1-based (A1). */
-export function hoopNodeId(ref: HoopRef): string {
-  return hoopId(ref.drumId, ref.hoop);
-}
-
-/** Decode a hoop flow-node id back to a 1-based {@link HoopRef}; null if not a hoop.
-    Drum ids never contain ':' today, but rejoin the middle defensively anyway. */
-export function parseHoopNodeId(id: string): HoopRef | null {
-  const parts = id.split(':');
-  if (parts[0] !== 'hoop' || parts.length < 3) return null;
-  const n = Number(parts[parts.length - 1]);
-  if (!Number.isFinite(n)) return null;
-  const drumId = parts.slice(1, -1).join(':');
-  if (!drumId) return null;
-  return { drumId, hoop: n };
-}
-
-/** Flow-node id for a physical output, carrying its `OutputConfig.id` for round-trip. */
-export function outputNodeId(outputId: string): string {
-  return OUTPUT_PREFIX + outputId;
-}
-
-/** Recover an output's `OutputConfig.id` from its flow-node id; null if not an output. */
-export function parseOutputNodeId(id: string): string | null {
-  return id.startsWith(OUTPUT_PREFIX) ? id.slice(OUTPUT_PREFIX.length) : null;
-}
 
 // --- layout helpers (mirror patch-topology's column maths, kept local & pure) -------
 
@@ -253,14 +221,15 @@ export function routingFromGraph(
     .sort(byY);
 
   const outputs: PatchOutput[] = outputNodeIds.map((oNodeId) => {
-    const id = parseOutputNodeId(oNodeId) ?? oNodeId;
+    const oRef = parsePatchNodeId(oNodeId);
+    const id = oRef.kind === 'output' ? oRef.outputId : oNodeId;
     const hoops: HoopRef[] = [];
     const seen = new Set<string>();
     let cursor = downstreamHoop(oNodeId);
     while (cursor && !seen.has(cursor)) {
       seen.add(cursor);
-      const ref = parseHoopNodeId(cursor);
-      if (ref) hoops.push(ref);
+      const ref = parsePatchNodeId(cursor);
+      if (ref.kind === 'hoop') hoops.push({ drumId: ref.drumId, hoop: ref.hoop });
       cursor = downstreamHoop(cursor);
     }
     const { startUniverse, channelsPerPixel, rgbOrder } = getScalars(id);

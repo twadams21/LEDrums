@@ -35,19 +35,18 @@
 
 import type { Node } from '@xyflow/svelte';
 import { classifyChainConnection, type ChainConnectionVerdict, type ChainEdge, type HoopRef } from '@ledrums/core';
-import { hoopNodeId, outputNodeId, parseHoopNodeId, parseOutputNodeId } from './patch-graph';
+import {
+  CONTROLLER_ID,
+  KIT_ID,
+  TRIGGERS_ID,
+  drumNodeId,
+  hoopNodeId,
+  outputNodeId,
+  parsePatchNodeId,
+  triggerNodeId,
+} from './patch-node-id';
 import { NODE_H, NODE_W, type PatchFlowEdge, type PatchFlowNode } from './patch-topology';
 import type { PatchRouting } from './patch-routing';
-
-// --- holder zone ids (top-level, no ':' so they don't collide with `hoop:`/`output:`/`drum:`) --
-export const CONTROLLER_ZONE_ID = 'controller';
-export const KIT_ZONE_ID = 'kit';
-export const TRIGGERS_ZONE_ID = 'triggers';
-
-/** Flow-node id for a drum sub-zone (also its Inspector selection id → the drum editor). */
-export const drumZoneId = (drumId: string): string => `drum:${drumId}`;
-/** Flow-node id for a trigger node. */
-export const triggerNodeId = (drumId: string): string => `trigger:${drumId}`;
 
 /** The kind of holder/sub zone (drives the icon, tint, and Inspector routing). */
 export type PatchZoneKind = 'controller' | 'kit' | 'drum' | 'triggers';
@@ -197,9 +196,9 @@ function seedTree(input: ZoneGraphInput): Node[] {
     const drumW = PAD.drum.x * 2 + Math.max(1, d.hoopCount) * NODE_W + Math.max(0, d.hoopCount - 1) * SEED.colGap;
     for (let h = 1; h <= d.hoopCount; h++) {
       const hId = hoopNodeId({ drumId: d.id, hoop: h });
-      leaves.push(leafNode(hId, drumZoneId(d.id), { x: PAD.drum.x + (h - 1) * (NODE_W + SEED.colGap), y: PAD.drum.top }, 'hoop', `${d.label} · Hoop ${h}`, 'LED hoop', !nonTerminalHoops.has(hId)));
+      leaves.push(leafNode(hId, drumNodeId(d.id), { x: PAD.drum.x + (h - 1) * (NODE_W + SEED.colGap), y: PAD.drum.top }, 'hoop', `${d.label} · Hoop ${h}`, 'LED hoop', !nonTerminalHoops.has(hId)));
     }
-    drumZones.push(zoneNode(drumZoneId(d.id), 'drum', d.label, { x: PAD.kit.x, y: ky }, { w: drumW, h: drumH }, KIT_ZONE_ID));
+    drumZones.push(zoneNode(drumNodeId(d.id), 'drum', d.label, { x: PAD.kit.x, y: ky }, { w: drumW, h: drumH }, KIT_ID));
     ky += drumH + SEED.rowGap;
     kitInnerW = Math.max(kitInnerW, drumW);
   }
@@ -209,7 +208,7 @@ function seedTree(input: ZoneGraphInput): Node[] {
   // --- Controller: stack the outputs ---
   input.routing.outputs.forEach((o, i) => {
     const n = o.hoops.length;
-    leaves.push(leafNode(outputNodeId(o.id), CONTROLLER_ZONE_ID, { x: PAD.controller.x, y: PAD.controller.top + i * (NODE_H + SEED.stackGap) }, 'output', `Output ${i + 1}`, n === 0 ? 'unwired' : `${n} hoop${n === 1 ? '' : 's'}`));
+    leaves.push(leafNode(outputNodeId(o.id), CONTROLLER_ID, { x: PAD.controller.x, y: PAD.controller.top + i * (NODE_H + SEED.stackGap) }, 'output', `Output ${i + 1}`, n === 0 ? 'unwired' : `${n} hoop${n === 1 ? '' : 's'}`));
   });
   const nOut = input.routing.outputs.length;
   const ctrlW = PAD.controller.x * 2 + NODE_W;
@@ -217,7 +216,7 @@ function seedTree(input: ZoneGraphInput): Node[] {
 
   // --- Drum Triggers: stack the triggers ---
   input.triggers.forEach((t, i) => {
-    leaves.push(leafNode(triggerNodeId(t.drumId), TRIGGERS_ZONE_ID, { x: PAD.triggers.x, y: PAD.triggers.top + i * (NODE_H + SEED.stackGap) }, 'trigger', t.label, t.sub));
+    leaves.push(leafNode(triggerNodeId(t.drumId), TRIGGERS_ID, { x: PAD.triggers.x, y: PAD.triggers.top + i * (NODE_H + SEED.stackGap) }, 'trigger', t.label, t.sub));
   });
   const nTrg = input.triggers.length;
   const trgW = PAD.triggers.x * 2 + NODE_W;
@@ -228,9 +227,9 @@ function seedTree(input: ZoneGraphInput): Node[] {
   const ctrlX = snapGrid(SEED.x0);
   const kitX = snapGrid(ctrlX + ctrlW + SEED.zoneGap);
   const trgX = snapGrid(kitX + kitW + SEED.zoneGap);
-  topZones.push(zoneNode(CONTROLLER_ZONE_ID, 'controller', 'Controller', { x: ctrlX, y: SEED.y0 }, { w: ctrlW, h: ctrlH }));
-  topZones.push(zoneNode(KIT_ZONE_ID, 'kit', 'Drum Kit', { x: kitX, y: SEED.y0 }, { w: kitW, h: kitH }));
-  topZones.push(zoneNode(TRIGGERS_ZONE_ID, 'triggers', 'Drum Triggers', { x: trgX, y: SEED.y0 }, { w: trgW, h: trgH }));
+  topZones.push(zoneNode(CONTROLLER_ID, 'controller', 'Controller', { x: ctrlX, y: SEED.y0 }, { w: ctrlW, h: ctrlH }));
+  topZones.push(zoneNode(KIT_ID, 'kit', 'Drum Kit', { x: kitX, y: SEED.y0 }, { w: kitW, h: kitH }));
+  topZones.push(zoneNode(TRIGGERS_ID, 'triggers', 'Drum Triggers', { x: trgX, y: SEED.y0 }, { w: trgW, h: trgH }));
 
   // Ancestors-first: top holders, then drum sub-zones, then all leaves.
   return [...topZones, ...drumZones, ...leaves];
@@ -380,7 +379,7 @@ export function buildRefEdges(triggers: ReadonlyArray<ZoneTrigger>, hasDrumZone:
     .map((t) => ({
       id: `ref:${t.drumId}`,
       source: triggerNodeId(t.drumId),
-      target: drumZoneId(t.drumId),
+      target: drumNodeId(t.drumId),
       type: 'ref',
       selectable: false,
       deletable: false,
@@ -393,15 +392,15 @@ export function buildRefEdges(triggers: ReadonlyArray<ZoneTrigger>, hasDrumZone:
 /** Decode a flow-node id into a core wire SOURCE, or null if it is not a legal source
     (only Output and Hoop nodes can start/continue a chain). */
 function chainSourceOf(nodeId: string): ChainEdge['from'] | null {
-  const outputId = parseOutputNodeId(nodeId);
-  if (outputId !== null) return { kind: 'output', outputId };
-  const ref = parseHoopNodeId(nodeId);
-  return ref ? { kind: 'hoop', ref } : null;
+  const ref = parsePatchNodeId(nodeId);
+  if (ref.kind === 'output') return { kind: 'output', outputId: ref.outputId };
+  return ref.kind === 'hoop' ? { kind: 'hoop', ref: { drumId: ref.drumId, hoop: ref.hoop } } : null;
 }
 
 /** Decode a flow-node id into a target HoopRef, or null if it is not a hoop node. */
 function targetHoopOf(nodeId: string): HoopRef | null {
-  return parseHoopNodeId(nodeId);
+  const ref = parsePatchNodeId(nodeId);
+  return ref.kind === 'hoop' ? { drumId: ref.drumId, hoop: ref.hoop } : null;
 }
 
 /** Project the live graph's chain edges (`output→hoop` / `hoop→hoop`) into core `ChainEdge[]`.

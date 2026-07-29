@@ -8,8 +8,9 @@
 
      2. Zones (the drum's zone→input wiring) — the (drumId, slot) MIDI-note / OSC entries in
         the authoritative `project.inputMap`, shared by EVERY graph on that drum. Edited via
-        the pure setZoneMidiNote / setZoneOscAddress helpers through store.setInputMap. This
-        mirrors PatchZoneInspector's per-zone editor, listed for the whole drum with add/remove.
+        the pure setZoneMidiNote / setZoneOscAddress helpers through store.setInputMap, listed
+        for the whole drum with add/remove (the only zone editor since the per-zone Inspector
+        arm was retired, 11-decisions.md #5).
 
      The zones list anchors to the drum this trigger fires from (its `drum` source, else the
      selected pad's drum); a MIDI/OSC-bound trigger with no pad shows no drum to wire. Per-zone

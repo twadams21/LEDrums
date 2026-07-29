@@ -19,7 +19,6 @@ import {
   totalKitPixelCount,
   zoneMidiNote,
   zoneOscAddress,
-  zoneSlot,
   zoneSlotsForDrum,
 } from './patch-inspector';
 
@@ -33,9 +32,11 @@ describe('patchEditorFor', () => {
     expect(patchEditorFor('trigger:snare')).toEqual({ kind: 'trigger', drumId: 'snare' });
   });
 
-  it('decodes a zone node to drumId + label + slot', () => {
-    expect(patchEditorFor('zone:snare:edge')).toEqual({ kind: 'zone', drumId: 'snare', zone: 'edge', slot: 1 });
-    expect(patchEditorFor('zone:kick:center')).toEqual({ kind: 'zone', drumId: 'kick', zone: 'center', slot: 0 });
+  // Decision 5: the zone Inspector arm is retired — nothing mints `zone:` ids since the
+  // v1 topology builder was deleted, so a zone id decodes as unknown.
+  it('treats a legacy zone id as unknown (retired arm)', () => {
+    expect(patchEditorFor('zone:snare:edge')).toEqual({ kind: 'unknown', id: 'zone:snare:edge' });
+    expect(patchEditorFor('zone:kick:center')).toEqual({ kind: 'unknown', id: 'zone:kick:center' });
   });
 
   it('decodes a drum node', () => {
@@ -58,17 +59,6 @@ describe('patchEditorFor', () => {
   });
 });
 
-describe('zoneSlot', () => {
-  it('maps the canonical zone order to 0-based slots', () => {
-    expect(zoneSlot('center')).toBe(0);
-    expect(zoneSlot('edge')).toBe(1);
-    expect(zoneSlot('rim')).toBe(2);
-    expect(zoneSlot('shell')).toBe(3);
-  });
-  it('falls back to slot 0 for an unknown zone', () => {
-    expect(zoneSlot('mystery')).toBe(0);
-  });
-});
 
 const kit = (drumOverrides: Partial<KitConfig['drums'][number]> = {}): KitConfig => ({
   version: 1,

@@ -3,16 +3,13 @@ import type { OutputConfig } from '@ledrums/core';
 import {
   buildOutputHalf,
   defaultRouting,
-  hoopNodeId,
-  outputNodeId,
   outputsSignature,
-  parseHoopNodeId,
-  parseOutputNodeId,
   rebuildOutputHalf,
   routingFromGraph,
   routingSignature,
   type OutputHalfLayout,
 } from './patch-graph';
+import { hoopNodeId, outputNodeId, parsePatchNodeId } from './patch-node-id';
 import { parseKit } from '@ledrums/core';
 import { hasHoopFanOut, outputsToPatch, patchToOutputs, pixelRanges, type PatchRouting } from './patch-routing';
 import type { PatchFlowEdge, PatchFlowNode, PatchStage } from './patch-topology';
@@ -36,21 +33,21 @@ describe('hoop node id ⇄ HoopRef (both 1-based, A1)', () => {
   it('round-trips the shared 1-based hoop number in both directions', () => {
     expect(hoopNodeId({ drumId: 'snare', hoop: 1 })).toBe('hoop:snare:1');
     expect(hoopNodeId({ drumId: 'tom1', hoop: 4 })).toBe('hoop:tom1:4');
-    expect(parseHoopNodeId('hoop:snare:1')).toEqual({ drumId: 'snare', hoop: 1 });
-    expect(parseHoopNodeId('hoop:tom1:4')).toEqual({ drumId: 'tom1', hoop: 4 });
+    expect(parsePatchNodeId('hoop:snare:1')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 1 });
+    expect(parsePatchNodeId('hoop:tom1:4')).toEqual({ kind: 'hoop', drumId: 'tom1', hoop: 4 });
   });
   it('rejects non-hoop / malformed ids', () => {
-    expect(parseHoopNodeId('output:1')).toBeNull();
-    expect(parseHoopNodeId('controller')).toBeNull();
-    expect(parseHoopNodeId('hoop:snare')).toBeNull();
+    expect(parsePatchNodeId('output:1').kind).not.toBe('hoop');
+    expect(parsePatchNodeId('controller').kind).not.toBe('hoop');
+    expect(parsePatchNodeId('hoop:snare')).toEqual({ kind: 'unknown', id: 'hoop:snare' });
   });
 });
 
 describe('output node id ⇄ OutputConfig.id', () => {
   it('round-trips and rejects non-output ids', () => {
     expect(outputNodeId('2')).toBe('output:2');
-    expect(parseOutputNodeId('output:2')).toBe('2');
-    expect(parseOutputNodeId('hoop:a:1')).toBeNull();
+    expect(parsePatchNodeId('output:2')).toEqual({ kind: 'output', outputId: '2' });
+    expect(parsePatchNodeId('hoop:a:1').kind).not.toBe('output');
   });
 });
 

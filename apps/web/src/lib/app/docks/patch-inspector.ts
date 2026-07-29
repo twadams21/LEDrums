@@ -9,8 +9,7 @@
    represents. */
 
 import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice } from '@ledrums/core';
-import { ZONE_LABELS } from '../../trigger-lab/fixtures';
-import { parseHoopNodeId, parseOutputNodeId } from '../patch-graph';
+import { parsePatchNodeId, type PatchNodeRef } from '../patch-node-id';
 import type { HoopRef, PatchRouting, PixelSpan } from '../patch-routing';
 
 const CHANNELS_PER_UNIVERSE = 512;
@@ -18,59 +17,13 @@ const CHANNELS_PER_UNIVERSE = 512;
 const MM_PER_INCH = 25.4;
 
 /** Which Inspector editor a selected Patch node opens, with its decoded references.
-    The id grammar is minted by patch-topology.ts / patch-graph.ts. */
-export type PatchEditor =
-  | { kind: 'input' }
-  | { kind: 'trigger'; drumId: string }
-  | { kind: 'triggers' } // the Drum Triggers holder zone (D1)
-  | { kind: 'zone'; drumId: string; zone: string; slot: number }
-  | { kind: 'drum'; drumId: string }
-  | { kind: 'kit' } // the Drum Kit holder zone (D1)
-  | { kind: 'hoop'; drumId: string; hoop: number } // 1-based hoop index (A1)
-  | { kind: 'output'; outputId: string }
-  | { kind: 'controller' }
-  | { kind: 'unknown'; id: string };
-
-/** Map a Patch zone label to its trigger slot — the 0-based index in the canonical
-    zone order (`fixtures.ZONE_LABELS`). InputMap keys MIDI/OSC by `(drumId, slot)`, so
-    the same labelled zone on any drum resolves to a stable slot. Unknown labels → 0. */
-export function zoneSlot(zone: string): number {
-  const i = ZONE_LABELS.indexOf(zone);
-  return i >= 0 ? i : 0;
-}
+    The id grammar is minted and decoded by patch-node-id.ts; the zone Inspector arm
+    is retired (11-decisions.md #5) — zone editing lives in DrumZonesList. */
+export type PatchEditor = PatchNodeRef;
 
 /** Decode a Patch flow-node id into the editor it should open plus its refs. */
 export function patchEditorFor(id: string): PatchEditor {
-  if (id === 'input') return { kind: 'input' };
-  if (id === 'controller') return { kind: 'controller' };
-  if (id === 'kit') return { kind: 'kit' }; // Drum Kit holder zone (D1)
-  if (id === 'triggers') return { kind: 'triggers' }; // Drum Triggers holder zone (D1)
-
-  const hoop = parseHoopNodeId(id);
-  if (hoop) return { kind: 'hoop', drumId: hoop.drumId, hoop: hoop.hoop };
-
-  const outputId = parseOutputNodeId(id);
-  if (outputId !== null) return { kind: 'output', outputId };
-
-  const parts = id.split(':');
-  switch (parts[0]) {
-    case 'trigger':
-      return parts.length >= 2 && parts.slice(1).join(':')
-        ? { kind: 'trigger', drumId: parts.slice(1).join(':') }
-        : { kind: 'unknown', id };
-    case 'zone': {
-      // zone:<drumId>:<zoneLabel> — the label is the LAST segment; rejoin the middle
-      // defensively in case a drum id ever carries a ':'.
-      if (parts.length < 3) return { kind: 'unknown', id };
-      const zone = parts[parts.length - 1]!;
-      const drumId = parts.slice(1, -1).join(':');
-      return drumId ? { kind: 'zone', drumId, zone, slot: zoneSlot(zone) } : { kind: 'unknown', id };
-    }
-    case 'drum':
-      return parts.slice(1).join(':') ? { kind: 'drum', drumId: parts.slice(1).join(':') } : { kind: 'unknown', id };
-    default:
-      return { kind: 'unknown', id };
-  }
+  return parsePatchNodeId(id);
 }
 
 /** Effective pixels-per-hoop for a drum. Mirrors core's PRIVATE `pixelsPerHoop`
