@@ -67,8 +67,9 @@ export const ERROR_FRAME_WINDOW_MS = 1_000;
  * (read ONCE at handler construction) overrides for a venue that outgrows it. */
 export const MAX_CLIENTS_DEFAULT = 32;
 
-/** Close code for a connection refused because the room is full. */
-export const WS_CLOSE_ROOM_FULL = 4429;
+/** Close code for a connection refused because the room is full. NOT 4429 — the
+ * decisions doc assigns 4429 to INIT-05's throttled-PIN close. */
+export const WS_CLOSE_ROOM_FULL = 4430;
 
 /** One-shot env read of the operational cap. Unset/empty/zero/negative/non-numeric
  * falls back to the default — a typo must never lock everyone out. */
@@ -127,8 +128,10 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
     }
 
     // Connection cap (S16) — checked AFTER the PIN decision, so an unauthorised dial
-    // gets 4401 and can never consume (or probe) a slot; a full room answers 4429.
+    // gets 4401 and can never consume (or probe) a slot; a full room answers 4430.
     if (clients.size >= maxClients) {
+      // Never a silent refusal: the host must be able to see WHY a peer can't join.
+      monitor({ type: 'error', direction: 'local', source: 'server/ws', label: 'WebSocket client refused: room full', detail: `${clients.size} clients connected, cap ${maxClients}` });
       ws.close(WS_CLOSE_ROOM_FULL, 'room full');
       return;
     }

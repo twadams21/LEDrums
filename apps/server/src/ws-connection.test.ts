@@ -266,8 +266,12 @@ describe('connection cap (S16 — resilience-hole-0005 amplifier)', () => {
     expect(MAX_CLIENTS_DEFAULT).toBe(32);
   });
 
-  it('the 33rd connection closes with 4429, is never admitted, gets no state, triggers no presence', () => {
-    const { handler, clients, ordered } = harness({ deps: { env: {} } });
+  it('the room-full close code is 4430 (4429 belongs to INIT-05 throttled-PIN)', () => {
+    expect(WS_CLOSE_ROOM_FULL).toBe(4430);
+  });
+
+  it('the 33rd connection closes with 4430, is never admitted, gets no state, triggers no presence — but IS monitored', () => {
+    const { handler, clients, ordered, events } = harness({ deps: { env: {} } });
     fill(handler, MAX_CLIENTS_DEFAULT);
     expect(clients.size).toBe(32);
     ordered.length = 0;
@@ -276,7 +280,9 @@ describe('connection cap (S16 — resilience-hole-0005 amplifier)', () => {
     expect(extra.closed).toEqual({ code: WS_CLOSE_ROOM_FULL, reason: 'room full' });
     expect(clients.size).toBe(32);
     expect(extra.sent).toHaveLength(0); // no state, no presence, no replay
-    expect(ordered).toEqual([]); // no broadcastPresence, no monitor
+    // Not silent (review N2): exactly one monitor row names the refusal, nothing else fires.
+    expect(ordered).toEqual(['monitor:WebSocket client refused: room full']);
+    expect(events.filter((e) => e.label === 'WebSocket client refused: room full')).toHaveLength(1);
   });
 
   it('the 33rd succeeds again after one of the 32 closes (slot frees)', () => {
@@ -290,7 +296,7 @@ describe('connection cap (S16 — resilience-hole-0005 amplifier)', () => {
     expect(clients.size).toBe(32);
   });
 
-  it('ORDERING: a wrong-PIN dial at capacity gets 4401, not 4429 — an unauthorised dial never consumes a slot', () => {
+  it('ORDERING: a wrong-PIN dial at capacity gets 4401, not 4430 — an unauthorised dial never consumes a slot', () => {
     const { handler, clients } = harness({ pin: '123456', deps: { env: {} } });
     fill(handler, MAX_CLIENTS_DEFAULT, '123456');
     expect(clients.size).toBe(32);
