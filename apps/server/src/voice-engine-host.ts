@@ -456,9 +456,36 @@ export class VoiceEngineHost {
 
   private scheduleNext(): void {
     this.timer = setTimeout(() => {
-      this.loop();
+      // A throw in loop()'s own bookkeeping (outside the per-step catch below) must
+      // still reschedule — the alternative is a silently dead loop with the rig lit.
+      try {
+        this.loop();
+      } catch (err) {
+        this.recordFrameFault(err);
+      }
       if (this.timer) this.scheduleNext();
     }, TICK_MS);
+  }
+
+  /** Consecutive faulted frames; reset by the first clean frame. Drives the
+   * rate-limited 'Render frame faulted' monitor event (first fault, then every
+   * 120th consecutive) so a 120 Hz deterministic throw cannot flood the Monitor
+   * bus or the error Reporter. */
+  private consecutiveFrameFaults = 0;
+
+  private recordFrameFault(err: unknown): void {
+    this.consecutiveFrameFaults++;
+    const n = this.consecutiveFrameFaults;
+    if (n === 1 || n % 120 === 0) {
+      this.monitorSink?.({
+        type: 'error',
+        direction: 'local',
+        source: 'server/voice-engine',
+        destination: 'render-loop',
+        label: 'Render frame faulted',
+        detail: `${err instanceof Error ? err.message : String(err)}${n > 1 ? ` (×${n} consecutive)` : ''}`,
+      });
+    }
   }
 
   /** One wall-clock loop iteration: catch the accumulator up in fixed steps. */
@@ -472,11 +499,25 @@ export class VoiceEngineHost {
     // Drain accumulated time in fixed steps. At 120fps a 100ms pause is 12 steps,
     // so the catch-up budget is double the legacy host's to keep wall-clock honest.
     let steps = 0;
+    let faulted = false;
     while (this.accumulator >= TICK_MS && steps < 12) {
-      this.step(TICK_MS);
+      // Per-frame exception boundary (resilience-hole-0001): one throw in an authored
+      // effect must not kill the process and freeze the rig lit. Contain it HERE — the
+      // outermost host-owned seam — survive the frame, and keep ticking. Deliberately
+      // no stop() and no per-effect quarantine: stop() closes the transport with no
+      // restart path, and quarantine state inside core would be hidden global state.
+      try {
+        this.step(TICK_MS);
+      } catch (err) {
+        this.recordFrameFault(err);
+        this.accumulator = 0; // abandon this frame's catch-up; next frame starts clean
+        faulted = true;
+        break;
+      }
       this.accumulator -= TICK_MS;
       steps++;
     }
+    if (!faulted && steps > 0) this.consecutiveFrameFaults = 0;
     if (this.accumulator >= TICK_MS) this.accumulator = 0; // drop backlog; never spiral
   }
 

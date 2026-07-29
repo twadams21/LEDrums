@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultProject, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { OutputManager } from './output-manager';
@@ -556,5 +556,72 @@ describe('VoiceEngineHost', () => {
         detail: expect.stringContaining('reason='),
       }),
     );
+  });
+});
+
+// --- S2: per-frame exception boundary (resilience-hole-0001) -----------------
+
+/** A RenderEngine fake whose tick() throws on chosen call numbers; all other
+ * surfaces delegate to the null engine so the host wires up normally. */
+function throwingEngine(shouldThrow: (tickCall: number) => boolean) {
+  const inner = voice.createNullEngine();
+  let calls = 0;
+  const engine: voice.RenderEngine = {
+    setModel: (m) => inner.setModel(m),
+    setShow: (sh) => inner.setShow(sh),
+    applyInput: (ev) => inner.applyInput(ev),
+    tick: (now, dt, transport) => {
+      calls++;
+      if (shouldThrow(calls)) throw new Error(`boom on tick ${calls}`);
+      inner.tick(now, dt, transport);
+    },
+    frame: () => inner.frame(),
+    stats: () => inner.stats(),
+  };
+  return { engine, tickCalls: () => calls };
+}
+
+describe('VoiceEngineHost per-frame exception boundary (S2)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('survives a throwing tick: stays scheduled and keeps ticking past the fault', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    const { engine, tickCalls } = throwingEngine((n) => n === 5);
+    const { host } = makeHost(engine);
+    host.start();
+    for (let i = 0; i < 12; i++) vi.advanceTimersByTime(STEP);
+    // Tick 5 threw; ticks 6..10 still happened and the loop is still scheduled.
+    expect(tickCalls()).toBeGreaterThanOrEqual(10);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    host.stop();
+  });
+
+  it('rate-limits the fault monitor event: one on the first throw, the next at the 120th consecutive', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    const { engine, tickCalls } = throwingEngine(() => true); // deterministically throwing effect
+    const { host } = makeHost(engine);
+    const events: { label?: string }[] = [];
+    host.setMonitor((event) => events.push(event));
+    host.start();
+    const faultEvents = () => events.filter((e) => e.label === 'Render frame faulted');
+    // Every tick call throws, so tickCalls() counts consecutive faulted frames exactly
+    // (timer quantization means one advance is not always one frame).
+    const advanceToFault = (n: number) => {
+      for (let guard = 0; tickCalls() < n && guard < n * 4; guard++) vi.advanceTimersByTime(STEP);
+      expect(tickCalls()).toBe(n);
+    };
+    advanceToFault(119);
+    expect(faultEvents()).toHaveLength(1);
+    advanceToFault(120);
+    expect(faultEvents()).toHaveLength(2);
+    host.stop();
+  });
+
+  it('keeps raw throw semantics on step() driven directly — the catch lives in loop() only', () => {
+    const { engine } = throwingEngine(() => true);
+    const { host } = makeHost(engine);
+    expect(() => host.step(STEP)).toThrow('boom on tick 1');
   });
 });
