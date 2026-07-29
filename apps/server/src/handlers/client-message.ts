@@ -191,7 +191,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // the Reporter (which subscribes to the bus) dedups, breadcrumbs, and ships it. `source: 'web'`
     // makes it a web-origin report; `origin` (which tap fired) rides `destination`.
     if (msg.t === 'webError') {
-      monitor?.({
+      monitor({
         type: 'error',
         direction: 'in',
         source: 'web',
@@ -212,9 +212,9 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // or restart the tunnel it rode in on, even after a `takeover`. That refusal is user-visible
     // (`error` reply), not silent, so the remote UI can explain itself.
     if (msg.t === 'tunnel') {
-      if (deps.isTunnelClient?.(ws)) {
+      if (deps.isTunnelClient(ws)) {
         ws.send(encodeServer({ t: 'error', message: 'Sharing can only be started or stopped from the host.' }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',
@@ -224,8 +224,8 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         });
         return;
       }
-      if (msg.action === 'start') deps.tunnelControl?.start();
-      else deps.tunnelControl?.stop();
+      if (msg.action === 'start') deps.tunnelControl.start();
+      else deps.tunnelControl.stop();
       return;
     }
 
@@ -234,35 +234,35 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // so a viewer's open panel keeps live status flowing. Each is fire-and-forget: the service
     // broadcasts its own `controllerDiscovery`/`controllerStatus`; a failed adopt replies `error`.
     if (msg.t === 'discoverControllers') {
-      void deps.controller?.discover();
+      void deps.controller.discover();
       return;
     }
     if (msg.t === 'adoptController') {
-      void deps.controller?.adopt(msg.host).then((r) => {
+      void deps.controller.adopt(msg.host).then((r) => {
         if (!r.ok && r.error) ws.send(encodeServer({ t: 'error', message: r.error }));
       });
       return;
     }
     if (msg.t === 'setControllerAuth') {
       // Editor-gated above (deny-by-default). The server hashes + persists ONLY the hash (R29).
-      deps.controller?.setAuth(msg.password);
+      deps.controller.setAuth(msg.password);
       return;
     }
     if (msg.t === 'identifyController') {
-      void deps.controller?.identify(msg.durationS);
+      void deps.controller.identify(msg.durationS);
       return;
     }
     if (msg.t === 'controllerTestData') {
-      void deps.controller?.setTestData(msg.pattern);
+      void deps.controller.setTestData(msg.pattern);
       return;
     }
     if (msg.t === 'controllerBackToLive') {
-      void deps.controller?.backToLive();
+      void deps.controller.backToLive();
       return;
     }
     if (msg.t === 'watchController') {
-      if (msg.watching) deps.controller?.watch(ws);
-      else deps.controller?.dropWatcher(ws);
+      if (msg.watching) deps.controller.watch(ws);
+      else deps.controller.dropWatcher(ws);
       return;
     }
 
@@ -281,7 +281,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // reply to the requesting client only with the server machine's NICs + per-adapter recommended
     // controller IP. Absent wiring → empty list (the panel just shows no recommendation).
     if (msg.t === 'listNetworkAdapters') {
-      ws.send(encodeServer({ t: 'networkAdapters', adapters: deps.listNetworkAdapters?.() ?? [] }));
+      ws.send(encodeServer({ t: 'networkAdapters', adapters: deps.listNetworkAdapters() }));
       return;
     }
 
@@ -291,7 +291,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // engine + every client like a cold load (all inside `backups.restore`). An unknown id is a
     // user-visible `error` reply with nothing touched.
     if (msg.t === 'listBackups') {
-      ws.send(encodeServer({ t: 'backups', items: deps.backups?.list() ?? [] }));
+      ws.send(encodeServer({ t: 'backups', items: deps.backups.list() }));
       return;
     }
     if (msg.t === 'restoreBackup') {
@@ -300,10 +300,10 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       // store never reached applyRestored). A `false`/`null` return is the distinct "unknown id" path.
       let ok: boolean;
       try {
-        ok = deps.backups?.restore(msg.id) ?? false;
+        ok = deps.backups.restore(msg.id);
       } catch (err) {
         ws.send(encodeServer({ t: 'error', message: `Restore aborted — backup failed, live state untouched (${err instanceof Error ? err.message : String(err)})` }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',
@@ -315,7 +315,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       }
       if (!ok) {
         ws.send(encodeServer({ t: 'error', message: `Unknown backup: ${msg.id}` }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',
@@ -325,7 +325,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         });
         return;
       }
-      monitor?.({
+      monitor({
         type: 'persistence',
         direction: 'local',
         source: 'server',
@@ -336,10 +336,10 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
 
-    // Project IO (load/save/list) is handled here, not by the reducer.
-    // `?? true`: with backups absent (snapshotting disabled) there is no safety net to fail, so the
-    // load proceeds; when backups is present, its `false` (write failed) makes the load refuse.
-    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups?.snapshotPreRisk() ?? true })) return;
+    // Project IO (load/save/list) is handled here, not by the reducer. snapshotPreRisk is
+    // fail-closed: `false` (pre-risk write failed) makes the load refuse (S9 — no absent-backups
+    // fallback survives; a dropped `backups` field is a compile error, not a silent fail-open).
+    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
 
     // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
     // legacy reducer so every MIDI input adapter obeys the same setting.
@@ -354,7 +354,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         const blob = msg.library;
         setShowLibrary(blob);
         showLibraryAutosaver.markDirty();
-        monitor?.({
+        monitor({
           type: 'persistence',
           direction: 'local',
           source: 'server',
@@ -374,7 +374,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         const blob = msg.library;
         setSongLibrary(blob);
         songLibraryAutosaver.markDirty();
-        monitor?.({
+        monitor({
           type: 'persistence',
           direction: 'local',
           source: 'server',
@@ -398,7 +398,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         const issue = parsed.error.issues[0];
         const where = issue?.path.join('.') || 'patch';
         ws.send(encodeServer({ t: 'error', message: `Invalid patch: ${where} — ${issue?.message ?? 'validation failed'}` }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',
@@ -423,7 +423,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       if (routingIssues.length) {
         const first = routingIssues[0]!;
         ws.send(encodeServer({ t: 'error', message: `Invalid patch outputs: ${first.message}` }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',
@@ -438,9 +438,9 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       // paste still has a clean state behind it. Fail-closed: if the safety snapshot's WRITE fails,
       // REFUSE the re-rig (a bulk apply with no recovery point behind it is the data-loss path) —
       // the socket stays alive and live state is untouched. Backups absent = no net to fail → proceed.
-      if (deps.backups && !deps.backups.snapshotPreRisk()) {
+      if (!deps.backups.snapshotPreRisk()) {
         ws.send(encodeServer({ t: 'error', message: 'Backup failed — patch not applied (no recovery snapshot)' }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',
@@ -459,7 +459,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       });
       host.reloadOutputSettings();
       if (voiceHost) voiceHost.adoptPatch(patch);
-      monitor?.({
+      monitor({
         type: 'system',
         direction: 'in',
         source: 'client',
@@ -487,7 +487,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       if (issues.length) {
         const first = issues[0]!;
         ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));
-        monitor?.({
+        monitor({
           type: 'error',
           direction: 'in',
           source: 'client',

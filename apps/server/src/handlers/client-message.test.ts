@@ -7,6 +7,15 @@ import type { Autosaver } from '../autosave';
 import { encodeServer, serializeModel, type ClientMessage, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import { createClientMessageHandler, requiresEditor, type ClientMessageDeps, type HandlerSocket } from './client-message';
 
+// `loadProject` reads from disk; stub project IO so the S9 fail-closed test exercises the handler
+// seam, not the filesystem (mirrors projects.test.ts). No other test here reaches project IO as an
+// editor, so the mock is inert for the rest of the file.
+vi.mock('../projects', () => ({
+  loadProject: vi.fn(() => defaultProject()),
+  listProjects: vi.fn(() => []),
+  saveProject: vi.fn(),
+}));
+
 /* S2 server handler integration (multi-socket capturing harness, same style as the S1 registry
    tests): `takeover` flips the editor role + re-broadcasts `presence` to every client; the
    read-only gate rejects a non-editor's authoring mutations (silent no-op) while engine inputs
@@ -1003,3 +1012,17 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     expect(host.engine.getProject()).toBe(before); // nothing applied
   });
 });
+
+describe('fail-closed pre-risk direction through the full handler (S9)', () => {
+  it('a loadProject with a failing pre-risk snapshot replies error and never reaches setProject', () => {
+    const { host, handle, join } = harness({
+      backups: { list: () => [], restore: () => false, snapshotPreRisk: () => false },
+    });
+    const setProject = vi.spyOn(host.engine, 'setProject');
+    const ws = join(); // first client = editor
+    handle({ t: 'loadProject', name: 'p' }, ws);
+    expect(setProject).not.toHaveBeenCalled();
+    expect(ws.has('error')).toBe(true);
+  });
+});
+

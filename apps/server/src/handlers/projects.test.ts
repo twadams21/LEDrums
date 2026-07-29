@@ -50,7 +50,7 @@ describe('handleProjectMessage — loadProject pre-risk fail-closed (#138 C1)', 
     expect(autosaver.markDirty).toHaveBeenCalledTimes(1);
   });
 
-  it('loads the project when backups are disabled (no snapshotPreRisk — no net to fail)', () => {
+  it('loads the project with the default harness stub (snapshot succeeds) (S9: the absent-backups config no longer exists)', () => {
     const { host, broadcastState, run } = harness(undefined);
     const before = host.engine.getProject();
 
