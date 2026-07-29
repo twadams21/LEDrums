@@ -153,6 +153,39 @@ function initialProject(): { project: Project; source: 'seed' | 'file'; name: st
   return { project: loadProject(LIVE_PROJECT), source: 'file', name: LIVE_PROJECT, path };
 }
 
+// --- monitor bus + process fault capture (hoisted, S6) ----------------------
+// Boot-crash capture must be installed BEFORE the project load below — a corrupt
+// project used to kill the process silently. The bus cannot take `broadcastJson`
+// directly here (it closes over `clients`, constructed later — a hoisted handler
+// firing during boot would throw a ReferenceError out of the handler itself), so
+// it writes through a mutable sink that starts as a no-op and is pointed at
+// `broadcastJson` once the WS wiring exists. The bus retains 300 events, so
+// anything emitted before the sink is live still reaches clients via replay.
+let broadcastSink: (msg: ServerMessage) => void = () => {};
+const monitorBus = createMonitorBus((m) => broadcastSink(m));
+// The error Reporter (#122) subscribes to EVERY Monitor event: non-error events become breadcrumbs,
+// error events become deduplicated, shipped reports. Created below iff telemetry is enabled + wired.
+let reporter: Reporter | null = null;
+// The off-site backups outbox (#123): a SECOND disk-backed ship-queue reusing the #122 transport
+// against a `/backups` route on the same Worker. Created in the same enablement block as the
+// reporter (endpoint/token present); null under dev / capture-only, where snapshotting stays local.
+let backupsQueue: ShipQueue<BackupRecord> | null = null;
+function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
+  const full = monitorBus.emit(event);
+  reporter?.observe(full);
+}
+
+// Server process fault capture (#122): uncaught exceptions + unhandled rejections land on the same
+// Monitor bus as an `error` event. `onFatal` darkens the rig then runs the Reporter's synchronous
+// queue flush before the process exits, so a crash report reaches disk (and ships on the next boot)
+// even on a hard fault.
+let flushReportsSync: () => void = () => {};
+installProcessErrorCapture({
+  monitor,
+  onFatal: createFatalHandler({ darken: () => (voiceHost ?? host).darken(), flushReports: () => flushReportsSync() }),
+  drainMs: 100,
+});
+
 const projectLoad = initialProject();
 const project0 = projectLoad.project;
 const host = new EngineHost(project0);
@@ -244,28 +277,9 @@ function broadcastJson(msg: ServerMessage): void {
   }
 }
 
-const monitorBus = createMonitorBus(broadcastJson);
-// The error Reporter (#122) subscribes to EVERY Monitor event: non-error events become breadcrumbs,
-// error events become deduplicated, shipped reports. Created below iff telemetry is enabled + wired.
-let reporter: Reporter | null = null;
-// The off-site backups outbox (#123): a SECOND disk-backed ship-queue reusing the #122 transport
-// against a `/backups` route on the same Worker. Created in the same enablement block as the
-// reporter (endpoint/token present); null under dev / capture-only, where snapshotting stays local.
-let backupsQueue: ShipQueue<BackupRecord> | null = null;
-function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
-  const full = monitorBus.emit(event);
-  reporter?.observe(full);
-}
-
-// Server process fault capture (#122): uncaught exceptions + unhandled rejections land on the same
-// Monitor bus as an `error` event. `onFatal` runs the Reporter's synchronous queue flush before the
-// process exits, so a crash report reaches disk (and ships on the next boot) even on a hard fault.
-let flushReportsSync: () => void = () => {};
-installProcessErrorCapture({
-  monitor,
-  onFatal: createFatalHandler({ darken: () => (voiceHost ?? host).darken(), flushReports: () => flushReportsSync() }),
-  drainMs: 100,
-});
+// Point the hoisted monitor bus (S6, above) at the real broadcast now that the
+// client registry + encoder wiring exist.
+broadcastSink = broadcastJson;
 
 // --- Remote error reporting (#122) ------------------------------------------
 // On when the server serves the built web root (packaged/prod), off under the dev proxy;
