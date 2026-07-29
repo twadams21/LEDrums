@@ -27,7 +27,8 @@
  * it as an indicator. Write-gates split the two via {@link blockingRoutingIssues}.
  */
 
-import { drumHoopCount, kitSchema, type KitConfig, type OutputConfig } from '../geometry/kit-schema';
+import { kitSchema, type KitConfig, type OutputConfig } from '../geometry/kit-schema';
+import { drumHoopCount } from '../geometry/kit-queries';
 import { kitDrumIds } from './integrity';
 
 /**

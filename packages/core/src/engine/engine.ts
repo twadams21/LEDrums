@@ -1,6 +1,7 @@
 import { buildPixelModel, materializeHoops, type PixelModel } from '../geometry/pixel-model';
 import { buildDmxMap, type DmxMap } from '../geometry/dmx-map';
-import { reconcileOutputs, type DrumConfig, type HoopConfig, type KitGlobalConfig, type NodeLayout } from '../geometry/kit-schema';
+import { type DrumConfig, type HoopConfig, type KitGlobalConfig, type NodeLayout } from '../geometry/kit-schema';
+import { reconcileOutputs } from '../geometry/kit-queries';
 import type {
   Clip,
   InputMap,

@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CURRENT_KIT_VERSION,
-  drumHoopCount,
-  migrateKit,
   parseKit,
   type HoopConfig,
   type KitConfig,
 } from './kit-schema';
+import { drumHoopCount } from './kit-queries';
+import { CURRENT_KIT_VERSION } from './kit-migrations';
 import { buildPixelModel, getHoopPixelRange, type Pixel } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
 
 /* B4 golden suite — hoops are FIRST-CLASS: `DrumConfig.hoops: HoopConfig[]`, each hoop its own
    `pixelCount` (hoops on one drum MAY differ) + `reverse` (flip the pixel index→position mapping
-   within that hoop only, for a backward-wired strip). The v<5 migrator expands a legacy uniform
-   `pixelsPerHoop` into an explicit `hoops[]`; reverse:false ⇒ byte-identical output (parity). */
+   within that hoop only, for a backward-wired strip). A uniform `pixelsPerHoop` drum remains a
+   valid authoring shape and resolves identically: reverse:false hoops[] ⇒ byte-identical output
+   (parity). The v<5 expander that rewrote uniform drums into hoops[] died with the v7 floor. */
 
 /** Single-drum kit at CURRENT version. `hoops` (when given) is authoritative; otherwise the drum
-    resolves the legacy uniform way from `pixelsPerHoop`/`hoopCount`. */
+    resolves the uniform way from `pixelsPerHoop`/`hoopCount`. */
 function kit(drum: Record<string, unknown>, global: Record<string, unknown> = {}): KitConfig {
   return parseKit({
     version: CURRENT_KIT_VERSION,
@@ -118,70 +118,8 @@ describe('B4 — per-hoop reverse flips within that hoop ONLY', () => {
   });
 });
 
-describe('B4 — migration expands uniform pixelsPerHoop into first-class hoops[]', () => {
-  // A post-B3, pre-B4 kit (version 4): uniform literal count, no `hoops`.
-  const legacyGlobal = { ledDensityPxPerM: 60, hoopCount: 4, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000, expanded: false };
-  const legacyDrum = {
-    id: 'kick',
-    diameterIn: 12,
-    hoopSpacingMm: 50,
-    hoopCount: 4,
-    pixelsPerHoop: 9,
-    localSpinDeg: 0,
-    startAngleDeg: 0,
-    origin: { x: 0, y: 0, z: 0 },
-    rotation: { x: 0, y: 0, z: 0 },
-  };
-  const legacyRaw = { version: 4, global: legacyGlobal, drums: [legacyDrum], outputs: [] };
-
-  it('a literal-count drum gains hoops[] of length hoopCount, each count + reverse:false', () => {
-    const migrated = migrateKit(legacyRaw) as { version: number; drums: Array<{ hoops?: HoopConfig[] }> };
-    expect(migrated.version).toBe(CURRENT_KIT_VERSION);
-    expect(migrated.drums[0]!.hoops).toEqual([
-      { pixelCount: 9, reverse: false },
-      { pixelCount: 9, reverse: false },
-      { pixelCount: 9, reverse: false },
-      { pixelCount: 9, reverse: false },
-    ]);
-  });
-
-  it('hoop count falls back to the kit global when the drum omits its own', () => {
-    const noPerDrum = { ...legacyRaw, global: { ...legacyGlobal, hoopCount: 3 }, drums: [{ ...legacyDrum, hoopCount: undefined }] };
-    const migrated = migrateKit(noPerDrum) as { drums: Array<{ hoops?: HoopConfig[] }> };
-    expect(migrated.drums[0]!.hoops).toHaveLength(3);
-  });
-
-  it('a density-derived drum (no literal count) keeps hoops absent — density still tracks', () => {
-    const density = { version: 4, global: legacyGlobal, drums: [{ ...legacyDrum, pixelsPerHoop: undefined }], outputs: [] };
-    const migrated = migrateKit(density) as { drums: Array<{ hoops?: HoopConfig[] }> };
-    expect(migrated.drums[0]!.hoops).toBeUndefined();
-  });
-
-  it('is cumulative from v1: A1 hoop-shift + B2 expanded + B3 origin + B4 hoops all applied', () => {
-    const v1 = {
-      version: 1,
-      global: { ledDensityPxPerM: 60, hoopCount: 4, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 },
-      drums: [legacyDrum],
-      outputs: [{ id: 'o1', channelsPerPixel: 3, dataLines: [{ id: 'o1:dl0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 3 }] }] }],
-    };
-    const parsed = parseKit(v1);
-    expect(parsed.version).toBe(CURRENT_KIT_VERSION);
-    expect(parsed.global.expanded).toBe(true); // B2
-    expect(parsed.outputs[0]!.segments[0]).toMatchObject({ hoopStart: 1, hoopEnd: 4 }); // A1 (D1: segments on output)
-    expect(parsed.drums[0]!.hoops).toHaveLength(4); // B4
-    expect(parsed.drums[0]!.hoops!.every((h) => h.pixelCount === 9 && h.reverse === false)).toBe(true);
-  });
-
-  it('is idempotent — a current-version kit is returned untouched, double-migrate is stable', () => {
-    const current = { ...legacyRaw, version: CURRENT_KIT_VERSION };
-    expect(migrateKit(current)).toBe(current);
-    const once = migrateKit(legacyRaw);
-    expect(migrateKit(once)).toEqual(once);
-  });
-});
-
-describe('B4 — parity: reverse:false hoops[] === the legacy uniform path (byte-identical)', () => {
-  // Same geometry, two spellings: explicit uniform hoops[] vs legacy pixelsPerHoop.
+describe('B4 — parity: reverse:false hoops[] === the uniform pixelsPerHoop path (byte-identical)', () => {
+  // Same geometry, two spellings: explicit uniform hoops[] vs uniform pixelsPerHoop.
   const viaHoops = kit({ hoops: [hoop(8), hoop(8), hoop(8), hoop(8)] });
   const viaLegacy = kit({ hoopCount: 4, pixelsPerHoop: 8 });
 
@@ -203,19 +141,21 @@ describe('B4 — parity: reverse:false hoops[] === the legacy uniform path (byte
     expect(mh.universes).toEqual(ml.universes);
   });
 
-  it('a migrated legacy kit renders identically to its pre-migration self', () => {
-    const rawLegacy = {
-      version: 4,
+  it('a uniform-count kit parses and renders dense from channel 0', () => {
+    const rawUniform = {
+      version: CURRENT_KIT_VERSION,
       global: { ledDensityPxPerM: 60, hoopCount: 4, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000, expanded: false },
       drums: [{ id: 'kick', diameterIn: 12, hoopSpacingMm: 50, hoopCount: 4, pixelsPerHoop: 8, localSpinDeg: 0, startAngleDeg: 0, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
       outputs: outputFor(4),
     };
-    const migrated = parseKit(rawLegacy); // gains hoops[]
-    expect(migrated.drums[0]!.hoops).toHaveLength(4);
-    const model = buildPixelModel(migrated);
-    // Same 32 pixels, dense DMX from channel 0 — nothing moved.
+    // `hoops` stays absent — the v<5 expander was deleted with the ladder; a uniform drum
+    // resolves through density/pixelsPerHoop, which is still a supported authoring shape.
+    const parsed = parseKit(rawUniform);
+    expect(parsed.drums[0]!.hoops).toBeUndefined();
+    const model = buildPixelModel(parsed);
+    // Same 32 pixels, dense DMX from channel 0 — the uniform path is byte-identical.
     expect(model.pixelCount).toBe(32);
-    const map = buildDmxMap(migrated, model);
+    const map = buildDmxMap(parsed, model);
     for (let id = 0; id < 32; id++) expect(map.perPixel[id]).toEqual({ channel: id * 3 });
   });
 });

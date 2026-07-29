@@ -29,9 +29,10 @@ function kit(
   });
 }
 
-const seg = (drumId: string, hoopStart = 0, hoopEnd = hoopStart) => ({ drumId, hoopStart, hoopEnd });
-// D1: an output carries its `segments` directly (no data-line wrapper). Fixtures are 0-based
-// hoops on purpose — the v1→2 (A1) migrator shifts them +1 at parse.
+// Hoop indices are 1-based (A1); fixtures are authored that way directly, since the v1→2
+// shift died with the v7 floor.
+const seg = (drumId: string, hoopStart = 1, hoopEnd = hoopStart) => ({ drumId, hoopStart, hoopEnd });
+// D1: an output carries its `segments` directly (no data-line wrapper).
 const out = (id: string, segments: unknown[], startUniverse?: number) =>
   startUniverse === undefined
     ? { id, channelsPerPixel: 3, segments }
@@ -141,18 +142,21 @@ describe('buildDmxMap — dense packing', () => {
   it('rejects a segment referencing an unknown drum or out-of-range hoop', () => {
     const badDrum = kit([{ id: 'A', pixelsPerHoop: 10 }], [out('o1', [seg('zzz')])]);
     expect(() => buildDmxMap(badDrum, buildPixelModel(badDrum))).toThrow(/unknown drum/);
-    const badHoop = kit([{ id: 'A', pixelsPerHoop: 10 }], [out('o1', [seg('A', 0, 9)])]);
+    const badHoop = kit([{ id: 'A', pixelsPerHoop: 10 }], [out('o1', [seg('A', 1, 10)])]);
     expect(() => buildDmxMap(badHoop, buildPixelModel(badHoop))).toThrow(/invalid hoop range/);
   });
 
-  it('accepts a legacy output carrying pre-D1 `dataLines` (migrator splits it)', () => {
-    // Pre-D1 persisted shape — the v6→7 migrator splits each data line into its own output.
+  it('absorbs a stray pre-D1 `dataLines` output instead of crashing (defence in depth)', () => {
+    // The v6→7 SPLIT died with the v7 floor: a genuine v<7 file is now rejected before parse, so
+    // the only way this shape arrives is a payload CLAIMING v7 — hand-edited or corrupt. The
+    // schema preprocess concatenates its lines into the one output rather than throwing; it is a
+    // crash guard, not a fidelity guarantee (a real v6 file would have split into one per line).
     const k = kit([{ id: 'A', pixelsPerHoop: 10 }], [
       { id: 'o1', channelsPerPixel: 3, dataLines: [{ id: 'o1:dl0', segments: [seg('A')] }] },
     ]);
     expect(k.outputs).toHaveLength(1);
     expect(k.outputs[0]!.segments).toHaveLength(1);
-    expect(k.outputs[0]!.id).toBe('o1:dl0');
+    expect(k.outputs[0]!.id).toBe('o1');
     const map = buildDmxMap(k, buildPixelModel(k));
     expect(map.perPixel[0]!.channel).toBe(0);
     expect(map.universes.map((u) => u.universe)).toEqual([0]);
@@ -190,7 +194,7 @@ describe('buildDmxMap — protocol-aware universe numbering (Decision 7)', () =>
   });
 
   it('an authored startUniverse stays ABSOLUTE under sACN (operator compensation survives)', () => {
-    const k = kit([{ id: 'a', pixelsPerHoop: 10 }], [out('o1', [seg('a', 0)], 5)]);
+    const k = kit([{ id: 'a', pixelsPerHoop: 10 }], [out('o1', [seg('a', 1)], 5)]);
     const model = buildPixelModel(k);
     const map = buildDmxMap(k, model, undefined, 'sacn');
     expect(map.universes.map((u) => u.universe)).toEqual([5]);

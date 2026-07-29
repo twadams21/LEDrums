@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_KIT_VERSION, parseKit, type OutputConfig } from './kit-schema';
+import { parseKit, type OutputConfig } from './kit-schema';
+import { CURRENT_KIT_VERSION } from './kit-migrations';
 import { buildPixelModel } from './pixel-model';
 import { buildDmxMap } from './dmx-map';
-import { parseProject, parseProjectPatch } from '../model/project-schema';
 
 /* B5 golden suite — RGB wiring order is a PER-OUTPUT attribute (`OutputConfig.rgbOrder`) rather
    than a single controller-level value. buildDmxMap stamps each pixel with its owning output's
-   order (byte-exact across a universe that spans two outputs of different orders). The v<6 PROJECT
-   migrator seeds the existing controller-level order onto every output that lacks one — parity for
-   unchanged data. The packer (output-manager) falls back to the controller order per pixel. */
+   order (byte-exact across a universe that spans two outputs of different orders). An output that
+   declares no order leaves its pixels unstamped and the packer (output-manager) falls back to the
+   controller order per pixel. (The v<6 project-layer seeder that back-filled the order onto old
+   files died with the v7 floor — see kit-migrations.ts.) */
 
 const global = { ledDensityPxPerM: 100, hoopCount: 1, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000, expanded: false };
 const drum = (id: string, i: number, pixelsPerHoop: number) => ({
@@ -65,50 +66,5 @@ describe('B5 — buildDmxMap stamps each pixel with its output rgbOrder', () => 
     const withoutOrder = kit([out('o1', 'A')]);
     expect((withOrder.outputs[0] as OutputConfig).rgbOrder).toBe('GBR');
     expect((withoutOrder.outputs[0] as OutputConfig).rgbOrder).toBeUndefined();
-  });
-});
-
-describe('B5 — migration seeds the controller order onto every output (kit v<6)', () => {
-  const legacyKit = {
-    version: 5, // post-B4, pre-B5: outputs carry no rgbOrder
-    global,
-    drums: [drum('A', 0, 4), drum('B', 1, 4)],
-    outputs: [out('o1', 'A'), out('o2', 'B')],
-  };
-
-  it('parseProject copies project.output.rgbOrder onto each output lacking one, bumping to v6', () => {
-    const project = parseProject({ kit: legacyKit, output: { rgbOrder: 'GRB' } });
-    expect(project.kit.version).toBe(CURRENT_KIT_VERSION);
-    expect(project.kit.outputs.map((o) => o.rgbOrder)).toEqual(['GRB', 'GRB']);
-    // The controller field itself is untouched (removed later by C1).
-    expect(project.output.rgbOrder).toBe('GRB');
-  });
-
-  it('defaults the seed to RGB when the project omits an explicit controller order', () => {
-    const project = parseProject({ kit: legacyKit });
-    expect(project.kit.outputs.map((o) => o.rgbOrder)).toEqual(['RGB', 'RGB']);
-  });
-
-  it('an output that ALREADY declares an order keeps it (per-output wins over the controller)', () => {
-    const mixed = { ...legacyKit, outputs: [out('o1', 'A', 'BGR'), out('o2', 'B')] };
-    const project = parseProject({ kit: mixed, output: { rgbOrder: 'GRB' } });
-    expect(project.kit.outputs.map((o) => o.rgbOrder)).toEqual(['BGR', 'GRB']);
-  });
-
-  it('a project patch is seeded the same way (device re-rig path)', () => {
-    const patch = parseProjectPatch({ kit: legacyKit, output: { rgbOrder: 'RBG' } });
-    expect(patch.kit.outputs.map((o) => o.rgbOrder)).toEqual(['RBG', 'RBG']);
-  });
-
-  it('parity: a v6 project is NOT re-seeded — explicit output orders survive untouched', () => {
-    const v6 = {
-      version: CURRENT_KIT_VERSION,
-      global,
-      drums: [drum('A', 0, 4)],
-      outputs: [out('o1', 'A', 'BRG')],
-    };
-    const project = parseProject({ kit: v6, output: { rgbOrder: 'GRB' } });
-    // Already v6 → the seed step is skipped; the authored per-output order stands.
-    expect(project.kit.outputs[0]!.rgbOrder).toBe('BRG');
   });
 });

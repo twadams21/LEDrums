@@ -1,6 +1,9 @@
 import { parseKit, type KitConfig } from '../geometry/kit-schema';
+import { CURRENT_KIT_VERSION } from '../geometry/kit-migrations';
 import { assertProjectIntegrity } from './integrity';
 import { parseProject, type Layer, type Project } from './project-schema';
+
+const HOOP_COUNT = 4;
 
 const drum = (
   id: string,
@@ -10,6 +13,7 @@ const drum = (
   /** Literal LED count per hoop — the authoritative count for the physical rig
       (docs/kit-hoop-pixel-counts.md); every hoop on a drum shares it. */
   pixelsPerHoop: number,
+  /** The drum's GEOMETRIC CENTRE (B3) — the midpoint of the hoop stack, NOT the first hoop. */
   origin: { x: number; y: number; z: number },
   rotation: { x: number; y: number; z: number },
 ) => ({
@@ -19,6 +23,8 @@ const drum = (
   diameterIn,
   hoopSpacingMm: 60,
   pixelsPerHoop,
+  /** First-class hoops (B4): every hoop on this drum carries the same literal count. */
+  hoops: Array.from({ length: HOOP_COUNT }, () => ({ pixelCount: pixelsPerHoop, reverse: false })),
   localSpinDeg: 270,
   startAngleDeg: 0,
   origin,
@@ -32,16 +38,25 @@ const drum = (
  * drift between the engine and the lab preview (the prior `tom` vs `tom1` bug class).
  * Parsed once so it's a validated {@link KitConfig} with all schema defaults applied.
  * (The full hardware topology ships separately as `apps/server/projects/default.json`.)
+ *
+ * Authored at {@link CURRENT_KIT_VERSION} in fully-resolved form: origins are geometric
+ * centres (B3) and hoops are explicit (B4). It used to be authored at v3 and reach that form
+ * through the migration ladder on every import; the ladder was deleted (Decision 6), so the
+ * resolved values are now written here directly — byte-identical to what the ladder produced.
  */
 export const DEFAULT_KIT: KitConfig = parseKit({
-  version: 3, // A1 1-based hoop indexing + B2 expanded flag; a NEW kit → expanded defaults OFF
+  version: CURRENT_KIT_VERSION,
   units: 'mm',
-  global: { ledDensityPxPerM: 30, hoopCount: 4, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096 },
+  global: { ledDensityPxPerM: 30, hoopCount: HOOP_COUNT, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096, expanded: false },
   drums: [
-    drum('kick', 'Kick', '#5bbcff', 21, 196, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
-    drum('snare', 'Snare', '#72d572', 12, 108, { x: -230, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
-    drum('tom1', 'Tom 1', '#ff8e72', 12, 108, { x: -120, y: 300, z: 840 }, { x: 18, y: 0, z: 4 }),
-    drum('tom2', 'Tom 2', '#d69cff', 15, 136, { x: 360, y: 40, z: 620 }, { x: 0, y: 0, z: 0 }),
+    drum('kick', 'Kick', '#5bbcff', 21, 196, { x: 0, y: 340, z: 330 }, { x: 90, y: 0, z: 0 }),
+    drum('snare', 'Snare', '#72d572', 12, 108, { x: -230, y: 0, z: 740 }, { x: 0, y: 0, z: 0 }),
+    // The rotated drum's centre is irrational in y/z — these are the exact values the v3→v4
+    // origin migrator produced from the historical first-hoop anchor (-120, 300, 840) at
+    // rotation (18, 0, 4), preserved to the last bit so the kit's geometry did not move when
+    // the ladder was deleted. Verified by DMX byte-parity against the pre-collapse build.
+    drum('tom1', 'Tom 1', '#ff8e72', 12, 108, { x: -120, y: 272.18847050625476, z: 925.5950864665638 }, { x: 18, y: 0, z: 4 }),
+    drum('tom2', 'Tom 2', '#d69cff', 15, 136, { x: 360, y: 40, z: 710 }, { x: 0, y: 0, z: 0 }),
   ],
   outputs: [],
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from './kit-schema';
+import { CURRENT_KIT_VERSION } from './kit-migrations';
 
 /* (b) A drum may carry the legacy `hoopCount`, a first-class `hoops[]`, both, or neither — but when
    BOTH are present they must AGREE (`hoopCount === hoops.length`). A divergent pair is a latent
@@ -53,12 +54,12 @@ describe('drumSchema hoops.length ↔ hoopCount invariant (b)', () => {
     ).toThrow(/hoopCount .* must equal hoops\.length/);
   });
 
-  it('a migrated legacy drum (uniform pixelsPerHoop expanded to hoops[]) satisfies the invariant', () => {
-    // The v4 → v5 migrator expands `pixelsPerHoop` into a `hoops[]` of length `hoopCount` while
-    // keeping `hoopCount` — so they match by construction and never trip the new refine.
+  it('a uniform drum (pixelsPerHoop + hoopCount, no hoops[]) satisfies the invariant', () => {
+    // A drum that declares no `hoops[]` can never trip the refine — the pair it compares does
+    // not exist. (This used to arrive via the v4→v5 expander, deleted with the v7 floor.)
     expect(() =>
       parseKit({
-        version: 4,
+        version: CURRENT_KIT_VERSION,
         global: { ledDensityPxPerM: 100, hoopCount: 4, defaultHoopSpacingMm: 50 },
         drums: [
           {
