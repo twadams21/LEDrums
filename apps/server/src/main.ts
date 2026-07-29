@@ -29,14 +29,7 @@ import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
 import { TunnelControl } from './tunnel-control';
-import {
-  admitDecision,
-  createMutablePinGate,
-  isTrustedHost,
-  isViaCloudflare,
-  resolveHostToken,
-  resolvePin,
-} from './pin-gate';
+import { createMutablePinGate, resolveHostToken, resolvePin } from './pin-gate';
 import { boot, lanAddresses } from './boot';
 import { createControllerMonitor } from './controller-monitor';
 import { listNetworkAdapters } from './network-adapters';
@@ -50,6 +43,7 @@ import { createMonitorBus } from './monitor';
 import { installProcessErrorCapture } from './process-errors';
 import { createFatalHandler } from './fatal-shutdown';
 import { createBroadcaster } from './ws-broadcast';
+import { createWsConnectionHandler } from './ws-connection';
 import { createShipQueue, type ShipQueue } from './telemetry/ship-queue';
 import { createHttpTransport } from './telemetry/transport';
 import { createReporter, type Reporter } from './telemetry/reporter';
@@ -57,7 +51,6 @@ import { isTelemetryEnabled, type ReportRecord } from './telemetry/envelope';
 import { createSnapshotStore, type SnapshotFiles, type SnapshotStore } from './backups/snapshot-store';
 import { backupsEndpoint, toBackupRecord, type BackupRecord } from './backups/offsite';
 import {
-  decodeClient,
   effectSpecs,
   encodeServer,
   serializeModel,
@@ -478,70 +471,23 @@ host.setOutputMonitor(monitor);
 voiceHost?.setOutputMonitor(monitor);
 voiceHost?.setMonitor(monitor);
 
-wss.on('connection', (ws, req) => {
-  // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
-  // registry or sent any presence/state/frames — so an un-authed client can neither view nor
-  // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
-  // admits everyone, so plain local dev is unchanged.
-  //
-  // Host bypass: the host's OWN app window is admitted without a PIN — but loopback alone is not
-  // proof of that (any local tab/script is also loopback), so the bypass requires the unguessable
-  // per-run host token the window was handed (plus loopback + not-via-cloudflared). Remote clients
-  // (cf-* headers) and LAN peers (non-loopback) can never satisfy it, so both stay gated.
-  const trustedLocal = isTrustedHost({
-    remoteAddress: req.socket.remoteAddress,
-    headers: req.headers,
-    url: req.url,
+// The connection body lives in ws-connection.ts (S12); main.ts only supplies the wiring.
+wss.on(
+  'connection',
+  createWsConnectionHandler<WebSocket>({
     hostToken,
-  });
-  const decision = admitDecision(req.url, pinGate, trustedLocal);
-  if (!decision.ok) {
-    ws.close(decision.code, decision.reason);
-    return;
-  }
-
-  // Admit additively (no eviction) — the first client auto-claims the editor slot, later clients
-  // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
-  // the `state` below — messages are ordered on the socket), then ship its initial state.
-  clients.admit(ws);
-  if (isViaCloudflare(req.headers)) tunnelClients.add(ws);
-  monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
-  broadcastPresence();
-  ws.send(encodeServer(stateMessage()));
-  monitorBus.replay((msg) => ws.send(encodeServer(msg)));
-
-  ws.on('message', (raw, isBinary) => {
-    if (isBinary) return; // clients send JSON only
-    let handled = false;
-    try {
-      const msg = decodeClient(raw.toString());
-      handled = true;
-      monitorInput(msg, 'ws');
-      handleClientMessage(msg, ws);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (handled) {
-        // Error escaped the handler — log, but keep the socket alive.
-        console.error('[ws] handler error:', message);
-      }
-      monitor({ type: 'error', direction: 'local', source: 'server/ws', label: handled ? 'WebSocket handler error' : 'WebSocket decode error', detail: message });
-      ws.send(encodeServer({ t: 'error', message }));
-    }
-  });
-
-  // On disconnect, drop the socket and re-broadcast presence (headcount changed, and the editor
-  // slot may have moved per the registry's election rule).
-  ws.on('close', () => {
-    clients.remove(ws);
-    controllerMonitor.dropWatcher(ws);
-    broadcastPresence();
-  });
-  ws.on('error', () => {
-    clients.remove(ws);
-    controllerMonitor.dropWatcher(ws);
-    broadcastPresence();
-  });
-});
+    pinGate,
+    clients,
+    tunnelClients,
+    monitor,
+    broadcastPresence,
+    stateMessage,
+    replayMonitor: (sendOne) => monitorBus.replay(sendOne),
+    monitorInput: (msg) => monitorInput(msg, 'ws'),
+    handleClientMessage: (msg, ws) => handleClientMessage(msg, ws),
+    dropWatcher: (ws) => controllerMonitor.dropWatcher(ws),
+  }),
+);
 
 // Shared collaborators handed to the extracted message handler. The broadcast/relay closures
 // capture the wiring so the handler stays free of module-level state + socket plumbing.
