@@ -11,25 +11,7 @@ import type { OscListenInfo, OutputStatus, SerializedModel, TunnelInfo } from '.
 
 import { MemStorage } from '../test-support/mem-storage';
 
-interface Harness {
-  cb: WSCallbacks | null;
-  reconnects: string[];
-}
-
-const harnessClient =
-  (h: Harness): (() => WSClient) =>
-  () =>
-    ({
-      on(cb: WSCallbacks) {
-        h.cb = cb;
-      },
-      connect() {},
-      close() {},
-      send() {},
-      reconnectWithPin(pin: string) {
-        h.reconnects.push(pin);
-      },
-    }) as unknown as WSClient;
+import { newHarness, harnessClient, type Harness } from '../test-support/ws-harness';
 
 const MODEL: SerializedModel = {
   count: 0,
@@ -76,7 +58,7 @@ afterEach(() => {
 
 describe('store — room PIN + tunnel (S3)', () => {
   it('onAuthError raises the gate and counts refusals', () => {
-    const h: Harness = { cb: null, reconnects: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     withRaf(() => {
       store.start();
@@ -95,7 +77,7 @@ describe('store — room PIN + tunnel (S3)', () => {
   });
 
   it('adopts the tunnel surface from the state message', () => {
-    const h: Harness = { cb: null, reconnects: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     withRaf(() => {
       store.start();
@@ -107,7 +89,7 @@ describe('store — room PIN + tunnel (S3)', () => {
   });
 
   it('setSharing sends the tunnel start/stop control message (item 4)', () => {
-    const h: Harness = { cb: null, reconnects: [] };
+    const h = newHarness();
     const sent: unknown[] = [];
     const client = (): WSClient =>
       ({
@@ -135,7 +117,7 @@ describe('store — room PIN + tunnel (S3)', () => {
   });
 
   it('submitPin remembers the PIN and replays it through the client', () => {
-    const h: Harness = { cb: null, reconnects: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     withRaf(() => {
       store.start();

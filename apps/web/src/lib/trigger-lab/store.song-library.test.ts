@@ -4,8 +4,8 @@ import { TriggerLab } from './store.svelte';
 import { buildShow } from './show-builder';
 import { SONGS_STORAGE_KEY, serializeSongLibrary, type SongLibrary } from './persistence';
 import type { LibrarySong } from './store/song-library';
-import type { WSClient, WSCallbacks } from '../ws/client';
-import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel } from '../ws/protocol-types';
+import type { WSClient } from '../ws/client';
+import type { OscListenInfo, OutputStatus, SerializedModel } from '../ws/protocol-types';
 
 /* Song library on the store (S41): export a local song into the canonical pool, reference it from
    a show (resolve materializes it into the runtime view), canonical propagation across shows, detach
@@ -16,11 +16,7 @@ import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 
-/** A WSClient that captures the callbacks the store registers, so a test can drive onState. */
-const harnessClient =
-  (h: { cb: WSCallbacks | null }): (() => WSClient) =>
-  () =>
-    ({ on(cb: WSCallbacks) { h.cb = cb; }, connect() {}, close() {}, send(_m: ClientMessage) {} }) as unknown as WSClient;
+import { newHarness, harnessClient } from '../test-support/ws-harness';
 
 const MODEL: SerializedModel = { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } };
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
@@ -222,7 +218,7 @@ describe('pool-id reservation (no collision with local song mints)', () => {
 
   it('reserves an ADOPTED pool id (server cold-load)', () => {
     const POOL = 'song-3000000000';
-    const h: { cb: WSCallbacks | null } = { cb: null };
+    const h = newHarness();
     withRaf(() => {
       const store = new TriggerLab(harnessClient(h));
       store.start(); // attaches the WS callbacks

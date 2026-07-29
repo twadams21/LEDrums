@@ -22,26 +22,7 @@ import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel, ShowL
 
 import { MemStorage } from '../test-support/mem-storage';
 
-interface Harness {
-  cb: WSCallbacks | null;
-  sent: ClientMessage[];
-}
-
-/** A WSClient that captures the callbacks the store registers and records every send, so a test
-    can drive the connect handshake (onConnection/onState) and assert what the store pushes. */
-const harnessClient =
-  (h: Harness): (() => WSClient) =>
-  () =>
-    ({
-      on(cb: WSCallbacks) {
-        h.cb = cb;
-      },
-      connect() {},
-      close() {},
-      send(m: ClientMessage) {
-        h.sent.push(m);
-      },
-    }) as unknown as WSClient;
+import { newHarness, harnessClient, type Harness } from '../test-support/ws-harness';
 
 /** A no-op client for boot-only tests (start() is never called, so nothing connects). */
 const noopClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
@@ -112,7 +93,7 @@ afterEach(() => {
 describe('cold-load adopt (server wins)', () => {
   it('adopts the server library over a fresh seed on the first state', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       expect(store.shows).toHaveLength(1); // fresh "Untitled Show" before any state
@@ -130,7 +111,7 @@ describe('cold-load adopt (server wins)', () => {
 
   it('caches the adopted library to localStorage and does not echo it back to the server', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       fireOpen(h);
@@ -154,7 +135,7 @@ describe('localStorage-cache fallback + seeding the server', () => {
         SHOWS_STORAGE_KEY,
         JSON.stringify(serverLib({ id: 'local-1', name: 'Local Show', bpm: 132 })),
       );
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       expect(store.activeShow!.name).toBe('Local Show'); // hydrated from the cache at boot
@@ -180,7 +161,7 @@ describe('cold-load keeps fresh local over a stale server (refresh preserves edi
         SHOWS_STORAGE_KEY,
         JSON.stringify(serverLib({ id: 'local-1', name: 'Local Show', bpm: 132 })),
       );
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       expect(store.bpm).toBe(132); // hydrated from the local cache at boot
@@ -202,7 +183,7 @@ describe('cold-load keeps fresh local over a stale server (refresh preserves edi
 describe('no clobber after the cold-load adopt', () => {
   it('ignores a later state broadcast — adopt happens once, in-session edits survive', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       fireOpen(h);
@@ -248,7 +229,7 @@ describe('role derives from presence (S1)', () => {
 describe('viewer live-follows the editor broadcast (S1)', () => {
   it('adopts a showLibrary broadcast with no refresh', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       fireOpen(h);
@@ -277,7 +258,7 @@ describe('viewer live-follows the editor broadcast (S1)', () => {
         SHOWS_STORAGE_KEY,
         JSON.stringify(serverLib({ id: 'local-1', name: 'Local Show', bpm: 132 })),
       );
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       expect(store.activeShow!.name).toBe('Local Show'); // hydrated from cache at boot
@@ -297,7 +278,7 @@ describe('viewer live-follows the editor broadcast (S1)', () => {
 describe('editor ignores a showLibrary broadcast (its own echo) (S1)', () => {
   it('does not adopt a broadcast while it holds the editor role', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       const ownName = store.activeShow!.name; // the editor's own fresh "Untitled Show"
@@ -322,7 +303,7 @@ describe('editor ignores a showLibrary broadcast (its own echo) (S1)', () => {
 describe('takeover sends the role-claim + role flips live on the next presence (S2)', () => {
   it('takeover() emits a `takeover` message; a follow-up presence makes us the editor', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       fireOpen(h);
@@ -414,7 +395,7 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
 
   it('blocks authoritative project mutators (setOutput) while a viewer', () => {
     withRaf(() => {
-      const h: Harness = { cb: null, sent: [] };
+      const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
       fireOpen(h);

@@ -12,24 +12,7 @@ import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel } from
 
 import { MemStorage } from '../test-support/mem-storage';
 
-interface Harness {
-  cb: WSCallbacks | null;
-  sent: ClientMessage[];
-}
-
-const harnessClient =
-  (h: Harness): (() => WSClient) =>
-  () =>
-    ({
-      on(cb: WSCallbacks) {
-        h.cb = cb;
-      },
-      connect() {},
-      close() {},
-      send(m: ClientMessage) {
-        h.sent.push(m);
-      },
-    }) as unknown as WSClient;
+import { newHarness, harnessClient, type Harness } from '../test-support/ws-harness';
 
 const MODEL: SerializedModel = {
   count: 0,
@@ -67,7 +50,7 @@ afterEach(() => {
 
 describe('setProjectPatch — bulk re-rig send (S45)', () => {
   it('sends setProject and does NOT optimistically write the local project', () => {
-    const h: Harness = { cb: null, sent: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     store.start();
     fireOpen(h);
@@ -86,7 +69,7 @@ describe('setProjectPatch — bulk re-rig send (S45)', () => {
   });
 
   it('is a no-op for a read-only viewer', () => {
-    const h: Harness = { cb: null, sent: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     store.start();
     fireOpen(h);
@@ -102,7 +85,7 @@ describe('setProjectPatch — bulk re-rig send (S45)', () => {
 
 describe('server error surface (S45)', () => {
   it('captures a server error, clears it on a new send, and on explicit dismiss', () => {
-    const h: Harness = { cb: null, sent: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     store.start();
     fireOpen(h);
@@ -123,7 +106,7 @@ describe('server error surface (S45)', () => {
 
 describe('copyPatch / buildPatchDoc (S45)', () => {
   it('serializes a patch ClipDoc that round-trips through parse with the device slices', () => {
-    const h: Harness = { cb: null, sent: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     store.start();
     fireOpen(h);
@@ -143,7 +126,7 @@ describe('copyPatch / buildPatchDoc (S45)', () => {
   it('copyPatch writes the doc to the clipboard and reports success', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });
-    const h: Harness = { cb: null, sent: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     store.start();
     fireOpen(h);
@@ -157,7 +140,7 @@ describe('copyPatch / buildPatchDoc (S45)', () => {
   });
 
   it('copyPatch returns false when offline (no project to copy)', async () => {
-    const h: Harness = { cb: null, sent: [] };
+    const h = newHarness();
     const store = new TriggerLab(harnessClient(h));
     store.start();
     expect(await store.copyPatch()).toBe(false); // no state yet → nothing to copy

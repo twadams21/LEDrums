@@ -13,24 +13,7 @@ import type { ClientMessage, ControllerStatus, ControllerTestPattern, Discovered
 
 import { MemStorage } from '../test-support/mem-storage';
 
-interface Harness {
-  cb: WSCallbacks | null;
-  sent: ClientMessage[];
-}
-
-const harnessClient =
-  (h: Harness): (() => WSClient) =>
-  () =>
-    ({
-      on(cb: WSCallbacks) {
-        h.cb = cb;
-      },
-      connect() {},
-      close() {},
-      send(m: ClientMessage) {
-        h.sent.push(m);
-      },
-    }) as unknown as WSClient;
+import { newHarness, harnessClient, type Harness } from '../test-support/ws-harness';
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -42,7 +25,7 @@ afterEach(() => {
 /** A store with the WS callbacks registered (no live socket) and `project` seeded so setOutput's
     optimistic write has something to write to. */
 function wired(): { store: TriggerLab; h: Harness } {
-  const h: Harness = { cb: null, sent: [] };
+  const h = newHarness();
   const store = new TriggerLab(harnessClient(h));
   store.project = defaultProject();
   (store as unknown as { wireClient(): void }).wireClient();
