@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPixelModel, parseKit } from '@ledrums/core';
 import {
+  clientErrorMessage,
   decodeClient,
   effectSpecs,
   frameToRgbBytes,
@@ -69,5 +70,37 @@ describe('ws-protocol', () => {
     const specs = effectSpecs();
     expect(specs.length).toBeGreaterThanOrEqual(11);
     expect(specs.every((s) => Array.isArray(s.paramSpec))).toBe(true);
+  });
+});
+
+describe('clientErrorMessage (S15 — resilience-hole-0013 truth table)', () => {
+  const REF = 'deadbeef';
+  const zodShaped = new Error('Invalid setProject message: project.drums.0.hoops.1.pixels Expected number, received string\nfurther zod issue lines\nand more');
+  const pathError = new Error('ENOENT: no such file or directory, open /Users/someone/projects/default.local.json');
+
+  it('viaTunnel: a ZodError-shaped message becomes the fixed ref-only sentence', () => {
+    const out = clientErrorMessage(zodShaped, true, REF);
+    expect(out).toMatch(/^Could not apply that change \(ref [0-9a-f]{8}\)$/);
+    expect(out).not.toContain('/');
+  });
+
+  it('viaTunnel: an absolute-path error leaks NOTHING of the path', () => {
+    const out = clientErrorMessage(pathError, true, REF);
+    expect(out).toMatch(/^Could not apply that change \(ref [0-9a-f]{8}\)$/);
+    expect(out).not.toContain('/');
+  });
+
+  it('local: first line only, capped at 300 chars, still carrying the ref', () => {
+    const long = new Error(`${'x'.repeat(500)}\nsecond line`);
+    const out = clientErrorMessage(long, false, REF);
+    expect(out).not.toContain('second line');
+    expect(out).toBe(`${'x'.repeat(300)} (ref ${REF})`);
+    const short = clientErrorMessage(pathError, false, REF);
+    expect(short).toBe(`ENOENT: no such file or directory, open /Users/someone/projects/default.local.json (ref ${REF})`);
+  });
+
+  it('a non-Error throw is stringified, not crashed on', () => {
+    expect(clientErrorMessage('plain string', false, REF)).toBe(`plain string (ref ${REF})`);
+    expect(clientErrorMessage('plain string', true, REF)).toBe(`Could not apply that change (ref ${REF})`);
   });
 });

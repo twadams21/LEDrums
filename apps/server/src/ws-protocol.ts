@@ -62,6 +62,25 @@ export function encodeServer(msg: ServerMessage): string {
   return JSON.stringify(msg);
 }
 
+/**
+ * The client-facing text of an `error` frame (resilience-hole-0013, S15). The raw
+ * `err.message` is a diagnostic — a ZodError is a schema path dump, a filesystem
+ * fault carries an absolute path on the drummer's machine — and a tunnel client is
+ * whoever holds the room PIN over a public Cloudflare edge. So:
+ *  - viaTunnel: a fixed sentence carrying only the correlation ref. No message
+ *    content leaves the machine.
+ *  - local: the first line of the message, capped at 300 chars, plus the ref —
+ *    enough to act on without the full stack (the Monitor event keeps that).
+ * `ref` is the caller-generated correlation id also written into the Monitor
+ * event's detail, so a screenshot of the frame finds the full diagnostic.
+ */
+export function clientErrorMessage(err: unknown, viaTunnel: boolean, ref: string): string {
+  if (viaTunnel) return `Could not apply that change (ref ${ref})`;
+  const message = err instanceof Error ? err.message : String(err);
+  const firstLine = message.split('\n', 1)[0] ?? '';
+  return `${firstLine.slice(0, 300)} (ref ${ref})`;
+}
+
 /** Serialize the pixel model for the visualizer (sent once per connection / rebuild). */
 export function serializeModel(model: PixelModel): SerializedModel {
   const positions: number[] = new Array(model.pixelCount * 3);

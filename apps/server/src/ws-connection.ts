@@ -2,7 +2,8 @@ import type { IncomingMessage } from 'node:http';
 import { admitDecision, isTrustedHost, isViaCloudflare, type MutablePinGate } from './pin-gate';
 import type { ClientRegistry } from './client-registry';
 import type { MonitorDraft } from './monitor';
-import { decodeClient, encodeServer, type ClientMessage, type ServerMessage } from './ws-protocol';
+import { randomBytes } from 'node:crypto';
+import { clientErrorMessage, decodeClient, encodeServer, type ClientMessage, type ServerMessage } from './ws-protocol';
 import type { BroadcastSocket } from './ws-broadcast';
 import { createWsKeepalive, type KeepaliveSocket } from './ws-keepalive';
 
@@ -31,8 +32,9 @@ export interface WsConnectionDeps<S extends ConnectionSocket> {
   hostToken: string | null;
   pinGate: MutablePinGate;
   clients: ClientRegistry<S>;
-  /** Sockets that connected VIA the share tunnel (cf-* headers at admit). */
-  tunnelClients: { add(ws: S): void };
+  /** Sockets that connected VIA the share tunnel (cf-* headers at admit). `has` feeds
+   * the error-frame redaction (S15): tunnel peers get the fixed ref-only sentence. */
+  tunnelClients: { add(ws: S): void; has(ws: S): boolean };
   monitor(event: MonitorDraft): void;
   broadcastPresence(): void;
   stateMessage(): ServerMessage;
@@ -51,6 +53,11 @@ export interface WsConnectionDeps<S extends ConnectionSocket> {
    * slow-peer strike clock (S14) rides here so strikes NEVER advance per broadcast. */
   onKeepaliveSweep?(): void;
 }
+
+/** Max outbound `error` frames per socket per window (S15). All failures still emit
+ * Monitor events — only the client-facing frames are limited. Named + test-asserted. */
+export const ERROR_FRAMES_PER_WINDOW = 5;
+export const ERROR_FRAME_WINDOW_MS = 1_000;
 
 /** The connection handler plus the keepalive disposer boot.ts calls on shutdown. */
 export type WsConnectionHandler<S extends ConnectionSocket> = ((ws: S, req: ConnectionRequest) => void) & {
@@ -108,6 +115,11 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
     ws.send(encodeServer(stateMessage()));
     replayMonitor((msg) => ws.send(encodeServer(msg)));
 
+    // Per-socket error-frame limiter (S15): the outbound frames are capped, the
+    // Monitor diagnostics never are.
+    let errorWindowStart = 0;
+    let errorFramesInWindow = 0;
+
     ws.on('message', (raw, isBinary) => {
       if (isBinary) return; // clients send JSON only
       let handled = false;
@@ -122,8 +134,20 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
           // Error escaped the handler — log, but keep the socket alive.
           log('[ws] handler error:', message);
         }
-        monitor({ type: 'error', direction: 'local', source: 'server/ws', label: handled ? 'WebSocket handler error' : 'WebSocket decode error', detail: message });
-        ws.send(encodeServer({ t: 'error', message }));
+        // The Monitor event keeps the FULL diagnostic (message + stack) under the same
+        // correlation ref the client frame carries; only the outbound frame is redacted.
+        const ref = randomBytes(4).toString('hex');
+        const stack = err instanceof Error && err.stack ? `\n${err.stack}` : '';
+        monitor({ type: 'error', direction: 'local', source: 'server/ws', label: handled ? 'WebSocket handler error' : 'WebSocket decode error', detail: `ref ${ref}: ${message}${stack}` });
+        const now = Date.now();
+        if (now - errorWindowStart >= ERROR_FRAME_WINDOW_MS) {
+          errorWindowStart = now;
+          errorFramesInWindow = 0;
+        }
+        if (errorFramesInWindow < ERROR_FRAMES_PER_WINDOW) {
+          errorFramesInWindow++;
+          ws.send(encodeServer({ t: 'error', message: clientErrorMessage(err, tunnelClients.has(ws), ref) }));
+        }
       }
     });
 
