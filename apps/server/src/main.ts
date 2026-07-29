@@ -25,6 +25,7 @@ import { resolveInitialProject } from './boot-project';
 import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
+import { createPersistedSlot } from './persisted-slot';
 import { buildStatsMessage, STATS_INTERVAL_MS } from './stats-frame';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
@@ -180,6 +181,8 @@ const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
 
 /** Live persistence: debounce-autosave the authoritative project to {@link LIVE_PROJECT}
  * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
+// NOT a createPersistedSlot: the live project IS engine state (the voice host mutates it in place
+// through `host.engine.getProject()`), so a slot-owned get/set would be a second source of truth.
 const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()), 400, {
   onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave scheduled' }),
   onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave saved' }),
@@ -191,42 +194,28 @@ const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engi
  * boot-recovered here, rebroadcast on cold load via {@link stateMessage}, autosaved on every
  * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
  * has no file yet); the web then seeds the server from its localStorage cache on connect. */
-const showLibraryLoad = inspectShowLibraryFile();
-let liveShowLibrary: ShowLibraryBlob | null = isVersionedBlob(projectLoad.showLibrary)
-  ? projectLoad.showLibrary
-  : loadShowLibrary();
+const showLibrarySlot = createPersistedSlot<ShowLibraryBlob, ReturnType<typeof inspectShowLibraryFile>>({
+  label: 'Show library',
+  destination: 'show-library',
+  inspect: inspectShowLibraryFile,
+  // Boot recovery order (S10): the snapshot bundle wins when it carries a versioned envelope,
+  // otherwise fall back to the standalone file.
+  load: () => (isVersionedBlob(projectLoad.showLibrary) ? projectLoad.showLibrary : loadShowLibrary()),
+  save: saveShowLibraryAsync,
+  monitor,
+});
 
 /** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
- * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
+ * like {@link showLibrarySlot} (boot-recovered, rebroadcast on cold load, autosaved on push,
  * flushed on shutdown). `null` until the first client pushes one. */
-const songLibraryLoad = inspectSongLibraryFile();
-let liveSongLibrary: SongLibraryBlob | null = isVersionedBlob(projectLoad.songLibrary)
-  ? projectLoad.songLibrary
-  : loadSongLibrary();
-
-/** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
- * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
- * yet) is a no-op. */
-const showLibraryAutosaver = createAutosaver(
-  () => (liveShowLibrary ? saveShowLibraryAsync(liveShowLibrary) : Promise.resolve()),
-  400,
-  {
-    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave scheduled' }),
-    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave saved' }),
-    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'show-library', label: 'Show library autosave failed', detail: message }),
-  },
-);
-
-/** Debounce-autosave the live song library (mirrors {@link showLibraryAutosaver}). */
-const songLibraryAutosaver = createAutosaver(
-  () => (liveSongLibrary ? saveSongLibraryAsync(liveSongLibrary) : Promise.resolve()),
-  400,
-  {
-    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave scheduled' }),
-    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave saved' }),
-    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'song-library', label: 'Song library autosave failed', detail: message }),
-  },
-);
+const songLibrarySlot = createPersistedSlot<SongLibraryBlob, ReturnType<typeof inspectSongLibraryFile>>({
+  label: 'Song library',
+  destination: 'song-library',
+  inspect: inspectSongLibraryFile,
+  load: () => (isVersionedBlob(projectLoad.songLibrary) ? projectLoad.songLibrary : loadSongLibrary()),
+  save: saveSongLibraryAsync,
+  monitor,
+});
 
 // --- HTTP + static + WS -----------------------------------------------------
 
@@ -375,8 +364,8 @@ for (const event of startupDiagnostics({
   webRoot,
   webRootExists: existsSync(webRoot),
   project: projectLoad,
-  showLibrary: showLibraryLoad,
-  songLibrary: songLibraryLoad,
+  showLibrary: showLibrarySlot.loadInfo,
+  songLibrary: songLibrarySlot.loadInfo,
   tunnel: { enabled: tunnelAtBoot, url: tunnelControl.url },
   pinRequired: pinGate.pin !== null,
   hostTokenPresent: !!hostToken,
@@ -467,8 +456,8 @@ function stateMessage(): ServerMessage {
     effects: effectSpecs(),
     projects: listProjects(),
     output: (voiceHost ?? host).getOutputStatus(),
-    showLibrary: liveShowLibrary,
-    songLibrary: liveSongLibrary,
+    showLibrary: showLibrarySlot.get(),
+    songLibrary: songLibrarySlot.get(),
     tunnel: tunnelInfo(),
     // Where to point Sensory Percussion / a Max device, and whether the socket is actually
     // bound (#139). Read at send time, so a client always gets the settled truth.
@@ -523,14 +512,8 @@ function applyRestoredSnapshot(files: SnapshotFiles): void {
   host.engine.setProject(project);
   host.reloadOutputSettings();
   autosaver.markDirty();
-  if (isVersionedBlob(files.showLibrary)) {
-    liveShowLibrary = files.showLibrary;
-    showLibraryAutosaver.markDirty();
-  }
-  if (isVersionedBlob(files.songLibrary)) {
-    liveSongLibrary = files.songLibrary;
-    songLibraryAutosaver.markDirty();
-  }
+  if (isVersionedBlob(files.showLibrary)) showLibrarySlot.set(files.showLibrary);
+  if (isVersionedBlob(files.songLibrary)) songLibrarySlot.set(files.songLibrary);
   broadcastState();
   monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'backups', label: 'Snapshot restored — engine + clients reloaded' });
 }
@@ -539,7 +522,7 @@ const snapshotOutbox = backupsQueue;
 const snapshotStore: SnapshotStore = createSnapshotStore({
   dir: join(resolveProjectsDir(process.env), 'backups'),
   now: () => Date.now(),
-  readCurrent: () => ({ project: host.engine.getProject(), showLibrary: liveShowLibrary, songLibrary: liveSongLibrary }),
+  readCurrent: () => ({ project: host.engine.getProject(), showLibrary: showLibrarySlot.get(), songLibrary: songLibrarySlot.get() }),
   applyRestored: applyRestoredSnapshot,
   onSnapshot: snapshotOutbox ? (meta, bundle) => snapshotOutbox.enqueue(toBackupRecord(hostname(), meta, bundle)) : undefined,
 });
@@ -579,20 +562,16 @@ const handleClientMessage = createClientMessageHandler<WebSocket>({
   host,
   voiceHost,
   autosaver,
-  showLibraryAutosaver,
-  songLibraryAutosaver,
+  showLibraryAutosaver: showLibrarySlot.autosaver,
+  songLibraryAutosaver: songLibrarySlot.autosaver,
   broadcastJson,
   broadcastPresence,
   broadcastState,
   stateMessage,
   // The live show-library slot is owned here (boot-recovered + autosaved); the handler adopts a
   // pushed library through this setter so stateMessage/the autosaver read the latest.
-  setShowLibrary: (lib) => {
-    liveShowLibrary = lib;
-  },
-  setSongLibrary: (lib) => {
-    liveSongLibrary = lib;
-  },
+  setShowLibrary: (lib) => showLibrarySlot.set(lib),
+  setSongLibrary: (lib) => songLibrarySlot.set(lib),
   relayToOthers,
   tunnelControl,
   isTunnelClient: (ws) => tunnelClients.has(ws),
@@ -738,8 +717,8 @@ boot({
   statsTimer,
   snapshotTimer,
   autosaver,
-  showLibraryAutosaver,
-  songLibraryAutosaver,
+  showLibraryAutosaver: showLibrarySlot.autosaver,
+  songLibraryAutosaver: songLibrarySlot.autosaver,
   tunnelControl,
   tunnelAtBoot,
   pin: pinGate.pin,
