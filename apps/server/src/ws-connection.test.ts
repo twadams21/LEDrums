@@ -4,7 +4,7 @@ import { ClientRegistry } from './client-registry';
 import { createMutablePinGate } from './pin-gate';
 import { createMonitorBus } from './monitor';
 import type { ServerMessage } from './ws-protocol';
-import { ERROR_FRAMES_PER_WINDOW, ERROR_FRAME_WINDOW_MS, createWsConnectionHandler, type ConnectionRequest, type ConnectionSocket, type WsConnectionDeps } from './ws-connection';
+import { ERROR_FRAMES_PER_WINDOW, ERROR_FRAME_WINDOW_MS, MAX_CLIENTS_DEFAULT, WS_CLOSE_ROOM_FULL, createWsConnectionHandler, resolveMaxClients, type ConnectionRequest, type ConnectionSocket, type WsConnectionDeps } from './ws-connection';
 
 /** Fake socket: records sends/closes and lets tests fire message/close/error events. */
 class FakeSocket implements ConnectionSocket {
@@ -248,5 +248,70 @@ describe('error-frame redaction + per-socket rate limit (S15 — resilience-hole
     const frames = errorFrames(ws);
     expect(frames).toHaveLength(5);
     expect(frames[0]).toMatch(/^first line detail \(ref [0-9a-f]{8}\)$/);
+  });
+});
+
+describe('connection cap (S16 — resilience-hole-0005 amplifier)', () => {
+  function fill(handler: (ws: FakeSocket, r: ConnectionRequest) => void, count: number, pin?: string): FakeSocket[] {
+    const admitted: FakeSocket[] = [];
+    for (let i = 0; i < count; i++) {
+      const ws = new FakeSocket();
+      handler(ws, req(pin ? { url: `/ws?pin=${pin}` } : {}));
+      admitted.push(ws);
+    }
+    return admitted;
+  }
+
+  it('the default cap is the named constant', () => {
+    expect(MAX_CLIENTS_DEFAULT).toBe(32);
+  });
+
+  it('the 33rd connection closes with 4429, is never admitted, gets no state, triggers no presence', () => {
+    const { handler, clients, ordered } = harness({ deps: { env: {} } });
+    fill(handler, MAX_CLIENTS_DEFAULT);
+    expect(clients.size).toBe(32);
+    ordered.length = 0;
+    const extra = new FakeSocket();
+    handler(extra, req());
+    expect(extra.closed).toEqual({ code: WS_CLOSE_ROOM_FULL, reason: 'room full' });
+    expect(clients.size).toBe(32);
+    expect(extra.sent).toHaveLength(0); // no state, no presence, no replay
+    expect(ordered).toEqual([]); // no broadcastPresence, no monitor
+  });
+
+  it('the 33rd succeeds again after one of the 32 closes (slot frees)', () => {
+    const { handler, clients } = harness({ deps: { env: {} } });
+    const admitted = fill(handler, MAX_CLIENTS_DEFAULT);
+    admitted[0]!.handlers.close?.();
+    expect(clients.size).toBe(31);
+    const extra = new FakeSocket();
+    handler(extra, req());
+    expect(extra.closed).toBeNull();
+    expect(clients.size).toBe(32);
+  });
+
+  it('ORDERING: a wrong-PIN dial at capacity gets 4401, not 4429 — an unauthorised dial never consumes a slot', () => {
+    const { handler, clients } = harness({ pin: '123456', deps: { env: {} } });
+    fill(handler, MAX_CLIENTS_DEFAULT, '123456');
+    expect(clients.size).toBe(32);
+    const intruder = new FakeSocket();
+    handler(intruder, req({ url: '/ws?pin=999999' }));
+    expect(intruder.closed).toEqual({ code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' });
+  });
+
+  it('LEDRUMS_MAX_CLIENTS=4 yields a cap of 4', () => {
+    const { handler, clients } = harness({ deps: { env: { LEDRUMS_MAX_CLIENTS: '4' } } });
+    fill(handler, 5);
+    expect(clients.size).toBe(4);
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['empty', ''],
+    ['zero', '0'],
+    ['negative', '-3'],
+    ['non-numeric', 'lots'],
+  ])('LEDRUMS_MAX_CLIENTS %s falls back to 32', (_label, value) => {
+    expect(resolveMaxClients({ LEDRUMS_MAX_CLIENTS: value })).toBe(MAX_CLIENTS_DEFAULT);
   });
 });

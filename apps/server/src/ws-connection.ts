@@ -52,12 +52,33 @@ export interface WsConnectionDeps<S extends ConnectionSocket> {
   /** Called once per keepalive sweep AFTER the reap pass — the broadcaster's
    * slow-peer strike clock (S14) rides here so strikes NEVER advance per broadcast. */
   onKeepaliveSweep?(): void;
+  /** Env for the one-shot LEDRUMS_MAX_CLIENTS read (S16). Defaults to process.env. */
+  env?: Record<string, string | undefined>;
 }
 
 /** Max outbound `error` frames per socket per window (S15). All failures still emit
  * Monitor events — only the client-facing frames are limited. Named + test-asserted. */
 export const ERROR_FRAMES_PER_WINDOW = 5;
 export const ERROR_FRAME_WINDOW_MS = 1_000;
+
+/** Default connection cap (S16, resilience-hole-0005's amplifier): admission was
+ * additive with no maximum, so a shared room link multiplies the per-client stats
+ * stream without limit on the machine driving a live show. `LEDRUMS_MAX_CLIENTS`
+ * (read ONCE at handler construction) overrides for a venue that outgrows it. */
+export const MAX_CLIENTS_DEFAULT = 32;
+
+/** Close code for a connection refused because the room is full. */
+export const WS_CLOSE_ROOM_FULL = 4429;
+
+/** One-shot env read of the operational cap. Unset/empty/zero/negative/non-numeric
+ * falls back to the default — a typo must never lock everyone out. */
+export function resolveMaxClients(env: Record<string, string | undefined>): number {
+  const raw = env.LEDRUMS_MAX_CLIENTS;
+  if (raw === undefined || raw.trim() === '') return MAX_CLIENTS_DEFAULT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return MAX_CLIENTS_DEFAULT;
+  return n;
+}
 
 /** The connection handler plus the keepalive disposer boot.ts calls on shutdown. */
 export type WsConnectionHandler<S extends ConnectionSocket> = ((ws: S, req: ConnectionRequest) => void) & {
@@ -69,6 +90,7 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
 ): WsConnectionHandler<S> {
   const { hostToken, pinGate, clients, tunnelClients, monitor, broadcastPresence, stateMessage, replayMonitor, monitorInput, handleClientMessage, dropWatcher } = deps;
   const log = deps.log ?? ((message: string, detail: string): void => console.error(message, detail));
+  const maxClients = resolveMaxClients(deps.env ?? process.env);
 
   /** Reap wired to the exact body of the close handler below, so a reaped peer is
    * indistinguishable from a normal disconnect to every other subsystem (S13). */
@@ -101,6 +123,13 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
     const decision = admitDecision(req.url, pinGate, trustedLocal);
     if (!decision.ok) {
       ws.close(decision.code, decision.reason);
+      return;
+    }
+
+    // Connection cap (S16) — checked AFTER the PIN decision, so an unauthorised dial
+    // gets 4401 and can never consume (or probe) a slot; a full room answers 4429.
+    if (clients.size >= maxClients) {
+      ws.close(WS_CLOSE_ROOM_FULL, 'room full');
       return;
     }
 
