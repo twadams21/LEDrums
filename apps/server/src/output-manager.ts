@@ -92,6 +92,11 @@ export class OutputManager {
   /** Generation counter guarding against status callbacks from a torn-down transport:
    * a closed dgram socket can still fire queued callbacks. */
   private transportGen = 0;
+  /** The map the LIVE transport was armed against. Teardown's blackout must address
+   * these universes — on a protocol flip the caller has already rebuilt dmxMap for the
+   * NEW protocol, and blacking out the new numbering over the still-open old socket
+   * would miss the old universes entirely (e.g. Art-Net 0 never blacked). */
+  private armedMap: DmxMap | null = null;
   private universeCount = 0;
   private settingsMonitorSignature = '';
   /** Dedup key for the universe-domain audit. Its OWN key, carrying WHICH universes are
@@ -120,13 +125,16 @@ export class OutputManager {
     // re-create the transport (alongside protocol/host/broadcast/port).
     const sig = `${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}|${settings.iface ?? ''}|${settings.priority}`;
     if (settings.state === 'armed') {
-      if (!this.output || sig !== this.signature) {
+      if (this.output && sig === this.signature) {
+        this.armedMap = dmxMap; // same transport, refreshed patch — blackout the latest map
+      } else {
         this.teardown(dmxMap, settings);
         try {
           this.output = this.factory(settings);
           this.signature = sig;
           this.lastError = null;
           this.transportError = null;
+          this.armedMap = dmxMap;
           const gen = ++this.transportGen;
           this.output.onStatus?.((s) => {
             if (gen !== this.transportGen) return; // stale transport — ignore
@@ -158,7 +166,9 @@ export class OutputManager {
   private auditUniverseDomain(settings: OutputSettings, dmxMap: DmxMap): void {
     const protocol = settings.protocol === 'sacn' ? 'sacn' : 'artnet';
     const bad = dmxMap.universes.filter((u) => !isUniverseValid(protocol, u.universe)).map((u) => u.universe);
-    const signature = `${settings.protocol}|${settings.state}|${bad.join(',')}`;
+    // No settings.state in the key (F5): an arming-state transition over the same bad
+    // set must not re-emit an identical row.
+    const signature = `${settings.protocol}|${bad.join(',')}`;
     if (signature === this.universeAuditSignature) return;
     this.universeAuditSignature = signature;
     if (bad.length === 0) return;
@@ -176,10 +186,13 @@ export class OutputManager {
 
   private teardown(dmxMap: DmxMap, settings: OutputSettings): void {
     if (this.output) {
-      this.blackout(dmxMap);
+      // Blackout the universes the transport was ARMED against, not the caller's map —
+      // on a protocol flip they differ (F1) and the old numbering is what is live.
+      this.blackout(this.armedMap ?? dmxMap);
       this.output.close();
       this.output = null;
       this.signature = '';
+      this.armedMap = null;
       this.transportGen++; // queued callbacks from the closed socket are now stale
     }
   }
@@ -326,6 +339,8 @@ export class OutputManager {
     if (this.output) {
       this.output.close();
       this.output = null;
+      this.armedMap = null;
+      this.transportGen++; // a queued dgram callback after close cannot latch a spurious fault
     }
   }
 
@@ -334,10 +349,16 @@ export class OutputManager {
   private emitMonitor(event: Omit<MonitorEvent, 'id' | 'time'>): void {
     try {
       this.onMonitor?.(event);
-    } catch {
-      /* a throwing sink must not reach the transmit path */
+    } catch (err) {
+      // Swallowed to protect transmit, but logged once so a broken sink stays visible.
+      if (!this.monitorSinkErrorLogged) {
+        this.monitorSinkErrorLogged = true;
+        console.error('[output-manager] monitor sink threw (suppressing further reports):', err);
+      }
     }
   }
+
+  private monitorSinkErrorLogged = false;
 
   private monitorPacketSummary(sample: Parameters<typeof this.outputDiag.record>[0]): void {
     const event = this.outputDiag.record(sample);

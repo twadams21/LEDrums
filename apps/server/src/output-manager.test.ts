@@ -422,6 +422,15 @@ describe('OutputManager universe-domain audit (S9)', () => {
     expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(2);
   });
 
+  it('an arming-state transition over the same bad set does not re-emit the audit row (F5)', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings({ ...sacn(), state: 'dry-run' }, mapWith(0, 1));
+    m.applySettings(sacn(), mapWith(0, 1)); // dry-run -> armed, identical bad set
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(1);
+  });
+
   it('Art-Net universe 0 is legal and stays silent', () => {
     const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
     const m = new OutputManager(() => new FakeOutput());
@@ -491,6 +500,41 @@ describe('OutputManager transport status (S7)', () => {
     expect(composed).toContain('net down');
     expect(composed).toContain('EMCASTIFACE');
     expect(composed).toContain(' | ');
+  });
+
+  it('teardown blackout addresses the universes the transport was ARMED against, not the post-flip map (F1)', () => {
+    const fakes: FakeOutput[] = [];
+    const m = new OutputManager(() => {
+      const f = new FakeOutput();
+      fakes.push(f);
+      return f;
+    });
+    const artnetMap: DmxMap = {
+      perPixel: [],
+      universes: [0, 1].map((universe) => ({ universe, channelCount: 3, pixels: [] })),
+    };
+    const sacnMap: DmxMap = {
+      perPixel: [],
+      universes: [1, 2].map((universe) => ({ universe, channelCount: 3, pixels: [] })),
+    };
+    m.applySettings(settings('armed'), artnetMap);
+    // Protocol flip: the caller (host) has already rebuilt the map for sACN. Teardown's
+    // blackout over the still-open Art-Net socket must hit the OLD 0-based universes.
+    m.applySettings({ ...settings('armed'), protocol: 'sacn' }, sacnMap);
+    const old = fakes[0]!;
+    expect(old.closed).toBe(true);
+    expect(old.sends.map((s) => s.universe)).toEqual([0, 1]);
+    expect(old.sends.every((s) => s.bytes.every((b) => b === 0))).toBe(true);
+  });
+
+  it('close() bumps the transport generation so a queued callback cannot latch a fault (F2)', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.close();
+    fake.emitStatus({ state: 'error', error: 'late after close', code: 'EBADF' });
+    expect(m.status().lastError).toBeNull();
   });
 
   it('a status from a torn-down transport is ignored', () => {

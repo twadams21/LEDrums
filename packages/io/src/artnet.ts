@@ -82,15 +82,18 @@ export class ArtNetOutput implements PixelOutput {
     this.status.subscribe(handler);
   }
 
+  /** Hoisted (F7): one shared completion callback, so the 44Hz send path allocates no closure. */
+  private readonly onSendComplete = (err: Error | null): void => {
+    if (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      this.status.set({ state: 'error', error: err.message, ...(code ? { code } : {}) });
+    }
+  };
+
   send(universe: number, channels: Uint8Array): void {
     if (!this.ready) return;
     const pkt = encodeArtDmx(universe, this.seq, channels);
-    this.socket.send(pkt, this.port, this.host, (err) => {
-      if (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        this.status.set({ state: 'error', error: err.message, ...(code ? { code } : {}) });
-      }
-    });
+    this.socket.send(pkt, this.port, this.host, this.onSendComplete);
   }
 
   close(): void {

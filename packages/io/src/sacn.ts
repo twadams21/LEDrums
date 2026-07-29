@@ -132,13 +132,16 @@ export class SacnOutput implements PixelOutput {
     if (!this.ready) return;
     const pkt = encodeE131(universe, this.seq, channels, this.cid, this.opts.sourceName, this.opts.priority);
     const host = this.opts.host ?? sacnMulticastAddress(universe);
-    this.socket.send(pkt, this.opts.port ?? SACN_PORT, host, (err) => {
-      if (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        this.status.set({ state: 'error', error: err.message, ...(code ? { code } : {}) });
-      }
-    });
+    this.socket.send(pkt, this.opts.port ?? SACN_PORT, host, this.onSendComplete);
   }
+
+  /** Hoisted (F7): one shared completion callback, so the 44Hz send path allocates no closure. */
+  private readonly onSendComplete = (err: Error | null): void => {
+    if (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      this.status.set({ state: 'error', error: err.message, ...(code ? { code } : {}) });
+    }
+  };
 
   close(): void {
     try {
