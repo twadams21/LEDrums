@@ -10,6 +10,7 @@ import { createWsConnectionHandler, type ConnectionRequest, type ConnectionSocke
 class FakeSocket implements ConnectionSocket {
   readonly OPEN = 1;
   readyState = 1;
+  bufferedAmount = 0;
   readonly sent: { data: string | Uint8Array; binary: boolean }[] = [];
   closed: { code?: number; reason?: string } | null = null;
   handlers: Record<string, (...args: unknown[]) => void> = {};

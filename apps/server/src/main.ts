@@ -255,11 +255,21 @@ const clients = new ClientRegistry<WebSocket>();
  * with the socket. */
 const tunnelClients = new WeakSet<WebSocket>();
 
-// The four socket-iterating broadcast closures live in ws-broadcast.ts (S11).
-const { broadcastJson, broadcastBinary, broadcastPresence, relayToOthers } = createBroadcaster<WebSocket>({
+// The socket-iterating broadcast closures live in ws-broadcast.ts (S11); its slow-peer
+// guard (S14) reaps through the SAME body as the keepalive's onDead, so a struck-out
+// peer is indistinguishable from a normal disconnect. Arrow bodies evaluate at sweep
+// time, after controllerMonitor exists.
+const broadcaster = createBroadcaster<WebSocket>({
   clients,
   encode: encodeServer,
+  monitor: (event) => monitor(event),
+  onSlowPeerDead: (ws) => {
+    clients.remove(ws);
+    controllerMonitor.dropWatcher(ws);
+    broadcastPresence();
+  },
 });
+const { broadcastJson, broadcastBinary, broadcastPresence, relayToOthers } = broadcaster;
 
 // Point the hoisted monitor bus (S6, above) at the real broadcast now that the
 // client registry + encoder wiring exist.
@@ -484,6 +494,7 @@ const wsConnectionHandler = createWsConnectionHandler<WebSocket>({
     monitorInput: (msg) => monitorInput(msg, 'ws'),
     handleClientMessage: (msg, ws) => handleClientMessage(msg, ws),
   dropWatcher: (ws) => controllerMonitor.dropWatcher(ws),
+  onKeepaliveSweep: () => broadcaster.sweepSlowPeers(),
 });
 wss.on('connection', wsConnectionHandler);
 

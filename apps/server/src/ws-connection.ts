@@ -47,6 +47,9 @@ export interface WsConnectionDeps<S extends ConnectionSocket> {
   log?(message: string, detail: string): void;
   /** Keepalive sweep period override (tests). */
   heartbeatMs?: number;
+  /** Called once per keepalive sweep AFTER the reap pass — the broadcaster's
+   * slow-peer strike clock (S14) rides here so strikes NEVER advance per broadcast. */
+  onKeepaliveSweep?(): void;
 }
 
 /** The connection handler plus the keepalive disposer boot.ts calls on shutdown. */
@@ -64,6 +67,7 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
    * indistinguishable from a normal disconnect to every other subsystem (S13). */
   const keepalive = createWsKeepalive<S>({
     heartbeatMs: deps.heartbeatMs,
+    onSweep: deps.onKeepaliveSweep,
     onDead: (ws) => {
       clients.remove(ws);
       dropWatcher(ws);

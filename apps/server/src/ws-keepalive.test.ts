@@ -99,6 +99,20 @@ describe('createWsKeepalive (S13)', () => {
     spy.mockRestore();
   });
 
+  it('onSweep fires once per sweep AFTER the reap pass (S14 strike clock)', () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    const keepalive = createWsKeepalive<FakeSocket>({
+      onDead: () => order.push('dead'),
+      onSweep: () => order.push('sweep'),
+    });
+    const ws = new FakeSocket();
+    keepalive.admit(ws);
+    vi.advanceTimersByTime(HEARTBEAT_MS * 2); // sweep 1 pings, sweep 2 reaps
+    expect(order).toEqual(['sweep', 'dead', 'sweep']);
+    keepalive.dispose();
+  });
+
   it('forget() removes a socket from the sweep (normal close path)', () => {
     vi.useFakeTimers();
     const { keepalive, dead } = harness();
