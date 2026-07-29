@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { createSocket, type Socket } from 'node:dgram';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createSocket, Socket } from 'node:dgram';
 import { ArtNetOutput, encodeArtDmx } from './artnet';
+import type { PixelOutputStatus } from './interfaces';
 
 /**
  * Characterization tests for the ArtNetOutput UDP socket lifecycle. Recorded at the
@@ -45,6 +46,8 @@ describe('ArtNetOutput socket lifecycle (characterization)', () => {
       const rx = await receiver();
       const out = new ArtNetOutput({ host: '127.0.0.1', port: rx.port, iface: '127.0.0.1' });
       cleanup.push(() => out.close());
+      const statuses: PixelOutputStatus[] = [];
+      out.onStatus((s) => statuses.push(s));
       const data = new Uint8Array(512).fill(9);
       out.nextFrame(); // seq -> 1
       // The bind is asynchronous and send() drops frames until ready; retry the same
@@ -59,27 +62,86 @@ describe('ArtNetOutput socket lifecycle (characterization)', () => {
       expect(got[7]).toBe(0);
       expect(got.length).toBe(530);
       expect(got.equals(Buffer.from(encodeArtDmx(1, 1, data)))).toBe(true);
+      expect(statuses).toContainEqual({ state: 'ready' });
     },
   );
 
+  // INVERTED from the S1 recording ("a bind failure is currently silent"): the bind
+  // failure is now observable through onStatus, while send() still never throws.
   it(
-    'a bind failure is currently silent: no throw, no status channel, nothing delivered within a 1000ms budget',
-    { timeout: 3000 },
+    'a bind failure now emits an observable error status; send still never throws',
+    { timeout: 2000 },
     async () => {
       const rx = await receiver();
       const out = new ArtNetOutput({ host: '127.0.0.1', port: rx.port, iface: TEST_NET_3 });
       cleanup.push(() => out.close());
       out.nextFrame();
-      // Today the adapter exposes no way to observe the failed bind. S4/S5 invert this.
-      expect('onStatus' in out).toBe(false);
+      const status = new Promise<PixelOutputStatus>((res) => out.onStatus((s) => res(s)));
       expect(() => out.send(1, new Uint8Array(512))).not.toThrow();
-      // Timing-bounded NEGATIVE assertion (not a deterministic proof): with the bind
-      // failed, nothing should reach the receiver inside a generous 1000ms budget.
-      const delivered = await Promise.race([
-        rx.first.then(() => true),
-        new Promise<boolean>((res) => setTimeout(() => res(false), 1000)),
-      ]);
-      expect(delivered).toBe(false);
+      const s = await status;
+      expect(s.state).toBe('error');
+      expect(s.error).toBeTruthy();
+      expect(['EADDRNOTAVAIL', 'EINVAL']).toContain(s.code); // platform-dependent
     },
   );
+
+  it(
+    'a subscriber attaching after the bind resolves is replayed the latched ready status',
+    { timeout: 2000 },
+    async () => {
+      const out = new ArtNetOutput({ host: '127.0.0.1', port: 65000, iface: '127.0.0.1' });
+      cleanup.push(() => out.close());
+      // Wait for the bind via a first subscriber…
+      await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+      // …then a LATE subscriber must be replayed the latched value immediately.
+      const seen: PixelOutputStatus[] = [];
+      out.onStatus((s) => seen.push(s));
+      expect(seen).toEqual([{ state: 'ready' }]);
+    },
+  );
+
+  it(
+    'a throwing subscriber escapes neither the adapter nor the process',
+    { timeout: 2000 },
+    async () => {
+      let uncaught = false;
+      const sentinel = (): void => {
+        uncaught = true;
+      };
+      process.once('uncaughtException', sentinel);
+      process.once('unhandledRejection', sentinel);
+      try {
+        const rx = await receiver();
+        const out = new ArtNetOutput({ host: '127.0.0.1', port: rx.port, iface: '127.0.0.1' });
+        cleanup.push(() => out.close());
+        out.onStatus(() => {
+          throw new Error('bad subscriber');
+        });
+        await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+        out.nextFrame();
+        expect(() => out.send(1, new Uint8Array(512))).not.toThrow();
+        await rx.first;
+        // Give any queued microtask/callback a beat to surface before asserting.
+        await new Promise((res) => setTimeout(res, 50));
+        expect(uncaught).toBe(false);
+      } finally {
+        process.removeListener('uncaughtException', sentinel);
+        process.removeListener('unhandledRejection', sentinel);
+      }
+    },
+  );
+
+  it('a broadcast-mode instance still calls socket.setBroadcast(true)', { timeout: 2000 }, async () => {
+    // Loopback cannot observe broadcast mode on the wire; a prototype spy locks the
+    // option so it cannot be silently dropped by a refactor.
+    const spy = vi.spyOn(Socket.prototype, 'setBroadcast').mockImplementation(() => {});
+    try {
+      const out = new ArtNetOutput({ host: '255.255.255.255', broadcast: true, iface: '127.0.0.1' });
+      cleanup.push(() => out.close());
+      await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+      expect(spy).toHaveBeenCalledWith(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
