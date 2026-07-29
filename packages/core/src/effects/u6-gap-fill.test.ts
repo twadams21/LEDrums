@@ -1,61 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseKit } from '../geometry/kit-schema';
-import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
+import { model, transport, ctx, trig, render, litIds, finite01Failures } from '../test-support/effect-harness';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import { canvasEffectId } from '../canvas/ids';
 import { tryGetCanvasEffect } from '../canvas/registry';
-import { defaultParams, type EffectGenerator, type ResolvedParams } from './types';
+import { type EffectGenerator } from './types';
 import { orbitComet } from './impl/orbit-comet';
 import { scanPlane } from './impl/scan-plane';
 import { drumSonar } from './impl/drum-sonar';
 import { gravityDrops } from './impl/gravity-drops';
-
-function model(drums = 2, hoopCount = 4): PixelModel {
-  const drumDefs = [];
-  for (let i = 0; i < drums; i++) {
-    drumDefs.push({ id: `d${i}`, diameterIn: 8, hoopSpacingMm: 50, origin: { x: i * 600, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } });
-  }
-  return buildPixelModel(parseKit({ global: { ledDensityPxPerM: 40, hoopCount, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 }, drums: drumDefs }));
-}
-
-function transport(beat = 0, timeMs = 0): TransportState {
-  return { timeMs, beat, bar: Math.floor(beat / 4), beatInBar: beat % 4, bpm: 120, beatsPerBar: 4, playing: true };
-}
-
-function ctx(m: PixelModel, opts: Partial<RenderContext> = {}): RenderContext {
-  return { model: m, timeMs: opts.timeMs ?? 0, dt: opts.dt ?? 16, transport: opts.transport ?? transport(0, opts.timeMs ?? 0), triggers: opts.triggers ?? [] };
-}
-
-function trig(seq: number, drumId: string, note: number, velocity: number, ageMs: number): Trigger {
-  return { seq, drumId, note, velocity, ageMs, timeMs: 0 };
-}
-
-function render<S>(effect: EffectGenerator<S>, m: PixelModel, c: RenderContext, params?: ResolvedParams, state?: S): Framebuffer {
-  const fb = new Framebuffer(m.pixelCount);
-  const p = { ...defaultParams(effect.paramSpec), ...params };
-  const s = state ?? (effect.createState ? effect.createState(m, 123) : (undefined as S));
-  effect.render(c, p, fb, s);
-  return fb;
-}
-
-function litIds(fb: Framebuffer): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < fb.pixelCount; i++) {
-    const j = i * 4;
-    if (fb.rgba[j]! > 0.004 || fb.rgba[j + 1]! > 0.004 || fb.rgba[j + 2]! > 0.004) out.push(i);
-  }
-  return out;
-}
-
-function assertFinite01(fb: Framebuffer, id: string): void {
-  for (let i = 0; i < fb.rgba.length; i++) {
-    const v = fb.rgba[i]!;
-    expect(Number.isFinite(v), `${id} channel ${i}`).toBe(true);
-    expect(v >= 0 && v <= 1, `${id} channel ${i} = ${v}`).toBe(true);
-  }
-}
 
 describe('U6 built-in canvas scenes', () => {
   it('registers at least ten scene-backed canvas generators with descriptions and tags', () => {
@@ -86,8 +39,8 @@ describe('U6 gap-fill natives', () => {
     const triggers = [trig(1, 'd0', 36, 0.8, 40), trig(2, 'd1', 38, 1, 120)];
     for (const e of effects) {
       const state = e.createState!(m, 99);
-      const fb = render(e, m, ctx(m, { dt: 0, timeMs: 180, transport: transport(1.2, 180), triggers }), {}, state);
-      assertFinite01(fb, e.id);
+      const fb = render(e, m, ctx(m, { dt: 0, timeMs: 180, transport: transport(1.2, 180), triggers }), {}, state, 123);
+      expect(finite01Failures(fb, e.id)).toEqual([]);
       expect(litIds(fb).length, e.id).toBeGreaterThan(0);
     }
   });
@@ -97,8 +50,8 @@ describe('U6 gap-fill natives', () => {
     for (const e of effects) {
       const run = (): Framebuffer => {
         const state = e.createState!(m, 42);
-        render(e, m, ctx(m, { dt: 0, triggers: [trig(1, 'd0', 36, 1, 0), trig(2, 'd1', 38, 0.7, 80)] }), {}, state);
-        return render(e, m, ctx(m, { dt: 240, timeMs: 240, transport: transport(0.5, 240) }), {}, state);
+        render(e, m, ctx(m, { dt: 0, triggers: [trig(1, 'd0', 36, 1, 0), trig(2, 'd1', 38, 0.7, 80)] }), {}, state, 123);
+        return render(e, m, ctx(m, { dt: 240, timeMs: 240, transport: transport(0.5, 240) }), {}, state, 123);
       };
       expect(run().rgba, e.id).toEqual(run().rgba);
     }
@@ -111,10 +64,10 @@ describe('U6 gap-fill natives', () => {
     const scanState = scanPlane.createState!(m);
     const sonarState = drumSonar.createState!(m);
     const dropsState = gravityDrops.createState!(m);
-    render(orbitComet, m, ctx(m, { dt: 0, triggers }), {}, orbitState);
-    render(scanPlane, m, ctx(m, { dt: 0, triggers }), {}, scanState);
-    render(drumSonar, m, ctx(m, { dt: 0, triggers }), {}, sonarState);
-    render(gravityDrops, m, ctx(m, { dt: 0, triggers }), {}, dropsState);
+    render(orbitComet, m, ctx(m, { dt: 0, triggers }), {}, orbitState, 123);
+    render(scanPlane, m, ctx(m, { dt: 0, triggers }), {}, scanState, 123);
+    render(drumSonar, m, ctx(m, { dt: 0, triggers }), {}, sonarState, 123);
+    render(gravityDrops, m, ctx(m, { dt: 0, triggers }), {}, dropsState, 123);
     expect(orbitState.em.emissions.length).toBe(2);
     expect(scanState.em.emissions.length).toBe(2);
     expect(sonarState.em.emissions.length).toBe(2);

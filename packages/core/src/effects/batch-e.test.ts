@@ -1,82 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { parseKit } from '../geometry/kit-schema';
-import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
-import { defaultParams, type EffectGenerator, type ResolvedParams } from './types';
+import type { Trigger } from '../engine/render-context';
+import { model, transport, ctx, trig, render, litIds, finite01Failures } from '../test-support/effect-harness';
+import { type EffectGenerator } from './types';
 import { createEmitterState, updateEmissions, MAX_EMISSIONS } from './emitter';
 import { chaseBands } from './impl/chase-bands';
 import { ripple3d } from './impl/ripple-3d';
 import { sparkArc } from './impl/spark-arc';
 import { rain3d } from './impl/rain-3d';
-
-function model(drums = 2, hoopCount = 4): PixelModel {
-  const drumDefs = [];
-  for (let i = 0; i < drums; i++) {
-    drumDefs.push({
-      id: `d${i}`,
-      diameterIn: 8,
-      hoopSpacingMm: 50,
-      origin: { x: i * 600, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0 },
-    });
-  }
-  return buildPixelModel(
-    parseKit({
-      global: { ledDensityPxPerM: 40, hoopCount, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 },
-      drums: drumDefs,
-    }),
-  );
-}
-
-function transport(beat = 0, timeMs = 0): TransportState {
-  return { timeMs, beat, bar: Math.floor(beat / 4), beatInBar: beat % 4, bpm: 120, beatsPerBar: 4, playing: true };
-}
-
-function ctx(m: PixelModel, opts: Partial<RenderContext> = {}): RenderContext {
-  return {
-    model: m,
-    timeMs: opts.timeMs ?? 0,
-    dt: opts.dt ?? 16,
-    transport: opts.transport ?? transport(0, opts.timeMs ?? 0),
-    triggers: opts.triggers ?? [],
-  };
-}
-
-function trig(seq: number, drumId: string, note: number, velocity: number, ageMs: number): Trigger {
-  return { seq, drumId, note, velocity, ageMs, timeMs: 0 };
-}
-
-function render<S>(
-  effect: EffectGenerator<S>,
-  m: PixelModel,
-  c: RenderContext,
-  params?: ResolvedParams,
-  state?: S,
-): Framebuffer {
-  const fb = new Framebuffer(m.pixelCount);
-  const p = { ...defaultParams(effect.paramSpec), ...params };
-  const s = state ?? (effect.createState ? effect.createState(m) : (undefined as S));
-  effect.render(c, p, fb, s);
-  return fb;
-}
-
-function litIds(fb: Framebuffer): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < fb.pixelCount; i++) {
-    const j = i * 4;
-    if (fb.rgba[j]! > 0.004 || fb.rgba[j + 1]! > 0.004 || fb.rgba[j + 2]! > 0.004) out.push(i);
-  }
-  return out;
-}
-
-function assertFinite01(fb: Framebuffer, id: string): void {
-  for (let i = 0; i < fb.rgba.length; i++) {
-    const v = fb.rgba[i]!;
-    expect(Number.isFinite(v), `${id} channel ${i}`).toBe(true);
-    expect(v >= 0 && v <= 1, `${id} channel ${i} = ${v}`).toBe(true);
-  }
-}
 
 describe('emitter', () => {
   it('spawns once per seq, ages by dt, expires at ttl', () => {
@@ -116,7 +47,7 @@ describe('batch-e: all four render finite [0,1]', () => {
     for (const e of [chaseBands, ripple3d, sparkArc, rain3d] as EffectGenerator<unknown>[]) {
       const state = e.createState!(m);
       const fb = render(e, m, ctx(m, { timeMs: 250, transport: transport(2.3, 250), triggers }), {}, state);
-      assertFinite01(fb, e.id);
+      expect(finite01Failures(fb, e.id)).toEqual([]);
     }
   });
 });
@@ -231,7 +162,7 @@ describe('rain-3d', () => {
     let anyLit = 0;
     for (let f = 0; f < 120; f++) {
       const fb = render(rain3d, m, ctx(m, { timeMs: f * 16, dt: 16 }), { density: 64 }, state);
-      assertFinite01(fb, 'rain-3d');
+      expect(finite01Failures(fb, 'rain-3d')).toEqual([]);
       anyLit += litIds(fb).length;
     }
     expect(anyLit).toBeGreaterThan(0);
