@@ -198,9 +198,14 @@ const showLibrarySlot = createPersistedSlot<ShowLibraryBlob, ReturnType<typeof i
   label: 'Show library',
   destination: 'show-library',
   inspect: inspectShowLibraryFile,
-  // Boot recovery order (S10): the snapshot bundle wins when it carries a versioned envelope,
-  // otherwise fall back to the standalone file.
-  load: () => (isVersionedBlob(projectLoad.showLibrary) ? projectLoad.showLibrary : loadShowLibrary()),
+  // Boot recovery order (S10 + review N7): on a snapshot-recovered boot the bundle is the ONLY
+  // source — a bundle without a library seeds empty rather than silently pairing the rolled-back
+  // project with the current on-disk file (HARD RULE 2 in boot-project.ts). Clean boots load the
+  // standalone file as always.
+  load: () =>
+    projectLoad.source === 'snapshot'
+      ? (isVersionedBlob(projectLoad.showLibrary) ? projectLoad.showLibrary : null)
+      : loadShowLibrary(),
   save: saveShowLibraryAsync,
   monitor,
 });
@@ -212,10 +217,25 @@ const songLibrarySlot = createPersistedSlot<SongLibraryBlob, ReturnType<typeof i
   label: 'Song library',
   destination: 'song-library',
   inspect: inspectSongLibraryFile,
-  load: () => (isVersionedBlob(projectLoad.songLibrary) ? projectLoad.songLibrary : loadSongLibrary()),
+  load: () =>
+    projectLoad.source === 'snapshot'
+      ? (isVersionedBlob(projectLoad.songLibrary) ? projectLoad.songLibrary : null)
+      : loadSongLibrary(),
   save: saveSongLibraryAsync,
   monitor,
 });
+
+// Whole-bundle recovery must PERSIST (review N7): the slots above seed from the snapshot
+// bundle in memory only, so without this the next boot would pair old on-disk library files
+// with the recovered project. Re-set() each recovered blob so the slot autosaves it to disk,
+// exactly like applyRestoredSnapshot; a bundle with no library seeds empty (above) and says
+// so on the Monitor — never a silent fallback to the current file.
+if (projectLoad.source === 'snapshot') {
+  if (isVersionedBlob(projectLoad.showLibrary)) showLibrarySlot.set(projectLoad.showLibrary);
+  else monitor({ type: 'error', direction: 'local', source: 'server', destination: 'show-library', label: 'Boot recovery: show library missing from snapshot bundle', detail: 'seeded empty; the on-disk show library file is ignored this run' });
+  if (isVersionedBlob(projectLoad.songLibrary)) songLibrarySlot.set(projectLoad.songLibrary);
+  else monitor({ type: 'error', direction: 'local', source: 'server', destination: 'song-library', label: 'Boot recovery: song library missing from snapshot bundle', detail: 'seeded empty; the on-disk song library file is ignored this run' });
+}
 
 // --- HTTP + static + WS -----------------------------------------------------
 
