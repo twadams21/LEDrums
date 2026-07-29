@@ -53,6 +53,10 @@ export interface VoiceHostStats {
 
 const TICK_MS = 1000 / 120; // fixed-timestep target (~120fps) — the voice path runs hot
 const MAX_DT_MS = 100; // clamp to survive GC pauses / tab throttling
+/** At most one 'Render frame faulted' monitor report per this window (review N3) —
+ * wall-clock, so no fault PATTERN (consecutive, alternating, bursty) can flood the
+ * Monitor ring or the error Reporter. Named + test-asserted. */
+export const FRAME_FAULT_REPORT_WINDOW_MS = 1_000;
 const PREVIEW_FPS = 30; // WS preview broadcast throttle
 
 /**
@@ -479,25 +483,30 @@ export class VoiceEngineHost {
     }, TICK_MS);
   }
 
-  /** Consecutive faulted frames; reset by the first clean frame. Drives the
-   * rate-limited 'Render frame faulted' monitor event (first fault, then every
-   * 120th consecutive) so a 120 Hz deterministic throw cannot flood the Monitor
-   * bus or the error Reporter. */
-  private consecutiveFrameFaults = 0;
+  /** Time-window limiter for the 'Render frame faulted' monitor event (review N3).
+   * A consecutive-run counter reports n===1 on EVERY fault of an every-other-frame
+   * pattern (up to 60 events/s, wiping the 300-row monitor ring), so the limit is
+   * on the wall clock instead: the first fault reports immediately, then at most
+   * one summary per {@link FRAME_FAULT_REPORT_WINDOW_MS} carrying the fault count
+   * accumulated since the last report — whatever the fault pattern. */
+  private faultsSinceReport = 0;
+  private lastFaultReportAt: number | null = null;
 
   private recordFrameFault(err: unknown): void {
-    this.consecutiveFrameFaults++;
-    const n = this.consecutiveFrameFaults;
-    if (n === 1 || n % 120 === 0) {
-      this.monitorSink?.({
-        type: 'error',
-        direction: 'local',
-        source: 'server/voice-engine',
-        destination: 'render-loop',
-        label: 'Render frame faulted',
-        detail: `${err instanceof Error ? err.message : String(err)}${n > 1 ? ` (×${n} consecutive)` : ''}`,
-      });
-    }
+    this.faultsSinceReport++;
+    const now = nowWall();
+    if (this.lastFaultReportAt !== null && now - this.lastFaultReportAt < FRAME_FAULT_REPORT_WINDOW_MS) return;
+    const n = this.faultsSinceReport;
+    this.monitorSink?.({
+      type: 'error',
+      direction: 'local',
+      source: 'server/voice-engine',
+      destination: 'render-loop',
+      label: 'Render frame faulted',
+      detail: `${err instanceof Error ? err.message : String(err)}${n > 1 ? ` (×${n} since last report)` : ''}`,
+    });
+    this.lastFaultReportAt = now;
+    this.faultsSinceReport = 0;
   }
 
   /** One wall-clock loop iteration: catch the accumulator up in fixed steps. */
@@ -511,7 +520,6 @@ export class VoiceEngineHost {
     // Drain accumulated time in fixed steps. At 120fps a 100ms pause is 12 steps,
     // so the catch-up budget is double the legacy host's to keep wall-clock honest.
     let steps = 0;
-    let faulted = false;
     while (this.accumulator >= TICK_MS && steps < 12) {
       // Per-frame exception boundary (resilience-hole-0001): one throw in an authored
       // effect must not kill the process and freeze the rig lit. Contain it HERE — the
@@ -523,13 +531,11 @@ export class VoiceEngineHost {
       } catch (err) {
         this.recordFrameFault(err);
         this.accumulator = 0; // abandon this frame's catch-up; next frame starts clean
-        faulted = true;
         break;
       }
       this.accumulator -= TICK_MS;
       steps++;
     }
-    if (!faulted && steps > 0) this.consecutiveFrameFaults = 0;
     if (this.accumulator >= TICK_MS) this.accumulator = 0; // drop backlog; never spiral
   }
 
