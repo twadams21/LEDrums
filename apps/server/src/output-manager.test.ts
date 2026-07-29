@@ -503,6 +503,44 @@ describe('OutputManager transport status (S7)', () => {
     expect(m.status().lastError).toBeNull();
   });
 
+  it('sendFrame performs no work proportional to status subscribers (non-negotiable: no work in the send path)', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    let invocations = 0;
+    for (let i = 0; i < 100; i++) fake.onStatus(() => invocations++);
+    for (let i = 0; i < 100; i++) m.sendFrame(fb.rgba, dmxMap);
+    // Status is emitted only from socket callbacks, never from the send path.
+    expect(invocations).toBe(0);
+  });
+
+  it('forwards transport errors 1:1 — the adapter latch is what bounds them', () => {
+    // The 44Hz flap bound is proven in packages/io/src/status-latch.test.ts (fake-clock,
+    // exact count); the manager itself deliberately adds no second limiter.
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    for (let i = 0; i < 1000; i++) fake.emitStatus({ state: 'error', error: `e${i}`, code: 'EX' });
+    expect(events.filter((e) => e.label === 'Output transport error')).toHaveLength(1000);
+  });
+
+  it('a throwing monitor sink cannot kill an armed transport', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = () => {
+      throw new Error('sink down');
+    };
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    expect(() => fake.emitStatus({ state: 'error', error: 'x', code: 'EX' })).not.toThrow();
+    expect(() => m.sendFrame(fb.rgba, dmxMap)).not.toThrow();
+    expect(fake.sends.length).toBeGreaterThan(0);
+  });
+
   it('a PixelOutput with no onStatus still arms and transmits', () => {
     const sends: number[] = [];
     const bare: PixelOutput = {

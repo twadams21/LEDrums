@@ -156,7 +156,7 @@ export class OutputManager {
     if (signature === this.universeAuditSignature) return;
     this.universeAuditSignature = signature;
     if (bad.length === 0) return;
-    this.onMonitor?.({
+    this.emitMonitor({
       type: 'output',
       direction: 'out',
       source: 'server/output',
@@ -290,7 +290,7 @@ export class OutputManager {
         universes.push(patch.universe);
       }
       if (this.settings) {
-        this.onMonitor?.({
+        this.emitMonitor({
           type: 'output',
           direction: 'out',
           source: 'server',
@@ -323,9 +323,19 @@ export class OutputManager {
     }
   }
 
+  /** Diagnostics must never take down transmit: a throwing monitor sink is swallowed here,
+   * so no send/blackout/status path can be killed by its own telemetry. */
+  private emitMonitor(event: Omit<MonitorEvent, 'id' | 'time'>): void {
+    try {
+      this.onMonitor?.(event);
+    } catch {
+      /* a throwing sink must not reach the transmit path */
+    }
+  }
+
   private monitorPacketSummary(sample: Parameters<typeof this.outputDiag.record>[0]): void {
     const event = this.outputDiag.record(sample);
-    if (event) this.onMonitor?.(event);
+    if (event) this.emitMonitor(event);
   }
 
   private monitorSettings(settings: OutputSettings, dmxMap: DmxMap): void {
@@ -334,7 +344,7 @@ export class OutputManager {
     this.settingsMonitorSignature = signature;
 
     const label = settings.state === 'armed' ? 'Output armed' : settings.state === 'dry-run' ? 'Output dry-run' : 'Output disabled';
-    this.onMonitor?.({
+    this.emitMonitor({
       type: 'output',
       direction: 'out',
       source: 'server',
@@ -345,7 +355,7 @@ export class OutputManager {
   }
 
   private monitorError(label: string, settings: OutputSettings, detail: string): void {
-    this.onMonitor?.({
+    this.emitMonitor({
       type: 'error',
       direction: 'out',
       source: 'server/output',

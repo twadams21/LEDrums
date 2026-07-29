@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createSocket, Socket } from 'node:dgram';
 import { ArtNetOutput, encodeArtDmx } from './artnet';
 import type { PixelOutputStatus } from './interfaces';
@@ -130,6 +131,51 @@ describe('ArtNetOutput socket lifecycle (characterization)', () => {
       }
     },
   );
+
+  it('send() returns before the dgram completion callback runs, and the adapters contain no sync IO', async () => {
+    // STRUCTURAL no-sync-IO lock (S10d): a wall-clock bound both false-fails under the
+    // gates mutex and false-passes on a fast box; instead prove nothing awaits the socket.
+    const order: string[] = [];
+    const spy = vi
+      .spyOn(Socket.prototype, 'send')
+      .mockImplementation(function (this: Socket, ...args: unknown[]) {
+        const cb = args[args.length - 1] as (err: Error | null) => void;
+        queueMicrotask(() => {
+          order.push('callback');
+          cb(null);
+        });
+      } as never);
+    try {
+      const out = new ArtNetOutput({ host: '127.0.0.1', port: 65003, iface: '127.0.0.1' });
+      cleanup.push(() => out.close());
+      await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+      out.nextFrame();
+      out.send(1, new Uint8Array(512));
+      order.push('returned');
+      await new Promise((res) => setTimeout(res, 0));
+      expect(order).toEqual(['returned', 'callback']);
+    } finally {
+      spy.mockRestore();
+    }
+    for (const file of ['./artnet.ts', './sacn.ts']) {
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      expect(src).not.toMatch(/\bawait\b|\bexecSync\b|Atomics\.wait/);
+    }
+  });
+
+  it('smoke check (not a proof): 44 successive real-socket sends stay inside a generous 250ms budget', { timeout: 2000 }, async () => {
+    const rx = await receiver();
+    const out = new ArtNetOutput({ host: '127.0.0.1', port: rx.port, iface: '127.0.0.1' });
+    cleanup.push(() => out.close());
+    await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+    const data = new Uint8Array(512);
+    const started = performance.now();
+    for (let i = 0; i < 44; i++) {
+      out.nextFrame();
+      out.send(1, data);
+    }
+    expect(performance.now() - started).toBeLessThan(250);
+  });
 
   it('a broadcast-mode instance still calls socket.setBroadcast(true)', { timeout: 2000 }, async () => {
     // Loopback cannot observe broadcast mode on the wire; a prototype spy locks the
