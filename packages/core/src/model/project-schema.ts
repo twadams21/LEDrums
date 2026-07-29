@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BLEND_MODES } from '../color/blend';
 import { kitSchema, rgbOrderSchema } from '../geometry/kit-schema';
-import { migrateKit } from '../geometry/kit-migrations';
+import { assertKitVersion } from '../geometry/kit-migrations';
 
 /** A control source feeds a live value (0..1 conceptually) into a parameter. */
 export const controlSourceSchema = z.discriminatedUnion('type', [
@@ -230,48 +230,20 @@ export type Project = z.infer<typeof projectSchema>;
 export type ProjectPatch = z.infer<typeof projectPatchSchema>;
 
 /**
- * B5 (kit v < 6): seed the project's controller-level RGB order onto each kit output that lacks
- * its own. RGB order moved from the single controller value to per-output (per data run); an
- * established project's one order becomes every output's order, so nothing changes on the wire.
- * The controller field itself stays for now (removed by C1). This is a PROJECT-scoped step —
- * unlike the other kit migrations it needs `project.output`, a field {@link migrateKit} can't see.
- * Operates on the (already kit-migrated) raw kit; outputs of foreign shape pass through untouched.
+ * Apply the kit version gate to a raw project/patch object's `kit`, leaving every other slice
+ * untouched. Foreign shapes pass through so the schema reports them.
+ *
+ * This used to be the PROJECT half of the migration ladder: it seeded the controller-level RGB
+ * order onto each output of a v<6 kit, because that source field lives on `project.output` —
+ * outside the kit, invisible to the kit-only migrator. The v7 floor (Decision 6) rejects a v<6
+ * kit outright, so that seed became unreachable and was deleted with the rest of the ladder.
+ * The wrapper survives as the project-level seam: a future kit migration that needs
+ * project-scoped context plugs in here, beside {@link assertKitVersion}.
  */
-function seedOutputRgbOrder(rawKit: unknown, controllerOrder: string): unknown {
-  if (!rawKit || typeof rawKit !== 'object' || Array.isArray(rawKit)) return rawKit;
-  const kit = rawKit as Record<string, unknown>;
-  if (!Array.isArray(kit.outputs)) return rawKit;
-  return {
-    ...kit,
-    outputs: kit.outputs.map((o) => {
-      if (!o || typeof o !== 'object' || Array.isArray(o)) return o;
-      const out = o as Record<string, unknown>;
-      return out.rgbOrder === undefined ? { ...out, rgbOrder: controllerOrder } : out;
-    }),
-  };
-}
-
-/** Replace a raw project/patch object's `kit` with its version-migrated form (A1 hoop indexing,
- *  … B5 per-output RGB order), leaving every other slice untouched. Foreign shapes pass through. */
 function migrateProjectKit(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !('kit' in raw)) return raw;
   const obj = raw as Record<string, unknown>;
-  const rawKit = obj.kit;
-  // The kit's ORIGINAL version gates the per-output-order seed (migrateKit will bump it to current).
-  const kitVersion =
-    rawKit && typeof rawKit === 'object' && !Array.isArray(rawKit) && typeof (rawKit as Record<string, unknown>).version === 'number'
-      ? ((rawKit as Record<string, unknown>).version as number)
-      : 1;
-  let kit = migrateKit(rawKit);
-  if (kitVersion < 6) {
-    const out = obj.output;
-    const controllerOrder =
-      out && typeof out === 'object' && !Array.isArray(out) && typeof (out as Record<string, unknown>).rgbOrder === 'string'
-        ? ((out as Record<string, unknown>).rgbOrder as string)
-        : 'RGB'; // outputSettingsSchema default
-    kit = seedOutputRgbOrder(kit, controllerOrder);
-  }
-  return { ...obj, kit };
+  return { ...obj, kit: assertKitVersion(obj.kit) };
 }
 
 /** Parse + validate a project JSON, applying kit version migrations + defaults. Throws

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit, type OutputConfig } from '../geometry/kit-schema';
+import { CURRENT_KIT_VERSION } from '../geometry/kit-migrations';
 import { drumHoopCount } from '../geometry/kit-queries';
 import { buildPixelModel } from '../geometry/pixel-model';
 import { buildDmxMap } from '../geometry/dmx-map';
@@ -12,9 +13,10 @@ import {
 } from './routing-integrity';
 import { DEFAULT_KIT } from './defaults';
 
-// Hoop indices are 1-based (A1): hoop 1 is the first hoop. Fixtures below build a
-// version-2 kit (already 1-based) so parseKit does not re-shift their hoop ranges. (Parse
-// still runs the B2 expanded default-ON step, which is irrelevant to routing integrity.)
+// Hoop indices are 1-based (A1): hoop 1 is the first hoop. Fixtures below build a kit at the
+// CURRENT version with `expanded` set explicitly — they used to be authored at v2 and rely on
+// the ladder's B2 default-ON step, which died with the v7 floor. `expanded` is irrelevant to
+// routing integrity either way; it is pinned only to keep these goldens byte-identical.
 // D1: an output carries its `segments` chain directly — the intermediate data line is gone,
 // so a hoop driven by two runs is now a collision across two OUTPUTS (not two data lines).
 
@@ -24,8 +26,8 @@ function kit(
   outputs: unknown[] = [],
 ) {
   return parseKit({
-    version: 2,
-    global: { ledDensityPxPerM: 100, hoopCount: 1, defaultHoopSpacingMm: 50 },
+    version: CURRENT_KIT_VERSION,
+    global: { ledDensityPxPerM: 100, hoopCount: 1, defaultHoopSpacingMm: 50, expanded: true },
     drums: drums.map((d, i) => ({
       id: d.id,
       diameterIn: 6,

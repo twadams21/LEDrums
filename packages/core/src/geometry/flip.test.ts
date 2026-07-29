@@ -27,7 +27,8 @@ function kit(flip: boolean, overrides: Record<string, unknown> = {}): KitConfig 
       },
     ],
     // A real single-output topology so the DMX map is a meaningful byte-exact golden.
-    outputs: [{ id: 'o1', channelsPerPixel: 3, dataLines: [{ id: 'o1:dl0', segments: [{ drumId: 'kick', hoopStart: 0, hoopEnd: 3 }] }] }],
+    // D1 shape, 1-based hoops (A1) — authored directly now that the ladder is gone.
+    outputs: [{ id: 'o1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] }],
   });
 }
 

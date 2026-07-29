@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';
+import { CURRENT_KIT_VERSION, assertKitVersion } from './kit-migrations';
 
 /** A 3D vector in millimetres (kit space). */
 export const vec3Schema = z.object({
@@ -32,17 +32,17 @@ export const drumSchema = z.object({
    * carries its own {@link hoopConfigSchema.pixelCount} + `reverse`, and the array length IS the
    * drum's hoop count (overriding `hoopCount`/density resolution). Every hoop is a first-class
    * object (matching the v2 patch graph where a hoop is a selectable node) — NOT a sparse
-   * override map. Optional for back-compat: a drum without `hoops` resolves the legacy uniform
-   * way (`pixelsPerHoop`/density × `hoopCount`). The v<5 migrator expands legacy drums into an
-   * explicit `hoops[]`. */
+   * override map. Optional: a drum without `hoops` resolves the uniform way
+   * (`pixelsPerHoop`/density × `hoopCount`) — still a supported authoring shape, not a legacy
+   * one, since the v<5 expander was deleted with the ladder (see {@link CURRENT_KIT_VERSION}). */
   hoops: z.array(hoopConfigSchema).min(1).optional(),
   /** Per-drum override of the global hoop count. Ignored when `hoops` is set (its length wins). */
   hoopCount: z.number().int().positive().optional(),
   /** Per-drum override of the global LED density (px/m). Ignored when `hoops` is set. */
   ledDensityPxPerM: z.number().positive().optional(),
-  /** Legacy uniform pixels-per-hoop. When set (and `hoops` absent), overrides the density
-   *  computation entirely. Superseded by per-hoop `hoops[].pixelCount`; kept for back-compat +
-   *  as the migrator's input. */
+  /** Uniform pixels-per-hoop. When set (and `hoops` absent), overrides the density
+   *  computation entirely. Superseded by per-hoop `hoops[].pixelCount`, which wins whenever
+   *  both are present; kept because a uniform drum is still a valid authoring shape. */
   pixelsPerHoop: z.number().int().positive().optional(),
   /** Rotates where pixel index 0 sits around the hoop. */
   localSpinDeg: z.number().default(0),
@@ -53,8 +53,8 @@ export const drumSchema = z.object({
   flip: z.boolean().optional(),
   /** Drum position in world space (mm): the drum's GEOMETRIC CENTRE — the midpoint of the
    * hoop stack (B3). Flip rotates the drum about this point in place, so `origin` (hence the
-   * drum's world position) is invariant to flip; only orientation changes. Pre-B3 kits stored
-   * `origin` at the first hoop and are shifted to this convention by {@link migrateKit}. The
+   * drum's world position) is invariant to flip; only orientation changes. Pre-B3 (v<4) kits
+   * stored `origin` at the first hoop; such a file is now REJECTED at load, not shifted. The
    * radial/3D effect (hit) origin is derived separately as the first-hoop centre in
    * {@link buildPixelModel} — it is NOT this point. */
   origin: vec3Schema,
@@ -80,8 +80,8 @@ export const drumSchema = z.object({
  *  daisy-chain (D1): a run extends while the next wired hoop is the same drum's very next
  *  hoop, and breaks (new segment) on any drum change or non-`+1` step. So `segments` in
  *  order, each expanded `hoopStart..hoopEnd` ASCENDING, reconstitutes the exact wired chain.
- *  Hoop indices are **1-based** (A1): the first hoop of a drum is hoop 1. Pre-A1 project
- *  files stored 0-based ranges and are shifted +1 by {@link migrateKit} on load. */
+ *  Hoop indices are **1-based** (A1): the first hoop of a drum is hoop 1. Pre-A1 (v1) files
+ *  stored 0-based ranges; such a file is now REJECTED at load, not shifted. */
 export const outputSegmentSchema = z.object({
   drumId: z.string().min(1),
   /** Inclusive hoop range carried on this segment (1-based), in chain order. */
@@ -108,8 +108,8 @@ const outputObjectSchema = z.object({
   channelsPerPixel: z.number().int().positive().default(3),
   /** Wiring RGB order for THIS output's strips (B5). Optional: absent → the packer falls back
    * to a sensible default (the controller-level order today, until C4 makes it a per-output
-   * control). Moved off the controller so different data runs may differ; the v<6 project
-   * migrator seeds each existing output with the controller-level order it inherited. */
+   * control). Moved off the controller so different data runs may differ; the v<6 project-layer
+   * seeder that back-filled it was deleted with the ladder. */
   rgbOrder: rgbOrderSchema.optional(),
   /** The output's ordered hoop chain, range-compressed (D1). May be EMPTY: outputs are a fixed
    *  set of physical controller ports (4 normal / 8 expanded, {@link logicalOutputCount}), so an
@@ -121,12 +121,16 @@ const outputObjectSchema = z.object({
 });
 
 /**
- * A physical controller output. Back-compat: a legacy output carrying the pre-D1
- * `dataLines: [{ segments }]` shape (that reached the schema un-migrated) is transparently
- * flattened — its data lines' segments concatenated in order into one `segments` chain — so
- * old saved payloads never crash. (The real v6→7 migration in {@link migrateKit} SPLITS a
- * multi-line output into one output per line, preserving output count; this preprocess is the
- * defensive single-output fallback for any stray un-migrated payload.)
+ * A physical controller output. DEFENCE IN DEPTH: an output carrying the pre-D1
+ * `dataLines: [{ segments }]` shape is transparently flattened — its data lines' segments
+ * concatenated in order into one `segments` chain — so such a payload never crashes.
+ *
+ * This is no longer a migration path. A genuine v<7 file is REJECTED before parse (the v7
+ * floor, {@link assertKitVersion}), so the only payload that can reach this preprocess is one
+ * CLAIMING v7 while carrying the old shape — i.e. hand-edited or corrupt. Note the fallback
+ * concatenates into ONE output where the deleted v6→7 migration SPLIT into one output per
+ * line, so the recovered wiring is not what a real v6 file would have produced; it is a crash
+ * guard, not a fidelity guarantee.
  */
 export const outputSchema = z.preprocess((raw) => {
   if (
@@ -159,7 +163,8 @@ export const kitGlobalSchema = z.object({
    * {@link logicalOutputCount} / {@link logicalOutputsForPhysical}. Purely hardware config,
    * so it lives beside {@link kitGlobalSchema.maxPixelsPerOutput} (also Advatek), NOT on the
    * network-adoption `controller` record. New kits default OFF; kits predating this flag
-   * (version < 3) migrate to ON so an established rig keeps its expanded wiring. */
+   * (version < 3) predate the flag entirely and are now rejected at load rather than
+   * defaulted ON. */
   expanded: z.boolean().default(false),
 });
 
@@ -174,7 +179,7 @@ export const vec2Schema = z.object({ x: z.number(), y: z.number() });
  * the map gets a one-time DETERMINISTIC seed position from the editor, then is frozen (written
  * back here). Keyed by patch-graph node id (`output:*`, `hoop:*`, `drum:*`, `trigger:*`, zone
  * container ids) — a superset of the kit's own ids, so it lives on the kit (travels with a patch)
- * rather than in per-show authored state. Absent is always valid (no migrator transform needed).
+ * rather than in per-show authored state. Absent is always valid.
  */
 export const nodeLayoutSchema = z.record(z.string(), vec2Schema);
 
@@ -199,8 +204,8 @@ export type OutputSegment = z.infer<typeof outputSegmentSchema>;
 export type KitGlobalConfig = z.infer<typeof kitGlobalSchema>;
 export type KitConfig = z.infer<typeof kitSchema>;
 
-/** Parse + validate raw kit JSON, applying version migrations + defaults. Throws ZodError
- *  on invalid input. */
+/** Parse + validate raw kit JSON, applying schema defaults. Throws ZodError on invalid input,
+ *  and a plain Error on a kit older than the v7 floor — see {@link assertKitVersion}. */
 export function parseKit(raw: unknown): KitConfig {
-  return kitSchema.parse(migrateKit(raw));
+  return kitSchema.parse(assertKitVersion(raw));
 }
