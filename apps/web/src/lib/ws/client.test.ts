@@ -265,7 +265,7 @@ describe('WSClient — room PIN (S3)', () => {
 });
 
 describe('liveness watchdog (S5)', () => {
-  function makeWatchdogClient(opts: { watchdogMs?: number } = {}) {
+  function makeWatchdogClient(opts: { watchdogMs?: number; now?: () => number } = {}) {
     FakeWS.instances = [];
     const factory = (url: string): WSLike => new FakeWS(url);
     const client = new WSClient({
@@ -274,7 +274,7 @@ describe('liveness watchdog (S5)', () => {
       baseDelayMs: 10,
       maxDelayMs: 100,
       watchdogMs: opts.watchdogMs ?? 5000,
-      now: () => Date.now(), // fake-timer clock
+      now: opts.now ?? (() => Date.now()), // fake-timer clock unless the test drives its own
     });
     return { client, factory };
   }
@@ -327,15 +327,25 @@ describe('liveness watchdog (S5)', () => {
   });
 
   it('background-tab clamping cannot manufacture a false positive: staleness is message age, not tick count', () => {
-    const { client } = makeWatchdogClient();
+    // The wall clock is OURS (injected `now`), decoupled from the fake timer queue —
+    // so the interval callback provably RUNS while the message age says "fresh".
+    // Review B2: the previous version shifted the system time, which also shifted the
+    // pending interval's due time, so the callback never ran and the test was vacuous.
+    let clock = 0;
+    const { client } = makeWatchdogClient({ now: () => clock });
     client.connect();
     const ws = FakeWS.instances[0]!;
     ws.open();
-    // Simulate a hidden tab whose interval was clamped: nothing runs until t+19500,
-    // when a message arrives; the (late) interval callback then fires at t+20000.
-    vi.setSystemTime(Date.now() + 19_500);
-    ws.emitText(JSON.stringify({ t: 'projects', names: [] }));
-    vi.advanceTimersByTime(500); // the delayed interval callback fires once here
+    // Hidden tab: the wall clock races ahead 19.5s while the clamped interval never ran.
+    clock = 19_500;
+    ws.emitText(JSON.stringify({ t: 'projects', names: [] })); // message lands NOW
+    clock = 20_000;
+    vi.advanceTimersByTime(5_000); // the (late) interval callback fires here, wall-age 500ms
     expect(ws.readyState).toBe(1); // NOT closed — last message is only 500ms old
+    // Prove the callback really runs on this path: with a genuinely stale age the very
+    // next tick closes the socket — the assertion above passed on a live check, not silence.
+    clock = 26_000;
+    vi.advanceTimersByTime(5_000);
+    expect(ws.readyState).toBe(3);
   });
 });
