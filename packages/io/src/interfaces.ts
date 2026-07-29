@@ -8,7 +8,9 @@ export interface PixelOutputStatus {
 }
 
 /** Pixel output transport (Art-Net / sACN). Behind this interface, `core` and the
- * server are oblivious to the wire protocol. */
+ * server are oblivious to the wire protocol. Sends stay fire-and-forget, but transport
+ * liveness is now observable via {@link PixelOutput.onStatus}, mirroring OscInput's
+ * status channel — a dark rig says so instead of failing silently. */
 export interface PixelOutput {
   /** Advance the per-frame sequence counter; call once before sending a frame's universes. */
   nextFrame(): void;

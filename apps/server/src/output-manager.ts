@@ -71,6 +71,12 @@ function defaultFactory(settings: OutputSettings): PixelOutput {
  * Output state machine (R15): `disabled → dry-run → armed`, defaulting to disabled.
  * Dry-run forms/counts packets without transmitting; arming opens a transport; any
  * transition away from armed, or a send error, emits a blackout failsafe.
+ *
+ * An ASYNCHRONOUS transport fault (bind / socket / multicast-setup / send-completion,
+ * via PixelOutput.onStatus) latches `transportError` and emits a monitor error but
+ * does NOT blackout — there is nothing to blacken; the socket is already not
+ * transmitting. status().lastError composes the synchronous (send/blackout) and
+ * transport slots so neither can hide the other; both are sticky until re-arm.
  */
 export class OutputManager {
   private output: PixelOutput | null = null;
