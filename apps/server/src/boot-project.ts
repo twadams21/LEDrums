@@ -69,6 +69,8 @@ export interface BootProjectDeps {
   now?: () => number;
   /** Injected file reader (IO-fault tests). Defaults to `readFileSync`. */
   readFile?: (path: string) => string;
+  /** Injected quarantine rename (rename-fault tests). Defaults to `renameSync`. */
+  rename?: (from: string, to: string) => void;
   log?: (message: string) => void;
 }
 
@@ -139,10 +141,16 @@ export function resolveInitialProject(deps: BootProjectDeps): BootProjectResult 
   // fresh seed over the drummer's (recoverable-by-hand) original.
   const quarantinedTo = join(deps.dir, `${deps.name}.corrupt-${now()}.json`);
   const reason = describeError(corruption);
+  const rename = deps.rename ?? renameSync;
   try {
-    renameSync(path, quarantinedTo);
+    rename(path, quarantinedTo);
   } catch (err) {
-    log(`[boot-project] quarantine rename failed: ${describeError(err)}`);
+    // FAIL CLOSED (review N6): if the corrupt original cannot be moved aside, the
+    // ladder must NOT continue — proceeding would return a recovered project whose
+    // autosaver then overwrites the drummer's (recoverable-by-hand) original, the
+    // exact loss the quarantine exists to prevent. Boot fails loudly instead.
+    log(`[boot-project] quarantine rename failed (${describeError(err)}); refusing to recover over an unquarantined original`);
+    throw err;
   }
   log(`[boot-project] live project unloadable (${reason}); quarantined to ${quarantinedTo}`);
 

@@ -105,3 +105,22 @@ describe('resolveInitialProject (S10)', () => {
     expect(readdirSync(dir).filter((f) => f.includes('corrupt'))).toEqual([]);
   });
 });
+
+describe('quarantine rename failure (review N6 — fail closed)', () => {
+  it('a failed quarantine rename ABORTS the ladder: throws, original untouched, never claims recovery', () => {
+    writeLiveProject('{ truncated');
+    writeSnapshot('1000-boot', { project: defaultProject() });
+    const denied = Object.assign(new Error('EACCES: permission denied, rename'), { code: 'EACCES' });
+    expect(() =>
+      resolve({
+        rename: () => {
+          throw denied;
+        },
+      }),
+    ).toThrow('EACCES');
+    // The original corrupt file is still in place — nothing seeded over it, no
+    // recovered project was returned for an autosaver to persist.
+    expect(existsSync(join(dir, `${NAME}.json`))).toBe(true);
+    expect(readdirSync(dir).filter((f) => f.includes('.corrupt-'))).toEqual([]);
+  });
+});
