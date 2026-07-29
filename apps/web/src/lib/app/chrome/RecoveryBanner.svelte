@@ -22,7 +22,14 @@
     /** Move focus to the acknowledge action on mount. Off in the styleguide, where several framed
      * copies render at once and stealing focus would yank the page around. */
     autofocus = true,
-  }: { recovery: BootRecoveryInfo | null; ackStore?: AckStore | null; autofocus?: boolean } = $props();
+    /** Notify the shell the moment the drummer acknowledges (App un-inerts on this). */
+    onAck,
+  }: {
+    recovery: BootRecoveryInfo | null;
+    ackStore?: AckStore | null;
+    autofocus?: boolean;
+    onAck?: () => void;
+  } = $props();
 
   // Acked in THIS page view. Seeded from the session store so a reconnect (which re-asserts the same
   // boot truth) does not re-raise a banner the drummer already dismissed.
@@ -44,6 +51,7 @@
     if (!recovery) return;
     acknowledge(recovery, ackStore);
     ackedToken = recovery.reason;
+    onAck?.();
   }
 </script>
 

@@ -8,7 +8,7 @@
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
   import { platformShortcutModifier } from './lib/app/primary-shortcut';
-  import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
+  import type { ShortcutEntry } from './lib/app/shortcuts';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
@@ -17,6 +17,8 @@
   import BootOverlay from './lib/app/chrome/BootOverlay.svelte';
   // Decision 8: the blocking boot-recovery acknowledgement banner, raised off the server's `state`.
   import RecoveryBanner from './lib/app/chrome/RecoveryBanner.svelte';
+  import { isAcknowledged, sessionAckStore } from './lib/app/chrome/recovery-banner';
+  import { createAppKeyHandler } from './lib/app/app-keys';
 
   const store = new TriggerLab();
   const shell = new ShellStore(parseSearch(typeof location !== 'undefined' ? location.search : ''));
@@ -63,46 +65,35 @@
     { combo: 'mod+d', description: 'Duplicate selected node', run: duplicateSelectedNode },
   ];
 
+  // Whether the boot-recovery banner is up and unacknowledged: while true, the whole
+  // shell keyboard AND focus tree are dead (review B1) — 1–9 fire live output, mod+z
+  // mutates. `recoveryAcked` flips on the banner's ack so this recomputes.
+  let recoveryAcked = $state(false);
+  const recoveryBlocking = $derived(
+    store.bootRecovery !== null &&
+      !recoveryAcked &&
+      !isAcknowledged(store.bootRecovery, sessionAckStore()),
+  );
+
   // Performance keys (approved wave-3 shell): 1–9 fire the active section's graphs
   // 1–9 (0 → graph 10); ←/→ step through the active song's sections. Skip while
   // typing in a control; leave arrows alone inside the flow canvas (xyflow nudges
-  // the selected node with them).
-  function onKey(e: KeyboardEvent): void {
-    if (dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
-    const el = e.target as HTMLElement | null;
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      const selection = shell.selection;
-      if (selection?.kind === 'node') {
-        const node = store.selectedGraph?.nodes.find((n) => n.id === selection.nodeId);
-        if (node && node.kind !== 'trigger') {
-          store.removeNode(node);
-          shell.clearSelection();
-          e.preventDefault();
-        }
-      }
-      return;
-    }
-    if (/^[0-9]$/.test(e.key)) {
-      const index = e.key === '0' ? 9 : Number(e.key) - 1;
-      store.fireSectionGraph(index);
-      return;
-    }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
-      const sections = store.activeSong?.sections ?? [];
-      if (sections.length === 0) return;
-      const cur = sections.findIndex((s) => s.id === store.activeSectionId);
-      const step = e.key === 'ArrowRight' ? 1 : -1;
-      const next = sections[(cur + step + sections.length) % sections.length];
-      if (next) store.setActiveSection(next.id);
-    }
-  }
+  // the selected node with them). Body lives in app-keys.ts so the blocking guard
+  // is unit-tested.
+  const onKey = createAppKeyHandler({
+    blocked: () => recoveryBlocking,
+    shortcuts,
+    platform: shortcutPlatform,
+    store,
+    shell,
+  });
 </script>
 
 <svelte:window onkeydowncapture={onKey} />
 
-<div class="shell-root">
+<!-- inert while the recovery banner blocks: belt+braces with the onKey guard — Tab can
+     never walk behind the scrim and no pointer event reaches the shell. -->
+<div class="shell-root" inert={recoveryBlocking}>
   <Shell {store} {shell} />
 </div>
 
@@ -116,7 +107,7 @@
 <!-- Decision 8: blocking acknowledgement banner when the server booted through the recovery ladder.
      Mounted at the app root beside the other chrome-level takeovers so it covers every view; it
      renders nothing on a clean boot (store.bootRecovery === null). -->
-<RecoveryBanner recovery={store.bootRecovery} />
+<RecoveryBanner recovery={store.bootRecovery} onAck={() => (recoveryAcked = true)} />
 
 <style>
   .shell-root {
