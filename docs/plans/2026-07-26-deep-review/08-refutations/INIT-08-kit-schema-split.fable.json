@@ -1,0 +1,105 @@
+{
+  "artifact": "08-refutations/INIT-08-kit-schema-split",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-08-kit-schema-split/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-08-kit-schema-split",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-08-kit-schema-split/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S2 verification (b) is unsatisfiable by a correct split: it requires the grep for CURRENT_KIT_VERSION/migrateKit in post-split kit-schema.ts to return 'ONLY the two import-line hits', but a correct split necessarily leaves at least three legitimate non-import hits — kitSchema's version default `z.number().int().default(CURRENT_KIT_VERSION)` (today line 213), parseKit's body `kitSchema.parse(migrateKit(raw))` (today line 457), and five {@link migrateKit}/{@link CURRENT_KIT_VERSION} doc-comment references (lines 57, 84, 127, 169, 386). An implementer taking the check literally either concludes the split failed, or 'fixes' it by stripping the doc comments and inlining the version constant — exactly the kind of non-move edit checks (a) and (c) exist to forbid.",
+          "severity": "major",
+          "evidence": "grep -n 'migrateKit\\|CURRENT_KIT_VERSION' packages/core/src/geometry/kit-schema.ts at HEAD: hits at lines 57, 84, 127, 169 (doc comments), 213 (kitSchema version default), 386 (doc), 394/446 (migrateKit body, which moves) and 457 (parseKit call, which stays). The plan's own S2 intent says kit-schema keeps parseKit and the version default, so the surviving call/default hits are entailed by the plan itself.",
+          "survives": false,
+          "repair": "Reword S2 check (b) to enumerate the expected residual hits: one import line, the kitSchema version-default use, the parseKit call to migrateKit, plus doc-comment references (excludable with `grep -v '^\\s*\\*'`). The transform-helper symbols (shiftOutputHoops, splitOutputDataLines, shiftDrumOriginToCentre, shiftDrumToHoops, isRawVec3) genuinely must have zero hits and can keep the strict form.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S3 verification (d) cannot be executed: `node -e \"const c=require('@ledrums/core'); ...\"` fails because @ledrums/core is `\"type\": \"module\"` whose only export is the raw TypeScript entry `./src/index.ts` and there is no built package — the package's `build` script is `tsc --noEmit` (emits nothing). require() of an ESM package resolving to a .ts file throws (ERR_REQUIRE_ESM / unknown extension), so the barrel-surface assertion — the one check that directly backs the plan's central 'no consumer outside packages/core changes' claim — silently never runs, and 'run from the built package' names an artifact that does not exist in this repo.",
+          "severity": "major",
+          "evidence": "packages/core/package.json lines 5-16: `\"type\": \"module\"`, `\"exports\": { \".\": \"./src/index.ts\" }`, `\"build\": \"tsc --noEmit\"`. No dist/ output exists anywhere in the workspace; apps consume the TS source directly via the workspace protocol.",
+          "survives": false,
+          "repair": "Replace with a TS-capable runner from a workspace consumer, e.g. `pnpm --filter @ledrums/server exec tsx -e \"import('@ledrums/core').then(c => { for (const k of [...]) if (!(k in c)) throw new Error('missing '+k) })\"`, or a 10-line vitest file in packages/core asserting the same symbol list against `import * as core from '../index'` (deleted after, or kept as a cheap surface lock).",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S1's step text contradicts the plan's own baseline_reference and, followed literally, guarantees a false parity failure at S4: S1 verification opens 'At baseline sha 3708648, run a throwaway node script...', while behaviour_parity_evidence_plan.baseline_reference says the artifact 'must be captured at the actual pre-split HEAD, not at 3708648, or the mirror removal will show up as a false parity break'. An implementer executing S1 as written must also `git checkout 3708648` — a mutating git operation in the live worktree — and the S4 before/after diff then flags every kit-mirror delta from fix batch 3 as a parity break that 'blocks the initiative'.",
+          "severity": "major",
+          "evidence": "The plan's own contradiction: S1 verification ('At baseline sha 3708648, run...') versus baseline_reference ('the parity artifact in S1 must be captured at the actual pre-split HEAD, not at 3708648'). Settled context confirms the kit-mirror removal (mirror field removed at every layer) already landed between 3708648 and the pre-split HEAD.",
+          "survives": false,
+          "repair": "Reword S1 verification to 'At the current pre-split HEAD (post fix-batches 1-3), run...'. No checkout, no sha pinning beyond recording `git rev-parse HEAD` into the artifact header so S4 can verify it diffs against the right predecessor.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S1's parity corpus is empty by construction in the execution environment, so the plan's headline compensating check for the 0-coverage migration ladder degenerates to 'gap recorded as unclosed': apps/server/projects/ does not exist in the review worktree (worktrees do not carry untracked user data), and the real saved kits live only in the primary checkout. The plan handles the empty case by recording it, but never tells the implementer where the real files actually are, so the closable gap goes unclosed on the default path.",
+          "severity": "minor",
+          "evidence": "`ls apps/server/projects/` in /Users/trent/.twux/worktrees/review returns nothing (directory absent). The plan's known_gaps text itself concedes 'it is only as good as the set of files present there'.",
+          "survives": false,
+          "repair": "Parameterize the S1 script with a projects-dir argument and instruct the implementer to point it at the primary checkout's apps/server/projects (e.g. ~/Documents/dev/ledrums/apps/server/projects), falling back to recording the unclosed gap only if that directory is also empty. Same repair fixes script executability: specify the runner (`pnpm --filter @ledrums/core exec tsx <scratchpad>/script.ts`) since plain node cannot import parseKit/buildDmxMap from the TS source.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "The parity gate 'test COUNT must stay at or above the 2968-test baseline' is measured against a stale number: 2968 was counted at 3708648, and the already-landed fix batches (12 dead-code removals, dead-code residue, kit-mirror removal including its tests at every layer) plausibly changed the collected count before this plan's first commit — so the gate either fails spuriously at S2 or is quietly vacuous, and cannot detect the failure mode it names (a suite silently dropping out of collection due to a broken import).",
+          "severity": "minor",
+          "evidence": "behaviour_parity_evidence_plan.checks[0] pins 2968; baseline_reference concedes 'the executing HEAD is AHEAD of 3708648 by fix batches 1-3' but never re-baselines the count. The kit-mirror removal removed the mirror field 'at every layer', which includes test assertions.",
+          "survives": false,
+          "repair": "Add to S1 (or a pre-S2 note): record the exact collected test count from `pnpm gates` at the pre-split HEAD, and gate S2/S3/S4 on equality with THAT number, not 2968.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "Import-cycle attack: kit-migrations.ts cannot be the clean leaf the plan claims if any transform touches a zod schema or inferred type, which would force kit-migrations -> kit-schema -> kit-migrations (kit-schema must import CURRENT_KIT_VERSION for its version default and migrateKit for parseKit), a runtime ESM cycle in the load path of every consumer of the package.",
+          "severity": "major",
+          "evidence": "Verified against source: lines 239-446 (shiftOutputHoops, splitOutputDataLines, isRawVec3, shiftDrumOriginToCentre, shiftDrumToHoops, migrateKit) reference only `unknown`-typed raw records and eulerXYZApply from './euler' — zero references to any zod schema or inferred type. The attack does not land.",
+          "survives": true,
+          "plan_response": "S2 intent states it exactly: 'This module is a leaf: it operates entirely on raw pre-parse unknown and imports nothing from kit-schema, so no cycle is possible', with the eulerXYZApply import named; S2 verification (d) additionally runs madge --circular as a mechanical backstop.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "Hidden-consumer attack: the plan's file lists miss an importer of a moved symbol, so a wave lands red — candidates checked: dmx-map.ts, defaults.ts, integrity.ts, project-schema.ts, routing-integrity.ts, engine.ts, and every geometry test file, plus deep '@ledrums/core/...' path imports from apps.",
+          "severity": "major",
+          "evidence": "Grep of all relative kit-schema importers at HEAD: dmx-map.ts/integrity.ts/defaults.ts import only types or parseKit (which stay put); project-schema.ts (migrateKit) is in S2's list; routing-integrity.ts (drumHoopCount) and engine.ts (reconcileOutputs) are in S3's list; hoop-migration/origin-centre/expanded-migration/per-output-rgb tests (CURRENT_KIT_VERSION, migrateKit) are in S2's list; reconcile-outputs/pixel-model tests in S3's. `grep -rn \"from '@ledrums/core/\"` across apps and packages returns zero deep imports. The attack does not land.",
+          "survives": true,
+          "plan_response": "The S2/S3 `files` arrays enumerate every genuine importer of a moved symbol (verified above), the summary explicitly claims and is correct that 'zero deep @ledrums/core/... imports exist in the repo', and S2 verification (c) makes typecheck the mechanical catch-all for any straggler.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "Scope-creep-under-cover-of-move attack: the plan could silently 'fix' the missing v5->v6 migration step or relocate migrateProjectKit (project-schema.ts:255) while claiming a pure move, changing load behaviour for stored v5 kits with no test able to notice.",
+          "severity": "major",
+          "evidence": "migrateKit at kit-schema.ts:390-448 indeed has steps for <2,<3,<4,<5,<7 and none for <6; migrateProjectKit confirmed at project-schema.ts:255. The plan pre-empts both: the attack does not land.",
+          "survives": true,
+          "plan_response": "Summary: 'Also deliberately out of scope: fixing the v5->v6 gap in the ladder, relocating migrateProjectKit... This plan moves code and changes nothing else'; open_questions[1] explicitly asks Trent to confirm the v5->v6 gap 'stays out of scope here rather than being fixed under cover of a pure move'; and the --color-moved=zebra checks in S2/S3 make any such edit mechanically visible.",
+          "targets_step": "S2"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 5,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Reword S2 check (b): a correct split leaves the import line, kitSchema's version-default use of CURRENT_KIT_VERSION, parseKit's call to migrateKit, and doc-comment {@link} references in kit-schema.ts; only the five private transform helpers must grep to zero.",
+        "Replace S3 check (d)'s `node -e require('@ledrums/core')` with a TS-capable runner (tsx from a workspace package, or a small vitest surface-lock test) — the package is ESM exporting raw ./src/index.ts and has no built artifact for require() to load.",
+        "Fix the S1 sha contradiction: capture the parity artifact at the current pre-split HEAD (record `git rev-parse HEAD` into it), never by checking out 3708648, or the landed kit-mirror removal produces a false parity break at S4.",
+        "Point the S1 parity script at the primary checkout's apps/server/projects (the review worktree has no untracked user data) via a dir parameter, and specify the runner (tsx) since plain node cannot import the TS source; only record the gap as unclosed if the primary checkout's dir is also empty.",
+        "Re-baseline the collected test count at the pre-split HEAD in S1 and gate S2/S3/S4 on that number instead of the stale 2968 counted at 3708648."
+      ]
+    }
+  ]
+}

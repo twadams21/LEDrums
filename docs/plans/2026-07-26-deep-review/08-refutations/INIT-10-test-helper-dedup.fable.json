@@ -1,0 +1,129 @@
+{
+  "artifact": "08-refutations/INIT-10-test-helper-dedup",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-10-test-helper-dedup/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-10-test-helper-dedup",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-10-test-helper-dedup/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "The plan's web-unit verification commands are inexecutable as written: every S1/S2/S3 check uses `pnpm --filter @ledrums/web exec vitest run ...`, but the Phase 0 record documents that exact invocation shape failing for apps/web, so the implementer's per-step JSON captures will error out instead of producing the name-list diffs the parity argument rests on.",
+          "severity": "major",
+          "evidence": "docs/plans/2026-07-26-deep-review/00-raw/README.md, observed 2026-07-26: \"`pnpm exec vitest` — fails for apps/web with ERR_MODULE_NOT_FOUND on 'vite'. What works: run the root `node_modules/.bin/vitest` from inside the package directory.\" The plan uses the failing form in S1 verification, S2 verification, S4 verification, and behaviour_parity_evidence_plan.checks[1].",
+          "survives": false,
+          "repair": "Replace every `pnpm --filter @ledrums/web exec vitest run` with the Phase-0-proven invocation: `cd apps/web && ../../node_modules/.bin/vitest run --reporter=json --outputFile=...` (and mirror for packages/core for consistency). One-line substitution across the verification strings.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S8's clone-count assertion compares numbers produced by two different jscpd configurations, so 'total clone count for packages/core/src/effects strictly below the baseline 57' can pass or fail for reasons unrelated to the dedup: the baseline ran `--min-tokens 70` over `packages apps`, while S8 runs `--min-tokens 0 --threshold 100` over `apps/web/src packages/core/src`; min-tokens 0 admits a strictly larger clone population than min-tokens 70, and the plan elsewhere misstates the Phase 0 thresholds as 'min-similarity 90'.",
+          "severity": "major",
+          "evidence": "docs/plans/2026-07-26-deep-review/artifacts/phase0.sh:72 — `\"$B/jscpd\" packages apps --min-lines 12 --min-tokens 70 --reporters json,console --output \"$RAW/jscpd\" --ignore ...` versus opus.json S8 verification — `./node_modules/.bin/jscpd --min-lines 12 --min-tokens 0 --threshold 100 ... apps/web/src packages/core/src`; behaviour_parity_evidence_plan.checks[6] claims Phase 0 used 'min-lines 12, min-similarity 90', which phase0.sh contradicts.",
+          "survives": false,
+          "repair": "Run the S8 after-measure with the byte-identical phase0.sh invocation (same flags, same `packages apps` roots, same ignore list), diff against 00-raw/jscpd/jscpd-report.json, and drop the invented `--min-tokens 0 --threshold 100` flags. The named-pair-disappearance check is fine; only the totals comparison needs the same lens on both sides.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "The coverage-delta gate ('no downward move' vs 00-coverage.json in S7 verification and checks[4]) is an apples-to-oranges comparison the plan treats as parity evidence: the initiative adds three new non-test source files (test-support modules) into each package's v8 coverage denominator, so package-level line/branch percentages can move — in either direction — with zero change to what the product code's tests exercise, making the gate both spuriously trippable and capable of masking a real drift it was meant to catch.",
+          "severity": "major",
+          "evidence": "packages/core/package.json test:coverage is `vitest run --coverage.enabled --coverage.provider=v8 ...` with no include/exclude config (no vitest.config exists anywhere in the repo — verified by glob); v8 provider reports every loaded non-test source file, and packages/core/src/test-support/effect-harness.ts will be loaded by all seven converted suites. Partially-exercised exports (e.g. `litIds` used by only 2 suites, branch arms of the widened `render` seed path) change the package's branch ratio without any product-code coverage changing.",
+          "survives": false,
+          "repair": "Either add `**/test-support/**` to the coverage exclude for the delta comparison, or compare the per-file coverage of the pre-existing file set only (00-coverage.json is json-summary; a 5-line jq join on filenames does it). State which in the step so the implementer doesn't hand-wave a moved package total.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S6's seed red-check is inexecutable in the order written: 'before converting u6-gap-fill.test.ts, run it with the harness `render` deliberately calling `createState(m)`' — but before conversion u6-gap-fill.test.ts does not import the harness (its seed lives in its own local render at u6-gap-fill.test.ts:38), so sabotaging the harness cannot make the unconverted suite red; the check only means anything run AFTER the conversion.",
+          "severity": "minor",
+          "evidence": "packages/core/src/effects/u6-gap-fill.test.ts:38 — `const s = state ?? (effect.createState ? effect.createState(m, 123) : (undefined as S));` is file-local until S6 lands; the harness module (S5) is not imported by any suite until S6/S7 convert them. The plan's own S5 'reverses' field confirms: 'nothing imports it until S6/S7'.",
+          "survives": false,
+          "repair": "Reorder the instruction: convert u6-gap-fill first, then temporarily edit the shared render to drop the seed argument, confirm at least one u6 test goes red, revert the sabotage, confirm green — all within the S6 working tree before committing. Same evidence, executable order.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S7's scoped re-run `vitest run batch-c batch-d effects` does not run the three suites the step claims: 'effects' is a substring path filter that matches the entire packages/core/src/effects/ directory, so all seven suites execute and the 'identical test names and pass count to the pre-conversion capture' diff fails against any capture that was scoped to batch-c/batch-d/effects.test alone.",
+          "severity": "minor",
+          "evidence": "Vitest CLI args are path substring filters; every file in this initiative lives under packages/core/src/effects/, so the token 'effects' matches batch-a..e and u6-gap-fill too. The S6 analogue (`vitest run batch-a batch-b batch-e u6-gap-fill`) does not have this problem because those tokens match single files.",
+          "survives": false,
+          "repair": "Use `vitest run batch-c batch-d effects.test` (or the full relative path src/effects/effects.test.ts) in S7's verification, and note that the pre-conversion capture must be produced with the identical filter.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S5 directs the implementer to put an `expect` import from vitest inside packages/core/src while the plan's own open question on whether that breaches the AGENTS.md core-purity non-negotiable is unresolved and marked blocks_execution:false — if Trent answers no, S5, S6 and S7 (the entire core half, ~5 of 8 steps) get reworked mid-flight, and the plan already names a cheaper default that would make the question moot.",
+          "severity": "major",
+          "evidence": "opus.json S5 intent: 'The module imports `expect` from vitest' + open_questions[0] with blocks_execution:false, owner trent, listing alternative (a): export only the boolean `allFinite01` and leave per-suite `expect` calls local. AGENTS.md: 'packages/core stays pure: no Node/DOM/IO imports' — vitest is literally none of those three, but this is a taste/architecture boundary call the ai-work-system rules assign to Trent, and the plan proceeds through it rather than defaulting to the safe branch.",
+          "survives": false,
+          "repair": "Default S5 to alternative (a): export boolean checkers only (allFinite01, and a `finite01Failures(fb): string[]` that returns per-channel failure descriptions so the suites keep their diagnostic messages via `expect(finite01Failures(fb)).toEqual([])` locally). Zero vitest import in core src, no waiting on Trent, per-channel messages preserved. If Trent later blesses the expect-in-test-support reading, collapsing back is a trivial follow-up.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "The 37-file MemStorage consolidation flattens five distinct class bodies into one and the plan only names two of the divergences, so an implementer following S2/S3 mechanically could silently change semantics in the unnamed variants.",
+          "severity": "minor",
+          "evidence": "Hashing `awk '/class MemStorage/,/^}/'` over all 37 files yields 5 distinct bodies: 24× canonical multi-line, 10× single-line-formatted (e.g. store.autowire.test.ts:11), 1× member-reordered (store.report-error.test.ts), 1× `?? null` getItem (object-rows.test.ts), 1× public `m` (store.autosave.test.ts). I read all five: the reordered and single-line variants are formatting-only; the two semantic-adjacent ones are exactly the two the plan names, and store.autosave.test.ts's public `m` is only ever used inside the class's own methods (grep '\\.m\\b' shows lines 16-31 only, all `this.m`).",
+          "survives": true,
+          "plan_response": "S1 intent names both semantically distinguishable copies and disposes of each: 'The one divergent copy (apps/web/src/lib/app/views/object-rows.test.ts uses `this.m.get(k) ?? null`) is semantically identical because the map is typed Map<string,string> and setItem coerces — the Phase 3 refuter checked exactly this' and 'Keep `m` private: the only file that declares it public (store.autosave.test.ts:14) never reads `storage.m` from a test body.' The remaining three variants differ only in whitespace/member order, which the additive-diff gate (deletions plus one import line) handles without any semantic decision.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "The union Harness in S4 (both `sent` and `reconnects` on one type) breaks any suite that asserts on the harness object's exact shape rather than a field, e.g. expect(h).toEqual({cb, sent}).",
+          "severity": "minor",
+          "evidence": "store.pin.test.ts:34-37 declares `{ cb, reconnects }` with no `sent`; store.controller.test.ts:36-39 declares `{ cb, sent }` with no `reconnects` — the two shapes are real and disjoint, so a whole-object assertion in either family would fail under the union.",
+          "survives": true,
+          "plan_response": "S4's verification opens with a pre-flight grep — 'grep -n `h\\.sent\\|h\\.reconnects` ... record which arrays each file asserts on, then confirm post-conversion that no assertion's expected value changed (store.pin.test.ts:165,170 assert `h.reconnects` toEqual [\"4242\"])' — and open_questions[3] pre-authorizes the fallback: split into two narrow factories if any suite asserts on the object's shape. The failure mode is anticipated, detected before conversion, and has a named escape hatch.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "Putting the shared MemStorage in apps/web/src/lib/trigger-lab/fixtures.ts, as finding duplicated-code-0001's proposed_fix instructs, would drag a test double into the production import graph — a plan that followed the finding literally would be wrong.",
+          "severity": "major",
+          "evidence": "02-findings/_all.json duplicated-code-0001 proposed_fix: 'Move MemStorage ... into apps/web/src/lib/trigger-lab/fixtures.ts'. That file is imported by shipping modules (store.svelte.ts, seed.ts, hydrate.ts, PatchGraphView.svelte et al.), so the finding's own fix location fails the initiative's zero-product-code promise.",
+          "survives": true,
+          "plan_response": "The plan explicitly refuses the finding's location and says why, in both the summary ('MemStorage does NOT go into apps/web/src/lib/trigger-lab/fixtures.ts — that file is production code (store.svelte.ts, seed.ts, hydrate.ts, PatchGraphView.svelte and six other shipping modules import it)') and interface_deltas[0].note, which enumerates the eleven production importers. This is the plan correcting its input, not missing the trap."
+        },
+        {
+          "claim": "S4 (wave 3) rewrites four files that S2/S3 (wave 2) also rewrite — store.controller, store.pin, store.server-library, store.patch-clipboard, store.song-library — a shared mutation seam that would corrupt concurrent execution or produce un-revertable interleaved commits.",
+          "severity": "minor",
+          "evidence": "S2 files list contains store.controller.test.ts and S3 contains store.pin/server-library/patch-clipboard/song-library/store.songs; S4's files list repeats five of these. sequencing is [[S1,S5],[S2,S3,S6],[S4,S7],[S8]].",
+          "survives": true,
+          "plan_response": "The waves are ordered, not concurrent across the seam: S4 sits in the wave AFTER S2/S3, and S4's 'reverses' field states the residual coupling honestly — 'disjoint from S2/S3 in every file except the four store.* files, where the two commits touch different regions (class declaration vs harness declaration) and revert independently.' Within wave 2, S2/S3/S6 are provably file-disjoint (verified against the actual 37-file grep: planned set == actual set, no overlap between batches).",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S1's claim that mem-storage.ts cannot be picked up as a test file rests on 'the repo has no vitest.config', which if false would let the new module change the suite count the whole parity argument diffs against.",
+          "severity": "minor",
+          "evidence": "Checked: no vitest.config.* or vitest.workspace.* exists at the root, apps/web, or packages/core (glob returned no matches); both packages' test scripts are bare `vitest run` with no --config flag, so the default include `**/*.{test,spec}.?(c|m)[jt]s?(x)` governs and mem-storage.ts / ws-harness.ts / effect-harness.ts match nothing.",
+          "survives": true,
+          "plan_response": "S1 verification states the mechanism and demands the observable: 'the new file matches no vitest include pattern — the repo has no vitest.config, so the default `**/*.{test,spec}.?(c|m)[jt]s?(x)` include cannot pick up mem-storage.ts; confirm the reported suite count is unchanged, not merely green.' The claim is true at baseline and the check would catch it if a config lands in the interim.",
+          "targets_step": "S1"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 5,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Replace every `pnpm --filter @ledrums/web exec vitest` invocation with the Phase-0-documented working form (root node_modules/.bin/vitest run from inside the package directory) in S1/S2/S4 verification and parity check 2 — the written commands fail with ERR_MODULE_NOT_FOUND per 00-raw/README.md.",
+        "S8: perform the after-measure with the byte-identical phase0.sh jscpd invocation (--min-lines 12 --min-tokens 70, roots `packages apps`, same ignore list) instead of the plan's --min-tokens 0 --threshold 100 variant, so the before/after totals share one configuration; fix the parity-check text that misstates the Phase 0 thresholds.",
+        "S7/checks[4]: scope the coverage-delta gate to the pre-existing file set (or exclude **/test-support/** from coverage) — the new harness modules enter the v8 denominator and move package-level percentages independently of real parity.",
+        "S6: reorder the seed red-check to convert u6-gap-fill first, then sabotage the shared render's seed argument, confirm red, revert, confirm green — the 'before converting' order in the plan text cannot make the unconverted suite red.",
+        "S7: change the scoped re-run filter from `effects` to `effects.test` (or the full path); the bare token matches the whole effects/ directory and breaks the capture comparison.",
+        "S5: default to the plan's own alternative (a) — boolean/failure-list exports only, no vitest `expect` import inside packages/core/src — rather than executing the contested design while open_questions[0] (owner: trent) is unresolved; keep per-channel diagnostics via a `finite01Failures(fb): string[]` helper asserted empty at each call site."
+      ]
+    }
+  ]
+}

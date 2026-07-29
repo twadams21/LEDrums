@@ -1,0 +1,159 @@
+{
+  "initiative_id": "INIT-13-core-surface-trims",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-13-core-surface-trims",
+    "model": "claude-opus-5[1m]",
+    "effort": "medium"
+  },
+  "summary": "This initiative carries exactly one surviving finding (speculative-generality-0011) proposing the deletion of three uncalled exports from packages/core: nearestPixelWithin (geometry/pixel-grid.ts:128), assertTriggerGraphIntegrity (voice/graph-integrity.ts:218) and listCanvasScenes (canvas/registry.ts:33). The right-sized design is three independent deletions plus one test rewrite — no abstraction, no new seam, no relocation. The only real design decision is ORDER and EVIDENCE, because two of the three exports are reachable through core's public barrels (`export * from './canvas/registry'` at src/index.ts:33 and `export * as voice from './voice'` at src/index.ts:73, whose voice/index.ts:18 blanket-exports graph-integrity), and one of them (assertTriggerGraphIntegrity) is a *validation* surface that a 2026-07-08 PRD explicitly specified as intended public API. So the plan: (1) freeze a machine-checkable no-caller proof before touching anything, since a green suite proves nothing about symbols with zero callers; (2) make the pixel-grid test independent of the wrapper BEFORE deleting the wrapper, so the deletion commit is a pure subtraction that typecheck alone can validate; (3) delete the three functions in three separately-revertable commits, gated on Trent's answer for the guard-shaped one; (4) re-run the unused-export scan to prove the trim created no new orphans. Deliberately NOT in scope: the voice barrel's blanket re-exports (middle-man finding, unassigned to any initiative) and any un-exporting of validateTriggerGraphIntegrity — narrowing a barrel is a different, larger argument than deleting a dead function, and folding it in here would turn a 30-line subtraction into a cross-package export audit.",
+  "findings_addressed": [
+    "speculative-generality-0011"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Freeze the no-caller proof for all three symbols",
+      "intent": "Deleting an export whose only defence is 'nobody calls it' needs the no-caller claim recorded as reproducible machine output at the commit that removes it, because no test can go red for a symbol with zero call sites. This step changes no source; it produces the evidence artifact the three deletion commits cite, and it is the step that would ABORT the initiative if any dynamic or string-keyed access is found.",
+      "files": [
+        "docs/plans/2026-07-26-deep-review/07-plans/INIT-13-core-surface-trims/evidence-no-callers.md"
+      ],
+      "risk": "low",
+      "verification": "Record verbatim output of, at repo root: (a) `rg -n 'nearestPixelWithin|assertTriggerGraphIntegrity|listCanvasScenes' -g '!node_modules' -g '!dist' -g '!docs/plans/2026-07-26-deep-review'` — expected hits ONLY at packages/core/src/geometry/pixel-grid.ts:128, packages/core/src/geometry/pixel-grid.test.ts:4/84/129, packages/core/src/voice/graph-integrity.ts:218, packages/core/src/canvas/registry.ts:33, plus docs/reports/2026-07-05-elv2-u5-report.md:111 and docs/plans/2026-07-08-gen3-graph-authoring-stabilisation-prd.md:104 (both prose, no code); (b) `rg -n \"\\\\['\\\"\\`](nearestPixelWithin|assertTriggerGraphIntegrity|listCanvasScenes)\" -g '!node_modules'` and `rg -n 'core\\\\.voice\\\\[|registry\\\\[' apps packages -g '!node_modules'` to rule out bracket/dynamic access; (c) `pnpm -w exec knip --reporter json` restricted to packages/core, confirming the three appear as unused exports; (d) `rg -n '\"private\"' packages/core/package.json` showing `\"private\": true` — no external consumer can depend on the removed names. ABORT the initiative and re-file if (a) or (b) returns any call site outside that list.",
+      "reverses": "Delete the evidence file; no source changed."
+    },
+    {
+      "id": "S2",
+      "title": "Rewrite pixel-grid tests onto nearestPixelIdWithin",
+      "intent": "packages/core/src/geometry/pixel-grid.test.ts is the wrapper's only consumer, and what it actually proves is brute-force equivalence of the spatial hash — a property the id-returning primitive establishes on its own. Moving the two assertions onto nearestPixelIdWithin removes the last caller without weakening the test, so the subsequent deletion is provably caller-free rather than caller-free-because-we-deleted-the-caller.",
+      "files": [
+        "packages/core/src/geometry/pixel-grid.test.ts"
+      ],
+      "risk": "low",
+      "verification": "In test 'nearestPixelWithin matches the brute-force nearest scan (confetti equivalence)' (line ~80), rename it to 'nearestPixelIdWithin matches the brute-force nearest scan (confetti equivalence)', replace `const hit = nearestPixelWithin(grid, pt, reach)` with `const id = nearestPixelIdWithin(grid, pt, reach)`, and replace the three assertions with: `expect(id).toBe(-1)` when `brute.dist > reach`; otherwise `expect(id).toBe(brute.id)` AND `expect(distance(m.pixels[id]!.world, pt)).toBeCloseTo(brute.dist, 10)` — the distance assertion MUST be kept (recomputed via the already-imported `distance` from '../math'), because dropping it would silently reduce coverage under cover of a refactor. In 'handles an empty model' (line ~129) replace `expect(nearestPixelWithin(g, {x:0,y:0,z:0}, 100)).toBeNull()` with `expect(nearestPixelIdWithin(g, {x:0,y:0,z:0}, 100)).toBe(-1)`. Update the import on line 4 to `{ buildPixelGrid, forEachPixelWithin, nearestPixelIdWithin }`. Verify: `pnpm gates` green (baseline 2968 tests, count must be unchanged — the rewrite adds and removes no test); and `git diff --stat` shows exactly one file, tests only, zero production lines.",
+      "reverses": "`git revert` this commit; the wrapper still exists at this point, so the old assertions compile unchanged."
+    },
+    {
+      "id": "S3",
+      "title": "Delete nearestPixelWithin from pixel-grid.ts",
+      "intent": "Remove the object-returning convenience (pixel-grid.ts:128-136) that undoes the allocation-free contract its own neighbour documents ('no closure, no result object — safe on a per-particle-per-frame hot path'). The module keeps one nearest-query shape instead of two, and the hot-path contract stops having a documented escape hatch nobody took.",
+      "files": [
+        "packages/core/src/geometry/pixel-grid.ts"
+      ],
+      "risk": "low",
+      "verification": "Delete lines 127-136 (the `/** Object-returning convenience over {@link nearestPixelIdWithin}. */` doc plus the function). Confirm `distance` (imported at line 2 from '../math') is STILL used by forEachPixelWithin and nearestPixelIdWithin — `rg -n 'distance\\\\(' packages/core/src/geometry/pixel-grid.ts` must return ≥2 hits, otherwise remove the now-dead import. pixel-grid is NOT re-exported from packages/core/src/index.ts (geometry exports there are kit-schema/euler/zones/pixel-model/dmx-map only), so no barrel edit is required — assert this with `rg -n 'pixel-grid' packages/core/src/index.ts` returning nothing. Then `pnpm gates` green with the same 2968 test count. Because the four production consumers (confetti-burst.ts, rain-3d.ts, spark-arc.ts, lightning.ts) call nearestPixelIdWithin/forEachPixelWithin and not the wrapper, a clean `pnpm typecheck` is a complete proof of no broken caller here.",
+      "reverses": "`git revert` this commit — a pure 10-line re-addition with no other file's state depending on it."
+    },
+    {
+      "id": "S4",
+      "title": "Delete assertTriggerGraphIntegrity (guard-shaped: gated on Trent)",
+      "intent": "graph-integrity.ts:218 is a throwing wrapper over validateTriggerGraphIntegrity with zero callers including tests, in a module whose actual policy is to return coded issues as data (`issues[]`). Deleting it collapses the module to one validation shape, so no future caller has to decide between two policies. This is the one step that removes a (never-reached) failure path, so it is fenced behind an explicit human confirmation rather than merged with the mechanical trims.",
+      "files": [
+        "packages/core/src/voice/graph-integrity.ts"
+      ],
+      "risk": "medium",
+      "verification": "PRECONDITION: open_question 'throwing-form-intent' answered 'delete' by Trent — the 2026-07-08 Gen3 PRD (docs/plans/2026-07-08-gen3-graph-authoring-stabilisation-prd.md:104) specified this signature as intended public API, so the no-caller evidence alone does not settle intent. On 'delete': remove lines 218-223 in packages/core/src/voice/graph-integrity.ts. validateTriggerGraphIntegrity and normalizeTriggerGraphToGen3 stay untouched — assert with `rg -n 'export function' packages/core/src/voice/graph-integrity.ts` returning exactly normalizeTriggerGraphToGen3 and validateTriggerGraphIntegrity. Do NOT edit packages/core/src/voice/index.ts:18 (`export * from './graph-integrity'`) — narrowing that barrel is out of scope for this initiative. Verify `pnpm gates` green at 2968 tests, and re-run the S1 rg to confirm the symbol now appears nowhere in packages/ or apps/. On 'keep': skip this step, mark the finding partially-retired in the ledger, and add a caller in the same change that wants it (per the finding's own proposed_fix) — do not leave it uncalled with a rationale comment.",
+      "reverses": "`git revert` this commit restores the 6-line throwing wrapper verbatim; nothing else references it, so the revert is total and order-independent with respect to S3/S5."
+    },
+    {
+      "id": "S5",
+      "title": "Delete listCanvasScenes from canvas/registry.ts",
+      "intent": "registry.ts:33 exists only to complete a CRUD quartet (register/unregister/tryGet/list). The web reads scenes from its own store (store.allCanvasScenes), and core's resolve path is tryGetCanvasEffect. Deleting it removes an enumeration of module-private mutable state from core's PUBLIC barrel, which is the largest single interface reduction in this initiative — `export * from './canvas/registry'` at src/index.ts:33 means this symbol is currently part of @ledrums/core's top-level surface.",
+      "files": [
+        "packages/core/src/canvas/registry.ts"
+      ],
+      "risk": "low",
+      "verification": "Delete lines 33-35. The module-private `scenes` Map must remain used by registerCanvasScene/unregisterCanvasScene/tryGetCanvasScene/tryGetCanvasEffect — `rg -n 'scenes\\\\.' packages/core/src/canvas/registry.ts` must return ≥5 hits, proving no dead state is left behind. Leave packages/core/src/index.ts:33 as-is (the wildcard now exports one fewer name; no line edit needed). Verify `pnpm gates` green at 2968 tests. Additionally `rg -n 'listCanvasScenes' apps packages -g '!node_modules'` returns nothing, and note that docs/reports/2026-07-05-elv2-u5-report.md:111 mentions it only as a rejected alternative in a dated report — a historical record, not live documentation, so it is deliberately not edited.",
+      "reverses": "`git revert` this commit; the 3-line accessor is restored over unchanged module state."
+    },
+    {
+      "id": "S6",
+      "title": "Re-scan unused exports and close the evidence loop",
+      "intent": "Prove the trim did what it claimed and created nothing new: no orphaned imports, no newly-unused private helper exposed by the deletions, and the interface delta actually equals the three symbols claimed. This is what turns 'the suite is still green' (which it would be even if we had deleted the wrong thing, since these symbols had no tests) into positive evidence.",
+      "files": [
+        "docs/plans/2026-07-26-deep-review/07-plans/INIT-13-core-surface-trims/evidence-no-callers.md"
+      ],
+      "risk": "low",
+      "verification": "Append to the evidence file: (a) `pnpm -w exec knip --reporter json` on packages/core before-vs-after, showing the three names gone from unused-exports and NO new entries appearing (a new entry means a deletion orphaned something); (b) a before/after count of top-level names exported by packages/core/src/index.ts, obtained with `node -e \"import('./packages/core/dist/index.js').then(m=>console.log(Object.keys(m).length))\"` after `pnpm build` — expected delta is exactly -1 (listCanvasScenes; nearestPixelWithin was never barrel-exported and assertTriggerGraphIntegrity lives under the `voice` namespace object, so also count `Object.keys(m.voice).length` for its -1); (c) final `pnpm gates` on the merged HEAD, green at 2968 tests. Any deviation from the expected deltas is a defect in this plan, not a rounding error — stop and report.",
+      "reverses": "Docs-only; delete the appended section."
+    }
+  ],
+  "sequencing": [
+    [
+      "S1"
+    ],
+    [
+      "S2"
+    ],
+    [
+      "S3",
+      "S4",
+      "S5"
+    ],
+    [
+      "S6"
+    ]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/core/src/geometry/pixel-grid.ts (module-internal; not in the package barrel)",
+      "removed": [
+        "nearestPixelWithin"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Two nearest-query shapes collapse to one; the allocation-free hot-path contract loses its documented escape hatch. Package-external surface unchanged because pixel-grid is imported by relative path only."
+    },
+    {
+      "at": "packages/core/src/voice (via `export * as voice from './voice'`, src/index.ts:73)",
+      "removed": [
+        "assertTriggerGraphIntegrity"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Removes a second, throwing validation policy from a module whose contract is issues-as-data. The voice barrel's blanket re-export line stays — narrowing it belongs to the unassigned voice-barrel middle-man finding, not here."
+    },
+    {
+      "at": "packages/core (top-level barrel, src/index.ts:33 → canvas/registry)",
+      "removed": [
+        "listCanvasScenes"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "The only change that shrinks @ledrums/core's top-level export set; removes public enumeration of module-private mutable registry state."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "`pnpm gates` green after each of S2, S3, S4, S5 and on the final merged HEAD — test count must stay at 2968 in every run (a changed count means a test was added, deleted or renamed into/out of existence, which this plan forbids).",
+      "`pnpm typecheck` (inside gates) is the PRIMARY parity instrument for S3/S4/S5: for a deleted symbol with zero call sites, a clean compile of packages/core + apps/server + apps/web + packages/io is a total proof that no caller broke, since the whole workspace is TypeScript and @ledrums/core is `private: true` with no external consumer.",
+      "S1's frozen `rg` output (literal, bracket-access and template-string forms) plus `knip` on packages/core, re-run in S6 — the no-caller claim recorded as reproducible machine output at the deleting commit.",
+      "S2-specific: the two rewritten assertions still compare against `bruteNearest` AND still assert the distance to 10 decimal places, so the equivalence property under test is byte-identical in strength; diff review must confirm no `expect` was dropped.",
+      "S3-specific: `rg -n 'nearestPixelIdWithin|forEachPixelWithin|buildPixelGrid' packages/core/src/effects/` still shows confetti-burst.ts, rain-3d.ts, spark-arc.ts and lightning.ts as callers — the module's live consumers are untouched by the trim.",
+      "Render-loop smoke (S6, non-model evidence): run the app with `LEDRUMS_ENGINE=voice pnpm dev`, fire the four grid-consuming effects (confetti-burst, rain-3d, spark-arc, lightning) from TriggerLab, and confirm pixel output renders with no console errors — covers the one region where a mistaken deletion would show up as silence rather than a red test."
+    ],
+    "known_gaps": "A green suite cannot prove anything about symbols that had zero callers — that is precisely why they are being deleted, and it means S4 and S5 would pass identically whether or not the deletion was correct. Three specific gaps, and what replaces the suite in each: (1) assertTriggerGraphIntegrity is a validation surface a PRD specified as intended API; no test covers it and none can, so the evidence that replaces coverage is Trent's explicit intent answer (open question 'throwing-form-intent'), not any command. (2) listCanvasScenes could in principle be reached by a string-keyed lookup on the imported namespace object; the suite would not catch that, so S1's bracket-access and template-literal rg patterns plus knip's unused-export report are the substitute evidence. (3) packages/core sits at 97% line coverage — the highest in the repo — but the three deleted functions are all inside the uncovered remainder, so core's coverage number is NOT evidence here; the load-bearing check is `pnpm typecheck` across the whole workspace plus the manual render-loop smoke on the four grid-consuming effects. No Rust/Tauri or apps/desktop path touches these symbols (they are TS-only, and src-tauri only spawns the server binary), so the desktop shell needs no separate parity evidence.",
+    "baseline_reference": "Phase 0 baseline sha 3708648 (full 37086485b0a9d0868f6bd4e896f3bb14e3637ad3), branch feat/ota-discord-announce, 2968 tests green under `pnpm gates`; packages/core coverage 97% lines / 93% functions per 00-coverage.json. Landed-tonight fix batches 1-3 (12 dead-code auto-fixes, dead-code residue, kit-mirror FIELD removal) are treated as part of the baseline; none of them touch geometry/pixel-grid.ts, voice/graph-integrity.ts or canvas/registry.ts, so no rebase interaction is expected."
+  },
+  "rollback_strategy": "Five commits, four of them independently revertable in any order: S2 (test rewrite), S3 (pixel-grid), S4 (graph-integrity), S5 (canvas registry), S6 (docs). The only ordering constraint on rollback is S2↔S3: reverting S2 alone while S3 has landed re-introduces test references to a deleted function, so revert S3 first or revert both together (`git revert <S3> <S2>`). S4 and S5 are single-function subtractions in files nothing else in this initiative touches — `git revert` restores each verbatim with no migration, no flag and no persisted state involved (canvas registry state is an in-process Map rebuilt at every boot). There is no feature flag because none is warranted: three uncalled functions cannot be toggled by anything at runtime. If the initiative must be abandoned mid-flight, reverting S3/S4/S5 and leaving S2 landed is also valid and leaves the tree green — the rewritten pixel-grid test passes against the restored wrapper too, since it no longer references it.",
+  "estimated_loc": 34,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "assertTriggerGraphIntegrity was specified as intended public API by the 2026-07-08 Gen3 graph-authoring PRD (docs/plans/.../2026-07-08-gen3-graph-authoring-stabilisation-prd.md:104) but was never wired to a caller. Is the throwing form still wanted for a future graph-import/authoring validation path, or is issues-as-data the settled policy and the wrapper should go? (Product/architecture call — the no-caller evidence cannot settle intent.)",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "listCanvasScenes is dead only because the web reads scenes from its own store rather than core's registry. Is a core-registry-backed scene browser on the roadmap? If yes, the finding's own advice is to keep it and add it WITH its caller rather than delete-then-re-add.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should this initiative also narrow packages/core/src/voice/index.ts:18's blanket `export * from './graph-integrity'` (and the eight sibling blanket lines) to the symbols actually consumed? This plan says no — that is the unassigned voice-barrel middle-man finding and a much larger cross-package export audit — but if another variant folds it in, Phase 9 must decide whether INIT-13 owns barrel narrowing or only symbol deletion.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    }
+  ]
+}

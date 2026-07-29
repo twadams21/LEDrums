@@ -1,0 +1,217 @@
+{
+  "artifact": "08-refutations/INIT-06-graph-node-type-model.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-06-graph-node-type-model/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-06-graph-node-type-model",
+      "variant_reviewed": "opus",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-06-graph-node-type-model/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S7's 'hoist ONE ModifierContext per frame and mutate ctx.timeMs per voice' changes aliasing semantics: today chain.ts:44 allocates a FRESH ctx per applyModifierChain call (per range), so a modifier whose apply() retains the ctx reference (e.g. into its createState slot) sees a stable snapshot; after the hoist every retained reference aliases one mutated object whose timeMs is whatever the LAST voice wrote. No test or the heap-delta harness can catch a capturing modifier — the harness measures allocation, not aliasing.",
+          "severity": "minor",
+          "evidence": "packages/core/src/modifiers/chain.ts:44 `const ctx: ModifierContext = { model, timeMs, dt };` is per-call today; compositor.ts:244 calls applyModifierChain per range inside the voice loop with per-voice `timeMs - v.bornAtMs`. The plan's S7 verification lists typecheck, suites, and a heap-delta harness — none of which fail for a modifier that stores ctx.",
+          "survives": false,
+          "repair": "Add to S7's verification: grep every modifier definition for any assignment of the ctx parameter into state or module scope (`ctx` escaping apply), and document that ModifierContext is a borrowed, per-call-invalidated view; if any modifier retains it, keep a per-voice (not per-frame) construction for that path.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S6's parity spec is internally inconsistent: it says 'the eight `() => base` entries must be exactly the kinds S1's switch reached via default' and then lists TEN kinds (trigger, all, random, sequence, chance, toggle, delay, scope, output, envelope). An implementer cannot execute 'eight entries' against a ten-kind list without guessing which statement wins.",
+          "severity": "minor",
+          "evidence": "Plan S6 verification text: 'the eight `() => base` entries must be exactly the kinds S1's switch reached via default (trigger, all, random, sequence, chance, toggle, delay, scope, output, envelope)' — that parenthetical is 10 items. Source confirms 10: trigger-flow-projection.ts:31-52 handles switch/play/modifier/mix/cc/note/osc/randomMod/lfo (9 arms), leaving 10 of the 19 canonical kinds to `default: return base`.",
+          "survives": false,
+          "repair": "Correct S6 to 'the ten () => base entries' and keep the enumerated list as authoritative; the golden table test already makes any miscount fail, so this is a text fix.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S3's new '@ledrums/core/test-fixtures' subpath may not resolve under vite/vitest in apps/web — the repo has never had a second entry point (packages/core/package.json exports has only '.'), so the whole step could wedge on toolchain resolution rather than code.",
+          "severity": "minor",
+          "evidence": "packages/core/package.json exports map contains only '.': './src/index.ts' (read at HEAD); apps/web/vite.config.ts has no alias for @ledrums/core (only optimizeDeps.exclude), so resolution does go through the exports map — plausible it works, but unproven in this repo.",
+          "survives": true,
+          "plan_response": "S3 verification: 'confirm by running `pnpm typecheck` for BOTH @ledrums/core and @ledrums/web before touching anything else', and S3.reverses gives an explicit fallback: 'if the exports subpath fights vite's SSR resolution in @ledrums/web, fall back to keeping the block in voice/index.ts and land only the grep guard — do not force the entry point.'",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S10's NodeView could silently omit some of GraphNode's 40 fields from every arm, making the 'view union' a partial lie about the record it claims to project.",
+          "severity": "minor",
+          "evidence": "The flat interface has 40 fields (types.ts:246-358 per primitive-obsession-0001); the S10 arm listing is hand-written in the plan and could drop a field.",
+          "survives": true,
+          "plan_response": "S10 verification assertion (c) NO ORPHAN FIELDS: '`type _Orphans = Exclude<keyof GraphNode, …>` must be `never`, so adding a field to GraphNode without assigning it to a kind fails to compile' — an omission is a typecheck failure, not a silent gap.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S2's claim that the three exported policy presets equal what every caller passes today rests on an unverified assertion that scope.parse.test.ts:10-12 reproduces the literals verbatim; if compositor.ts:35's local wrapper uses different flags than the stated 'compositor' preset, the repoint changes hoop routing silently.",
+          "severity": "major",
+          "evidence": "compositor.ts:35 wraps voice parseHoopTarget with its own option literal (confirmed present at HEAD); render.ts:30 uses {sourceDrumOnNoHash:true, emptyFallback:'first', sort:false}. Whether compositor's literal matches the plan's 'compositor' preset is asserted, not shown.",
+          "survives": true,
+          "plan_response": "S2 verification makes the equality itself the gate: 'the three literals are already reproduced verbatim as local consts in scope.parse.test.ts:10-12, so the test file becomes the assertion that the exported presets equal what every caller passes today', plus persistence/clipdoc hoop-migration suites 'unchanged in expectation' — a mismatch fails the step rather than shipping.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "Waves 2-4 could collide on shared files (compositor.ts appears in S2, S7, S8; trigger-flow-projection.ts in S1, S6, S11; modulation-graph.ts in S4, S12), making the stated parallel waves land dirty.",
+          "severity": "major",
+          "evidence": "Checked every wave against every step's file list: wave1 [S1,S2,S3], wave2 [S4,S7,S10], wave3 [S5,S6,S8], wave4 [S9,S11,S12], wave5 [S13] — within each wave the file sets are pairwise disjoint; all repeats (compositor.ts in S2/S7/S8, trigger-flow-projection.ts in S1/S6/S11) are across successive waves, i.e. serial.",
+          "survives": true,
+          "plan_response": "The `sequencing` array itself: [[S1,S2,S3],[S4,S7,S10],[S5,S6,S8],[S9,S11,S12],[S13]] is genuinely file-disjoint within each wave; shared-file steps are always in different waves."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 4,
+        "verification_strength": 5
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S7: add an explicit ctx-escape check (no modifier may retain the hoisted ModifierContext across apply calls) before adopting mutate-in-place; fall back to per-voice construction where a modifier captures it.",
+        "S6: fix the 'eight entries' / ten-kind list inconsistency — the enumerated ten-kind list is authoritative."
+      ]
+    },
+    {
+      "initiative_id": "INIT-06-graph-node-type-model",
+      "variant_reviewed": "sonnet",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-06-graph-node-type-model/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S4's rule that each per-kind interface carries 'only its own kind's fields as required (not optional)' is both a runtime lie and a sequencing breaker: kind-specific fields that are OPTIONAL on the flat interface (ccController, ccChannel, oscAddress, noteNumber, modifierId, playType, canvasScene, lfo, …) exist on persisted shows only sometimes, and nothing in the plan adds normalize-time defaulting for them; and once they are required on the union arms, the flat GraphNode (which S13/S14 have not yet retired) stops being assignable to GraphNodeUnion, so S6's core-dispatch narrowing (wave 3) and S9's inspectors (wave 4) cannot typecheck while stores/tests still hand them flat nodes.",
+          "severity": "major",
+          "evidence": "types.ts flat interface marks these fields optional (triggerNodeSignature reads `n.ccController ?? ''`, `n.modifierId ?? ''`, `n.playType ?? ''` at trigger-flow-projection.ts:36-49 — the ?? exists because the fields can be absent); modulation-graph's nodeModSource applies `??` defaults (finding repeated-switches-0002 / opus S12 enumerate ten of them as 'load-bearing back-compat for graphs authored before each field existed'). S4's own text: 'carrying only its own kind's fields as required (not optional)'. TS assignability of {kind:'cc', ccController?: number} to an arm requiring ccController fails.",
+          "survives": false,
+          "repair": "Preserve each kind-specific field's current optionality on its union arm (required-ness may only match the flat interface), or route every ingress through a narrowing normalizer that provably defaults each newly-required field — and state which, per field, in S4.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S15 contradicts the rollback strategy: the step's intent says it 'changes the on-disk/clipboard string format', while rollback_strategy claims 'no step in this plan performs an irreversible data migration… no user data can be stranded'. A show saved by a post-S15 build in the new encodeScopeTarget format is unreadable by every pre-S15 build (and by a post-revert build), and the 'version-gated codec' that would prevent this is asserted in one clause but designed nowhere — no version field, no dual-write, no fixture proving old builds read new saves.",
+          "severity": "major",
+          "evidence": "Plan S15 intent: 'it changes the on-disk/clipboard string format and touches the compositor's per-frame parseHoopTarget call'; rollback_strategy: 'S15's persisted-format change is additive (decode accepts both…)' — decode-both protects the NEW build reading OLD data, not old builds reading new saves, which is exactly the stranding case the strategy denies. Contrast fable-plan's S4, which commits a forward-compat fixture proving the pre-step sha loads post-step saves.",
+          "survives": false,
+          "repair": "Keep the persisted string format byte-identical: decode/encode ScopeTarget only at the persistence boundary while still writing the existing `drum#h,h` string (escaping added only behind an explicit version bump with a forward-compat fixture test at the pre-S15 sha), or drop the on-disk change from S15 entirely.",
+          "targets_step": "S15"
+        },
+        {
+          "claim": "S2 edits TriggerNode.svelte and NodeSignalPreview.svelte — near-zero-coverage UI components — with verification that is only a unit-test filter run; AGENTS.md requires ui-shot capture for any UI-touching change, and the plan's own checks list schedules ui-shot only after S9/S13/S15, four waves later, so a rendering regression from S2 ships unobserved through waves 1-3.",
+          "severity": "minor",
+          "evidence": "S2 verification: '`pnpm test --filter @ledrums/core -- modulation-graph` and `pnpm test --filter @ledrums/web -- TriggerNode` stay green' — no ui-shot. AGENTS.md: 'UI changes must be verified with `pnpm ui-shot` captures'. behaviour_parity_evidence_plan lists ui-shot 'after S9, S13, S15' only.",
+          "survives": false,
+          "repair": "Add to S2: ui-shot capture of the Trigger Graph with one node of each of the six mod-source kinds, diffed against HEAD captures, zero console errors (as the opus variant's S5 specifies).",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "The plan cannot start on its own authority: it declares hard dependencies on INIT-01-single-render-stack and INIT-02-store-decomposition and two blocks_execution:true open questions, so its 7-wave schedule is fiction until two other initiatives land or Trent overrides.",
+          "severity": "major",
+          "evidence": "dependencies_on_other_initiatives: ['INIT-01-single-render-stack','INIT-02-store-decomposition']; open_questions 1 and 2 both blocks_execution: true, owner trent.",
+          "survives": true,
+          "plan_response": "The plan states this honestly rather than hiding it: dependencies_on_other_initiatives names both, and open questions 1-2 explicitly gate execution on Trent's serialization decision ('this plan's dependencies_on_other_initiatives assumes yes'). It is a scheduling constraint surfaced for Phase 9/10, not an unacknowledged hole."
+        },
+        {
+          "claim": "S6 (wave 3) narrows eval-graph/modulation-graph/graph-integrity internals to GraphNodeUnion while TriggerGraph.nodes and every test fixture still carry flat GraphNode until S11 (wave 4) — the wave-3 commit cannot typecheck green in isolation.",
+          "severity": "major",
+          "evidence": "20 packages/core test files construct nodes via `Partial<GraphNode>` factories (grep at HEAD: 26 files match Partial<GraphNode>); S11's consolidation of exactly those factories is scheduled a wave AFTER S6. If flat→union assignability fails (see the S4 required-fields attack), every one of those suites breaks at S6, not S11.",
+          "survives": false,
+          "repair": "Fold the flat/union assignability proof into S4's verification (a compile-time `flat extends union` assertion), or move S11's factory consolidation ahead of S6 so the dispatch narrowing lands against already-compatible fixtures.",
+          "targets_step": "S6"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 3,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 4,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S4: keep kind-specific field optionality identical to the flat interface (or add provable normalize-time defaulting per newly-required field), and add a compile-time flat→union assignability assertion so S6/S9 can land before S13/S14.",
+        "S15: eliminate the on-disk/clipboard format change or gate it behind a versioned codec with a forward-compat fixture proving pre-S15 builds read post-S15 saves; reconcile the rollback_strategy claim.",
+        "S2: add ui-shot verification for the TriggerNode/NodeSignalPreview edits per AGENTS.md.",
+        "Re-order or re-scope S6 vs S11 so wave 3 typechecks green with the test-fixture factories that still exist at that point."
+      ]
+    },
+    {
+      "initiative_id": "INIT-06-graph-node-type-model",
+      "variant_reviewed": "fable",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-06-graph-node-type-model/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S4's file list omits every consumer of `Partial<GraphNode>` — 26 files at HEAD (20 packages/core test files, 5 apps/web test files, plus apps/web/src/lib/trigger-lab/sim.graph-compilation.ts, whose makeNode is the web app's single node mint and is NOT in S4's list). The moment GraphNode becomes a union, `Partial<GraphNode>` exposes only the fields common to all arms (~id/kind/x/y), so every one of those factories fails typecheck inside the S4 commit; the step as scoped cannot land green.",
+          "severity": "major",
+          "evidence": "grep -rln 'Partial<GraphNode>' packages/core/src apps/web/src → 26 files including determinism.test.ts, engine.test.ts, compositor.test.ts, eval-graph.*.test.ts, and sim.graph-compilation.ts; none appear in S4's 14-file list. The sonnet variant independently discovered the same set and spends two whole steps (S11/S12) on it.",
+          "survives": false,
+          "repair": "Add a NodeOfKind<K> extract helper and a shared kind-generic test factory to S4's scope (or as a prior step), and list sim.graph-compilation.ts plus the 25 test files in S4's files — the real blast radius is ~40 files, not 14.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S4 is an unlandable mega-step: one commit, one wave, rewriting types.ts + graph-integrity + eval-graph + render-plan + modulation-graph + modifier-graph + store.svelte.ts (3630 lines) + hydrate + persistence + clipdoc + four view files, PLUS the ~26 unlisted files above. The sonnet variant budgets 2400 LOC and five waves (S6/S8/S9/S13/S14) for the same territory; this plan claims 1050 LOC for the whole 10-step plan. The 'single commit revert' rollback claim is flattery when the commit is this large — reverting it also reverts the filler-deletion, codec-narrowing and makeNode rewrite as one opaque blob.",
+          "severity": "major",
+          "evidence": "S4 files list (14 entries incl. store.svelte.ts, hydrate.ts, persistence.ts, clipdoc.ts); sequencing puts S4 alone in wave 3 as ONE step; estimated_loc: 1050 for all ten steps vs sonnet's 2400 for the equivalent migration; the shadow-type-then-flip strategy used by BOTH sibling variants exists precisely to avoid this bang.",
+          "survives": false,
+          "repair": "Split S4 into (a) shadow union + codec + fixture tests, (b) core-dispatch adoption, (c) web store/views adoption, (d) flip-and-delete — each its own green commit, as the sibling plans do; keep the same-name-no-new-symbols end state by doing the rename in step (d).",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S10 names a file that does not exist: 'apps/web/src/lib/app/views/scope-inspector.ts'. The actual module is apps/web/src/lib/app/docks/inspectors/scope-inspector.ts. An implementer following the file fence literally either creates a duplicate or stalls.",
+          "severity": "minor",
+          "evidence": "grep at HEAD: parseHoopTarget's web caller is apps/web/src/lib/app/docks/inspectors/scope-inspector.ts:24-25; no scope-inspector.ts exists under app/views.",
+          "survives": false,
+          "repair": "Correct the S10 files entry to apps/web/src/lib/app/docks/inspectors/scope-inspector.ts.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S7's 'hoist ONE ModifierContext per frame and mutate ctx.timeMs per voice' changes aliasing semantics for any modifier whose apply() retains the ctx reference: today chain.ts:44 allocates a fresh ctx per call, so a retained reference is a stable snapshot; after the hoist it aliases one object mutated by later voices. The step's grep verification ('no ModifierContext literal inside a per-voice loop') checks allocation, not escape.",
+          "severity": "minor",
+          "evidence": "packages/core/src/modifiers/chain.ts:44 allocates per call at HEAD; compositor.ts:244 passes per-voice `timeMs - v.bornAtMs`. S7 verification greps for construction sites only; no check that ctx does not escape a modifier's apply.",
+          "survives": false,
+          "repair": "Add a ctx-escape audit to S7 (no modifier stores the ctx parameter into state/module scope) or construct per-voice rather than mutating one per-frame object.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S3's claim that '`pnpm typecheck` will enumerate every now-dead === \"play\" comparison' is false for the Svelte sites it names (TriggerNode.svelte:60, Inspector.svelte:132) — plain tsc does not check .svelte templates, so the enumeration mechanism misses exactly the files with zero test coverage.",
+          "severity": "minor",
+          "evidence": "TS2367 (unintentional comparison) fires under tsc for .ts files only; the two named sites are .svelte. packages/core's typecheck script is `tsc --noEmit` (package.json read at HEAD).",
+          "survives": true,
+          "plan_response": "S3's verification does not rely on typecheck alone: the grep gate `grep -rn \"=== 'play'\" apps/web/src/lib packages/core/src --include='*.ts' --include='*.svelte' … returns zero` explicitly covers .svelte files, and the legacy-'play' fixture test covers the load path.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S2's test-only subpath export ('./testing/modulation-parity') is a novel pattern in this repo (exports map currently has only '.') and the step has no contingency if vite/vitest resolution in apps/web rejects it — a wedge with no fallback, unlike the opus variant's explicit reverses clause.",
+          "severity": "minor",
+          "evidence": "packages/core/package.json exports: {'.': './src/index.ts'} at HEAD; apps/web/vite.config.ts has no @ledrums/core alias. S2's verification (grep + gates) detects failure but the step text names no fallback path.",
+          "survives": false,
+          "repair": "Add a pre-flight: land the package.json subpath + repointed import as the FIRST edit and run apps/web typecheck/vitest before deleting the barrel block; on failure, keep the barrel export and land only a lint/grep guard (mirror opus S3's reverses clause).",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S3 (kill 'play' from NodeKind) drops the legacy member from BlockKind, but legacy block-trees with kind 'play' are persisted input to nodeFromBlock/treeToGraph; if the block-tree codec path is typed against the narrowed BlockKind, legacy shows stop compiling/loading.",
+          "severity": "minor",
+          "evidence": "types.ts:221 `BlockKind = LegacyGraphNodeKind | 'effect' | …`; apps/web sim.ts:69 defines its own `BlockKind = Block['kind']` consumed by sim.graph-compilation.ts.",
+          "survives": true,
+          "plan_response": "S3 explicitly fences the codec: 'Pair-sites in hydrate.ts's pre-normalisation migrations … are the codec boundary and KEEP their play handling, typed against PersistedNodeKind. Zod schemas in clipdoc.ts / store.svelte.ts keep accepting play (persisted back-compat is untouched)', and the S3 verification commits a legacy kind:'play' fixture test through hydrate.",
+          "targets_step": "S3"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 4,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 2,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S4: split the flip into shadow-type / core-adoption / web-adoption / flip waves; add NodeOfKind helper and a shared kind-generic test factory; list the ~26 Partial<GraphNode> files (including sim.graph-compilation.ts) in scope.",
+        "S10: correct the scope-inspector.ts path to apps/web/src/lib/app/docks/inspectors/scope-inspector.ts.",
+        "S7: add a ctx-escape audit before adopting the hoisted-and-mutated ModifierContext.",
+        "S2: add a pre-flight resolution check and an explicit fallback for the test-only subpath export."
+      ]
+    }
+  ]
+}

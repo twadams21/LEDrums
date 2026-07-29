@@ -1,0 +1,166 @@
+{
+  "initiative_id": "INIT-08-kit-schema-split",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-08-kit-schema-split",
+    "model": "claude-opus-5[1m]",
+    "effort": "high"
+  },
+  "summary": "packages/core/src/geometry/kit-schema.ts (537 LOC) carries three independent reasons to change — the zod declaration surface, the cumulative v1→v7 migration ladder, and pure derived queries over an already-parsed kit — and 15 commits prove each axis moves on its own. The smallest design that fully retires divergent-change-0005 is a three-way move along the natural dependency DAG that already exists inside the file: kit-migrations.ts (leaf: raw `unknown` in, raw `unknown` out, depends only on ./euler), kit-schema.ts (zod + inferred types + parseKit, imports migrateKit/CURRENT_KIT_VERSION from the migrations module), kit-queries.ts (pure functions OF a KitConfig, imports only types from kit-schema). No symbol is renamed, no body is edited, and packages/core/src/index.ts keeps exporting exactly the same set, so every consumer outside packages/core (apps/server, apps/web, apps/desktop — all of which import from the '@ledrums/core' barrel, verified: zero deep '@ledrums/core/...' imports exist in the repo) is untouched by construction. The only edits outside the three files are one-line import-path changes at the ~11 core-internal relative importers plus two added barrel lines. Deliberately NOT done here: no compatibility facade left behind at kit-schema.ts re-exporting the moved symbols — a facade would preserve the exact magnet that produced the scatter, and the import-site churn it avoids is 11 mechanical lines that `pnpm typecheck` proves complete. Also deliberately out of scope: fixing the v5→v6 gap in the ladder, relocating migrateProjectKit, and any change to reconcileOutputs' id grammar (INIT-07's territory). This plan moves code and changes nothing else.",
+  "findings_addressed": ["divergent-change-0005"],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Capture a pre-split parity artifact from real on-disk kits",
+      "intent": "packages/core is 97% line-covered, but the one region a green suite cannot speak for is the migration ladder applied to REAL saved kit files — apps/server/projects/*.json is untracked user data that no test ever loads. Before any code moves, freeze what today's binary does to those files so the post-split run is a byte comparison rather than a reading. This step adds no repo files; it produces an artifact in the scratchpad.",
+      "files": [
+        "packages/core/src/geometry/kit-schema.ts",
+        "apps/server/src/projects.ts"
+      ],
+      "risk": "low",
+      "verification": "At baseline sha 3708648, run a throwaway node script (written to the session scratchpad, NOT the repo) that, for every JSON file under apps/server/projects/ plus packages/core's DEFAULT_KIT, prints `JSON.stringify(parseKit(raw))` and `JSON.stringify(buildDmxMap(kit, buildPixelModel(kit)))` and writes `sha256` of each to <scratchpad>/init08-parity-before.txt. Evidence of success = the file exists and lists at least one real project file; if apps/server/projects/ is empty on the executing machine, the step MUST record that fact explicitly so the known_gaps in this plan are read as unclosed rather than closed.",
+      "reverses": "Delete the scratchpad artifact; nothing in the repo changed."
+    },
+    {
+      "id": "S2",
+      "title": "Extract the migration ladder into kit-migrations.ts",
+      "intent": "Move change axis 2 behind its own module boundary. New file packages/core/src/geometry/kit-migrations.ts receives, verbatim and in the same order, `CURRENT_KIT_VERSION`, `shiftOutputHoops`, `splitOutputDataLines`, `isRawVec3`, `shiftDrumOriginToCentre`, `shiftDrumToHoops` and `migrateKit`, plus the existing `import { eulerXYZApply } from './euler'`. This module is a leaf: it operates entirely on raw pre-parse `unknown` and imports nothing from kit-schema, so no cycle is possible. kit-schema.ts then adds `import { CURRENT_KIT_VERSION, migrateKit } from './kit-migrations';` (kitSchema's `version` default and parseKit both need it) and re-exports nothing of it. packages/core/src/index.ts gains `export * from './geometry/kit-migrations';` immediately after the kit-schema line so the package's public surface is bit-identical.",
+      "files": [
+        "packages/core/src/geometry/kit-migrations.ts",
+        "packages/core/src/geometry/kit-schema.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/model/project-schema.ts",
+        "packages/core/src/geometry/hoop-migration.test.ts",
+        "packages/core/src/geometry/origin-centre.test.ts",
+        "packages/core/src/geometry/expanded-migration.test.ts",
+        "packages/core/src/geometry/per-output-rgb.test.ts",
+        "packages/core/src/geometry/per-hoop-attrs.test.ts",
+        "packages/core/src/geometry/reconcile-outputs.test.ts",
+        "apps/server/src/output-manager.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "(a) `git diff -M --stat` must show the moved hunks as pure relocation — review the diff of kit-migrations.ts against the deleted range of kit-schema.ts with `git diff --color-moved=zebra`; any non-whitespace line that is not a moved line is a defect. (b) `grep -n 'CURRENT_KIT_VERSION\\|migrateKit\\|shiftOutputHoops\\|splitOutputDataLines\\|shiftDrumOriginToCentre\\|shiftDrumToHoops\\|isRawVec3' packages/core/src/geometry/kit-schema.ts` returns ONLY the two import-line hits. (c) `pnpm gates` green — typecheck proves every relative importer (project-schema.ts and the five geometry test files listed) was repointed, and the migration suites (hoop-migration.test.ts, origin-centre.test.ts, expanded-migration.test.ts, per-hoop-attrs.test.ts) pass with no assertion edited — only their import lines may differ, checked with `git diff -U0 -- '*.test.ts' | grep '^[+-]' | grep -v \"^[+-][+-]\" | grep -v \"from '\\./kit-\"` returning empty. (d) `node_modules/.bin/madge --circular --extensions ts packages/core/src` reports no new cycle versus the 5 known at baseline. apps/server/src/output-manager.test.ts is listed only as a scope fence: it imports CURRENT_KIT_VERSION from the '@ledrums/core' barrel and MUST NOT need an edit — if it does, the barrel step was done wrong.",
+      "reverses": "`git revert` this single commit; kit-migrations.ts is a new file with no other referents, and the import lines revert with it."
+    },
+    {
+      "id": "S3",
+      "title": "Extract the derived queries into kit-queries.ts",
+      "intent": "Move change axis 3 behind its own module boundary. New file packages/core/src/geometry/kit-queries.ts receives, verbatim, `drumHoopCount`, `drumDensity`, `PIXLITE_PHYSICAL_OUTPUTS`, `logicalOutputCount`, `logicalOutputsForPhysical` and `reconcileOutputs`, importing `type { KitConfig, DrumConfig, OutputConfig } from './kit-schema'` — types only, so the edge is erasable and no runtime cycle exists. After this step kit-schema.ts holds exactly the declaration surface: the zod schemas, the `z.infer` types, and parseKit. packages/core/src/index.ts gains `export * from './geometry/kit-queries';`.",
+      "files": [
+        "packages/core/src/geometry/kit-queries.ts",
+        "packages/core/src/geometry/kit-schema.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/geometry/pixel-model.ts",
+        "packages/core/src/geometry/pixel-model.test.ts",
+        "packages/core/src/geometry/reconcile-outputs.test.ts",
+        "packages/core/src/geometry/expanded-migration.test.ts",
+        "packages/core/src/geometry/per-hoop-attrs.test.ts",
+        "packages/core/src/model/routing-integrity.ts",
+        "packages/core/src/model/routing-integrity.test.ts",
+        "packages/core/src/engine/engine.ts"
+      ],
+      "risk": "medium",
+      "verification": "(a) `git diff --color-moved=zebra` on the commit: every line of kit-queries.ts is a moved line. (b) `wc -l packages/core/src/geometry/kit-schema.ts` is ~245 and `grep -c '^export ' packages/core/src/geometry/kit-schema.ts` drops from 22 to 13. (c) `pnpm gates` green — reconcile-outputs.test.ts, expanded-migration.test.ts, routing-integrity.test.ts and pixel-model.test.ts pass with only import lines changed (same `git diff -U0` emptiness check as S2). (d) `node -e \"const c=require('@ledrums/core'); for (const k of ['parseKit','migrateKit','CURRENT_KIT_VERSION','drumHoopCount','drumDensity','PIXLITE_PHYSICAL_OUTPUTS','logicalOutputCount','logicalOutputsForPhysical','reconcileOutputs','kitSchema','rgbOrderSchema']) if (!(k in c)) throw new Error('missing '+k)\"` run from the built package — proves the barrel surface is unchanged for apps/server and apps/web. (e) madge circular check as in S2. Note for the implementer: packages/core/src/engine/engine.ts is the LEGACY engine INIT-01 intends to retire — touch only its import line here.",
+      "reverses": "`git revert` this single commit; kit-queries.ts is new and its only referents are the import lines that revert with it."
+    },
+    {
+      "id": "S4",
+      "title": "Prove parity against the pre-split artifact and repair doc truth",
+      "intent": "Close the loop the suite cannot: re-run S1's script against the split HEAD and diff the hashes, then make the repo's live navigation docs describe the new three-file shape so the next contributor adds a migrator to kit-migrations.ts rather than re-growing the god file. Only .mex/context/conventions.md changes (its line 29 names kit-schema.ts as the schema source of truth and should name the trio and their axes); .mex/ROUTER.md's kit-schema mention is historical review narrative and is deliberately left alone.",
+      "files": [
+        ".mex/context/conventions.md",
+        "packages/core/src/geometry/kit-migrations.ts",
+        "packages/core/src/geometry/kit-queries.ts",
+        "packages/core/src/geometry/kit-schema.ts"
+      ],
+      "risk": "low",
+      "verification": "(a) Re-run the S1 scratchpad script at the post-S3 HEAD into init08-parity-after.txt; `diff <before> <after>` must be empty — identical parseKit output and identical buildDmxMap bytes for every real kit file on the machine. A non-empty diff blocks the initiative. (b) Each of the three files opens with a one-line module header naming its single change axis ('schema declaration only — migrations live in kit-migrations.ts'); verified by reading, this is documentation not behaviour. (c) `node_modules/.bin/knip` reports no newly-unused export in packages/core versus the baseline 00-raw knip output. (d) `pnpm gates` green.",
+      "reverses": "Revert the doc/header commit; it contains no executable change."
+    }
+  ],
+  "sequencing": [["S1"], ["S2"], ["S3"], ["S4"]],
+  "interface_deltas": [
+    {
+      "at": "packages/core/src/geometry/kit-schema.ts",
+      "removed": [
+        "CURRENT_KIT_VERSION",
+        "migrateKit",
+        "drumHoopCount",
+        "drumDensity",
+        "PIXLITE_PHYSICAL_OUTPUTS",
+        "logicalOutputCount",
+        "logicalOutputsForPhysical",
+        "reconcileOutputs"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "The module's own surface falls from 22 exports to 13, and its remaining 13 are one coherent axis (declare the kit shape). Nothing is added back as a facade."
+    },
+    {
+      "at": "packages/core (root barrel, src/index.ts)",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "Honest accounting: at the PACKAGE boundary this plan relocates rather than reduces — the same symbol set is exported, just from three modules. That is the point (no consumer outside packages/core changes), and it is why this initiative scores on change-axis separation, not on interface reduction."
+    },
+    {
+      "at": "packages/core/src/geometry/kit-migrations.ts (new module)",
+      "removed": [],
+      "added": ["CURRENT_KIT_VERSION", "migrateKit"],
+      "net_interface_change": "increases",
+      "note": "New module boundary with a 2-symbol public face over 7 relocated functions — the five transforms stay private, exactly as they are today. Deliberate: this is where the ladder's growth is now contained."
+    },
+    {
+      "at": "packages/core/src/geometry/kit-queries.ts (new module)",
+      "removed": [],
+      "added": [
+        "drumHoopCount",
+        "drumDensity",
+        "PIXLITE_PHYSICAL_OUTPUTS",
+        "logicalOutputCount",
+        "logicalOutputsForPhysical",
+        "reconcileOutputs"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate relocation, not new API. Every symbol is already exported today from kit-schema.ts; the count of exported symbols in packages/core is unchanged."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates (machine-mutex; typecheck + full suite) after S2, S3 and S4 — must stay at or above the 2968-test baseline with zero failures. The test COUNT must not drop: this plan adds no tests and deletes none, so any delta means a suite stopped being collected because an import broke silently.",
+      "git diff --color-moved=zebra on the S2 and S3 commits — every line in the new files must be classified as moved. A non-moved line is an edited behaviour and must be justified or reverted.",
+      "git diff -U0 -- '*.test.ts' on S2 and S3 filtered to lines that are not `from './kit-...'` import lines — must be empty. Per the finding's own verification plan, any test edit beyond an import line means the split changed behaviour.",
+      "node_modules/.bin/madge --circular --extensions ts packages/core/src — no cycle beyond the 5 known at baseline (only #1 touches this scope, and it is in modifiers/voice, not geometry).",
+      "Barrel-surface assertion (S3 verification d): every symbol previously exported from kit-schema.ts is still reachable from '@ledrums/core'.",
+      "Real-kit byte parity: the S1/S4 before-after diff of parseKit output hashes and buildDmxMap channel bytes over apps/server/projects/*.json and DEFAULT_KIT — empty diff required."
+    ],
+    "known_gaps": "Two gaps a green suite cannot close. (1) THE MIGRATION LADDER OVER REAL FILES: packages/core sits at 97% line coverage and there are eight dedicated kit test files (hoop-migration, origin-centre, expanded-migration, per-hoop-attrs, per-output-rgb, reconcile-outputs, kit-schema.hoop-invariant, flip), so the ladder is well exercised — but only against synthetic literals authored in the tests. No test loads a real saved kit; apps/server/projects/*.json is untracked user data outside the repo, and none of Trent's actual saved projects are ever migrated by CI. The replacement evidence is S1/S4's before-after byte diff run on the actual machine that holds those files, and it is only as good as the set of files present there — if apps/server/projects/ is empty on the executing machine, this gap stands UNCLOSED and the initiative should be treated as evidenced only by the synthetic suite plus the moved-line diff. (2) DMX OUTPUT ON THE WIRE: nothing in the suite or in S1/S4 sends a packet. buildDmxMap byte parity is computed in-process; the Art-Net/sACN senders in packages/io are not exercised (that is INIT-03's region, 88.9% covered with the send path untested). This plan does not touch packages/io or the render loop, so the risk is structural rather than measured — the argument is that no line of behaviour moves, evidenced by --color-moved, not that the wire was observed. Claiming 'the suite proves it' would be false for both regions and is not claimed here.",
+    "baseline_reference": "Phase 0 baseline sha 3708648 (branch feat/ota-discord-announce), 2968 tests green at HEAD, packages/core coverage 97% lines / 86.41% branches per 00-coverage.json. Note the executing HEAD is AHEAD of 3708648 by fix batches 1-3 (12 dead-code auto-fixes, dead-code residue, kit-mirror removal); the parity artifact in S1 must be captured at the actual pre-split HEAD, not at 3708648, or the mirror removal will show up as a false parity break."
+  },
+  "rollback_strategy": "Three independently revertible commits (S2, S3, S4) with no data migration, no feature flag, and no persisted-format change — the on-disk kit format and CURRENT_KIT_VERSION are untouched, so a revert at any point leaves saved projects loadable by both the reverted and the split code. Revert order is S4 → S3 → S2 (reverse landing order); each revert alone is green because each commit is self-contained (new file + its import sites + its barrel line). Partial rollback is meaningful: reverting only S3 leaves the migration split landed and the queries back in kit-schema.ts, which still retires two-thirds of the change scatter. If a defect surfaces only after all three have landed and been built on, the safe move is a forward fix in the relevant new module, not a revert, because by then INIT-07 may have edited reconcileOutputs in kit-queries.ts.",
+  "estimated_loc": 620,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should migrateProjectKit (packages/core/src/model/project-schema.ts:255) move into kit-migrations.ts as an explicit v5→v6 step taking the controller rgbOrder as a parameter, or stay in project-schema.ts? It is genuinely a kit migration — it seeds per-output RGB order onto the kit — but it reads project.output, which migrateKit cannot see. Leaving it out means the ladder is documented in one file and implemented in two.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    },
+    {
+      "question": "The map (01-map/core-geom.json) flags that the ladder has steps for <2, <3, <4, <5 and <7 but no v5→v6 transform, so a stored v5 kit may reach the schema missing whatever v6 introduced. This plan treats that as pre-existing behaviour and moves it verbatim. Confirm it stays out of scope here rather than being fixed under cover of a 'pure move'.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Is it acceptable to ship a small checked-in corpus of REAL kit JSON (Trent's actual saved projects, at v1..v7) as test fixtures so the migration ladder gains regression coverage against files that were actually written by the app? That is the only durable fix for the parity gap this plan can only paper over with a one-shot local diff — but it means committing what is currently private user data.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Merge ordering against INIT-07-patch-node-identity, which will rewrite reconcileOutputs' `output:<n>` id minting, and INIT-01-single-render-stack, which retires packages/core/src/engine/engine.ts (one import line here). This plan is ~620 LOC of pure motion and should land BEFORE both so their edits happen in kit-queries.ts and not in a file that is about to be cut in three. Confirm that ordering rather than letting the cheap plan queue behind the expensive ones.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    }
+  ]
+}

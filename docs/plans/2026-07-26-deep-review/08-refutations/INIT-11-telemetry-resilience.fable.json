@@ -1,0 +1,105 @@
+{
+  "artifact": "08-refutations/INIT-11-telemetry-resilience.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-11-telemetry-resilience/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-11-telemetry-resilience",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-11-telemetry-resilience/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "The 'blocked' state does not actually stop shipping: S3 gates only tick/flush's scheduleFlush, but `enqueue` also calls `scheduleFlush(flushIntervalMs)` (apps/server/src/telemetry/ship-queue.ts:206) and `doShip` itself has no blocked check. On a persistent 401 with a live error stream (the keyed reports queue upserts continuously — main.ts:298-300), every enqueue after the block re-arms the timer, tick fires, doShip POSTs, gets another 401 — one credential-rejected POST per flush interval, forever, while state() says 'blocked' and the operator was told shipping stopped. S3's test (b) passes only because no enqueue occurs during the 30 fake-timer minutes, so the suite cannot catch this.",
+          "severity": "major",
+          "evidence": "ship-queue.ts:197-207 (enqueue → scheduleFlush unconditionally), :147-149 (doShip has no state guard), plan S3 text: 'tick/flush must check blocked before calling scheduleFlush' — enqueue is not named, and no doShip guard is specified. Plan intent for branch (2): 'stops the wakeup treadmill'.",
+          "survives": false,
+          "repair": "Specify that doShip returns early when `blocked` unless the attempt was initiated by an explicit `flush()` call (the operator escape hatch), and that `enqueue` skips `scheduleFlush` while blocked (still persisting and enforcing caps). Extend test (b) to enqueue a new item after the block and assert zero further transport calls.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "The state-change contract is self-contradictory and leaves S5's 'recovered' events with no producer. S3 says onStateChange is 'invoked only on a TRANSITION, never per attempt', yet branch (3) calls onStateChange('ok', 'dead-lettered N item(s)…') unconditionally — on a first-attempt 400 the state goes ok→ok, which is not a transition, so under the stated rule the operator's ONLY poison-batch signal never fires. Symmetrically, no step says the SUCCESS path (or flush()-after-blocked) calls onStateChange at all, so the 'Error reporting recovered' / 'Off-site backups recovered' labels S5 wires into the Monitor can never be emitted: blocked→ok recovery happens inside the success path of doShip, which S3 leaves byte-for-byte per the parity anchor. An implementer cannot execute this unambiguously — they must either violate the transition-only rule or ship dead events.",
+          "severity": "major",
+          "evidence": "Plan's own contradiction: S3 intent text ('invoked only on a TRANSITION') vs branch (3) ('call opts.onStateChange?.(\\'ok\\', `dead-lettered …`)') vs S5 label list including 'recovered' labels, with no step assigning the ok-transition emission to the success path; parity check in behaviour_parity_evidence_plan demands existing success-path tests pass byte-unmodified.",
+          "survives": false,
+          "repair": "Define the contract precisely: onStateChange fires on state TRANSITIONS (blocked→ok on flush success, ok→blocked on 401/403) AND dead-letter events are a separate always-fire notification (either a distinct onDeadLetter callback or an explicit exception written into the contract). Name the success-path line where the blocked→ok / retrying→ok emission happens, and note that adding it does not break the parity-anchor tests (they inject no onStateChange).",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S1 verification (c) cannot fail for the reason it claims to test: asserting 'a DB.prepare spy was never called' on an oversized-content-length POST proves nothing about 'without reading the body', because in TODAY'S code DB.prepare is also never reached before the body read on a 413 path (index.ts:40-41 rejects before ingestBatch). The test would pass against an implementation that fully buffers via req.text() and only then checks content-length — the exact behaviour the step exists to remove.",
+          "severity": "minor",
+          "evidence": "workers/error-ingest/src/index.ts:39-41 — raw is read then length-checked, and DB access (line 54-63) is unreachable on the 413 path already; the proposed assertion is vacuously true both before and after the change.",
+          "survives": false,
+          "repair": "Have the fake Request expose a spy on text()/body consumption and assert it was never invoked when the declared content-length exceeds the limit.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "The dead-letter cap is unimplementable as written across restarts: MAX_DEADLETTER_BYTES is enforced on an append-only file via fs.promises.appendFile, but the plan never says how the current file size is known. An in-memory byte tally resets on every process restart, so a recurring poison pattern grows `<path>.deadletter.jsonl` without bound across boots — recreating the 'second unbounded queue' the cap exists to prevent — while stat-ing the file before each append is a design decision the implementer is left to invent.",
+          "severity": "minor",
+          "evidence": "Plan S3: 'capped by an internal MAX_DEADLETTER_BYTES = 4_000_000: over the cap, the append is skipped and logged' — no mechanism named; ship-queue.ts has no existing file-size tracking for any path, and boot-recovery (lines 177-194) reads only opts.path, never the dead-letter sibling.",
+          "survives": false,
+          "repair": "Specify the mechanism: stat the dead-letter file once at queue construction (or lazily before the first append), keep the tally in memory thereafter, and accept the small race as documented slack.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "The plan admits a mutation seam with INIT-04 (S5 edits the main.ts telemetry block that INIT-04 decomposes, 'must not run concurrently') yet declares `dependencies_on_other_initiatives: []` — the machine-readable field Phase 9 and the fleet scheduler actually consume. The seam gate is constitutional (slices sharing a mutation seam stay serial); burying it in a non-blocking open_question owned by 'synthesis' means an orchestrator reading the structured fields can legally dispatch INIT-11 wave 4 concurrently with INIT-04 and corrupt the merge.",
+          "severity": "major",
+          "evidence": "Plan line: dependencies_on_other_initiatives is [] while open_questions[4] states 'These share a mutation seam and must not run concurrently'; AGENTS.md/ai-work-system seam gate: slices sharing a mutation seam stay serial.",
+          "survives": false,
+          "repair": "Move the constraint into dependencies_on_other_initiatives as an explicit serialization edge on INIT-04 (either order, never concurrent), keeping the open question only for the which-goes-first decision.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S4's default maxBatchBytes of 900_000 also applies to the backups queue (S5 leaves it on the default), where a single snapshot bundle routinely exceeds 900KB — so every backups ship degenerates to one-bundle-per-request via the 'always at least one item' clause, multiplying request count against a route whose cap is 16MB, not 1MB.",
+          "severity": "minor",
+          "evidence": "main.ts:321-326 (backups queue maxBytes 8_000_000, bundles carry whole project); index.ts:12 MAX_BACKUP_BODY_BYTES 16_000_000; S4 default 900_000 derived from the /ingest cap only.",
+          "survives": true,
+          "plan_response": "S4 names this outcome as intended: 'Note the side benefit for the append-only backups queue: bundles now ship one or few at a time, so a single bad bundle takes only itself to the dead-letter file' — per-bundle shipping is claimed deliberately, and the extra request count (≤100 items) is bounded and drained at DRAIN_DELAY_MS per S4's cadence design.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "Deploy skew breaks the client: S2-S5 can land while the live Worker is still the pre-S1 version, whose D1/R2 faults surface as bare runtime 500s with no JSON body, and the new classification could mishandle them.",
+          "severity": "minor",
+          "evidence": "The Worker is a separate deploy unit (`pnpm --filter @ledrums/error-ingest-worker deploy`); git landing order does not control the live version.",
+          "survives": true,
+          "plan_response": "rollback_strategy answers this explicitly: 'the client-side classification (S2-S5) is safe against BOTH Worker versions because the old Worker's bare 500 is a 5xx and therefore classified retryable, i.e. today's behaviour. Partial rollback is therefore safe in either direction.' isRetryableStatus(500)=true confirms it.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "The byte budget measures cached per-item serialized lengths, not the actual POST body, which adds the `{\"reports\":[...],\"dropped\":N}` envelope and separators — so a budget-compliant batch could still exceed the Worker's 1MB cap and 413 permanently.",
+          "severity": "minor",
+          "evidence": "ship-queue.ts:199 caches Buffer.byteLength(JSON.stringify(item))+1 per item; transport.ts:19 posts JSON.stringify({ reports, dropped }); the two differ by envelope + comma overhead.",
+          "survives": true,
+          "plan_response": "S4/S5 set the default at 900_000 explicitly derived from MAX_BODY_BYTES 1_000_000 ('explicit, with a comment naming workers/error-ingest MAX_BODY_BYTES as the number it is derived from') — 100KB of headroom against an envelope overhead of ~30 bytes plus one comma per item, orders of magnitude of margin; and S3's dead-letter path is the designed backstop if the margin were ever breached.",
+          "targets_step": "S4"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 4,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S3: gate doShip and enqueue's scheduleFlush on the blocked state (flush() remains the explicit escape hatch), and extend test (b) to enqueue after blocking and assert zero further transport calls — otherwise a live error stream keeps POSTing 401s while 'blocked'.",
+        "S3/S5: make the onStateChange contract executable — transitions only for ok/retrying/blocked (including the success-path blocked→ok emission that produces S5's 'recovered' labels, which currently has no producer), with dead-letter notification defined as a separate always-fire signal or an explicit contract exception.",
+        "S3: specify how MAX_DEADLETTER_BYTES knows the current file size across restarts (stat once at construction, tally in memory) so the dead-letter file cannot grow unboundedly across boots.",
+        "S1: replace verification (c)'s vacuous DB.prepare-spy assertion with a spy on the request body read, so the no-buffering property is what the test actually proves.",
+        "Metadata: record the INIT-04 mutation seam on apps/server/src/main.ts as an explicit serialization edge in dependencies_on_other_initiatives, not only as a non-blocking open question."
+      ]
+    }
+  ]
+}

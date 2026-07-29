@@ -1,0 +1,152 @@
+{
+  "initiative_id": "INIT-05-pin-auth-hardening",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-05-pin-auth-hardening",
+    "model": "claude-opus-5[1m]",
+    "effort": "medium"
+  },
+  "summary": "Two findings, one root cause: pin-gate.ts holds two credentials as bare `string | null`, so the strength rule and the constant-time comparison written for the host token were never applied to the room PIN — the credential that actually faces the public tunnel — and the admission path has no failure accounting at all, leaving a 10^6 space searchable at connection rate. This plan makes the credential invariants structural rather than remembered (one internal `Credential` helper inside pin-gate.ts, used by BOTH credentials, so a future third credential cannot get a weaker comparison by omission), and adds one new pure module, admission-throttle.ts, that turns repeated refusals into a per-peer exponential cooldown plus a bounded global tier and a single monitor event per escalation. The admission policy is folded into the existing `admitDecision` export rather than added beside it, so the whole decision — trusted-host bypass, PIN check, throttle — stays one pure, unit-testable function and main.ts keeps a ten-line handler. Deliberately NOT in scope: a new WS close code. Reusing 4401 keeps the change server-only (packages/protocol, apps/web store and PinGate.svelte untouched, no design-system or ui-shot obligation); the cost is that a throttled legitimate user sees 'incorrect PIN' rather than 'too many attempts', which is recorded as an open question rather than silently widened into a UI initiative. Smallest design that fully retires both findings.",
+  "findings_addressed": [
+    "resilience-hole-0006",
+    "primitive-obsession-0010"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Credential value helper in pin-gate.ts: one parse, one constant-time equals, both credentials",
+      "intent": "Today `safeEqual` (pin-gate.ts:170-175) and the `injected.length >= MIN_HOST_TOKEN_LENGTH` strength rule (line 153) are host-token-only by accident of where they were written; the room PIN reaches `supplied === pin` at lines 35 and 58. Introduce a module-private `Credential` helper in apps/server/src/pin-gate.ts with exactly two operations — `parseCredential(raw: string | null | undefined, minLength: number): string | null` (trim, reject below minLength, reject empty) and `credentialsEqual(a: string, b: string): boolean` (the existing safeEqual body, renamed and now shared) — and route every credential path through them: `createPinGate.check`, `createMutablePinGate.check`, `resolvePin`, `resolveHostToken`, `isTrustedHost`. Export a new `MIN_PIN_LENGTH = 4` constant next to the existing `MIN_HOST_TOKEN_LENGTH`, and make `resolvePin` FAIL CLOSED on a too-short explicit `LEDRUMS_PIN` by throwing `new Error('LEDRUMS_PIN must be at least 4 characters')` — not by silently ignoring it, because a silently-dropped PIN means an OPEN server. The minimum is enforced regardless of `tunnelEnabled`, because `MutablePinGate.ensurePin()` (line 60-63) keeps an existing weak PIN when the in-app Share control later opens a tunnel on an already-booted server: 'no tunnel at boot' is not 'never public'. `generatePin` and the 6-digit generated PIN are unchanged. `Credential` is NOT exported — the interface stays the same size while the invariant becomes structural.",
+      "files": [
+        "apps/server/src/pin-gate.ts",
+        "apps/server/src/pin-gate.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New cases in apps/server/src/pin-gate.test.ts: (a) `createPinGate('4242').check('4243')` still false and `.check('4242')` still true — the existing 'admits only the exact PIN' and 'no trimming — exact match' cases must pass UNCHANGED, proving the constant-time swap is behaviour-identical for equal- and unequal-length inputs including multi-byte input ('4242' vs '424\\u00e9' must be false, not throw); (b) `expect(() => resolvePin({ LEDRUMS_PIN: '1' }, false)).toThrow(/at least 4/)` — the exact case the finding's verification_plan names as accepted today; (c) `resolvePin({ LEDRUMS_PIN: ' 4242 ' }, false) === '4242'` (trim preserved); (d) `resolvePin({}, true)` still returns 6 digits; (e) `resolveHostToken` weak/empty/at-minimum cases (pin-gate.test.ts:102-137) pass untouched, proving the shared parse did not move the host-token boundary. Then `pnpm gates`.",
+      "reverses": "Revert the S1 commit; no persisted state and no protocol change, so the only externally visible effect is that a sub-4-character LEDRUMS_PIN boots again."
+    },
+    {
+      "id": "S2",
+      "title": "New pure module admission-throttle.ts: per-peer cooldown, bounded global tier, injected clock",
+      "intent": "Create apps/server/src/admission-throttle.ts owning ALL failure accounting, with no IO, no timers and an injected `now: () => number` so it is deterministic under test. Public surface, three symbols: `peerKeyFrom(remoteAddress: string | null | undefined, headers: Record<string, string | string[] | undefined>): string` — returns `cf:<cf-connecting-ip>` only when `isViaCloudflare(headers)` is true (so a direct caller cannot mint unlimited buckets by forging the header), else `ip:<remoteAddress ?? 'unknown'>`; `createAdmissionThrottle(policy?: Partial<ThrottlePolicy>): AdmissionThrottle` with `{ allow(key): { ok: true } | { ok: false; retryAfterMs: number }, recordFailure(key): ThrottleAlert | null, recordSuccess(key): void }`; and the `ThrottlePolicy`/`AdmissionThrottle`/`ThrottleAlert` types. Policy defaults: `freeAttempts = 5`, `windowMs = 60_000` (a bucket with no failure for windowMs is forgotten), cooldown `baseMs = 1_000` doubling per failure past the free allowance to `maxMs = 60_000`; `maxTrackedPeers = 1_024` with oldest-touched eviction so the map cannot be grown without bound by a spoofed-key flood; a GLOBAL tier of `globalFailures = 100` inside windowMs that applies one shared `maxMs` cooldown to every non-trusted peer, because per-peer buckets alone do nothing against a distributed guess. `recordFailure` returns a non-null `ThrottleAlert { scope: 'peer' | 'global'; key: string; failures: number; cooldownMs: number }` ONLY on crossing into cooldown and then at most once per escalation — the alert is a value, not an emit, so the module stays pure and the caller controls the sink. `recordSuccess` clears the peer bucket so a drummer who finally types the right PIN is not still cooling down.",
+      "files": [
+        "apps/server/src/admission-throttle.ts",
+        "apps/server/src/admission-throttle.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New apps/server/src/admission-throttle.test.ts with a fake clock (`let t = 0; const now = () => t`): (a) 5 failures then `allow(key).ok === false` with `retryAfterMs === 1000`; (b) advancing t past retryAfterMs re-allows exactly one attempt, and a further failure yields 2000 then 4000 — capped at 60000; (c) failures on key A never affect key B; (d) `recordSuccess(A)` after 4 failures resets A to the full free allowance; (e) a bucket untouched for windowMs is forgotten (allow → ok, and internal size shrinks); (f) 1500 distinct keys leave at most 1024 tracked (assert via the exported `size()` debug accessor or by proving the first key is allowed again after eviction); (g) 100 failures spread over 100 distinct keys put a 101st fresh key into global cooldown; (h) `recordFailure` returns an alert exactly once per escalation, not once per failure — assert exactly 3 non-null alerts across 12 failures. Then `pnpm gates`.",
+      "reverses": "Delete both new files; nothing imports them until S3."
+    },
+    {
+      "id": "S3",
+      "title": "Fold the throttle into admitDecision so the whole admission policy is one pure function",
+      "intent": "Change `admitDecision` (pin-gate.ts:212-220) from `(url, gate, trustedLocal = false)` to `(url, gate, ctx: AdmitContext = {})` where `AdmitContext = { trustedLocal?: boolean; throttle?: AdmissionThrottle; peerKey?: string }`, and give it the full ordered policy: trustedLocal → `{ ok: true }` with NO throttle bookkeeping (the host app can never lock itself out, and never consumes another peer's budget); otherwise, when a throttle and peerKey are supplied, `throttle.allow(peerKey)` first — a denied peer is refused WITHOUT the PIN ever being compared, which is what makes the cooldown a real control rather than a delay; otherwise `gate.check(pinFromUrl(url))`, then `throttle.recordSuccess(peerKey)` on pass or `throttle.recordFailure(peerKey)` on fail, returning the refusal as `{ ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin', alert?: ThrottleAlert }`. The refusal `code`/`reason` are deliberately unchanged so no client-side or protocol change is implied. An `AdmitDecision` with neither throttle nor peerKey behaves exactly as today, which is how every existing pin-gate.test.ts admitDecision case stays honest. This step is why the initiative adds no second admission entry point: one exported decision function, one place the order of checks lives.",
+      "files": [
+        "apps/server/src/pin-gate.ts",
+        "apps/server/src/pin-gate.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Update the five existing `describe('admitDecision')` cases (pin-gate.test.ts:52-75) to the object form and confirm they pass with identical expectations. Add: (a) the finding's exact scenario — 5 wrong PINs from one peerKey, then a call supplying the CORRECT PIN during cooldown returns `ok: false`, and after the clock advances past the cooldown the same correct PIN returns `ok: true`; (b) `trustedLocal: true` called 50 times with a wrong PIN never produces a refusal and leaves `throttle.allow(peerKey).ok === true` — the host is neither throttled nor charged; (c) an open gate (`createPinGate(null)`) records no failures at all; (d) a decision with no throttle argument is byte-identical to today's for all five legacy cases. Then `pnpm gates`.",
+      "reverses": "Revert S3 only: the signature reverts to `(url, gate, trustedLocal)`; S1 and S2 remain valid and unused-by-main respectively."
+    },
+    {
+      "id": "S4",
+      "title": "Wire throttle + audit event into the WS connection handler in main.ts",
+      "intent": "In apps/server/src/main.ts, construct `const admissionThrottle = createAdmissionThrottle();` next to the `pinGate` construction (line 86) and change the `wss.on('connection')` admit block (lines 480-490) to compute `const peerKey = peerKeyFrom(req.socket.remoteAddress, req.headers);` and call `admitDecision(req.url, pinGate, { trustedLocal, throttle: admissionThrottle, peerKey })`. On `decision.alert`, emit ONE monitor event — `monitor({ type: 'error', direction: 'local', source: 'server/ws', destination: 'remote-access', label: 'Repeated PIN refusals', detail: `${alert.failures} failed attempts from ${alert.key}; cooling down ${Math.round(alert.cooldownMs / 1000)}s` })` — and a matching `console.warn`. Because the alert is emitted only on escalation and at most once per escalation, a guessing flood cannot itself flood the 300-event monitor bus (monitor.ts:3) or the per-attempt broadcast to every admitted client; that amplification is the reason the alert is throttled inside the module rather than emitted per failure. Nothing else in the handler moves — `clients.admit`, `tunnelClients.add`, presence, state and replay are untouched.",
+      "files": [
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "`pnpm typecheck` and `pnpm gates` (main.ts is 0%-covered, so the suite proves compilation and non-regression only — the behavioural proof is S5). Read-back check that the handler still calls `clients.admit(ws)` exactly once and that no code path emits a monitor event per failed attempt (grep the diff for `monitor(` inside the refusal branch: exactly one call site, guarded by `decision.alert`).",
+      "reverses": "Revert this commit; `admitDecision` called without the ctx throttle fields degrades to today's behaviour, so the server is immediately back to baseline admission with S1-S3 still landed."
+    },
+    {
+      "id": "S5",
+      "title": "Adversarial live-socket proof over the real server (the evidence the suite cannot give)",
+      "intent": "main.ts's connection handler has no unit coverage, so a green suite cannot prove the wiring is live — the exact failure mode the review is meant to catch. Add scripts/pin-throttle-probe.mjs: a Node script that boots the built server on an ephemeral port with `LEDRUMS_PIN=4242`, opens N sequential WebSocket connections to `ws://127.0.0.1:<port>/ws?pin=0000` from the same peer, records each close code and the wall-clock gap before the connection is refused, then attempts `?pin=4242` DURING the cooldown and again after it, and finally asserts a `?hostToken=<token>` connection is admitted throughout. It prints a JSON verdict and exits non-zero on failure. Store the run output as docs/plans/2026-07-26-deep-review/artifacts/pin-throttle-probe.json. The script is a dev/CI probe, never imported by the server, and takes no machine lock (it uses its own port), so it does not contend with `pnpm gates`.",
+      "files": [
+        "scripts/pin-throttle-probe.mjs",
+        "docs/plans/2026-07-26-deep-review/artifacts/pin-throttle-probe.json"
+      ],
+      "risk": "low",
+      "verification": "`node scripts/pin-throttle-probe.mjs` exits 0 and its JSON shows: attempts 1-5 refused with code 4401 immediately; attempt 6 refused without the server ever comparing the PIN (observable as refusal while supplying the correct PIN); a correct-PIN connection after the cooldown ADMITTED (proving no permanent lockout); the hostToken connection admitted at every point (proving the host bypass is never throttled). Run the same script against baseline sha 3708648 to capture the before-state — every attempt admitted-or-refused with zero delay and unlimited retries — and keep both runs in the artifact.",
+      "reverses": "Delete the script and artifact; no product code involved."
+    },
+    {
+      "id": "S6",
+      "title": "Document the credential rules where operators actually read them",
+      "intent": "Record the two new operator-visible rules so the change does not become folklore: `LEDRUMS_PIN` must be at least 4 characters and the server now REFUSES TO BOOT below that, and repeated failed admissions from one peer trigger an escalating cooldown plus a 'Repeated PIN refusals' monitor event. Update the pin-gate.ts header comment block (lines 4-19), which is currently the de-facto spec for the gate and today claims only that the gate is uniform, to state the throttle and the fail-closed minimum. No design-system or UI surface is touched by this initiative, so no styleguide entry or ui-shot capture is owed.",
+      "files": [
+        "apps/server/src/pin-gate.ts",
+        "docs/plans/2026-07-26-deep-review/artifacts/pin-throttle-probe.json"
+      ],
+      "risk": "low",
+      "verification": "Read-back diff: the header comment names MIN_PIN_LENGTH, the boot-time throw, the per-peer cooldown and the trusted-host exemption; `pnpm gates` still green (comment-only change to product code)."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2"],
+    ["S3"],
+    ["S4"],
+    ["S5", "S6"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/server/src/pin-gate.ts",
+      "removed": [],
+      "added": ["MIN_PIN_LENGTH", "AdmitContext"],
+      "net_interface_change": "increases",
+      "note": "Deliberate and minimal. The strength/constant-time machinery (parseCredential, credentialsEqual) stays MODULE-PRIVATE, so the invariants become structural without enlarging the surface; only the operator-facing constant and the admitDecision context type are exported. `admitDecision`'s third parameter changes from a positional boolean to an options object — a signature change, not a new export, chosen over adding a second admission entry point precisely so the order of admission checks has exactly one home."
+    },
+    {
+      "at": "apps/server/src/admission-throttle.ts",
+      "removed": [],
+      "added": ["createAdmissionThrottle", "peerKeyFrom", "ThrottlePolicy", "AdmissionThrottle", "ThrottleAlert"],
+      "net_interface_change": "increases",
+      "note": "A new module for a control that does not exist today; a resilience initiative adds code by definition. The surface is one factory, one pure key derivation and three types — the failure accounting itself (buckets, eviction, global tier, escalation) is entirely behind it, and main.ts gains no new state of its own."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates — full suite under the machine mutex; must stay at or above the 2968-test baseline with zero failures.",
+      "pnpm typecheck — proves the admitDecision signature change has exactly the call sites the plan names (main.ts:486 and pin-gate.test.ts) and no silent boolean-to-object coercion elsewhere.",
+      "The five pre-existing admitDecision cases (apps/server/src/pin-gate.test.ts:52-75) and the eleven resolveHostToken/isTrustedHost cases (lines 98-160) must pass with their EXPECTATIONS unchanged — only the call form may change. An edited expectation in this file is a parity failure, not a test update.",
+      "apps/server/src/pin-gate.test.ts:29 'a configured gate admits only the exact PIN' pins that the constant-time swap changed no accept/reject decision, including the no-trimming case and unequal-length inputs.",
+      "apps/web/src/lib/trigger-lab/store.pin.test.ts and apps/web/src/lib/ws/client.test.ts must pass untouched — the 4401 close code and reason are unchanged, so the client's PIN-gate overlay and reconnect pause behave exactly as before.",
+      "node scripts/pin-throttle-probe.mjs (S5) run against baseline sha 3708648 and against HEAD, both outputs archived, showing the before/after difference is exactly: refusal after the free allowance, and nothing else.",
+      "Manual: `pnpm dev` with no LEDRUMS_PIN — the boot banner shows no PIN, the local app connects, and admission is unchanged (the open-gate path records no failures at all)."
+    ],
+    "known_gaps": "apps/server/src/main.ts has no unit coverage, so a green `pnpm gates` cannot prove S4's wiring is live — it proves only that it compiles. That gap is filled by S5's adversarial probe against a real booted server, which is non-model evidence and outranks any reading of the diff. Second gap: the constant-time property of credentialsEqual is not provable by a test — timing assertions are flaky by nature — so the evidence is structural (both credentials provably route through the single timingSafeEqual call site; grep must show zero remaining `=== pin` comparisons in pin-gate.ts), not measured. Third gap: the throttle's real-world efficacy against a DISTRIBUTED guess rests on the global tier, whose parameters (100 failures/60s) are a judgement, not a measurement; the probe exercises the single-peer path only. Fourth: no test covers the interaction between the cooldown and a legitimate user on a flaky mobile connection who reconnects repeatedly with a CORRECT PIN — recordSuccess clears the bucket, so this is argued rather than observed, and the probe's post-cooldown correct-PIN admission is the closest evidence.",
+    "baseline_reference": "Phase 0 baseline sha 3708648, 2968 tests green at HEAD via `pnpm gates`; plus the pre-change run of scripts/pin-throttle-probe.mjs archived alongside the post-change run."
+  },
+  "rollback_strategy": "Six commits, one per step, in the sequencing order — each is independently revertable and the boundaries were chosen for that. Cheapest partial rollback if the throttle misbehaves in the field: revert S4 alone (a ~10-line main.ts change). admitDecision called without the ctx throttle fields is behaviourally identical to baseline, so reverting S4 restores today's admission while keeping the constant-time comparison and the strength rule — the security floor never goes backwards. Full rollback is `git revert` of S4, S3, S1 in that order (S2, S5, S6 are additive files and can be left or deleted). No persisted state, no migration, no protocol or client change, so nothing is one-way; the single operator-visible irreversibility is that between S1 landing and its revert, a server configured with a sub-4-character LEDRUMS_PIN will refuse to boot — the fix is to set a longer PIN, and it must be called out in the release note.",
+  "estimated_loc": 290,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should a throttled connection close with a distinct code (e.g. WS_CLOSE_PIN_THROTTLED = 4429) so the web PIN overlay can say 'too many attempts, wait 30s' instead of 'Incorrect PIN'? This plan deliberately reuses 4401 to keep the change server-only; the honest cost is that a cooling-down drummer is told the wrong thing.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Is 4 the right minimum for an explicit LEDRUMS_PIN, and should the tunnel-GENERATED PIN grow past 6 digits now that guessing is throttled? 6 digits at one attempt per 60s is ~9 months of guessing, so the throttle arguably makes lengthening unnecessary — but a longer PIN is the only defence if the throttle is ever reverted, and it costs the drummer typing on a phone.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "INIT-04's opus variant extracts the WS connection handler into apps/server/src/ws-connection.ts (its S13/S14) — the same seam S4 edits. Which lands first? This plan assumes INIT-05 goes first because it is two files against INIT-04's nineteen; if INIT-04 lands first, S4 retargets ws-connection.ts verbatim and INIT-04's S13 connection cap sits alongside the throttle.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    },
+    {
+      "question": "Should the failed-attempt counter survive a server restart, or is in-memory acceptable? In-memory means an attacker who can crash or wait out a restart resets the budget; persistence means a new file on disk and a new failure path in the boot sequence. This plan chooses in-memory as the smallest design that retires the finding.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Is `cf-connecting-ip` trustworthy as a throttle key here? cloudflared overwrites it on forwarded requests, and peerKeyFrom only reads it when isViaCloudflare(headers) is already true — but a local process that can reach the loopback port could forge both headers to mint fresh buckets. It would still be bounded by the global tier; confirm that reasoning is acceptable rather than requiring the loopback path to ignore the header entirely.",
+      "blocks_execution": false,
+      "owner": "implementer"
+    }
+  ]
+}

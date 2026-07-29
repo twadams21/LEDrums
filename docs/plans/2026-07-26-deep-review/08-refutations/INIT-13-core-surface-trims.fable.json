@@ -1,0 +1,112 @@
+{
+  "artifact": "08-refutations/INIT-13-core-surface-trims",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-13-core-surface-trims/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-13-core-surface-trims",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-13-core-surface-trims/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S6's export-count check is unexecutable: it runs `node -e \"import('./packages/core/dist/index.js')\"` after `pnpm build`, but packages/core's build script is `tsc --noEmit` and its exports field is `\".\": \"./src/index.ts\"` — no dist/index.js exists on disk or is ever produced, so the command fails with ERR_MODULE_NOT_FOUND and the claimed 'expected delta is exactly -1' can never be measured as written.",
+          "severity": "major",
+          "evidence": "packages/core/package.json lines 6-8 (`\"exports\": { \".\": \"./src/index.ts\" }`) and line 15 (`\"build\": \"tsc --noEmit\"`); `ls packages/core/dist` returns nothing at HEAD.",
+          "survives": false,
+          "repair": "Replace the dist import with something the workspace can actually run: either (a) a throwaway vitest spec in packages/core that does `import * as m from '../index'` and asserts `Object.keys(m)` / `Object.keys(m.voice)` deltas (vitest already executes TS there), or (b) drop the runtime count entirely and let the knip before/after diff plus `rg -n '^export' packages/core/src/index.ts` carry the interface-delta evidence. Do not add a build step to core for this.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S1's dynamic-access proofs are mangled regexes that vacuously match nothing, so the step's ABORT gate cannot fire even if bracket access existed: the pattern `\\['\\\"\\`](...)` escapes the `[`, turning the intended quote character-class into a literal `['\"` sequence, and `core\\.voice\\[` presumes an identifier named `core` that no file in apps/ or packages/ uses for the voice namespace import.",
+          "severity": "minor",
+          "evidence": "S1 verification text (b) as written; parsing `\\[` in rg yields a literal open-bracket, not a class; `rg -n 'core\\.voice' apps packages -g '!node_modules'` returns nothing at baseline, so the command 'passes' regardless of reality — a fail-open guard.",
+          "survives": false,
+          "repair": "Specify the exact executable patterns: `rg -n \"['\\\"](nearestPixelWithin|assertTriggerGraphIntegrity|listCanvasScenes)['\\\"]\" -g '!node_modules' -g '!docs'` (quoted-name form covers obj['x'], obj[\"x\"] and string-keyed maps), plus a backtick variant, each with its expected-empty output recorded in evidence-no-callers.md.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S4's 'keep' branch is internally contradictory and not executable: it says 'skip this step' but also 'add a caller in the same change that wants it ... do not leave it uncalled' — no such caller exists or is specified anywhere, so an implementer told 'keep' can neither skip (violates the no-uncalled rule) nor add a caller (none is designed).",
+          "severity": "minor",
+          "evidence": "S4 verification text, final sentence: \"On 'keep': skip this step, mark the finding partially-retired in the ledger, and add a caller in the same change that wants it (per the finding's own proposed_fix) — do not leave it uncalled with a rationale comment.\" The finding's proposed_fix offers no caller either; graph-integrity.ts:218-223 has zero call sites including tests.",
+          "survives": false,
+          "repair": "On 'keep': record Trent's intent answer in the ledger, leave the function untouched, and file a follow-up ticket to wire the intended caller (graph-import/authoring validation path) — explicitly out of this initiative's scope. Delete the 'add a caller in the same change' clause.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "The parity story leans on 'a clean typecheck is a total proof of no broken caller', which string-keyed or dynamic namespace access would evade silently — the suite and tsc both stay green while a runtime lookup starts returning undefined.",
+          "severity": "major",
+          "evidence": "packages/core/src/index.ts:33 (`export * from './canvas/registry'`) and :73 (`export * as voice from './voice'`) make all three symbols in-principle reachable via namespace objects; nothing in the test suite covers them (finding evidence: testfiles=0).",
+          "survives": true,
+          "plan_response": "S1 verification (b) rules out bracket/template-string access before any deletion, (c) runs knip's unused-export scan, and behaviour_parity_evidence_plan.known_gaps item (2) names exactly this gap for listCanvasScenes and designates the rg+knip output as the substitute evidence — the mechanism is right even though the literal regexes need the S1 repair above.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "Deleting barrel-reachable exports (listCanvasScenes via index.ts:33, assertTriggerGraphIntegrity via the voice namespace at index.ts:73) breaks external consumers of @ledrums/core that the plan never names.",
+          "severity": "major",
+          "evidence": "packages/core/src/index.ts:33 and :73 confirm both symbols are on the package surface; the attack fails because packages/core/package.json line 4 is `\"private\": true` and the workspace's only consumers (apps/server, apps/web, packages/io) are all typechecked by `pnpm gates`.",
+          "survives": true,
+          "plan_response": "S1 verification (d) explicitly records `\"private\": true` as the no-external-consumer proof, and behaviour_parity_evidence_plan check 2 states the whole-workspace typecheck covers every internal consumer. Verified true at HEAD.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S2's test rewrite could silently weaken coverage: nearestPixelIdWithin returns only an id, so the brute-force distance equivalence (hit.dist toBeCloseTo brute.dist, 10) could be dropped in the port and nobody would notice — a coverage reduction smuggled in as a refactor.",
+          "severity": "minor",
+          "evidence": "pixel-grid.test.ts:84-91 currently asserts id AND dist; the id-returning primitive discards the distance by design (pixel-grid.ts:96-99 doc).",
+          "survives": true,
+          "plan_response": "S2 verification mandates it verbatim: 'the distance assertion MUST be kept (recomputed via the already-imported `distance` from ../math), because dropping it would silently reduce coverage under cover of a refactor', and parity check 4 requires diff review confirming no expect was dropped. I verified `distance` is already imported at pixel-grid.test.ts:5 and the empty-grid path returns -1 (buildPixelGrid dims go to 0 for an empty model), so the prescribed rewrite is executable as written.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S4 deletes a symbol the 2026-07-08 Gen3 PRD specified as intended public API, so the no-caller evidence alone cannot justify the deletion — the plan is destroying a specified surface on mechanical grounds.",
+          "severity": "major",
+          "evidence": "docs/plans/2026-07-08-gen3-graph-authoring-stabilisation-prd.md:104 contains the exact signature `export function assertTriggerGraphIntegrity(graph: TriggerGraph): void;` — verified at HEAD.",
+          "survives": true,
+          "plan_response": "S4's PRECONDITION gates the deletion on Trent answering open question 'throwing-form-intent', and known_gaps (1) states the intent answer, not any command, is the evidence that replaces coverage. The plan found the PRD reference itself and fenced the step accordingly.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "Wave 3 runs S3, S4 and S5 concurrently, and the sequencing only lands green if the three touch provably disjoint files and none shares a barrel edit that would conflict.",
+          "severity": "minor",
+          "evidence": "S3 = geometry/pixel-grid.ts only (not barrel-exported, confirmed: `rg 'pixel-grid' packages/core/src/index.ts` is empty); S4 = voice/graph-integrity.ts only; S5 = canvas/registry.ts only; both wildcard barrel lines (index.ts:33, voice/index.ts:18) are explicitly left unedited, so no shared file exists in the wave.",
+          "survives": true,
+          "plan_response": "The sequencing block places S2 strictly before the deletion wave, each S3/S4/S5 names exactly one file, and S4/S5 verification both contain explicit do-NOT-edit-the-barrel instructions ('Leave packages/core/src/index.ts:33 as-is', 'Do NOT edit packages/core/src/voice/index.ts:18'). Rollback section additionally proves order-independence of the three reverts.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S1/S6's knip runs are underspecified: `pnpm -w exec knip --reporter json` runs the whole workspace, and the plan's phrase 'restricted to packages/core' names no mechanism, so two implementers could record incomparable before/after snapshots (whole-repo noise vs one workspace).",
+          "severity": "minor",
+          "evidence": "knip 6.29.0 is in root devDependencies and a root knip.json exists (verified), so the command runs — but neither S1(c) nor S6(a) says `--workspace packages/core` or how to filter the JSON to core's entries.",
+          "survives": false,
+          "repair": "Pin the command in both steps to `pnpm -w exec knip --workspace packages/core --reporter json` (or specify the jq filter over the whole-repo report) so the S1 baseline and S6 re-scan are byte-comparable.",
+          "targets_step": "S6"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 5,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S6: replace the `node -e import('./packages/core/dist/index.js')` export-count check — packages/core never builds a dist (build = `tsc --noEmit`, exports = src/index.ts); count exports via a vitest-executed TS import or drop the runtime count in favour of the knip diff plus a static scan of index.ts.",
+        "S1: rewrite the bracket/dynamic-access rg patterns into executable form (quoted-name class around the three symbols, plus backtick variant) — as written they escape the bracket and match nothing, making the ABORT gate fail-open.",
+        "S4: fix the contradictory 'keep' branch — on 'keep', record the intent answer and file a follow-up ticket to wire the caller; remove the un-executable 'add a caller in the same change' instruction.",
+        "S1/S6: pin the knip invocation to `--workspace packages/core` (or a specified JSON filter) so the before/after unused-export snapshots are comparable."
+      ]
+    }
+  ]
+}

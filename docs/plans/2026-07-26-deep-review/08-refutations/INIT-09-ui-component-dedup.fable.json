@@ -1,0 +1,118 @@
+{
+  "artifact": "08-refutations/INIT-09-ui-component-dedup.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-09-ui-component-dedup/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-09-ui-component-dedup",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-09-ui-component-dedup/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S1's acceptance bar — 'the reviewer diffs the deleted .action* rules against ActionButton's <style> block and confirms byte equality apart from selector renaming' — is unsatisfiable for AdoptByIpRow: its `.adopt-row .action` (AdoptByIpRow.svelte:93-111) is a materially different rule set from ControllerStatusPanel's `.action` (ControllerStatusPanel.svelte:579-597): `flex: none; width: auto; padding: var(--space-1) var(--space-3)` and no `gap: 6px`, versus `flex: 1; gap: 6px; padding: var(--space-1) var(--space-2)`. Adopting the proposed ActionButton (props: onclick/disabled/wide/pressed/tone/title/ariaLabel) in AdoptByIpRow either stretches the Adopt button across the row (visible layout change on an untested surface) or requires a sized-to-label variant the plan never specifies; the jsdom anchor AdoptByIpRow.test.ts cannot detect either outcome.",
+          "severity": "major",
+          "evidence": "AdoptByIpRow.svelte:91-111 ('Sized to its label here (auto width, wider inline padding) rather than stretching the row') vs ControllerStatusPanel.svelte:579-597 — verified by reading both style blocks at HEAD; deltas: flex none vs flex 1, width auto, space-3 vs space-2 inline padding, missing gap.",
+          "survives": false,
+          "repair": "Add a `fit: 'stretch' | 'label'` (or `size`) variant to ActionButton carrying the AdoptByIpRow deltas, name the visual deltas per adoption site, and restate the reviewer check as per-site rule-block equivalence against the site's OWN deleted copy — or drop AdoptByIpRow from S1's adoption set and keep its variant local.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S7's visual-parity check aims at the wrong surface: the `patch-controller` preset in scripts/ui-shot/shots.json is `{state: 'view:patch', target: 'node:controller'}` — it captures the controller NODE in the patch graph, not ControllerStatusPanel, which mounts only inside OutputStatusPanel (OutputStatusPanel.svelte:115). Even if a capture reached the panel, a dev app with no live PixLite can only show the un-adopted/discovery state, so the adopted/LOST/takeover/test-pattern states that S7's split moves have zero capture coverage; the four stub-fed states already demoed in SectionComposites.svelte:385-389 (receiving, not-receiving, LOST, un-adopted) are the only reachable renderings of those branches and the plan never captures them.",
+          "severity": "major",
+          "evidence": "scripts/ui-shot/shots.json key 'patch-controller' = {\"state\": \"view:patch\", \"target\": \"node:controller\", \"settle\": 1500}; grep shows ControllerStatusPanel's only app mount is OutputStatusPanel.svelte:115; SectionComposites.svelte:385-389 renders the four states on stubs.",
+          "survives": false,
+          "repair": "In S0 add a preset against the styleguide route (`route: '?style'`) cropping the ControllerStatusPanel demo cards in SectionComposites, and make that capture pair — not `patch-controller` — the S7 pixel-parity bar; keep patch-controller only as a smoke shot.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S7 never instructs moving the parent's scoped CSS with the markup it styles. Svelte scoped styles do not reach child components: every rule in ControllerStatusPanel's <style> block that matches markup relocated into ControllerBanners/ControllerDiscovery/ControllerReadout/ControllerAuthField/ControllerTestPatterns silently stops applying after the split. The step's stated anchor (ControllerStatusPanel.test.ts byte-unmodified and green) is jsdom and cannot fail on lost styling, so an implementer following the step text to the letter can land a green commit with five visually broken sections.",
+          "severity": "major",
+          "evidence": "S7's intent text specifies only that 'every $derived that feeds one child moves with it' — no mention of the style block; ControllerStatusPanel.svelte's <style> (lines ~560-847) contains the banner, actions, readout and test-pattern rules; Svelte scoping is per-component by construction.",
+          "survives": false,
+          "repair": "Add to S7: each extracted child takes the scoped rules matching its markup verbatim into its own <style>; acceptance adds `svelte-check`'s unused-selector warnings must be zero in ControllerStatusPanel after the split (Svelte emits css-unused-selector for orphaned rules), plus the styleguide-route capture from the S7 repair above.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S2's acceptance ('the reviewer confirms in the diff that the four CSS rules moved verbatim into InspectorHeader') is unsatisfiable as written because the five copies are not identical: ModifierNodeInspector.svelte's `.sub` rule carries `text-transform: capitalize` that the other four sites lack. Moving one canonical block verbatim either strips capitalization from the modifier inspector's subtitle (a visible change on a zero-coverage surface) or the component needs a variant the prop list ({eyebrow, title, sub, leading, trailing}) does not express, and the step text gives the implementer no instruction either way.",
+          "severity": "minor",
+          "evidence": "grep -c 'text-transform: capitalize' across the five files: only inspectors/ModifierNodeInspector.svelte has it (its .sub block, ~line 146); jscpd in the finding likewise shows PlayNode/ModifierNode as partial 93-token matches vs the 144-token full clones.",
+          "survives": false,
+          "repair": "Name the canonical block (Inspector.svelte's), enumerate the two variant sites, and either add a `subTransform`/class pass-through or keep `text-transform: capitalize` at the ModifierNodeInspector call site via its own scoped selector on the sub slot — decided in the plan, not by the implementer.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S0's baseline provenance is false as written: the captures are described as taken 'at the pre-change sha' and stored as `.ui-shots/baseline-3708648/`, but HEAD is already past 3708648 (fix batches 1-3: dead-code removals and the kit-mirror removal landed tonight), so the baseline is actually captured at a different sha it does not name. A later reviewer diffing against 'baseline-3708648' inherits a mislabelled reference, and dead-code batch 1 deleted whole components — captures at true 3708648 would not even match the app being changed.",
+          "severity": "minor",
+          "evidence": "Task-settled fact: fix batches 1-3 already landed on top of baseline sha 3708648; S0 verification text says 'copied to .ui-shots/baseline-3708648/' and behaviour_parity_evidence_plan.baseline_reference says 'produced by S0 at the pre-change HEAD'.",
+          "survives": false,
+          "repair": "Name the directory `.ui-shots/baseline-<sha-of-S0-HEAD>/` and state in S0 that the visual baseline is post-batch-1-3 HEAD, distinct from the analysis baseline 3708648.",
+          "targets_step": "S0"
+        },
+        {
+          "claim": "S6 creates a new reusable design-system surface (control-props.ts:ControlProps<T>) without touching the styleguide entry or regenerating docs/design-system.html — its file list contains neither styleguide/sections nor the artifact — violating AGENTS.md's 'anything new and reusable gets added to the styleguide entry and the file regenerated in the same change', and contradicting the finding's own proposed_fix ('add the type to the styleguide entry per AGENTS.md's use-or-extend rule'). The artifact then stays stale through S7 (which forbids regen) until S8.",
+          "severity": "minor",
+          "evidence": "S6.files lists only control-props.ts, the nine primitives and SearchField.test.ts; data-clumps-0002.proposed_fix explicitly requires the styleguide entry; AGENTS.md non-negotiable on use-or-extend.",
+          "survives": false,
+          "repair": "Add the ControlProps contract to the primitives' styleguide documentation (SectionPrimitives source pointers already cover the components; add the type note) and run `pnpm design-system` in S6.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "A green `pnpm gates` after the CSS-extraction steps (S2, S3, S5) proves nothing about the surfaces changed, because none of the eight touched components has a component test — the plan could be shipping on a suite that cannot fail for the reasons that matter.",
+          "severity": "major",
+          "evidence": "Verified: no test file exists for Inspector/SectionInspector/PlayNodeInspector/ModifierNodeInspector/DrumZonesList/PatchZoneInspector/Overlays (find in apps/web/src); TriggerSourceInspector likewise untested.",
+          "survives": true,
+          "plan_response": "The plan states this itself and builds S0 around it: summary ('every one of the five .ihead sites and all three MIDI-learn sites have ZERO component tests … so a green pnpm gates proves nothing about them'), S0's baseline freeze plus new presets, the verbatim-CSS reviewer diff as the stated acceptance bar for S1-S3, and known_gaps (1) naming the exact files. S3 additionally adds MidiLearnRow.test.ts coverage that never existed."
+        },
+        {
+          "claim": "MidiLearnRow creates a hidden ordering dependency on INIT-07's {drumId,slot} learn-target address change: a shared component that knows the learn target would have to change in lockstep with that initiative.",
+          "severity": "minor",
+          "evidence": "The three call sites each call store.startMidiLearn with their own target shape (DrumZonesList.svelte:121-148, TriggerSourceInspector.svelte:180-201, PatchZoneInspector.svelte:66-88).",
+          "survives": true,
+          "plan_response": "S3's intent explicitly designs this out: 'The component must NOT take a learn-target descriptor: keeping store.startMidiLearn({kind, drumId, slot}) in the callers is what lets INIT-07's {drumId,slot} address-object change land without touching this component' — props are {learning, disabled, onToggle, children} only, and I verified all three sites already own their target dispatch and differ only in armed-state naming."
+        },
+        {
+          "claim": "The before/after capture comparison is a human eyeball, not a machine gate — no pixel-diff tool exists on the machine and ui-shot has no comparator — so the 'capture pair' acceptance bar for S1-S3 and S7 is model/human judgement dressed as verification.",
+          "severity": "minor",
+          "evidence": "scripts/ui-shot/README.md:92: 'Blank-pixel detection is not yet implemented — eyeball canvas-heavy shots'; no compare/magick binary claimed by the plan.",
+          "survives": true,
+          "plan_response": "known_gaps (2) states exactly this ('a human eyeball, not a machine gate') and open question 6 escalates the pixelmatch-comparator decision to Trent rather than papering over it. The plan is honest about the gap; the repair is priced and offered, not hidden."
+        },
+        {
+          "claim": "S0's `styleguide-primitives` preset via `--route \"?style\"` may not be expressible: shots.json presets are documented as {state, target, name, viewport, settle} and a route-based preset could be unsupported, making the step unexecutable as written.",
+          "severity": "minor",
+          "evidence": "scripts/ui-shot/README.md:72 lists preset fields without `route`; but ui-shot.mjs (preset loader) reads `route: preset.route` — presets do support a route field, and main.ts:10-13 confirms `?style` lazy-mounts the styleguide.",
+          "survives": true,
+          "plan_response": "The mechanism the plan relies on exists in the tool even though the README omits it: ui-shot.mjs's preset-to-request mapping carries `route: preset.route`, so S0's instruction ('the last via --route \"?style\"') is executable; S0 also pre-authorizes extending shot-seam.ts per the README convention if a target cannot resolve."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 3,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 3,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S1: add a sized-to-label variant to ActionButton (or exclude AdoptByIpRow) and restate the byte-equality check per-site — AdoptByIpRow's .adopt-row .action is not the same rule set (flex:none/width:auto/space-3 padding).",
+        "S7: retarget visual parity at the SectionComposites controller demo cards on the ?style route (all four stubbed states) instead of the patch-controller preset, which captures the patch-graph node, not the panel.",
+        "S7: state explicitly that each extracted child takes its matching scoped CSS verbatim, and gate on zero css-unused-selector warnings in the post-split ControllerStatusPanel.",
+        "S2: name the canonical .ihead block and decide the ModifierNodeInspector `.sub` `text-transform: capitalize` variant in the plan (slot class pass-through or caller-side rule) instead of leaving it to the implementer.",
+        "S0: rename the capture directory to the actual capture sha and state that the visual baseline is post-fix-batch-1-3 HEAD, not 3708648.",
+        "S6: add ControlProps to the styleguide entry and regenerate docs/design-system.html in the same change, per AGENTS.md and the finding's own proposed_fix."
+      ]
+    }
+  ]
+}
