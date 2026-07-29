@@ -11,6 +11,7 @@
  * it stays testable without real hardware. `packages/core` never touches any of this.
  */
 import { networkInterfaces } from 'node:os';
+import { intToIp, ipToInt } from '@ledrums/io';
 import type { NetworkAdapter } from './ws-protocol';
 
 /** The subset of `os.NetworkInterfaceInfo` this module reads — declared locally so the injectable
@@ -25,25 +26,6 @@ export interface NicInfo {
 
 /** The shape of `os.networkInterfaces()` — a dict of adapter name → its addresses. */
 export type NicEnumerator = () => Record<string, NicInfo[] | undefined>;
-
-// ── Pure IPv4 helpers ────────────────────────────────────────────────────────
-
-/** Parse dotted-decimal IPv4 to an unsigned 32-bit int. Throws on malformed input. */
-function ipToInt(addr: string): number {
-  const parts = addr.split('.');
-  if (parts.length !== 4) throw new Error(`invalid IPv4 address: ${addr}`);
-  let n = 0;
-  for (const p of parts) {
-    const o = Number(p);
-    if (!Number.isInteger(o) || o < 0 || o > 255) throw new Error(`invalid IPv4 address: ${addr}`);
-    n = (n * 256 + o) >>> 0;
-  }
-  return n >>> 0;
-}
-
-function intToIp(n: number): string {
-  return [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff].join('.');
-}
 
 /** Count the set bits of a dotted-decimal mask → CIDR prefix length (e.g. 255.255.255.0 → 24). */
 function prefixFromMask(netmask: string): number {

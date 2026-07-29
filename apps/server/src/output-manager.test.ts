@@ -8,7 +8,7 @@ import {
   type DmxMap,
   type OutputSettings,
 } from '@ledrums/core';
-import type { PixelOutput } from '@ledrums/io';
+import type { PixelOutput, PixelOutputStatus } from '@ledrums/io';
 import { getHoopPixelRange } from '@ledrums/core';
 import { applyRgbOrder, frameToUniverseBytes, OutputManager } from './output-manager';
 import type { MonitorEvent } from './ws-protocol';
@@ -17,6 +17,7 @@ class FakeOutput implements PixelOutput {
   sends: { universe: number; bytes: number[] }[] = [];
   closed = false;
   throwing = false;
+  private statusHandlers: Array<(s: PixelOutputStatus) => void> = [];
   nextFrame(): void {}
   send(universe: number, channels: Uint8Array): void {
     if (this.throwing) throw new Error('net down');
@@ -24,6 +25,15 @@ class FakeOutput implements PixelOutput {
   }
   close(): void {
     this.closed = true;
+  }
+  onStatus(h: (s: PixelOutputStatus) => void): void {
+    this.statusHandlers.push(h);
+  }
+  emitStatus(s: PixelOutputStatus): void {
+    for (const h of this.statusHandlers) h(s);
+  }
+  statusHandlerCount(): number {
+    return this.statusHandlers.length;
   }
 }
 
@@ -371,5 +381,224 @@ describe('OutputManager monitor diagnostics', () => {
       source: 'server',
       destination: 'sacn:broadcast:5568',
     });
+  });
+});
+
+describe('OutputManager universe-domain audit (S9)', () => {
+  /** A hand-built map whose universe numbers are exact — the audit only reads them. */
+  const mapWith = (...universes: number[]): DmxMap => ({
+    perPixel: [],
+    universes: universes.map((universe) => ({ universe, channelCount: 3, pixels: [] })),
+  });
+  const sacn = (): OutputSettings => ({ ...settings('armed'), protocol: 'sacn' });
+
+  it('sACN with a 0-based map emits one informational row and never touches lastError', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings(sacn(), mapWith(0, 1));
+    const audits = events.filter((e) => e.label === 'Universes outside protocol range');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ type: 'output', source: 'server/output' });
+    expect(audits[0]!.detail).toContain('0');
+    expect(m.status().lastError).toBeNull();
+  });
+
+  it('does not fire twice for an unchanged map', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings(sacn(), mapWith(0, 1));
+    m.applySettings(sacn(), mapWith(0, 1));
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(1);
+  });
+
+  it('an equal-count change of WHICH universes are bad re-fires (dedup-key regression lock)', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings(sacn(), mapWith(0, 1)); // bad: [0]
+    m.applySettings(sacn(), mapWith(64000, 1)); // bad: [64000] — same count, different set
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(2);
+  });
+
+  it('an arming-state transition over the same bad set does not re-emit the audit row (F5)', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    m.applySettings({ ...sacn(), state: 'dry-run' }, mapWith(0, 1));
+    m.applySettings(sacn(), mapWith(0, 1)); // dry-run -> armed, identical bad set
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(1);
+  });
+
+  it('Art-Net universe 0 is legal and stays silent', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const m = new OutputManager(() => new FakeOutput());
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture(); // artnet default map, universe 0
+    m.applySettings(settings('armed'), dmxMap);
+    expect(events.filter((e) => e.label === 'Universes outside protocol range')).toHaveLength(0);
+  });
+
+  it('the audit changes no transmitted bytes', () => {
+    const { dmxMap, fb } = fixture();
+    const audited = new FakeOutput();
+    const silent = new FakeOutput();
+    const mAudited = new OutputManager(() => audited);
+    const mSilent = new OutputManager(() => silent);
+    mAudited.applySettings(sacn(), dmxMap); // universe 0 under sacn — audit fires
+    mSilent.applySettings(settings('armed'), dmxMap); // artnet — no audit
+    mAudited.sendFrame(fb.rgba, dmxMap);
+    mSilent.sendFrame(fb.rgba, dmxMap);
+    expect(audited.sends).toEqual(silent.sends);
+  });
+});
+
+describe('OutputManager transport status (S7)', () => {
+  it('a transport error reaches lastError', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.emitStatus({ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' });
+    expect(m.status().lastError).toContain('EADDRNOTAVAIL');
+  });
+
+  it('a transport error reaches the monitor bus', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.emitStatus({ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' });
+    const errors = events.filter((e) => e.type === 'error' && e.source === 'server/output');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ label: 'Output transport error' });
+  });
+
+  it('a ready status clears nothing — faults are sticky until re-arm', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.emitStatus({ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' });
+    fake.emitStatus({ state: 'ready' });
+    expect(m.status().lastError).toContain('EADDRNOTAVAIL');
+  });
+
+  it('a transport ready cannot erase a synchronous send failure, and both slots compose', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.throwing = true;
+    m.sendFrame(fb.rgba, dmxMap); // synchronous send failure -> lastError
+    fake.emitStatus({ state: 'ready' });
+    fake.emitStatus({ state: 'error', error: 'iface gone', code: 'EMCASTIFACE' });
+    const composed = m.status().lastError!;
+    expect(composed).toContain('net down');
+    expect(composed).toContain('EMCASTIFACE');
+    expect(composed).toContain(' | ');
+  });
+
+  it('teardown blackout addresses the universes the transport was ARMED against, not the post-flip map (F1)', () => {
+    const fakes: FakeOutput[] = [];
+    const m = new OutputManager(() => {
+      const f = new FakeOutput();
+      fakes.push(f);
+      return f;
+    });
+    const artnetMap: DmxMap = {
+      perPixel: [],
+      universes: [0, 1].map((universe) => ({ universe, channelCount: 3, pixels: [] })),
+    };
+    const sacnMap: DmxMap = {
+      perPixel: [],
+      universes: [1, 2].map((universe) => ({ universe, channelCount: 3, pixels: [] })),
+    };
+    m.applySettings(settings('armed'), artnetMap);
+    // Protocol flip: the caller (host) has already rebuilt the map for sACN. Teardown's
+    // blackout over the still-open Art-Net socket must hit the OLD 0-based universes.
+    m.applySettings({ ...settings('armed'), protocol: 'sacn' }, sacnMap);
+    const old = fakes[0]!;
+    expect(old.closed).toBe(true);
+    expect(old.sends.map((s) => s.universe)).toEqual([0, 1]);
+    expect(old.sends.every((s) => s.bytes.every((b) => b === 0))).toBe(true);
+  });
+
+  it('close() bumps the transport generation so a queued callback cannot latch a fault (F2)', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.close();
+    fake.emitStatus({ state: 'error', error: 'late after close', code: 'EBADF' });
+    expect(m.status().lastError).toBeNull();
+  });
+
+  it('a status from a torn-down transport is ignored', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.applySettings(settings('disabled'), dmxMap); // teardown; queued callbacks may still fire
+    fake.emitStatus({ state: 'error', error: 'late bind failure', code: 'EADDRNOTAVAIL' });
+    expect(m.status().lastError).toBeNull();
+  });
+
+  it('sendFrame performs no work proportional to status subscribers (non-negotiable: no work in the send path)', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    let invocations = 0;
+    for (let i = 0; i < 100; i++) fake.onStatus(() => invocations++);
+    for (let i = 0; i < 100; i++) m.sendFrame(fb.rgba, dmxMap);
+    // Status is emitted only from socket callbacks, never from the send path.
+    expect(invocations).toBe(0);
+  });
+
+  it('forwards transport errors 1:1 — the adapter latch is what bounds them', () => {
+    // The 44Hz flap bound is proven in packages/io/src/status-latch.test.ts (fake-clock,
+    // exact count); the manager itself deliberately adds no second limiter.
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    for (let i = 0; i < 1000; i++) fake.emitStatus({ state: 'error', error: `e${i}`, code: 'EX' });
+    expect(events.filter((e) => e.label === 'Output transport error')).toHaveLength(1000);
+  });
+
+  it('a throwing monitor sink cannot kill an armed transport', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = () => {
+      throw new Error('sink down');
+    };
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    expect(() => fake.emitStatus({ state: 'error', error: 'x', code: 'EX' })).not.toThrow();
+    expect(() => m.sendFrame(fb.rgba, dmxMap)).not.toThrow();
+    expect(fake.sends.length).toBeGreaterThan(0);
+  });
+
+  it('a PixelOutput with no onStatus still arms and transmits', () => {
+    const sends: number[] = [];
+    const bare: PixelOutput = {
+      nextFrame: () => {},
+      send: (universe) => {
+        sends.push(universe);
+      },
+      close: () => {},
+    };
+    const m = new OutputManager(() => bare);
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.sendFrame(fb.rgba, dmxMap);
+    expect(sends).toHaveLength(dmxMap.universes.length);
+    expect(m.status().lastError).toBeNull();
   });
 });

@@ -43,6 +43,12 @@ export interface DmxMap {
 /** Channels in a single DMX universe. */
 export const CHANNELS_PER_UNIVERSE = 512;
 
+/** Wire protocol the map is built for. Art-Net universes are 0-based (15-bit field);
+ *  ANSI E1.31 (sACN) universes are 1-based — universe 0 is spec-invalid and its default
+ *  multicast group (239.255.0.0) is dead, so a sACN map must never emit it. Declared
+ *  locally: `core` stays pure and cannot import the io package's protocol tags. */
+export type DmxProtocol = 'artnet' | 'sacn';
+
 /** Global pixel ids for one hoop, in id order. `hoop` is **1-based** (A1). Uses the model's
  *  prefix-sum hoop range so mixed per-hoop counts (B4) pack correctly, not just uniform drums. */
 function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
@@ -63,8 +69,10 @@ function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
  * boundary (the controller owns universe mapping; the app only authors order + density).
  *
  * Optional universe jumps: when an output declares a `startUniverse`, the cursor snaps to that
- * universe's channel 0 on entry (a deliberate boundary/gap). Absent → the cursor stays
- * dense/contiguous (output 1 → output 2 …, no reset). The base starts at universe 0, channel 0.
+ * universe's channel 0 on entry (a deliberate boundary/gap — the operator's number is taken as
+ * ABSOLUTE for either protocol, so existing compensation at the controller survives). Absent →
+ * the cursor stays dense/contiguous (output 1 → output 2 …, no reset). The base universe is
+ * protocol-aware: 0 for Art-Net, 1 for sACN (E1.31 has no universe 0 — see {@link DmxProtocol}).
  * There is NO hardcoded pixel cap — the controller enforces its own; `maxPixelsPerOutput` is
  * advisory only.
  *
@@ -80,7 +88,12 @@ function hoopPixelIds(drum: DrumInfo, hoop: number): number[] {
  *
  * Throws on topology errors: an unknown drum or an out-of-range hoop.
  */
-export function buildDmxMap(kit: KitConfig, model: PixelModel, controllerRgbOrder?: RgbOrder): DmxMap {
+export function buildDmxMap(
+  kit: KitConfig,
+  model: PixelModel,
+  controllerRgbOrder?: RgbOrder,
+  protocol: DmxProtocol = 'artnet',
+): DmxMap {
   const perPixel: (PixelDmx | undefined)[] = new Array(model.pixelCount).fill(undefined);
   const hasWiredOutput = kit.outputs.some((o) => o.segments.length > 0);
   const outputs = hasWiredOutput ? kit.outputs : deriveFlatOutputs(model, controllerRgbOrder);
@@ -96,7 +109,8 @@ export function buildDmxMap(kit: KitConfig, model: PixelModel, controllerRgbOrde
     return patch;
   };
 
-  let cursor = 0; // next global channel to assign
+  // Next global channel to assign; sACN packs from universe 1 (0 is E1.31-invalid).
+  let cursor = protocol === 'sacn' ? CHANNELS_PER_UNIVERSE : 0;
   for (const output of outputs) {
     const cpp = output.channelsPerPixel;
     if (output.startUniverse !== undefined) cursor = output.startUniverse * CHANNELS_PER_UNIVERSE;
@@ -137,7 +151,8 @@ export function buildDmxMap(kit: KitConfig, model: PixelModel, controllerRgbOrde
 }
 
 /** Derive a single flat output (one data run) covering every pixel, in pixel-id order —
- *  dense from universe 0. When `controllerRgbOrder` is given it is stamped onto the synthetic
+ *  dense from the protocol's base universe (Art-Net 0, sACN 1 — the cursor base in
+ *  {@link buildDmxMap} applies to the flat fallback too). When `controllerRgbOrder` is given it is stamped onto the synthetic
  *  output (B5), so every pixel on the flat/loopback path carries that DEFINED order instead of
  *  `undefined`. For the default kit the controller order IS the packer's own fallback, so
  *  stamping it leaves the emitted DMX bytes unchanged; omitting it is byte-identical to before. */

@@ -6,6 +6,9 @@
    Why link state alone was wrong: Art-Net/sACN send is fire-and-forget, so a socket
    can be open and green while output is actually failing (lastError set, packets 0).
    The old pill showed "LIVE" off link state alone — the worst lie in the app.
+   lastError now also carries bind-time, multicast-interface and send-completion
+   transport faults surfaced by packages/io (INIT-03), so ERR fires on a stale-iface
+   failure that previously showed LIVE.
 
    Colour intent (see tokens.css "State colours"): `live` (red) = LIVE / armed —
    "reads across a room"; `warn` (amber) = dry-run / warning; `muted` = inert. The

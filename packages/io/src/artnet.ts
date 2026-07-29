@@ -1,5 +1,6 @@
 import { createSocket, type Socket } from 'node:dgram';
-import type { PixelOutput } from './interfaces';
+import type { PixelOutput, PixelOutputStatus } from './interfaces';
+import { StatusLatch } from './status-latch';
 
 export const ARTNET_PORT = 6454;
 
@@ -32,6 +33,8 @@ export interface ArtNetOptions {
   broadcast?: boolean;
   /** Local source interface address to send from (multi-NIC safety). */
   iface?: string;
+  /** Injectable clock for the status rate floor (tests only). */
+  now?: () => number;
 }
 
 /** Art-Net pixel output. One per-frame sequence counter is shared across universes. */
@@ -41,21 +44,27 @@ export class ArtNetOutput implements PixelOutput {
   private readonly port: number;
   private seq = 0;
   private ready = false;
+  private readonly status: StatusLatch<PixelOutputStatus>;
 
   constructor(opts: ArtNetOptions) {
     this.host = opts.host;
     this.port = opts.port ?? ARTNET_PORT;
+    this.status = new StatusLatch<PixelOutputStatus>(opts.now ? { now: opts.now } : {});
     this.socket = createSocket('udp4');
-    this.socket.on('error', () => {});
+    this.socket.on('error', (err: NodeJS.ErrnoException) =>
+      this.status.set({ state: 'error', error: err.message, ...(err.code ? { code: err.code } : {}) }),
+    );
     const onBound = (): void => {
       if (opts.broadcast) {
         try {
           this.socket.setBroadcast(true);
-        } catch {
-          /* ignore */
+        } catch (err) {
+          // Observable, but non-fatal: transmit proceeds exactly as before.
+          this.status.set({ state: 'error', error: `broadcast unavailable: ${String(err)}`, code: 'EBROADCAST' });
         }
       }
       this.ready = true;
+      this.status.set({ state: 'ready' });
     };
     // Bind to the given local interface (ephemeral port) so outbound packets leave the
     // chosen NIC; otherwise bind ephemerally on the default interface.
@@ -68,10 +77,23 @@ export class ArtNetOutput implements PixelOutput {
     if (this.seq === 0) this.seq = 1; // 0 disables sequence tracking; keep it active
   }
 
+  /** Latch-and-replay transport status; see PixelOutput.onStatus. */
+  onStatus(handler: (s: PixelOutputStatus) => void): void {
+    this.status.subscribe(handler);
+  }
+
+  /** Hoisted (F7): one shared completion callback, so the 44Hz send path allocates no closure. */
+  private readonly onSendComplete = (err: Error | null): void => {
+    if (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      this.status.set({ state: 'error', error: err.message, ...(code ? { code } : {}) });
+    }
+  };
+
   send(universe: number, channels: Uint8Array): void {
     if (!this.ready) return;
     const pkt = encodeArtDmx(universe, this.seq, channels);
-    this.socket.send(pkt, this.port, this.host, () => {});
+    this.socket.send(pkt, this.port, this.host, this.onSendComplete);
   }
 
   close(): void {

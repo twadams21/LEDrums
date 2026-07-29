@@ -6,7 +6,7 @@ import {
   type RgbOrder,
   type UniversePatch,
 } from '@ledrums/core';
-import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
+import { ArtNetOutput, SacnOutput, isUniverseValid, type PixelOutput } from '@ledrums/io';
 import { createOutputMonitorCoalescer, outputDestination, universeRangeLabel } from './output-monitor';
 import type { MonitorEvent } from './ws-protocol';
 import type { OutputStatus } from './ws-protocol';
@@ -71,6 +71,12 @@ function defaultFactory(settings: OutputSettings): PixelOutput {
  * Output state machine (R15): `disabled → dry-run → armed`, defaulting to disabled.
  * Dry-run forms/counts packets without transmitting; arming opens a transport; any
  * transition away from armed, or a send error, emits a blackout failsafe.
+ *
+ * An ASYNCHRONOUS transport fault (bind / socket / multicast-setup / send-completion,
+ * via PixelOutput.onStatus) latches `transportError` and emits a monitor error but
+ * does NOT blackout — there is nothing to blacken; the socket is already not
+ * transmitting. status().lastError composes the synchronous (send/blackout) and
+ * transport slots so neither can hide the other; both are sticky until re-arm.
  */
 export class OutputManager {
   private output: PixelOutput | null = null;
@@ -78,8 +84,25 @@ export class OutputManager {
   private signature = '';
   private packetsSent = 0;
   private lastError: string | null = null;
+  /** Asynchronous transport fault (bind / socket / multicast-setup / send-completion),
+   * held in its OWN slot so it can neither clear nor hide a synchronous send/blackout
+   * failure in {@link lastError}. Composed into status().lastError; sticky until the
+   * transport is (re)constructed, matching the lastError contract. */
+  private transportError: string | null = null;
+  /** Generation counter guarding against status callbacks from a torn-down transport:
+   * a closed dgram socket can still fire queued callbacks. */
+  private transportGen = 0;
+  /** The map the LIVE transport was armed against. Teardown's blackout must address
+   * these universes — on a protocol flip the caller has already rebuilt dmxMap for the
+   * NEW protocol, and blacking out the new numbering over the still-open old socket
+   * would miss the old universes entirely (e.g. Art-Net 0 never blacked). */
+  private armedMap: DmxMap | null = null;
   private universeCount = 0;
   private settingsMonitorSignature = '';
+  /** Dedup key for the universe-domain audit. Its OWN key, carrying WHICH universes are
+   * bad — settingsMonitorSignature only sees universes.length, which misses an
+   * equal-count valid→invalid transition (e.g. startUniverse 1→0 turns [1,2] into [0,1]). */
+  private universeAuditSignature = '';
   private readonly now: () => number;
   private readonly outputDiag: ReturnType<typeof createOutputMonitorCoalescer>;
   /** Active hoop-identify override (E1): pixels [start,end) are forced full-on until `expiresAt`
@@ -102,12 +125,23 @@ export class OutputManager {
     // re-create the transport (alongside protocol/host/broadcast/port).
     const sig = `${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}|${settings.iface ?? ''}|${settings.priority}`;
     if (settings.state === 'armed') {
-      if (!this.output || sig !== this.signature) {
+      if (this.output && sig === this.signature) {
+        this.armedMap = dmxMap; // same transport, refreshed patch — blackout the latest map
+      } else {
         this.teardown(dmxMap, settings);
         try {
           this.output = this.factory(settings);
           this.signature = sig;
           this.lastError = null;
+          this.transportError = null;
+          this.armedMap = dmxMap;
+          const gen = ++this.transportGen;
+          this.output.onStatus?.((s) => {
+            if (gen !== this.transportGen) return; // stale transport — ignore
+            if (s.state !== 'error') return; // 'ready' deliberately clears nothing
+            this.transportError = s.code ? `${s.code}: ${s.error ?? 'transport error'}` : (s.error ?? 'transport error');
+            this.monitorError('Output transport error', settings, this.transportError);
+          });
         } catch (err) {
           this.lastError = String(err);
           this.output = null;
@@ -120,14 +154,46 @@ export class OutputManager {
     }
     this.settings = settings;
     this.monitorSettings(settings, dmxMap);
+    this.auditUniverseDomain(settings, dmxMap);
+  }
+
+  /** Warn-only sACN/Art-Net universe-domain audit at the arm seam. With buildDmxMap now
+   * protocol-aware (Decision 7) this fires only on a real mismatch — a map built for the
+   * wrong protocol, or an operator-set startUniverse outside the domain. Informational
+   * monitor row only: never type 'error', never lastError/transportError, and emitted
+   * AFTER the settings row (ordering is load-bearing for the pre-existing filterable-fields
+   * test). Transmitted bytes are never touched. */
+  private auditUniverseDomain(settings: OutputSettings, dmxMap: DmxMap): void {
+    const protocol = settings.protocol === 'sacn' ? 'sacn' : 'artnet';
+    const bad = dmxMap.universes.filter((u) => !isUniverseValid(protocol, u.universe)).map((u) => u.universe);
+    // No settings.state in the key (F5): an arming-state transition over the same bad
+    // set must not re-emit an identical row.
+    const signature = `${settings.protocol}|${bad.join(',')}`;
+    if (signature === this.universeAuditSignature) return;
+    this.universeAuditSignature = signature;
+    if (bad.length === 0) return;
+    this.emitMonitor({
+      type: 'output',
+      direction: 'out',
+      source: 'server/output',
+      destination: outputDestination(settings),
+      label: 'Universes outside protocol range',
+      detail:
+        `${protocol} universes ${bad.join(',')} are outside the protocol domain — ` +
+        `universe 0 multicasts to 239.255.0.0, a dead group; set startUniverse on the output`,
+    });
   }
 
   private teardown(dmxMap: DmxMap, settings: OutputSettings): void {
     if (this.output) {
-      this.blackout(dmxMap);
+      // Blackout the universes the transport was ARMED against, not the caller's map —
+      // on a protocol flip they differ (F1) and the old numbering is what is live.
+      this.blackout(this.armedMap ?? dmxMap);
       this.output.close();
       this.output = null;
       this.signature = '';
+      this.armedMap = null;
+      this.transportGen++; // queued callbacks from the closed socket are now stale
     }
   }
 
@@ -243,7 +309,7 @@ export class OutputManager {
         universes.push(patch.universe);
       }
       if (this.settings) {
-        this.onMonitor?.({
+        this.emitMonitor({
           type: 'output',
           direction: 'out',
           source: 'server',
@@ -264,7 +330,7 @@ export class OutputManager {
       protocol: this.settings?.protocol ?? 'artnet',
       host: this.settings?.host ?? '',
       packetsSent: this.packetsSent,
-      lastError: this.lastError,
+      lastError: [this.lastError, this.transportError].filter(Boolean).join(' | ') || null,
       universeCount: this.universeCount,
     };
   }
@@ -273,12 +339,30 @@ export class OutputManager {
     if (this.output) {
       this.output.close();
       this.output = null;
+      this.armedMap = null;
+      this.transportGen++; // a queued dgram callback after close cannot latch a spurious fault
     }
   }
 
+  /** Diagnostics must never take down transmit: a throwing monitor sink is swallowed here,
+   * so no send/blackout/status path can be killed by its own telemetry. */
+  private emitMonitor(event: Omit<MonitorEvent, 'id' | 'time'>): void {
+    try {
+      this.onMonitor?.(event);
+    } catch (err) {
+      // Swallowed to protect transmit, but logged once so a broken sink stays visible.
+      if (!this.monitorSinkErrorLogged) {
+        this.monitorSinkErrorLogged = true;
+        console.error('[output-manager] monitor sink threw (suppressing further reports):', err);
+      }
+    }
+  }
+
+  private monitorSinkErrorLogged = false;
+
   private monitorPacketSummary(sample: Parameters<typeof this.outputDiag.record>[0]): void {
     const event = this.outputDiag.record(sample);
-    if (event) this.onMonitor?.(event);
+    if (event) this.emitMonitor(event);
   }
 
   private monitorSettings(settings: OutputSettings, dmxMap: DmxMap): void {
@@ -287,7 +371,7 @@ export class OutputManager {
     this.settingsMonitorSignature = signature;
 
     const label = settings.state === 'armed' ? 'Output armed' : settings.state === 'dry-run' ? 'Output dry-run' : 'Output disabled';
-    this.onMonitor?.({
+    this.emitMonitor({
       type: 'output',
       direction: 'out',
       source: 'server',
@@ -298,7 +382,7 @@ export class OutputManager {
   }
 
   private monitorError(label: string, settings: OutputSettings, detail: string): void {
-    this.onMonitor?.({
+    this.emitMonitor({
       type: 'error',
       direction: 'out',
       source: 'server/output',

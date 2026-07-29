@@ -4,6 +4,7 @@
  * short-timeout `GET /ver`. This module is pure: it takes the prober as a
  * dependency, so discovery is fully testable without a network.
  */
+import { intToIp, ipToInt } from '../net/ipv4';
 import type { ControllerIdentity } from './types';
 
 /** The dependency sweep needs: identity for a host, or null if none responds. */
@@ -24,22 +25,6 @@ export interface SweepOptions {
 }
 
 const MAX_SWEEP_HOSTS = 1024;
-
-function ipToInt(addr: string): number {
-  const parts = addr.split('.');
-  if (parts.length !== 4) throw new Error(`invalid IPv4 address: ${addr}`);
-  let n = 0;
-  for (const p of parts) {
-    const o = Number(p);
-    if (!Number.isInteger(o) || o < 0 || o > 255) throw new Error(`invalid IPv4 address: ${addr}`);
-    n = (n * 256 + o) >>> 0;
-  }
-  return n >>> 0;
-}
-
-function intToIp(n: number): string {
-  return [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff].join('.');
-}
 
 /** Expand an IPv4 CIDR (e.g. `192.168.1.0/24`) into its usable host addresses. */
 export function expandCidr(cidr: string): string[] {
