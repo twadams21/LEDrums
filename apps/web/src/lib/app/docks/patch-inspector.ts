@@ -127,18 +127,27 @@ export function physicalPortLine(outputIndex: number, expanded: boolean): { port
   return { port: Math.ceil(n / 2), line: ((n - 1) % 2) + 1 };
 }
 
+/** The wire protocol the output table reads under — structurally matches
+    `Project['output']['protocol']` (project-schema.ts). */
+export type OutputProtocol = 'artnet' | 'sacn';
+
 /** One row of the C4 Pixel Output Table: an output's transmit-order position, where its first
     pixel lands in the dense DMX stream, and how many pixels it carries.
 
-    Channel math MIRRORS core's {@link buildDmxMap} exactly: a single global channel cursor starts
-    at 0, snaps to `output.startUniverse * 512` when that output declares one (blank = dense/auto),
-    and advances `channelsPerPixel` per pixel. So `startChannel` is the GLOBAL, 0-based DMX channel
-    of the output's first pixel (core's `PixelDmx.channel`), and `startUniverse` is its 0-based
-    universe (`floor(startChannel / 512)`), `null` for an unwired output (no pixels, no start).
+    Channel math MIRRORS core's protocol-aware {@link buildDmxMap} (Decision 7): a single global
+    channel cursor advances `channelsPerPixel` per pixel, and a declared `output.startUniverse`
+    snaps it to that universe's first channel (blank = dense/auto). Universe NUMBERING is
+    protocol-domain: Art-Net universes are 0-based (cursor snap `startUniverse * 512`, dense
+    stream starts on universe 0), sACN universes are 1-based (universe 0 is spec-invalid — the
+    snap is `(startUniverse - 1) * 512` and the dense stream starts on universe 1). `startChannel`
+    stays the GLOBAL, 0-based DMX channel of the output's first pixel (core's `PixelDmx.channel`);
+    `startUniverse` is the PROTOCOL-DOMAIN universe of that channel (`floor(startChannel / 512)`,
+    +1 under sACN), `null` for an unwired output (no pixels, no start).
 
-    The C4 view derives the PixLite device columns from these: device `startUni = startUniverse + 1`
-    and `startCh = startChannel % 512 + 1` (the API models both from 1 — see PixLite Mk3 API v1.7
-    `pixPort.startUni` / `startCh`). */
+    The C4 view derives the device columns from these: under Art-Net the PixLite models
+    universes from 1 (`startUni = startUniverse + 1`, PixLite Mk3 API v1.7 `pixPort.startUni`);
+    under sACN `startUniverse` is already the true wire universe and displays as-is. Channels
+    display `startChannel % 512 + 1` in both (the APIs model channels from 1). */
 export type PixelOutputRow = {
   outputId: string;
   index: number;
@@ -156,12 +165,18 @@ export function buildPixelOutputTable(
   routing: PatchRouting,
   _kit: KitConfig,
   pixelsForHoop: (h: HoopRef) => number,
+  protocol: OutputProtocol = 'artnet',
 ): PixelOutputRow[] {
   const rows: PixelOutputRow[] = [];
+  // sACN universes are 1-based: a declared startUniverse names a 1-based wire universe, and
+  // the row's universe read-out shifts by the same offset. Art-Net stays 0-based.
+  const universeBase = protocol === 'sacn' ? 1 : 0;
   let cursor = 0; // next global DMX channel to assign
 
   routing.outputs.forEach((output, index) => {
-    if (output.startUniverse !== undefined) cursor = output.startUniverse * CHANNELS_PER_UNIVERSE;
+    if (output.startUniverse !== undefined) {
+      cursor = Math.max(0, output.startUniverse - universeBase) * CHANNELS_PER_UNIVERSE;
+    }
     const startChannel = cursor;
 
     let pixelCount = 0;
@@ -175,7 +190,7 @@ export function buildPixelOutputTable(
     rows.push({
       outputId: output.id,
       index,
-      startUniverse: pixelCount > 0 ? Math.floor(startChannel / CHANNELS_PER_UNIVERSE) : null,
+      startUniverse: pixelCount > 0 ? Math.floor(startChannel / CHANNELS_PER_UNIVERSE) + universeBase : null,
       startChannel,
       pixelCount,
     });

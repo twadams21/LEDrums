@@ -295,7 +295,8 @@ export function defaultRouting(
   for (let i = 0, n = 0; i < chain.length; i += size, n++) {
     const hoops = chain.slice(i, i + size);
     const id = String(n + 1);
-    // No startUniverse → the synthesized chain packs dense/contiguous from universe 0.
+    // No startUniverse → the synthesized chain packs dense/contiguous from the protocol's
+    // first universe (Art-Net 0, sACN 1 — universe numbering is core buildDmxMap's concern).
     outputs.push({ id, channelsPerPixel: 3, hoops });
   }
   return { outputs };

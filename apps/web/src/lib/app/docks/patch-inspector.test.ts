@@ -243,6 +243,33 @@ describe('buildPixelOutputTable', () => {
     const rows = buildPixelOutputTable(r, kit(), pxForHoop);
     expect(rows[1]).toEqual({ outputId: 'next', index: 1, startUniverse: 1, startChannel: 600, pixelCount: 30 });
   });
+
+  // Decision 7 (INIT-03 F3): universe numbering is protocol-domain. sACN universes are
+  // 1-based (0 is spec-invalid) — a dense stream starts on universe 1, and a declared
+  // startUniverse names the 1-based wire universe (snap = (startUniverse-1)*512). The
+  // channel cursor itself stays 0-based/byte-true in both protocols.
+  it('sACN: dense outputs read universe 1 and a startUniverse snap lands on its 1-based universe', () => {
+    const r: PatchRouting = {
+      outputs: [
+        { id: 'o1', channelsPerPixel: 3, hoops: [{ drumId: 'A', hoop: 1 }] }, // 50px → 150ch
+        { id: 'o2', startUniverse: 2, channelsPerPixel: 3, hoops: [{ drumId: 'B', hoop: 1 }] }, // 1-based uni 2 → ch512
+      ],
+    };
+    expect(buildPixelOutputTable(r, kit(), pxForHoop, 'sacn')).toEqual([
+      { outputId: 'o1', index: 0, startUniverse: 1, startChannel: 0, pixelCount: 50 },
+      { outputId: 'o2', index: 1, startUniverse: 2, startChannel: 512, pixelCount: 30 },
+    ]);
+  });
+
+  it('artnet (default): identical to the unparameterised behaviour — 0-based universes', () => {
+    const r: PatchRouting = {
+      outputs: [{ id: 'o4', startUniverse: 2, channelsPerPixel: 3, hoops: [{ drumId: 'A', hoop: 1 }] }],
+    };
+    expect(buildPixelOutputTable(r, kit(), pxForHoop, 'artnet')).toEqual(buildPixelOutputTable(r, kit(), pxForHoop));
+    expect(buildPixelOutputTable(r, kit(), pxForHoop, 'artnet')[0]).toEqual(
+      { outputId: 'o4', index: 0, startUniverse: 2, startChannel: 1024, pixelCount: 50 },
+    );
+  });
 });
 
 describe('boundTriggerFor', () => {
