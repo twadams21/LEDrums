@@ -27,6 +27,19 @@ and all review artifacts live here, not on main. Before executing initiative 1, 
 with Trent: merge/rebase this branch into main first, or execute on a fresh branch off
 current main and cherry-pick the fix batches. Do not guess.
 
+## Fleet policy (Trent, 2026-07-29 ~23:30)
+
+- **You are Fable high.** Implementers run **fable low until the 7d usage reset at
+  2026-07-30T04:00+10:00**; after the reset, implementers switch to **opus high**
+  (you stay fable high). Aim to finish the larger jobs (ranks 1–3) before the reset.
+- **3 agents wide**, no wider.
+- **Long-standing worktrees, one per agent** — twux creates and maintains them
+  (`twux launch` worktree support / `twux worktree` — check `--help`, not memory).
+  Agents stay in their own worktree for their whole lane; **the orchestrator merges**.
+  Disk was critical earlier tonight (recovered to ~9G free) — each worktree costs
+  ~330M after `pnpm install`, so 3 standing worktrees is the budget; remove them with
+  `git worktree remove` when a lane retires, and re-check `df` before adding more.
+
 ## Operational rules (each learned the hard way — see HANDOFF.md for the original list)
 
 - **Concurrency lives in code, never in a prompt.** Machine crashed once already.
