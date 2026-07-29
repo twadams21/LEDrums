@@ -454,6 +454,18 @@ export class VoiceEngineHost {
     this.output.close();
   }
 
+  /** Fatal-path blackout (S3): stop the loop and send the blackout frame WITHOUT
+   * closing the transport — dgram send is async, and closing the socket before the
+   * darkening datagrams flush discards them. Used only by the fatal handler; a
+   * clean shutdown still goes through {@link stop}. */
+  darken(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.output.blackout(this.dmxMap);
+  }
+
   private scheduleNext(): void {
     this.timer = setTimeout(() => {
       // A throw in loop()'s own bookkeeping (outside the per-step catch below) must

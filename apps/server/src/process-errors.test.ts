@@ -57,6 +57,27 @@ describe('installProcessErrorCapture (#122)', () => {
     uninstall();
   });
 
+  it('with drainMs, onFatal runs synchronously but exit(1) is deferred by exactly the drain window', () => {
+    vi.useFakeTimers();
+    try {
+      const proc = new EventEmitter();
+      const exit = vi.fn();
+      const onFatal = vi.fn();
+      installProcessErrorCapture({ monitor: vi.fn(), exit, log: vi.fn(), onFatal, proc, drainMs: 100 });
+      proc.emit('uncaughtException', new Error('kaboom'));
+      // The fatal callback (darken + flush) ran inline; the exit did NOT.
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(exit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(99);
+      expect(exit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(exit).toHaveBeenCalledTimes(1);
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('handles non-Error rejection values', () => {
     const { proc, monitor } = harness();
     proc.emit('unhandledRejection', 'a plain string reason');

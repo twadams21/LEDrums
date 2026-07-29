@@ -625,3 +625,20 @@ describe('VoiceEngineHost per-frame exception boundary (S2)', () => {
     expect(() => host.step(STEP)).toThrow('boom on tick 1');
   });
 });
+
+describe('VoiceEngineHost.darken (S3)', () => {
+  it('sends the blackout frame, clears the loop timer, and does NOT close the transport', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    try {
+      const { host, fake } = makeHost();
+      host.start();
+      const sendsBefore = fake.sends;
+      host.darken();
+      expect(fake.sends).toBeGreaterThan(sendsBefore); // blackout reached the transport
+      expect(fake.closed).toBe(false); // the socket stays open so the datagrams can flush
+      expect(vi.getTimerCount()).toBe(0); // the loop is stopped
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

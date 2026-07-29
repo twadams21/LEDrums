@@ -47,6 +47,7 @@ import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
 import { createMonitorBus } from './monitor';
 import { installProcessErrorCapture } from './process-errors';
+import { createFatalHandler } from './fatal-shutdown';
 import { createShipQueue, type ShipQueue } from './telemetry/ship-queue';
 import { createHttpTransport } from './telemetry/transport';
 import { createReporter, type Reporter } from './telemetry/reporter';
@@ -260,7 +261,11 @@ function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
 // Monitor bus as an `error` event. `onFatal` runs the Reporter's synchronous queue flush before the
 // process exits, so a crash report reaches disk (and ships on the next boot) even on a hard fault.
 let flushReportsSync: () => void = () => {};
-installProcessErrorCapture({ monitor, onFatal: () => flushReportsSync() });
+installProcessErrorCapture({
+  monitor,
+  onFatal: createFatalHandler({ darken: () => (voiceHost ?? host).darken(), flushReports: () => flushReportsSync() }),
+  drainMs: 100,
+});
 
 // --- Remote error reporting (#122) ------------------------------------------
 // On when the server serves the built web root (packaged/prod), off under the dev proxy;

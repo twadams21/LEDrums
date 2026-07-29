@@ -24,6 +24,11 @@ export interface ProcessErrorDeps {
   exit?: (code: number) => void;
   /** Local-only logger; defaults to `console.error`. */
   log?: (message: string) => void;
+  /** Delay (ms) between onFatal and exit(1). Default 0 = exit inline (today's
+   * behaviour). main.ts sets 100 so the async dgram blackout sent by onFatal has a
+   * bounded window to leave the socket before the process dies — dgram send is
+   * asynchronous and a synchronous exit(1) would discard the darkening datagrams. */
+  drainMs?: number;
 }
 
 function faultDetail(value: unknown): { message: string; stack?: string } {
@@ -55,7 +60,9 @@ export function installProcessErrorCapture(deps: ProcessErrorDeps): () => void {
     } catch {
       /* never let cleanup mask the exit */
     }
-    exit(1);
+    const drainMs = deps.drainMs ?? 0;
+    if (drainMs > 0) setTimeout(() => exit(1), drainMs);
+    else exit(1);
   };
 
   const onRejection = (reason: unknown): void => {
