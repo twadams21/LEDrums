@@ -1,5 +1,6 @@
 import { createSocket, type Socket } from 'node:dgram';
-import type { PixelOutput } from './interfaces';
+import type { PixelOutput, PixelOutputStatus } from './interfaces';
+import { StatusLatch } from './status-latch';
 
 export const SACN_PORT = 5568;
 
@@ -79,6 +80,8 @@ export interface SacnOptions {
   iface?: string;
   /** E1.31 framing-layer priority 1–200 (default 100); higher wins at a merging node. */
   priority?: number;
+  /** Injectable clock for the status rate floor (tests only). */
+  now?: () => number;
 }
 
 /** sACN (E1.31) pixel output. Uses per-universe multicast unless `host` is given. */
@@ -88,20 +91,37 @@ export class SacnOutput implements PixelOutput {
   private readonly opts: SacnOptions;
   private seq = 0;
   private ready = false;
+  private readonly status: StatusLatch<PixelOutputStatus>;
 
   constructor(opts: SacnOptions = {}) {
     this.opts = opts;
+    this.status = new StatusLatch<PixelOutputStatus>(opts.now ? { now: opts.now } : {});
     this.socket = createSocket({ type: 'udp4', reuseAddr: true });
-    this.socket.on('error', () => {});
+    this.socket.on('error', (err: NodeJS.ErrnoException) =>
+      this.status.set({ state: 'error', error: err.message, ...(err.code ? { code: err.code } : {}) }),
+    );
     this.socket.bind(() => {
       try {
         if (opts.iface) this.socket.setMulticastInterface(opts.iface);
         this.socket.setMulticastTTL(16);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        // The bind takes no address, so a stale iface NEVER fails the bind — it fails
+        // here, after which multicast silently leaves the DEFAULT NIC. Observable now,
+        // but non-fatal: transmit proceeds exactly as before.
+        this.status.set({
+          state: 'error',
+          error: `multicast interface ${opts.iface} unavailable: ${String(err)}`,
+          code: 'EMCASTIFACE',
+        });
       }
       this.ready = true;
+      this.status.set({ state: 'ready' });
     });
+  }
+
+  /** Latch-and-replay transport status; see PixelOutput.onStatus. */
+  onStatus(handler: (s: PixelOutputStatus) => void): void {
+    this.status.subscribe(handler);
   }
 
   nextFrame(): void {
@@ -112,7 +132,12 @@ export class SacnOutput implements PixelOutput {
     if (!this.ready) return;
     const pkt = encodeE131(universe, this.seq, channels, this.cid, this.opts.sourceName, this.opts.priority);
     const host = this.opts.host ?? sacnMulticastAddress(universe);
-    this.socket.send(pkt, this.opts.port ?? SACN_PORT, host, () => {});
+    this.socket.send(pkt, this.opts.port ?? SACN_PORT, host, (err) => {
+      if (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        this.status.set({ state: 'error', error: err.message, ...(code ? { code } : {}) });
+      }
+    });
   }
 
   close(): void {

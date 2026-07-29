@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { createSocket, type Socket } from 'node:dgram';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { createSocket, Socket } from 'node:dgram';
 import { SacnOutput, encodeE131 } from './sacn';
+import type { PixelOutputStatus } from './interfaces';
 
 /**
  * Characterization tests for the SacnOutput UDP socket lifecycle. Recorded at the
@@ -44,6 +46,8 @@ describe('SacnOutput socket lifecycle (characterization)', () => {
       const rx = await receiver();
       const out = new SacnOutput({ host: '127.0.0.1', port: rx.port, iface: '127.0.0.1' });
       cleanup.push(() => out.close());
+      const statuses: PixelOutputStatus[] = [];
+      out.onStatus((s) => statuses.push(s));
       const data = new Uint8Array(512).fill(5);
       out.nextFrame(); // seq -> 1
       const timer = setInterval(() => out.send(1, data), 10);
@@ -58,20 +62,21 @@ describe('SacnOutput socket lifecycle (characterization)', () => {
       // (bytes 22..38) and re-encode — every other byte must then match exactly.
       const cid = Uint8Array.from(got.subarray(22, 38));
       expect(got.equals(Buffer.from(encodeE131(1, 1, data, cid)))).toBe(true);
+      expect(statuses).toContainEqual({ state: 'ready' });
     },
   );
 
+  // INVERTED from the S1 recording ("a stale multicast interface is currently silent"):
+  // the failure now emits EMCASTIFACE — while unicast delivery still succeeds, proving
+  // observability was added without changing transmit behaviour.
   it(
-    'a stale multicast interface is currently silent: no throw, no status channel, and unicast delivery still succeeds',
+    'a stale multicast interface emits EMCASTIFACE and unicast delivery still succeeds',
     { timeout: 2000 },
     async () => {
       const rx = await receiver();
-      // The sACN bind takes no address, so a stale iface NEVER produces a bind error:
-      // setMulticastInterface fails inside a bare catch and multicast silently uses the
-      // default NIC. With an explicit unicast host, delivery still succeeds regardless.
       const out = new SacnOutput({ host: '127.0.0.1', port: rx.port, iface: TEST_NET_3 });
       cleanup.push(() => out.close());
-      expect('onStatus' in out).toBe(false);
+      const status = new Promise<PixelOutputStatus>((res) => out.onStatus((s) => res(s)));
       const data = new Uint8Array(512).fill(3);
       out.nextFrame();
       expect(() => out.send(1, data)).not.toThrow();
@@ -80,6 +85,70 @@ describe('SacnOutput socket lifecycle (characterization)', () => {
       const got = await rx.first;
       clearInterval(timer);
       expect(got.length).toBe(638);
+      const s = await status;
+      expect(s.state).toBe('error');
+      expect(s.code).toBe('EMCASTIFACE');
+      expect(s.error).toContain(TEST_NET_3);
     },
   );
+
+  it(
+    'a subscriber attaching after the bind resolves is replayed the latched status',
+    { timeout: 2000 },
+    async () => {
+      const out = new SacnOutput({ host: '127.0.0.1', port: 65001, iface: '127.0.0.1' });
+      cleanup.push(() => out.close());
+      await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+      const seen: PixelOutputStatus[] = [];
+      out.onStatus((s) => seen.push(s));
+      expect(seen).toEqual([{ state: 'ready' }]);
+    },
+  );
+
+  it(
+    'a throwing subscriber escapes neither the adapter nor the process',
+    { timeout: 2000 },
+    async () => {
+      let uncaught = false;
+      const sentinel = (): void => {
+        uncaught = true;
+      };
+      process.once('uncaughtException', sentinel);
+      process.once('unhandledRejection', sentinel);
+      try {
+        const rx = await receiver();
+        const out = new SacnOutput({ host: '127.0.0.1', port: rx.port, iface: '127.0.0.1' });
+        cleanup.push(() => out.close());
+        out.onStatus(() => {
+          throw new Error('bad subscriber');
+        });
+        await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+        out.nextFrame();
+        expect(() => out.send(1, new Uint8Array(512))).not.toThrow();
+        await rx.first;
+        await new Promise((res) => setTimeout(res, 50));
+        expect(uncaught).toBe(false);
+      } finally {
+        process.removeListener('uncaughtException', sentinel);
+        process.removeListener('unhandledRejection', sentinel);
+      }
+    },
+  );
+
+  it('still configures reuseAddr and calls setMulticastTTL(16)', { timeout: 2000 }, async () => {
+    // Loopback unicast cannot observe either option; these locks stop a refactor from
+    // silently dropping them. TTL via a prototype spy; reuseAddr via a source-text lock
+    // (createSocket is module-bound, so its options object is not spyable per-instance).
+    const spy = vi.spyOn(Socket.prototype, 'setMulticastTTL').mockImplementation(() => 16);
+    try {
+      const out = new SacnOutput({ host: '127.0.0.1', port: 65002, iface: '127.0.0.1' });
+      cleanup.push(() => out.close());
+      await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
+      expect(spy).toHaveBeenCalledWith(16);
+    } finally {
+      spy.mockRestore();
+    }
+    const src = readFileSync(new URL('./sacn.ts', import.meta.url), 'utf8');
+    expect(src).toContain("createSocket({ type: 'udp4', reuseAddr: true })");
+  });
 });
