@@ -8,7 +8,7 @@ import {
   type DmxMap,
   type OutputSettings,
 } from '@ledrums/core';
-import type { PixelOutput } from '@ledrums/io';
+import type { PixelOutput, PixelOutputStatus } from '@ledrums/io';
 import { getHoopPixelRange } from '@ledrums/core';
 import { applyRgbOrder, frameToUniverseBytes, OutputManager } from './output-manager';
 import type { MonitorEvent } from './ws-protocol';
@@ -17,6 +17,7 @@ class FakeOutput implements PixelOutput {
   sends: { universe: number; bytes: number[] }[] = [];
   closed = false;
   throwing = false;
+  private statusHandlers: Array<(s: PixelOutputStatus) => void> = [];
   nextFrame(): void {}
   send(universe: number, channels: Uint8Array): void {
     if (this.throwing) throw new Error('net down');
@@ -24,6 +25,15 @@ class FakeOutput implements PixelOutput {
   }
   close(): void {
     this.closed = true;
+  }
+  onStatus(h: (s: PixelOutputStatus) => void): void {
+    this.statusHandlers.push(h);
+  }
+  emitStatus(s: PixelOutputStatus): void {
+    for (const h of this.statusHandlers) h(s);
+  }
+  statusHandlerCount(): number {
+    return this.statusHandlers.length;
   }
 }
 
@@ -371,5 +381,81 @@ describe('OutputManager monitor diagnostics', () => {
       source: 'server',
       destination: 'sacn:broadcast:5568',
     });
+  });
+});
+
+describe('OutputManager transport status (S7)', () => {
+  it('a transport error reaches lastError', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.emitStatus({ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' });
+    expect(m.status().lastError).toContain('EADDRNOTAVAIL');
+  });
+
+  it('a transport error reaches the monitor bus', () => {
+    const events: Array<Omit<MonitorEvent, 'id' | 'time'>> = [];
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    m.onMonitor = (event) => events.push(event);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.emitStatus({ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' });
+    const errors = events.filter((e) => e.type === 'error' && e.source === 'server/output');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ label: 'Output transport error' });
+  });
+
+  it('a ready status clears nothing — faults are sticky until re-arm', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.emitStatus({ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' });
+    fake.emitStatus({ state: 'ready' });
+    expect(m.status().lastError).toContain('EADDRNOTAVAIL');
+  });
+
+  it('a transport ready cannot erase a synchronous send failure, and both slots compose', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    fake.throwing = true;
+    m.sendFrame(fb.rgba, dmxMap); // synchronous send failure -> lastError
+    fake.emitStatus({ state: 'ready' });
+    fake.emitStatus({ state: 'error', error: 'iface gone', code: 'EMCASTIFACE' });
+    const composed = m.status().lastError!;
+    expect(composed).toContain('net down');
+    expect(composed).toContain('EMCASTIFACE');
+    expect(composed).toContain(' | ');
+  });
+
+  it('a status from a torn-down transport is ignored', () => {
+    const fake = new FakeOutput();
+    const m = new OutputManager(() => fake);
+    const { dmxMap } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.applySettings(settings('disabled'), dmxMap); // teardown; queued callbacks may still fire
+    fake.emitStatus({ state: 'error', error: 'late bind failure', code: 'EADDRNOTAVAIL' });
+    expect(m.status().lastError).toBeNull();
+  });
+
+  it('a PixelOutput with no onStatus still arms and transmits', () => {
+    const sends: number[] = [];
+    const bare: PixelOutput = {
+      nextFrame: () => {},
+      send: (universe) => {
+        sends.push(universe);
+      },
+      close: () => {},
+    };
+    const m = new OutputManager(() => bare);
+    const { dmxMap, fb } = fixture();
+    m.applySettings(settings('armed'), dmxMap);
+    m.sendFrame(fb.rgba, dmxMap);
+    expect(sends).toHaveLength(dmxMap.universes.length);
+    expect(m.status().lastError).toBeNull();
   });
 });

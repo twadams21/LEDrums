@@ -78,6 +78,14 @@ export class OutputManager {
   private signature = '';
   private packetsSent = 0;
   private lastError: string | null = null;
+  /** Asynchronous transport fault (bind / socket / multicast-setup / send-completion),
+   * held in its OWN slot so it can neither clear nor hide a synchronous send/blackout
+   * failure in {@link lastError}. Composed into status().lastError; sticky until the
+   * transport is (re)constructed, matching the lastError contract. */
+  private transportError: string | null = null;
+  /** Generation counter guarding against status callbacks from a torn-down transport:
+   * a closed dgram socket can still fire queued callbacks. */
+  private transportGen = 0;
   private universeCount = 0;
   private settingsMonitorSignature = '';
   private readonly now: () => number;
@@ -108,6 +116,14 @@ export class OutputManager {
           this.output = this.factory(settings);
           this.signature = sig;
           this.lastError = null;
+          this.transportError = null;
+          const gen = ++this.transportGen;
+          this.output.onStatus?.((s) => {
+            if (gen !== this.transportGen) return; // stale transport — ignore
+            if (s.state !== 'error') return; // 'ready' deliberately clears nothing
+            this.transportError = s.code ? `${s.code}: ${s.error ?? 'transport error'}` : (s.error ?? 'transport error');
+            this.monitorError('Output transport error', settings, this.transportError);
+          });
         } catch (err) {
           this.lastError = String(err);
           this.output = null;
@@ -128,6 +144,7 @@ export class OutputManager {
       this.output.close();
       this.output = null;
       this.signature = '';
+      this.transportGen++; // queued callbacks from the closed socket are now stale
     }
   }
 
@@ -264,7 +281,7 @@ export class OutputManager {
       protocol: this.settings?.protocol ?? 'artnet',
       host: this.settings?.host ?? '',
       packetsSent: this.packetsSent,
-      lastError: this.lastError,
+      lastError: [this.lastError, this.transportError].filter(Boolean).join(' | ') || null,
       universeCount: this.universeCount,
     };
   }
