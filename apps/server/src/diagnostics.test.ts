@@ -62,4 +62,16 @@ describe('startupDiagnostics', () => {
     expect(text).toContain('pinRequired=true');
     expect(text).toContain('hostTokenPresent=true');
   });
+
+  it('a recovered boot surfaces as an ERROR row, not a quiet persistence line (S10)', () => {
+    for (const source of ['snapshot', 'recovered-seed'] as const) {
+      const entry = startupDiagnostics(input({ project: { name: 'default.local', path: '/p', source } })).find(
+        (e) => e.destination === 'project',
+      );
+      expect(entry?.type).toBe('error');
+      expect(entry?.label).toBe(`Project loaded from ${source}`);
+    }
+    const clean = startupDiagnostics(input()).find((e) => e.destination === 'project');
+    expect(clean?.type).toBe('persistence');
+  });
 });

@@ -20,7 +20,8 @@ import {
   oscRecall,
   parseSectionRecallAddress,
 } from './input-router';
-import { listProjects, loadProject, projectExists, projectFilePath, resolveProjectsDir, saveProjectAsync } from './projects';
+import { listProjects, resolveProjectsDir, saveProjectAsync } from './projects';
+import { resolveInitialProject } from './boot-project';
 import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
@@ -135,24 +136,6 @@ const hostToken = resolveHostToken(process.env);
  * gitignored (see apps/server/.gitignore) — never committed, never a hand-edited seed. */
 const LIVE_PROJECT = 'default.local';
 
-function initialProject(): { project: Project; source: 'seed' | 'file'; name: string; path: string } {
-  // Boot recovery: the live project file is authoritative — load + integrity-check it if
-  // present (failing loudly on dangling refs). Only on a truly fresh machine (no saved
-  // file) do we seed from the canonical in-code definition (defaultProject → DEFAULT_KIT),
-  // so there is no hand-edited file to drift from the engine/lab kit. Once any edit lands,
-  // the autosaver writes this slot and it is what subsequent boots restore.
-  const path = projectFilePath(LIVE_PROJECT);
-  // Both boot paths land on the canonical port count (4 normal / 8 expanded): loadProject already
-  // reconciles a saved file; the seed (fresh machine) reconciles here so DEFAULT_KIT's `outputs: []`
-  // boots as 4 real ports too — so the patch graph always renders exactly logicalOutputCount ports,
-  // never defaultRouting's hoops-per-output chunking (the "3 outputs" the drummer saw).
-  if (!projectExists(LIVE_PROJECT)) {
-    const seed = defaultProject();
-    return { project: { ...seed, kit: reconcileOutputs(seed.kit) }, source: 'seed', name: LIVE_PROJECT, path };
-  }
-  return { project: loadProject(LIVE_PROJECT), source: 'file', name: LIVE_PROJECT, path };
-}
-
 // --- monitor bus + process fault capture (hoisted, S6) ----------------------
 // Boot-crash capture must be installed BEFORE the project load below — a corrupt
 // project used to kill the process silently. The bus cannot take `broadcastJson`
@@ -186,7 +169,11 @@ installProcessErrorCapture({
   drainMs: 100,
 });
 
-const projectLoad = initialProject();
+// Boot recovery (S10): file → newest snapshot bundle → seed, with error-class
+// discrimination (corruption quarantines; an IO fault fails loudly without renaming).
+// The process-error capture above is already installed, so even a throw here is
+// captured + reported before exit.
+const projectLoad = resolveInitialProject({ name: LIVE_PROJECT, dir: resolveProjectsDir(process.env) });
 const project0 = projectLoad.project;
 const host = new EngineHost(project0);
 /** Voice-bus host, only constructed in voice mode. It owns the live render + output;
@@ -210,13 +197,17 @@ const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engi
  * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
  * has no file yet); the web then seeds the server from its localStorage cache on connect. */
 const showLibraryLoad = inspectShowLibraryFile();
-let liveShowLibrary: ShowLibraryBlob | null = loadShowLibrary();
+let liveShowLibrary: ShowLibraryBlob | null = isVersionedBlob(projectLoad.showLibrary)
+  ? projectLoad.showLibrary
+  : loadShowLibrary();
 
 /** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
  * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
  * flushed on shutdown). `null` until the first client pushes one. */
 const songLibraryLoad = inspectSongLibraryFile();
-let liveSongLibrary: SongLibraryBlob | null = loadSongLibrary();
+let liveSongLibrary: SongLibraryBlob | null = isVersionedBlob(projectLoad.songLibrary)
+  ? projectLoad.songLibrary
+  : loadSongLibrary();
 
 /** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
  * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
@@ -387,6 +378,21 @@ for (const event of startupDiagnostics({
   hostTokenPresent: !!hostToken,
 })) {
   monitor(event);
+}
+
+// Decision 8 (11-decisions.md): a boot-recovery quarantine is never quiet. This error
+// event rides the EXISTING Monitor → Reporter → Worker → Discord path (the Reporter
+// keys reports by label, so the report key is `boot-recovery/quarantine`); the in-app
+// acknowledgement banner reads the same recovery outcome off the `state` message.
+if (projectLoad.recovery) {
+  monitor({
+    type: 'error',
+    direction: 'local',
+    source: 'server',
+    destination: 'boot-recovery',
+    label: 'boot-recovery/quarantine',
+    detail: `live project unloadable (${projectLoad.recovery.reason}); recovered from ${projectLoad.source === 'snapshot' ? `snapshot ${projectLoad.recovery.bundleId}` : 'seed'}; original quarantined to ${projectLoad.recovery.quarantinedTo ?? 'n/a'} — last edits may be missing`,
+  });
 }
 
 function monitorInput(msg: ClientMessage, origin: string): void {

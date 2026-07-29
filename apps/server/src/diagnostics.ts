@@ -10,7 +10,7 @@ export interface StartupDiagnosticsInput {
   oscHosts: string[];
   webRoot: string;
   webRootExists: boolean;
-  project: { name: string; path: string; source: 'seed' | 'file' };
+  project: { name: string; path: string; source: 'seed' | 'file' | 'snapshot' | 'recovered-seed' };
   showLibrary: { path: string; source: 'absent' | 'loaded' | 'invalid' };
   songLibrary: { path: string; source: 'absent' | 'loaded' | 'invalid' };
   tunnel: { enabled: boolean; url: string | null };
@@ -40,7 +40,10 @@ export function startupDiagnostics(input: StartupDiagnosticsInput): MonitorDraft
         : `no LAN address detected; send OSC to 127.0.0.1:${input.oscPort}`,
     },
     {
-      type: 'persistence',
+      // A recovered boot (snapshot / recovered-seed) is an ERROR row, not a quiet
+      // persistence line — silent recovery is worse than the crash it replaces (S10):
+      // a drummer who does not notice can author on top of a week-old snapshot.
+      type: input.project.source === 'snapshot' || input.project.source === 'recovered-seed' ? 'error' : 'persistence',
       direction: 'local',
       source: 'server',
       destination: 'project',
