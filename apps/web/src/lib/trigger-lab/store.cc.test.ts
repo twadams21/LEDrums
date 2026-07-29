@@ -9,15 +9,7 @@ import { voice } from '@ledrums/core';
    reserved-CC-0 rejection, MIDI-learn binding the next incoming CC (and skipping CC 0), the
    WebMIDI forward feeding the offline sim's CC table, and add-node seeding. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number { return this.m.size; }
-  key(i: number): string | null { return [...this.m.keys()][i] ?? null; }
-  getItem(k: string): string | null { return this.m.has(k) ? this.m.get(k)! : null; }
-  setItem(k: string, v: string): void { this.m.set(k, String(v)); }
-  removeItem(k: string): void { this.m.delete(k); }
-  clear(): void { this.m.clear(); }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 

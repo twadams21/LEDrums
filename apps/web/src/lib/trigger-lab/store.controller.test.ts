@@ -11,46 +11,9 @@ import type { ClientMessage, ControllerStatus, ControllerTestPattern, Discovered
    A capturing harness records callbacks + sends; `wireClient()` registers the callbacks without
    opening a real socket. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.has(k) ? this.m.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
-interface Harness {
-  cb: WSCallbacks | null;
-  sent: ClientMessage[];
-}
-
-const harnessClient =
-  (h: Harness): (() => WSClient) =>
-  () =>
-    ({
-      on(cb: WSCallbacks) {
-        h.cb = cb;
-      },
-      connect() {},
-      close() {},
-      send(m: ClientMessage) {
-        h.sent.push(m);
-      },
-    }) as unknown as WSClient;
+import { newHarness, harnessClient, type Harness } from '../test-support/ws-harness';
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -62,7 +25,7 @@ afterEach(() => {
 /** A store with the WS callbacks registered (no live socket) and `project` seeded so setOutput's
     optimistic write has something to write to. */
 function wired(): { store: TriggerLab; h: Harness } {
-  const h: Harness = { cb: null, sent: [] };
+  const h = newHarness();
   const store = new TriggerLab(harnessClient(h));
   store.project = defaultProject();
   (store as unknown as { wireClient(): void }).wireClient();

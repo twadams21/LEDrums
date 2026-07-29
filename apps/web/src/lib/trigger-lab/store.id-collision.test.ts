@@ -8,15 +8,7 @@ import type { GraphNode } from './sim';
    carries — and a duplicate id silently breaks select-by-id (the inspector resolves to the first
    match). `addNode` / `addPlayNode` / `connect` route through `freshId`, which skips a taken id. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number { return this.m.size; }
-  key(i: number): string | null { return [...this.m.keys()][i] ?? null; }
-  getItem(k: string): string | null { return this.m.has(k) ? this.m.get(k)! : null; }
-  setItem(k: string, v: string): void { this.m.set(k, String(v)); }
-  removeItem(k: string): void { this.m.delete(k); }
-  clear(): void { this.m.clear(); }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient =>
   ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;

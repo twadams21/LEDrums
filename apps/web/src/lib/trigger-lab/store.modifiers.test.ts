@@ -8,15 +8,7 @@ import type { WSClient } from '../ws/client';
    carrying the `mod` target port with the modifier-scoping guard (mod wires only from a
    modifier node). */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number { return this.m.size; }
-  key(i: number): string | null { return [...this.m.keys()][i] ?? null; }
-  getItem(k: string): string | null { return this.m.has(k) ? this.m.get(k)! : null; }
-  setItem(k: string, v: string): void { this.m.set(k, String(v)); }
-  removeItem(k: string): void { this.m.delete(k); }
-  clear(): void { this.m.clear(); }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient =>
   ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;

@@ -9,27 +9,7 @@ import type { Voice } from './sim';
    between the streamed server voices (link open) and the local sim voices (offline); and while
    connected the sim's per-frame `snapshot()` must NOT clobber the server-streamed bus levels. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.has(k) ? this.m.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const capturing = (sent: ClientMessage[]): (() => WSClient) =>
   () =>

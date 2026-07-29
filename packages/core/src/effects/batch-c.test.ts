@@ -1,83 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseKit } from '../geometry/kit-schema';
-import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
-import { defaultParams, type EffectGenerator, type ResolvedParams } from './types';
+import { model, transport, ctx, trig, render, litCount, finite01Failures } from '../test-support/effect-harness';
+import { type EffectGenerator } from './types';
 import { starfield } from './impl/starfield';
 import { cometTrails } from './impl/comet-trails';
 import { lightning } from './impl/lightning';
 import { confettiBurst } from './impl/confetti-burst';
 import { helix } from './impl/helix';
 import { orbitRings } from './impl/orbit-rings';
-
-function model(drums = 1, hoopCount = 4): PixelModel {
-  const drumDefs = [];
-  for (let i = 0; i < drums; i++) {
-    drumDefs.push({
-      id: `d${i}`,
-      diameterIn: 8,
-      hoopSpacingMm: 50,
-      origin: { x: i * 600, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0 },
-    });
-  }
-  return buildPixelModel(
-    parseKit({
-      global: { ledDensityPxPerM: 40, hoopCount, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 },
-      drums: drumDefs,
-    }),
-  );
-}
-
-function transport(beat = 0, timeMs = 0): TransportState {
-  return { timeMs, beat, bar: Math.floor(beat / 4), beatInBar: beat % 4, bpm: 120, beatsPerBar: 4, playing: true };
-}
-
-function ctx(m: PixelModel, opts: Partial<RenderContext> = {}): RenderContext {
-  return {
-    model: m,
-    timeMs: opts.timeMs ?? 0,
-    dt: opts.dt ?? 16,
-    transport: opts.transport ?? transport(0, opts.timeMs ?? 0),
-    triggers: opts.triggers ?? [],
-  };
-}
-
-function trig(seq: number, drumId: string, note: number, velocity: number, ageMs: number): Trigger {
-  return { seq, drumId, note, velocity, ageMs, timeMs: 0 };
-}
-
-function render<S>(
-  effect: EffectGenerator<S>,
-  m: PixelModel,
-  c: RenderContext,
-  params?: ResolvedParams,
-  state?: S,
-): Framebuffer {
-  const fb = new Framebuffer(m.pixelCount);
-  const p = { ...defaultParams(effect.paramSpec), ...params };
-  const s = state ?? (effect.createState ? effect.createState(m) : (undefined as S));
-  effect.render(c, p, fb, s);
-  return fb;
-}
-
-function litCount(fb: Framebuffer): number {
-  let n = 0;
-  for (let i = 0; i < fb.pixelCount; i++) {
-    const j = i * 4;
-    if (fb.rgba[j]! > 0.004 || fb.rgba[j + 1]! > 0.004 || fb.rgba[j + 2]! > 0.004) n++;
-  }
-  return n;
-}
-
-function assertFinite01(fb: Framebuffer, id: string): void {
-  for (let i = 0; i < fb.rgba.length; i++) {
-    const v = fb.rgba[i]!;
-    expect(Number.isFinite(v), `${id} channel ${i}`).toBe(true);
-    expect(v >= 0 && v <= 1, `${id} channel ${i} = ${v}`).toBe(true);
-  }
-}
 
 const batchC: EffectGenerator<unknown>[] = [starfield, cometTrails, lightning, confettiBurst, helix, orbitRings];
 
@@ -87,7 +16,7 @@ describe('batch-c: all six render finite [0,1]', () => {
     const triggers = [trig(1, 'd0', 36, 0.8, 30), trig(2, 'd1', 38, 1, 120)];
     for (const e of batchC) {
       const fb = render(e, m, ctx(m, { timeMs: 250, transport: transport(2.3, 250), triggers }));
-      assertFinite01(fb, e.id);
+      expect(finite01Failures(fb, e.id)).toEqual([]);
     }
   });
 });
@@ -98,11 +27,11 @@ describe('starfield', () => {
     const state = starfield.createState!(m);
     const a = render(starfield, m, ctx(m, { timeMs: 120, dt: 16 }), { count: 40, rate: 3 }, state);
     expect(litCount(a)).toBeGreaterThan(0);
-    assertFinite01(a, 'starfield');
+    expect(finite01Failures(a, 'starfield')).toEqual([]);
     // Drive a second tick on the same state; still finite and lit.
     const b = render(starfield, m, ctx(m, { timeMs: 260, dt: 16 }), { count: 40, rate: 3 }, state);
     expect(litCount(b)).toBeGreaterThan(0);
-    assertFinite01(b, 'starfield');
+    expect(finite01Failures(b, 'starfield')).toEqual([]);
   });
 
   it('is seed-deterministic for the same star layout', () => {
@@ -127,7 +56,7 @@ describe('comet-trails', () => {
       fb = render(cometTrails, m, ctx(m, { timeMs: f * 100, dt: 100 }), params, state);
     }
     expect(litCount(fb)).toBeGreaterThan(0);
-    assertFinite01(fb, 'comet-trails');
+    expect(finite01Failures(fb, 'comet-trails')).toEqual([]);
   });
 });
 
@@ -136,7 +65,7 @@ describe('lightning', () => {
     const m = model(2);
     const fb = render(lightning, m, ctx(m, { triggers: [trig(7, 'd0', 36, 1, 0)] }), { boltWidth: 200 });
     expect(litCount(fb)).toBeGreaterThan(0);
-    assertFinite01(fb, 'lightning');
+    expect(finite01Failures(fb, 'lightning')).toEqual([]);
     // Same seq → identical bolt.
     const again = render(lightning, m, ctx(m, { triggers: [trig(7, 'd0', 36, 1, 0)] }), { boltWidth: 200 });
     expect(Array.from(again.rgba)).toEqual(Array.from(fb.rgba));
@@ -160,7 +89,7 @@ describe('confetti-burst', () => {
       fb = render(confettiBurst, m, ctx(m, { timeMs: f * 60, dt: 60, triggers: [] }), params, state);
     }
     expect(litCount(fb)).toBeGreaterThan(0);
-    assertFinite01(fb, 'confetti-burst');
+    expect(finite01Failures(fb, 'confetti-burst')).toEqual([]);
   });
 
   it('is seed-deterministic across two engines fed the same hit', () => {
@@ -198,7 +127,7 @@ describe('helix', () => {
     const m = model(2, 4);
     const fb = render(helix, m, ctx(m, { timeMs: 350 }), { speed: 1.5 });
     expect(litCount(fb)).toBeGreaterThan(0);
-    assertFinite01(fb, 'helix');
+    expect(finite01Failures(fb, 'helix')).toEqual([]);
   });
 });
 
@@ -209,7 +138,7 @@ describe('orbit-rings', () => {
     let totalLit = 0;
     for (let f = 0; f < 8; f++) {
       const fb = render(orbitRings, m, ctx(m, { timeMs: f * 200 }), { width: 200, amp: 1, speed: 1.5 });
-      assertFinite01(fb, 'orbit-rings');
+      expect(finite01Failures(fb, 'orbit-rings')).toEqual([]);
       totalLit += litCount(fb);
     }
     expect(totalLit).toBeGreaterThan(0);
