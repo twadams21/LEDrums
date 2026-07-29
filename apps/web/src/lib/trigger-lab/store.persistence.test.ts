@@ -10,27 +10,7 @@ import type { WSClient } from '../ws/client';
    blob, and that createGraph mints a persistable authored graph. The pure module's
    serialize/deserialize contract is covered separately in persistence.test.ts. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.has(k) ? this.m.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 // The store never connects in these tests (start() is not called), so a no-op client
 // that satisfies the constructor's factory is enough.

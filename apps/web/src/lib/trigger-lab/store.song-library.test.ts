@@ -12,27 +12,7 @@ import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel } from
    to a local copy, the delete-in-use guard, and the pool's own persistence round-trip. The pure
    resolve/detach/CRUD/guard contract is covered in store/song-library-refs.test.ts. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.has(k) ? this.m.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 

@@ -9,27 +9,7 @@ import type { ClientMessage } from '../ws/protocol-types';
    so a hit fires only the matching pad's graph — the pre-section per-zone behaviour, now
    expressed as a flat list + source filter. */
 
-class MemStorage {
-  private m = new Map<string, string>();
-  get length(): number {
-    return this.m.size;
-  }
-  key(i: number): string | null {
-    return [...this.m.keys()][i] ?? null;
-  }
-  getItem(k: string): string | null {
-    return this.m.has(k) ? this.m.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.m.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.m.delete(k);
-  }
-  clear(): void {
-    this.m.clear();
-  }
-}
+import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 const capturing = (sent: ClientMessage[]): (() => WSClient) =>
