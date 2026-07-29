@@ -11,114 +11,6 @@
  },
  "dropped": [
   {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-05-pin-auth-hardening",
-    "title": "Tunnel PIN gate: credential types + brute-force resistance",
-    "priority": 3,
-    "findings": [
-     "resilience-hole-0006",
-     "primitive-obsession-0010"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-05-pin-auth-hardening/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-05-pin-auth-hardening.fable.json"
-  },
-  {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-07-patch-node-identity",
-    "title": "Patch node id grammar → typed identity; {drumId,slot} trigger address object",
-    "priority": 3,
-    "findings": [
-     "primitive-obsession-0008",
-     "dead-code-0008",
-     "data-clumps-0007"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-07-patch-node-identity/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-07-patch-node-identity.fable.json"
-  },
-  {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-08-kit-schema-split",
-    "title": "kit-schema.ts: split schema surface / migration ladder / defaults",
-    "priority": 3,
-    "findings": [
-     "divergent-change-0005"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-08-kit-schema-split/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-08-kit-schema-split.fable.json"
-  },
-  {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-09-ui-component-dedup",
-    "title": "Design-system dedup: control contract, inspector chrome, MIDI-learn, ControllerStatusPanel split",
-    "priority": 4,
-    "findings": [
-     "data-clumps-0002",
-     "duplicated-code-0010",
-     "duplicated-code-0013",
-     "duplicated-code-0014",
-     "divergent-change-0007",
-     "middle-man-0007"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-09-ui-component-dedup/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-09-ui-component-dedup.fable.json"
-  },
-  {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-10-test-helper-dedup",
-    "title": "Shared test harness: in-memory Storage (×37) + effects test helpers (×6)",
-    "priority": 4,
-    "findings": [
-     "duplicated-code-0001",
-     "duplicated-code-0002"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-10-test-helper-dedup/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-10-test-helper-dedup.fable.json"
-  },
-  {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-11-telemetry-resilience",
-    "title": "Telemetry transport + ingest Worker fault handling",
-    "priority": 3,
-    "findings": [
-     "resilience-hole-0008",
-     "resilience-hole-0010"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-11-telemetry-resilience/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-11-telemetry-resilience.fable.json"
-  },
-  {
-   "reason": "Light-track plan exists and was adversarially attacked; verdict sound-with-repairs — held out of 09-synthesis until a repair pass applies the named repairs. Re-rank after promotion.",
-   "initiative": {
-    "initiative_id": "INIT-13-core-surface-trims",
-    "title": "Small core API trims (pixel-grid wrappers, graph-integrity throwing form, listCanvasScenes)",
-    "priority": 4,
-    "findings": [
-     "speculative-generality-0011"
-    ],
-    "decisions": []
-   },
-   "plan_ref": "docs/plans/2026-07-26-deep-review/07-plans/INIT-13-core-surface-trims/opus.json",
-   "refutation_ref": "docs/plans/2026-07-26-deep-review/08-refutations/INIT-13-core-surface-trims.fable.json"
-  },
-  {
    "reason": "Executed this stint as fix batch-02 (commits a7c46eb + 792cb23, gates green 2968, Phase 6 review non-blocking): mirror field removed at every layer; setKitGlobal survives carrying live kit config.",
    "initiative": {
     "initiative_id": "INIT-12-kit-mirror-removal",
@@ -198,6 +90,99 @@
    "depends_on": [],
    "recommended_order_reason": "Buys compiler-enforced totality over the 19-kind node model and fixes the live effect-arm dispatch bug. Last of the five because it touches persisted-show compatibility and benefits from INIT-01 having deleted the legacy consumers of these types.",
    "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-06-graph-node-type-model.json",
+   "status": "ready"
+  },
+  {
+   "rank": 6,
+   "initiative_id": "INIT-05-pin-auth-hardening",
+   "title": "Tunnel PIN gate: credential types + brute-force resistance",
+   "criticals": 0,
+   "estimated_loc": 340,
+   "risk": "medium",
+   "payoff": "medium",
+   "depends_on": [],
+   "recommended_order_reason": "First of the light track: the tunnel PIN is the only thing between the internet and the rig, and the throttle design is small (~340 LOC), independent, and security-shaped — worth landing before any remote show.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-05-pin-auth-hardening.json",
+   "status": "ready"
+  },
+  {
+   "rank": 7,
+   "initiative_id": "INIT-07-patch-node-identity",
+   "title": "Patch node id grammar → typed identity; {drumId,slot} trigger address object",
+   "criticals": 0,
+   "estimated_loc": 730,
+   "risk": "medium",
+   "payoff": "medium",
+   "depends_on": [],
+   "recommended_order_reason": "Fixes a LIVE defect found during repair (every reconciled port titles as \"Output output\" in the Inspector) while retiring the stringly-typed node-id grammar. Before the remaining light rows because it has user-visible payoff.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-07-patch-node-identity.json",
+   "status": "ready"
+  },
+  {
+   "rank": 8,
+   "initiative_id": "INIT-11-telemetry-resilience",
+   "title": "Telemetry transport + ingest Worker fault handling",
+   "criticals": 0,
+   "estimated_loc": 380,
+   "risk": "medium",
+   "payoff": "medium",
+   "depends_on": [
+    "INIT-04-server-runtime-hardening"
+   ],
+   "recommended_order_reason": "Closes the telemetry silent-failure pair (blocked-that-never-blocks, opaque transport errors). Blocked behind INIT-04: seven of INIT-04's steps churn main.ts where INIT-11's S5 lands, and INIT-04 is the far larger edit.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-11-telemetry-resilience.json",
+   "status": "blocked"
+  },
+  {
+   "rank": 9,
+   "initiative_id": "INIT-08-kit-schema-split",
+   "title": "kit-schema.ts: split schema surface / migration ladder / defaults",
+   "criticals": 0,
+   "estimated_loc": 620,
+   "risk": "medium",
+   "payoff": "medium",
+   "depends_on": [],
+   "recommended_order_reason": "Three-axis split of kit-schema.ts retires a divergent-change hotspot; independent of everything above, but no live-defect or security payoff, so it queues behind those.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-08-kit-schema-split.json",
+   "status": "ready"
+  },
+  {
+   "rank": 10,
+   "initiative_id": "INIT-09-ui-component-dedup",
+   "title": "Design-system dedup: control contract, inspector chrome, MIDI-learn, ControllerStatusPanel split",
+   "criticals": 0,
+   "estimated_loc": 1900,
+   "risk": "medium",
+   "payoff": "medium",
+   "depends_on": [],
+   "recommended_order_reason": "Design-system dedup incl. the ControllerStatusPanel split; meaningful surface reduction but UI-only. Repair pinned real regressions to watch (Discover spinner keyframes, styleguide targeting), keeping risk honest.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-09-ui-component-dedup.json",
+   "status": "ready"
+  },
+  {
+   "rank": 11,
+   "initiative_id": "INIT-10-test-helper-dedup",
+   "title": "Shared test harness: in-memory Storage (×37) + effects test helpers (×6)",
+   "criticals": 0,
+   "estimated_loc": 1210,
+   "risk": "medium",
+   "payoff": "low",
+   "depends_on": [],
+   "recommended_order_reason": "Test-only consolidation (37 Storage copies, 6 effects helpers). Zero runtime risk and good hygiene, but no production behaviour changes — cheap to land whenever capacity allows.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-10-test-helper-dedup.json",
+   "status": "ready"
+  },
+  {
+   "rank": 12,
+   "initiative_id": "INIT-13-core-surface-trims",
+   "title": "Small core API trims (pixel-grid wrappers, graph-integrity throwing form, listCanvasScenes)",
+   "criticals": 0,
+   "estimated_loc": 34,
+   "risk": "medium",
+   "payoff": "low",
+   "depends_on": [],
+   "recommended_order_reason": "Three small API trims; the repair demoted its tooling evidence (knip cannot see core's barrel surface), so this is grep-and-typecheck-backed tidy-up. Last because smallest payoff.",
+   "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-13-core-surface-trims.json",
    "status": "ready"
   }
  ]
