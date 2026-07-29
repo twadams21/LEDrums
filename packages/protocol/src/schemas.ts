@@ -333,6 +333,15 @@ const oscListenInfoSchema = z.object({
   error: z.string().optional(),
 });
 
+/** Boot-recovery outcome (Decision 8): present on `state` only when the boot ladder had to
+ * recover the live project, so every connecting client can show the blocking acknowledgement
+ * banner. `source` names the rung that saved us — a backup snapshot, or a fresh default when no
+ * readable snapshot existed; `reason` is the error class that made the live file unloadable. */
+const bootRecoveryInfoSchema = z.object({
+  source: z.enum(['snapshot', 'recovered-seed']),
+  reason: z.string(),
+});
+
 const controllerUniverseRxSchema = z.object({
   uniNum: z.number(),
   protocol: z.enum(['sACN', 'artNet']),
@@ -396,6 +405,10 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     songLibrary: songLibraryBlobSchema.nullable(),
     tunnel: tunnelInfoSchema.nullable(),
     osc: oscListenInfoSchema,
+    /** Non-null only when this server booted through the recovery ladder (Decision 8).
+     * The read side tolerates a MISSING field (review N9) so a client is never cut off
+     * from a server one release behind; the server itself always sends object-or-null. */
+    recovery: bootRecoveryInfoSchema.nullable().optional(),
   }).strict(),
   z.object({
     t: z.literal('stats'),
@@ -426,6 +439,9 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
+
+/** Boot-recovery outcome carried on `state` (Decision 8) — see {@link bootRecoveryInfoSchema}. */
+export type BootRecoveryInfo = z.infer<typeof bootRecoveryInfoSchema>;
 
 // The set of known client message discriminants, DERIVED from the schema (not hand-maintained) —
 // the server's `decodeClient` uses it only to preserve its "Unknown client message type" error for

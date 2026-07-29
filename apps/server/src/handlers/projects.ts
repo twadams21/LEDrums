@@ -21,7 +21,7 @@ export interface ProjectHandlerDeps {
    * safety snapshot was taken (or backups are disabled — no net to fail) and `false` when the WRITE
    * failed, so the load can refuse fail-closed rather than overwrite live state with no recovery
    * point. Absent = backups disabled (treated as `true`). */
-  snapshotPreRisk?(): boolean;
+  snapshotPreRisk(): boolean;
 }
 
 /**
@@ -36,8 +36,7 @@ export function handleProjectMessage(msg: ClientMessage, ws: JsonSink, deps: Pro
     // parse) replaces it, so a load that turns out wrong still has a clean state behind it. Fail-
     // closed: if the safety snapshot's WRITE fails, REFUSE the load (overwriting live state with no
     // recovery point is the data-loss path) — surface an error, socket alive, live state untouched.
-    // `?? true`: backups absent (disabled) = no net to fail → proceed.
-    if ((deps.snapshotPreRisk?.() ?? true) === false) {
+    if (!deps.snapshotPreRisk()) {
       ws.send(encodeServer({ t: 'error', message: `Backup failed — project "${msg.name}" not loaded (no recovery snapshot)` }));
       return true;
     }

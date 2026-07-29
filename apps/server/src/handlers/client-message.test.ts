@@ -5,7 +5,16 @@ import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
 import { encodeServer, serializeModel, type ClientMessage, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
-import { createClientMessageHandler, requiresEditor, type HandlerSocket } from './client-message';
+import { createClientMessageHandler, requiresEditor, type ClientMessageDeps, type HandlerSocket } from './client-message';
+
+// `loadProject` reads from disk; stub project IO so the S9 fail-closed test exercises the handler
+// seam, not the filesystem (mirrors projects.test.ts). No other test here reaches project IO as an
+// editor, so the mock is inert for the rest of the file.
+vi.mock('../projects', () => ({
+  loadProject: vi.fn(() => defaultProject()),
+  listProjects: vi.fn(() => []),
+  saveProject: vi.fn(),
+}));
 
 /* S2 server handler integration (multi-socket capturing harness, same style as the S1 registry
    tests): `takeover` flips the editor role + re-broadcasts `presence` to every client; the
@@ -46,6 +55,21 @@ interface TunnelHarnessOpts {
     restore(id: string): boolean;
     snapshotPreRisk(): boolean;
   };
+  controller?: ClientMessageDeps<FakeSocket>['controller'];
+}
+
+/** Inert controller stub — the harness runs without a PixLite (S7 explicit stub). */
+function nullController(): ClientMessageDeps<FakeSocket>['controller'] {
+  return {
+    discover: () => Promise.resolve(undefined),
+    adopt: () => Promise.resolve({ ok: false }),
+    setAuth: () => {},
+    identify: () => Promise.resolve(),
+    setTestData: () => Promise.resolve(),
+    backToLive: () => Promise.resolve(),
+    watch: () => {},
+    dropWatcher: () => {},
+  };
 }
 
 function harness(opts: TunnelHarnessOpts = {}) {
@@ -74,6 +98,7 @@ function harness(opts: TunnelHarnessOpts = {}) {
     songLibrary: slot.songLib,
     tunnel: null,
     osc: { status: 'listening', port: 9000, hosts: [] },
+    recovery: null,
   });
   const broadcastState = (): void => broadcastJson(stateMessage());
   const relayToOthers = (sender: FakeSocket, msg: ServerMessage): void => {
@@ -99,10 +124,13 @@ function harness(opts: TunnelHarnessOpts = {}) {
       slot.songLib = lib;
     },
     relayToOthers,
-    tunnelControl: opts.tunnelControl,
-    isTunnelClient: opts.isTunnelClient,
-    listNetworkAdapters: opts.listNetworkAdapters,
-    backups: opts.backups,
+    // Explicit no-op stubs (S7): the collaborators are required, so "tunnel/backups/
+    // controller disabled" is now a stated test intent rather than an absent field.
+    tunnelControl: opts.tunnelControl ?? { start: () => {}, stop: () => {} },
+    isTunnelClient: opts.isTunnelClient ?? (() => false),
+    listNetworkAdapters: opts.listNetworkAdapters ?? (() => []),
+    backups: opts.backups ?? { list: () => [], restore: () => false, snapshotPreRisk: () => true },
+    controller: opts.controller ?? nullController(),
     monitor,
   });
 
@@ -146,6 +174,7 @@ function voiceHarness() {
       songLibrary: base.slot.songLib,
       tunnel: null,
       osc: { status: 'listening', port: 9000, hosts: [] },
+      recovery: null,
     }),
     setShowLibrary: (lib) => {
       base.slot.lib = lib;
@@ -157,6 +186,11 @@ function voiceHarness() {
       const data = encodeServer(msg);
       for (const s of base.clients) if (s !== sender && s.readyState === s.OPEN) s.send(data);
     },
+    tunnelControl: { start: () => {}, stop: () => {} },
+    isTunnelClient: () => false,
+    listNetworkAdapters: () => [],
+    backups: { list: () => [], restore: () => false, snapshotPreRisk: () => true },
+    controller: nullController(),
     monitor: base.monitor,
   });
   const handle = (msg: ClientMessage, ws: FakeSocket): void => {
@@ -980,3 +1014,17 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     expect(host.engine.getProject()).toBe(before); // nothing applied
   });
 });
+
+describe('fail-closed pre-risk direction through the full handler (S9)', () => {
+  it('a loadProject with a failing pre-risk snapshot replies error and never reaches setProject', () => {
+    const { host, handle, join } = harness({
+      backups: { list: () => [], restore: () => false, snapshotPreRisk: () => false },
+    });
+    const setProject = vi.spyOn(host.engine, 'setProject');
+    const ws = join(); // first client = editor
+    handle({ t: 'loadProject', name: 'p' }, ws);
+    expect(setProject).not.toHaveBeenCalled();
+    expect(ws.has('error')).toBe(true);
+  });
+});
+

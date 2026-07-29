@@ -91,16 +91,21 @@ describe('WSClient', () => {
       songLibrary: null,
       tunnel: null,
       osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
+      // Decision 8: the boot-recovery outcome rides `state`; null = this server booted cleanly.
+      recovery: { source: 'snapshot', reason: 'SyntaxError: bad json' },
     };
     ws.emitText(JSON.stringify(msg));
 
     expect(onState).toHaveBeenCalledTimes(1);
-    const [, model, , projects, , , , , osc] = onState.mock.calls[0]!;
+    const [, model, , projects, , , , , osc, recovery] = onState.mock.calls[0]!;
     expect(model.count).toBe(2);
     expect(projects).toEqual(['default']);
     // The OSC listen surface (#139) rides `state` — it is what the Settings panel reads to tell a
     // user which host:port to type into Sensory Percussion.
     expect(osc).toEqual({ status: 'listening', port: 9000, hosts: ['192.168.1.20'] });
+    // Decision 8: the boot-recovery outcome must reach the app — it is what raises the blocking
+    // acknowledgement banner, so a dropped argument here would silently hide real data loss.
+    expect(recovery).toEqual({ source: 'snapshot', reason: 'SyntaxError: bad json' });
   });
 
   it('decodes a binary frame into a Uint8Array and invokes onFrame', () => {
@@ -256,5 +261,91 @@ describe('WSClient — room PIN (S3)', () => {
     expect(client.hasAuthError).toBe(false);
     vi.advanceTimersByTime(50);
     expect(FakeWS.instances.length).toBe(2);
+  });
+});
+
+describe('liveness watchdog (S5)', () => {
+  function makeWatchdogClient(opts: { watchdogMs?: number; now?: () => number } = {}) {
+    FakeWS.instances = [];
+    const factory = (url: string): WSLike => new FakeWS(url);
+    const client = new WSClient({
+      url: 'ws://test/ws',
+      factory,
+      baseDelayMs: 10,
+      maxDelayMs: 100,
+      watchdogMs: opts.watchdogMs ?? 5000,
+      now: opts.now ?? (() => Date.now()), // fake-timer clock unless the test drives its own
+    });
+    return { client, factory };
+  }
+
+  it('force-closes a silent socket after the window and arms a reconnect', () => {
+    const { client } = makeWatchdogClient();
+    const states: string[] = [];
+    client.on({ onConnection: (st) => states.push(st) });
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    // No messages at all: two windows guarantee one stale check has fired.
+    vi.advanceTimersByTime(10_001);
+    expect(ws.readyState).toBe(3); // close() was called on the socket
+    expect(states).toContain('closed');
+    expect(client.reconnectAttempt).toBeGreaterThan(0); // reconnect armed
+  });
+
+  it('never closes a socket that keeps delivering messages', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(2500); // window/2
+      ws.emitText(JSON.stringify({ t: 'projects', names: [] }));
+    }
+    expect(ws.readyState).toBe(1); // still open after 10 windows
+    expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it('is disarmed after a 4401 auth close — no timer fires while auth-paused', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    ws.closeWith(WS_CLOSE_INVALID_PIN);
+    expect(client.hasAuthError).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(60_000);
+    expect(FakeWS.instances.length).toBe(1); // no watchdog-driven redial either
+  });
+
+  it('close() clears the watchdog timer', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    FakeWS.instances[0]!.open();
+    client.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('background-tab clamping cannot manufacture a false positive: staleness is message age, not tick count', () => {
+    // The wall clock is OURS (injected `now`), decoupled from the fake timer queue —
+    // so the interval callback provably RUNS while the message age says "fresh".
+    // Review B2: the previous version shifted the system time, which also shifted the
+    // pending interval's due time, so the callback never ran and the test was vacuous.
+    let clock = 0;
+    const { client } = makeWatchdogClient({ now: () => clock });
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    // Hidden tab: the wall clock races ahead 19.5s while the clamped interval never ran.
+    clock = 19_500;
+    ws.emitText(JSON.stringify({ t: 'projects', names: [] })); // message lands NOW
+    clock = 20_000;
+    vi.advanceTimersByTime(5_000); // the (late) interval callback fires here, wall-age 500ms
+    expect(ws.readyState).toBe(1); // NOT closed — last message is only 500ms old
+    // Prove the callback really runs on this path: with a genuinely stale age the very
+    // next tick closes the socket — the assertion above passed on a live check, not silence.
+    clock = 26_000;
+    vi.advanceTimersByTime(5_000);
+    expect(ws.readyState).toBe(3);
   });
 });

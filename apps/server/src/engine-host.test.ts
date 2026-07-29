@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { EngineHost } from './engine-host';
@@ -81,5 +81,22 @@ describe('EngineHost step loop', () => {
     host.step(STEP);
     host.stop();
     expect(fake.closed).toBe(true);
+  });
+});
+
+describe('EngineHost.darken (S3)', () => {
+  it('sends the blackout frame, clears the loop timer, and does NOT close the transport', () => {
+    vi.useFakeTimers();
+    try {
+      const { host, fake } = makeHost();
+      host.start();
+      const sendsBefore = fake.sends;
+      host.darken();
+      expect(fake.sends).toBeGreaterThan(sendsBefore); // blackout reached the transport
+      expect(fake.closed).toBe(false); // the socket stays open so the datagrams can flush
+      expect(vi.getTimerCount()).toBe(0); // the loop is stopped
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

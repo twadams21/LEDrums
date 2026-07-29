@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { isTrustedHost } from '../pin-gate';
+import { createTrustedPostRoute, sendPlain } from './trusted-post';
 import type { MonitorDraft } from '../monitor';
 
 /** POST route the desktop shell uses to report its OWN diagnostics into the server Monitor bus. */
 export const HOST_EVENT_PATH = '/api/host-event';
 
 /** Body cap — these are short status lines, not payloads. */
-const MAX_BODY = 2048;
+const HOST_EVENT_MAX_BODY = 2048;
 
 /** Severity the shell reports. `error` lands as a Monitor `error` event (red in the app); `info`
  * lands as a `system` event. Nothing else is accepted. */
@@ -65,11 +65,6 @@ export interface HostEventDeps {
   monitor(event: MonitorDraft): void;
 }
 
-function sendPlain(res: ServerResponse, status: number, body: string): void {
-  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
-  res.end(body);
-}
-
 /**
  * Build the host-event HTTP handler. Returns `(req, res) => boolean`: `true` once it owns the
  * request (route matched), `false` to fall through to the next handler.
@@ -88,36 +83,12 @@ export function createHostEventHandler(
 ): (req: IncomingMessage, res: ServerResponse) => boolean {
   const { hostToken, monitor } = deps;
 
-  return function handleHostEventHttp(req: IncomingMessage, res: ServerResponse): boolean {
-    const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-    if (path !== HOST_EVENT_PATH) return false;
-
-    if (req.method !== 'POST') {
-      sendPlain(res, 405, 'method not allowed');
-      return true;
-    }
-
-    const trustedLocal = isTrustedHost({
-      remoteAddress: req.socket.remoteAddress,
-      headers: req.headers,
-      url: req.url,
-      hostToken,
-    });
-    if (!trustedLocal) {
-      sendPlain(res, 401, 'unauthorized');
-      return true;
-    }
-
-    let raw = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk) => {
-      raw += chunk;
-      if (raw.length > MAX_BODY) req.destroy(new Error('host event payload too large'));
-    });
-    req.on('error', () => {
-      if (!res.headersSent) sendPlain(res, 400, 'bad request');
-    });
-    req.on('end', () => {
+  return createTrustedPostRoute({
+    path: HOST_EVENT_PATH,
+    hostToken,
+    maxBody: HOST_EVENT_MAX_BODY,
+    tooLargeMessage: 'host event payload too large',
+    onBody: (raw, res) => {
       const body = parseHostEvent(raw);
       if (!body) {
         sendPlain(res, 400, 'bad host event');
@@ -125,7 +96,6 @@ export function createHostEventHandler(
       }
       monitor(hostEventToMonitorDraft(body));
       sendPlain(res, 204, '');
-    });
-    return true;
-  };
+    },
+  });
 }

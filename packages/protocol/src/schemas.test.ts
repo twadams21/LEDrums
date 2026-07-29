@@ -110,6 +110,7 @@ const serverSamples: ServerMessage[] = [
     songLibrary: null,
     tunnel: { status: 'off', url: null, pin: null },
     osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
+    recovery: null,
   },
   { t: 'stats', stats: { timeMs: 0, beat: 0, bar: 0, activeTriggers: 0, tickCount: 1, pixelCount: 2 }, latencyMs: 5, fps: 60, output: outputStatus, voice: { voiceCount: 1, busLevels: { main: 0.5 }, voices: [{ id: 'v1', busId: 'main', effectId: 'swirl', mode: 'oneshot', level: 0.5, hue: 200, releasing: false, via: 'kick' }] } },
   { t: 'input', kind: 'midi', label: 'note', value: 100, note: 38, channel: 1 },
@@ -171,6 +172,23 @@ describe('serverMessageSchema', () => {
     expect(serverMessageSchema.safeParse({ t: 'error' }).success).toBe(false); // missing message
     expect(serverMessageSchema.safeParse({ t: 'presence', editorId: null, youAreEditor: 'yes', clientCount: 1 }).success).toBe(false);
     expect(serverMessageSchema.safeParse({ t: 'state', project: { name: 'no-kit' }, model: {}, effects: [], projects: [], output: outputStatus, showLibrary: null, songLibrary: null, tunnel: null }).success).toBe(false); // invalid project
+  });
+
+  // Decision 8: the boot-recovery banner reads this field, so its shape is contract.
+  it('carries a boot-recovery outcome on state and rejects an unknown rung', () => {
+    const base = serverSamples[0] as Extract<ServerMessage, { t: 'state' }>;
+    const recovered = { ...base, recovery: { source: 'snapshot' as const, reason: 'SyntaxError: bad json' } };
+    expect(serverMessageSchema.parse(JSON.parse(JSON.stringify(recovered)))).toEqual(recovered);
+    expect(serverMessageSchema.safeParse({ ...base, recovery: { source: 'file', reason: 'x' } }).success).toBe(false);
+    expect(serverMessageSchema.safeParse({ ...base, recovery: { source: 'snapshot' } }).success).toBe(false); // reason is required
+  });
+
+  it('tolerates a MISSING recovery field on the read side (review N9 — one-release-behind server)', () => {
+    const base = serverSamples[0] as Extract<ServerMessage, { t: 'state' }>;
+    const withoutRecovery: Record<string, unknown> = { ...base };
+    delete withoutRecovery.recovery;
+    const parsed = serverMessageSchema.safeParse(JSON.parse(JSON.stringify(withoutRecovery)));
+    expect(parsed.success).toBe(true);
   });
 });
 

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createSnapshotReader,
   createSnapshotStore,
   SNAPSHOT_VERSION,
   type SnapshotFiles,
@@ -315,3 +316,29 @@ describe('createSnapshotStore (#123)', () => {
     expect(reopened.list()).toHaveLength(1);
   });
 });
+
+describe('createSnapshotReader (S8)', () => {
+  it('list() ignores non-snapshot filenames in the backups dir', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ledrums-reader-'));
+    try {
+      writeFileSync(join(dir, 'notes.txt'), 'not a snapshot');
+      writeFileSync(join(dir, 'garbage.json.gz'), 'bad stem'); // no <createdAt>-<reason> stem
+      const reader = createSnapshotReader({ dir, log: () => {} });
+      expect(reader.list()).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('read() on a truncated .gz returns null rather than throwing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ledrums-reader-'));
+    try {
+      writeFileSync(join(dir, '1000000000000-boot.json.gz'), Buffer.from([0x1f, 0x8b, 0x08])); // truncated gzip
+      const reader = createSnapshotReader({ dir, log: () => {} });
+      expect(reader.read('1000000000000-boot')).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+

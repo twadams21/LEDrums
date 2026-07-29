@@ -1,10 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { isTrustedHost } from '../pin-gate';
+import { createTrustedPostRoute, sendPlain } from './trusted-post';
 import type { MonitorDraft } from '../monitor';
 import { decodeClient, type ClientMessage } from '../ws-protocol';
 
 /** POST route for the desktop shell's native (Core-MIDI / node-midi) input bridge. */
 export const NATIVE_MIDI_PATH = '/api/native-midi';
+
+/** Body cap — a native MIDI message is tiny; 4KB is generous headroom. */
+const NATIVE_MIDI_MAX_BODY = 4096;
 
 /** The three MIDI channel-message kinds the native bridge may forward (matches the WS input path). */
 export type NativeMidiMessage = Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }>;
@@ -29,11 +32,6 @@ export interface NativeMidiDeps {
   monitor(event: MonitorDraft): void;
 }
 
-function sendPlain(res: ServerResponse, status: number, body: string): void {
-  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
-  res.end(body);
-}
-
 /**
  * Build the native-MIDI HTTP handler. Returns `(req, res) => boolean`: `true` once it owns the
  * request (route matched), `false` to fall through to the next handler. Behaviour matches the
@@ -45,36 +43,12 @@ export function createNativeMidiHandler(
 ): (req: IncomingMessage, res: ServerResponse) => boolean {
   const { hostToken, monitorInput, dispatch, monitor } = deps;
 
-  return function handleNativeMidiHttp(req: IncomingMessage, res: ServerResponse): boolean {
-    const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-    if (path !== NATIVE_MIDI_PATH) return false;
-
-    if (req.method !== 'POST') {
-      sendPlain(res, 405, 'method not allowed');
-      return true;
-    }
-
-    const trustedLocal = isTrustedHost({
-      remoteAddress: req.socket.remoteAddress,
-      headers: req.headers,
-      url: req.url,
-      hostToken,
-    });
-    if (!trustedLocal) {
-      sendPlain(res, 401, 'unauthorized');
-      return true;
-    }
-
-    let raw = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk) => {
-      raw += chunk;
-      if (raw.length > 4096) req.destroy(new Error('native MIDI payload too large'));
-    });
-    req.on('error', () => {
-      if (!res.headersSent) sendPlain(res, 400, 'bad request');
-    });
-    req.on('end', () => {
+  return createTrustedPostRoute({
+    path: NATIVE_MIDI_PATH,
+    hostToken,
+    maxBody: NATIVE_MIDI_MAX_BODY,
+    tooLargeMessage: 'native MIDI payload too large',
+    onBody: (raw, res) => {
       try {
         const msg = decodeClient(raw);
         if (!isNativeMidiMessage(msg)) {
@@ -89,7 +63,6 @@ export function createNativeMidiHandler(
         monitor({ type: 'error', direction: 'local', source: 'server/native-midi', label: 'Native MIDI error', detail: message });
         sendPlain(res, 400, message);
       }
-    });
-    return true;
-  };
+    },
+  });
 }

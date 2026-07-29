@@ -1,0 +1,269 @@
+{
+  "banner": [
+    "LEDrums server listening on http://localhost:<port> [voice engine]",
+    "OSC listening on udp:<oscPort>",
+    "  send OSC to: <ip>:<oscPort>",
+    "  send OSC to: <ip>:<oscPort>",
+    "Pixel output: set target IP + Arm in the UI",
+    "  Host token: <token>"
+  ],
+  "engine": "voice",
+  "harness": "server-smoke/1",
+  "lanUrlCount": 2,
+  "messageOrder": [
+    "monitor",
+    "presence",
+    "state",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor",
+    "monitor"
+  ],
+  "monitor": [
+    {
+      "destination": "ws",
+      "label": "WebSocket client accepted",
+      "source": "server",
+      "type": "system"
+    },
+    {
+      "destination": null,
+      "label": "Server started in voice mode",
+      "source": "server",
+      "type": "system"
+    },
+    {
+      "destination": "osc-input",
+      "label": "OSC input on udp:<oscPort>",
+      "source": "server/osc",
+      "type": "system"
+    },
+    {
+      "destination": "project",
+      "label": "Project loaded from seed",
+      "source": "server",
+      "type": "persistence"
+    },
+    {
+      "destination": "show-library",
+      "label": "Show library absent",
+      "source": "server",
+      "type": "persistence"
+    },
+    {
+      "destination": "song-library",
+      "label": "Song library absent",
+      "source": "server",
+      "type": "persistence"
+    },
+    {
+      "destination": "web",
+      "label": "Web root missing; serving placeholder",
+      "source": "server",
+      "type": "system"
+    },
+    {
+      "destination": "remote-access",
+      "label": "Tunnel disabled",
+      "source": "server",
+      "type": "system"
+    },
+    {
+      "destination": "osc-input",
+      "label": "OSC bound on udp:<oscPort>",
+      "source": "server/osc",
+      "type": "system"
+    },
+    {
+      "destination": "artnet:255.255.255.255:",
+      "label": "Output disabled",
+      "source": "server",
+      "type": "output"
+    },
+    {
+      "destination": "ws",
+      "label": "WebSocket client accepted",
+      "source": "server",
+      "type": "system"
+    }
+  ],
+  "seedCorrupt": false,
+  "state": {
+    "effects": {
+      "array": 49,
+      "first": {
+        "category": "string",
+        "id": "string",
+        "name": "string",
+        "paramSpec": "array(5)"
+      }
+    },
+    "model": {
+      "bounds": {
+        "center": "array(3)",
+        "size": "number"
+      },
+      "count": "number",
+      "drums": {
+        "array": 4,
+        "first": "object{color,id,label,pixelCount,pixelStart}"
+      },
+      "normals": {
+        "array": 6576,
+        "first": "number"
+      },
+      "positions": {
+        "array": 6576,
+        "first": "number"
+      },
+      "segmentLengths": {
+        "array": 2192,
+        "first": "number"
+      },
+      "tangents": {
+        "array": 6576,
+        "first": "number"
+      }
+    },
+    "osc": {
+      "hosts": {
+        "array": 2,
+        "first": "string"
+      },
+      "port": "number",
+      "status": "string",
+      "statusValue": "listening"
+    },
+    "output": {
+      "host": "string",
+      "lastError": "null",
+      "packetsSent": "number",
+      "protocol": "string",
+      "state": "string",
+      "universeCount": "number"
+    },
+    "project": {
+      "composition": {
+        "layers": "array(3)",
+        "transport": "object{beatsPerBar,bpm,playing}"
+      },
+      "inputMap": {
+        "midiChannel": "null",
+        "midiNotes": "array(4)",
+        "oscMap": "array(2)",
+        "volumeOscAddress": "string",
+        "zones": "array(0)"
+      },
+      "kit": {
+        "drums": "array(4)",
+        "global": "object{defaultHoopSpacingMm,expanded,hoopCount,ledDensityPxPerM,maxPixelsPerOutput}",
+        "outputs": "array(4)",
+        "units": "string",
+        "version": "number"
+      },
+      "name": "string",
+      "output": {
+        "broadcast": "boolean",
+        "fps": "number",
+        "host": "string",
+        "priority": "number",
+        "protocol": "string",
+        "rgbOrder": "string",
+        "state": "string"
+      },
+      "setlist": {
+        "activeSectionId": "string",
+        "activeSongId": "string",
+        "songs": "array(1)"
+      }
+    },
+    "projects": {
+      "array": 0
+    },
+    "recovery": "null",
+    "showLibrary": "null",
+    "songLibrary": "null",
+    "tunnel": {
+      "pin": "null",
+      "status": "string",
+      "url": "null"
+    }
+  },
+  "statsKeySets": [
+    {
+      "stats": [
+        "activeTriggers",
+        "bar",
+        "beat",
+        "pixelCount",
+        "tickCount",
+        "timeMs"
+      ],
+      "top": [
+        "fps",
+        "latencyMs",
+        "output",
+        "stats",
+        "t",
+        "voice"
+      ],
+      "voice": [
+        "busLevels",
+        "voiceCount",
+        "voices"
+      ]
+    },
+    {
+      "stats": [
+        "activeTriggers",
+        "bar",
+        "beat",
+        "pixelCount",
+        "tickCount",
+        "timeMs"
+      ],
+      "top": [
+        "fps",
+        "latencyMs",
+        "output",
+        "stats",
+        "t",
+        "voice"
+      ],
+      "voice": [
+        "busLevels",
+        "voiceCount",
+        "voices"
+      ]
+    },
+    {
+      "stats": [
+        "activeTriggers",
+        "bar",
+        "beat",
+        "pixelCount",
+        "tickCount",
+        "timeMs"
+      ],
+      "top": [
+        "fps",
+        "latencyMs",
+        "output",
+        "stats",
+        "t",
+        "voice"
+      ],
+      "voice": [
+        "busLevels",
+        "voiceCount",
+        "voices"
+      ]
+    }
+  ]
+}

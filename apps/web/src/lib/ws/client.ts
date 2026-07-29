@@ -3,6 +3,7 @@ import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 import {
   decodeServer,
   type BackupSnapshotMeta,
+  type BootRecoveryInfo,
   type ClientMessage,
   type ControllerStatus,
   type DiscoveredController,
@@ -49,6 +50,10 @@ export interface WSCallbacks {
     /** OSC listen surface (#139): the host:port a third-party sender should target, plus
      * whether the socket actually bound. */
     osc: OscListenInfo,
+    /** Boot-recovery outcome (Decision 8): non-null when this server's live project was recovered
+     * by the boot ladder, which is what raises the blocking acknowledgement banner. Optional in the
+     * callback signature so a caller that does not care about it needs no argument. */
+    recovery?: BootRecoveryInfo | null,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
@@ -92,6 +97,15 @@ export interface WSClientOptions {
   /** Host-session token sent on connect as the `?hostToken=` query (S4 desktop) — the packaged app
    * injects it so the host's own window is admitted without the room PIN. null/empty for browsers. */
   hostToken?: string | null;
+  /** Liveness watchdog window (ms). The server emits traffic continuously (stats/preview), so a
+   * socket that has delivered NO message for this long is treated as half-open (wifi drop, laptop
+   * sleep, dead tunnel) and force-closed so the reconnect ladder takes over. Deliberately far above
+   * any plausible server cadence and NOT derived from the stats period, so a later cadence change
+   * cannot silently break it. Default 5000. */
+  watchdogMs?: number;
+  /** Clock used for message-age staleness (default Date.now). Exists solely so the watchdog is
+   * testable with fake timers — knowingly the one test-only field in this options bag. */
+  now?: () => number;
 }
 
 function defaultUrl(): string {
@@ -131,6 +145,12 @@ export class WSClient {
   /** The last connect was refused for a bad PIN (close 4401) — the reconnect loop is paused
       until {@link reconnectWithPin} supplies a new one. */
   private authRejected = false;
+  /** Liveness watchdog (S5): message-age based, because a browser answers ws-level pings
+      invisibly at the transport layer — message AGE is the only signal a page can observe. */
+  private readonly watchdogMs: number;
+  private readonly now: () => number;
+  private lastMessageAt = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(opts: WSClientOptions = {}) {
     this.url = opts.url ?? defaultUrl();
@@ -139,6 +159,8 @@ export class WSClient {
     this.maxDelayMs = opts.maxDelayMs ?? 8000;
     this.pin = opts.pin ?? null;
     this.hostToken = opts.hostToken ?? null;
+    this.watchdogMs = opts.watchdogMs ?? 5000;
+    this.now = opts.now ?? Date.now;
   }
 
   /** The connect URL with the room PIN (`?pin=`) and/or host token (`?hostToken=`) appended when set. */
@@ -194,12 +216,14 @@ export class WSClient {
     }
     this.ws = ws;
     ws.binaryType = 'arraybuffer';
+    this.armWatchdog();
 
     ws.onopen = () => {
       this.attempt = 0;
       this.cb.onConnection?.('open');
     };
     ws.onclose = (ev?: unknown) => {
+      this.clearWatchdog();
       this.cb.onConnection?.('closed');
       this.ws = null;
       // A 4401 close means the server refused our PIN. Don't dial forever against a gate we
@@ -219,6 +243,9 @@ export class WSClient {
   }
 
   private handleMessage(data: unknown): void {
+    // Liveness: ANY delivered frame counts — recorded before decode, so a malformed
+    // frame still proves the link is alive.
+    this.lastMessageAt = this.now();
     // Binary path: a quantized RGB frame (Uint8Array, length pixelCount*3).
     if (data instanceof ArrayBuffer) {
       this.cb.onFrame?.(new Uint8Array(data));
@@ -244,7 +271,7 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc, msg.recovery);
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
@@ -285,6 +312,27 @@ export class WSClient {
     }
   }
 
+  /** Arm the liveness watchdog for a freshly-dialed socket. Staleness is computed from
+   * `now() - lastMessageAt`, never from tick counts, so a browser clamping timers in a
+   * hidden tab can only DELAY detection, never manufacture a false positive. */
+  private armWatchdog(): void {
+    this.clearWatchdog();
+    this.lastMessageAt = this.now();
+    this.watchdogTimer = setInterval(() => {
+      if (this.now() - this.lastMessageAt <= this.watchdogMs) return;
+      // Half-open link: no traffic for a full window on a server that streams
+      // continuously. Force the close; the existing reconnect ladder handles the rest.
+      this.ws?.close();
+    }, this.watchdogMs);
+  }
+
+  private clearWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectTimer !== null) return;
     const delay = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** this.attempt);
@@ -314,6 +362,7 @@ export class WSClient {
 
   close(): void {
     this.closedByUser = true;
+    this.clearWatchdog();
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

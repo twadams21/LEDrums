@@ -18,6 +18,8 @@ export interface BootDeps {
   oscInput: OscInput;
   /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
   controllerMonitor?: { stop(): void };
+  /** WS keepalive reaper (S13) — its sweep interval is stopped on shutdown. */
+  wsKeepalive?: { disposeKeepalive(): void };
   port: number;
   oscPort: number;
   voiceMode: boolean;
@@ -105,6 +107,7 @@ export function boot(deps: BootDeps): void {
     clearInterval(deps.statsTimer);
     if (deps.snapshotTimer) clearInterval(deps.snapshotTimer);
     deps.controllerMonitor?.stop();
+    deps.wsKeepalive?.disposeKeepalive();
     deps.tunnelControl.stop();
     if (deps.voiceHost) deps.voiceHost.stop();
     else deps.host.stop();

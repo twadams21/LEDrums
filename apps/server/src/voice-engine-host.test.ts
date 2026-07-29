@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultProject, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { OutputManager } from './output-manager';
-import { VoiceEngineHost } from './voice-engine-host';
+import { FRAME_FAULT_REPORT_WINDOW_MS, VoiceEngineHost } from './voice-engine-host';
 
 class FakeOutput implements PixelOutput {
   sends = 0;
@@ -556,5 +556,103 @@ describe('VoiceEngineHost', () => {
         detail: expect.stringContaining('reason='),
       }),
     );
+  });
+});
+
+// --- S2: per-frame exception boundary (resilience-hole-0001) -----------------
+
+/** A RenderEngine fake whose tick() throws on chosen call numbers; all other
+ * surfaces delegate to the null engine so the host wires up normally. */
+function throwingEngine(shouldThrow: (tickCall: number) => boolean) {
+  const inner = voice.createNullEngine();
+  let calls = 0;
+  const engine: voice.RenderEngine = {
+    setModel: (m) => inner.setModel(m),
+    setShow: (sh) => inner.setShow(sh),
+    applyInput: (ev) => inner.applyInput(ev),
+    tick: (now, dt, transport) => {
+      calls++;
+      if (shouldThrow(calls)) throw new Error(`boom on tick ${calls}`);
+      inner.tick(now, dt, transport);
+    },
+    frame: () => inner.frame(),
+    stats: () => inner.stats(),
+  };
+  return { engine, tickCalls: () => calls };
+}
+
+describe('VoiceEngineHost per-frame exception boundary (S2)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('survives a throwing tick: stays scheduled and keeps ticking past the fault', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    const { engine, tickCalls } = throwingEngine((n) => n === 5);
+    const { host } = makeHost(engine);
+    host.start();
+    for (let i = 0; i < 12; i++) vi.advanceTimersByTime(STEP);
+    // Tick 5 threw; ticks 6..10 still happened and the loop is still scheduled.
+    expect(tickCalls()).toBeGreaterThanOrEqual(10);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    host.stop();
+  });
+
+  it('rate-limits the fault monitor event on the WALL CLOCK: immediate first report, then ≤1 per window', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    const { engine } = throwingEngine(() => true); // deterministically throwing effect
+    const { host } = makeHost(engine);
+    const events: { label?: string; detail?: string }[] = [];
+    host.setMonitor((event) => events.push(event));
+    host.start();
+    const faultEvents = () => events.filter((e) => e.label === 'Render frame faulted');
+    vi.advanceTimersByTime(STEP * 2); // first fault → immediate report
+    expect(faultEvents()).toHaveLength(1);
+    vi.advanceTimersByTime(FRAME_FAULT_REPORT_WINDOW_MS - STEP * 4); // still inside the window
+    expect(faultEvents()).toHaveLength(1);
+    vi.advanceTimersByTime(STEP * 8); // window elapses mid-faulting → one summary
+    expect(faultEvents()).toHaveLength(2);
+    expect(faultEvents()[1]!.detail).toMatch(/×\d+ since last report/);
+    host.stop();
+  });
+
+  it('an every-other-frame fault pattern cannot flood the monitor (review N3 — the consecutive-run hole)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    const { engine, tickCalls } = throwingEngine((n) => n % 2 === 0); // alternating fault/clean
+    const { host } = makeHost(engine);
+    const events: { label?: string }[] = [];
+    host.setMonitor((event) => events.push(event));
+    host.start();
+    // Two seconds of alternating faults ≈ 120 faults — a consecutive-run limiter
+    // reported every single one of them (n===1 each time).
+    vi.advanceTimersByTime(FRAME_FAULT_REPORT_WINDOW_MS * 2);
+    expect(tickCalls()).toBeGreaterThan(100); // the pattern really ran
+    const reports = events.filter((e) => e.label === 'Render frame faulted').length;
+    expect(reports).toBeLessThanOrEqual(3); // immediate + ~1 per window
+    expect(reports).toBeGreaterThanOrEqual(2);
+    host.stop();
+  });
+
+  it('keeps raw throw semantics on step() driven directly — the catch lives in loop() only', () => {
+    const { engine } = throwingEngine(() => true);
+    const { host } = makeHost(engine);
+    expect(() => host.step(STEP)).toThrow('boom on tick 1');
+  });
+});
+
+describe('VoiceEngineHost.darken (S3)', () => {
+  it('sends the blackout frame, clears the loop timer, and does NOT close the transport', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+    try {
+      const { host, fake } = makeHost();
+      host.start();
+      const sendsBefore = fake.sends;
+      host.darken();
+      expect(fake.sends).toBeGreaterThan(sendsBefore); // blackout reached the transport
+      expect(fake.closed).toBe(false); // the socket stays open so the datagrams can flush
+      expect(vi.getTimerCount()).toBe(0); // the loop is stopped
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

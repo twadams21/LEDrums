@@ -127,10 +127,20 @@ function parseStem(stem: string): SnapshotMeta | null {
   return { id: stem, createdAt, reason };
 }
 
-export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
-  const policy: RetentionPolicy = { ...DEFAULT_RETENTION, ...deps.retention };
-  const log = deps.log ?? ((m: string): void => console.error(m));
+/** The read half of the store: filename-only listing + decode-or-null bundle reads.
+ * Split out (S8) so the boot-recovery ladder can read the newest snapshot BEFORE the
+ * full store can exist — `createSnapshotStore` needs `readCurrent`/`applyRestored`,
+ * which at boot depend on the engine that has not been constructed yet. One
+ * implementation, two entry points: the store delegates to a reader internally. */
+export interface SnapshotReader {
+  /** All local snapshots, newest first. */
+  list(): SnapshotMeta[];
+  /** Read + decode a bundle by id, or null when it is absent or unreadable. */
+  read(id: string): SnapshotBundle | null;
+}
 
+export function createSnapshotReader(deps: { dir: string; log?: (message: string) => void }): SnapshotReader {
+  const log = deps.log ?? ((m: string): void => console.error(m));
   const pathFor = (id: string): string => join(deps.dir, `${id}${FILE_SUFFIX}`);
 
   function list(): SnapshotMeta[] {
@@ -157,6 +167,18 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
       return null;
     }
   }
+
+  return { list, read };
+}
+
+export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
+  const policy: RetentionPolicy = { ...DEFAULT_RETENTION, ...deps.retention };
+  const log = deps.log ?? ((m: string): void => console.error(m));
+
+  const pathFor = (id: string): string => join(deps.dir, `${id}${FILE_SUFFIX}`);
+  const reader = createSnapshotReader({ dir: deps.dir, log });
+  const list = (): SnapshotMeta[] => reader.list();
+  const read = (id: string): SnapshotBundle | null => reader.read(id);
 
   /** Ids to KEEP under the retention policy, computed from the full listing. Everything else rotates.
    * pre-risk and boot/cadence are budgeted independently (pre-risk churn can't evict a daily). */
