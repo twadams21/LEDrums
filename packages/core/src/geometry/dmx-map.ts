@@ -151,7 +151,8 @@ export function buildDmxMap(
 }
 
 /** Derive a single flat output (one data run) covering every pixel, in pixel-id order —
- *  dense from universe 0. When `controllerRgbOrder` is given it is stamped onto the synthetic
+ *  dense from the protocol's base universe (Art-Net 0, sACN 1 — the cursor base in
+ *  {@link buildDmxMap} applies to the flat fallback too). When `controllerRgbOrder` is given it is stamped onto the synthetic
  *  output (B5), so every pixel on the flat/loopback path carries that DEFINED order instead of
  *  `undefined`. For the default kit the controller order IS the packer's own fallback, so
  *  stamping it leaves the emitted DMX bytes unchanged; omitting it is byte-identical to before. */

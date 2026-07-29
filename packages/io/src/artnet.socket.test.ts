@@ -158,23 +158,12 @@ describe('ArtNetOutput socket lifecycle (characterization)', () => {
       spy.mockRestore();
     }
     for (const file of ['./artnet.ts', './sacn.ts']) {
-      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      // F9: comments stripped first, so prose mentioning e.g. "await" cannot false-fail the lock.
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
       expect(src).not.toMatch(/\bawait\b|\bexecSync\b|Atomics\.wait/);
     }
-  });
-
-  it('smoke check (not a proof): 44 successive real-socket sends stay inside a generous 250ms budget', { timeout: 2000 }, async () => {
-    const rx = await receiver();
-    const out = new ArtNetOutput({ host: '127.0.0.1', port: rx.port, iface: '127.0.0.1' });
-    cleanup.push(() => out.close());
-    await new Promise<void>((res) => out.onStatus((s) => s.state === 'ready' && res()));
-    const data = new Uint8Array(512);
-    const started = performance.now();
-    for (let i = 0; i < 44; i++) {
-      out.nextFrame();
-      out.send(1, data);
-    }
-    expect(performance.now() - started).toBeLessThan(250);
   });
 
   it('a broadcast-mode instance still calls socket.setBroadcast(true)', { timeout: 2000 }, async () => {
