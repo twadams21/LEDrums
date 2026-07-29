@@ -1,8 +1,10 @@
 # server-smoke digest — normalisation contract (INIT-04 S0)
 
 Harness: `scripts/server-smoke.mjs`. Digest version `server-smoke/1`.
-Baselines `smoke-baseline-voice.json` / `smoke-baseline-legacy.json` captured at
-branch `init/04-server-hardening`, HEAD `7d6c910` (post fix batches 1–3).
+Baselines `smoke-baseline-voice.json` / `smoke-baseline-legacy.json` originally captured at
+branch `init/04-server-hardening`, HEAD `7d6c910` (post fix batches 1–3); re-captured once at
+`6d5e717` (the banner commit — the digest gained the `state.recovery` shape, the one sanctioned
+re-capture; stability proven by double-run diff per engine).
 
 The digest is an ALLOW-LIST: anything not listed under "Retained" is not in the
 digest; anything listed under "Retained" is never redacted.

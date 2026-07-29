@@ -7,17 +7,22 @@ import type { ServerMessage } from './ws-protocol';
  * divergent-change-0004), plus resilience-hole-0005's backpressure guard (S14).
  *
  * The guard has two halves, each shaped by a landed review attack:
- *  - SKIP CONFINED TO THE HIGH-RATE STREAMS: only the 100 Hz `stats` JSON broadcast
- *    and the binary preview are skipped for a peer whose send buffer is over
- *    {@link BACKPRESSURE_BYTES}. Event-driven messages (state, presence, monitor,
- *    error) ALWAYS send — skipping everything would starve the message-age signal
- *    the client watchdog (S5) measures, so a slow-but-alive peer would be declared
- *    dead by its own client.
+ *  - SKIP CONFINED TO THE HIGH-RATE STREAMS: only the 30 Hz `stats` JSON broadcast
+ *    (STATS_INTERVAL_MS, stats-frame.ts) and the binary preview are skipped for a
+ *    peer whose send buffer is over {@link BACKPRESSURE_BYTES}. Event-driven
+ *    messages (state, presence, monitor, error) ALWAYS send — skipping everything
+ *    would starve the message-age signal the client watchdog (S5) measures, so a
+ *    slow-but-alive peer would be declared dead by its own client.
  *  - STRIKES ON THE SWEEP CLOCK: consecutive-over strikes advance only in
  *    {@link Broadcaster.sweepSlowPeers}, driven by the keepalive's 15s sweep —
- *    never per broadcast, where 3 strikes at 100 Hz would terminate a peer after
- *    ~30ms. Termination needs {@link SLOW_PEER_SWEEPS} x 15s of SUSTAINED
- *    over-threshold, an order of magnitude past the client's 5s self-recovery.
+ *    never per broadcast, where a per-send counter terminates a peer within
+ *    milliseconds. Termination needs {@link SLOW_PEER_SWEEPS} x 15s of SUSTAINED
+ *    over-threshold. In practice a fully-wedged peer never reaches this ladder:
+ *    the server's pings queue behind the same send backlog, so the keepalive
+ *    reaps it at ~30s (two missed sweeps) first — this ladder exists for the peer
+ *    that stays transport-responsive while chronically failing to drain the
+ *    high-rate streams. Either way the client's own 5s watchdog self-recovery
+ *    fires long before the server gives up on it.
  */
 
 /** A peer buffering more than this many undelivered bytes is skipped on the
