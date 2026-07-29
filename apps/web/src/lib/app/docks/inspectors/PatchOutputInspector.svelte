@@ -43,7 +43,8 @@
   const rgbOptions = [{ value: RGB_INHERIT, label: 'Inherit (controller)' }, ...RGB_OPTS];
 
   // Whole-kit port map — one row per output, current port highlighted. Read the AUTHORITATIVE routing.
-  const pixelTable = $derived(kit && liveRouting ? buildPixelOutputTable(liveRouting, kit, pixelsForHoop) : []);
+  const protocol = $derived(store.project?.output.protocol ?? 'artnet');
+  const pixelTable = $derived(kit && liveRouting ? buildPixelOutputTable(liveRouting, kit, pixelsForHoop, protocol) : []);
   const port = $derived(outputIndex >= 0 ? physicalPortLine(outputIndex, expanded) : null);
 
   /** Rebuild the outputs array with one port's transport scalars changed → setRouting. A blank
@@ -56,9 +57,11 @@
     store.setRouting(kit.outputs.map((o) => (o.id === outputId ? { ...o, ...partial } : o)));
   }
 
-  /** Device-facing universe/channel for the table: the API models both from 1 (PixLite Mk3 API v1.7
-      `pixPort.startUni`/`startCh`); an unwired output (null universe / 0 px) reads em-dash. */
-  const fmtUni = (u: number | null): string => (u === null ? '—' : `${u + 1}`);
+  /** Device-facing universe/channel for the table. Art-Net: the table's universe is 0-based and
+      the PixLite API models it from 1 (Mk3 API v1.7 `pixPort.startUni`) → display u+1. sACN: the
+      table's universe is already the true 1-based wire universe → display as-is. Channels display
+      from 1 in both; an unwired output (null universe / 0 px) reads em-dash. */
+  const fmtUni = (u: number | null): string => (u === null ? '—' : `${protocol === 'sacn' ? u : u + 1}`);
   const fmtCh = (u: number | null, ch: number): string => (u === null ? '—' : `${(ch % 512) + 1}`);
 </script>
 

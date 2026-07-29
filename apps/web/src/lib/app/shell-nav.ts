@@ -12,9 +12,10 @@
 export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'patch' | 'monitor';
 
 /** A node id in the Patch Graph (device routing). These are stage-prefixed strings
-    minted by `patch-topology.ts` — `input` · `trigger:<drumId>` · `zone:<drumId>:<zone>`
-    · `drum:<drumId>` · `hoop:<drumId>:<n>` · `dataline:<n>` · `output:<n>` · `controller`
-    — so the graph can name any node without a closed enum. */
+    minted and decoded by `patch-node-id.ts` (the single grammar owner) — `input` ·
+    `trigger:<drumId>` · `drum:<drumId>` · `hoop:<drumId>:<n>` · `output:<OutputConfig.id>`
+    · `kit` · `triggers` · `controller` — so the graph can name any node without a
+    closed enum. */
 export type PatchNodeId = string;
 
 /** What is loaded into an inspector surface: a node in the active trigger graph,

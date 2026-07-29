@@ -9,14 +9,16 @@ import {
   classifyGraphConnection,
   graphChainEdges,
   layoutSignature,
-  CONTROLLER_ZONE_ID,
-  KIT_ZONE_ID,
-  TRIGGERS_ZONE_ID,
-  drumZoneId,
-  triggerNodeId,
   type XY,
   type ZoneGraphInput,
 } from './patch-zones';
+import {
+  CONTROLLER_ID as CONTROLLER_ZONE_ID,
+  KIT_ID as KIT_ZONE_ID,
+  TRIGGERS_ID as TRIGGERS_ZONE_ID,
+  drumNodeId as drumZoneId,
+  triggerNodeId,
+} from './patch-node-id';
 import type { PatchFlowEdge } from './patch-topology';
 
 const INPUT: ZoneGraphInput = {

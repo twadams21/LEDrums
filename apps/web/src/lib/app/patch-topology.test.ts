@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_KIT, type KitConfig } from '@ledrums/core';
-import {
-  buildPatchTopology,
-  describePatchNode,
-  topoDrumsFromKit,
-  CONTROLLER_ID,
-  INPUT_ID,
-  drumNodeId,
-  type TopologyDrum,
-} from './patch-topology';
+import { CONTROLLER_ID, INPUT_ID } from './patch-node-id';
+import { describePatchNode, topoDrumsFromKit, type TopologyDrum } from './patch-topology';
 
 /** The current canonical kit: kick has 2 zones, the rest have the full 4; all 4 hoops. */
 const KIT: TopologyDrum[] = [
@@ -17,126 +10,6 @@ const KIT: TopologyDrum[] = [
   { id: 'tom1', label: 'Tom 1', zones: ['center', 'edge', 'rim', 'shell'], hoopCount: 4 },
   { id: 'tom2', label: 'Tom 2', zones: ['center', 'edge', 'rim', 'shell'], hoopCount: 4 },
 ];
-
-const ZONES = 2 + 4 + 4 + 4; // 14
-const HOOPS = 4 * 4; // 16
-
-const outDeg = (edges: { source: string }[], id: string): number => edges.filter((e) => e.source === id).length;
-const inDeg = (edges: { target: string }[], id: string): number => edges.filter((e) => e.target === id).length;
-const byStage = (nodes: { id: string; data: { stage: string } }[], stage: string) =>
-  nodes.filter((n) => n.data.stage === stage);
-
-/** Map each hoop node → the OUTPUT node that roots its chain (walk chain edges upstream). */
-function outputOfHoopMap(nodes: { id: string; data: { stage: string } }[], edges: { source: string; target: string }[]) {
-  const stageById = new Map(nodes.map((n) => [n.id, n.data.stage]));
-  const upstream = new Map<string, string>();
-  for (const e of edges) {
-    const s = stageById.get(e.source);
-    if (stageById.get(e.target) === 'hoop' && (s === 'output' || s === 'hoop')) upstream.set(e.target, e.source);
-  }
-  return (hoopId: string): string => {
-    let cur = hoopId;
-    const seen = new Set<string>();
-    while (upstream.has(cur) && !seen.has(cur)) {
-      seen.add(cur);
-      cur = upstream.get(cur)!;
-    }
-    return cur; // an output node id
-  };
-}
-
-describe('buildPatchTopology', () => {
-  it('emits one node per stage entry across all seven columns', () => {
-    const { nodes } = buildPatchTopology(KIT); // default hoopsPerOutput = 6 → 3 outputs
-    expect(byStage(nodes, 'input')).toHaveLength(1);
-    expect(byStage(nodes, 'trigger')).toHaveLength(KIT.length);
-    expect(byStage(nodes, 'zone')).toHaveLength(ZONES);
-    expect(byStage(nodes, 'drum')).toHaveLength(KIT.length);
-    expect(byStage(nodes, 'hoop')).toHaveLength(HOOPS);
-    expect(byStage(nodes, 'output')).toHaveLength(3);
-    expect(byStage(nodes, 'controller')).toHaveLength(1);
-    // 1 + 4 + 14 + 4 + 16 + 3 + 1
-    expect(nodes).toHaveLength(43);
-  });
-
-  it('wires the full path with the expected edge count', () => {
-    const { edges } = buildPatchTopology(KIT);
-    // input→trigger 4 · trigger→zone 14 · zone→drum 14 · drum→hoop 16
-    // · chain (output→hoop / hoop→hoop) 16 (one per hoop) · output→controller 3
-    expect(edges).toHaveLength(4 + ZONES + ZONES + HOOPS + HOOPS + 3);
-  });
-
-  it('fans the single input out to every drum trigger', () => {
-    const { edges } = buildPatchTopology(KIT);
-    expect(outDeg(edges, INPUT_ID)).toBe(KIT.length);
-  });
-
-  it('converges every zone of a drum into its drum node and fans out to its hoops', () => {
-    const { edges } = buildPatchTopology(KIT);
-    for (const d of KIT) {
-      const id = drumNodeId(d.id);
-      expect(inDeg(edges, id)).toBe(d.zones.length); // zone → drum
-      expect(outDeg(edges, id)).toBe(d.hoopCount); // drum → hoop
-    }
-  });
-
-  it('collects every output into the single controller', () => {
-    const { nodes, edges } = buildPatchTopology(KIT);
-    expect(inDeg(edges, CONTROLLER_ID)).toBe(byStage(nodes, 'output').length);
-    expect(outDeg(edges, CONTROLLER_ID)).toBe(0); // it is the sink
-  });
-
-  it('cross-wires hoops: a drum splits across outputs AND an output carries >1 drum', () => {
-    const { nodes, edges } = buildPatchTopology(KIT); // 16 hoops / 6 → outputs [6,6,4]
-    const outputOfHoop = outputOfHoopMap(nodes, edges);
-
-    const outputsPerDrum = new Map<string, Set<string>>();
-    const drumsPerOutput = new Map<string, Set<string>>();
-    for (const n of byStage(nodes, 'hoop')) {
-      const m = /^hoop:([^:]+):\d+$/.exec(n.id)!;
-      const o = outputOfHoop(n.id);
-      (outputsPerDrum.get(m[1]!) ?? outputsPerDrum.set(m[1]!, new Set()).get(m[1]!)!).add(o);
-      (drumsPerOutput.get(o) ?? drumsPerOutput.set(o, new Set()).get(o)!).add(m[1]!);
-    }
-    // snare's four hoops straddle two outputs (idx 4-7 vs the 0-5 / 6-11 split)
-    expect(outputsPerDrum.get('snare')!.size).toBe(2);
-    // At least one output carries hoops from more than one drum.
-    expect([...drumsPerOutput.values()].some((s) => s.size > 1)).toBe(true);
-  });
-
-  it('keeps node ids unique and every edge endpoint resolvable', () => {
-    const { nodes, edges } = buildPatchTopology(KIT);
-    const ids = nodes.map((n) => n.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    const idSet = new Set(ids);
-    for (const e of edges) {
-      expect(idSet.has(e.source)).toBe(true);
-      expect(idSet.has(e.target)).toBe(true);
-    }
-  });
-
-  it('tags every node with a stage role colour and the patch node type', () => {
-    const { nodes } = buildPatchTopology(KIT);
-    for (const n of nodes) {
-      expect(n.type).toBe('patch');
-      expect(n.data.role).toMatch(/^var\(--role-/);
-    }
-  });
-
-  it('honours hoopsPerOutput — a single fat output when capacity covers the chain', () => {
-    const { nodes } = buildPatchTopology(KIT, { hoopsPerOutput: 100 });
-    expect(byStage(nodes, 'output')).toHaveLength(1);
-  });
-
-  it('survives a degenerate single-drum kit', () => {
-    const one: TopologyDrum[] = [{ id: 'kick', label: 'Kick', zones: ['center'], hoopCount: 1 }];
-    const { nodes, edges } = buildPatchTopology(one);
-    // input, trigger, zone, drum, hoop, output, controller
-    expect(nodes).toHaveLength(7);
-    // input→trigger · trigger→zone · zone→drum · drum→hoop · output→hoop · output→controller
-    expect(edges).toHaveLength(6);
-  });
-});
 
 describe('topoDrumsFromKit (#11: input half follows the project kit, not DEFAULT_KIT)', () => {
   const drumList = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
@@ -168,13 +41,6 @@ describe('topoDrumsFromKit (#11: input half follows the project kit, not DEFAULT
     expect(kit.global.hoopCount).not.toBe(DEFAULT_KIT.global.hoopCount);
   });
 
-  it('builds the matching number of input-half hoop nodes for a non-default kit', () => {
-    const kit = nonDefaultKit();
-    const { nodes } = buildPatchTopology(topoDrumsFromKit(kit, drumList, oneZone));
-    const snareHoops = nodes.filter((n) => n.id.startsWith('hoop:snare:'));
-    expect(snareHoops).toHaveLength(9); // would be DEFAULT_KIT.global.hoopCount with the old bug
-  });
-
   it('falls back to the kit global when a drum is absent from the kit', () => {
     const kit = nonDefaultKit();
     const topo = topoDrumsFromKit(kit, [{ id: 'ghost', label: 'Ghost' }], oneZone);
@@ -193,7 +59,6 @@ describe('describePatchNode', () => {
     expect(describePatchNode(INPUT_ID).title).toBe('Sensory Percussion');
     expect(describePatchNode(CONTROLLER_ID).stage).toBe('controller');
     expect(describePatchNode('trigger:tom1', KIT).title).toBe('Tom 1 Trigger');
-    expect(describePatchNode('zone:tom1:edge', KIT).title).toBe('Tom 1 · edge');
     expect(describePatchNode('drum:snare', KIT).title).toBe('Snare Drum');
     expect(describePatchNode('hoop:kick:2', KIT).title).toBe('Kick Hoop 2');
     expect(describePatchNode('output:1').title).toBe('Output 1');
@@ -201,5 +66,44 @@ describe('describePatchNode', () => {
 
   it('falls back to the raw drum id when no label is known', () => {
     expect(describePatchNode('trigger:tom1').title).toBe('tom1 Trigger');
+  });
+
+  // S3 declared divergence (a): the old split-based decode truncated a colon-carrying
+  // drum id ('hoop:weird:id:3' titled as 'weird Hoop id'); the total decoder rejoins it.
+  it('rejoins a colon-carrying drum id in a hoop title', () => {
+    expect(describePatchNode('hoop:weird:id:3').title).toBe('weird:id Hoop 3');
+  });
+
+  // S3/S4 declared divergence (b): an output flow-node id carries its FULL payload and
+  // titles by 1-based array position in kit.outputs — the same label the canvas node
+  // paints. The shipping ids are double-prefixed (`output:output:<n>` — reconcileOutputs
+  // mints OutputConfig.id as `output:<n>`), so the old first-segment render titled every
+  // reconciled port as the literal 'Output output'.
+  it('titles an output by its 1-based position in kit.outputs (shipping id shape)', () => {
+    const outputs = [{ id: 'output:1' }, { id: 'output:2' }];
+    expect(describePatchNode('output:output:1', [], outputs).title).toBe('Output 1');
+    expect(describePatchNode('output:output:2', [], outputs).title).toBe('Output 2');
+  });
+
+  it('titles a custom (non-prefixed) output id by position too', () => {
+    expect(describePatchNode('output:out-a', [], [{ id: 'out-a' }, { id: 'out-b' }]).title).toBe('Output 1');
+  });
+
+  it('falls back to the prefix-stripped payload when the output id is not found', () => {
+    expect(describePatchNode('output:output:9', [], [{ id: 'output:1' }]).title).toBe('Output 9');
+    // baseline expectation, still true with no outputs supplied
+    expect(describePatchNode('output:1').title).toBe('Output 1');
+  });
+
+  it('reports stage unknown for an unrecognised prefix instead of posing as input', () => {
+    expect(describePatchNode('bogus:thing').stage).toBe('unknown');
+    expect(describePatchNode('bogus:thing').title).toBe('bogus:thing');
+  });
+
+  // Decision 5: the zone arm is retired — nothing mints `zone:` ids and the zone
+  // Inspector arm is gone, so a zone id falls through to the unknown rendering.
+  it('treats a legacy zone id as unrecognised', () => {
+    expect(describePatchNode('zone:tom1:edge', KIT).title).toBe('zone:tom1:edge');
+    expect(describePatchNode('zone:tom1:edge', KIT).stage).toBe('unknown');
   });
 });

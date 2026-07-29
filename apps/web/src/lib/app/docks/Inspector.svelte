@@ -39,7 +39,6 @@
   import OscNodeInspector from './inspectors/OscNodeInspector.svelte';
   import RandomModNodeInspector from './inspectors/RandomModNodeInspector.svelte';
   import PatchTriggerInspector from './inspectors/PatchTriggerInspector.svelte';
-  import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
   import PatchDrumInspector from './inspectors/PatchDrumInspector.svelte';
   import PatchHoopInspector from './inspectors/PatchHoopInspector.svelte';
   import PatchKitInspector from './inspectors/PatchKitInspector.svelte';
@@ -142,7 +141,7 @@
     {/if}
   {:else if sel?.kind === 'patch' && ed}
     {@const editor = ed}
-    {@const d = describePatchNode(sel.nodeId, store.drums)}
+    {@const d = describePatchNode(sel.nodeId, store.drums, project?.kit.outputs ?? [])}
     <header class="ihead">
       <div class="titles">
         <Eyebrow>{d.stage}</Eyebrow>
@@ -170,8 +169,6 @@
 
         {#if editor.kind === 'trigger'}
           <PatchTriggerInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
-        {:else if editor.kind === 'zone'}
-          <PatchZoneInspector {store} {editor} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'kit'}
           <PatchKitInspector {store} nodeId={sel.nodeId} title={d.title} />
         {:else if editor.kind === 'drum'}

@@ -8,9 +8,8 @@
    the S3 store mutators — so each Patch node becomes the editor of the device setting it
    represents. */
 
-import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice } from '@ledrums/core';
-import { ZONE_LABELS } from '../../trigger-lab/fixtures';
-import { parseHoopNodeId, parseOutputNodeId } from '../patch-graph';
+import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice, type ZoneRef } from '@ledrums/core';
+import { parsePatchNodeId, type PatchNodeRef } from '../patch-node-id';
 import type { HoopRef, PatchRouting, PixelSpan } from '../patch-routing';
 
 const CHANNELS_PER_UNIVERSE = 512;
@@ -18,59 +17,13 @@ const CHANNELS_PER_UNIVERSE = 512;
 const MM_PER_INCH = 25.4;
 
 /** Which Inspector editor a selected Patch node opens, with its decoded references.
-    The id grammar is minted by patch-topology.ts / patch-graph.ts. */
-export type PatchEditor =
-  | { kind: 'input' }
-  | { kind: 'trigger'; drumId: string }
-  | { kind: 'triggers' } // the Drum Triggers holder zone (D1)
-  | { kind: 'zone'; drumId: string; zone: string; slot: number }
-  | { kind: 'drum'; drumId: string }
-  | { kind: 'kit' } // the Drum Kit holder zone (D1)
-  | { kind: 'hoop'; drumId: string; hoop: number } // 1-based hoop index (A1)
-  | { kind: 'output'; outputId: string }
-  | { kind: 'controller' }
-  | { kind: 'unknown'; id: string };
-
-/** Map a Patch zone label to its trigger slot — the 0-based index in the canonical
-    zone order (`fixtures.ZONE_LABELS`). InputMap keys MIDI/OSC by `(drumId, slot)`, so
-    the same labelled zone on any drum resolves to a stable slot. Unknown labels → 0. */
-export function zoneSlot(zone: string): number {
-  const i = ZONE_LABELS.indexOf(zone);
-  return i >= 0 ? i : 0;
-}
+    The id grammar is minted and decoded by patch-node-id.ts; the zone Inspector arm
+    is retired (11-decisions.md #5) — zone editing lives in DrumZonesList. */
+export type PatchEditor = PatchNodeRef;
 
 /** Decode a Patch flow-node id into the editor it should open plus its refs. */
 export function patchEditorFor(id: string): PatchEditor {
-  if (id === 'input') return { kind: 'input' };
-  if (id === 'controller') return { kind: 'controller' };
-  if (id === 'kit') return { kind: 'kit' }; // Drum Kit holder zone (D1)
-  if (id === 'triggers') return { kind: 'triggers' }; // Drum Triggers holder zone (D1)
-
-  const hoop = parseHoopNodeId(id);
-  if (hoop) return { kind: 'hoop', drumId: hoop.drumId, hoop: hoop.hoop };
-
-  const outputId = parseOutputNodeId(id);
-  if (outputId !== null) return { kind: 'output', outputId };
-
-  const parts = id.split(':');
-  switch (parts[0]) {
-    case 'trigger':
-      return parts.length >= 2 && parts.slice(1).join(':')
-        ? { kind: 'trigger', drumId: parts.slice(1).join(':') }
-        : { kind: 'unknown', id };
-    case 'zone': {
-      // zone:<drumId>:<zoneLabel> — the label is the LAST segment; rejoin the middle
-      // defensively in case a drum id ever carries a ':'.
-      if (parts.length < 3) return { kind: 'unknown', id };
-      const zone = parts[parts.length - 1]!;
-      const drumId = parts.slice(1, -1).join(':');
-      return drumId ? { kind: 'zone', drumId, zone, slot: zoneSlot(zone) } : { kind: 'unknown', id };
-    }
-    case 'drum':
-      return parts.slice(1).join(':') ? { kind: 'drum', drumId: parts.slice(1).join(':') } : { kind: 'unknown', id };
-    default:
-      return { kind: 'unknown', id };
-  }
+  return parsePatchNodeId(id);
 }
 
 /** Effective pixels-per-hoop for a drum. Mirrors core's PRIVATE `pixelsPerHoop`
@@ -106,30 +59,30 @@ export function hoopPixelSpan(
 }
 
 // --- input-map editing (zone node MIDI / OSC) ----------------------------------------
-// Pure, immutable updates keyed by (drumId, slot). The store optimistic-writes the result
-// and forwards `setInputMap` over WS.
+// Pure, immutable updates addressed by a core `ZoneRef` (the named `(drumId, slot)`
+// pair). The store optimistic-writes the result and forwards `setInputMap` over WS.
 
-/** The MIDI note mapped to `(drumId, slot)`, or null. */
-export function zoneMidiNote(map: InputMap, drumId: string, slot: number): number | null {
-  return map.midiNotes.find((n) => n.drumId === drumId && n.slot === slot)?.note ?? null;
+/** The MIDI note mapped to a zone ref, or null. */
+export function zoneMidiNote(map: InputMap, ref: ZoneRef): number | null {
+  return map.midiNotes.find((n) => n.drumId === ref.drumId && n.slot === ref.slot)?.note ?? null;
 }
 
-/** The OSC address mapped to `(drumId, slot)`, or null. */
-export function zoneOscAddress(map: InputMap, drumId: string, slot: number): string | null {
-  return map.oscMap.find((o) => o.drumId === drumId && o.slot === slot)?.address ?? null;
+/** The OSC address mapped to a zone ref, or null. */
+export function zoneOscAddress(map: InputMap, ref: ZoneRef): string | null {
+  return map.oscMap.find((o) => o.drumId === ref.drumId && o.slot === ref.slot)?.address ?? null;
 }
 
-/** Immutably set (or clear, when null) the MIDI note for `(drumId, slot)`. */
-export function setZoneMidiNote(map: InputMap, drumId: string, slot: number, note: number | null): InputMap {
-  const rest = map.midiNotes.filter((n) => !(n.drumId === drumId && n.slot === slot));
-  return { ...map, midiNotes: note === null ? rest : [...rest, { note, drumId, slot }] };
+/** Immutably set (or clear, when null) the MIDI note for a zone ref. */
+export function setZoneMidiNote(map: InputMap, ref: ZoneRef, note: number | null): InputMap {
+  const rest = map.midiNotes.filter((n) => !(n.drumId === ref.drumId && n.slot === ref.slot));
+  return { ...map, midiNotes: note === null ? rest : [...rest, { note, drumId: ref.drumId, slot: ref.slot }] };
 }
 
-/** Immutably set (or clear, when null / blank) the OSC address for `(drumId, slot)`. */
-export function setZoneOscAddress(map: InputMap, drumId: string, slot: number, address: string | null): InputMap {
-  const rest = map.oscMap.filter((o) => !(o.drumId === drumId && o.slot === slot));
+/** Immutably set (or clear, when null / blank) the OSC address for a zone ref. */
+export function setZoneOscAddress(map: InputMap, ref: ZoneRef, address: string | null): InputMap {
+  const rest = map.oscMap.filter((o) => !(o.drumId === ref.drumId && o.slot === ref.slot));
   const trimmed = address?.trim();
-  return { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId, slot }] : rest };
+  return { ...map, oscMap: trimmed ? [...rest, { address: trimmed, drumId: ref.drumId, slot: ref.slot }] : rest };
 }
 
 // --- pixel-count read-outs (C2 kit, C5 hoop) -----------------------------------------
@@ -174,18 +127,27 @@ export function physicalPortLine(outputIndex: number, expanded: boolean): { port
   return { port: Math.ceil(n / 2), line: ((n - 1) % 2) + 1 };
 }
 
+/** The wire protocol the output table reads under — structurally matches
+    `Project['output']['protocol']` (project-schema.ts). */
+export type OutputProtocol = 'artnet' | 'sacn';
+
 /** One row of the C4 Pixel Output Table: an output's transmit-order position, where its first
     pixel lands in the dense DMX stream, and how many pixels it carries.
 
-    Channel math MIRRORS core's {@link buildDmxMap} exactly: a single global channel cursor starts
-    at 0, snaps to `output.startUniverse * 512` when that output declares one (blank = dense/auto),
-    and advances `channelsPerPixel` per pixel. So `startChannel` is the GLOBAL, 0-based DMX channel
-    of the output's first pixel (core's `PixelDmx.channel`), and `startUniverse` is its 0-based
-    universe (`floor(startChannel / 512)`), `null` for an unwired output (no pixels, no start).
+    Channel math MIRRORS core's protocol-aware {@link buildDmxMap} (Decision 7): a single global
+    channel cursor advances `channelsPerPixel` per pixel, and a declared `output.startUniverse`
+    snaps it to that universe's first channel (blank = dense/auto). Universe NUMBERING is
+    protocol-domain: Art-Net universes are 0-based (cursor snap `startUniverse * 512`, dense
+    stream starts on universe 0), sACN universes are 1-based (universe 0 is spec-invalid — the
+    snap is `(startUniverse - 1) * 512` and the dense stream starts on universe 1). `startChannel`
+    stays the GLOBAL, 0-based DMX channel of the output's first pixel (core's `PixelDmx.channel`);
+    `startUniverse` is the PROTOCOL-DOMAIN universe of that channel (`floor(startChannel / 512)`,
+    +1 under sACN), `null` for an unwired output (no pixels, no start).
 
-    The C4 view derives the PixLite device columns from these: device `startUni = startUniverse + 1`
-    and `startCh = startChannel % 512 + 1` (the API models both from 1 — see PixLite Mk3 API v1.7
-    `pixPort.startUni` / `startCh`). */
+    The C4 view derives the device columns from these: under Art-Net the PixLite models
+    universes from 1 (`startUni = startUniverse + 1`, PixLite Mk3 API v1.7 `pixPort.startUni`);
+    under sACN `startUniverse` is already the true wire universe and displays as-is. Channels
+    display `startChannel % 512 + 1` in both (the APIs model channels from 1). */
 export type PixelOutputRow = {
   outputId: string;
   index: number;
@@ -203,12 +165,18 @@ export function buildPixelOutputTable(
   routing: PatchRouting,
   _kit: KitConfig,
   pixelsForHoop: (h: HoopRef) => number,
+  protocol: OutputProtocol = 'artnet',
 ): PixelOutputRow[] {
   const rows: PixelOutputRow[] = [];
+  // sACN universes are 1-based: a declared startUniverse names a 1-based wire universe, and
+  // the row's universe read-out shifts by the same offset. Art-Net stays 0-based.
+  const universeBase = protocol === 'sacn' ? 1 : 0;
   let cursor = 0; // next global DMX channel to assign
 
   routing.outputs.forEach((output, index) => {
-    if (output.startUniverse !== undefined) cursor = output.startUniverse * CHANNELS_PER_UNIVERSE;
+    if (output.startUniverse !== undefined) {
+      cursor = Math.max(0, output.startUniverse - universeBase) * CHANNELS_PER_UNIVERSE;
+    }
     const startChannel = cursor;
 
     let pixelCount = 0;
@@ -222,7 +190,7 @@ export function buildPixelOutputTable(
     rows.push({
       outputId: output.id,
       index,
-      startUniverse: pixelCount > 0 ? Math.floor(startChannel / CHANNELS_PER_UNIVERSE) : null,
+      startUniverse: pixelCount > 0 ? Math.floor(startChannel / CHANNELS_PER_UNIVERSE) + universeBase : null,
       startChannel,
       pixelCount,
     });
@@ -266,28 +234,32 @@ export function zoneSlotsForDrum(map: InputMap, drumId: string): number[] {
 
 /** Declare a zone slot on a drum (immutably) — persists an added zone before it carries any MIDI/OSC
     binding. Idempotent: a slot already declared (or already bound, hence already a zone) is a no-op. */
-export function addDeclaredZone(map: InputMap, drumId: string, slot: number): InputMap {
+export function addDeclaredZone(map: InputMap, ref: ZoneRef): InputMap {
   const zones = map.zones ?? [];
-  if (zones.some((z) => z.drumId === drumId && z.slot === slot)) return map;
-  return { ...map, zones: [...zones, { drumId, slot }] };
+  if (zones.some((z) => z.drumId === ref.drumId && z.slot === ref.slot)) return map;
+  return { ...map, zones: [...zones, { drumId: ref.drumId, slot: ref.slot }] };
 }
 
 /** Remove a zone from a drum ENTIRELY — drops its declaration and any MIDI-note / OSC binding, so
     the slot is no longer a zone. The inverse of {@link addDeclaredZone} + the per-binding setters. */
-export function removeZone(map: InputMap, drumId: string, slot: number): InputMap {
-  const cleared = setZoneOscAddress(setZoneMidiNote(map, drumId, slot, null), drumId, slot, null);
-  return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === drumId && z.slot === slot)) };
+export function removeZone(map: InputMap, ref: ZoneRef): InputMap {
+  const cleared = setZoneOscAddress(setZoneMidiNote(map, ref, null), ref, null);
+  return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === ref.drumId && z.slot === ref.slot)) };
 }
 
-/** Move a zone (declaration + MIDI/OSC bindings) from `oldSlot` to `newSlot` — a re-label. */
-export function moveZoneSlot(map: InputMap, drumId: string, oldSlot: number, newSlot: number): InputMap {
-  if (oldSlot === newSlot) return map;
-  const note = zoneMidiNote(map, drumId, oldSlot);
-  const addr = zoneOscAddress(map, drumId, oldSlot);
-  let m = removeZone(map, drumId, oldSlot);
-  m = addDeclaredZone(m, drumId, newSlot);
-  m = setZoneMidiNote(m, drumId, newSlot, note);
-  m = setZoneOscAddress(m, drumId, newSlot, addr);
+/** Move a zone (declaration + MIDI/OSC bindings) from one slot to another — a RE-LABEL
+    WITHIN ONE DRUM, exactly the domain the old `(map, drumId, oldSlot, newSlot)` signature
+    made structurally inexpressible. The wider two-ref type does NOT widen the domain:
+    a cross-drum move (`from.drumId !== to.drumId`) returns `map` unchanged, as does a
+    same-slot move. Cross-drum zone moves are explicitly out of scope. */
+export function moveZoneSlot(map: InputMap, from: ZoneRef, to: ZoneRef): InputMap {
+  if (from.drumId !== to.drumId || from.slot === to.slot) return map;
+  const note = zoneMidiNote(map, from);
+  const addr = zoneOscAddress(map, from);
+  let m = removeZone(map, from);
+  m = addDeclaredZone(m, to);
+  m = setZoneMidiNote(m, to, note);
+  m = setZoneOscAddress(m, to, addr);
   return m;
 }
 
