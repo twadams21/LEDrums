@@ -5,7 +5,7 @@ import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
 import { encodeServer, serializeModel, type ClientMessage, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
-import { createClientMessageHandler, requiresEditor, type HandlerSocket } from './client-message';
+import { createClientMessageHandler, requiresEditor, type ClientMessageDeps, type HandlerSocket } from './client-message';
 
 /* S2 server handler integration (multi-socket capturing harness, same style as the S1 registry
    tests): `takeover` flips the editor role + re-broadcasts `presence` to every client; the
@@ -45,6 +45,21 @@ interface TunnelHarnessOpts {
     list(): import('../ws-protocol').BackupSnapshotMeta[];
     restore(id: string): boolean;
     snapshotPreRisk(): boolean;
+  };
+  controller?: ClientMessageDeps<FakeSocket>['controller'];
+}
+
+/** Inert controller stub — the harness runs without a PixLite (S7 explicit stub). */
+function nullController(): ClientMessageDeps<FakeSocket>['controller'] {
+  return {
+    discover: () => Promise.resolve(undefined),
+    adopt: () => Promise.resolve({ ok: false }),
+    setAuth: () => {},
+    identify: () => Promise.resolve(),
+    setTestData: () => Promise.resolve(),
+    backToLive: () => Promise.resolve(),
+    watch: () => {},
+    dropWatcher: () => {},
   };
 }
 
@@ -99,10 +114,13 @@ function harness(opts: TunnelHarnessOpts = {}) {
       slot.songLib = lib;
     },
     relayToOthers,
-    tunnelControl: opts.tunnelControl,
-    isTunnelClient: opts.isTunnelClient,
-    listNetworkAdapters: opts.listNetworkAdapters,
-    backups: opts.backups,
+    // Explicit no-op stubs (S7): the collaborators are required, so "tunnel/backups/
+    // controller disabled" is now a stated test intent rather than an absent field.
+    tunnelControl: opts.tunnelControl ?? { start: () => {}, stop: () => {} },
+    isTunnelClient: opts.isTunnelClient ?? (() => false),
+    listNetworkAdapters: opts.listNetworkAdapters ?? (() => []),
+    backups: opts.backups ?? { list: () => [], restore: () => false, snapshotPreRisk: () => true },
+    controller: opts.controller ?? nullController(),
     monitor,
   });
 
@@ -157,6 +175,11 @@ function voiceHarness() {
       const data = encodeServer(msg);
       for (const s of base.clients) if (s !== sender && s.readyState === s.OPEN) s.send(data);
     },
+    tunnelControl: { start: () => {}, stop: () => {} },
+    isTunnelClient: () => false,
+    listNetworkAdapters: () => [],
+    backups: { list: () => [], restore: () => false, snapshotPreRisk: () => true },
+    controller: nullController(),
     monitor: base.monitor,
   });
   const handle = (msg: ClientMessage, ws: FakeSocket): void => {

@@ -29,7 +29,8 @@ function harness(snapshotPreRisk?: () => boolean) {
   const autosaver = fakeAutosaver();
   const broadcastState = vi.fn();
   const { sink, sent } = fakeSink();
-  const deps = { host, autosaver, broadcastState, snapshotPreRisk };
+  // Explicit stub (S7): snapshotPreRisk is required; default = snapshot succeeds.
+  const deps = { host, autosaver, broadcastState, snapshotPreRisk: snapshotPreRisk ?? (() => true) };
   const run = (msg: ClientMessage): boolean => handleProjectMessage(msg, sink, deps);
   return { host, autosaver, broadcastState, sent, run };
 }

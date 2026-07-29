@@ -105,16 +105,16 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
   relayToOthers(sender: S, msg: ServerMessage): void;
   /** In-app share-tunnel lifecycle control (S3 follow-up), or absent when the wiring has none
    * (the `tunnel` message is then a no-op). Status changes surface via `state` re-broadcasts. */
-  tunnelControl?: { start(): void; stop(): void };
+  tunnelControl: { start(): void; stop(): void };
   /** Whether `ws` connected VIA the share tunnel (cf-* headers at admit). Such a client must
    * never control the tunnel it rode in on — even if it holds the editor slot. */
-  isTunnelClient?(ws: S): boolean;
+  isTunnelClient(ws: S): boolean;
   /** Append a diagnostic event to the shared Monitor stream. */
-  monitor?(event: MonitorDraft): void;
+  monitor(event: MonitorDraft): void;
   /** Enumerate the server machine's network adapters (NICs) for the `listNetworkAdapters` read — the
    * panel uses them to guide the operator to put the PixLite on the adapter's subnet + recommend an
    * IP. Absent when the wiring provides none (the message then replies with an empty list). */
-  listNetworkAdapters?: () => NetworkAdapter[];
+  listNetworkAdapters: () => NetworkAdapter[];
   /** Project backups (#123). `list` backs the `listBackups` read (the Backups dialog). `restore`
    * runs the server-side restore — pre-risk snapshot of current state, atomic replace of all three
    * blobs, engine/client cold-load reload — and returns false for an unknown id (a user-visible
@@ -123,7 +123,7 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
    * `true` when the safety snapshot was taken and `false` when the WRITE failed, so a seam can refuse
    * the mutation fail-closed rather than overwrite live state with no recovery point. Absent when the
    * wiring runs without backups (snapshotting disabled): the reads reply empty + no-op. */
-  backups?: {
+  backups: {
     list(): BackupSnapshotMeta[];
     restore(id: string): boolean;
     snapshotPreRisk(): boolean;
@@ -132,7 +132,7 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
    * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
    * that client's interest. `adopt` resolves to a result the handler turns into an `error` reply on
    * failure; discover/adopt/identify broadcast their own `controllerDiscovery`/`controllerStatus`. */
-  controller?: {
+  controller: {
     discover(): Promise<unknown>;
     adopt(host: string): Promise<{ ok: boolean; error?: string }>;
     setAuth(password: string): void;

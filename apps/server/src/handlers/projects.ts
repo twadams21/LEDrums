@@ -21,7 +21,7 @@ export interface ProjectHandlerDeps {
    * safety snapshot was taken (or backups are disabled — no net to fail) and `false` when the WRITE
    * failed, so the load can refuse fail-closed rather than overwrite live state with no recovery
    * point. Absent = backups disabled (treated as `true`). */
-  snapshotPreRisk?(): boolean;
+  snapshotPreRisk(): boolean;
 }
 
 /**
