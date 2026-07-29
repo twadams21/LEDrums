@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { model, transport, ctx, trig, render, litCount, allFinite01 } from '../test-support/effect-harness';
+import { model, ctx, trig, render, litCount, allFinite01 } from '../test-support/effect-harness';
 import { gravityWells } from './impl/gravity-wells';
 import { breathingKit } from './impl/breathing-kit';
 import { tempSweep } from './impl/temp-sweep';

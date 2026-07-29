@@ -16,7 +16,7 @@ const VIRTUAL_ID = 'virtual:source-manifest';
 const RESOLVED_ID = '\0' + VIRTUAL_ID;
 
 const INCLUDE = /\.(svelte|ts|css)$/;
-const EXCLUDE = /(\.test\.ts|\.fixture\.svelte|\.d\.ts)$/i;
+const EXCLUDE = /(\.test\.ts|\.fixture\.svelte|\.d\.ts)$|\/test-support\//i;
 
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
