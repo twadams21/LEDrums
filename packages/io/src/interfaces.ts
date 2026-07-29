@@ -1,3 +1,12 @@
+/** Transport status: bind, socket, multicast-setup, and send-completion outcomes. */
+export interface PixelOutputStatus {
+  state: 'ready' | 'error';
+  /** Human-readable detail (message text varies; equality lives in (state, code)). */
+  error?: string;
+  /** Stable errno-style code, e.g. EADDRNOTAVAIL / EMCASTIFACE / EBROADCAST. */
+  code?: string;
+}
+
 /** Pixel output transport (Art-Net / sACN). Behind this interface, `core` and the
  * server are oblivious to the wire protocol. */
 export interface PixelOutput {
@@ -6,6 +15,11 @@ export interface PixelOutput {
   /** Send one universe's channel bytes. Fire-and-forget. */
   send(universe: number, channels: Uint8Array): void;
   close(): void;
+  /** Observe transport status (optional — test doubles need not implement it).
+   * Latch-and-replay: the handler is invoked immediately with the current status if
+   * one has been latched, then on every deduped, rate-floored status change. Emission
+   * happens only from asynchronous socket callbacks, never on the send() call path. */
+  onStatus?(handler: (s: PixelOutputStatus) => void): void;
 }
 
 export type OscArg = number | string | Uint8Array;
