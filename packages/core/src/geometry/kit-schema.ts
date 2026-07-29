@@ -505,8 +505,10 @@ export function logicalOutputsForPhysical(physicalPort: number, expanded: boolea
  * - **shrink**: keep the first `count` outputs in order, trim the surplus.
  * - **identity**: already the right length → returned unchanged (same array ref).
  *
- * Appended port ids are `output:<n>`, matching the patch graph's `outputId(index)` grammar and
- * minted as the LOWEST unused `output:<n>` not already claimed by a kept output — so a sparse
+ * Appended `OutputConfig.id`s are the strings `output:<n>` — a naming legacy of the old
+ * positional grammar, not a reference to it (the patch graph's flow-node id for any output is
+ * `output:` + the config id, i.e. `output:output:<n>` for appended ports, minted and decoded by
+ * apps/web's patch-node-id.ts). Each is minted as the LOWEST unused `output:<n>` not already claimed by a kept output — so a sparse
  * survivor set (e.g. `output:1,2,8` grown to 8) can never mint a duplicate id and stick the count
  * below target (the id-collision stuck-state defect). A pre-existing id is never rewritten (order +
  * identity of kept outputs preserved); every id in the returned kit is unique when the survivors are.

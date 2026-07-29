@@ -17,7 +17,7 @@
    stable top→bottom output order for that, but a run's transmit order is purely its chain.)
 
    HOOP INDEX BASE. Hoop indices are **1-based everywhere** since A1: the topology's hoop
-   NODE ids (`hoop:<drum>:1..N`, see `patch-topology.ts`), core's `OutputSegment`, and
+   NODE ids (`hoop:<drum>:1..N`, see `patch-node-id.ts`), core's `OutputSegment`, and
    `HoopRef.hoop` all agree (`dmx-map.ts` validates `1..hoopCount`). The id helpers below
    just format/parse the shared 1-based number. */
 
@@ -39,9 +39,9 @@ import {
   type PatchRouting,
 } from './patch-routing';
 
-// --- layout helpers (mirror patch-topology's column maths, kept local & pure) -------
+// --- layout helpers (local & pure column maths) -------------------------------------
 
-/** Signal-flow role colour for the Output stage (matches patch-topology's STAGE_ROLE). */
+/** Signal-flow role colour for the Output stage (design-system role token). */
 const OUTPUT_ROLE = 'var(--role-output)';
 
 /** Stack `count` rows centred on `centerY` with the given pitch (mirror of the
