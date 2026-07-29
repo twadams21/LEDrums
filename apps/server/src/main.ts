@@ -25,6 +25,7 @@ import { resolveInitialProject } from './boot-project';
 import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
 import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
+import { buildStatsMessage, STATS_INTERVAL_MS } from './stats-frame';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
 import { TunnelManager, tunnelConfigFromEnv } from './tunnel-manager';
@@ -703,31 +704,18 @@ oscInput.on((e) => {
 
 // --- periodic stats ---------------------------------------------------------
 
+// The adaptation policy (and the cadence constant) lives in stats-frame.ts as a pure
+// function; this timer is just the clock. `beatsPerBar` is read fresh each tick off the
+// legacy host's project — the authoritative transport, even in voice mode.
 const statsTimer = setInterval(() => {
-  if (voiceHost) {
-    const s = voiceHost.getStats();
-    // Adapt the voice engine's stats onto the legacy `stats` shape, plus the additive
-    // `voice` extension carrying voiceCount + per-bus levels.
-    broadcastJson({
-      t: 'stats',
-      stats: {
-        timeMs: s.engine.timeMs,
-        beat: s.engine.beat,
-        bar: Math.floor(s.engine.beat / host.engine.getProject().composition.transport.beatsPerBar),
-        activeTriggers: s.engine.voiceCount,
-        tickCount: 0,
-        pixelCount: voiceHost.getModel().pixelCount,
-      },
-      latencyMs: s.latencyMs,
-      fps: s.fps,
-      output: s.output,
-      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
-    });
-    return;
-  }
-  const s = host.getStats();
-  broadcastJson({ t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output });
-}, 10);
+  broadcastJson(
+    buildStatsMessage({
+      voiceHost,
+      host,
+      beatsPerBar: host.engine.getProject().composition.transport.beatsPerBar,
+    }),
+  );
+}, STATS_INTERVAL_MS);
 
 // --- boot + shutdown --------------------------------------------------------
 
