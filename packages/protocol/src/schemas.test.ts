@@ -182,6 +182,14 @@ describe('serverMessageSchema', () => {
     expect(serverMessageSchema.safeParse({ ...base, recovery: { source: 'file', reason: 'x' } }).success).toBe(false);
     expect(serverMessageSchema.safeParse({ ...base, recovery: { source: 'snapshot' } }).success).toBe(false); // reason is required
   });
+
+  it('tolerates a MISSING recovery field on the read side (review N9 — one-release-behind server)', () => {
+    const base = serverSamples[0] as Extract<ServerMessage, { t: 'state' }>;
+    const withoutRecovery: Record<string, unknown> = { ...base };
+    delete withoutRecovery.recovery;
+    const parsed = serverMessageSchema.safeParse(JSON.parse(JSON.stringify(withoutRecovery)));
+    expect(parsed.success).toBe(true);
+  });
 });
 
 describe('opaque + authored passthrough', () => {

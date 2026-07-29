@@ -405,8 +405,10 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     songLibrary: songLibraryBlobSchema.nullable(),
     tunnel: tunnelInfoSchema.nullable(),
     osc: oscListenInfoSchema,
-    /** Non-null only when this server booted through the recovery ladder (Decision 8). */
-    recovery: bootRecoveryInfoSchema.nullable(),
+    /** Non-null only when this server booted through the recovery ladder (Decision 8).
+     * The read side tolerates a MISSING field (review N9) so a client is never cut off
+     * from a server one release behind; the server itself always sends object-or-null. */
+    recovery: bootRecoveryInfoSchema.nullable().optional(),
   }).strict(),
   z.object({
     t: z.literal('stats'),
