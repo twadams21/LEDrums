@@ -49,6 +49,7 @@ import { startupDiagnostics } from './diagnostics';
 import { createMonitorBus } from './monitor';
 import { installProcessErrorCapture } from './process-errors';
 import { createFatalHandler } from './fatal-shutdown';
+import { createBroadcaster } from './ws-broadcast';
 import { createShipQueue, type ShipQueue } from './telemetry/ship-queue';
 import { createHttpTransport } from './telemetry/transport';
 import { createReporter, type Reporter } from './telemetry/reporter';
@@ -261,12 +262,11 @@ const clients = new ClientRegistry<WebSocket>();
  * with the socket. */
 const tunnelClients = new WeakSet<WebSocket>();
 
-function broadcastJson(msg: ServerMessage): void {
-  const data = encodeServer(msg);
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(data);
-  }
-}
+// The four socket-iterating broadcast closures live in ws-broadcast.ts (S11).
+const { broadcastJson, broadcastBinary, broadcastPresence, relayToOthers } = createBroadcaster<WebSocket>({
+  clients,
+  encode: encodeServer,
+});
 
 // Point the hoisted monitor bus (S6, above) at the real broadcast now that the
 // client registry + encoder wiring exist.
@@ -443,20 +443,6 @@ function monitorInput(msg: ClientMessage, origin: string): void {
   }
 }
 
-/** Re-broadcast presence to every client (each gets its own `youAreEditor`). Called on any
- * join/leave so every client's editor/viewer role + headcount stays current. */
-function broadcastPresence(): void {
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(encodeServer({ t: 'presence', ...clients.presenceFor(ws) }));
-  }
-}
-
-function broadcastBinary(rgb: Uint8Array): void {
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(rgb, { binary: true });
-  }
-}
-
 /** The remote-access surface for the host UI: tunnel lifecycle status + resolved URL + room
  * PIN. Always present (the Share button always renders, offering Start sharing when off). Only
  * ever reaches already-admitted clients (it rides the `state` message), so an un-authed
@@ -560,14 +546,6 @@ wss.on('connection', (ws, req) => {
 // Shared collaborators handed to the extracted message handler. The broadcast/relay closures
 // capture the wiring so the handler stays free of module-level state + socket plumbing.
 const broadcastState = (): void => broadcastJson(stateMessage());
-
-/** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
-function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
-  const data = encodeServer(msg);
-  for (const other of clients) {
-    if (other !== sender && other.readyState === other.OPEN) other.send(data);
-  }
-}
 
 // --- Project backups (#123) --------------------------------------------------
 // Snapshotting is ALWAYS on (local + cheap); only the off-site push follows #122's enablement rule
