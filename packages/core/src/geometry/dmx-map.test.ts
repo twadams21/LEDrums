@@ -158,3 +158,48 @@ describe('buildDmxMap — dense packing', () => {
     expect(map.universes.map((u) => u.universe)).toEqual([0]);
   });
 });
+
+describe('buildDmxMap — protocol-aware universe numbering (Decision 7)', () => {
+  it('defaults to Art-Net numbering: explicit artnet is deep-equal to the historical default', () => {
+    const k = kit([{ id: 'a', pixelsPerHoop: 200 }, { id: 'b', pixelsPerHoop: 200 }]);
+    const model = buildPixelModel(k);
+    expect(buildDmxMap(k, model, undefined, 'artnet')).toEqual(buildDmxMap(k, model));
+  });
+
+  it('sACN packs from universe 1 — universe 0 never appears', () => {
+    const k = kit([{ id: 'a', pixelsPerHoop: 200 }, { id: 'b', pixelsPerHoop: 200 }]);
+    const model = buildPixelModel(k);
+    const map = buildDmxMap(k, model, undefined, 'sacn');
+    expect(map.universes.every((u) => u.universe >= 1)).toBe(true);
+    expect(map.universes[0]!.universe).toBe(1);
+    expect(map.perPixel[0]!.channel).toBe(CHANNELS_PER_UNIVERSE); // universe 1, channel 0
+  });
+
+  it('a sACN map is the Art-Net map shifted by exactly one universe, byte-structure intact', () => {
+    // 400 px * 3ch = 1200 channels -> straddles universes; the shift must preserve every
+    // per-universe channelCount and per-pixel offset WITHIN its universe.
+    const k = kit([{ id: 'a', pixelsPerHoop: 200 }, { id: 'b', pixelsPerHoop: 200 }]);
+    const model = buildPixelModel(k);
+    const art = buildDmxMap(k, model);
+    const sacn = buildDmxMap(k, model, undefined, 'sacn');
+    expect(sacn.universes.map((u) => u.universe)).toEqual(art.universes.map((u) => u.universe + 1));
+    expect(sacn.universes.map((u) => u.channelCount)).toEqual(art.universes.map((u) => u.channelCount));
+    for (let p = 0; p < model.pixelCount; p++) {
+      expect(sacn.perPixel[p]!.channel).toBe(art.perPixel[p]!.channel + CHANNELS_PER_UNIVERSE);
+    }
+  });
+
+  it('an authored startUniverse stays ABSOLUTE under sACN (operator compensation survives)', () => {
+    const k = kit([{ id: 'a', pixelsPerHoop: 10 }], [out('o1', [seg('a', 0)], 5)]);
+    const model = buildPixelModel(k);
+    const map = buildDmxMap(k, model, undefined, 'sacn');
+    expect(map.universes.map((u) => u.universe)).toEqual([5]);
+  });
+
+  it('the flat (unwired) fallback is also protocol-aware', () => {
+    const k = kit([{ id: 'a', pixelsPerHoop: 30 }]);
+    const model = buildPixelModel(k);
+    const map = buildDmxMap(k, model, undefined, 'sacn');
+    expect(map.universes.map((u) => u.universe)).toEqual([1]);
+  });
+});

@@ -81,12 +81,13 @@ export class Engine {
   }
 
   private buildMapSafe(): DmxMap {
+    const protocol = this.project.output.protocol;
     try {
-      return buildDmxMap(this.project.kit, this.model);
+      return buildDmxMap(this.project.kit, this.model, undefined, protocol);
     } catch {
       // Invalid topology must not stop rendering/preview — fall back to a flat map.
       const flat = { ...this.project.kit, outputs: [], global: { ...this.project.kit.global, maxPixelsPerOutput: Number.MAX_SAFE_INTEGER } };
-      return buildDmxMap(flat, this.model);
+      return buildDmxMap(flat, this.model, undefined, protocol);
     }
   }
 
@@ -268,7 +269,11 @@ export class Engine {
   }
 
   setOutput(partial: Partial<OutputSettings>): void {
+    const protocolChanged = partial.protocol !== undefined && partial.protocol !== this.project.output.protocol;
     Object.assign(this.project.output, partial);
+    // Universe numbering is protocol-aware (sACN is 1-based), so a protocol flip
+    // invalidates the map even though the kit topology is unchanged.
+    if (protocolChanged) this.dmxMap = this.buildMapSafe();
   }
 
   addLayer(layer: Layer): void {

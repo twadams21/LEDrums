@@ -135,8 +135,9 @@ export class VoiceEngineHost {
    * no longer silent (S07): the offending reference is named and reported as a Monitor `error`
    * event before degrading, so a corrupt routing surfaces loudly instead of going dark. */
   private buildMapSafe(kit: KitConfig): DmxMap {
+    const protocol = this.project.output.protocol;
     try {
-      const map = buildDmxMap(kit, this.model);
+      const map = buildDmxMap(kit, this.model, undefined, protocol);
       this.pendingRoutingDegradation = null; // routing is healthy again
       return map;
     } catch (err) {
@@ -157,7 +158,7 @@ export class VoiceEngineHost {
         outputs: [],
         global: { ...kit.global, maxPixelsPerOutput: Number.MAX_SAFE_INTEGER },
       };
-      return buildDmxMap(flat, this.model);
+      return buildDmxMap(flat, this.model, undefined, protocol);
     }
   }
 
@@ -430,7 +431,11 @@ export class VoiceEngineHost {
   /** Apply a partial output-settings change (state/protocol/host/rgbOrder/fps/...) and
    * re-apply it to the transport live. */
   setOutput(partial: Partial<OutputSettings>): void {
+    const protocolChanged = partial.protocol !== undefined && partial.protocol !== this.project.output.protocol;
     Object.assign(this.project.output, partial);
+    // Universe numbering is protocol-aware (sACN is 1-based), so a protocol flip must
+    // rebuild the map before the transport re-applies against it.
+    if (protocolChanged) this.dmxMap = this.buildMapSafe(this.kit);
     this.reloadOutputSettings();
   }
 
