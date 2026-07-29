@@ -74,18 +74,36 @@ describe('describePatchNode', () => {
     expect(describePatchNode('hoop:weird:id:3').title).toBe('weird:id Hoop 3');
   });
 
-  // S3 declared divergence (b): an output flow-node id carries its FULL payload. The
-  // shipping ids are double-prefixed (`output:output:<n>` — reconcileOutputs mints
-  // OutputConfig.id as `output:<n>`), so the old first-segment render titled every
-  // reconciled port as the literal 'Output output'. S4 resolves the payload to the
-  // display index; at this step the raw payload is carried through.
-  it('carries the full output payload for the shipping double-prefixed id', () => {
-    expect(describePatchNode('output:output:1').title).toBe('Output output:1');
+  // S3/S4 declared divergence (b): an output flow-node id carries its FULL payload and
+  // titles by 1-based array position in kit.outputs — the same label the canvas node
+  // paints. The shipping ids are double-prefixed (`output:output:<n>` — reconcileOutputs
+  // mints OutputConfig.id as `output:<n>`), so the old first-segment render titled every
+  // reconciled port as the literal 'Output output'.
+  it('titles an output by its 1-based position in kit.outputs (shipping id shape)', () => {
+    const outputs = [{ id: 'output:1' }, { id: 'output:2' }];
+    expect(describePatchNode('output:output:1', [], outputs).title).toBe('Output 1');
+    expect(describePatchNode('output:output:2', [], outputs).title).toBe('Output 2');
+  });
+
+  it('titles a custom (non-prefixed) output id by position too', () => {
+    expect(describePatchNode('output:out-a', [], [{ id: 'out-a' }, { id: 'out-b' }]).title).toBe('Output 1');
+  });
+
+  it('falls back to the prefix-stripped payload when the output id is not found', () => {
+    expect(describePatchNode('output:output:9', [], [{ id: 'output:1' }]).title).toBe('Output 9');
+    // baseline expectation, still true with no outputs supplied
+    expect(describePatchNode('output:1').title).toBe('Output 1');
+  });
+
+  it('reports stage unknown for an unrecognised prefix instead of posing as input', () => {
+    expect(describePatchNode('bogus:thing').stage).toBe('unknown');
+    expect(describePatchNode('bogus:thing').title).toBe('bogus:thing');
   });
 
   // Decision 5: the zone arm is retired — nothing mints `zone:` ids and the zone
   // Inspector arm is gone, so a zone id falls through to the unknown rendering.
   it('treats a legacy zone id as unrecognised', () => {
     expect(describePatchNode('zone:tom1:edge', KIT).title).toBe('zone:tom1:edge');
+    expect(describePatchNode('zone:tom1:edge', KIT).stage).toBe('unknown');
   });
 });

@@ -141,7 +141,7 @@
     {/if}
   {:else if sel?.kind === 'patch' && ed}
     {@const editor = ed}
-    {@const d = describePatchNode(sel.nodeId, store.drums)}
+    {@const d = describePatchNode(sel.nodeId, store.drums, project?.kit.outputs ?? [])}
     <header class="ihead">
       <div class="titles">
         <Eyebrow>{d.stage}</Eyebrow>

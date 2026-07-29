@@ -76,9 +76,11 @@ export function topoDrumsFromKit(
 }
 
 /** A human-readable summary of a patch node id, for the Inspector (no built graph
-    needed). `drums` resolves drum ids to labels; falls back to the raw id. */
+    needed). `drums` resolves drum ids to labels; falls back to the raw id. `stage`
+    is `'unknown'` for an unrecognised id — the description type widens, but
+    `PatchStage` itself does not (no styling/leafRole arm needed anywhere). */
 export interface PatchNodeDescription {
-  stage: PatchStage;
+  stage: PatchStage | 'unknown';
   title: string;
   sub: string;
 }
@@ -86,6 +88,7 @@ export interface PatchNodeDescription {
 export function describePatchNode(
   id: string,
   drums: ReadonlyArray<{ id: string; label: string }> = [],
+  outputs: ReadonlyArray<{ id: string }> = [],
 ): PatchNodeDescription {
   const labelOf = (drumId: string): string => drums.find((d) => d.id === drumId)?.label ?? drumId;
   const ref = parsePatchNodeId(id);
@@ -105,9 +108,16 @@ export function describePatchNode(
       return { stage: 'drum', title: `${labelOf(ref.drumId)} Drum`, sub: 'zones converge → hoops' };
     case 'hoop':
       return { stage: 'hoop', title: `${labelOf(ref.drumId)} Hoop ${ref.hoop}`, sub: 'LED hoop' };
-    case 'output':
-      return { stage: 'output', title: `Output ${ref.outputId}`, sub: 'physical data run' };
+    case 'output': {
+      // Title by 1-based ARRAY POSITION in kit.outputs — the same label patch-zones
+      // paints on the node itself (`Output ${i + 1}`), so Inspector and canvas agree.
+      // Not found (a ghost/stale id): fall back to the payload with a leading
+      // `output:` stripped, so a reconciled id reads 'Output 3', never 'Output output:3'.
+      const i = outputs.findIndex((o) => o.id === ref.outputId);
+      const title = i >= 0 ? `Output ${i + 1}` : `Output ${ref.outputId.replace(/^output:/, '')}`;
+      return { stage: 'output', title, sub: 'physical data run' };
+    }
     case 'unknown':
-      return { stage: 'input', title: id, sub: 'patch node' };
+      return { stage: 'unknown', title: id, sub: 'patch node' };
   }
 }
