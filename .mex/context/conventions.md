@@ -11,7 +11,7 @@ triggers:
 edges:
   - target: context/architecture.md
     condition: when a convention depends on understanding the system structure
-last_updated: 2026-06-20
+last_updated: 2026-07-30
 ---
 
 # Conventions
@@ -27,6 +27,7 @@ last_updated: 2026-06-20
 - `packages/core` is pure — no `node:*`, no DOM, no IO imports. Geometry/model/effects/engine only.
 - IO (UDP/Art-Net/sACN/OSC) lives in `packages/io` behind `PixelOutput`/`EventInput`; `core` never imports it.
 - The zod schemas (`kit-schema.ts`, `project-schema.ts`) are the single source of truth — TS types are `z.infer`'d from them, never hand-duplicated.
+- Kit code is split by change axis, one reason to change each: `kit-schema.ts` DECLARES the shape (zod + inferred types + `parseKit`), `kit-migrations.ts` owns the VERSION GATE on raw pre-parse data (currently a hard v7 floor — a pre-v7 kit is rejected, not migrated; a future ladder goes here), and `kit-queries.ts` holds PURE DERIVED QUERIES over an already-parsed `KitConfig` (`drumHoopCount`, `logicalOutputCount`, `reconcileOutputs`, …). Add a migrator to `kit-migrations.ts` and a derived helper to `kit-queries.ts` — never back into `kit-schema.ts`.
 - Effects are pure `render(ctx, params, fb, state)`; per-clip mutable state is engine-owned (`ClipState`), reset on clip change, never persisted.
 - Server reducer is explicit + typed (`applyClientMessage`) — no generic path-mutation. The engine is the source of truth; the UI applies optimistically and reconciles on `state` echo.
 - Relative imports are extensionless (Bundler resolution); type-only imports use `import type` (verbatimModuleSyntax).

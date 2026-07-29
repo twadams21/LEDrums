@@ -1,3 +1,5 @@
+// Kit SCHEMA DECLARATION only: zod schemas, their inferred types, and parseKit. The version
+// floor lives in ./kit-migrations; derived queries over a parsed kit in ./kit-queries.
 import { z } from 'zod';
 import { CURRENT_KIT_VERSION, assertKitVersion } from './kit-migrations';
 

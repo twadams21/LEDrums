@@ -1,3 +1,5 @@
+// Pure DERIVED QUERIES over an already-parsed KitConfig. Types-only dependency on
+// ./kit-schema, so this module never participates in parsing or validation.
 import type { KitConfig, DrumConfig, OutputConfig } from './kit-schema';
 
 /** Resolve the effective hoop count for a drum. When `hoops[]` is present it is AUTHORITATIVE

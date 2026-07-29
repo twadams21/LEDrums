@@ -1,3 +1,5 @@
+// Kit VERSION GATE: raw `unknown` in, raw `unknown` out, no zod. Holds the v7 floor and is
+// where a future migration ladder goes — nothing here knows the parsed KitConfig shape.
 /**
  * Current — and MINIMUM — kit schema version.
  *
