@@ -32,7 +32,7 @@ class FakeReq {
   url: string;
   headers: Record<string, string> = {};
   socket = { remoteAddress: '127.0.0.1' };
-  private handlers: Record<string, (arg?: unknown) => void> = {};
+  handlers: Record<string, (arg?: unknown) => void> = {};
   destroyed?: Error;
   constructor(opts: { method?: string; path?: string; token?: string | null } = {}) {
     this.method = opts.method ?? 'POST';
@@ -140,6 +140,43 @@ describe('createNativeMidiHandler', () => {
     expect(res.status).toBe(400);
     expect(d.monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', source: 'server/native-midi' }));
     expect(d.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('400s a request whose stream errors before end', () => {
+    const d = deps();
+    const handler = createNativeMidiHandler(d);
+    const req = new FakeReq();
+    const res = new FakeRes();
+    handler(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    req.handlers.error?.(new Error('socket reset'));
+    expect(res.status).toBe(400);
+    expect(res.body).toBe('bad request');
+    expect(d.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('accepts a body exactly at the 4096-byte cap (reaches the decoder)', () => {
+    const d = deps();
+    const handler = createNativeMidiHandler(d);
+    const req = new FakeReq();
+    const res = new FakeRes();
+    handler(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    req.send('x'.repeat(4096));
+    // Not destroyed: the boundary body passed the cap and reached decodeClient
+    // (which rejects it as non-JSON with a 400 — proving the decoder ran).
+    expect(req.destroyed).toBeUndefined();
+    expect(res.status).toBe(400);
+    expect(d.monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', source: 'server/native-midi' }));
+  });
+
+  it('destroys a body of 4097 bytes (one past the cap)', () => {
+    const handler = createNativeMidiHandler(deps());
+    const req = new FakeReq();
+    const res = new FakeRes();
+    handler(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    req.send('x'.repeat(4097));
+    expect(req.destroyed).toBeInstanceOf(Error);
+    expect(req.destroyed?.message).toBe('native MIDI payload too large');
+    expect(res.status).toBe(400);
   });
 
   it('destroys the request when the body exceeds the 4KB cap', () => {
