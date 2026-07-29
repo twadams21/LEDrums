@@ -22,10 +22,8 @@ export interface DrumTransformPartial {
   color?: string;
 }
 
-/** Partial kit-global change (S11 mirror + C1/C2 kit config): all kit-wide, not per-drum. */
+/** Partial kit-global change (C1/C2 kit config): all kit-wide, not per-drum. */
 export interface KitGlobalPartial {
-  /** Kit-wide mirror mode (geometry-only world reflection; DMX bytes unchanged). */
-  mirror?: 'none' | 'x' | 'y';
   /** Advatek expanded output mode (B2) — lives at kit.global.expanded. */
   expanded?: boolean;
   /** Global LED density (px/m). */
@@ -67,11 +65,11 @@ export function applyDrumTransform(project: Project, drumId: string, partial: Dr
   };
 }
 
-/** Kit-global change (S11 mirror + C1/C2 config): merge onto project.kit.global (immutable). When
+/** Kit-global change (C1/C2 config): merge onto project.kit.global (immutable). When
     `expanded` flips, reconcile kit.outputs to the new port count (4 normal / 8 expanded) so the
     optimistic local project matches what the server-apply backstop yields — mutation parity with
     Engine / VoiceEngineHost setKitGlobal. Reconcile is a no-op (same outputs ref) when the count is
-    already right, so a plain mirror/density edit preserves the outputs identity as before. */
+    already right, so a plain density edit preserves the outputs identity as before. */
 export function applyKitGlobal(project: Project, partial: KitGlobalPartial): Project {
   const merged: Project = { ...project, kit: { ...project.kit, global: { ...project.kit.global, ...partial } } };
   return partial.expanded !== undefined ? { ...merged, kit: reconcileOutputs(merged.kit) } : merged;

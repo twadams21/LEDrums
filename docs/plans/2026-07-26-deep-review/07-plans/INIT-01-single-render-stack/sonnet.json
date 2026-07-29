@@ -1,0 +1,229 @@
+{
+  "initiative_id": "INIT-01-single-render-stack",
+  "variant": "sonnet",
+  "provenance": {
+    "model": "claude-sonnet-5",
+    "effort": "medium"
+  },
+  "summary": "Design the end state first and delete backward from it: ONE render stack is packages/core/src/voice (RenderEngine + VoicePool + eval-graph + Compositor), constructed identically by the server (apps/server) and the web trigger-lab's offline preview. That end state deletes packages/core/src/engine/{engine,compositor,modulation,control-state,transport}.ts wholesale (framebuffer.ts + render-context.ts survive, voice/ depends on both), deletes the LEDRUMS_ENGINE/VOICE_MODE branch and the legacy EngineHost in apps/server, deletes the dual kit-mutation apply path (applyClientMessage vs propagateToVoiceHost), deletes sim.ts's private mirror of voice spawn/release/mono-steal/pendingFires/mixMemberSnapshots in favour of hosting a real voice.createVoiceBusEngine() in the browser, and deletes render.ts's parallel compositing loop in favour of reading that engine's own frame(). Two small, fully mechanical dedups (duplicated EffectDef/Preset/Bus/ParamSpec types, duplicated hash2/fade/valueNoise/fbm noise helpers) and one additive resilience fix (an unresolved-id ledger for the modifier/effect skip-not-throw paths) ride along as independent low-coordination-cost wins. The one thing this plan does NOT resolve, and surfaces loudly instead of guessing: LayersDock.svelte is a live, unconditionally-mounted 233-line dock authoring Project.composition.layers/clips through message types only the legacy reducer understands, and VoiceEngineHost never renders composition.layers at all — meaning in every shipped build today those edits are already silently inert. This plan decouples that reducer slice from the Engine class (so the class can still be deleted) without deciding the dock's fate, because that is a content-model call, not a dedup.",
+  "findings_addressed": [
+    "divergent-change-0001",
+    "divergent-change-0003",
+    "duplicated-code-0004",
+    "duplicated-code-0011",
+    "resilience-hole-0011"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Alias sim.ts/sim.envelopes.ts duplicate types to core voice/types.ts",
+      "intent": "Shrinks apps/web/src/lib/trigger-lab's type surface by deleting its hand-maintained, byte-identical copies of EffectDef/Preset/Bus (sim.ts:135-183) and ParamSpec (sim.envelopes.ts:31-44), replacing them with `export type X = voice.X` aliases exactly as sim.envelopes.ts:31-54 already does for Envelope/AdsrShape (the in-repo S23 precedent this finding cites). EffectDef keeps its web-only gallery fields via an intersection: `export type EffectDef = voice.EffectDef & { category?: EffectCategory; description?: string; tags?: EffectTag[] }`. Purely a type-level substitution — zero runtime behaviour change.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/sim.ts",
+        "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+        "packages/core/src/voice/types.ts"
+      ],
+      "risk": "low",
+      "verification": "pnpm typecheck (any field drift between web and core shapes now fails the build, which is the point); pnpm --filter @ledrums/web run test confirms every sim.*.test.ts file still passes unmodified.",
+      "reverses": "git revert this commit; the four local type declarations return unchanged since the alias was pure type substitution with no runtime code."
+    },
+    {
+      "id": "S2",
+      "title": "Move hash2/fade/valueNoise/fbm into packages/core/src/math.ts",
+      "intent": "packages/core/src/canvas/elements.ts:30-68 and packages/core/src/effects/impl/perlin-clouds.ts:7-45 declare byte-identical hash2/fade/valueNoise plus an fbm accumulator differing only in perlin-clouds hardcoding octaves=3. Export one parameterised `fbm(x, y, octaves)` plus hash2/fade/valueNoise from math.ts (joining clamp01/lerp/wrap/mulberry32/hashString already there); both call sites import it, perlin-clouds calling `fbm(x, y, 3)`. effects/impl/fire.ts's own hash2 uses a different imul-avalanche formula (confirmed by grep during finding evidence) and is deliberately left alone.",
+      "files": [
+        "packages/core/src/math.ts",
+        "packages/core/src/canvas/elements.ts",
+        "packages/core/src/effects/impl/perlin-clouds.ts"
+      ],
+      "risk": "high",
+      "verification": "pnpm test --filter core — canvas determinism and effects/batch-*.test.ts assert per-pixel output for these two generators, so any formula drift during the move fails immediately. `grep -n \"127.1\" packages/core/src` shows exactly one definition site (math.ts) plus two call sites, down from two definition sites.",
+      "reverses": "git revert this commit; canvas/elements.ts and effects/impl/perlin-clouds.ts regain their private copies unchanged — math.ts's addition was purely additive, so this is a clean 3-file revert."
+    },
+    {
+      "id": "S3",
+      "title": "Add an unresolved modifier/effect-id ledger surfaced once per new id",
+      "intent": "packages/core/src/modifiers/chain.ts:47 (`if (!def) continue`) and packages/core/src/voice/generator-bridge.ts's renderVoice (`if (!gen) return`, confirmed live by the refuter) both correctly skip-not-throw stale authored ids but record nothing — a rename regression is invisible until a drummer notices a layer 'looks wrong'. Add a `Set<string>` unresolved-id tracker owned per RenderEngine instance (never a module global — determinism must hold), record the id the FIRST time it is skipped in both call sites, and expose it via `getUnresolvedIds(): ReadonlySet<string>` on packages/core/src/voice/engine.ts's RenderEngine. apps/server/src/main.ts's periodic stats tick (main.ts:748-770) reads it once per tick and emits ONE `monitor({type:'error', ...})` event per newly-seen id. Render-path behaviour (skip, never throw) is unchanged — this only adds an observation channel.",
+      "files": [
+        "packages/core/src/modifiers/chain.ts",
+        "packages/core/src/voice/generator-bridge.ts",
+        "packages/core/src/voice/engine.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "high",
+      "verification": "New unit test: render a chain/voice referencing an unregistered modifierId/generatorId, assert the framebuffer is byte-identical to the no-ledger baseline (current behaviour preserved) AND the id appears in getUnresolvedIds(); a second identical frame does not re-add it. pnpm test --filter core.",
+      "reverses": "git revert this commit; chain.ts/generator-bridge.ts return to bare `continue`/`return`, engine.ts loses the accessor, main.ts's stats tick loses the emit — all additive, so the revert is clean."
+    },
+    {
+      "id": "S4",
+      "title": "Capture a pre-deletion parity assertion for the dual kit-mutation apply path",
+      "intent": "Before collapsing the legacy-reducer / voice-host dual-apply in S5, add a temporary (dev/test-only) assertion in apps/server/src/handlers/client-message.ts: after both `applyClientMessage(host.engine, msg, ...)` and `propagateToVoiceHost(voiceHost, msg)` run for a kit/output message, diff `host.engine.getProject().kit` / `.output` against `voiceHost.getProject().kit` / `.output` and throw in test mode (log-only in prod) on any structural difference. Run it across every one of setKitTransform/setKitGlobal/setHoopConfig/setKitOutputs/setKitNodeLayout/setOutput/setInputMap — the 7 types propagateToVoiceHost already handles — BEFORE either path is deleted, so any pre-existing silent drift (the historical pixelsPerHoop bug already documented at input-router.ts:177-179 is the proof this class of bug is real) is caught by an assertion, not discovered after the legacy path is gone.",
+      "files": [
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/voice-input.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New/extended integration test apps/server/src/handlers/voice-input.test.ts drives all 7 message types through createClientMessageHandler with a live voiceHost, asserting zero parity diffs are thrown. `pnpm --filter @ledrums/server run test`.",
+      "reverses": "git revert this commit; the temporary assertion and its test are removed — S5 would then proceed without the extra check (not recommended, but mechanically clean)."
+    },
+    {
+      "id": "S5",
+      "title": "Make one function the sole mutator for kit/output/routing message types",
+      "intent": "apps/server/src/input-router.ts's applyClientMessage re-handles setKitTransform/setKitGlobal/setHoopConfig/setKitNodeLayout/setOutput against the legacy Engine class; apps/server/src/handlers/voice-input.ts's propagateToVoiceHost re-handles the SAME types (plus setKitOutputs/setInputMap, which have no legacy case) against VoiceEngineHost — S4 proved these agree today. Delete the 7 corresponding case arms from applyClientMessage; rename propagateToVoiceHost to applyKitMutation and call it unconditionally from handlers/client-message.ts (drop the `if (voiceHost)` guard — after S6 there is exactly one host). Content-authoring message types with NO voice-side equivalent (setLayer/addLayer/removeLayer/addClip/removeClip/setParam/setTransport/setActiveSection/setBinding — the LayersDock.svelte surface, see open_questions/OQ1) are deliberately NOT touched: their case arms are extracted out of applyClientMessage into a new pure-function module operating directly on Project (no Engine class dependency), so the Engine class can still be deleted in S7 without silently breaking LayersDock ahead of Trent's answer to OQ1.",
+      "files": [
+        "apps/server/src/input-router.ts",
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/voice-input.ts",
+        "apps/server/src/handlers/legacy-content.ts"
+      ],
+      "risk": "high",
+      "verification": "pnpm gates. Manual: pnpm --filter @ledrums/server run start, exercise every one of the 7 kit/output message types from the web UI (drum transform gizmo, kit-global density/hoopCount, per-hoop pixel count, output port assign, patch-graph node layout, input-map edit) and confirm routing/DMX output is identical (pnpm ui-shot on the Patch Graph and Output docks, before/after).",
+      "reverses": "git revert this commit; the 7 cases return to applyClientMessage, propagateToVoiceHost is restored under its old name with the `if (voiceHost)` guard, legacy-content.ts is removed."
+    },
+    {
+      "id": "S6",
+      "title": "Construct VoiceEngineHost as the ONLY host; retire LEDRUMS_ENGINE/VOICE_MODE",
+      "intent": "apps/server/src/main.ts:72 defaults LEDRUMS_ENGINE unset to legacy while every shipping path (scripts/dev.mjs:32, src-tauri/src/lib.rs:386) already forces voice — the legacy branch is reachable only by a config nobody sets. Delete the VOICE_MODE constant and every branch keyed on it (main.ts:308,357,374,728,790 and boot.ts's `if (deps.voiceHost) ... else deps.host.start()`), delete `const host = new EngineHost(project0)` (main.ts:157) and its import, and repoint the remaining `host.` call sites — autosave's `saveProjectAsync(LIVE_PROJECT, host.engine.getProject())`, `host.markInput()`, `host.reloadOutputSettings()`, stateMessage() — onto voiceHost. VoiceEngineHost already exposes getProject()/markInput()/reloadOutputSettings()/start() with matching shapes (voice-engine-host.ts:179,395,424,437), so this is a rename-and-repoint of ~20 call sites, not new plumbing. voiceHost becomes unconditional.",
+      "files": [
+        "apps/server/src/main.ts",
+        "apps/server/src/boot.ts",
+        "apps/server/src/engine-host.ts"
+      ],
+      "risk": "high",
+      "verification": "pnpm gates. Boot-reachability proof: `LEDRUMS_ENGINE=` pnpm --filter @ledrums/server run start (unset) — confirm the banner still prints '[voice engine]', proving the removal did not regress the default shipped path (previously this was the ONLY way to prove legacy was live at all). Delete apps/server/src/engine-host.ts and its test; pnpm typecheck enumerates every remaining reference.",
+      "reverses": "git revert this commit; EngineHost construction, VOICE_MODE and the conditional voiceHost return; engine-host.ts is restored from git history."
+    },
+    {
+      "id": "S7",
+      "title": "Delete packages/core/src/engine/{engine,compositor,modulation,control-state,transport}.ts",
+      "intent": "With S5-S6 landed, nothing constructs the legacy Engine class or reads its Compositor/ControlState/TransportState/modulation.ts (a 4-shape LFO with no phase offset or beats-sync — the divergence with voice/lfo.ts's 5-shape+phase+beats-sync implementation this initiative's context calls out resolves itself by deletion, not reconciliation, since nothing calls the legacy one anymore). Delete the five files plus engine.test.ts/modulation.test.ts, and remove packages/core/src/index.ts:65-69's five barrel `export * from './engine/...'` lines, keeping only framebuffer.ts and render-context.ts (index.ts:63-64) since packages/core/src/voice/engine.ts genuinely imports both.",
+      "files": [
+        "packages/core/src/engine/engine.ts",
+        "packages/core/src/engine/compositor.ts",
+        "packages/core/src/engine/modulation.ts",
+        "packages/core/src/engine/control-state.ts",
+        "packages/core/src/engine/transport.ts",
+        "packages/core/src/engine/engine.test.ts",
+        "packages/core/src/engine/modulation.test.ts",
+        "packages/core/src/index.ts"
+      ],
+      "risk": "high",
+      "verification": "pnpm typecheck — every remaining reference to the deleted exports surfaces as a compile error; this enumeration IS the completeness proof (the finding's own verification_plan: 'each break is a live legacy-stack consumer'). pnpm gates once green. `grep -rn \"from '.*engine/engine'\\|from '.*engine/modulation'\\|from '.*engine/compositor'\\|from '.*engine/control-state'\\|from '.*engine/transport'\" apps packages` returns zero hits.",
+      "reverses": "git revert this commit; all five files and their barrel exports are restored verbatim from git history — this commit is a pure deletion, nothing else changes alongside it."
+    },
+    {
+      "id": "S8",
+      "title": "Replace Sim's hand-rolled voice lifecycle with a hosted core RenderEngine",
+      "intent": "apps/web/src/lib/trigger-lab/sim.ts's Sim class privately re-implements voice spawn/release/mono-bus-stealing, a pendingFires delay queue and mixMemberSnapshots (sim.ts:298-320, 445-460) that packages/core/src/voice/engine.ts's RenderEngine (via VoicePool + eval-graph, already the graph-eval delegate since sim.ts:400's `voice.evalGraph` call) already owns — and its own header literally documents the class as 'Ported from trigger-lab/sim.ts', i.e. core's engine.ts is the canonical port target sim.ts was always meant to converge on. Construct one `voice.createVoiceBusEngine()` inside Sim, call setModel/setShow when the lab's kit/graph change, feed pad hits and other inputs through applyInput() instead of calling spawn/triggerGraph's internals directly, and call tick() once per frame. Keep Sim's PUBLIC shape (.voices, .buses, .timeMs, .triggerGraph(), .tick()) exactly as today so the ~14 sim.*.test.ts files exercise it unmodified — they become the parity oracle for this step. Sim's private seqIndex/lastPick/latched/pendingFires/mixMemberSnapshots fields and spawn/release methods are deleted; Sim becomes a thin adapter reshaping RenderEngine.stats()/frame() into the lab's existing Voice/dock-voices.ts display types.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/sim.ts",
+        "apps/web/src/lib/trigger-lab/dock-voices.ts"
+      ],
+      "risk": "medium",
+      "verification": "pnpm --filter @ledrums/web run test — the full sim.*.test.ts / sim-determinism.test.ts / sim.gen3-parity.test.ts / sim.delay*.test.ts / sim.modulation.test.ts suite (14 files) runs UNMODIFIED; any assertion failure identifies a semantic gap between Sim's old hand-rolled logic and core's real evaluator, not a test needing an update to match new behaviour. pnpm ui-shot capture of the trigger-lab visualizer against a fixed authored show, before/after.",
+      "reverses": "git revert this commit; Sim regains its private voiceSeq/pendingFires/mixMemberSnapshots/spawn/release implementation verbatim."
+    },
+    {
+      "id": "S9",
+      "title": "Retarget render.ts to core's composited frame() instead of its own mirror",
+      "intent": "apps/web/src/lib/trigger-lab/render.ts already delegates per-effect rendering to core's tryGetEffect/applyModifierChain/compositeInto (the pattern this initiative's context calls out as already proving the right shape), but still owns its own compositing loop (mixInputVoice, renderGeneratorVoice, the mix-scratch accumulation at render.ts:104-178) in parallel with packages/core/src/voice/compositor.ts's Compositor, which S8's hosted RenderEngine now runs every tick. Once S8 lands, renderFrame reads the RenderEngine's own frame() (composited RGBA, stride 4) directly instead of re-deriving pixels voice-by-voice — deleting renderGeneratorVoice/mixInputVoice/syncMixInputState and their scratch buffers entirely. LabModel's pixel model is passed to setModel() once instead of threaded through every render call.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/render.ts"
+      ],
+      "risk": "medium",
+      "verification": "pnpm --filter @ledrums/web run test — same sim.*.test.ts suite plus any render-specific tests. pnpm ui-shot capture of the visualizer, byte-diffed against S8's baseline capture — this step is pure plumbing and must produce IDENTICAL pixels to S8's post-change output.",
+      "reverses": "git revert this commit; render.ts regains its own renderGeneratorVoice/mixInputVoice compositing loop verbatim."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2", "S3"],
+    ["S4"],
+    ["S5"],
+    ["S6"],
+    ["S7"],
+    ["S8"],
+    ["S9"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/web/src/lib/trigger-lab/sim.ts / sim.envelopes.ts",
+      "removed": ["EffectDef (hand-maintained)", "Preset (hand-maintained)", "Bus (hand-maintained)", "ParamSpec (hand-maintained)"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Names re-appear as `export type X = voice.X` aliases (or an intersection for EffectDef's gallery fields) — the hand-maintained declaration is what's removed, not the export."
+    },
+    {
+      "at": "packages/core/src/math.ts",
+      "removed": [],
+      "added": ["hash2", "fade", "valueNoise", "fbm"],
+      "net_interface_change": "increases",
+      "note": "Two private per-file duplicates collapse into one shared export — net LOC and drift-hazard reduces even though math.ts's own export count increases."
+    },
+    {
+      "at": "packages/core/src/voice/engine.ts",
+      "removed": [],
+      "added": ["RenderEngine.getUnresolvedIds()"],
+      "net_interface_change": "increases",
+      "note": "Additive diagnostic accessor; render-path skip-not-throw behaviour is unchanged."
+    },
+    {
+      "at": "apps/server/src/input-router.ts",
+      "removed": ["applyClientMessage's setKitTransform/setKitGlobal/setHoopConfig/setKitNodeLayout/setOutput cases"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "propagateToVoiceHost (renamed applyKitMutation) becomes the sole mutator for these 7 message types."
+    },
+    {
+      "at": "packages/core/src/index.ts",
+      "removed": ["Engine", "Compositor (legacy)", "ControlState", "TransportState (legacy)", "lfoValue", "sourceValue", "applyCurve", "resolveParams", "createEngine and ~30 related legacy exports"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "The full legacy engine barrel (index.ts:65-69) is removed; framebuffer.ts and render-context.ts (index.ts:63-64) survive. Matches divergent-change-0001's own estimate of ~40 removed exported symbols."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab/sim.ts / render.ts",
+      "removed": ["Sim's private spawn/release/mono-steal internals", "render.ts's renderGeneratorVoice", "render.ts's mixInputVoice", "render.ts's syncMixInputState"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Sim's public API (.voices/.buses/.triggerGraph()/.tick()) is preserved; only the private re-implementation of core semantics is deleted. Matches divergent-change-0003's own estimate of ~12 removed exported symbols."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates (machine-mutex, full 2968-test suite) after every wave",
+      "pnpm test --filter core -- effects/batch-*.test.ts canvas determinism suite — per-pixel snapshot proof for S2/S3's touched render-path code",
+      "pnpm --filter @ledrums/server run test -- handlers/voice-input.test.ts — S4's dual-apply parity assertion run across all 7 kit/output message types BEFORE S5 deletes either path",
+      "pnpm --filter @ledrums/web run test -- the 14-file sim.*.test.ts / sim-determinism.test.ts / sim.gen3-parity.test.ts suite, run UNMODIFIED after S8/S9 — the parity oracle for the sim→core migration",
+      "pnpm typecheck after S6/S7 — every dangling reference to a deleted legacy export is a compile error, which is the actual completeness proof for the deletion",
+      "grep -rn \"LEDRUMS_ENGINE\\|VOICE_MODE\" apps packages scripts src-tauri after S6 returns zero hits outside historical docs/comments",
+      "pnpm ui-shot on the trigger-lab visualizer and the Patch Graph/Output docks, before/after S5 and before/after S8+S9, byte-compared for a fixed authored show + fixed input sequence"
+    ],
+    "known_gaps": "No fixture exercises BOTH content models (legacy Project.composition.layers/clips vs voice Show/TriggerGraph) with equivalent authored content, because they are structurally different models — there is no shared show that can prove the legacy engine and the voice engine render 'the same thing', so the engine-selection deletion (S5-S7) cannot be proven behaviour-identical by any green suite; the only available evidence is the settled fact that every shipping path already forces voice, so deletion formalizes what has already been the sole visual truth in production, it does not change what ships. Separately, WebMIDI input timing/jitter for the trigger-lab preview (S8/S9) cannot be replayed deterministically under vitest/node (WebMIDI is browser-only) — the sim.*.test.ts suite proves graph-eval/lifecycle logic determinism but not live-input feel, so a manual pnpm ui-shot capture firing a fixed MIDI/keyboard sequence is the only evidence for that slice, and a human should audit the capture for perceptual jank, not just pixel-diff it.",
+    "baseline_reference": "baseline sha 3708648, pnpm gates 2968 tests green at HEAD on feat/ota-discord-announce"
+  },
+  "rollback_strategy": "Each wave lands as its own commit(s), and the waves are strictly serial by design (S4 through S9 each assume the previous wave already landed), so the safe rollback unit is 'revert this wave and every wave after it', never a single wave in isolation once a later one has landed — e.g. reverting S6 alone after S7 has landed would resurrect the VOICE_MODE branch against already-deleted legacy engine.ts and fail to compile. Waves 1 (S1-S3) and the sim/render migration (S8-S9) are file-disjoint from the engine-retirement waves (S4-S7) and revert cleanly on their own via plain `git revert`. No data migration is involved anywhere in this plan — Project.composition/kit/output schemas are unchanged; only which code path applies them changes — so there is no irreversible persisted-state step.",
+  "estimated_loc": 2800,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "LayersDock.svelte (233 lines, mounted unconditionally in AuthorShell.svelte) authors Project.composition.layers/clips (the base/trigger/automation/effect roles AGENTS.md documents as part of the product) via the legacy Engine's addLayer/addClip/setLayer/setParam/setTransport/setActiveSection/setBinding reducer cases. VoiceEngineHost has no equivalent for any of these and only ever reads composition.transport — meaning in every shipped build today (voice forced on), LayersDock's edits are already silently inert for actual light output. Is the layer/clip content model still product-relevant (and due its own migration to the voice/Show model), or is LayersDock dead UI that should be deleted alongside the engine?",
+      "blocks_execution": true,
+      "owner": "trent"
+    },
+    {
+      "question": "S6 collapses VoiceEngineHost into the sole server host. Does anything outside TypeScript's own checker — the Tauri IPC boundary (src-tauri/src/lib.rs:386), a native binding, or an external script — match against the literal name/shape of EngineHost or VoiceEngineHost in a way a rename/collapse could break silently without surfacing as a compile error?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "INIT-04-server-runtime-hardening also restructures apps/server/src/main.ts (boot/WS liveness decomposition) and shares S6's exact files. If both initiatives are approved, which lands first to avoid rebase churn — this plan shrinks main.ts by removing the dual-host branch before INIT-04 decomposes it, which seems like the lower-friction order, but synthesis should confirm against INIT-04's own plan shape.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    },
+    {
+      "question": "S8 moves the trigger-lab's offline preview from a lightweight hand-rolled Sim to a full core RenderEngine running on the browser main thread (not a worker). Has anyone benchmarked voice-pool/eval-graph/compositor well enough in that context to be confident it won't visibly jank the lab UI for a busy show with many concurrent buses, or is a Web Worker host worth scoping as a follow-up?",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ]
+}

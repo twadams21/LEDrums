@@ -1,0 +1,4 @@
+{"finding_id":"dead-code-0002",
+ "refutation":{"votes":[{"refuted":false,"reasoning":"Nothing references it anywhere in the tree.","criterion_applied":"unreachable-and-no-dynamic-access","provenance":{"model":"claude-opus-5","effort":"high"}}],"outcome":"survived"},
+ "mechanical_verification":{"attempted":true,"outcome":"verified","isolation":{"required":true,"worktree_path":null,"baseline_sha":"e50da8d"}},
+ "disposition":"auto-fix"}

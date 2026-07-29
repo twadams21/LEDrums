@@ -1,0 +1,37 @@
+{
+  "phase": "0",
+  "generated_by": "artifacts/phase0.sh",
+  "baseline_sha": "37086485b0a9d0868f6bd4e896f3bb14e3637ad3",
+  "branch": "feat/ota-discord-announce",
+  "tracked_dirty_files": 2,
+  "selectors": {
+    "source": "git ls-files <unit>, keep extensions ts/tsx/js/mjs/cjs/svelte/rs, drop names containing .test. or .spec. or ending _tests.rs",
+    "tests": "git ls-files, keep names matching .test. or .spec. with ts/js/mjs, plus *_tests.rs"
+  },
+  "scope": {
+  "packages/core": {"files": 132, "loc": 14466},
+  "packages/io": {"files": 14, "loc": 1402},
+  "packages/protocol": {"files": 2, "loc": 777},
+  "apps/server": {"files": 36, "loc": 6511},
+  "apps/web": {"files": 265, "loc": 43302},
+  "apps/desktop": {"files": 14, "loc": 2630},
+  "workers/error-ingest": {"files": 11, "loc": 801},
+  "scripts": {"files": 4, "loc": 643}
+},
+  "test_loc": 42958,
+  "tool_versions": {"knip":"6.29.0","depcheck":"1.4.7","madge":"8.0.0","jscpd":"5.0.12","ajv-cli":"5.0.0","@vitest/coverage-v8":"2.1.9"},
+  "tools_dropped": {"ts-prune": "0/20 precision on packages/io — flags every barrel re-export; see pilot/PILOT.md"},
+  "thresholds": {
+    "duplication_min_lines": 12,
+    "duplication_min_similarity_pct": 90,
+    "data_clump_min_params": 3,
+    "data_clump_min_sites": 3,
+    "repeated_switch_min_sites": 3,
+    "change_scatter_min_files": 4,
+    "change_scatter_min_commits": 3,
+    "refuter_budget": 90,
+    "wrapper_batch_size": 4,
+    "tool_precision_gate_pct": 50
+  },
+  "raw_output_dir": "00-raw/"
+}

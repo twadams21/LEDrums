@@ -13,7 +13,7 @@ import { padKey, padLabel } from './seed';
 
 /** The canonical Gen3 terminal anchor id. Kept literal here (not imported from hydrate)
     so the graph CRUD slice stays small and dependency-free. */
-export const OUTPUT_ANCHOR_ID = 'output';
+const OUTPUT_ANCHOR_ID = 'output';
 
 /** A brand-new authored graph is Gen3 from birth: one explicit trigger source anchor and one
     visible Output terminal. Without this, createGraph() briefly produced an unversioned Gen2
@@ -44,7 +44,7 @@ export function nextGraphName(graphNames: Record<string, string>): string {
 
 /** The default effect id for a fresh play node — the first `drum`-scoped effect, else the
     first effect. */
-export function firstEffectId(effects: readonly EffectDef[]): string {
+function firstEffectId(effects: readonly EffectDef[]): string {
   return effects.find((e) => e.scope === 'drum')?.id ?? effects[0]!.id;
 }
 

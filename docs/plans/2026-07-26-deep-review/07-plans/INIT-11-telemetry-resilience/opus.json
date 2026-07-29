@@ -1,0 +1,137 @@
+{
+  "initiative_id": "INIT-11-telemetry-resilience",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-11-telemetry-resilience",
+    "model": "claude-opus-5[1m]",
+    "effort": "high"
+  },
+  "summary": "The whole initiative is one missing concept: the shipping path has no notion of a PERMANENT failure. `createHttpTransport` flattens 401/400/413/503/network into one untyped Error, `doShip` treats them identically (retain the whole store, back off to a 30-minute ceiling, log locally), and the Worker turns any D1/R2 fault into a bare runtime 500 with no body — which the client then also reads as 'retry forever'. The smallest design that fully retires both findings is therefore: (1) make the Worker's own faults legible and retryable-by-contract (503 JSON) so a storage outage is honestly transient, (2) give the transport a typed rejection carrying `status` and a `retryable` verdict, (3) let the queue act on that verdict — retryable keeps today's exact retain-and-backoff, auth-permanent enters a `blocked` state that stops the wakeup treadmill, other-permanent dead-letters the shipped batch to `<path>.deadletter.jsonl` so one poison item can never block the items behind it, and (4) cut batches by byte budget so the report queue (2MB cap) can never post a body the Worker rejects at its 1MB cap in the first place. The queue's isolation invariant is deliberately preserved: it still never emits onto the Monitor bus. It exposes `state()` and an injected `onStateChange`, and the composition root (main.ts) — not the queue — turns a transition into a Monitor `system` event, so a shipping failure still cannot recurse into the stream it ships. Rejected alternatives: retry-classification inside the Worker (wrong side of the trust boundary), a bespoke backups-health UI panel (buys a design-system + ui-shot pass for signal the Monitor already carries), and a full outbox rewrite (the existing queue is a deep, well-tested module — this adds a policy branch, not a new mechanism).",
+  "findings_addressed": ["resilience-hole-0008", "resilience-hole-0010"],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Worker fault boundary: storage faults become 503 JSON, size cap becomes byte-accurate and pre-buffer",
+      "intent": "The Worker is the thing you rely on when everything else is broken, so it must fail legibly. Extract the routing body of `default.fetch` in workers/error-ingest/src/index.ts into an internal `async function route(req, env): Promise<Response>` (NOT exported — the module's public surface stays `default.fetch`), and have `fetch` call it inside a try/catch that logs via `console.error('[ingest] route fault', err)` and returns `json({ status: 503, body: { error: 'storage unavailable', detail: err instanceof Error ? err.message : String(err) } })`. Any D1 rate-limit, post-migration schema mismatch, or R2 outage from d1Store/r2Store now becomes a structured, explicitly-retryable response instead of a bare runtime 500. Separately, fix the two size caps: before `await req.text()` on both POST routes, read `req.headers.get('content-length')` and reject 413 immediately when it parses to a number above the limit (fast reject, no buffering); after reading, replace `raw.length` (UTF-16 code units, up to 3x under-counting a non-ASCII stack trace) with `new TextEncoder().encode(raw).byteLength` as the authoritative check — content-length is client-supplied and cannot be the only gate. Both checks share one helper `function tooLarge(raw: string, max: number): boolean` plus `function declaredTooLarge(req: Request, max: number): boolean`. MAX_BODY_BYTES (1_000_000) and MAX_BACKUP_BODY_BYTES (16_000_000) are unchanged. Update workers/error-ingest/README.md's response table with the 503 row and the byte-accurate cap.",
+      "files": [
+        "workers/error-ingest/src/index.ts",
+        "workers/error-ingest/test/index.test.ts",
+        "workers/error-ingest/README.md"
+      ],
+      "risk": "medium",
+      "verification": "New cases in workers/error-ingest/test/index.test.ts: (a) 'returns 503 JSON when D1 faults' — Env whose `DB.prepare` throws, POST /ingest with a valid single-report batch, assert `res.status === 503` and `(await res.json()).error === 'storage unavailable'`; (b) 'returns 503 JSON when R2 faults' — same via `BACKUPS.put` throwing on POST /backups; (c) 'rejects an oversized declared content-length without reading the body' — POST /ingest with header `content-length: '99999999'`, assert 413 and that a `DB.prepare` spy was never called; (d) 'counts bytes not code units' — a body of 400_000 emoji (1.6MB UTF-8, 800k UTF-16 units) against MAX_BODY_BYTES, assert 413 where today it passes. Run `pnpm --filter @ledrums/error-ingest-worker test` and `pnpm --filter @ledrums/error-ingest-worker typecheck`; the existing 4 auth/404/400 cases in that file must stay green unchanged.",
+      "reverses": "Single-file revert of index.ts; the extracted `route` is internal so nothing outside the module binds to it. The Worker is deployed separately (`pnpm --filter @ledrums/error-ingest-worker deploy`) — rolling back code alone is not enough, the previous version must be redeployed."
+    },
+    {
+      "id": "S2",
+      "title": "Typed transport rejection: ShipHttpError with status + retryable verdict",
+      "intent": "Stop discarding the status class at apps/server/src/telemetry/transport.ts:21. Add `export class ShipHttpError extends Error { readonly status: number; readonly retryable: boolean; constructor(status: number) }` with `name = 'ShipHttpError'`, message kept byte-identical to today (`ingest responded ${status}`) so existing assertions and log lines do not change. Classification lives in one exported predicate `export function isRetryableStatus(status: number): boolean` — true for status >= 500, 408, 429; false otherwise. `createHttpTransport` throws `new ShipHttpError(res.status)` instead of a bare Error. A rejected `doFetch` (DNS failure, offline, TLS) is left untouched and propagates as whatever it already is — an unclassified rejection, which the queue will keep treating as retryable. This step is deliberately behaviour-neutral at the queue: `doShip` still catches everything identically, so it lands as its own green commit and the classification can be reviewed in isolation.",
+      "files": [
+        "apps/server/src/telemetry/transport.ts",
+        "apps/server/src/telemetry/transport.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Extend apps/server/src/telemetry/transport.test.ts: the existing 'throws on a non-2xx' case keeps asserting `.rejects.toThrow('429')` AND now additionally asserts `instanceof ShipHttpError`, `.status === 429`, `.retryable === true`; new cases assert 401 → retryable false / status 401, 400 → retryable false, 503 → retryable true, 413 → retryable false. Unit-test `isRetryableStatus` at the 4xx/5xx boundary (499 false, 500 true, 408 true, 429 true). Run `pnpm --filter @ledrums/server test -- transport` then `pnpm gates`."
+    },
+    {
+      "id": "S3",
+      "title": "ShipQueue outcome policy: blocked state for auth failures, dead-letter for poison batches",
+      "intent": "Make the queue act on the verdict S2 produces — this is the step that retires the 'wedged forever at the 30-minute ceiling' hole. In apps/server/src/telemetry/ship-queue.ts, replace the single catch in `doShip` with a three-way branch on the rejection: (1) unclassified rejection, or `ShipHttpError` with `retryable === true` → EXACTLY today's path (failures++, log, retain the batch, caller reschedules with backoff) — byte-for-byte unchanged, this is the parity anchor; (2) `ShipHttpError` with status 401 or 403 → set an internal `blocked = true`, log, retain the batch, do NOT increment failures and do NOT reschedule (tick/flush must check `blocked` before calling `scheduleFlush`), and call `opts.onStateChange?.('blocked', \\`ingest rejected credentials (${status})\\`)`; (3) any other `ShipHttpError` with `retryable === false` (400/404/413/422/…) → append the shipped batch, one JSON item per line, to `${opts.path}.deadletter.jsonl`, remove exactly those keys from `store`/`lengths` (same removal loop as the success path, minus the dropped-counter reset), set `failures = 0`, log the status and item count, and call `opts.onStateChange?.('ok', \\`dead-lettered ${batch.length} item(s) after ${status}\\`)` — the queue keeps draining, so one poison item can never block the items behind it. Dead-letter writes go through the existing `persistChain` with `fs.promises.appendFile` (never sync, never blocking a caller) and are capped by an internal `MAX_DEADLETTER_BYTES = 4_000_000`: over the cap, the append is skipped and logged, because a dead-letter file is a debugging aid, not a second unbounded queue. Interface additions, kept to the minimum that makes the state observable: `ShipQueue.state(): 'ok' | 'retrying' | 'blocked'` (derived: blocked → 'blocked'; failures > 0 → 'retrying'; else 'ok') and `ShipQueueOptions.onStateChange?: (state: 'ok' | 'retrying' | 'blocked', detail: string) => void`, invoked only on a TRANSITION, never per attempt. `flush()` is the operator escape hatch: it clears `blocked` and attempts once, so a re-baked token recovers without a restart. Update the module doc comment's Isolation paragraph to state the new taxonomy AND to reassert that the queue still never emits onto the Monitor bus — `onStateChange` is a plain injected callback, exactly like `log`.",
+      "files": [
+        "apps/server/src/telemetry/ship-queue.ts",
+        "apps/server/src/telemetry/ship-queue.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New cases in apps/server/src/telemetry/ship-queue.test.ts, all with a transport rejecting a constructed ShipHttpError: (a) 'a 400 dead-letters the batch and keeps draining' — assert `q.size() === 0` after flush, the two items appear as two JSON lines in `<path>.deadletter.jsonl`, `q.state() === 'ok'`, and a SECOND enqueue+flush against a now-succeeding transport ships normally; (b) 'a 401 blocks and stops rescheduling' — with fake timers, assert `q.state() === 'blocked'`, `q.size() === 1` (retained), `onStateChange` called once with 'blocked', and that advancing timers by 30 minutes produces NO further transport calls; (c) 'flush() clears blocked and retries once' — after (b), a succeeding transport plus `await q.flush()` empties the queue and `state() === 'ok'`; (d) 'a 503 retains and backs off exactly as today' — the EXISTING 'retains the batch and backs off' test is duplicated with a ShipHttpError(503) and must assert the identical call counts and 60s backoff; (e) 'an unclassified rejection is still retryable' — the existing `new Error('offline')` and sync-throw tests must pass UNMODIFIED (do not touch their assertions; if either needs editing, the branch is wrong). Run `pnpm gates` and confirm the suite total is 2968 + exactly the new cases.",
+      "reverses": "Revert ship-queue.ts and its test together; the on-disk `<path>.deadletter.jsonl` is a NEW file that pre-change code never reads or writes, so a revert leaves it as inert debris (delete it manually if desired). The `blocked` flag is in-memory only — no persisted state to migrate back."
+    },
+    {
+      "id": "S4",
+      "title": "Byte-budgeted batch cut: never post a body the Worker will reject",
+      "intent": "S3 makes a 413 survivable; this step makes it unreachable and simultaneously shrinks the poison-blast radius. Today `doShip` maps the ENTIRE store into one batch (apps/server/src/telemetry/ship-queue.ts:146-148) while the report queue retains up to `maxBytes` 2_000_000 against the Worker's MAX_BODY_BYTES of 1_000_000 — a straightforwardly reachable permanent 413. Add `ShipQueueOptions.maxBatchBytes` (default 900_000) and have `doShip` take an insertion-ordered PREFIX of `store` whose cached `lengths` sum stays within the budget, always including at least one item (a single item larger than the budget still ships alone — the Worker's own cap is then the authority, and S3 dead-letters it if it is genuinely too big). The success path already removes exactly the shipped keys, so it needs no change; only the batch construction does. Because a ship can now leave items behind, add an internal `DRAIN_DELAY_MS = 1_000`: after a SUCCESSFUL ship that leaves `store.size > 0`, reschedule at that delay instead of the full `flushIntervalMs`, so a 100-item backups backlog drains in ~100s rather than ~50 minutes. Failure paths keep the existing backoff delay untouched. Note the side benefit for the append-only backups queue: bundles now ship one or few at a time, so a single bad bundle takes only itself to the dead-letter file.",
+      "files": [
+        "apps/server/src/telemetry/ship-queue.ts",
+        "apps/server/src/telemetry/ship-queue.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New cases: (a) 'cuts a batch at the byte budget' — 10 items of ~200 bytes with `maxBatchBytes: 500`, assert the first transport call receives only the items that fit, in insertion order, and `q.size()` equals the remainder; (b) 'always ships at least one item' — a single item larger than `maxBatchBytes` is still passed to the transport; (c) 'drains the remainder on the short delay' — with fake timers, assert the second transport call happens at +1_000ms after a successful partial ship, not at +30_000ms; (d) 'the dropped counter still ships with the FIRST batch and resets only on its success' — assert `dropped()` semantics are unchanged when a cut occurs (the existing drop-oldest test must pass unmodified). Run `pnpm gates`.",
+      "reverses": "Revert ship-queue.ts to the S3 commit; `maxBatchBytes` is an optional option with a default, and no caller outside main.ts sets it, so removing it cannot break a call site."
+    },
+    {
+      "id": "S5",
+      "title": "Wire the health signal at the composition root and align the report batch cap with the Worker",
+      "intent": "Give the operator the one signal the finding says is missing, without breaking the queue's no-emit invariant. In apps/server/src/main.ts's telemetry block (~lines 296-333): pass `maxBatchBytes: 900_000` to the reports `createShipQueue` call (explicit, with a comment naming workers/error-ingest MAX_BODY_BYTES as the number it is derived from) and leave the backups queue on the default; pass `onStateChange` to BOTH queues, each emitting through the existing local `monitor(...)` helper as a `system` event — `{ type: 'system', direction: 'local', source: 'server', destination: 'telemetry', label: 'Error reporting blocked' | 'Off-site backups blocked' | 'Error reporting recovered' | 'Off-site backups recovered', detail }`. It MUST be `system`, never `error`: an `error` event would be observed by the Reporter, enqueued, fail to ship, and re-trigger the same transition — the exact recursion the module doc warns about. This lands the signal on the Monitor bus, which is already broadcast to every connected client, so the existing in-app Monitor surfaces it with no UI work. Also extend the boot `monitor` system event at main.ts:337-345 to mention the dead-letter path so an operator knows where poison batches land.",
+      "files": ["apps/server/src/main.ts"],
+      "risk": "medium",
+      "verification": "No unit test exists for main.ts (server-composition-root is a 0%-coverage region — see behaviour_parity_evidence_plan). Evidence is a live-path check, recorded in the PR: run `LEDRUMS_TELEMETRY=on LEDRUMS_TELEMETRY_ENDPOINT=http://127.0.0.1:8788/ingest LEDRUMS_TELEMETRY_TOKEN=x pnpm start` against a throwaway node http stub that returns 401 for /ingest and 400 for /backups; force an error (POST a bad WS frame) and a snapshot; then confirm from the running app's Monitor panel that exactly ONE 'Error reporting blocked' system event appears (not a stream), that no further POSTs hit the stub after it (stub request log), that `<projects>/backups-outbox.jsonl.deadletter.jsonl` contains the dropped bundle, and that flipping the stub to 200 plus an app restart drains both queues. `pnpm gates` must stay green (this step adds no tests but must not break the 2968).",
+      "reverses": "Single-file revert of main.ts. The wiring is additive — removing `onStateChange`/`maxBatchBytes` leaves the queues on their defaults, which is the S4 behaviour, not the pre-initiative behaviour; a full back-out is the wave-ordered revert in rollback_strategy."
+    }
+  ],
+  "sequencing": [["S1", "S2"], ["S3"], ["S4"], ["S5"]],
+  "interface_deltas": [
+    {
+      "at": "apps/server/src/telemetry/transport.ts",
+      "removed": [],
+      "added": ["ShipHttpError", "isRetryableStatus"],
+      "net_interface_change": "increases",
+      "note": "Deliberate. The status class currently exists inside the module and is thrown away at the boundary; exporting a typed rejection is the minimum surface that lets the queue make a decision. `isRetryableStatus` is exported only so the classification has one testable home rather than being re-derived at the catch site."
+    },
+    {
+      "at": "apps/server/src/telemetry/ship-queue.ts",
+      "removed": [],
+      "added": ["ShipQueue.state()", "ShipQueueOptions.onStateChange", "ShipQueueOptions.maxBatchBytes"],
+      "net_interface_change": "increases",
+      "note": "A resilience initiative adds behaviour, so this cannot score on interface reduction. Held to three additions: one query, one injected callback (same shape as the existing `log`, preserving the no-emit invariant), one bound. Deliberately NOT added: a `deadLettered()` counter (folded into the onStateChange detail string), a `maxDeadLetterBytes` option (internal constant), and any per-queue policy object."
+    },
+    {
+      "at": "workers/error-ingest/src/index.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "The extracted `route()` and the two size helpers stay module-internal; the Worker's public surface remains `default.fetch`. Its HTTP contract gains a 503 status but loses none."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates — full machine-locked suite; must go from 2968 green to 2968 + the new cases green, with zero pre-existing tests edited except transport.test.ts's non-2xx case (which only GAINS assertions).",
+      "The existing ship-queue.test.ts cases 'retains the batch and backs off when the transport fails, then ships on retry', 'a transport that throws never propagates out of a flush', 'drops oldest at the item cap and ships the dropped count as batch meta' and 'survives a restart' must pass BYTE-UNMODIFIED after S3 and S4 — they are the parity anchor for the retryable path, and any need to edit them is the signal that the classification branch changed transient behaviour.",
+      "New ship-queue case (d) in S3 duplicates the backoff test against ShipHttpError(503) and asserts the identical transport call counts and the identical 60s second-attempt timing.",
+      "The 4 existing workers/error-ingest/test/index.test.ts auth/404/invalid-JSON cases must pass unmodified after S1, proving the route extraction moved no routing behaviour.",
+      "pnpm typecheck across the workspace (workers/* is a pnpm workspace member, so the Worker is type-gated by `pnpm gates` too).",
+      "Manual live-path script (S5 verification): a throwaway node http stub returning programmable statuses (200/401/400/413/503) with a request log, driven against a real `pnpm start` server; assert the Monitor event sequence, the stub's request log, and the contents of `error-reports.jsonl`, `backups-outbox.jsonl` and their `.deadletter.jsonl` siblings after each status."
+    ],
+    "known_gaps": "A green suite cannot prove parity for three regions here. (1) apps/server/src/main.ts is a 0%-coverage composition root (server lane is 72.31% lines overall, and the telemetry wiring block has no test at all) — S5 is entirely inside it. The replacing evidence is the scripted stub-server live-path run above: it exercises the actual wired queues, the actual Monitor bus and the actual on-disk outboxes, and its Monitor output plus stub request log are pasted into the PR as the artefact. (2) Nothing in CI ever speaks HTTP to the real Worker — there is no miniflare/wrangler test harness, and D1/R2 are faked at the store seam, so the 503 boundary is proven only against a fake Env whose binding throws. The replacing evidence is a `npx wrangler@4 dev --local` smoke with the D1 binding pointed at a non-existent database, curl'ing /ingest and /reports and capturing the actual 503 JSON body; plus a post-deploy curl against the live Worker for the same two routes. (3) Timing behaviour is proven with vitest fake timers, not real clocks, so the drain cadence (S4's DRAIN_DELAY_MS) and the 30-minute backoff ceiling are asserted structurally rather than observed; the stub-server run covers the drain cadence in real time for a small backlog only, and the 30-minute ceiling remains unobserved by design (nobody will sit through it). Claiming 'none' anywhere here would be false.",
+    "baseline_reference": "Phase 0 baseline sha 3708648, 2968 tests green under `pnpm gates`; coverage baseline docs/plans/2026-07-26-deep-review/00-coverage.json (server 72.31% lines). Plan assumes fix batches 1-3 (dead-code auto-fixes, dead-code residue, kit-mirror removal) have already landed on top of it; none of those touch apps/server/src/telemetry or workers/error-ingest, so the baseline is unmoved for this initiative's files."
+  },
+  "rollback_strategy": "Five commits across four waves, each independently revertable in reverse order (S5 → S4 → S3 → S2 → S1). There is no data migration and no schema change; the only new persistent artefact is `<queue path>.deadletter.jsonl`, which pre-change code neither reads nor writes, so reverting leaves it as inert debris rather than corrupting the outbox. The `blocked` state is in-memory only, so a revert plus a process restart restores the exact pre-initiative retain-and-backoff behaviour on the next boot. Two ordering constraints: (a) S3 without S2 does not compile (it consumes ShipHttpError), so reverting S2 alone is invalid — revert the pair; (b) the Worker is a SEPARATE deploy unit — reverting S1 in git does nothing to the live Worker until `pnpm --filter @ledrums/error-ingest-worker deploy` is re-run from the reverted tree, and the client-side classification (S2-S5) is safe against BOTH Worker versions because the old Worker's bare 500 is a 5xx and therefore classified retryable, i.e. today's behaviour. Partial rollback is therefore safe in either direction. Fastest kill switch without any revert: unset LEDRUMS_TELEMETRY_ENDPOINT / set LEDRUMS_TELEMETRY=off, which disables both queues entirely and leaves capture feeding the local Monitor.",
+  "estimated_loc": 330,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should a blocked/dead-lettering queue get a visible badge in the app (BackupsDialog or TopBar), or is the Monitor `system` event the whole signal? This plan chose the Monitor event alone — a badge means a design-system extension plus a `pnpm ui-shot` pass, which is real UI work this initiative would otherwise not touch.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "The report queue retains up to maxBytes 2_000_000 while the Worker caps a body at MAX_BODY_BYTES 1_000_000. This plan fixes the mismatch on the CLIENT (batch cut at 900_000). Should the Worker's cap instead rise to 2MB+ so a full queue always ships in one request?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "On a persistent 401 (rotated TELEMETRY_TOKEN), should the backups queue keep accepting snapshots until it silently drop-oldests at its 100-item cap, or should `enqueue` hard-stop while blocked so nothing is written that will certainly be lost? This plan keeps accepting (drops are counted and reported on recovery), which favours a token fix arriving soon.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Is a dead-lettered batch expected to be recoverable — i.e. should a later step re-ingest `<path>.deadletter.jsonl` after a schema fix — or is it purely a forensic artefact? This plan treats it as forensic (capped at 4MB, never re-read), which is the smaller design.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S5 edits the telemetry block of apps/server/src/main.ts, which INIT-04-server-runtime-hardening decomposes. These share a mutation seam and must not run concurrently — which initiative lands first, and should S5 instead be written against INIT-04's extracted telemetry module if INIT-04 goes first?",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    }
+  ]
+}

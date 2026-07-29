@@ -1,6 +1,6 @@
 import type { MonitorEvent } from '../ws/protocol-types';
 
-export const MONITOR_RETENTION_LIMIT = 300;
+const MONITOR_RETENTION_LIMIT = 300;
 
 export type MonitorFilterType = MonitorEvent['type'] | 'all';
 
@@ -44,7 +44,7 @@ export function monitorEventRowKey(event: MonitorEvent, index: number): string {
   return `${event.id}:${event.time}:${event.type}:${event.direction}:${event.source}:${event.destination ?? ''}:${index}`;
 }
 
-export function monitorSearchText(event: MonitorEvent): string {
+function monitorSearchText(event: MonitorEvent): string {
   return [event.type, event.direction, event.source, event.destination, event.label, event.detail]
     .filter(Boolean)
     .join(' ')

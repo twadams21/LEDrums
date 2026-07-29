@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/verdict.schema.json",
+  "title": "Deep Review Verdict",
+  "description": "The combined 3a + 3b outcome for one finding. PRODUCER: Phase 3 (03-verdicts.json for survivors, 03-refuted.json for refuted, 03-unadmitted.json for findings the admission cap excluded). CONSUMERS: Phase 4 triage (reads disposition), Phase 10 ranking, and any future false-negative audit (which is why refuted and unadmitted findings are retained in full, never as counts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "finding_id",
+    "refutation",
+    "mechanical_verification",
+    "disposition"
+  ],
+  "properties": {
+    "finding_id": {
+      "type": "string",
+      "description": "Joins to finding.schema.json id."
+    },
+    "refutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "votes",
+        "outcome"
+      ],
+      "description": "Phase 3a. Refuter count: 3 if fix_size_loc > 50 OR blast_radius.touches_core, else 1.",
+      "properties": {
+        "votes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "refuted",
+              "reasoning",
+              "criterion_applied",
+              "provenance"
+            ],
+            "properties": {
+              "refuted": {
+                "type": "boolean",
+                "description": "Default TRUE under uncertainty."
+              },
+              "reasoning": {
+                "type": "string",
+                "minLength": 20
+              },
+              "criterion_applied": {
+                "type": "string",
+                "description": "MUST equal the finding's declared criterion. A refuter that applies a different one is a protocol violation and the vote is void."
+              },
+              "provenance": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "model",
+                  "effort"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "survived",
+            "refuted"
+          ],
+          "description": "Refuted if a majority of votes refute. With 1 vote, that vote decides."
+        }
+      }
+    },
+    "mechanical_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempted",
+        "outcome",
+        "isolation"
+      ],
+      "description": "Phase 3b. Non-model evidence only. Not attempted when the finding's criterion_is_mechanical is false.",
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "falsified",
+            "inconclusive",
+            "not-applicable"
+          ],
+          "description": "'verified' is the ONLY value that permits Phase 5 auto-fix."
+        },
+        "isolation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "required",
+            "worktree_path",
+            "baseline_sha"
+          ],
+          "description": "Mutation experiments MUST be isolated. Concurrent unisolated experiments in one checkout let each lane attribute a green suite to its own change when it actually tested the combined patch.",
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "description": "Mirrors the finding's verification_plan.requires_mutation."
+            },
+            "worktree_path": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The dedicated worktree this experiment ran in. MUST be non-null when required is true."
+            },
+            "baseline_sha": {
+              "type": "string",
+              "description": "The pinned Phase 0 sha the worktree was created from. Every experiment measures against the same baseline, never against another experiment's tree."
+            }
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exactly what was run, so the result is reproducible."
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "disposition": {
+      "type": "string",
+      "enum": [
+        "auto-fix",
+        "structural-track",
+        "refuted",
+        "unadmitted"
+      ],
+      "description": "auto-fix requires ALL of: refutation.outcome=survived AND mechanical_verification.outcome=verified AND NOT (removes_failure_path.value AND interface_delta.net_interface_change != 'reduces'). Anything that survives 3a but is not mechanically verified goes to structural-track for human review, never to auto-fix. 'unadmitted' means the Phase 3 admission cap excluded it before verification; the finding is retained in full."
+    },
+    "disposition_reason": {
+      "type": "string",
+      "description": "Which clause of the disposition rule decided it."
+    }
+  },
+  "allOf": [
+    {
+      "description": "ENFORCED: a mutation experiment must name the worktree it ran in.",
+      "if": {
+        "type": "object",
+        "required": [
+          "mechanical_verification"
+        ],
+        "properties": {
+          "mechanical_verification": {
+            "type": "object",
+            "required": [
+              "isolation"
+            ],
+            "properties": {
+              "isolation": {
+                "type": "object",
+                "required": [
+                  "required"
+                ],
+                "properties": {
+                  "required": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mechanical_verification": {
+            "properties": {
+              "isolation": {
+                "required": [
+                  "worktree_path",
+                  "baseline_sha"
+                ],
+                "properties": {
+                  "worktree_path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: auto-fix requires BOTH gates. The rule between a model opinion and automatic deletion.",
+      "if": {
+        "type": "object",
+        "required": [
+          "disposition"
+        ],
+        "properties": {
+          "disposition": {
+            "const": "auto-fix"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "refutation",
+          "mechanical_verification"
+        ],
+        "properties": {
+          "refutation": {
+            "properties": {
+              "outcome": {
+                "const": "survived"
+              }
+            }
+          },
+          "mechanical_verification": {
+            "properties": {
+              "outcome": {
+                "const": "verified"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: a refuted finding cannot carry any other disposition.",
+      "if": {
+        "type": "object",
+        "required": [
+          "refutation"
+        ],
+        "properties": {
+          "refutation": {
+            "type": "object",
+            "required": [
+              "outcome"
+            ],
+            "properties": {
+              "outcome": {
+                "const": "refuted"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "disposition": {
+            "const": "refuted"
+          }
+        }
+      }
+    }
+  ]
+}

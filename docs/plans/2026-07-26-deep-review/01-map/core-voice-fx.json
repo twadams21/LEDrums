@@ -1,0 +1,725 @@
+{
+  "artifact": "01-map/core-voice-fx",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "1",
+    "lane": "core-voice-fx",
+    "model": "claude-opus-5",
+    "effort": "low",
+    "nonce_verified": true,
+    "run_id": "wf_2cd19a09-dd0"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "lane": "core-voice-fx",
+      "scope": {
+        "paths": [
+          "packages/core/src/voice",
+          "packages/core/src/effects"
+        ],
+        "files_read": 18
+      },
+      "modules": [
+        {
+          "name": "engine (outer seam)",
+          "paths": [
+            "packages/core/src/voice/engine.ts"
+          ],
+          "responsibility": "Owns the host-facing RenderEngine: input queue, show/graph resolution, action execution into a voice pool, envelope ticking, compositing, and telemetry.",
+          "public_interface": [
+            "RenderEngine",
+            "createVoiceBusEngine",
+            "createNullEngine",
+            "RenderEngineOptions",
+            "InputEvent",
+            "EngineStats",
+            "VoiceStat",
+            "EnginePerfStats"
+          ],
+          "depends_on": [
+            "eval-graph",
+            "voice-pool",
+            "envelope-tick",
+            "compositor",
+            "render-plan",
+            "graph-integrity",
+            "prng",
+            "modulation",
+            "diagnostics",
+            "voice-types",
+            "canvas/registry",
+            "canvas/presets",
+            "engine/framebuffer"
+          ],
+          "depth": "deep",
+          "loc": 850,
+          "notes": "6-method interface over ~700 lines of class body with ~20 mutable private maps (seqIndex, lastPick, latched, mixMemberSnapshots, cc/osc/note tables, pendingFires, renderPlanCache). Deepest module in scope but also the biggest single-file concentration of state; applyInput is ~400 lines (298-694)."
+        },
+        {
+          "name": "eval-graph",
+          "paths": [
+            "packages/core/src/voice/eval-graph.ts"
+          ],
+          "responsibility": "Pure evaluator that walks a compiled trigger graph for one pad hit and emits Play/Stop/Pending actions.",
+          "public_interface": [
+            "evalGraph",
+            "evalChildren",
+            "bandIndex",
+            "Action",
+            "EvalState",
+            "PlayAction",
+            "PlayDraft",
+            "MixInputDraft",
+            "PendingDescriptor",
+            "TriggerCtx"
+          ],
+          "depends_on": [
+            "render-plan",
+            "voice-types",
+            "modulation",
+            "modulation-graph",
+            "modifier-graph",
+            "scope",
+            "delay",
+            "prng",
+            "lfo"
+          ],
+          "depth": "deep",
+          "loc": 637,
+          "notes": "evalGraphGen3FromPlan spans lines 277-594 \u2014 a single ~320-line recursive traversal with per-NodeKind branching. EvalState is a bag of caller-owned maps handed in by the engine (shared mutable seam)."
+        },
+        {
+          "name": "voice types & show model",
+          "paths": [
+            "packages/core/src/voice/types.ts"
+          ],
+          "responsibility": "Central type vocabulary for the voice-bus domain: Show, Bus, EffectDef, Preset, TriggerGraph nodes/edges, envelopes, params, play modes.",
+          "public_interface": [
+            "Show",
+            "emptyShow",
+            "Bus",
+            "EffectDef",
+            "Preset",
+            "TriggerGraph",
+            "GraphNode",
+            "GraphEdge",
+            "NodeKind",
+            "PlayMode",
+            "Scope",
+            "Envelope",
+            "AdsrShape",
+            "ParamValues",
+            "TriggerSource",
+            "TriggerFire",
+            "normalizeTriggerValue",
+            "padKey"
+          ],
+          "depends_on": [
+            "effects/vocabulary",
+            "modifier-graph types"
+          ],
+          "depth": "shallow",
+          "loc": 600,
+          "notes": "Type-only module plus two small helpers; ~43 exported names. It is the shared vocabulary every other voice module imports, so widening it is the cheapest way to leak concepts."
+        },
+        {
+          "name": "compositor (inner seam)",
+          "paths": [
+            "packages/core/src/voice/compositor.ts"
+          ],
+          "responsibility": "Renders the live voice list into a destination framebuffer \u2014 additive accumulation, mix scratch buffers, per-voice effective-param resolution.",
+          "public_interface": [
+            "Compositor",
+            "CompositorFrame",
+            "createDefaultCompositor",
+            "applyEffectiveParams",
+            "voicePhase"
+          ],
+          "depends_on": [
+            "generator-bridge",
+            "modulation",
+            "engine/framebuffer",
+            "geometry/pixel-model",
+            "voice-types"
+          ],
+          "depth": "deep",
+          "loc": 291,
+          "notes": "Small interface (one render method) over the perf hotspot; closure-captured scratch buffers. applyEffectiveParams is exported separately and also called by the engine \u2014 a second entry point into the same logic."
+        },
+        {
+          "name": "generator-bridge",
+          "paths": [
+            "packages/core/src/voice/generator-bridge.ts"
+          ],
+          "responsibility": "Adapts a voice into a RenderContext for a hosted EffectGenerator, choosing absolute vs voice-local clock and owning per-voice generator state.",
+          "public_interface": [
+            "GeneratorBridge",
+            "createGeneratorBridge"
+          ],
+          "depends_on": [
+            "effects/registry",
+            "effects/types",
+            "engine/render-context",
+            "voice-types"
+          ],
+          "depth": "deep",
+          "loc": 169,
+          "notes": "The only place voice-world meets effects-world. Reads EffectGenerator.timebase; owns state lifecycle (create/reset)."
+        },
+        {
+          "name": "voice pool & lifecycle",
+          "paths": [
+            "packages/core/src/voice/voice-pool.ts",
+            "packages/core/src/voice/envelope-tick.ts"
+          ],
+          "responsibility": "Fixed-slab object pool for Voice records plus the per-frame envelope advance and dead-voice reap.",
+          "public_interface": [
+            "VoicePool",
+            "SpawnDeps",
+            "releaseVoice",
+            "advanceEnvelopes",
+            "reapDeadVoices"
+          ],
+          "depends_on": [
+            "voice-types",
+            "envelope",
+            "easing"
+          ],
+          "depth": "mixed",
+          "loc": 310,
+          "notes": "Pool is deep (allocation discipline behind acquire/release); envelope-tick is two free functions taking the pool array plus a busById map \u2014 a procedure, not an abstraction."
+        },
+        {
+          "name": "render-plan compiler",
+          "paths": [
+            "packages/core/src/voice/render-plan.ts"
+          ],
+          "responsibility": "Compiles a TriggerGraph into a cached, traversal-ready RenderPlan with node categories, flow children, and structural issues.",
+          "public_interface": [
+            "compileRenderPlan",
+            "renderPlanSignature",
+            "createRenderPlanCache",
+            "RenderPlan",
+            "RenderPlanNode",
+            "RenderPlanChild",
+            "RenderPlanIssue",
+            "nodeCategory",
+            "isFlowEdge"
+          ],
+          "depends_on": [
+            "voice-types"
+          ],
+          "depth": "deep",
+          "loc": 239,
+          "notes": "Cache keyed on a string signature \u2014 correctness depends on the signature covering every field traversal reads."
+        },
+        {
+          "name": "graph integrity & normalization",
+          "paths": [
+            "packages/core/src/voice/graph-integrity.ts"
+          ],
+          "responsibility": "Normalizes legacy graphs to the Gen3 shape and validates structural integrity, reporting coded issues or throwing.",
+          "public_interface": [
+            "normalizeTriggerGraphToGen3",
+            "validateTriggerGraphIntegrity",
+            "assertTriggerGraphIntegrity",
+            "TriggerGraphIssue",
+            "TriggerGraphIssueCode",
+            "TriggerGraphIntegrityResult",
+            "TriggerGraphSystemActions"
+          ],
+          "depends_on": [
+            "voice-types",
+            "render-plan"
+          ],
+          "depth": "deep",
+          "loc": 223,
+          "notes": "A migration layer plus a guard in one file; the migration path is legacy-shaped and likely to outlive its need."
+        },
+        {
+          "name": "graph lints",
+          "paths": [
+            "packages/core/src/voice/scope-lint.ts",
+            "packages/core/src/voice/reachability-lint.ts"
+          ],
+          "responsibility": "Read-only static analyses over a trigger graph reporting empty-scope targets and unreachable nodes for the authoring UI.",
+          "public_interface": [
+            "detectEmptyScopes",
+            "detectUnreachable"
+          ],
+          "depends_on": [
+            "voice-types",
+            "scope",
+            "render-plan",
+            "geometry/pixel-model"
+          ],
+          "depth": "mixed",
+          "loc": 280,
+          "notes": "Two sibling analyses with the same shape (graph in, issue list out) but no shared lint framing."
+        },
+        {
+          "name": "modulation core",
+          "paths": [
+            "packages/core/src/voice/modulation.ts",
+            "packages/core/src/voice/modulation-graph.ts",
+            "packages/core/src/voice/modulation-parity.ts"
+          ],
+          "responsibility": "Defines modulation sources (envelope/lfo/cc/note/osc/random), samples them, and applies mappings to base parameter values.",
+          "public_interface": [
+            "ModSource",
+            "Mapping",
+            "ModSampleCtx",
+            "ModParamSpec",
+            "sampleSource",
+            "mappingContribution",
+            "applyModulations",
+            "envelopeToMapping",
+            "ccKey",
+            "ccValue01",
+            "sampleCc",
+            "oscValue01",
+            "sampleOsc",
+            "noteKey",
+            "noteValue01",
+            "sampleNote",
+            "sampleRandomDistribution",
+            "quantizeSteppedRandom",
+            "resolveNodeModulations",
+            "nodeModSource",
+            "paramKeyOf",
+            "isModSourceKind",
+            "MOD_SOURCE_KINDS",
+            "MODULATION_PARITY_CASES"
+          ],
+          "depends_on": [
+            "voice-types",
+            "envelope",
+            "lfo",
+            "prng",
+            "easing"
+          ],
+          "depth": "mixed",
+          "loc": 545,
+          "notes": "cc/osc/note each get their own near-identical key/value01/sample trio. modulation-parity.ts is a legacy-vs-new comparison harness living in production source and re-exported from index."
+        },
+        {
+          "name": "envelopes & easing",
+          "paths": [
+            "packages/core/src/voice/envelope.ts",
+            "packages/core/src/voice/easing.ts"
+          ],
+          "responsibility": "Envelope shapes (preset kinds, ADSR, custom point curves) with sampling, cloning, migration, and the shared easing function table.",
+          "public_interface": [
+            "envShape",
+            "presetPoints",
+            "defaultEnvelope",
+            "defaultAdsr",
+            "cloneAdsr",
+            "cloneEnvelope",
+            "adsrToPoints",
+            "migrateAdsr",
+            "sampleEnvelope",
+            "ease"
+          ],
+          "depends_on": [
+            "voice-types"
+          ],
+          "depth": "mixed",
+          "loc": 265,
+          "notes": "`ease(spec, t)` is a clean deep seam; envelope.ts mixes sampling with schema migration (migrateAdsr)."
+        },
+        {
+          "name": "scope resolution",
+          "paths": [
+            "packages/core/src/voice/scope.ts"
+          ],
+          "responsibility": "Parses and intersects drum/kit/hoop scope targets into concrete pixel-range targets with configurable empty-hoop fallback.",
+          "public_interface": [
+            "parseHoopTarget",
+            "intersectScopeTargets",
+            "ScopeTarget",
+            "HoopTarget",
+            "ParseHoopTargetOptions",
+            "EmptyHoopFallback"
+          ],
+          "depends_on": [
+            "voice-types",
+            "geometry/pixel-model"
+          ],
+          "depth": "deep",
+          "loc": 102,
+          "notes": "EmptyHoopFallback ('first'|'sentinel'|'none') is a caller-supplied policy knob \u2014 a place different callers can disagree."
+        },
+        {
+          "name": "determinism primitives",
+          "paths": [
+            "packages/core/src/voice/prng.ts",
+            "packages/core/src/voice/delay.ts",
+            "packages/core/src/voice/lfo.ts"
+          ],
+          "responsibility": "Seeded RNG, musical delay-division\u2192ms conversion, and LFO waveform sampling \u2014 the deterministic time/randomness substrate.",
+          "public_interface": [
+            "Prng",
+            "deriveSeed",
+            "computeDelayMs",
+            "DELAY_DIVISIONS",
+            "DelayDivision",
+            "sampleLfo",
+            "lfoPeriodMs",
+            "defaultLfoSettings",
+            "LFO_WAVEFORMS",
+            "LfoSettings",
+            "LfoWaveform",
+            "LfoRateMode"
+          ],
+          "depends_on": [],
+          "depth": "deep",
+          "loc": 200,
+          "notes": "Leaf modules, no intra-scope deps; the purity guarantee of the whole engine rests here."
+        },
+        {
+          "name": "modifier graph",
+          "paths": [
+            "packages/core/src/voice/modifier-graph.ts"
+          ],
+          "responsibility": "Resolves modifier nodes and chains attached to a play node into a single ResolvedModifier applied at spawn.",
+          "public_interface": [
+            "resolveModifierNode",
+            "resolveModifierChain",
+            "ResolvedModifier"
+          ],
+          "depends_on": [
+            "voice-types"
+          ],
+          "depth": "shallow",
+          "loc": 91,
+          "notes": "Two functions, one of which loops the other; thin over the node data it reads."
+        },
+        {
+          "name": "diagnostics",
+          "paths": [
+            "packages/core/src/voice/diagnostics.ts"
+          ],
+          "responsibility": "Type vocabulary for engine diagnostic events (graph resolution path, miss reasons, sink callback).",
+          "public_interface": [
+            "VoiceDiagnostic",
+            "VoiceDiagnosticSink",
+            "VoiceInputDescriptor",
+            "GraphResolutionPath",
+            "GraphMissReason"
+          ],
+          "depends_on": [],
+          "depth": "shallow",
+          "loc": 64,
+          "notes": "Pure types + a callback alias; the seam it defines is real, the module is a declaration file."
+        },
+        {
+          "name": "voice public barrel",
+          "paths": [
+            "packages/core/src/voice/index.ts"
+          ],
+          "responsibility": "Curates the package-facing export surface for the voice subsystem, mixing blanket re-exports with hand-picked named ones.",
+          "public_interface": [
+            "(re-exports of the modules above)"
+          ],
+          "depends_on": [
+            "all voice modules"
+          ],
+          "depth": "shallow",
+          "loc": 74,
+          "notes": "Inconsistent policy: `export *` for 8 modules, explicit lists for 8 others; exports test-support material (MODULATION_PARITY_CASES) as public API."
+        },
+        {
+          "name": "effect generator contract",
+          "paths": [
+            "packages/core/src/effects/types.ts"
+          ],
+          "responsibility": "Defines the EffectGenerator interface, param spec vocabulary, timebase flag, and tolerant param readers.",
+          "public_interface": [
+            "EffectGenerator",
+            "ParamSpec",
+            "ParamType",
+            "EffectCategory",
+            "EffectTimebase",
+            "ResolvedParams",
+            "pnum",
+            "pstr",
+            "pbool",
+            "defaultParams"
+          ],
+          "depends_on": [
+            "geometry/pixel-model",
+            "engine/framebuffer",
+            "engine/render-context",
+            "effects/vocabulary"
+          ],
+          "depth": "deep",
+          "loc": 97,
+          "notes": "The contract all 49 effects implement; deliberately narrow (render + optional createState). Note there is a SECOND unrelated `ParamSpec` in voice/types.ts."
+        },
+        {
+          "name": "effect registry & taxonomy",
+          "paths": [
+            "packages/core/src/effects/registry.ts",
+            "packages/core/src/effects/metadata.ts",
+            "packages/core/src/effects/vocabulary.ts",
+            "packages/core/src/effects/aliases.ts"
+          ],
+          "responsibility": "Assembles all built-in generators into a keyed registry, merges central metadata, resolves retired ids, and derives play-type collections from tags.",
+          "public_interface": [
+            "getEffect",
+            "tryGetEffect",
+            "listEffects",
+            "effectIds",
+            "playTypeForEffect",
+            "EFFECT_METADATA",
+            "EFFECT_ALIASES",
+            "resolveEffectAlias",
+            "isAliasedEffectId",
+            "EFFECT_TAGS",
+            "EffectTag",
+            "isEffectTag",
+            "PlayType",
+            "COLLECTIONS",
+            "collectionOf",
+            "collectionMeta"
+          ],
+          "depends_on": [
+            "effects/types",
+            "canvas/registry",
+            "canvas/ids",
+            "canvas/presets",
+            "all 49 impl modules"
+          ],
+          "depth": "mixed",
+          "loc": 542,
+          "notes": "Registry is shallow (a Map with three accessors) but carries the metadata-merge and canvas-fallback policy; the 49 imports + 49-entry ALL array is a hand-maintained parallel list. Module-level `throw` on duplicate id and an import side effect ('../canvas/presets')."
+        },
+        {
+          "name": "emitter (hit-emission substrate)",
+          "paths": [
+            "packages/core/src/effects/emitter.ts"
+          ],
+          "responsibility": "Per-hit emission list with aging, TTL expiry, capped spawn, and per-emission payload \u2014 the shared spine of the emission-based effects.",
+          "public_interface": [
+            "Emission",
+            "EmitterState",
+            "createEmitterState",
+            "updateEmissions",
+            "MAX_EMISSIONS"
+          ],
+          "depends_on": [
+            "engine/render-context"
+          ],
+          "depth": "deep",
+          "loc": 93,
+          "notes": "Used by 7 of 49 effects (chase-bands, drum-sonar, gravity-drops, orbit-comet, ripple-3d, scan-plane, spark-arc). The rest re-derive hit tracking themselves."
+        },
+        {
+          "name": "effect implementations",
+          "paths": [
+            "packages/core/src/effects/impl/"
+          ],
+          "responsibility": "Forty-nine concrete pure pixel generators covering base looks, hit effects, 2D UV textures, particles, and meters.",
+          "public_interface": [
+            "one exported const EffectGenerator per file (solidBase, chase, plasma, sparkArc, \u2026)"
+          ],
+          "depends_on": [
+            "effects/types",
+            "effects/emitter",
+            "color/color",
+            "math",
+            "geometry/pixel-model",
+            "geometry/pixel-grid",
+            "canvas/sampler"
+          ],
+          "depth": "shallow",
+          "loc": 3600,
+          "notes": "Each file is data (id/name/paramSpec/tags) plus one render loop; 49/49 import color, 38 import math. Individually shallow by design \u2014 the depth lives in the shared contract and helpers."
+        },
+        {
+          "name": "effects test suite",
+          "paths": [
+            "packages/core/src/effects/batch-a.test.ts",
+            "packages/core/src/effects/batch-b.test.ts",
+            "packages/core/src/effects/batch-c.test.ts",
+            "packages/core/src/effects/batch-d.test.ts",
+            "packages/core/src/effects/batch-e.test.ts",
+            "packages/core/src/effects/effects.test.ts",
+            "packages/core/src/effects/registry.test.ts",
+            "packages/core/src/effects/u6-gap-fill.test.ts",
+            "packages/core/src/effects/aliases.test.ts"
+          ],
+          "responsibility": "Per-effect behavioural coverage sharded into lettered batches plus registry/alias/vocabulary contract tests.",
+          "public_interface": [
+            "(none \u2014 vitest suites)"
+          ],
+          "depends_on": [
+            "effects/registry",
+            "effects/impl",
+            "geometry fixtures"
+          ],
+          "depth": "shallow",
+          "notes": "jscpd's largest clone cluster lives here: the batch-* files repeat the same model/framebuffer/ctx setup per effect. The batch split appears arbitrary (letters, not concepts)."
+        }
+      ],
+      "seams": [
+        {
+          "at": "packages/core/src/voice/engine.ts:124 RenderEngine",
+          "kind": "existing",
+          "why": "Six-method host boundary with a NullEngine already implementing it \u2014 behaviour swappable without touching hosts."
+        },
+        {
+          "at": "packages/core/src/voice/compositor.ts:168 Compositor",
+          "kind": "existing",
+          "why": "Voices\u2192pixels is a one-method interface; an alternate compositor drops in without engine edits."
+        },
+        {
+          "at": "packages/core/src/effects/types.ts EffectGenerator",
+          "kind": "existing",
+          "why": "New visual behaviour is added by writing a new object against this contract, never by editing the render path."
+        },
+        {
+          "at": "packages/core/src/effects/registry.ts ALL array",
+          "kind": "leaky",
+          "why": "Adding an effect requires editing two places in this file (import + array) plus optionally metadata.ts \u2014 the extension point is a hand-maintained list, not a registration call. tryGetEffect also hardcodes the canvas fallback."
+        },
+        {
+          "at": "packages/core/src/voice/generator-bridge.ts GeneratorBridge",
+          "kind": "existing",
+          "why": "Single adapter point between the voice world and the effects world; timebase policy is honoured here so effects need no host knowledge."
+        },
+        {
+          "at": "packages/core/src/voice/render-plan.ts createRenderPlanCache",
+          "kind": "existing",
+          "why": "Compilation is separated from traversal, so plan-shape changes do not touch the evaluator's execution loop."
+        },
+        {
+          "at": "packages/core/src/voice/eval-graph.ts EvalState",
+          "kind": "leaky",
+          "why": "State is a struct of five raw Maps owned by the engine and mutated in place by the pure evaluator; any new per-node state means adding a field here and a matching private map + clear() in engine.ts."
+        },
+        {
+          "at": "packages/core/src/voice/eval-graph.ts:277 evalGraphGen3FromPlan",
+          "kind": "missing",
+          "why": "Node kinds are handled by branches inside one ~320-line traversal; there is no per-kind handler seam, so adding a node type edits the hot function."
+        },
+        {
+          "at": "packages/core/src/voice/modulation.ts:230 sampleSource",
+          "kind": "leaky",
+          "why": "A new modulation source requires coordinated edits in sampleSource, MOD_SOURCE_KINDS, the ModSource union, nodeModSource, and the engine's live table plumbing \u2014 five places for one concept."
+        },
+        {
+          "at": "packages/core/src/voice/diagnostics.ts VoiceDiagnosticSink",
+          "kind": "existing",
+          "why": "Optional callback lets hosts observe engine decisions without the engine importing any IO."
+        },
+        {
+          "at": "packages/core/src/effects/emitter.ts updateEmissions",
+          "kind": "existing",
+          "why": "Hit\u2192emission lifecycle is shared and host-agnostic; effects opt in by composing it."
+        },
+        {
+          "at": "packages/core/src/voice/scope.ts ParseHoopTargetOptions.emptyHoopFallback",
+          "kind": "leaky",
+          "why": "A correctness-relevant policy is a per-call option rather than a resolved decision, so different callers can pick different semantics for the same graph."
+        },
+        {
+          "at": "packages/core/src/effects/metadata.ts EFFECT_METADATA",
+          "kind": "existing",
+          "why": "Descriptions/tags/deprecations are injected by the registry, so 49 impl files stay untouched when copy changes."
+        },
+        {
+          "at": "packages/core/src/voice/scope-lint.ts + reachability-lint.ts",
+          "kind": "missing",
+          "why": "Two graph analyses with identical input/output shape and no common lint interface \u2014 a third lint has nothing to register against."
+        },
+        {
+          "at": "packages/core/src/effects/batch-*.test.ts",
+          "kind": "missing",
+          "why": "No shared effect-conformance harness; each batch re-creates model/framebuffer/context scaffolding, which is where jscpd's largest clone cluster sits."
+        }
+      ],
+      "suspicions": [
+        {
+          "lens": "divergent-change",
+          "where": "packages/core/src/voice/engine.ts (applyInput, ~lines 298-694)",
+          "hunch": "One ~400-line method appears to hold input normalization, section/pad graph resolution, cc/osc/note table updates, action execution and pending-fire scheduling; several unrelated reasons to change converge on it."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "packages/core/src/effects/batch-a..e.test.ts",
+          "hunch": "The lettered batch split looks arbitrary and each case likely repeats the same model+framebuffer+ctx setup; a single conformance harness plus a table would probably delete most of the 57 clones."
+        },
+        {
+          "lens": "repeated-switches",
+          "where": "packages/core/src/voice/eval-graph.ts:277 evalGraphGen3FromPlan and render-plan.ts:49 nodeCategory",
+          "hunch": "NodeKind is switched on in at least two places (plan categorisation and traversal); a new node kind probably needs both edited in step, with nothing enforcing it."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "packages/core/src/voice/modulation.ts:55-130",
+          "hunch": "ccKey/ccValue01/sampleCc, oscValue01/sampleOsc, and noteKey/noteValue01/sampleNote are three near-identical table-source trios that could be one parameterised source-table abstraction."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "packages/core/src/voice/engine.ts private maps (seqIndex, lastPick, latched, mixMemberSnapshots) and eval-graph EvalState",
+          "hunch": "Per-node graph state is spread across four raw Map<string,\u2026> keyed by a hand-built `${prefix}#${nodeId}` string; a missed clear() on one map on setShow would be invisible."
+        },
+        {
+          "lens": "data-clumps",
+          "where": "packages/core/src/voice/compositor.ts CompositorFrame and modulation.ts ModSampleCtx",
+          "hunch": "{timeMs, bpm/transport, cc, osc, notes} travels together through compositor \u2192 applyEffectiveParams \u2192 sampleSource under three different type names."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "packages/core/src/voice/modulation-parity.ts (exported from voice/index.ts)",
+          "hunch": "A legacy-vs-mapping parity comparison harness ships as public API; if the legacy path is gone this is a test fixture living in production exports."
+        },
+        {
+          "lens": "dead-code",
+          "where": "packages/core/src/voice/graph-integrity.ts:92 normalizeTriggerGraphToGen3 and envelope.ts:156 migrateAdsr",
+          "hunch": "Two migration layers for legacy shapes run on every setShow; if no persisted show still carries the old shapes, this is permanent cost for a finished migration."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "packages/core/src/effects/impl/ (42 of 49 files not using emitter.ts)",
+          "hunch": "Only 7 effects compose the emitter substrate; the hit-tracking and hue/velocity param-reading preamble is likely re-derived independently across the rest."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "packages/core/src/effects/registry.ts imports '../canvas/presets' for side effect and branches on isCanvasEffectId",
+          "hunch": "The effects registry knows about the canvas subsystem specifically, rather than canvas registering itself into a general provider list \u2014 an import-order-sensitive coupling."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "packages/core/src/voice/types.ts:102 ParamSpec vs packages/core/src/effects/types.ts:9 ParamSpec",
+          "hunch": "Two distinct types share a name across the two halves of this scope and both describe effect parameters; conversion or drift between them is a likely defect site."
+        },
+        {
+          "lens": "middle-man",
+          "where": "packages/core/src/voice/index.ts",
+          "hunch": "Mixed `export *` and curated named exports means the public surface of the voice package is accidental in places; some internals are probably reachable that were never intended to be."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "packages/core/src/voice/render-plan.ts:162 renderPlanSignature",
+          "hunch": "The plan cache keys on a derived string; if the signature omits a field the traversal reads, a mutated graph would silently reuse a stale plan."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "packages/core/src/effects/emitter.ts:47 MAX_EMISSIONS cap with `break`",
+          "hunch": "When the cap is hit the loop breaks after already advancing lastSeq for earlier triggers, so a burst may drop hits silently with no diagnostic; worth checking the lastSeq bookkeeping on the break path."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "packages/core/src/effects/registry.ts module-level `throw new Error('Duplicate effect id')`",
+          "hunch": "A registry-construction failure throws at import time in a pure package, so any duplicate id takes down module loading rather than surfacing as a validation result."
+        }
+      ],
+      "coverage_notes": "Read in full or substantially: voice/index.ts, voice/engine.ts (header + interface + first 200 lines + method index), voice/eval-graph.ts (export/function index only), effects/types.ts, effects/registry.ts, effects/emitter.ts, compositor.ts (interface + factory head), impl/orbit-comet.ts. For the remaining voice modules I read the exported-symbol index and file headers, not full bodies \u2014 so responsibilities are inferred from names, doc comments and import graphs, and could be wrong in detail. NOT read: the bodies of eval-graph.ts (lines 277-594, the core traversal), engine.ts lines 200-850 (applyInput/tick/stats bodies), voice/types.ts beyond its first ~200 lines, metadata.ts contents, and 48 of 49 effects/impl files (mapped as one module from the import histogram and one representative). All test files were mapped from filenames and the supplied jscpd context only \u2014 I did not open any test file, so the duplication suspicion there is tooling-derived, not verified. impl/ LOC is an estimate (total scope minus files I counted individually). Cross-scope dependencies (canvas/*, geometry/*, color/*, math, engine/framebuffer, engine/render-context) were treated as external and not inspected."
+    }
+  ]
+}

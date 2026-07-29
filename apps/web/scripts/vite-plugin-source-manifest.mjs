@@ -32,7 +32,7 @@ function walk(dir, out) {
   }
 }
 
-export function buildSourceManifest() {
+function buildSourceManifest() {
   const out = new Map();
   walk(SRC_DIR, out);
   // deterministic output: sorted keys

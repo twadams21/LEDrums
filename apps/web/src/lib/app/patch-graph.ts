@@ -26,7 +26,6 @@ import {
   CONTROLLER_ID,
   NODE_H,
   NODE_W,
-  STAGE_ORDER,
   hoopId,
   type PatchFlowEdge,
   type PatchFlowNode,
@@ -214,7 +213,7 @@ export type OutputScalars = { startUniverse?: number; channelsPerPixel: number; 
 
 /** Sensible defaults for an output the project hasn't seen yet (a fresh palette node):
     3 channels/pixel, dense (no universe snap), default rgb order. */
-export const DEFAULT_OUTPUT_SCALARS: OutputScalars = { channelsPerPixel: 3 };
+const DEFAULT_OUTPUT_SCALARS: OutputScalars = { channelsPerPixel: 3 };
 
 /**
  * Read the live flow graph's output half back into a `PatchRouting`. Each Output's hoop chain
@@ -332,6 +331,3 @@ export function defaultRouting(
   }
   return { outputs };
 }
-
-/** The full set of left→right stages, re-exported for the view's keep/drop partition. */
-export { STAGE_ORDER };

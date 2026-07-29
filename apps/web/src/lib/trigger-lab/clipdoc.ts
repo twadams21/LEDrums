@@ -450,7 +450,7 @@ export interface RemapMint {
     come off the shared monotonic counter. Effect minting also dedups against ids minted EARLIER
     in the same pass (`freshEffectId` is name-derived, not counter-backed, so without this two
     same-name effects in one closure would mint the same id — the other minters are immune). */
-export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes'>): RemapMint {
+function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes'>): RemapMint {
   const mintedEffectIds = new Set<string>();
   const mintedSceneIds = new Set<string>();
   return {

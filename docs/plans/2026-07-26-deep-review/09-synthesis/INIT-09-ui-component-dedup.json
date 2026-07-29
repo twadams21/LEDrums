@@ -1,0 +1,302 @@
+{
+  "initiative_id": "INIT-09-ui-component-dedup",
+  "variant": "synthesis",
+  "provenance": {
+    "phase": "9",
+    "lane": "synthesis/INIT-09-ui-component-dedup",
+    "model": "claude-opus-5[1m]",
+    "effort": "medium"
+  },
+  "summary": "Six findings, all inside apps/web, all the same disease: a visual contract that exists in N copies because there is no component that owns it. The plan adds exactly four shared surfaces (ActionButton, InspectorHeader, MidiLearnRow, ControlProps), deletes one wrapper that owns nothing (Overlays), pulls the two duplicated canvas $effects into one rune helper, and only THEN splits ControllerStatusPanel. That order is the whole design: splitting an 847-line component whose children all use the local `.action` button vocabulary would fork that CSS into five new files and manufacture the duplication this initiative exists to remove, so the ActionButton extraction is an enabling step, not scope creep. The second load-bearing choice is the evidence order: every one of the five `.ihead` sites and all three MIDI-learn sites have ZERO component tests (verified: no Inspector/SectionInspector/TriggerSourceInspector/PlayNodeInspector/ModifierNodeInspector/DrumZonesList/PatchZoneInspector/Overlays test file exists), so a green `pnpm gates` proves nothing about them. Step S0 therefore freezes a ui-shot baseline and closes the capture gap BEFORE any code moves; the acceptance bar for the CSS steps is a capture pair plus a per-site CSS-equivalence diff, not a passing suite. This synthesis repairs the opus plan against the Phase 8 refutation on the three points where 'the CSS moves verbatim' was false — the `.action` block is NOT identical between ControllerStatusPanel and AdoptByIpRow (flex/width/padding/gap differ), the `.sub` block is NOT identical across the five `.ihead` sites (ModifierNodeInspector capitalizes), and Svelte scoped CSS does not follow markup into an extracted child — so each of those is now a named variant or an explicit relocation instruction decided in the plan rather than by the implementer. It also retargets S7's parity evidence: `patch-controller` captures the patch-graph NODE, not the panel, and a dev app with no PixLite can only render the un-adopted branch, so the panel's real capture surface is the stub-fed styleguide route, which S0 now prepares and captures. MidiLearnRow still deliberately does NOT know the learn target, which keeps INIT-07's {drumId,slot} address-object change entirely inside the callers.",
+  "findings_addressed": [
+    "data-clumps-0002",
+    "duplicated-code-0010",
+    "duplicated-code-0013",
+    "duplicated-code-0014",
+    "divergent-change-0007",
+    "middle-man-0007"
+  ],
+  "design": [
+    {
+      "id": "S0",
+      "title": "Freeze the visual baseline and close the capture gap (including the controller panel's only reachable surface)",
+      "intent": "Nothing here is provable by the test suite: the five `.ihead` call sites, the three MIDI-learn sites and Overlays.svelte have no component tests at all. Before a single style block moves, create the non-model evidence this initiative will be judged against. Three gaps to close, all mechanical and visually inert. (1) PRESETS: shots.json has `patch-controller`, `node-editor-play`, `section-detail` and `gen3-scope-inspector`, but nothing reaching the Patch zone inspector, the drum-zones list, the trigger-source inspector or the styleguide route — add `patch-zone-inspector`, `patch-drum-zones`, `trigger-source-inspector`, `styleguide-primitives` and `styleguide-controller-states`; the last two carry `\"route\": \"?style\"` (verified: ui-shot.mjs:118 maps `route: preset.route` into the request and main.ts:11-14 lazy-mounts the styleguide on `?style`, even though the README's field list omits `route`). (2) TARGETABILITY: the styleguide's DemoCard has no accessible name, and `.panel-row` occurs twice in SectionComposites (lines 359 and 384), so a CSS target would resolve `.first()` — the OutputStatusPanel row, not the controller row. Per the ui-shot README's stated convention ('every meaningful UI surface must have an accessible name … data-shot is reserved / a smell'), give DemoCard `role=\"region\" aria-label={title}` — one attribute pair, no rendered pixels — which makes every demo card in the styleguide targetable by its title forever (`--target \"Controller status panel (PixLite)\"`). Fallback if that convention is rejected: `data-shot=\"controller-panel-states\"` on the wrapper div at SectionComposites.svelte:384. (3) THE R29 BRANCH: the controller demo renders five stub states (receiving, takeover, not-receiving, LOST+recommendation, un-adopted+candidates) but none with the admin-password field warm, so S7's ControllerAuthField extraction would have no capture coverage — add a sixth stub using the prop shape ControllerStatusPanel.test.ts:190-196 already constructs (`identity.authReqd: true`, `reachable: false`, plus `onSetAuth`), which renders `.auth.needs`.",
+      "files": [
+        "scripts/ui-shot/shots.json",
+        "apps/web/src/lib/app/shot-seam.ts",
+        "apps/web/src/lib/styleguide/DemoCard.svelte",
+        "apps/web/src/lib/styleguide/sections/SectionComposites.svelte",
+        "docs/design-system.html"
+      ],
+      "risk": "low",
+      "verification": "(1) `pnpm ui-shot --discover --state \"view:patch\"` resolves a target for the zone inspector and the drum-zones list; if a surface cannot be reached by a `--state` string, extend `shot-seam.ts` with ONE adapter method per the README convention — never a bespoke click script in the preset. (2) `pnpm ui-shot --discover --route \"?style\"` must now list `region  Controller status panel (PixLite)` and `region  Primitives`-family cards, proving the DemoCard accessible name resolves. (3) `pnpm ui-shot --all --strict` exits 0 with every new preset resolving a non-zero bounding box. (4) `pnpm design-system` regenerated and committed HERE — SectionComposites and DemoCard are styleguide source, so the artifact must not be left stale for the next seven steps. (5) `pnpm gates` green; RECORD THE TEST COUNT — the Phase 0 figure (2968 at 3708648) predates fix batches 1-3, so the count measured at S0's HEAD is the floor every later step is compared against. (6) BASELINE NAMING: copy `.ui-shots/` to `.ui-shots/baseline-<sha>/` where `<sha>` is the literal output of `git rev-parse --short HEAD` at the moment S0 lands — NOT 3708648. 3708648 is the ANALYSIS baseline; the visual baseline is post-fix-batch-1-3 HEAD and includes this step's own (pixel-inert) attribute and stub additions. Write the actual sha into S0's commit message and substitute it wherever later steps say `<baseline-sha>`.",
+      "reverses": "Delete the added preset keys, the shot-seam adapter, the DemoCard attribute pair and the sixth stub, then re-run `pnpm design-system`. No app code depends on any of it."
+    },
+    {
+      "id": "S1",
+      "title": "Extract the soft text-button vocabulary as ui/ActionButton.svelte — with the two variants the sites actually differ on",
+      "intent": "`.action` — the 30px soft inset button with the scale-on-press treatment — is written out in ControllerStatusPanel.svelte:579-643, AdoptByIpRow.svelte:93-121, PatchHoopInspector.svelte and ShareInfo.svelte, and ControllerStatusPanel alone renders it eleven times across four of its five change axes. Splitting that panel (S7) without owning this control first would copy the rule set into five new files. Add `apps/web/src/lib/ui/ActionButton.svelte` with props `{ onclick, disabled?, fit?: 'stretch' | 'label', wide?, pressed?, scanning?, tone?: 'plain' | 'discover', title?, ariaLabel?, children }`. THE TWO SITES ARE NOT THE SAME RULE SET — verified at source, and this is the repair the refutation forced: ControllerStatusPanel's `.action` is `flex: 1; gap: 6px; padding: var(--space-1) var(--space-2)` while AdoptByIpRow's `.adopt-row .action` is `flex: none; width: auto; padding: var(--space-1) var(--space-3)` with no `gap` (its own comment says 'Sized to its label here … rather than stretching the row'). So `fit` carries exactly that delta: `'stretch'` (default) = flex:1 + gap:6px + space-2 inline padding; `'label'` = flex:none + width:auto + space-3 inline padding, no gap. Everything else (min-height 30px, surface-inset/border/radius-2, text-xs, ink, the three-property transition, `:hover:not(:disabled)`, `:active:not(:disabled)` scale 0.96, `:disabled` opacity 0.5) is byte-identical between the two and moves once. TWO FURTHER MECHANICS, both forced by Svelte scoping: (a) `.action :global(svg)` must keep its `:global` — the icon markup arrives from the caller's snippet, so a scoped selector would not match it; (b) the Discover button is `class=\"action wide discover\" class:scanning` and its spinner is `@keyframes scan-spin`, which Svelte renames per component — so ActionButton declares `scanning` + its OWN copy of `@keyframes scan-spin`, and ControllerStatusPanel KEEPS a copy for its `.scanning-row` hint paragraph (ControllerStatusPanel.svelte:623-637). That one duplicated 3-line keyframe block is the price of not introducing a `-global-` animation name, and it is a deliberate decision, not an oversight. Adopt ActionButton in ControllerStatusPanel and AdoptByIpRow only; PatchHoopInspector and ShareInfo are outside this initiative's fence and keep their copies. `.actions` (the flex row container) stays in ControllerStatusPanel — it is layout, not the button.",
+      "files": [
+        "apps/web/src/lib/ui/ActionButton.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte",
+        "apps/web/src/lib/app/docks/inspectors/AdoptByIpRow.svelte",
+        "apps/web/src/lib/styleguide/sections/SectionPrimitives.svelte",
+        "docs/design-system.html"
+      ],
+      "risk": "medium",
+      "verification": "(1) `ControllerStatusPanel.test.ts` and `AdoptByIpRow.test.ts` must pass UNMODIFIED — `git diff --stat` on both test files must be empty at commit time; they assert button names, disabled state and callback firing, so an untouched pass is the behavioural anchor. (2) PER-SITE CSS EQUIVALENCE (restated from the plan's original global byte-equality claim, which was unsatisfiable): the reviewer diffs EACH deleted rule block against the ActionButton variant that site now adopts — ControllerStatusPanel's `.action` against `fit='stretch'`, AdoptByIpRow's `.adopt-row .action` against `fit='label'` — and confirms every declaration is preserved with no declaration silently inherited from the other variant. A property that appears in one site and not the other must appear ONLY under its variant selector. (3) Captures against `.ui-shots/baseline-<baseline-sha>/`: `pnpm ui-shot styleguide-controller-states` (all six stub states, where the eleven ControllerStatusPanel buttons and the AdoptByIpRow button actually render side by side) and `pnpm ui-shot patch-controller` as a smoke shot. The Adopt button must still be label-width, not row-width — that is the specific regression `fit` exists to prevent and it is visible in the un-adopted stub. (4) `pnpm gates`. (5) `pnpm design-system` regenerated and committed in this step — S1 is the only step in its wave permitted to touch docs/design-system.html.",
+      "reverses": "`git revert` the single commit, then re-run `pnpm design-system` — the artifact is generated, so reverting source without regenerating leaves a stale docs/design-system.html."
+    },
+    {
+      "id": "S2",
+      "title": "Extract ui/InspectorHeader.svelte and retire the five .ihead copies",
+      "intent": "The `.ihead` / `.titles` / `h3` / `.sub` quartet is written out in Inspector.svelte:218-239, SectionInspector.svelte:92-113, TriggerSourceInspector.svelte:258-279, PlayNodeInspector.svelte:216-244 and ModifierNodeInspector.svelte:118-151. PanelHeader is NOT this component (fixed 38px, uppercase, no subtitle), so add a sibling `apps/web/src/lib/ui/InspectorHeader.svelte` with props `{ eyebrow?: string, title: string, sub?: string, subCase?: 'raw' | 'capitalize', leading?: Snippet, trailing?: Snippet }`. THE FIVE COPIES ARE NOT IDENTICAL — verified at source, and this is the second repair the refutation forced: ModifierNodeInspector.svelte:146-151's `.sub` carries `text-transform: capitalize` (it renders `{def?.category ?? 'none'} · modifier` at line 41) which the other four lack. CANONICAL BLOCK: Inspector.svelte's (`font-size: var(--text-2xs); font-family: var(--font-mono); color: var(--text-faint)`) — it is the one four of the five sites share verbatim. VARIANT: `subCase` defaults to `'raw'`; `'capitalize'` adds `.sub.cap { text-transform: capitalize }` inside InspectorHeader, and ModifierNodeInspector passes `subCase=\"capitalize\"`. This is decided here rather than by the implementer because the alternative (a caller-side scoped rule) CANNOT work — the `.sub` element belongs to InspectorHeader's template, so the caller's scoping hash never lands on it. Leading content (PlayNodeInspector's `.thumb`, ModifierNodeInspector's `.chip`) and trailing content (the IconButtons) stay in the callers as snippets, so their local styles do not migrate and nothing about their layout changes. Drop the `class=\"patch-title\"` attribute at Inspector.svelte:149 — grep proves no CSS rule matches it anywhere in apps/web/src, so it is a dead attribute.",
+      "files": [
+        "apps/web/src/lib/ui/InspectorHeader.svelte",
+        "apps/web/src/lib/app/docks/Inspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/SectionInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte",
+        "apps/web/src/lib/styleguide/sections/SectionPrimitives.svelte",
+        "docs/design-system.html"
+      ],
+      "risk": "medium",
+      "verification": "Zero test coverage exists on all five files, so the suite is not evidence here. (1) `grep -rn '\\.ihead {' apps/web/src` must return 0 hits after the change, and `grep -rn 'text-transform: capitalize' apps/web/src/lib/app/docks` must return 0 — the capitalize rule now lives only in InspectorHeader under `.sub.cap`. (2) `pnpm ui-shot node-editor-play`, `section-detail`, `gen3-scope-inspector` and `trigger-source-inspector` (S0 preset), each compared against its `.ui-shots/baseline-<baseline-sha>/` counterpart; `--strict` must keep the console clean. THE MODIFIER SUBTITLE IS THE NAMED CHECK: in the modifier-inspector capture the subtitle must still read with a capital first letter (e.g. 'Shape · modifier'), not lowercase. (3) The reviewer confirms in the diff that the canonical four rules moved verbatim, that the ONLY variant declaration is `text-transform: capitalize` under `.sub.cap`, and that each call site's leading/trailing markup is unchanged. (4) `pnpm gates` (svelte-check catches any dropped prop). (5) `pnpm design-system` regenerated in this step.",
+      "reverses": "`git revert` the commit and re-run `pnpm design-system`."
+    },
+    {
+      "id": "S3",
+      "title": "Extract ui/MidiLearnRow.svelte, target-agnostic by design",
+      "intent": "The `.note-row` grid plus the 29px `.learn` pill with its hover/active/disabled states is byte-identical in DrumZonesList.svelte:218-246, TriggerSourceInspector.svelte:289-317 and PatchZoneInspector.svelte:147-175, and the three learn buttons differ only in which target they arm. Add `apps/web/src/lib/ui/MidiLearnRow.svelte` with props `{ learning: boolean, disabled?: boolean, onToggle: () => void, children: Snippet }` — the caller passes its own CommitInput as the child (their placeholder/allowEmpty/onCommit props genuinely differ) and keeps ownership of the learn target. The component must NOT take a learn-target descriptor: keeping `store.startMidiLearn({ kind, drumId, slot })` in the callers is what lets INIT-07's {drumId,slot} address-object change land without touching this component, and removes an ordering dependency between the two initiatives (the refuter attacked this and it survived — all three sites already own their dispatch). The `.learn` CSS moves verbatim, including `height: 29px` and `.learn:hover:not(:disabled), .learn.active` — do not unify it with ActionButton (see open question). Before moving, the implementer runs the same per-site check S1 and S2 forced: diff the three `.note-row`/`.learn` blocks against each other and STOP if any declaration differs; the finding reports them identical, but 'verbatim' is a claim to verify per site, not to assume.",
+      "files": [
+        "apps/web/src/lib/ui/MidiLearnRow.svelte",
+        "apps/web/src/lib/ui/MidiLearnRow.test.ts",
+        "apps/web/src/lib/app/docks/inspectors/DrumZonesList.svelte",
+        "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte",
+        "apps/web/src/lib/styleguide/sections/SectionPrimitives.svelte",
+        "docs/design-system.html"
+      ],
+      "risk": "medium",
+      "verification": "All three call sites are untested, so: (1) `grep -rn '\\.learn {' apps/web/src` returns 0 hits after. (2) A new `apps/web/src/lib/ui/MidiLearnRow.test.ts` (jsdom + @testing-library/svelte, matching the ControllerStatusPanel.test.ts style) asserts the button label flips Learn→Listening on `learning`, that `disabled` blocks the click, and that `onToggle` fires exactly once per click — the interaction contract now has coverage it never had. (3) `pnpm ui-shot patch-zone-inspector`, `patch-drum-zones` and `trigger-source-inspector` (S0 presets) against baseline, in both the idle and armed states. (4) `pnpm gates`. (5) `pnpm design-system` regenerated in this step.",
+      "reverses": "`git revert` the commit and re-run `pnpm design-system`."
+    },
+    {
+      "id": "S4",
+      "title": "Share the canvas visibility + reduced-motion runes",
+      "intent": "EffectThumb.svelte:81-122 and SignalFace.svelte:30-65 carry identical copies of the IntersectionObserver gate — including the `hasBeenVisible` pre-layout guard that stops a portaled panel's spurious `false` from killing the ticker subscription — and of the prefers-reduced-motion matchMedia subscription. This is the largest non-test clone in the repo (52 lines) and it duplicates a subtle correctness guard, which is precisely the kind of fix that gets applied to one copy only. Add `apps/web/src/lib/trigger-lab/canvas-visibility.svelte.ts` next to the existing effect-thumb-ticker.ts, exporting `elementVisibility(getEl: () => HTMLElement | undefined): { readonly current: boolean }` and `prefersReducedMotion(): { readonly current: boolean }`, both implemented with `$state` + `$effect` so they must be called at component init. Both components replace their two `$effect` blocks with one call each; the `typeof IntersectionObserver !== 'undefined'` / `typeof matchMedia !== 'undefined'` feature tests and both teardown returns move across intact.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/canvas-visibility.svelte.ts",
+        "apps/web/src/lib/trigger-lab/canvas-visibility.fixture.svelte",
+        "apps/web/src/lib/trigger-lab/canvas-visibility.test.ts",
+        "apps/web/src/lib/trigger-lab/EffectThumb.svelte",
+        "apps/web/src/lib/trigger-lab/SignalFace.svelte"
+      ],
+      "risk": "medium",
+      "verification": "(1) `EffectThumb.test.ts` and `SignalFace.test.ts` must pass UNMODIFIED (`git diff --stat` empty on both) — they already stub IntersectionObserver and matchMedia and assert the pause/resume of the ticker subscription, so an untouched pass is direct evidence the guard survived. (2) New `canvas-visibility.test.ts` drives the helpers through `canvas-visibility.fixture.svelte` (precedent: `lib/ui/MasterDetail.fixture.svelte`) and asserts the pre-layout trap specifically: an observer callback with `isIntersecting: false` fired BEFORE any true must leave `current === true`; a false AFTER a true must set it false. That assertion does not exist anywhere today. (3) `pnpm ui-shot effect-gallery --settle 1200` and `gen3-slider-input` against baseline — thumbnails must still animate (non-blank). (4) `pnpm gates`. This step makes no styleguide source change and must NOT regenerate docs/design-system.html; the next styleguide-touching step picks the bundle change up.",
+      "reverses": "`git revert` the commit; the helper file is new and has no other consumers."
+    },
+    {
+      "id": "S5",
+      "title": "Inline Overlays.svelte into App.svelte and delete it",
+      "intent": "Overlays.svelte is fifteen lines: a comment, three imports, one `$props()`, three self-closing tags. It adds no state, no condition, no layout and no styling; each overlay reads its own open state off the store. Its stated justification — 'a single mount point shared by both shells' — is false today: `grep -rn 'Overlays' apps/web/src` returns exactly one consumer, App.svelte:107. Move `<EffectGallery {store} />`, `<ClipSettings {store} />`, `<EnvelopeEditor {store} />` and their three imports into App.svelte where `<Overlays {store} />` sits, carry the comment across with the stale 'both shells' clause corrected, and delete the file. This is the plan's only genuine interface reduction.",
+      "files": [
+        "apps/web/src/App.svelte",
+        "apps/web/src/lib/app/Overlays.svelte"
+      ],
+      "risk": "low",
+      "verification": "(1) `pnpm gates` — svelte-check fails loudly on a missing import. (2) `pnpm ui-shot effect-gallery --strict` plus ad-hoc captures of the Clip Settings and Envelope Editor open states (`pnpm ui-shot --state \"view:trigger,add:effect,select:effect\" --target \"dialog:Clip settings\"`); all three must still mount with a clean console. (3) `grep -rn 'Overlays' apps/web/src` afterwards returns only the unrelated string literal in styleguide/sections/SectionPrimitives.svelte:435. Gated on the open question about the second shell — if that plan is live, this step degrades to a one-line comment correction and the file stays.",
+      "reverses": "`git revert` the commit; the deleted file returns with its single call site."
+    },
+    {
+      "id": "S6",
+      "title": "One ControlProps<T> contract for the eight design-system primitives — documented where the primitives are documented",
+      "intent": "Slider, Select, Switch, Toggle, TextField, SegmentedControl, ColorSwatch and EasePicker each declare `onChange?: (v: T) => void; disabled?: boolean; ariaLabel?: string; class?: string` inline, with nothing keeping them aligned — SearchField already drifted (no `disabled`). Add `apps/web/src/lib/ui/control-props.ts` exporting `export type ControlProps<T> = { onChange?: (v: T) => void; disabled?: boolean; ariaLabel?: string; class?: string }`; each primitive becomes `type Props = ControlProps<number> & { value: number; … }` with every default kept at its existing destructuring site. Backfill SearchField: adopt ControlProps<string> and actually wire `disabled` onto the `<input>` and the clear button — the drift is closed rather than encoded via Omit. Leave IconButton's `label` alone (see open question). STYLEGUIDE, per the refutation and per data-clumps-0002's own proposed_fix: AGENTS.md requires anything new and reusable to be added to the styleguide entry and the artifact regenerated IN THE SAME CHANGE, and a shared props contract is exactly that even though it is a type rather than a component. Add a short contract note plus a CopyChip source pointer keyed `lib/ui/control-props` at the head of SectionPrimitives' value-control group — verified executable: the source manifest keys off `\\.(svelte|ts|css)$` (apps/web/scripts/vite-plugin-source-manifest.mjs:29), so a `.ts` key resolves the same way `lib/app/docks/inspectors/output-status` already does in SectionComposites. Then regenerate here rather than letting the artifact sit stale through S7.",
+      "files": [
+        "apps/web/src/lib/ui/control-props.ts",
+        "apps/web/src/lib/ui/Slider.svelte",
+        "apps/web/src/lib/ui/Select.svelte",
+        "apps/web/src/lib/ui/Switch.svelte",
+        "apps/web/src/lib/ui/Toggle.svelte",
+        "apps/web/src/lib/ui/TextField.svelte",
+        "apps/web/src/lib/ui/SegmentedControl.svelte",
+        "apps/web/src/lib/ui/ColorSwatch.svelte",
+        "apps/web/src/lib/ui/EasePicker.svelte",
+        "apps/web/src/lib/ui/SearchField.svelte",
+        "apps/web/src/lib/ui/SearchField.test.ts",
+        "apps/web/src/lib/styleguide/sections/SectionPrimitives.svelte",
+        "docs/design-system.html"
+      ],
+      "risk": "low",
+      "verification": "(1) `pnpm gates` — svelte-check resolves every consumer of the eight primitives, so a dropped or renamed prop surfaces as a type error; `Slider.test.ts`, `ColorSwatch.test.ts`, `ListItem.test.ts`, `EditableRow.test.ts` must pass unmodified. (2) SearchField gains real behaviour, so it needs its own evidence: a new `SearchField.test.ts` asserting that with `disabled` the input carries the attribute and the clear button does not fire `onChange`. That is the only behaviour change in this entire plan and it is deliberate, per the finding. (3) The reviewer confirms every prop kept its optionality by reading the diff — a `?` silently dropped is a type widening the suite would not catch on optional props. (4) `pnpm design-system` regenerated and committed here; `pnpm ui-shot styleguide-primitives --strict` against `.ui-shots/baseline-<baseline-sha>/` shows the primitives section unchanged apart from the added contract note, and the new ⧉ chip resolves (a `⚠ missing` chip means the manifest key is wrong).",
+      "reverses": "`git revert` the commit and re-run `pnpm design-system`; the type file is new and every primitive returns to its inline declaration."
+    },
+    {
+      "id": "S7",
+      "title": "Split ControllerStatusPanel along the five axes its history actually moves on — carrying each child's scoped CSS with it",
+      "intent": "847 lines covering identity, discovery/adoption, per-universe rx, health/takeover banners, admin auth and test patterns, with git showing each arriving as its own commit (0360c10 takeover+test patterns, 4731718 admin password, da3342d subnet recommendation+Adopt-by-IP, 6c12f97 status hardening, 8dc92b9 the partial AdoptByIpRow/UniverseRxTable extraction that proves the seam). Cut along the axes the HISTORY moves on: `ControllerBanners.svelte` (takeover banner + LOST/not-receiving alert), `ControllerDiscovery.svelte` (recommendation card + copy-IP + AdoptByIpRow + candidate list + Discover button + the `.scanning-row` hint), `ControllerReadout.svelte` (identity/rates/health ReadRows + UniverseRxTable), `ControllerAuthField.svelte` (R29 password + hint), `ControllerTestPatterns.svelte` (swatches + ops + back-to-live). Files stay flat in `docks/inspectors/` with a `Controller` prefix, matching the AdoptByIpRow/UniverseRxTable precedent — no subdirectory move, so no import or test-path churn. ControllerStatusPanel keeps its exact props surface and becomes the derivation + composition shell; every `$derived` that feeds one child moves with it, and children receive plain values, never the store. THE CSS INSTRUCTION THE ORIGINAL PLAN OMITTED, and the reason a green commit could otherwise ship five visually broken sections: Svelte scoped styles do NOT cross a component boundary, so every rule in ControllerStatusPanel's `<style>` that matches relocated markup must move verbatim into that child's own `<style>` — the banner/alert family with ControllerBanners, `.rec*`/`.cand*`/`.adopt*`/`.scanning-row` (and its own copy of `@keyframes scan-spin`, which Svelte renames per component) with ControllerDiscovery, `.readrow`/`.k`/`.rval`/rates/health with ControllerReadout, `.auth`/`.auth-label`/`.needs` with ControllerAuthField, `.testpatterns`/swatch/ops with ControllerTestPatterns. Shared token-only rules may be duplicated; nothing becomes `:global`. The parent keeps only what still matches its own markup (`.actions` layout, the panel frame).",
+      "files": [
+        "apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ControllerBanners.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ControllerDiscovery.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ControllerReadout.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ControllerAuthField.svelte",
+        "apps/web/src/lib/app/docks/inspectors/ControllerTestPatterns.svelte"
+      ],
+      "risk": "medium",
+      "verification": "THE STRUCTURAL ANCHOR: `ControllerStatusPanel.test.ts` must remain byte-unmodified and green — `git diff --stat` on it must be empty at commit time. Its seven describe blocks cover adopted+receiving, not-receiving, LOST, un-adopted+discovery, actions, admin password (R29) and test patterns+takeover (S49), and they query the rendered DOM by class (`.readrow`, `.k`, `.rval`, `.auth.needs`) and by accessible name, so an untouched pass proves the composed DOM is unchanged across every branch. If any assertion has to be edited to make the split pass, the split is wrong — stop and re-cut the seam. It is jsdom, so it CANNOT see lost styling; two further gates cover that. (1) ORPHANED-RULE GATE: `pnpm --filter @ledrums/web run typecheck 2>&1 | grep -i 'unused css selector'` must return zero lines for ControllerStatusPanel.svelte and for each new child — Svelte emits `css_unused_selector` for a rule left behind by its markup, and svelte-check surfaces compiler warnings. Grep the output rather than trusting the exit code: svelte-check exits non-zero on errors, and a warning alone would leave `pnpm gates` green. (2) VISUAL PARITY, retargeted: `pnpm ui-shot styleguide-controller-states --strict` against `.ui-shots/baseline-<baseline-sha>/` is THE pixel bar, because it is the only surface that renders the adopted / takeover / not-receiving / LOST / un-adopted / needs-auth branches at all — ControllerStatusPanel's single app mount is OutputStatusPanel.svelte:115, the `patch-controller` preset is `{state:'view:patch', target:'node:controller'}` which captures the patch-graph NODE and not this panel, and a dev app with no live PixLite can only reach the un-adopted branch anyway. Keep `pnpm ui-shot patch-controller --settle 1500 --strict` as a smoke shot only. (3) `pnpm gates` with the test count at or above S0's recorded floor. No styleguide regen in this step.",
+      "reverses": "`git revert` the single commit — the five children are new files with exactly one consumer each, and the parent's props surface, imports from output-status.ts and test file are untouched, so the revert cannot strand a caller."
+    },
+    {
+      "id": "S8",
+      "title": "Register the controller children in the styleguide and sweep",
+      "intent": "AGENTS.md requires reusable UI to be demoed in the styleguide and docs/design-system.html regenerated in the same change; SectionComposites.svelte already demos ControllerStatusPanel (six stub states after S0), AdoptByIpRow and UniverseRxTable, so the five S7 children follow that precedent — each gets a DemoCard fed by a minimal reactive stub, never copied markup, and each inherits S0's `role=\"region\" aria-label={title}` so it is capturable by title from day one. This is a separate step from S7 so the split lands as its own reviewable green commit and the styleguide seam is touched exactly once. Close the initiative with the full capture sweep against the S0 baseline.",
+      "files": [
+        "apps/web/src/lib/styleguide/sections/SectionComposites.svelte",
+        "docs/design-system.html"
+      ],
+      "risk": "low",
+      "verification": "(1) `pnpm design-system` regenerates docs/design-system.html and it is committed here; opening the file from the filesystem shows five new controller demo cards with resolving ⧉ source pointers — a `⚠ missing` chip means the virtual source-manifest key is wrong. (2) `pnpm ui-shot --all --strict` sweeps every preset including the five added in S0, each compared against `.ui-shots/baseline-<baseline-sha>/`; `styleguide-controller-states` must still match S0's baseline apart from the five newly added cards below it. (3) `pnpm gates` on the committed HEAD with the test count at or above S0's floor, then push — the initiative is done only when HEAD is green AND pushed.",
+      "reverses": "`git revert` the commit and re-run `pnpm design-system` to restore the artifact to match the surviving source."
+    }
+  ],
+  "sequencing": [
+    ["S0"],
+    ["S1", "S5"],
+    ["S2", "S4"],
+    ["S3"],
+    ["S6"],
+    ["S7"],
+    ["S8"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/web/src/lib/ui",
+      "removed": [],
+      "added": [
+        "ActionButton.svelte",
+        "InspectorHeader.svelte",
+        "MidiLearnRow.svelte",
+        "control-props.ts:ControlProps<T>"
+      ],
+      "net_interface_change": "increases",
+      "note": "Four new shared surfaces bought with sixteen local style contracts retired: five `.ihead` blocks, three `.note-row`/`.learn` blocks and two `.action` blocks inside this fence, plus eight inline copies of the four-member control contract collapsed to one type. Two of the four carry a named variant prop rather than a single canonical rule set — ActionButton's `fit: 'stretch' | 'label'` and InspectorHeader's `subCase: 'raw' | 'capitalize'` — because the source copies genuinely differ there; that is two extra props, declared here rather than discovered by an implementer mid-extraction. ActionButton also carries `scanning` (the Discover spinner) since a caller cannot style a child component's button. Interface per unit of behaviour still falls sharply even though the exported count rises."
+    },
+    {
+      "at": "apps/web/src/lib/app",
+      "removed": ["Overlays.svelte"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "The only pure deletion in the plan: a wrapper with one consumer, no state, no condition, no layout."
+    },
+    {
+      "at": "apps/web/src/lib/app/docks/inspectors",
+      "removed": [],
+      "added": [
+        "ControllerBanners.svelte",
+        "ControllerDiscovery.svelte",
+        "ControllerReadout.svelte",
+        "ControllerAuthField.svelte",
+        "ControllerTestPatterns.svelte"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate. ControllerStatusPanel's own props surface is unchanged (identical prop list, identical callbacks), so no consumer sees a wider interface; the five children each have exactly one consumer and exist to give five independent change axes five independent files. This is the finding's whole point — the alternative is one file that six unrelated commits keep colliding in."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab",
+      "removed": [],
+      "added": [
+        "canvas-visibility.svelte.ts:elementVisibility",
+        "canvas-visibility.svelte.ts:prefersReducedMotion"
+      ],
+      "net_interface_change": "increases",
+      "note": "Two exports replace four duplicated `$effect` blocks, and — the reason this one matters — the pre-layout `hasBeenVisible` guard stops existing in two places that can drift apart."
+    },
+    {
+      "at": "apps/web/src/lib/styleguide/DemoCard.svelte",
+      "removed": [],
+      "added": ["role=\"region\" aria-label={title} on every demo card"],
+      "net_interface_change": "neutral",
+      "note": "Not a props change — an accessibility attribute pair derived from the existing `title` prop, added in S0 so the styleguide route becomes ui-shot-targetable by demo title. Per the ui-shot README convention this is the sanctioned alternative to a `data-shot` hook ('data-shot is reserved … prefer fixing the accessible name'), and it makes every future styleguide surface capturable without further maintenance."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "`pnpm gates` on the committed HEAD of every step — full typecheck + suite under the machine mutex. The floor is the test count RE-MEASURED at S0's HEAD, not the Phase 0 figure (2968 at 3708648), because fix batches 1-3 landed on top of that sha and removed whole components; the count may only rise (S3, S4 and S6 each add tests) and never fall.",
+      "UNMODIFIED-TEST ANCHORS, checked with `git diff --stat <file>` returning empty at commit time: ControllerStatusPanel.test.ts through S1 and S7; AdoptByIpRow.test.ts through S1; EffectThumb.test.ts and SignalFace.test.ts through S4; Slider/ColorSwatch/ListItem/EditableRow tests through S6. An anchor that had to be edited is a failed step, not an inconvenient test.",
+      "`pnpm ui-shot --all --strict` at S0 (captures copied to `.ui-shots/baseline-<sha of S0 HEAD>/`, the literal `git rev-parse --short HEAD` output recorded in S0's commit message) and again at S8, with per-step spot captures named in each step's verification; `--strict` doubles as the clean-console gate.",
+      "`pnpm ui-shot styleguide-controller-states --strict` is the parity bar for S1's ControllerStatusPanel/AdoptByIpRow adoption and for the whole of S7 — it is the ONLY surface rendering the adopted / takeover / not-receiving / LOST / un-adopted / needs-auth branches, since the panel's single app mount is OutputStatusPanel.svelte:115 and a dev app with no PixLite reaches only the un-adopted branch. `patch-controller` (a patch-graph NODE capture, not this panel) is retained as a smoke shot only.",
+      "`pnpm --filter @ledrums/web run typecheck 2>&1 | grep -i 'unused css selector'` returns zero lines after S7 — the mechanical detector for scoped rules orphaned by markup that moved into a child. Grepped rather than trusted to the exit code, because svelte-check fails on errors and this is a warning.",
+      "PER-SITE CSS EQUIVALENCE (not global byte equality): for S1, S2 and S3 the reviewer diffs each deleted rule block against the specific variant its site now adopts, and confirms no declaration crossed between variants. Verified deltas that make a global claim false: AdoptByIpRow `.adopt-row .action` is flex:none/width:auto/space-3 padding/no gap vs ControllerStatusPanel `.action` flex:1/gap:6px/space-2 padding; ModifierNodeInspector `.sub` adds text-transform:capitalize. This is a human check and is the acceptance bar for the CSS steps.",
+      "New coverage where the plan changes something that had none: `MidiLearnRow.test.ts` (label flip, disabled blocks click, onToggle fires once), `canvas-visibility.test.ts` via `canvas-visibility.fixture.svelte` (the pre-layout-false trap asserted directly for the first time), `SearchField.test.ts` (the newly wired `disabled`).",
+      "`grep -rn '\\.ihead {' apps/web/src` and `grep -rn '\\.learn {' apps/web/src` both return zero hits after S2 and S3, and `grep -rn 'text-transform: capitalize' apps/web/src/lib/app/docks` returns zero after S2 — the mechanical proof the copies are gone rather than merely joined by a shared one."
+    ],
+    "known_gaps": "Large and named rather than waved at. (1) ZERO component tests exist for Inspector.svelte, SectionInspector, TriggerSourceInspector, PlayNodeInspector, ModifierNodeInspector, DrumZonesList, PatchZoneInspector or Overlays — verified by find; a green `pnpm gates` after S2, S3 and S5 proves compilation and nothing else, which is why S0 exists and why the capture pair plus the per-site CSS diff are the real acceptance bar there. (2) There is no pixel-diff tooling on this machine (neither `magick` nor `compare` is installed) and ui-shot has no built-in comparison — README:92 says so outright — so before/after capture comparison is a human eyeball, not a machine gate; the honest fix is a small pixelmatch comparator, which this plan does not build (open question 6). (3) `docs/design-system.html` inlines the whole bundle, so its bytes change on any code edit — 'the artifact did not change' is NOT available as a parity signal; only the rendered styleguide route captured via ui-shot is. (4) jsdom cannot evaluate Svelte scoped CSS or resolve CSS custom properties, so no unit test can assert visual parity for S1/S2/S3 or catch a rule orphaned by S7 — the `css_unused_selector` grep catches the orphan (a rule with no markup) but NOT the inverse (markup that moved to a child which forgot the rule), which only the styleguide capture pair can see. (5) The IntersectionObserver and matchMedia paths in S4 are exercised only through stubs; real-browser behaviour (a genuinely portaled panel firing a pre-layout false) is covered only by the effect-gallery ui-shot. (6) ControllerStatusPanel's discovery/adopt/identify/test-pattern flows are tested against callback spies and rendered against styleguide stubs, never against a real PixLite A4 — S7 moves no protocol code so it cannot regress the wire protocol, but nothing here proves hardware behaviour, and the stub states are a designer's reconstruction of the device's states, not a recording of them. (7) The S0 visual baseline is captured AFTER fix batches 1-3, so it cannot detect a visual regression those batches introduced; this initiative's captures prove only that IT changed nothing.",
+    "baseline_reference": "TWO baselines, deliberately distinct. ANALYSIS baseline: Phase 0 sha 3708648, 2968 tests green — what the findings were derived against. EXECUTION baseline: the HEAD at which S0 lands (post-fix-batches-1-3), whose short sha names `.ui-shots/baseline-<sha>/` and whose re-measured `pnpm gates` test count is the floor for every later step. Conflating the two was the refutation's S0 finding; every later step reads `<baseline-sha>` as the literal value recorded in S0's commit message."
+  },
+  "rollback_strategy": "Nine steps, nine commits, nine independent revert boundaries — no step depends on a later one and none of them migrates data or changes a persisted schema, a protocol message, or anything in packages/core or packages/io. Reverting the initiative wholesale is `git revert` of S8..S0 in reverse order followed by one `pnpm design-system` run: docs/design-system.html is a generated artifact, so reverting source without regenerating leaves it stale and the next UI change will produce a confusing diff. Partial rollback is the expected mode: S7 can be reverted alone (five new files, one consumer each, parent props and test file untouched), and S1/S2/S3 can each be reverted alone because the shared component is additive and its call sites are swapped in the same commit. S0 is worth keeping even in a full rollback — the presets, the DemoCard accessible name and the sixth controller stub are pure evidence infrastructure with no runtime effect, and the baseline captures are the record of what the app looked like before. The one step that is not purely reversible in effect is S6's SearchField `disabled` wiring — reverting restores the drift the finding names, so if S6 must be backed out, back out only the SearchField hunk and keep the ControlProps type. No feature flag is warranted: nothing here is runtime-switchable, and a flag would double the UI paths this initiative exists to halve.",
+  "estimated_loc": 1900,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Is the 'shared by both shells' plan in Overlays.svelte's comment still live? If a second shell is genuinely coming, S5 becomes a comment correction instead of a deletion; if not, the file goes. There is exactly one consumer today, so this is a roadmap question, not a code question.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should the MIDI-learn pill be unified with the ActionButton vocabulary? They are the same idea at different sizes — learn is 29px / text-2xs / weight 600 / text-muted, action is 30px / text-xs / normal / ink. Unifying deletes another duplicated contract but visibly changes three inspector surfaces; this plan preserves both exactly, so a yes means one extra step and a fresh capture baseline.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "IconButton uses `label` where the eight ControlProps primitives use `ariaLabel`. Do we unify the name (a repo-wide sweep of every IconButton call site, well outside this initiative's fence) or accept two names permanently? Leaving it means ControlProps is the contract for value controls only, not for all controls.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Do the five ControllerStatusPanel children each earn their own styleguide demo card (the AdoptByIpRow/UniverseRxTable precedent, ~250 LOC of stub-fed demos in SectionComposites), or are panel-private children demoed through the parent only? This is an interpretation of AGENTS.md's use-or-extend rule and it sets the precedent for every future panel split.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Can the ui-shot state seam already reach the Patch zone inspector and the drum-zones list, or does shot-seam.ts need one new adapter method (e.g. `select:zone`)? Answerable at build time with `pnpm ui-shot --discover --state \"view:patch\"`; it only changes S0's size.",
+      "blocks_execution": false,
+      "owner": "implementer"
+    },
+    {
+      "question": "Is a human eyeball on before/after ui-shot pairs an acceptable acceptance bar for the three CSS-extraction steps and for S7, given no pixel-diff tool is installed and jsdom cannot assert scoped CSS? The alternative is building a small pixelmatch comparator into scripts/ui-shot first, which this plan deliberately does not do. S7's split raises the stakes on this answer: the orphaned-rule grep catches a rule left behind, but only a capture pair catches markup that moved into a child without its rule.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S0 gives every styleguide DemoCard `role=\"region\" aria-label={title}` so the styleguide route is ui-shot-targetable by demo title. That is a design-system-wide convention change (~40 new landmark regions on that route) made to buy capture coverage for one panel — accept it as the standing convention, or take the narrower `data-shot=\"controller-panel-states\"` hook on the single wrapper div instead? The plan's default is the accessible name, per the ui-shot README's own guidance that data-shot is a smell; the narrow fallback is written into S0 so this can be answered either way without re-planning.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Does a shared TYPE contract (ControlProps<T>) belong in the styleguide at all? S6 adds a note plus a source chip to SectionPrimitives because AGENTS.md says anything new and reusable is added to the styleguide entry in the same change, and data-clumps-0002's proposed_fix says so explicitly — but the styleguide has so far documented rendered components, not type contracts, and a note that cannot be demoed may be the wrong shape for that page. Alternative: document the contract in control-props.ts's own header comment and leave the styleguide to components. The plan's default is to follow AGENTS.md literally.",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ],
+  "synthesis_inputs": {
+    "variants_considered": ["opus", "fable"],
+    "refutations_consumed": [
+      "docs/plans/2026-07-26-deep-review/08-refutations/INIT-09-ui-component-dedup.fable.json"
+    ],
+    "attacks_addressed": [
+      "S1's byte-equality acceptance bar is unsatisfiable for AdoptByIpRow — its `.adopt-row .action` is a materially different rule set (flex:none/width:auto/space-3 padding/no gap) from ControllerStatusPanel's `.action`, so adopting one canonical ActionButton either stretches the Adopt button across the row or needs a variant the plan never specified.",
+      "S7's visual-parity check aims at the wrong surface — the `patch-controller` preset captures the patch-graph node, not ControllerStatusPanel (whose only app mount is OutputStatusPanel.svelte:115), and a dev app with no PixLite can render only the un-adopted branch.",
+      "S7 never instructs moving the parent's scoped CSS with the markup it styles; Svelte scoping is per component, so an implementer following the step text can land a green commit with five visually broken sections.",
+      "S2's 'the four CSS rules moved verbatim' is unsatisfiable — ModifierNodeInspector's `.sub` carries `text-transform: capitalize` the other four lack, and the prop list cannot express it.",
+      "S0's baseline provenance is false as written: HEAD is already past 3708648 (fix batches 1-3 landed), so `.ui-shots/baseline-3708648/` mislabels captures taken at a different sha.",
+      "S6 creates a new reusable design-system surface without touching the styleguide entry or regenerating docs/design-system.html, violating AGENTS.md's use-or-extend rule and the finding's own proposed_fix.",
+      "A green `pnpm gates` after S2/S3/S5 proves nothing about the surfaces changed (survived: the plan states it, builds S0 around it, and names the eight uncovered files in known_gaps).",
+      "MidiLearnRow creates a hidden ordering dependency on INIT-07's learn-target change (survived: S3 designs it out — props are {learning, disabled, onToggle, children} and all three sites keep their own dispatch).",
+      "The before/after capture comparison is a human eyeball, not a machine gate (survived: known_gaps (2) says exactly this and open question 6 escalates the comparator decision to Trent).",
+      "S0's `--route \"?style\"` preset may be unexpressible (survived: ui-shot.mjs:118 maps `route: preset.route` and main.ts:11-14 lazy-mounts `?style`; the README's field list is merely incomplete)."
+    ],
+    "rationale": "SKELETON: opus, unchanged in shape — it is the only Phase 7 variant authored for this initiative (07-plans/INIT-09-ui-component-dedup/ contains opus.json alone), and the single fable refutation returned sound-with-repairs with rubric 4/3/4/3/3. `variants_considered` therefore names opus (the plan) and fable (the Phase 8 refutation — the second and only other design input, which authored all six required repairs); the schema's two-input minimum is satisfied honestly only under that reading, and this sentence is the disclosure. This is a repaired opus plan, not a merge of rival designs. WHAT CHANGED, and which surviving attack forced it — every repair spot-checked at source before adoption: (1) S1 gains `fit: 'stretch' | 'label'`. Verified: ControllerStatusPanel.svelte:579-597 is `flex: 1; gap: 6px; padding: var(--space-1) var(--space-2)`; AdoptByIpRow.svelte:93-111 is `flex: none; width: auto; padding: var(--space-1) var(--space-3)` with no gap and a comment saying so ('Sized to its label here … rather than stretching the row'). Everything else in the two blocks is identical, so ONE prop carries the whole delta, and the acceptance bar is restated as per-site equivalence against the variant that site adopts — a global byte-equality check was literally unsatisfiable. (2) S7's parity target moves to the styleguide route. Verified: shots.json's `patch-controller` is `{state:'view:patch', target:'node:controller'}` and ui-shot's `node:` resolver matches `.svelte-flow__node` — a patch-graph node, not the panel; the panel's only app mount is OutputStatusPanel.svelte:115; SectionComposites.svelte:384-393 renders it on FIVE stubs (the refutation said four — it missed the takeover stub), which is the only place the LOST/takeover/not-receiving branches render at all. (3) S7 gains the scoped-CSS instruction with a per-child rule-family assignment and a mechanical orphan detector (`css_unused_selector` grepped out of svelte-check's output, because svelte-check's exit code counts errors and this is a warning — the gate would otherwise be decorative). (4) S2 names Inspector.svelte's block canonical and adds `subCase: 'raw' | 'capitalize'`. Verified: only ModifierNodeInspector.svelte:146-151 has the capitalize declaration, and its subtitle is `{def?.category ?? 'none'} · modifier` (line 41) so the transform is load-bearing text, not decoration. The refutation offered a caller-side scoped rule as an alternative — rejected, because the `.sub` element belongs to InspectorHeader's template and the caller's scoping hash never reaches it; a prop is the only mechanism that works. (5) S0's baseline directory becomes `.ui-shots/baseline-<sha of S0 HEAD>/` with the literal sha recorded in the commit message, and behaviour_parity_evidence_plan now carries TWO baselines (analysis 3708648 / execution S0-HEAD) — plus a repair the refutation did not ask for: the 2968 test-count floor is re-measured at S0 HEAD, since the same fix batches that invalidate the sha can move the count. (6) S6 gains SectionPrimitives + docs/design-system.html and a `pnpm design-system` run; verified the manifest keys off `\\.(svelte|ts|css)$` (vite-plugin-source-manifest.mjs:29) so a `.ts` source chip resolves. WHAT THIS PASS ADDED BEYOND THE NAMED REPAIRS, justified from source: (a) ActionButton must also own `scanning` and its own `@keyframes scan-spin` copy — ControllerStatusPanel.svelte:363 renders `class=\"action wide discover\" class:scanning` and :623-637 animates the icon through a component-scoped keyframe name; a caller cannot style a child's button, and Svelte renames keyframes per component, so the parent keeps a second copy for its `.scanning-row` hint. Missing this would have silently killed the Discover spinner in a step whose anchor is a jsdom test. (b) `.action :global(svg)` must stay `:global` because the icon arrives from the caller's snippet. (c) S0 must make the styleguide targetable at all: DemoCard has no accessible name and `.panel-row` occurs twice in SectionComposites (359 and 384), so a CSS target resolves `.first()` — the OutputStatusPanel row. The fix follows the ui-shot README's own convention (accessible name over `data-shot`), with the narrow `data-shot` hook written in as the fallback and the choice escalated as a new open question. (d) S0 adds a sixth controller stub for the R29 needs-auth state (prop shape lifted from ControllerStatusPanel.test.ts:190-196: `identity.authReqd: true`, `reachable: false`), because S7 extracts ControllerAuthField and none of the five existing stubs renders `.auth.needs` — the child would have shipped with zero visual coverage. (e) SEQUENCING was re-cut: six steps now regenerate docs/design-system.html (S0, S1, S2, S3, S6, S8) and two regenerating steps cannot share a wave without conflicting on a generated artifact, so S6 leaves the [S3, S6] wave and the plan runs [S0][S1,S5][S2,S4][S3][S6][S7][S8]. WHAT SURVIVED UNCHANGED: the eight-step order with ActionButton as an enabling step before the panel split, MidiLearnRow's deliberate target-agnosticism (attacked, survived), the unmodified-test anchors, S4's rune extraction and its pre-layout-trap test, S5's Overlays deletion gated on the second-shell question, and the plan's own honesty about the eyeball-not-a-gate limit. Two open questions were added (the DemoCard accessible-name convention, and whether a type contract belongs in the styleguide at all), both with the plan's default decided so neither blocks execution; the six original questions are unchanged."
+  }
+}

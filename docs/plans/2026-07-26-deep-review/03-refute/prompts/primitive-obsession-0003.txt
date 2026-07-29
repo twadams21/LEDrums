@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   The primitive stands for a domain concept with >=2 invariants enforced at call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: primitive-obsession-0003
+lens: primitive-obsession
+criterion: domain-concept-with-invariants
+severity: major (author confidence: high)
+locations:
+  packages/core/src/voice/scope.ts:41-60 (parseHoopTarget)
+  packages/core/src/voice/scope.ts:87-91 (fromPixelSet)
+  apps/web/src/lib/trigger-lab/persistence.ts:168-182 (shiftHoopTargetTo1Based)
+
+claim: `GraphNode.targetId` (types.ts:274-281) encodes a structured domain value — a drum plus a set of 1-based hoop indices — as `"<drumId>#<hoop>[,<hoop>]"`. The structured type it should be already exists in the same file: `HoopTarget` / `PixelSet` (scope.ts:62-91), which the resolver immediately decodes into and re-encodes out of. Two costs are visible in the code. (a) `parseHoopTarget` needs THREE behaviour flags — `sourceDrumOnNoHash`, `emptyFallback: 'first'|'sentinel'|none`, `sort` — because the same string means different things to different callers; the string is genuinely ambiguous and each caller injects its own disambiguation policy. (b) The 0-based→1-based hoop cutover could not be a type change, so it became a STRING-REWRITE migration duplicated across persistence.ts:171 and clipdoc.ts:334, gated on `node.scope !== 'hoop'` — a filter that is a second, independent hand-maintained invariant. Additionally the encoding has no escaping: a drumId containing `#` or `,` silently produces the wrong target, unlike patch-graph.ts:54-62 which defensively rejoins its middle segments.
+
+evidence the author gave:
+  [read]  :: packages/core/src/voice/scope.ts:41-60 — parseHoopTarget(targetId, sourceDrumId, {sourceDrumOnNoHash, emptyFallback, sort}); scope.ts:65-69 calls it with sourceDrumOnNoHash:false/emptyFallback:'sentinel'/sort:true while apps/web/.../scope-inspector.ts:25 calls it with a different option set.
+  [read]  :: packages/core/src/voice/scope.ts:90 re-encodes: `{ scope: 'hoop', targetId: `${set.drumId}#${set.hoopIndices.join(',')}` }` — decode/encode round-trip through the string on every intersection.
+  [read]  :: apps/web/src/lib/trigger-lab/persistence.ts:156-197 — the whole B6/A1 migration block exists purely to rewrite these strings; migrateGraphHoopTargets gates on `node.scope !== 'hoop' || !node.targetId.includes('#')`.
+  [grep] grep -rn "targetId" --include=*.ts --include=*.svelte packages apps | grep -v node_modules :: `grep -rn targetId` across packages+apps reports 272 matches in 38 files — the primitive has spread wide.
+
+proposed fix: Promote `ScopeTarget` to a discriminated union carrying structure rather than a string: `{ scope: 'kit' } | { scope: 'drum'; drumId: string } | { scope: 'hoop'; drumId: string; hoopIndices: number[] }`. Keep the string form strictly as a persistence codec (`encodeScopeTarget` / `decodeScopeTarget`) applied once at load/save, so parseHoopTarget's three policy flags collapse: callers that today differ only in how they read an ambiguous string get an unambiguous value instead. Future index-base changes then become a codec version bump, not a rewrite scattered across persistence.ts and clipdoc.ts.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"primitive-obsession-0003",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"domain-concept-with-invariants",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

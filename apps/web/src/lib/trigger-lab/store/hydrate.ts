@@ -64,7 +64,7 @@ export function unionPresets(persisted: readonly Preset[]): Preset[] {
 /** Ensure a pad graph's trigger node carries a `drum` source derived from its padKey
     `"drumId:zone"`. Returns the SAME graph reference when nothing changes (idempotent +
     alias-stable), so an already-sourced or non-pad-keyed graph is untouched. */
-export function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
+function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
   const i = graph.nodes.findIndex((n) => n.kind === 'trigger');
   if (i < 0 || graph.nodes[i]!.source) return graph; // no trigger node, or already explicit
   const sep = key.indexOf(':');
@@ -84,7 +84,7 @@ export function withDrumSource(graph: TriggerGraph, key: string): TriggerGraph {
     `graph-`/`graph:` keys, or any other) are left untouched — they keep `source` unset until the
     user binds a drum/MIDI/OSC source. Keyed off the actual pad-key set rather than "not named",
     because graphNames now labels pad keys too (so it can't proxy "authored"). */
-export function unionTriggerSources(
+function unionTriggerSources(
   graphs: Record<string, TriggerGraph>,
   padKeys: ReadonlySet<string>,
 ): Record<string, TriggerGraph> {
@@ -101,7 +101,7 @@ export function unionTriggerSources(
     in `names`) is left untouched — only missing pad-key names are filled. Returns the SAME
     reference when nothing changes (alias-stable, mirrors {@link withDrumSource}). Authored keys
     are named at create/duplicate time, not here. */
-export function hydratePadNames(
+function hydratePadNames(
   graphs: Record<string, TriggerGraph>,
   names: Record<string, string>,
   pads: readonly Pad[],
@@ -314,7 +314,7 @@ export function migrateGraphsEnvMaps(
 /** Rewrite every play node's `effectId` (and its `presetId` prefix) through the effect
     alias map so a retired id resolves to its live replacement. Pure + idempotent — only
     touches graphs that actually reference an aliased id, so it's free when the map is empty. */
-export function resolveGraphAliases(
+function resolveGraphAliases(
   graphs: Record<string, TriggerGraph>,
 ): Record<string, TriggerGraph> {
   const out: Record<string, TriggerGraph> = {};
@@ -367,7 +367,7 @@ export function splitModulationSourceNodes(graph: TriggerGraph): TriggerGraph {
   return changed ? { ...graph, nodes } : graph;
 }
 
-export function splitModulationSources(
+function splitModulationSources(
   graphs: Record<string, TriggerGraph>,
 ): Record<string, TriggerGraph> {
   let changed = false;
@@ -400,7 +400,7 @@ export function migrateGen3Graph(graph: TriggerGraph): TriggerGraph {
   return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
 }
 
-export function migrateGen3Graphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+function migrateGen3Graphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
   const out: Record<string, TriggerGraph> = {};
   let changed = false;
   for (const [key, graph] of Object.entries(graphs)) {
@@ -418,7 +418,7 @@ export function sanitizeGraphIntegrity(graph: TriggerGraph): TriggerGraph {
   return voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
 }
 
-export function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+function sanitizeGraphsIntegrity(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
   let changed = false;
   const out: Record<string, TriggerGraph> = {};
   for (const [key, graph] of Object.entries(graphs)) {
@@ -438,13 +438,11 @@ export interface SystemActionSummary {
   autoWiredNodes: number;
 }
 
-export const NO_SYSTEM_ACTIONS: SystemActionSummary = { migratedGraphs: 0, autoWiredNodes: 0 };
-
 /** Sanitize/migrate every graph to Gen3 AND report the batched system actions performed. The
     Gen3 normalize is the single seam where migration + auto-wire happen, so the actions are read
     straight off it — no guessing from before/after diffs. Used at the FIRST integrity pass of
     {@link normalizeGraphs} (subsequent idempotent passes over already-Gen3 graphs report nothing). */
-export function sanitizeGraphsIntegrityWithActions(
+function sanitizeGraphsIntegrityWithActions(
   graphs: Record<string, TriggerGraph>,
 ): { graphs: Record<string, TriggerGraph>; actions: SystemActionSummary } {
   let changed = false;

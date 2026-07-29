@@ -1,0 +1,253 @@
+{
+  "artifact": "06-fix-reviews/batch-03",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "6",
+    "lane": "fix-review/batch-03",
+    "model": "claude-opus",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "finding_id": "dead-code-0003",
+      "files_touched": ["apps/web/src/lib/trigger-lab/store/hydrate.ts"],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: 2 lines deleted at hydrate.ts:438 (const NO_SYSTEM_ACTIONS + its blank line). Nothing else in the file changed."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 0, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "Independently re-verified at HEAD: `rg -w NO_SYSTEM_ACTIONS` (excluding docs/plans) returns ZERO hits repo-wide — no source, no test, no doc, no string/dynamic-access form. The batch-01 residue is genuinely gone. No test file appears anywhere in `git diff --name-only 7ea4ebf..61fb868`, so 2968 -> 2968 is structurally guaranteed, not merely reported."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0004",
+      "files_touched": ["apps/server/src/show-library.ts"],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: 5 lines deleted (doc comment + function showLibraryPath + blank). The adjacent inspectShowLibraryFile, which shares the `store` handle, is untouched."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 0, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "`rg -w showLibraryPath` at HEAD (excluding docs/plans) returns ZERO hits. Its doc comment was deleted with it, so no stale comment references the removed symbol. No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0005",
+      "files_touched": ["apps/web/src/lib/trigger-lab/sim.envelopes.ts"],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: 3 lines deleted (stale 'the editor seeds from these' comment + const ENV_KINDS + blank). The EnvKind type it was annotated with is untouched and still live."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 0, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "findings",
+        "spec_verdict": "clean",
+        "findings": [
+          {
+            "severity": "nit",
+            "note": "One stale reference to the now-deleted symbol survives repo-wide, but in a frozen historical handoff doc, not in code: docs/handoff/rock-solid/S23.md:94 states that `./sim.envelopes` surfaces `ParamSpec, clampUnit, ENV_KINDS`. That claim was ALREADY false before this batch (batch-01 had dropped the `export`), so batch-03 did not introduce the staleness — it only made the symbol non-existent rather than merely non-exported. Recorded for the audit trail; a dated handoff record arguably should stay as-written, and no code comment anywhere references ENV_KINDS. Not a blocker and not something this batch should have widened its file set to fix.",
+            "location": "docs/handoff/rock-solid/S23.md"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "`rg -w ENV_KINDS` at HEAD (excluding docs/plans) returns exactly one hit — the S23.md handoff prose noted above. Zero source hits, zero test hits, zero import/dynamic-access forms. No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0006",
+      "files_touched": ["apps/web/src/lib/app/views/mix-layer-rows.ts"],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: 4 lines deleted (function isMixRowHandleId + blank). MIX_ROW_HANDLE_PREFIX correctly left in place — it still backs mixRowHandleId in the same file."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 0, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "`rg -w isMixRowHandleId` at HEAD (excluding docs/plans) returns ZERO hits. The judgement call to keep MIX_ROW_HANDLE_PREFIX is correct and independently confirmed: it is the prefix mixRowHandleId composes, so deleting it would have been a live-path break. No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0007",
+      "files_touched": ["workers/error-ingest/src/validate.ts"],
+      "mutations_applied": 6,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: exactly 6 `export ` keywords removed across two hunks (+6/-6, one-token edits). No value, comment, or ordering changed."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 6, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "Each of the 6 constants re-checked with `rg -w` at HEAD: every hit is inside workers/error-ingest/src/validate.ts and every one retains a real in-file consumer — MAX_MESSAGE_LEN at :49/:59/:61, MAX_STACK_LEN at :62, MAX_BREADCRUMBS at :57, MAX_STR as str()'s default param at :18, MAX_BACKUPS_PER_BATCH at :117, MAX_KEY_SEGMENT_LEN at :89. Zero external importers, zero test importers (workers/error-ingest tests never name them), and a bracket-string dynamic-access sweep for these identifiers returns nothing. Unexport (not delete) is therefore the correct mutation. No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0009",
+      "files_touched": ["apps/web/src/lib/app/patch-graph.ts"],
+      "mutations_applied": 2,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: the `export { STAGE_ORDER };` line plus its doc comment removed at the file tail, and the now-unused STAGE_ORDER specifier dropped from the patch-topology import at :29. The rest of that import list (hoopId, PatchFlowEdge, PatchFlowNode, ...) is untouched, so this is a specifier removal, not an import rewrite."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 1, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "nit",
+            "note": "The batch record's note overstates its evidence: it says 'every external consumer of patch-graph.ts (patch-graph.test.ts, PatchGraphView.svelte, patch-inspector.ts, and others) imports STAGE_ORDER, if at all, from patch-topology, never from patch-graph'. Verified at HEAD, the stronger and simpler truth is that NO module outside patch-topology.ts references STAGE_ORDER at all — `rg -w STAGE_ORDER` yields only patch-topology.ts:88 (the declaration) and :137 (its own colX helper), plus one design-doc mention in docs/handoff/2026-07-13-d1-ui-handoff.md that correctly attributes it to patch-topology. The conclusion the note draws (the patch-graph re-export had zero consumers) is CORRECT and if anything understated; only the supporting sentence is imprecise. No action needed.",
+            "location": "docs/plans/2026-07-26-deep-review/05-fixes/batch-03.json"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "Removing an unconsumed re-export and the import that only fed it is provably runtime-inert: STAGE_ORDER's owning module still exports it, and typecheck stayed at 0 errors, which is the binding proof that no importer resolved through patch-graph. DEFAULT_OUTPUT_SCALARS was correctly left alone (still backing routingFromGraph's in-module default). No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0011",
+      "files_touched": [
+        "apps/web/src/lib/app/views/add-node-taxonomy.ts",
+        "apps/web/src/lib/app/monitor.ts"
+      ],
+      "mutations_applied": 4,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: 4 one-token `export ` removals (+2/-2 in each of the two files). Preset array contents, ROUTE_GROUP_KEY, and the monitor filter/rowKey exports are untouched."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 4, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "All four re-checked with `rg -w` at HEAD and all four retain in-file consumers with zero external ones: ENVELOPE_PRESETS (add-node-taxonomy.ts:14 decl, :70 buildAddGroups map), LFO_PRESETS (:22 decl, :79 map), MONITOR_RETENTION_LIMIT (monitor.ts:3 decl, :24 appendMonitorEvent default param), monitorSearchText (:47 decl, :39 filterMonitorEvents caller). No .svelte file imports any of them and no dynamic/bracket-string access exists. The deliberate exclusion is confirmed correct and untouched: apps/server/src/monitor.ts still `export const SERVER_MONITOR_RETENTION_LIMIT` at :3 and apps/server/src/monitor.test.ts:2 still imports it by name (used at :28/:31/:32) — unexporting that one would have broken a live test importer. No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    },
+    {
+      "finding_id": "dead-code-0012",
+      "files_touched": ["apps/server/src/controller-monitor.ts"],
+      "mutations_applied": 1,
+      "pre_fix_sha": "7ea4ebf",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates"],
+        "detail": "Diff verified: `export ` removed from localNicSubnets at :96 and the now-false 'Exported for direct testing.' clause struck from its doc comment, leaving the surrounding sentence intact. +2/-2, no body change."
+      },
+      "interface_delta_actual": { "exported_symbols_removed": 1, "exported_symbols_added": 0 },
+      "commit_sha": "61fb868",
+      "review": {
+        "standards_verdict": "clean",
+        "spec_verdict": "clean",
+        "findings": [],
+        "parity_check": {
+          "baseline_test_count": 2968,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "The implementer's flagged path deviation is CORRECT and independently confirmed. `rg -w localNicSubnets` across the whole repo returns exactly two hits, both in apps/server/src/controller-monitor.ts — the declaration at :96 and its own DI default at :170 (`deps.localSubnets ?? localNicSubnets`). The web-side controller-monitor.svelte.ts named in the task brief contains no such symbol, so the brief's path was a typo and fixing the server file is the only way to execute the finding at all. The doc-comment edit is required, not optional: leaving 'Exported for direct testing' on a non-exported function would have been exactly the stale comment the standards axis prohibits. Test compatibility re-confirmed: apps/server/src/controller-monitor.test.ts injects `localSubnets` through the deps object and never imports the function, so unexport (not delete) is right and no test needed changing. No test file in the diff."
+        },
+        "reviewer": { "model": "claude-opus", "effort": "low" }
+      }
+    }
+  ]
+}

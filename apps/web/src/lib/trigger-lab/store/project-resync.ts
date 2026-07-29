@@ -58,15 +58,12 @@ export function projectResyncMessages(live: Project | null, restored: Project | 
       msgs.push({ t: 'setKitTransform', drumId: drum.id, ...drumTransform(drum) });
     }
   }
-  // Kit-global resync. `expanded` MUST be carried alongside `mirror`: it is the sole driver of the
-  // output-port count, so an undo across the Expanded toggle has to re-apply it BEFORE setKitOutputs
-  // — otherwise the engine reconciles the restored outputs against the wrong mode and the count
-  // drifts right back (the exact defect the static-output rig kills). Only the fields that actually
-  // moved are sent, so a plain mirror edit still emits `{ mirror }` alone.
-  const globalPartial: { mirror?: Project['kit']['global']['mirror']; expanded?: boolean } = {};
-  if (!liveKit || liveKit.global.mirror !== restored.kit.global.mirror) {
-    globalPartial.mirror = restored.kit.global.mirror;
-  }
+  // Kit-global resync. `expanded` MUST be carried: it is the sole driver of the output-port
+  // count, so an undo across the Expanded toggle has to re-apply it BEFORE setKitOutputs —
+  // otherwise the engine reconciles the restored outputs against the wrong mode and the count
+  // drifts right back (the exact defect the static-output rig kills). Only the fields that
+  // actually moved are sent.
+  const globalPartial: { expanded?: boolean } = {};
   if (!liveKit || liveKit.global.expanded !== restored.kit.global.expanded) {
     globalPartial.expanded = restored.kit.global.expanded;
   }

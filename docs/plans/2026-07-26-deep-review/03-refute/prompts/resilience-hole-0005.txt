@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   An unhandled failure path with a PLAUSIBLE trigger. INVERSE POLARITY — this finding proposes ADDING code. Refute it if the path is already handled, or if no realistic trigger exists.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: resilience-hole-0005
+lens: resilience-hole
+criterion: unhandled-failure-path
+severity: major (author confidence: high)
+locations:
+  apps/server/src/main.ts:748-770 (statsTimer)
+  apps/server/src/main.ts:239-244 (broadcastJson)
+  apps/server/src/main.ts:493-494 (clients.admit)
+
+claim: `statsTimer` fires every 10ms and calls `broadcastJson`, which serializes a full stats object (including per-voice arrays under voice mode) and pushes it to every OPEN socket. `broadcastJson` never consults `ws.bufferedAmount` — a grep for `bufferedAmount` across apps/server/src and apps/web/src returns nothing. A remote viewer over the Cloudflare tunnel on a phone, or any peer whose TCP window collapses, cannot drain 100 messages/second; `ws` buffers the undeliverable frames in the Node process, and the queue grows for as long as the socket stays technically OPEN — which, per the heartbeat finding, is forever on a half-open link. Compounding it, `clients.admit(ws)` enforces no maximum connection count, so a shared room link (or a script against a 6-digit PIN) multiplies the per-client 100 Hz stream without limit. The machine under attack is the one driving a live show.
+
+evidence the author gave:
+  [read]  :: apps/server/src/main.ts:770 — the stats interval is `}, 10);` i.e. 100 Hz, and the voice-mode branch includes `voices: s.engine.voices` (a per-voice array), so the payload is not small.
+  [read]  :: apps/server/src/main.ts:239-244 — `broadcastJson`: encode once, then `for (const ws of clients) if (ws.readyState === ws.OPEN) ws.send(data);` — readyState is the only gate.
+  [grep] grep -rn "bufferedAmount" apps/server/src apps/web/src :: `grep -rn bufferedAmount apps/server/src apps/web/src` → no matches. Nothing anywhere inspects socket backpressure.
+  [read]  :: apps/server/src/main.ts:493 — `clients.admit(ws);` with the comment 'Admit additively (no eviction)'. No cap.
+
+proposed fix: In `broadcastJson` (and `relayToOthers`), skip any socket whose `bufferedAmount` exceeds a threshold (e.g. 1MB) and count the skip; when a socket stays over the threshold across N consecutive sweeps, `terminate()` it and emit an error Monitor event naming the peer. Independently, drop the stats cadence from 100 Hz to something a UI can actually render (the preview stream is already throttled to 30fps) and add a `LEDRUMS_MAX_CLIENTS` cap enforced in the connection handler, refusing beyond it with a distinct close code.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"resilience-hole-0005",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"unhandled-failure-path",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

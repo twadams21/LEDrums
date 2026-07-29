@@ -1,0 +1,798 @@
+{
+  "artifact": "02-findings/data-clumps",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "data-clumps",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "Phase 1 lead (web-app.json): patch-inspector.ts pixelsPerHoopForDrum / perHoopPixelCount / hoopPixelSpan share a (drum, kit, \u2026) tuple => missing hoop-geometry value object",
+      "why_rejected": "Read all three at apps/web/src/lib/app/docks/patch-inspector.ts:80, :89, :149. The shared tuple is (drum, kit) \u2014 TWO params, below this lens's >=3 threshold. Worse, the third function does not even share it: hoopPixelSpan(routing: OutputConfig[], ref: {drumId,hoop}, pixelsForHoop) takes a completely different shape and ALREADY uses an object for its address. perHoopPixelCount's third param (hoopIndex) is the varying argument, not a co-traveller. A (drum, kit) value object would be a wrapper around two things the caller already holds side by side with no third member to justify it. Not a clump."
+    },
+    {
+      "candidate": "Phase 1 lead (web-triggerlab.json): trigger-routing.ts DrumTransformPartial / KitGlobalPartial / HoopConfigPartial / OutputPartial and their mirrored store setters => one Project-patch operation split four ways",
+      "why_rejected": "Read apps/web/src/lib/trigger-lab/store/trigger-routing.ts (145 lines). Every apply* function is (project, partial) or (project, drumId, hoopIndex, partial) \u2014 the four Partial types are DISJOINT field sets (transform geometry vs kit globals vs per-hoop pixel count vs output protocol), not one tuple recurring. This is a parallel-structure / mutation-parity observation, which is a different lens's territory. There is no set of >=3 parameters travelling together across >=3 sites here; unifying the four Partials would merge four correctly-narrow types into one wide one, which INCREASES interface surface. Actively wrong to fix."
+    },
+    {
+      "candidate": "Phase 1 lead (server.json): main.ts boot() and stateMessage() pass the same (host, voiceHost, clients, autosavers x3, tunnelControl, monitor) bag => an unnamed 'ServerContext'",
+      "why_rejected": "Half wrong, and I kept only the half that survived. The bag IS already named twice: BootDeps (boot.ts:12-43, fully documented) and ClientMessageDeps (client-message.ts:85+). Both are single object params, not positional clumps, so the headline claim ('never been named') is false. stateMessage() at main.ts:446 takes NO parameters at all \u2014 it closes over module scope. What did survive is narrower: the three sibling Autosaver fields inside those bags, which I filed as its own finding. Rejecting the broad 'ServerContext' framing: merging BootDeps and ClientMessageDeps would couple the lifecycle surface to the message surface and increase what each consumer can reach."
+    },
+    {
+      "candidate": "Mechanical hit: canvas/elements.ts stripesAt / circleAt / gradientAt / polygonAt / checkerAt / noiseAt / elementAt all take (u, v[, t], el) \u2014 7 functions, top clump by raw count",
+      "why_rejected": "Genuine co-travel, but the fix is net-negative here and I will not file it. These are per-pixel-per-element renderers on the deepest inner loop in the repo (sceneColorAt at elements.ts:171 calls elementAt for every element at every pixel of every frame). AGENTS.md forbids allocation on the render loop; packaging (u,v,t) into a SamplePoint object either allocates per call or forces a mutable shared scratch that reintroduces the hidden-global-state hazard the same doc bans ('effects must be pure functions of RenderContext, no hidden global state'). The params are also maximally distinguishable in practice \u2014 u and v are a coordinate pair everyone reads as one idiom, and the arity is 3-4, not 8. Cost exceeds benefit."
+    },
+    {
+      "candidate": "Mechanical hit: sendPlain(res, status, body) duplicated at http/native-midi.ts:32 and http/host-event.ts:68, plus sendJson(res, status, body) at http/update-status.ts:45",
+      "why_rejected": "The tuple recurs, but the defect is duplicated-helper, not a missing type: (res, status, body) is the standard Node http response idiom and no value object wants to be born from it. The right fix is one shared `respond()` in a server http util, which belongs to the duplication lens, not mine. Filing it here would collide on dedup with that lens's better-framed version."
+    },
+    {
+      "candidate": "Mechanical hit: pnum / pstr / pbool in packages/core/src/effects/types.ts:77-89 all take (params, key, fallback)",
+      "why_rejected": "Three params travelling across three functions, so it trips the mechanical bar \u2014 but this is a typed-accessor family, the intended shape. `params` is the receiver, `key` selects, `fallback` is the per-call default; there is no tuple with independent identity. Bundling them would produce `pnum(params, {key, fallback})`, which is strictly worse ergonomics for a hot accessor. Correct as written."
+    },
+    {
+      "candidate": "Mechanical hit: setHoopConfig(drumId, hoopIndex, partial) at store.svelte.ts:1883, voice-engine-host.ts:242 and engine.ts:334; identifyHoop(drumId, hoop, durationMs) at engine-host.ts:195 and voice-engine-host.ts:411",
+      "why_rejected": "These are cross-layer delegation chains (web store -> server host -> core engine) forwarding the same call, not independent sites that co-evolved a tuple. The co-travelling part is (drumId, hoopIndex) \u2014 TWO members, below threshold; the third slot differs per function (partial vs durationMs). A HoopRef value object would add an exported type to three packages to save one param at each hop. Interface delta would be 'increases'. Not worth it."
+    },
+    {
+      "candidate": "Mechanical hit: color.ts hsvToRgb(h,s,v) / hsvToHex(h,s,v) and rgbToHsv(r,g,b) / rgbToHex(r,g,b)",
+      "why_rejected": "Colour component triples are the universal idiom and both modules already expose object-returning counterparts where an object is warranted. Introducing Hsv/Rgb params would force allocation at ~every pixel in the effects layer (hsvToRgb is called inside every element renderer in canvas/elements.ts). Same hot-path reasoning as the elements.ts rejection; also, ColorSwatch.svelte already imports an `Hsv` type for the places where the object form belongs."
+    }
+  ],
+  "items": [
+    {
+      "id": "data-clumps-0001",
+      "dedup_key": "c65ec3f170735862",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 61,
+          "end_line": 61,
+          "symbol": "applyEffectiveParams"
+        },
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 77,
+          "end_line": 92,
+          "symbol": "FrameModCtx / modCtxFor"
+        },
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 154,
+          "end_line": 166,
+          "symbol": "CompositorFrame"
+        },
+        {
+          "path": "packages/core/src/voice/modulation.ts",
+          "start_line": 191,
+          "end_line": 204,
+          "symbol": "ModSampleCtx"
+        },
+        {
+          "path": "packages/core/src/voice/engine.ts",
+          "start_line": 711,
+          "end_line": 711,
+          "symbol": "VoiceEngine tick sweep"
+        }
+      ],
+      "claim": "The tuple {timeMs, bpm, cc, osc, notes} travels through the voice path under three names and one un-named positional spread. compositor.ts:80 already declares `type FrameModCtx = Omit<ModSampleCtx,'phase'>` \u2014 exactly this tuple \u2014 and modCtxFor() consumes it, yet the sibling export applyEffectiveParams (line 61) takes the same five members as bare positional params (v, timeMs, bpm, cc?, osc?, notes?) and re-bundles them internally. CompositorFrame (line 154) carries the same live-table trio (cc/osc/notes) plus transport, and render() at line 180 hand-copies it into a FrameModCtx literal. The clump has a name; three of four sites refuse to use it.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/compositor.ts:61 \u2014 `export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ParamValues`; line 80 in the SAME file \u2014 `type FrameModCtx = Omit<ModSampleCtx, 'phase'>` which is precisely {timeMs,bpm,cc,osc,notes}."
+        },
+        {
+          "kind": "grep",
+          "command": "grep -rn \"notes?: NoteTable|osc?: OscTable|cc?: CcTable\" packages apps",
+          "detail": "Only 3 declaration sites, and they are the three names of the same tuple: compositor.ts:61 (positional), compositor.ts:160-164 (CompositorFrame), modulation.ts:198-203 (ModSampleCtx)."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/engine.ts:711 \u2014 `applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable)` \u2014 the engine holds all five as sibling fields and explodes them at the call."
+        }
+      ],
+      "proposed_fix": "Export FrameModCtx from compositor.ts (or better, move it beside ModSampleCtx in modulation.ts as the canonical 'frame-wide modulation context'). Change applyEffectiveParams to `(v: Voice, frame: FrameModCtx)`. Have VoiceEngine hold one FrameModCtx field it mutates in place per tick (zero-alloc, same as today's scratch discipline) and pass it to both applyEffectiveParams and the compositor. Make CompositorFrame embed it: `{ dt, transport, mod: FrameModCtx }` or leave CompositorFrame as the host-facing shape and have render() keep its single conversion.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure signature reshaping; the optional-table neutrality (absent cc/osc/notes => neutral sample) is preserved by keeping the fields optional on FrameModCtx, which they already are on ModSampleCtx."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck \u2014 the compiler enumerates every applyEffectiveParams call site (engine.ts:711 plus modulation.test.ts / modulation-graph.test.ts)",
+          "pnpm test --filter @ledrums/core \u2014 modulation.test.ts and modulation-graph.test.ts pin the sweep semantics and must stay green unchanged in expectation"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0002",
+      "dedup_key": "1cd1308af6871b84",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ui/Slider.svelte",
+          "start_line": 8,
+          "end_line": 21,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/Select.svelte",
+          "start_line": 11,
+          "end_line": 18,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/Switch.svelte",
+          "start_line": 6,
+          "end_line": 11,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/Toggle.svelte",
+          "start_line": 6,
+          "end_line": 13,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/TextField.svelte",
+          "start_line": 3,
+          "end_line": 11,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/SegmentedControl.svelte",
+          "start_line": 9,
+          "end_line": 15,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/ColorSwatch.svelte",
+          "start_line": 14,
+          "end_line": 27,
+          "symbol": "Props"
+        },
+        {
+          "path": "apps/web/src/lib/ui/EasePicker.svelte",
+          "start_line": 39,
+          "end_line": 45,
+          "symbol": "Props"
+        }
+      ],
+      "claim": "Eight design-system primitives each independently declare the identical four-member control contract \u2014 `onChange?: (v: T) => void; disabled?: boolean; ariaLabel?: string; class?: string` \u2014 with no shared base type. There is no compiler force keeping them aligned: SearchField.svelte already drifted (it has onChange/ariaLabel/class but no `disabled`, line 6-11), and IconButton.svelte uses `label` where the others use `ariaLabel` (line 13-17). Changing the control contract (e.g. adding a `required`/`invalid` a11y flag, or renaming ariaLabel) is an eight-file manual sweep the type system cannot check.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "for f in $(grep -rl 'type Props' --include='*.svelte' apps/web/src/lib); do grep -q onChange $f && grep -q 'disabled?: boolean' $f && grep -q 'ariaLabel?: string' $f && grep -q 'class?: string' $f && echo $f; done",
+          "detail": "Returns exactly 8 files: ColorSwatch, SegmentedControl, Switch, Toggle, TextField, Select, Slider, EasePicker \u2014 all four members present, all declared inline."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ui/Switch.svelte:6-14 declares the full four and destructures `class: klass`; apps/web/src/lib/ui/SearchField.svelte:6-14 declares only three (no `disabled`) \u2014 the drift is already present."
+        }
+      ],
+      "proposed_fix": "Add `export type ControlProps<T> = { onChange?: (v: T) => void; disabled?: boolean; ariaLabel?: string; class?: string }` to a new apps/web/src/lib/ui/control-props.ts (or theme-tokens.ts's sibling). Each primitive becomes `type Props = ControlProps<number> & { value: number; ... }`. Backfill `disabled` on SearchField in the same change and add the type to the styleguide entry per AGENTS.md's use-or-extend rule.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure type extraction; every prop keeps its optionality and its default at the destructuring site. No guard, validation or fallback is touched."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 9,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck \u2014 svelte-check resolves every consumer of the 8 primitives; any prop dropped or renamed surfaces as an error",
+          "pnpm test \u2014 Slider.test.ts, ColorSwatch.test.ts, ListItem.test.ts, EditableRow.test.ts exercise the props surface",
+          "pnpm design-system then diff docs/design-system.html to confirm the styleguide still renders every primitive"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0003",
+      "dedup_key": "7812275f40599a9a",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 262,
+          "end_line": 275,
+          "symbol": "evalGraphGen3From"
+        },
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 277,
+          "end_line": 286,
+          "symbol": "evalGraphGen3FromPlan"
+        },
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 615,
+          "end_line": 625,
+          "symbol": "evalChildren"
+        },
+        {
+          "path": "packages/core/src/voice/eval-graph.ts",
+          "start_line": 266,
+          "end_line": 270,
+          "symbol": "evalGraphGen3"
+        }
+      ],
+      "claim": "Three functions carry the identical 8-slot positional tuple (state, graph|plan, pad, startIds|childIds, ctx, viaPrefix, seen, draft) and do nothing but forward it to each other: evalGraphGen3 -> evalGraphGen3FromPlan (line 269), evalChildren -> evalGraphGen3From -> evalGraphGen3FromPlan (lines 625, 274). Six of the eight members (state, graph/plan, pad, ctx, viaPrefix, seen) are one traversal cursor; only startIds and draft vary per hop. Eight same-shaped positional args across three hops is the classic silent-transposition hazard \u2014 `seen` and `viaPrefix` are both invariant-carrying and adjacent, and `viaPrefix: string` sits next to `pad: string`, so a swapped pair type-checks cleanly.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/eval-graph.ts:262-275 and :277-286 \u2014 the two signatures differ only in `graph: TriggerGraph` vs `plan: RenderPlan`; every other slot is identical in name, order and type."
+        },
+        {
+          "kind": "tool-output",
+          "command": "python3 scratchpad/big.py (regex scan for functions with >=5 params across all 8 units)",
+          "detail": "eval-graph.ts is the top hit in the repo with three separate 8-param functions; only compositeInto (blend.ts:29, an rgba splat) and applyModifierChain tie it."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/eval-graph.ts:615-626 \u2014 the exported `evalChildren` re-lists all 8 and its whole body is a single forwarding call."
+        }
+      ],
+      "proposed_fix": "Introduce `interface EvalCursor { state: EvalState; pad: string; ctx: TriggerCtx; viaPrefix: string; seen: Set<string> }` local to eval-graph.ts. Signatures become `evalGraphGen3FromPlan(cursor: EvalCursor, plan: RenderPlan, startIds: readonly string[], draft: PlayDraft | null)` and likewise for the graph variant. Keep `evalChildren`'s exported signature intact as the public seam (it is called from the engine's pending-fire drain) and have it construct the cursor \u2014 that confines the churn to one file.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The `seen` cycle guard, the `plan.fatal` early return (lines 268, 273) and the unknown-child skip all stay exactly as written; only how they are addressed changes."
+      },
+      "fix_size_loc": 50,
+      "blast_radius": {
+        "files_touched": 1,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test --filter @ledrums/core \u2014 the eval-graph / trigger-graph suites pin R13/R14 fan-in and delay-drain semantics; a transposed cursor member would break them"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0004",
+      "dedup_key": "30795dcb137e0272",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/modifiers/chain.ts",
+          "start_line": 34,
+          "end_line": 44,
+          "symbol": "applyModifierChain"
+        },
+        {
+          "path": "packages/core/src/modifiers/types.ts",
+          "start_line": 37,
+          "end_line": 48,
+          "symbol": "ModifierContext"
+        },
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 243,
+          "end_line": 243,
+          "symbol": "compositor render"
+        },
+        {
+          "path": "packages/core/src/voice/generator-bridge.ts",
+          "start_line": 152,
+          "end_line": 152,
+          "symbol": "generator bridge"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/render.ts",
+          "start_line": 265,
+          "end_line": 265,
+          "symbol": "sim mirror"
+        }
+      ],
+      "claim": "applyModifierChain takes 8 positional params, three of which (model, timeMs, dt) are assembled into a `ModifierContext` object on the very first line of the body (chain.ts:45 `const ctx: ModifierContext = { model, timeMs, dt }`). ModifierContext is already an exported type (modifiers/types.ts:43) and is already what every modifier's `apply` receives. Every non-test caller has the three values adjacent and hands them over positionally; the sim mirror in apps/web (render.ts:265) repeats the same spread, so the engine and the trigger-lab mirror can drift on argument order independently. `timeMs` and `dt` are both bare numbers in adjacent slots \u2014 a transposition is silent.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/modifiers/chain.ts:34-45 \u2014 signature is (chain, state, fb, range, model, timeMs, dt, modCtx?) and line 45 is `const ctx: ModifierContext = { model, timeMs, dt };`."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/modifiers/types.ts:43-48 \u2014 `export interface ModifierContext { model: PixelModel; timeMs: number; dt: number }`, already re-exported from packages/core/src/index.ts."
+        },
+        {
+          "kind": "grep",
+          "command": "grep -rn 'applyModifierChain' --include='*.ts' --include='*.svelte' .",
+          "detail": "3 non-test call sites (compositor.ts:243, generator-bridge.ts:152, apps/web/.../trigger-lab/render.ts:265) plus ~30 call sites across 7 core test files, all passing model/timeMs/dt positionally."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/compositor.ts:243 \u2014 `applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx)`; the three clump members are contiguous at the call, same as everywhere else."
+        }
+      ],
+      "proposed_fix": "Change the signature to `applyModifierChain(chain, state, fb, range, ctx: ModifierContext, modCtx?: ModSampleCtx)` \u2014 8 params to 6, no new exported symbol (ModifierContext is already public). The compositor and generator-bridge each already own a per-frame object they can reuse in place (zero-alloc: mutate `ctx.timeMs` per voice rather than allocating), preserving the render-loop no-allocation contract. Test call sites update mechanically.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The bypass skip, the unknown-modifier-id skip (never throw on the render path) and the lazy createState slot all stay untouched \u2014 only the parameter packaging changes."
+      },
+      "fix_size_loc": 80,
+      "blast_radius": {
+        "files_touched": 10,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck \u2014 surfaces all ~33 call sites including the apps/web sim mirror",
+          "pnpm test \u2014 modifiers.s30/s31/s32, slice, trail, modulation and the trigger-lab generator-bridge parity test all exercise the chain runner",
+          "Confirm zero new per-frame allocations: the compositor must hoist one ModifierContext per frame, not construct one per voice per range"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0005",
+      "dedup_key": "0b3263bbaa9d3326",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+          "start_line": 74,
+          "end_line": 80,
+          "symbol": "classifyConnection"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+          "start_line": 95,
+          "end_line": 102,
+          "symbol": "classifyReconnect"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+          "start_line": 143,
+          "end_line": 150,
+          "symbol": "canConnect"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+          "start_line": 157,
+          "end_line": 165,
+          "symbol": "canReconnect"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/TriggerGraphView.svelte",
+          "start_line": 565,
+          "end_line": 579,
+          "symbol": "drop-target validity"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 2678,
+          "end_line": 2726,
+          "symbol": "connect / reconnect"
+        }
+      ],
+      "claim": "`fromId, toId, fromPort?, toPort?` travel as a four-slot positional tuple through classifyConnection, classifyReconnect, canConnect, canReconnect and the private sameSlot helper, and are re-spelled at 8 call sites. Two of the four slots are `string | undefined` in adjacent positions, so a from/to port transposition type-checks. TriggerGraphView.svelte:565 and :573 deliberately swap fromId/toId to validate a reverse drag (`canConnect(g, toId, from.nodeId, undefined, toPort)`) \u2014 exactly the manoeuvre a named `WireEnds { from, to, fromPort?, toPort? }` would make legible and a positional tuple makes an easy transposition bug.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "grep -rn 'canConnect(|classifyConnection(|canReconnect(|classifyReconnect(|sameSlot(' apps/web/src packages",
+          "detail": "17 hits across 3 non-test files; 5 declaration sites all carrying the identical 4-slot tail, 8 call sites re-spelling it, including 5 in TriggerGraphView.svelte alone."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts:150 and :165 \u2014 canConnect/canReconnect are pure pass-throughs whose entire body is the same 4-slot forward: `classifyConnection(graph, fromId, toId, fromPort, toPort) === null`."
+        }
+      ],
+      "proposed_fix": "Add `export interface WireEnds { from: string; to: string; fromPort?: string; toPort?: ToPort }` in graph-wiring.ts. Signatures become `classifyConnection(graph: TriggerGraph, w: WireEnds)`, `classifyReconnect(graph, edgeId, w)`, and the two `can*` verdicts likewise. Call sites in TriggerGraphView.svelte become named-field literals, which makes the deliberate reverse-drag swap self-documenting.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The direction/duplicate/cycle precedence, the self-loop check and the pure+total 'never throws on unknown ids' contract are all inside the bodies and are not touched."
+      },
+      "fix_size_loc": 45,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test \u2014 the graph-wiring suite pins each WireRejection reason and its precedence",
+          "pnpm ui-shot on the Trigger Graph view to confirm invalid-drop styling still fires (the reverse-drag path at TriggerGraphView.svelte:565 is the one behaviour a transposition would silently break)"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0006",
+      "dedup_key": "7d4ae543faecfb43",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/boot.ts",
+          "start_line": 28,
+          "end_line": 30,
+          "symbol": "BootDeps"
+        },
+        {
+          "path": "apps/server/src/handlers/client-message.ts",
+          "start_line": 89,
+          "end_line": 91,
+          "symbol": "ClientMessageDeps"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 622,
+          "end_line": 624,
+          "symbol": "createClientMessageHandler call"
+        },
+        {
+          "path": "apps/server/src/main.ts",
+          "start_line": 793,
+          "end_line": 795,
+          "symbol": "boot call"
+        },
+        {
+          "path": "apps/server/src/boot.ts",
+          "start_line": 125,
+          "end_line": 127,
+          "symbol": "shutdown flush"
+        }
+      ],
+      "claim": "`autosaver`, `showLibraryAutosaver`, `songLibraryAutosaver` are declared as three sibling `Autosaver` fields on BootDeps (boot.ts:28-30) and again on ClientMessageDeps (client-message.ts:89-91), passed as three arguments at both main.ts:622-624 and main.ts:793-795, and flushed as three parallel calls at boot.ts:125-127. They are three same-typed members that are never used apart: every consumer either markDirty()s one of them or flushes all three. A fourth persisted slot (a very likely addition) is a five-file edit today, and the shutdown flush at boot.ts:125-127 is the exact place a forgotten fourth autosaver would silently lose the last edit.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "grep -rn 'showLibraryAutosaver|songLibraryAutosaver' apps/server/src",
+          "detail": "20 non-test hits: 2 construction sites (main.ts:190, :201), 2 interface declarations (boot.ts:29-30, client-message.ts:90-91), 2 pass-through call sites (main.ts:623-624, :794-795), 2 destructures (client-message.ts:166-167), 4 markDirty call sites, plus the boot.ts:126-127 flush pair."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/boot.ts:124-128 \u2014 shutdown awaits `deps.autosaver.flush()`, `deps.showLibraryAutosaver.flush()`, `deps.songLibraryAutosaver.flush()` as three hand-written lines rather than iterating a collection."
+        }
+      ],
+      "proposed_fix": "Replace the three fields with one `Autosavers { project: Autosaver; showLibrary: Autosaver; songLibrary: Autosaver }` (or, given every consumer only calls markDirty/flush, a `readonly Autosaver[]` for the flush path plus named accessors). BootDeps and ClientMessageDeps each shed two fields; the shutdown flush becomes `Object.values(deps.autosavers).map(a => a.flush().catch(() => {}))`, which cannot forget a future member.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The `.catch(() => {})` per-flush swallow at boot.ts:125-127 must be preserved verbatim in the iterated form; nothing is removed, and the change makes the flush set harder to under-populate."
+      },
+      "fix_size_loc": 35,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test --filter server \u2014 client-message.test.ts asserts markDirty is/is-not called per library (lines 284-338) and autosave.test.ts covers flush; both must stay green",
+          "Assert the shutdown path still flushes exactly three autosavers (add a count assertion so the iterated form is pinned)"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0007",
+      "dedup_key": "ccc9fb15b7f8e85b",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/docks/patch-inspector.ts",
+          "start_line": 113,
+          "end_line": 133,
+          "symbol": "zoneMidiNote / zoneOscAddress / setZoneMidiNote / setZoneOscAddress"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/patch-inspector.ts",
+          "start_line": 269,
+          "end_line": 320,
+          "symbol": "addDeclaredZone / removeZone / moveZoneSlot"
+        },
+        {
+          "path": "packages/core/src/model/project-schema.ts",
+          "start_line": 72,
+          "end_line": 93,
+          "symbol": "midiNoteMapSchema / oscMapSchema / declaredZoneSchema"
+        },
+        {
+          "path": "packages/core/src/model/project-schema.ts",
+          "start_line": 107,
+          "end_line": 110,
+          "symbol": "triggerBindingSchema"
+        }
+      ],
+      "claim": "`{drumId, slot}` is the repo's trigger address, and it already exists as an object in four separate core schemas (midiNoteMapSchema:73-77, oscMapSchema:80-84, declaredZoneSchema:90-93, triggerBindingSchema:108-110) with no shared base \u2014 each re-declares `drumId: z.string(), slot: slotSchema`. In the web layer it is then exploded into positional params across seven functions in patch-inspector.ts, whose bodies immediately re-materialise it: `[...rest, { note, drumId, slot }]` (line 124), `{ ...map, zones: [...zones, { drumId, slot }] }` (line 274). moveZoneSlot (line 320) juggles four such addresses positionally in one function. Both `slot: number` params of `moveZoneSlot(map, drumId, oldSlot, newSlot)` are indistinguishable to the compiler.",
+      "evidence": [
+        {
+          "kind": "tool-output",
+          "command": "python3 scratchpad/clump.py (top-level function param-name clustering across all 8 units)",
+          "detail": "`('map','drumId','slot')` was the single most-repeated >=3-param signature in the repo \u2014 4 exact hits (patch-inspector.ts:113, :118, :269, :277) before counting the 4-param setters and moveZoneSlot."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/model/project-schema.ts:72-93 \u2014 three consecutive schemas each ending in the same `drumId: z.string(); slot: slotSchema.default(0)` pair; the doc comment at line 64 literally names the concept: 'What a `(drum, slot)` hit DOES...'."
+        },
+        {
+          "kind": "grep",
+          "command": "grep -rn 'drumId: string;' packages apps --include='*.ts'",
+          "detail": "apps/web/src/lib/trigger-lab/midi-controller.svelte.ts:26 and apps/web/src/lib/app/docks/patch-inspector.ts:26 both carry ad-hoc `{ kind: 'zone'; drumId: string; slot: number }` variants of the same address."
+        }
+      ],
+      "proposed_fix": "Add `export const zoneRefSchema = z.object({ drumId: z.string(), slot: slotSchema.default(0) })` to packages/core/src/model/project-schema.ts and define the three map schemas by extension (`zoneRefSchema.extend({ note: ... })`). Export `type ZoneRef = z.infer<typeof zoneRefSchema>`. Then reshape patch-inspector.ts's seven functions to `(map: InputMap, ref: ZoneRef, ...)`; moveZoneSlot becomes `(map, from: ZoneRef, to: ZoneRef)`, which makes the two slot numbers non-transposable.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "slotSchema's 0..7 range validation is preserved by construction (the extracted base carries it); the idempotence guard in addDeclaredZone and the total-clear semantics of removeZone are untouched."
+      },
+      "fix_size_loc": 70,
+      "blast_radius": {
+        "files_touched": 5,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test \u2014 patch-inspector.test.ts covers the zone editing functions; packages/protocol schemas.test.ts and core project-schema tests pin the persisted shape",
+          "Round-trip an existing saved project through the schema to confirm zod output is byte-identical after the extend() refactor (defaults must not shift)"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "data-clumps-0008",
+      "dedup_key": "5cb3aad1362b0f21",
+      "lens": "data-clumps",
+      "criterion": "co-travelling-params",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/generator-bridge.ts",
+          "start_line": 43,
+          "end_line": 43,
+          "symbol": "GeneratorBridge.renderVoice"
+        },
+        {
+          "path": "packages/core/src/voice/generator-bridge.ts",
+          "start_line": 78,
+          "end_line": 78,
+          "symbol": "renderVoice impl"
+        },
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 230,
+          "end_line": 230,
+          "symbol": "mix-branch render"
+        },
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 279,
+          "end_line": 279,
+          "symbol": "scoped render"
+        },
+        {
+          "path": "packages/core/src/modifiers/types.ts",
+          "start_line": 31,
+          "end_line": 34,
+          "symbol": "PixelRange"
+        }
+      ],
+      "claim": "`PixelRange { start, end }` is an exported core type (modifiers/types.ts:31) used by applyModifierChain and produced by `pixelRangesFor()`. Yet the sibling seam `renderVoice(v, model, timeMs, level, start, end, dst, modCtx)` takes 8 positional params, two of which are that object destructured. Both compositor call sites hold a real PixelRange and explode it at the boundary: `generators.renderVoice(branchVoice, model, timeMs, 1, range.start, range.end, input, branchCtx)` (line 230) and the same at line 279. Two adjacent bare numbers where a named type already exists, in the same package, on the render hot path.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "command": "grep -rn 'renderVoice(' apps packages",
+          "detail": "Exactly 3 call sites + 2 declarations, all in packages/core/src/voice/{compositor,generator-bridge}.ts; two of the three call sites destructure a PixelRange inline."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/compositor.ts:225-230 \u2014 `for (const range of pixelRangesFor(branchVoice, model)) { generators.renderVoice(..., range.start, range.end, ...) }` \u2014 the loop variable IS a PixelRange."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/modifiers/types.ts:31-34 \u2014 PixelRange is declared and re-exported from packages/core/src/index.ts:50, so no new symbol is needed."
+        }
+      ],
+      "proposed_fix": "Change the GeneratorBridge interface (generator-bridge.ts:43) and its implementation (line 78) to `renderVoice(v, model, timeMs, level, range: PixelRange, dst, modCtx)` \u2014 8 params to 7, zero new exported symbols. Lines 230 and 279 pass `range` directly; line 287 passes the `{ start, end }` it already computes.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Signature-only change on a seam with no guards; the range values are read identically inside."
+      },
+      "fix_size_loc": 12,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test --filter @ledrums/core",
+          "Confirm no new allocation at compositor.ts:287 (the full-model path) \u2014 pass a hoisted range object rather than a fresh literal per voice"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "data-clumps",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

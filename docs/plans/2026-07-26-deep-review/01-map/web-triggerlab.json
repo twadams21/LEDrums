@@ -1,0 +1,546 @@
+{
+  "artifact": "01-map/web-triggerlab",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "1",
+    "lane": "web-triggerlab",
+    "model": "claude-opus-5",
+    "effort": "low",
+    "nonce_verified": true,
+    "run_id": "wf_2cd19a09-dd0"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "lane": "web-triggerlab",
+      "scope": {
+        "paths": [
+          "apps/web/src/lib/trigger-lab"
+        ],
+        "files_read": 30
+      },
+      "modules": [
+        {
+          "name": "trigger-lab-store (TriggerLab god object)",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/store.svelte.ts"
+          ],
+          "responsibility": "Single Svelte-runes application store that owns the entire authoring model (graphs, presets, effects, canvas scenes, buses, transport, setlist) and exposes ~207 mutation methods plus ~42 accessors to every UI surface.",
+          "public_interface": [
+            "class TriggerLab",
+            "28 $state fields (graphs, graphNames, presets, canvasScenes, buses, pads, bpm, velocity, playing, galleryBlock, settingsBlock, envTarget, ...)",
+            "~207 methods: node CRUD (addNode/removeNode/connect/disconnect/reconnect/spliceOnDrop), param setters (setMode/setScope/setChance/setDelayMs/...), graph CRUD, section/song/show CRUD delegators, clipboard/paste, controller + backup + MIDI-learn commands, routing setters",
+            "type PasteResult, PasteContext, AddNodeOptions"
+          ],
+          "depends_on": [
+            "sim",
+            "clipdoc",
+            "persistence",
+            "store-submodules",
+            "controllers-suite",
+            "ws-client",
+            "midi-webmidi",
+            "@ledrums/core (voice)",
+            "render",
+            "kit",
+            "fixtures",
+            "dock-voices",
+            "dock-smoothing",
+            "save-status",
+            "show-builder"
+          ],
+          "depth": "mixed",
+          "loc": 3641,
+          "notes": "Largest file in repo; 109 files outside trigger-lab reference the lab, most through this store. Many methods are one-line delegators to store/* pure helpers or to the extracted controllers (shallow pass-throughs), while persistence/hydration/WS-sync sections are genuinely deep."
+        },
+        {
+          "name": "store pure helpers (store/*)",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/store/graphs.ts",
+            "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+            "apps/web/src/lib/trigger-lab/store/objects.ts",
+            "apps/web/src/lib/trigger-lab/store/ids.ts",
+            "apps/web/src/lib/trigger-lab/store/mod-graph.ts",
+            "apps/web/src/lib/trigger-lab/store/param-envelope.ts",
+            "apps/web/src/lib/trigger-lab/store/value-switch.ts",
+            "apps/web/src/lib/trigger-lab/store/seed.ts",
+            "apps/web/src/lib/trigger-lab/store/wire-toasts.ts",
+            "apps/web/src/lib/trigger-lab/store/system-toasts.ts",
+            "apps/web/src/lib/trigger-lab/store/trigger-routing.ts"
+          ],
+          "responsibility": "Stateless, immutable transformation helpers the store calls to compute new graph/edge/param/project values and to classify legal wiring operations.",
+          "public_interface": [
+            "buildEmptyGraph/cloneGraph/nextGraphName/removeGraphEverywhere",
+            "classifyConnection/classifyReconnect/canConnect/canReconnect/canSplice/reaches/normalizeFromPort/normalizeToPort",
+            "modTargetSpecs/addModInput/removeModInput/mappingsFor/modSourcesFor",
+            "setParamValue/setEnvKind/setEnvAmount/setEnvPoints/setEnvAdsr",
+            "addBand/removeBandAt/setBandCutoff/stripBandPorts/remapBandPorts",
+            "nid/reserveId/reserveIds/freshId",
+            "applyDrumTransform/applyKitGlobal/applyHoopConfig/applyRouting/applyInputMap/applyOutput/setPatchLabel",
+            "seedGraphs/seedAuthored/seedSongs/padKey/padLabel",
+            "wireRejectionMessage/describeSystemActions/announceSystemActions"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice types)",
+            "fixtures"
+          ],
+          "depth": "deep",
+          "loc": 1100,
+          "notes": "Well-factored: small interfaces over real rules (cycle detection, band port remapping). ids.ts holds module-level mutable id state \u2014 a hidden global."
+        },
+        {
+          "name": "hydration & migration pipeline",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/store/hydrate.ts"
+          ],
+          "responsibility": "Normalizes and forward-migrates persisted graphs \u2014 unioning builtin effects/presets, materializing linked nodes, and running the gen3 envelope/env-map/alias/play-type/mod-source-split/integrity migrations.",
+          "public_interface": [
+            "unionEffects/unionPresets/unionTriggerSources/hydratePadNames",
+            "materializeLinkedNodes(All)",
+            "migrateGraphEnvelopes/migrateGraphEnvMaps/resolveGraphAliases/inferPlayTypes/splitModulationSources/migrateGen3Graph(s)",
+            "sanitizeGraphsIntegrity(WithActions)",
+            "normalizeGraphs",
+            "type SystemActionSummary, NO_SYSTEM_ACTIONS"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice)",
+            "fixtures",
+            "store/graphs"
+          ],
+          "depth": "deep",
+          "loc": 504,
+          "notes": "Migration chain is append-only; each new gen adds another pass over every graph."
+        },
+        {
+          "name": "persistence & schema versioning",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/persistence.ts"
+          ],
+          "responsibility": "Defines the localStorage schemas (authored state, show library, song library) with serialize/deserialize/coerce plus versioned migrations including the 1-based hoop-target shift.",
+          "public_interface": [
+            "STORAGE_KEY/VERSION/AUTHORED_PRIOR_VERSION",
+            "serializeAuthored/deserializeAuthored/coerceAuthored",
+            "shiftHoopTargetTo1Based/migrateGraphHoopTargets/migrateGraphsHoopTargets/migrateAuthoredHoopTargets",
+            "migrateSongs/sectionGraphList",
+            "SHOWS_STORAGE_KEY/serializeShowLibrary/deserializeShowLibrary/loadShowLibrary",
+            "SONGS_STORAGE_KEY/song-library serialize+deserialize",
+            "interface AuthoredState, Show, ShowLibrary"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice)",
+            "store/song-library types"
+          ],
+          "depth": "deep",
+          "loc": 497,
+          "notes": "Two version axes (authored v2, shows v2, songs v1) coexist; hoop migration duplicated in shape with hydrate's migrations."
+        },
+        {
+          "name": "show & song library model",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/store/song-library.ts",
+            "apps/web/src/lib/trigger-lab/store/song-library-refs.ts",
+            "apps/web/src/lib/trigger-lab/store/song-library-sync.ts",
+            "apps/web/src/lib/trigger-lab/store/show-library-sync.ts",
+            "apps/web/src/lib/trigger-lab/store/shows.ts",
+            "apps/web/src/lib/trigger-lab/store/reserve-library-ids.ts",
+            "apps/web/src/lib/trigger-lab/show-builder.ts"
+          ],
+          "responsibility": "Models reusable library songs and shows \u2014 closure extraction, namespacing, ref resolve/detach, delete planning, server reconciliation, and compiling the authored model into an engine Show.",
+          "public_interface": [
+            "extractSongClosure/songNamespace/interface LibrarySong, ClosureSources",
+            "resolveSongRefs/detachLibrarySong/withLibrarySong/renameLibrarySongIn/removeLibrarySong/addSongRef/removeSongRef/showsUsingSong/planDeleteLibrarySong",
+            "class SongLibrarySync, class ShowLibrarySync (ReconcilePlan)",
+            "nextShowName/withShow/renameShowIn/planDeleteShow",
+            "buildShow(source: ShowSource)"
+          ],
+          "depends_on": [
+            "persistence",
+            "@ledrums/core (voice)"
+          ],
+          "depth": "deep",
+          "loc": 800,
+          "notes": "Two near-identical sync classes (shows vs songs) and two near-identical library CRUD sets \u2014 prime duplication territory."
+        },
+        {
+          "name": "extracted store controllers",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts",
+            "apps/web/src/lib/trigger-lab/sections-controller.svelte.ts",
+            "apps/web/src/lib/trigger-lab/controller-monitor.svelte.ts",
+            "apps/web/src/lib/trigger-lab/controller-test.svelte.ts",
+            "apps/web/src/lib/trigger-lab/midi-controller.svelte.ts",
+            "apps/web/src/lib/trigger-lab/save-status.ts"
+          ],
+          "responsibility": "Host-injected rune-owning collaborators carved out of the store (shows/songs, section arrangement, controller monitor/test, MIDI learn, save-status timing) that the store re-exposes through delegating accessors.",
+          "public_interface": [
+            "class ShowsController + ShowsControllerHost, writeStoredLibrary/writeStoredSongLibrary",
+            "class SectionsController + SectionsControllerHost",
+            "class ControllerMonitor + host",
+            "class ControllerTest + host",
+            "class MidiController + host, type MidiLearnTarget",
+            "class SaveStatusController, type SaveStatus, MIN_SAVING_MS/SAVED_HOLD_MS"
+          ],
+          "depends_on": [
+            "store.svelte.ts (via host callback interfaces)",
+            "persistence",
+            "store/song-library*",
+            "ws message types"
+          ],
+          "depth": "mixed",
+          "loc": 1311,
+          "notes": "Real extraction, but every method is mirrored back onto the store as a forwarder, so the store's surface never shrank."
+        },
+        {
+          "name": "simulation engine (Sim)",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/sim.ts",
+            "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+            "apps/web/src/lib/trigger-lab/sim.trigger-source.ts",
+            "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts"
+          ],
+          "responsibility": "Deterministic offline voice/graph simulator: compiles a TriggerGraph into blocks, resolves hits against trigger sources, and advances voices with envelope/LFO modulation on mono/poly buses.",
+          "public_interface": [
+            "class Sim (hit/tick/recallSection/stopBus/panic)",
+            "types Block/PlayBlock/AllBlock/RandomBlock/SequenceBlock/SwitchBlock/ChanceBlock/ToggleBlock, Bus, Voice, Section, LogEntry, EffectDef, Preset, Scope, PlayMode",
+            "defaultParams",
+            "makeNode/NODE_KINDS/nodeHasInput/nodeHasOutput/nodeHasModInput/nodeHasParams/blockChildren",
+            "triggerSourceOf/sourceMatchesFire/sourceMatchesPad/resolveGraphsForFire/normalizeTriggerValue",
+            "re-exported voice envelope/mod types"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice)",
+            "fixtures"
+          ],
+          "depth": "deep",
+          "loc": 1124,
+          "notes": "sim.envelopes.ts is almost purely re-exports of core voice types \u2014 a barrel, not a module. 14 sim.*.test.ts files, including a gen3-parity suite."
+        },
+        {
+          "name": "clipboard document format",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/clipdoc.ts",
+            "apps/web/src/lib/trigger-lab/clipboard-io.ts",
+            "apps/web/src/lib/trigger-lab/patch-diff.ts"
+          ],
+          "responsibility": "Versioned copy/paste document format for graphs, sections, songs, and patches \u2014 build, serialize, parse with typed errors, id remapping on paste, and a diff view for incoming patches.",
+          "public_interface": [
+            "CLIPDOC_APP/CLIPDOC_VERSION/CLIPDOC_PRIOR_VERSION",
+            "buildGraphClipDoc/buildSectionClipDoc/buildSongClipDoc/buildPatchClipDoc",
+            "serialize/parse/isClipParseError, ClipParseReason",
+            "RemapContext/RemapMint/makeDefaultMint + remap",
+            "types ClipDoc union, PatchPayload",
+            "writeClipboardText/readClipboardText",
+            "diffPatch, PatchDiff/PatchDiffRow"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice)",
+            "store/song-library (ClosureSources)",
+            "persistence types"
+          ],
+          "depth": "deep",
+          "loc": 808,
+          "notes": "Own v1\u2192v2 migration axis, separate from persistence's and hydrate's."
+        },
+        {
+          "name": "canvas scenes",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/store/canvas-scenes.ts"
+          ],
+          "responsibility": "Models user-authored canvas scene documents and projects each one into a virtual effect definition plus default preset so scenes appear in the normal effect pickers.",
+          "public_interface": [
+            "CANVAS_BUS_ID",
+            "makeCanvasScene/canvasEffectDef/canvasDefaultPreset",
+            "sceneRefsInGraph/retargetSceneRefs",
+            "formatCanvasScene/parseCanvasSceneJson, SceneJsonResult"
+          ],
+          "depends_on": [
+            "@ledrums/core (canvasEffectId, BUILTIN_CANVAS_SCENES)",
+            "sim types"
+          ],
+          "depth": "deep",
+          "loc": 140
+        },
+        {
+          "name": "engine sync / transport link",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/store/transport.ts",
+            "apps/web/src/lib/trigger-lab/store/project-resync.ts"
+          ],
+          "responsibility": "Keeps the browser model and the server engine in agreement \u2014 transport state signature diffing and computing the resync message list when a restored project differs from the live one.",
+          "public_interface": [
+            "interface TransportState, showSig, class EngineLinkSync",
+            "projectResyncMessages(live, restored)"
+          ],
+          "depends_on": [
+            "ws message types",
+            "@ledrums/core (Project)"
+          ],
+          "depth": "deep",
+          "loc": 152
+        },
+        {
+          "name": "live rendering & kit model",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/render.ts",
+            "apps/web/src/lib/trigger-lab/kit.ts",
+            "apps/web/src/lib/trigger-lab/fixtures.ts"
+          ],
+          "responsibility": "Builds the lab's pixel/kit geometry model and composites sim voices into an RGB frame buffer for the 3D preview.",
+          "public_interface": [
+            "renderFrame(buf, sim, lab)",
+            "buildLabModel/buildThumbPixelModel, interface LabModel",
+            "BUSES/DRUMS/EFFECTS/PADS/PRESETS, type Pad"
+          ],
+          "depends_on": [
+            "sim",
+            "@ledrums/core (geometry, effects)"
+          ],
+          "depth": "deep",
+          "loc": 677,
+          "notes": "fixtures.ts is seed data masquerading as a module; effects/presets defined here rather than in core."
+        },
+        {
+          "name": "effect thumbnails",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/effect-thumb-render.ts",
+            "apps/web/src/lib/trigger-lab/effect-thumb-ticker.ts",
+            "apps/web/src/lib/trigger-lab/thumb-projection.ts",
+            "apps/web/src/lib/trigger-lab/EffectThumb.svelte"
+          ],
+          "responsibility": "Renders animated per-effect preview thumbnails on a shared rAF ticker with a cached dot-grid projection of the kit.",
+          "public_interface": [
+            "THUMB_LOOP_MS, renderGeneratorThumbFrame",
+            "ticker (Ticker)",
+            "THUMB_COLS/THUMB_ROWS, getThumbProjection, representativeAgeMs, DotTable/ThumbProjection",
+            "<EffectThumb/>"
+          ],
+          "depends_on": [
+            "kit",
+            "sim",
+            "render",
+            "@ledrums/core"
+          ],
+          "depth": "deep",
+          "loc": 650
+        },
+        {
+          "name": "signal preview & envelope geometry",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/signal-preview.ts",
+            "apps/web/src/lib/trigger-lab/envelope-editor-geom.ts",
+            "apps/web/src/lib/trigger-lab/SignalFace.svelte",
+            "apps/web/src/lib/trigger-lab/EnvelopeEditor.svelte",
+            "apps/web/src/lib/trigger-lab/EnvelopeEditorView.svelte"
+          ],
+          "responsibility": "Pure math for modulation-source preview traces and ADSR editor hit-testing/dragging, plus the SVG views that draw them.",
+          "public_interface": [
+            "PREVIEW_LOOP_MS, triggerClock/firePulse/firePick/delayProgress/envelopeTrace/lfoTrace/randomDistributionTrace, SignalTrace/PreviewPoint",
+            "GEO/NUDGE/xOf/yOf/toUnit/handleAnchors/segmentBands/segmentAt/dragAttack\u2026",
+            "<SignalFace/>, <EnvelopeEditor/>, <EnvelopeEditorView/>"
+          ],
+          "depends_on": [
+            "@ledrums/core (voice)"
+          ],
+          "depth": "deep",
+          "loc": 1160,
+          "notes": "Geometry cleanly split from view \u2014 the strongest seam in the UI layer."
+        },
+        {
+          "name": "dock telemetry",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/dock-voices.ts",
+            "apps/web/src/lib/trigger-lab/dock-smoothing.ts",
+            "apps/web/src/lib/trigger-lab/input-activity.ts",
+            "apps/web/src/lib/trigger-lab/stat-format.ts",
+            "apps/web/src/lib/trigger-lab/StatusBar.svelte"
+          ],
+          "responsibility": "Normalizes sim-side and server-side voice/level telemetry into one dock view model with exponential smoothing, plus input-binding liveness badges and stat formatting.",
+          "public_interface": [
+            "DockVoice, simVoiceToDockVoice/serverVoiceToDockVoice/selectDockVoices",
+            "smoothingAlpha/smoothBusLevels/smoothDockVoices/groupVoicesByBus",
+            "InputActivity/InputBinding/InputBadgeView, activityKey/acceptsChannel/bindingFromSource/deriveInputBadge, LIVE_MS/STALE_MS",
+            "formatFps/formatMs",
+            "<StatusBar/>"
+          ],
+          "depends_on": [
+            "sim",
+            "ws message types",
+            "@ledrums/core (voice)"
+          ],
+          "depth": "mixed",
+          "loc": 437,
+          "notes": "stat-format.ts (18 LOC) is a shallow two-function module."
+        },
+        {
+          "name": "clip editing UI",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/ClipSettings.svelte",
+            "apps/web/src/lib/trigger-lab/EffectGallery.svelte"
+          ],
+          "responsibility": "Modal surfaces for choosing an effect and editing a play node's preset, parameters, and per-param envelopes.",
+          "public_interface": [
+            "<ClipSettings/>",
+            "<EffectGallery/>"
+          ],
+          "depends_on": [
+            "store.svelte.ts (TriggerLab)",
+            "sim types",
+            "EffectThumb",
+            "EnvelopeEditor"
+          ],
+          "depth": "shallow",
+          "loc": 635,
+          "notes": "Both bind directly to the god store rather than to props \u2014 no injectable seam."
+        },
+        {
+          "name": "trigger-lab test corpus",
+          "paths": [
+            "apps/web/src/lib/trigger-lab/*.test.ts",
+            "apps/web/src/lib/trigger-lab/store/*.test.ts"
+          ],
+          "responsibility": "Vitest suites covering the store (35+ files), sim behaviour, persistence migrations, clipdoc round-trips, and UI geometry \u2014 roughly half the LOC in scope.",
+          "public_interface": [
+            "n/a (test-only)"
+          ],
+          "depends_on": [
+            "every module above"
+          ],
+          "depth": "shallow",
+          "loc": 13000,
+          "notes": "Store tests are split by feature (store.delay, store.lfo, store.shows\u2026) while store/ has a parallel set \u2014 two organizing schemes for the same subject; jscpd flags 58 duplicated lines between persistence.songlibrary.test.ts and store/song-library.test.ts."
+        }
+      ],
+      "seams": [
+        {
+          "at": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:113 (ShowsControllerHost) and sections-controller.svelte.ts:35, controller-monitor.svelte.ts:16, controller-test.svelte.ts:19, midi-controller.svelte.ts:32",
+          "kind": "existing",
+          "why": "Each extracted controller takes a host interface of callbacks, so its behaviour is testable and substitutable without touching the store."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/store.svelte.ts:877 makeClient: () => WSClient",
+          "kind": "existing",
+          "why": "WS transport is injectable at construction \u2014 tests can swap the client without a live server."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/save-status.ts:26 SaveStatusClock",
+          "kind": "existing",
+          "why": "Clock injection makes save-status timing deterministic in tests."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/store/hydrate.ts:126 PresetParamsFor / :235 SpecsFor",
+          "kind": "existing",
+          "why": "Migrations take lookup functions instead of reaching into the store, keeping them pure."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/clipdoc.ts:439 RemapMint / makeDefaultMint",
+          "kind": "existing",
+          "why": "Id minting on paste is a pluggable strategy, allowing deterministic remap tests."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/store/ids.ts",
+          "kind": "leaky",
+          "why": "Module-level mutable id registry (reserveId/reserveIds) is process-global state shared by store, clipdoc paste, and library import \u2014 no way to scope or reset it per store instance."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/store.svelte.ts localStorage writes (~lines 1088-1300) and shows-controller writeStoredLibrary/writeStoredSongLibrary",
+          "kind": "leaky",
+          "why": "Storage is touched directly via `typeof localStorage === 'undefined'` guards in two different modules rather than behind one injected storage port."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/ClipSettings.svelte / EffectGallery.svelte / StatusBar.svelte",
+          "kind": "missing",
+          "why": "Components consume the TriggerLab instance directly instead of a narrow prop/view-model, so no UI behaviour can be varied or tested without the whole store."
+        },
+        {
+          "at": "migration chain across persistence.ts (hoop/song migrations) and store/hydrate.ts (gen3 migrations)",
+          "kind": "missing",
+          "why": "There is no single registered migration pipeline; each new schema generation appends a bespoke pass in whichever of the two files happens to own the shape."
+        },
+        {
+          "at": "store/show-library-sync.ts ShowLibrarySync vs store/song-library-sync.ts SongLibrarySync",
+          "kind": "missing",
+          "why": "Two reconciliation classes with parallel ReconcilePlan/SongReconcilePlan shapes and no shared abstraction \u2014 a change to reconcile semantics must be made twice."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/effect-thumb-ticker.ts (module-level `ticker` singleton)",
+          "kind": "leaky",
+          "why": "A shared exported rAF ticker object means thumbnail animation timing cannot be substituted or paused per consumer."
+        },
+        {
+          "at": "apps/web/src/lib/trigger-lab/fixtures.ts",
+          "kind": "leaky",
+          "why": "EFFECTS/PRESETS/BUSES/PADS are hard-coded seed data imported by store, sim, hydrate and render alike \u2014 the effect catalog has no registry seam."
+        }
+      ],
+      "suspicions": [
+        {
+          "lens": "divergent-change",
+          "where": "apps/web/src/lib/trigger-lab/store.svelte.ts (3641 LOC, ~207 methods, 28 $state fields)",
+          "hunch": "Adding a node kind, a persistence field, a controller command, or a paste context all force edits to this one class \u2014 it is the repo's single highest-churn file and almost every unrelated concern converges on it."
+        },
+        {
+          "lens": "middle-man",
+          "where": "apps/web/src/lib/trigger-lab/store.svelte.ts section/song/show delegators to sectionsCtl and showsCtl (e.g. get/set activeSectionId, sectionClipboard, newShow, saveShow, renameSong)",
+          "hunch": "The controller extraction added a layer without removing the old surface \u2014 dozens of methods are pure forwarders, so the store still has the full API and the split bought navigability, not decoupling."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "apps/web/src/lib/trigger-lab/persistence.songlibrary.test.ts vs store/song-library.test.ts (jscpd: 58 lines)",
+          "hunch": "Both suites appear to build the same library fixtures and assert overlapping round-trip behaviour, which suggests the production code is likewise split across persistence.ts and store/song-library*.ts along an arbitrary line."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "store/show-library-sync.ts vs store/song-library-sync.ts; store/shows.ts (withShow/renameShowIn/planDeleteShow) vs store/song-library-refs.ts (withLibrarySong/renameLibrarySongIn/planDeleteLibrarySong)",
+          "hunch": "Two libraries of named, id-keyed, delete-planned entities implemented twice with parallel names \u2014 likely one generic library module in disguise."
+        },
+        {
+          "lens": "duplicated-code",
+          "where": "parallel test-organisation schemes: store.<feature>.test.ts (35+ at top level) vs store/<feature>.test.ts",
+          "hunch": "The same subjects (canvas-scenes, shows, song-library, value-switch, system-toasts, graphs, ids) have suites in both places; some pairs may be near-copies testing the same code path twice."
+        },
+        {
+          "lens": "primitive-obsession",
+          "where": "apps/web/src/lib/trigger-lab/store.svelte.ts graph keys \u2014 pad graphs keyed `drumId:zone`, authored graphs keyed `graph-<n>`; store/seed.ts padKey()",
+          "hunch": "Two semantically different identifier kinds share one bare `string` type and are parsed by convention, so a pad key and an authored key are indistinguishable at every call site."
+        },
+        {
+          "lens": "repeated-switches",
+          "where": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts NODE_KINDS + nodeHasInput/nodeHasOutput/nodeHasModInput/nodeHasParams/nodeIsModSource, and the ~25 per-kind setters in store.svelte.ts (setMode/setScope/setChance/setSwitchOn/setDelayMode/setBandCutoff/\u2026)",
+          "hunch": "Node-kind capability is decided by five separate predicate functions plus a fan of kind-specific setters; adding a kind means finding every one of them."
+        },
+        {
+          "lens": "speculative-generality",
+          "where": "apps/web/src/lib/trigger-lab/sim.envelopes.ts (75 LOC, essentially all `export type X = voice.X` re-exports)",
+          "hunch": "A file that only aliases core types adds an indirection layer with no behaviour; same smell in parts of sim.ts's re-export block."
+        },
+        {
+          "lens": "dead-code",
+          "where": "apps/web/src/lib/trigger-lab/NOTES.md (\"throwaway model probe \u2026 delete this directory\" with all three verdicts still TBD)",
+          "hunch": "The directory is documented as a disposable prototype but is now ~13k LOC referenced by 109 files \u2014 the doc is stale and may hide genuinely abandoned probe-era code (fixtures.ts EFFECTS/PRESETS, render.ts, kit.ts) alongside production paths."
+        },
+        {
+          "lens": "boundary-violation",
+          "where": "apps/web/src/lib/trigger-lab/fixtures.ts (EFFECTS, PRESETS, BUSES) and render.ts",
+          "hunch": "Effect definitions and frame compositing live in an app-level lab directory while AGENTS.md declares effects/compositor belong to packages/core \u2014 the web app may be carrying a second, divergent effect catalog."
+        },
+        {
+          "lens": "resilience-hole",
+          "where": "apps/web/src/lib/trigger-lab/store.svelte.ts localStorage persistence effect (~1234-1300) and writeStoredLibrary in shows-controller.svelte.ts:90",
+          "hunch": "Write-through localStorage caching guarded only by `typeof localStorage === 'undefined'`; quota-exceeded or serialization failure on a large show library likely throws inside a $effect with no fallback."
+        },
+        {
+          "lens": "data-clumps",
+          "where": "store/trigger-routing.ts partial types (DrumTransformPartial, KitGlobalPartial, HoopConfigPartial, OutputPartial) and their matching store setters",
+          "hunch": "Four parallel `apply*(project, partial)` functions each mirrored by a store method suggest one Project-patch operation split four ways by data shape."
+        },
+        {
+          "lens": "divergent-change",
+          "where": "three independent version axes: persistence.ts (VERSION 2 / SHOWS_VERSION 2 / SONGS_VERSION 1), clipdoc.ts (CLIPDOC_VERSION 2), store/hydrate.ts gen3 migrations",
+          "hunch": "A single model change (e.g. a new node field) must be threaded through three unrelated migration mechanisms; drift between them is likely already present in hoop-target handling, which appears in both persistence.ts and hydrate."
+        }
+      ],
+      "coverage_notes": "Read fully or substantially: store/*.ts export surfaces (all non-test files), sim.* module headers, persistence.ts, clipdoc.ts, hydrate.ts, and the export lists of every non-test .ts in the directory. I read only the first ~420 lines of store.svelte.ts plus a full method-name inventory (207 methods, 42 accessors, 28 $state fields) \u2014 the bodies of the persistence effect, WS sync, paste/materialize, and node-editing sections are UNREAD, so depth judgements there are inferred from names and import graph. The six .svelte components (ClipSettings, EffectGallery, EnvelopeEditor, EnvelopeEditorView, EffectThumb, SignalFace, StatusBar, ~1900 LOC) were NOT read at all \u2014 their responsibilities and the \"binds directly to the store\" claim are inferred from the store's popup state fields and the 109-file external reference count, not verified. No test file bodies were read; the duplication suspicions restate the jscpd signal plus the filename-parallelism pattern rather than confirmed copies. LOC figures per module are summed from wc and are approximate for grouped modules."
+    }
+  ]
+}

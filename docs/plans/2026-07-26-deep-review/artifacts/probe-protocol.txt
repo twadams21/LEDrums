@@ -1,0 +1,1 @@
+Use Glob and Read to inspect packages/protocol. Reply with exactly one line and nothing else: MODEL=<the exact model identifier you are running as> FILES=<number of .ts files under packages/protocol/src> TOPIC=<five words describing what this package is for>

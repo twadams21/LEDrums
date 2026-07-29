@@ -1,0 +1,218 @@
+{
+  "initiative_id": "INIT-04-server-runtime-hardening",
+  "variant": "fable",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-04",
+    "model": "claude-fable-5",
+    "effort": "medium"
+  },
+  "summary": "Subtraction-first hardening of the server runtime: the plan's centre of gravity is DELETION — kill the never-exercised optionality on ClientMessageDeps/ProjectHandlerDeps (the mechanism by which the pre-risk snapshot guard can silently fail open), collapse the duplicated trusted-POST scaffolding into one owner with two proven callers, and add the smallest honest fault containment the survived findings demand: a per-frame catch in the voice render loop that keeps the loop alive (no quarantine machinery — the drummer fixes the bad effect from a still-running UI), a boot recovery ladder that quarantines a corrupt live project and seeds (making the ALREADY-EXISTING WS snapshot-restore path reachable instead of building a boot-time restore rung), blackout-on-fatal by reusing the existing stop(), standard ws keepalive both sides, a bufferedAmount send gate, and error-frame redaction+rate-limit. Every proposed abstraction from the findings that had one hypothetical caller is refused by name: no createServerApp factory, no PersistedSlots registry, no per-effect quarantine, no LEDRUMS_MAX_CLIENTS knob, no dropped-send counters. divergent-change-0004 is treated by shrinking main.ts through the deletions above and by noting that the honest bulk of its shrink (the dual legacy/voice host wiring, VOICE_MODE stats branch, dual onFrame) is INIT-01's deletion to make — duplicating it here would be scope creep.",
+  "findings_addressed": [
+    "speculative-generality-0002",
+    "duplicated-code-0006",
+    "resilience-hole-0001",
+    "resilience-hole-0002",
+    "resilience-hole-0004",
+    "resilience-hole-0005",
+    "resilience-hole-0013",
+    "divergent-change-0004"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Delete the speculative optionality on ClientMessageDeps and ProjectHandlerDeps",
+      "intent": "speculative-generality-0002: make tunnelControl, isTunnelClient, monitor, listNetworkAdapters, backups and controller REQUIRED on ClientMessageDeps (apps/server/src/handlers/client-message.ts:84-145) and snapshotPreRisk REQUIRED on ProjectHandlerDeps (apps/server/src/handlers/projects.ts:24). Delete every now-dead absent-collaborator branch: the ~20 `deps.x?.` optional chains at client-message.ts:215-306, `deps.backups?.snapshotPreRisk() ?? true` at :342, the `deps.backups && !deps.backups.snapshotPreRisk()` short-circuit at :441, and `(deps.snapshotPreRisk?.() ?? true) === false` at projects.ts:40 (becomes `!deps.snapshotPreRisk()`). The sole production wiring (main.ts:618-663) already supplies all six, so main.ts needs zero edits. Tests that want a disabled shape pass explicit no-op stubs — 'backups disabled' becomes stated test intent instead of an ambient fail-open default. This turns a dropped `backups` key from a silent data-loss fail-open into a compile error, and is net-negative LOC.",
+      "files": [
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/projects.ts",
+        "apps/server/src/handlers/client-message.test.ts",
+        "apps/server/src/handlers/projects.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck clean (only test harnesses should error before stubs are added); `grep -n 'backups?\\.\\|snapshotPreRisk?\\.\\|controller?\\.\\|tunnelControl?\\.\\|listNetworkAdapters?' apps/server/src/handlers/*.ts` returns zero optional-chain hits on those deps; grep confirms exactly one non-test createClientMessageHandler call site; existing loadProject fail-closed test (backup write fails → load refused, error frame sent) stays green with an explicit failing stub; pnpm gates green; `git diff --stat` for this commit is net-negative."
+    },
+    {
+      "id": "S2",
+      "title": "Collapse the duplicated trusted-POST scaffolding into http/trusted-post.ts",
+      "intent": "duplicated-code-0006: the ~28-line preamble duplicated at host-event.ts:91-120 and native-midi.ts:48-77 (path match, 405 gate, isTrustedHost → 401, utf8 accumulation, byte-cap destroy(), error→400) moves into ONE new module apps/server/src/http/trusted-post.ts exporting `createTrustedPostRoute({ path, hostToken, maxBody, tooLargeMessage, onBody(raw, res) }): (req, res) => boolean` plus the shared sendPlain. This abstraction passes the two-real-callers test on day one — both existing routes are rewritten as thin onBody bodies (host-event keeps its parseHostEvent→monitor 204/400; native-midi keeps decode→type-gate→dispatch 204/400). The `4096` magic number becomes a named per-route maxBody argument; the drifted constants unify. Both handler files shrink; net LOC is negative (~56 deleted vs ~45 added).",
+      "files": [
+        "apps/server/src/http/trusted-post.ts",
+        "apps/server/src/http/host-event.ts",
+        "apps/server/src/http/native-midi.ts"
+      ],
+      "risk": "medium",
+      "verification": "apps/server/src/http/host-event.test.ts and apps/server/src/http/native-midi.test.ts pass UNCHANGED (they already assert 405/401/400/204 and the oversize-body destroy path — zero test edits is the parity proof); pnpm gates green; `git diff --stat` net-negative across the three files."
+    },
+    {
+      "id": "S3",
+      "title": "Per-frame catch in VoiceEngineHost.loop — contain a throwing effect to one frame",
+      "intent": "resilience-hole-0001 (loop half): wrap the `this.step(TICK_MS)` call inside loop()'s drain while-loop (voice-engine-host.ts:473-477) in try/catch. On catch: emit ONE monitor error event ('Render tick failed — frame skipped', with err.message/stack as detail) via the already-wired this.monitor, throttled to at most one emit per 1000ms of engine time (a lastFaultEmitMs field — two lines), zero the accumulator for this iteration, and CONTINUE — the timer chain in scheduleNext() stays intact because the throw no longer escapes the setTimeout callback. Deliberately NO per-voice/per-effect quarantine machinery (refused: it needs fault attribution plumbing through core for a case the UI already solves — the rig latches the last good frame, the app and UI stay alive, and the drummer deletes the offending effect from a working editor). No signature changes, no new exports, no core edits.",
+      "files": [
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/voice-engine-host.test.ts"
+      ],
+      "risk": "high",
+      "reverses": "Single-commit revert: `git revert` this commit alone restores the bare loop; no other step reads the catch or the lastFaultEmitMs field.",
+      "verification": "New voice-engine-host.test.ts cases: (1) register a show whose effect render throws from frame 5 onward, drive step()/loop() via the public test seam, assert the host keeps advancing engineTimeMs and the timer path stays scheduled; (2) assert exactly one monitor error event per 1000ms of engine time while the effect throws continuously at 120fps; (3) assert a one-frame throw followed by healthy frames resumes normal output.sendFrame calls. pnpm gates green at 2968+new."
+    },
+    {
+      "id": "S4",
+      "title": "Install process error capture FIRST and reuse stop() for blackout-on-fatal",
+      "intent": "resilience-hole-0001 (fatal half) + the capture-ordering aggravator of resilience-hole-0002: move installProcessErrorCapture from main.ts:263 to above the initialProject() call (before line 137) so boot faults are captured and reported, mirroring the existing `let flushReportsSync` late-binding pattern with `let onFatalCleanup: () => void = () => {}`. After voiceHost/host construction, assign `onFatalCleanup = () => { try { (voiceHost ?? host).stop(); } catch { /* never mask exit */ } }` and make onFatal run onFatalCleanup THEN flushReportsSync — VoiceEngineHost.stop() (voice-engine-host.ts:446-453) already does clearTimeout + output.blackout(dmxMap) + output.close(), so a hard crash darkens the rig instead of freezing it lit, with ZERO new blackout code. No new exports, no new modules.",
+      "files": [
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "process-errors.test.ts already proves onFatal runs before exit — extend main-level proof manually: kill -USR-style simulation is not unit-testable from main.ts, so evidence is (a) code order: capture install line number < initialProject call line number in the diff, (b) a new voice-engine-host.test.ts assertion that stop() invokes output.blackout then output.close on a fake output, (c) pnpm gates green."
+    },
+    {
+      "id": "S5",
+      "title": "Boot recovery ladder: quarantine a corrupt live project, seed, and boot",
+      "intent": "resilience-hole-0002: move initialProject() out of main.ts into apps/server/src/projects.ts as exported `bootProject(): { project; source: 'seed' | 'file' | 'recovered-seed'; name; path; quarantinedTo?: string }` (main.ts loses ~20 lines; the function becomes unit-testable, which inline-in-main never was). Ladder: if the file exists, try loadProject; on ANY throw (JSON/Zod/ReferentialIntegrityError), rename the bad file to `default.local.corrupt-<ISO ts>.json` via fs.renameSync (data preserved, never deleted), and return the reconciled seed with source 'recovered-seed'. Deliberately NO boot-time snapshot-restore rung (refused: snapshotStore cannot exist before the host, and it does not need to — once the app boots on the seed, the ALREADY-EXISTING Backups dialog restore path becomes reachable, which is the entire point). Widen diagnostics.ts project.source union to include 'recovered-seed' and emit a loud 'Project file was corrupt — quarantined to <path>; recovered from seed. Restore a backup from the Backups dialog.' monitor error event when quarantinedTo is set.",
+      "files": [
+        "apps/server/src/projects.ts",
+        "apps/server/src/projects.test.ts",
+        "apps/server/src/main.ts",
+        "apps/server/src/diagnostics.ts"
+      ],
+      "risk": "medium",
+      "verification": "New projects.test.ts cases against a temp LEDRUMS_PROJECTS_DIR: (1) truncated JSON in default.local.json → bootProject returns source 'recovered-seed', the bad file is renamed aside and still on disk, the seed passes assertProjectIntegrity; (2) schema-valid file → source 'file', untouched; (3) no file → source 'seed'. diagnostics.test.ts covers the new source label. pnpm gates green."
+    },
+    {
+      "id": "S6",
+      "title": "Server-side ws keepalive: ping sweep + terminate dead peers",
+      "intent": "resilience-hole-0004 (server half): add `installWsKeepalive({ sockets, intervalMs, onDead })` to apps/server/src/client-registry.ts (co-located with the registry that owns socket membership, tested by its existing suite) implementing the standard ws heartbeat: mark isAlive=false, ping(); pong sets isAlive=true; a socket still false at the next sweep is terminate()d and handed to onDead. main.ts wires onDead to the exact body of the existing 'close' handler (clients.remove + controllerMonitor.dropWatcher + broadcastPresence) and unref()s the interval like snapshotTimer. This is the whole fix for the server's half-open-peer leak — no protocol change, ~25 lines added, and it is also the mechanism S8's slow-peer strikes reuse for removal.",
+      "files": [
+        "apps/server/src/client-registry.ts",
+        "apps/server/src/client-registry.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "client-registry.test.ts: fake sockets with recorded ping/terminate — a socket that never pongs is terminated on the second sweep and reported to onDead; a ponging socket survives N sweeps; pnpm gates green."
+    },
+    {
+      "id": "S7",
+      "title": "Web client staleness watchdog: force-close a half-open link",
+      "intent": "resilience-hole-0004 (client half): in apps/web/src/lib/ws/client.ts, record lastServerMessageAt in the message handler and run a watchdog interval while the socket claims open: if nothing (stats frames arrive every 10ms; binary preview ~30fps) has arrived for STALE_MS=5000, call ws.close() and let the EXISTING onclose → onConnection('closed') → reconnect ladder do everything else — store.link flips, hit() falls back to local sim, no new states, no new protocol, no dropped-send counter (refused as speculative observability). ~15 lines.",
+      "files": [
+        "apps/web/src/lib/ws/client.ts",
+        "apps/web/src/lib/ws/client.test.ts"
+      ],
+      "risk": "low",
+      "verification": "client.test.ts with the injected WSLike factory and fake timers: open the socket, deliver no messages, advance past 5000ms, assert close() was called on the fake and onConnection reported 'closed' with a reconnect scheduled; delivering any message resets the deadline. pnpm gates green."
+    },
+    {
+      "id": "S8",
+      "title": "bufferedAmount send gate + slow-peer strikes on the broadcast paths",
+      "intent": "resilience-hole-0005: export a pure `backpressureVerdict(bufferedAmount: number, strikes: number): 'send' | 'skip' | 'terminate'` from apps/server/src/client-registry.ts (threshold 1MB, terminate at 3 consecutive over-threshold sweeps) and apply it in main.ts's broadcastJson (:239), broadcastBinary (:429) and relayToOthers (:540): skip the send and increment a WeakMap<WebSocket, number> strike counter when over threshold, reset on under, terminate() + monitor error ('Slow consumer dropped') on the third strike — removal then rides S6's existing dead-peer path. The stats cadence stays 10ms and NO LEDRUMS_MAX_CLIENTS cap is added (both refused here: cadence is a product-feel call routed to Trent in open_questions; a connection cap is a knob for a load the PIN gate plus this reaper already bound).",
+      "files": [
+        "apps/server/src/client-registry.ts",
+        "apps/server/src/client-registry.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "medium",
+      "verification": "client-registry.test.ts: backpressureVerdict truth table (under→send+reset, over→skip at strikes 0-1, over at strike 2→terminate); main.ts wiring evidenced by grep showing all three broadcast loops route through the verdict (no bare `ws.send` left in a clients loop); pnpm gates green."
+    },
+    {
+      "id": "S9",
+      "title": "Redact tunnel-facing error frames and rate-limit the error reply",
+      "intent": "resilience-hole-0013: add pure `clientErrorMessage(err: unknown, viaTunnel: boolean): string` to apps/server/src/ws-protocol.ts (existing tested module): viaTunnel → the constant 'Could not apply that change.' (no schema paths, no filesystem paths); local → err.message flattened to its first line and capped at 300 chars. In main.ts's ws.on('message') catch (:510-517), keep the monitor emit carrying the FULL message/stack (telemetry unchanged; Reporter already dedups), pass tunnelClients.has(ws) to clientErrorMessage for the ws.send, and add a per-socket error-frame limiter (WeakMap<WebSocket, {windowStart, count}>, max 5 error frames per 1000ms — over the limit the frame is silently dropped; the monitor emit still fires so telemetry sees the flood but the socket cannot be used as an amplifier of itself).",
+      "files": [
+        "apps/server/src/ws-protocol.ts",
+        "apps/server/src/ws-protocol.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "low",
+      "verification": "ws-protocol.test.ts: clientErrorMessage with a multi-line ZodError-shaped message and an absolute-path Error → tunnel output is the constant string, local output is single-line and path-capped at 300 chars; limiter unit: 50 calls in one window yield 5 sends. pnpm gates green."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2", "S3"],
+    ["S4", "S7"],
+    ["S5"],
+    ["S6"],
+    ["S8"],
+    ["S9"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/server/src/handlers/client-message.ts",
+      "removed": ["ClientMessageDeps.tunnelControl?", "ClientMessageDeps.isTunnelClient?", "ClientMessageDeps.monitor?", "ClientMessageDeps.listNetworkAdapters?", "ClientMessageDeps.backups?", "ClientMessageDeps.controller?"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Optionality deleted, fields kept as required — six configuration degrees of freedom that never occurred in production are removed from the contract, and ~20 unreachable branches with them."
+    },
+    {
+      "at": "apps/server/src/handlers/projects.ts",
+      "removed": ["ProjectHandlerDeps.snapshotPreRisk? (optional form + `?? true` fail-open default)"],
+      "added": [],
+      "net_interface_change": "reduces"
+    },
+    {
+      "at": "apps/server/src/http",
+      "removed": [],
+      "added": ["createTrustedPostRoute (http/trusted-post.ts)"],
+      "net_interface_change": "increases",
+      "note": "One export, two REAL callers on day one (host-event, native-midi) — passes the guilty-until-second-caller test; net LOC across the module is negative and the drifted 4096 literal dies."
+    },
+    {
+      "at": "apps/server/src/projects.ts",
+      "removed": [],
+      "added": ["bootProject"],
+      "net_interface_change": "increases",
+      "note": "Relocation of main.ts's inline initialProject; the export is the price of the only honest unit test (boot recovery cannot be tested while inlined in a module-scope-executing file)."
+    },
+    {
+      "at": "apps/server/src/client-registry.ts",
+      "removed": [],
+      "added": ["installWsKeepalive", "backpressureVerdict"],
+      "net_interface_change": "increases",
+      "note": "Resilience additions — this initiative adds failure handling by nature; both are ~pure, co-located with the registry, and each has exactly the callers it ships with."
+    },
+    {
+      "at": "apps/server/src/ws-protocol.ts",
+      "removed": [],
+      "added": ["clientErrorMessage"],
+      "net_interface_change": "increases",
+      "note": "Pure redaction function placed in the existing tested protocol module rather than inline-untestable in main.ts."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates — full suite green at every wave boundary, count never below the 2968 baseline (new tests only add)",
+      "S2 parity by construction: http/host-event.test.ts and http/native-midi.test.ts pass with ZERO edits — the route contract (405/401/400/204, oversize destroy) is asserted by pre-existing tests against the refactored implementation",
+      "S1 parity: the existing fail-closed loadProject test (snapshot write fails → load refused) passes with an explicit failing stub, proving the guard semantics survived the optionality deletion",
+      "git diff --stat per commit for S1 and S2 — net-negative LOC is the subtraction claim, measured not asserted",
+      "grep gates: zero optional chains on the six deps in handlers/ (S1); zero bare ws.send inside clients-iteration loops in main.ts (S8)",
+      "Named new tests: voice-engine-host.test.ts throw-containment trio (S3), projects.test.ts corrupt-boot ladder trio (S5), client-registry.test.ts keepalive + backpressureVerdict tables (S6/S8), client.test.ts staleness watchdog (S7), ws-protocol.test.ts redaction table (S9)"
+    ],
+    "known_gaps": "Green suites cannot prove: (a) real half-open TCP behaviour — S6/S7 are verified against fakes with fake timers; the actual wifi-drop recovery is evidenced only by a manual check (boot `pnpm dev`, connect a client, hard-suspend the network interface, observe the client flip to reconnecting within ~7s and the server reap the peer within two sweeps); (b) the fatal-path blackout reaching physical LEDs — output.blackout is asserted against a fake output; the UDP frame actually darkening a rig needs the bench kit; (c) main.ts wiring order (S4) — main.ts has no unit harness by design, so capture-before-load is evidenced by diff line order plus boot.test.ts staying green; (d) 100Hz stats under genuine tunnel backpressure — backpressureVerdict is proven as a truth table, the live Cloudflare behaviour is not reproducible in CI. Also stated honestly: S3/S4/S5/S9 deliberately CHANGE behaviour on fault paths (crash→skip-frame, crash→seed-boot, verbatim-error→redacted) — parity is claimed only for non-fault paths, and each fault path carries its own named positive test instead of a parity claim.",
+    "baseline_reference": "Phase 0 baseline sha 3708648, 2968 tests green at HEAD after tonight's fix batches 1-3 (dead-code auto-fixes, residue, kit-mirror removal)."
+  },
+  "rollback_strategy": "Each step is one revertable commit landed green (sequencing waves = commit boundaries). No data migrations, no wire-protocol changes, no schema changes anywhere in the plan; the only new on-disk artifact is the quarantine rename in S5, which is additive (the corrupt file is preserved under a new name — reverting S5 changes nothing about existing files). S3 (render loop) carries its own single-commit revert and is independent of every other step. S8 depends on S6's dead-peer path for removal, so reverting S6 requires reverting S8 first — the only revert-order constraint in the plan. Full initiative back-out is `git revert` of at most nine commits in reverse wave order.",
+  "estimated_loc": 420,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Stats cadence: broadcastJson ships per-voice stats at 100Hz (main.ts:748-772) while the preview stream is already throttled to ~30fps. Dropping to 30Hz deletes ~70% of the broadcast load and is the real subtraction fix behind resilience-hole-0005 — but it may change how live the UI meters feel. Approve the cadence drop (this plan ships only the backpressure gate without it)?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Render-fault posture (S3): on a persistently throwing effect the rig latches the last good frame while the app and UI stay alive so you can delete the bad effect mid-show — chosen over auto-stop-and-blackout (dark rig) and over per-effect quarantine machinery. Confirm frozen-lit-but-recoverable is the right stage behaviour; if you want auto-dark after N seconds of continuous faulting, that is a ~5-line addition to the same catch.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "divergent-change-0004 residual: this plan shrinks main.ts by deletion (S1 context, S5 moves bootProject out, S2 kills http drift) but deliberately REFUSES the createServerApp factory + PersistedSlots registry — the honest bulk of main.ts's shrink is the dual legacy/voice host wiring that INIT-01 deletes. If INIT-01 is deferred or descoped, do you want a structural factory extraction as a follow-up initiative, or is composition-root-stays-flat acceptable long-term?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Connection cap: LEDRUMS_MAX_CLIENTS was proposed by resilience-hole-0005 and is refused here as a speculative knob (PIN gate + slow-peer reaper bound the realistic load). Veto the refusal if you expect shared room links with dozens of viewers at a show.",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ]
+}

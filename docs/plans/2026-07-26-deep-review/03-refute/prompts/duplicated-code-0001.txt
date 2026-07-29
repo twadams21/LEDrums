@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   >=2 sites, >=12 lines each, >=90% token similarity, SEMANTICALLY equivalent. Consolidation must REDUCE total interface, not relocate it.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: duplicated-code-0001
+lens: duplicated-code
+criterion: duplication-threshold
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/trigger-lab/store.controller.test.ts:15-33 (MemStorage)
+  apps/web/src/lib/trigger-lab/store.songs.test.ts:1-40 (MemStorage)
+  apps/web/src/lib/app/views/object-rows.test.ts:10-40 (MemStorage)
+
+claim: An identical ~19-line in-memory `Storage` implementation (length/key/getItem/setItem/removeItem/clear) is declared verbatim in 37 separate test files under apps/web/src, and is the root cause of the largest cluster of jscpd clones in the web unit (store.controller vs store.server-library, 50 lines; store.controller vs store.patch-clipboard, 48 lines; object-rows vs store.cc, 40 lines; and ~30 further pairs). apps/web/src/lib/trigger-lab/fixtures.ts already exists as the shared test-fixture home, so there is no missing seam — the copies are pure inertia. Consolidation does not weaken test independence: each suite still instantiates its own MemStorage in its own beforeEach, so no state is shared across suites.
+
+evidence the author gave:
+  [grep] grep -rl "class MemStorage" /Users/trent/Documents/dev/ledrums/apps/web/src | wc -l :: 37 files contain a `class MemStorage` declaration.
+  [read]  :: Read apps/web/src/lib/trigger-lab/store.controller.test.ts:15-33 — the class body (private m = new Map<string,string>(); length; key(i); getItem; setItem; removeItem; clear) matches the copies in store.songs.test.ts and object-rows.test.ts character-for-character apart from surrounding blank lines.
+  [tool-output]  :: jscpd-report.json: the top-30 web clones are dominated by pairs whose ranges begin at the file heads of store.*.test.ts, e.g. store.controller.test.ts:6 vs store.server-library.test.ts:14 (50 lines / 251 tokens), store.controller.test.ts:6 vs store.patch-clipboard.test.ts:6 (48 lines / 250 tokens).
+
+proposed fix: Move MemStorage (and the 5-site `harnessClient` WS stub next to it) into apps/web/src/lib/trigger-lab/fixtures.ts (or a sibling test-support.ts) as a single exported class/factory, and replace the 37 local declarations with an import. Keep per-suite instantiation in beforeEach so suites stay independent.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"duplicated-code-0001",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"duplication-threshold",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

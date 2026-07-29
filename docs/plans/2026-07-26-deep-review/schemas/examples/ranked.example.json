@@ -1,0 +1,14 @@
+{
+  "rank": 1,
+  "initiative_id": "INIT-03-io-output-resilience",
+  "title": "Art-Net/sACN silent-failure closure: error surfacing, ready-flag lifecycle, send seam",
+  "criticals": 1,
+  "estimated_loc": 260,
+  "risk": "high",
+  "payoff": "high",
+  "depends_on": [],
+  "recommended_order_reason": "No dependencies, and it closes the only finding whose failure mode is the show going dark with no diagnostic; the high risk is contained to packages/io and reverts cleanly.",
+  "plan_ref": "docs/plans/2026-07-26-deep-review/09-synthesis/INIT-03-io-output-resilience.json",
+  "status": "ready",
+  "findings_resolved": 3
+}

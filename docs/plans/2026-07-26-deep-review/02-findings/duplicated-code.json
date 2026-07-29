@@ -1,0 +1,1255 @@
+{
+  "artifact": "02-findings/duplicated-code",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "duplicated-code",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "Map suspicion (server.json): apps/server/src/show-library.ts vs song-library.ts \u2014 \"the same ~50 lines with the noun swapped\"",
+      "why_rejected": "Already consolidated. Read both files in full: each is a 50-60 line doc-comment-heavy wrapper whose every function body is a one-line delegation to the shared `createNamedBlobStore` seam (store.path/inspect/load/save/saveAsync). The mechanics are single-sourced; what remains duplicated is the naming (5 exported functions per noun), which is an api-design question, not a >=12-line code clone. jscpd flags no clone between them."
+    },
+    {
+      "candidate": "Map suspicion (core-voice-fx.json): packages/core/src/voice/modulation.ts:55-130 \u2014 ccKey/ccValue01/sampleCc, oscValue01/sampleOsc, noteKey/noteValue01/sampleNote as \"three near-identical table-source trios\"",
+      "why_rejected": "Under threshold and not semantically equivalent. Read modulation.ts:48-130: each function is 2-8 lines (ccValue01 is `raw/127` then clamp, oscValue01 is a bare clamp \u2014 different normalisation), sampleNote carries a release-tail computation the other two do not, and the key functions use different prefixes deliberately. No pair reaches 12 lines, and parameterising the trio would add a generic source-table abstraction (interface increase) to save ~15 trivial lines."
+    },
+    {
+      "candidate": "Map suspicion (core-geom.json): packages/core/src/engine/modulation.ts vs packages/core/src/voice/modulation.ts \u2014 \"LFO shapes, curve application and source sampling reimplemented\"",
+      "why_rejected": "The named file pair does not duplicate: voice/modulation.ts has no LFO code at all (grep for lfoValue/applyCurve/'saw' returns nothing there). The real overlap is engine/modulation.ts:8-21 `lfoValue` vs voice/lfo.ts:73-85 `continuousWave` \u2014 the sine/triangle/saw/square switch, about 9 lines. Below the 12-line bar, and the two have different rate models (Hz-only vs Hz-or-beats) and different phase conventions, so they are not drop-in equivalent."
+    },
+    {
+      "candidate": "Map suspicion (web-rest.json): lib/ui/Toggle.svelte vs Switch.svelte vs SegmentedControl.svelte \u2014 \"differences may be purely visual and collapsible into one control\"",
+      "why_rejected": "Incidental shape. Read Toggle.svelte and Switch.svelte in full: they wrap DIFFERENT bits-ui primitives (Toggle.Root with a pressed/onPressedChange contract and a text label, vs Switch.Root+Switch.Thumb with checked/onCheckedChange and a translating thumb), and their style blocks share no rule. Only the ~6-line Props preamble (disabled/ariaLabel/class) looks alike. Collapsing them would merge two distinct a11y contracts. jscpd finds no clone."
+    },
+    {
+      "candidate": "Map suspicion (web-rest.json): lib/ui/Dialog.svelte vs Drawer.svelte vs ConfirmDialog.svelte \u2014 \"duplicated overlay/layer/escape chrome\"",
+      "why_rejected": "Two of the three are already composed correctly and the third is under threshold. ConfirmDialog imports and wraps the shared Dialog primitive (line 6). Drawer wraps bits-ui Dialog directly, but its Portal/Overlay/Content markup diverges after 3 lines (side variants, width style, close-button header, dw-body wrapper) and it needs no z-layer stacking. Longest identical run is ~4 lines. jscpd reports no clone in the trio."
+    },
+    {
+      "candidate": "Map suspicion (web-rest.json): visualizer/Pixels.svelte vs Pixels2D.svelte frame-to-colour mapping",
+      "why_rejected": "Semantically unrelated indexing. Pixels.svelte walks m.drums with a 4-channel RGBA stride for the 3D scene; Pixels2D.svelte lays drums out as rows and reads a 3-channel `(drum.pixelStart + i) * 3` stride. Different buffer layouts, different loop bodies, ~5 lines of superficial similarity. jscpd reports no clone between them."
+    },
+    {
+      "candidate": "Map suspicion (web-app.json): SongRow / LibrarySongRow / LibraryRefRow / GraphRow / EffectRow / PresetRow / CanvasSceneRow \u2014 \"one row abstraction copied per object type\"",
+      "why_rejected": "Already abstracted. All are 43-79 lines and every one composes the shared `EditableRow` primitive plus IconButton; what differs per file is the icon set, the ContextMenuAction list and the sub-line text \u2014 genuinely per-type. jscpd reports zero clones among the seven. Consolidating further would mean a config-object row factory, which increases interface and reduces readability."
+    },
+    {
+      "candidate": "Map suspicion (web-triggerlab.json): persistence.songlibrary.test.ts vs store/song-library.test.ts (jscpd's 58-line / 444-token clone, the second largest in the repo)",
+      "why_rejected": "Not duplicated tests \u2014 duplicated fixtures only. Read both file heads: the shared lines are the `effect()`, `preset()` and `playGraph()` fixture builders. The assertions are disjoint (persistence.songlibrary.test.ts covers the storage key, envelope round-trip and the never-throws defensive deserialize; store/song-library.test.ts covers songNamespace and extractSongClosure over a modulation/modifier graph). Consolidating the assertions would destroy coverage; only the ~20 fixture lines (3 sites) are consolidatable, noted under coverage rather than spending a finding slot."
+    },
+    {
+      "candidate": "Map suspicion (web-triggerlab.json): parallel test schemes store.<feature>.test.ts (34 files) vs store/<feature>.test.ts \u2014 \"some pairs may be near-copies testing the same code path twice\"",
+      "why_rejected": "The overlap is the harness, not the tests. Every jscpd pair among these files anchors at the file head (lines 1-15), which is the MemStorage/harnessClient preamble \u2014 reported as finding #1. I sampled store.controller / store.song-library / store.songs / object-rows and found no duplicated `it()` body. The organisational split is a naming question for a different lens."
+    },
+    {
+      "candidate": "jscpd: packages/core/src/engine/engine.ts:134-147 vs packages/core/src/voice/engine.ts:299-311 (14 lines / 117 tokens)",
+      "why_rejected": "Not reported as its own finding: these are the two generations of the engine (legacy clip engine vs voice engine) and the shared fragment is frame/pixel bookkeeping that the Gen2->Gen3 migration is expected to retire wholesale. Adding a seam to a soon-to-be-deleted path costs more than it saves. Same reasoning for the 35-line modifiers.s30.test.ts vs modulation-osc.test.ts pair, which is harness setup already covered in spirit by finding #2."
+    },
+    {
+      "candidate": "jscpd/manual: packages/core/src/effects/impl/fire.ts hash2 + valueNoise as a third site of the noise-primitive clone",
+      "why_rejected": "Looks like the same helper by name and role but is NOT a clone: fire.ts:7-13 uses an imul avalanche hash (0x27d4eb2d / 0x85ebca6b) while elements.ts and perlin-clouds.ts use the sin-scramble hash, and fire.ts's valueNoise inlines its own smoothstep with different variable naming. Folding it into the shared helper would CHANGE the rendered output of the fire effect, so it is deliberately excluded from the noise-primitives fix."
+    }
+  ],
+  "items": [
+    {
+      "id": "duplicated-code-0001",
+      "dedup_key": "5ab9338de0507f93",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.controller.test.ts",
+          "start_line": 15,
+          "end_line": 33,
+          "symbol": "MemStorage"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.songs.test.ts",
+          "start_line": 1,
+          "end_line": 40,
+          "symbol": "MemStorage"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/object-rows.test.ts",
+          "start_line": 10,
+          "end_line": 40,
+          "symbol": "MemStorage"
+        }
+      ],
+      "claim": "An identical ~19-line in-memory `Storage` implementation (length/key/getItem/setItem/removeItem/clear) is declared verbatim in 37 separate test files under apps/web/src, and is the root cause of the largest cluster of jscpd clones in the web unit (store.controller vs store.server-library, 50 lines; store.controller vs store.patch-clipboard, 48 lines; object-rows vs store.cc, 40 lines; and ~30 further pairs). apps/web/src/lib/trigger-lab/fixtures.ts already exists as the shared test-fixture home, so there is no missing seam \u2014 the copies are pure inertia. Consolidation does not weaken test independence: each suite still instantiates its own MemStorage in its own beforeEach, so no state is shared across suites.",
+      "evidence": [
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rl \"class MemStorage\" /Users/trent/Documents/dev/ledrums/apps/web/src | wc -l",
+          "detail": "37 files contain a `class MemStorage` declaration."
+        },
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/trigger-lab/store.controller.test.ts:15-33 \u2014 the class body (private m = new Map<string,string>(); length; key(i); getItem; setItem; removeItem; clear) matches the copies in store.songs.test.ts and object-rows.test.ts character-for-character apart from surrounding blank lines."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: the top-30 web clones are dominated by pairs whose ranges begin at the file heads of store.*.test.ts, e.g. store.controller.test.ts:6 vs store.server-library.test.ts:14 (50 lines / 251 tokens), store.controller.test.ts:6 vs store.patch-clipboard.test.ts:6 (48 lines / 250 tokens)."
+        }
+      ],
+      "proposed_fix": "Move MemStorage (and the 5-site `harnessClient` WS stub next to it) into apps/web/src/lib/trigger-lab/fixtures.ts (or a sibling test-support.ts) as a single exported class/factory, and replace the 37 local declarations with an import. Keep per-suite instantiation in beforeEach so suites stay independent.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure test-double relocation; no guard, retry, timeout or validation branch is touched, and every assertion stays where it is."
+      },
+      "fix_size_loc": 740,
+      "blast_radius": {
+        "files_touched": 38,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "grep -rl 'class MemStorage' apps/web/src \u2192 expect 0 after the fix",
+          "pnpm test --filter web \u2192 suite count and pass count unchanged from baseline"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0002",
+      "dedup_key": "7772ba469d0f37dd",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/effects/batch-a.test.ts",
+          "start_line": 14,
+          "end_line": 70,
+          "symbol": "model/transport/ctx/render/litCount"
+        },
+        {
+          "path": "packages/core/src/effects/batch-c.test.ts",
+          "start_line": 14,
+          "end_line": 75,
+          "symbol": "model/transport/ctx/trig/render/litCount"
+        },
+        {
+          "path": "packages/core/src/effects/effects.test.ts",
+          "start_line": 51,
+          "end_line": 100,
+          "symbol": "model/transport/ctx/trig/render/litCount"
+        }
+      ],
+      "claim": "batch-a/-b/-c/-d/-e.test.ts and effects.test.ts each declare their own copy of the same six helpers \u2014 `model(drums,hoopCount)` (parseKit+buildPixelModel), `transport(beat,timeMs)`, `ctx(m,opts)`, `trig(...)`, `render(effect,m,c,params,state)` and `litCount(fb)`/`allFiniteInRange(fb)` \u2014 differing only in a default argument (`drums = 1` vs `2`). This is the whole of the 57-clone core count's top band: batch-c vs batch-d 63 lines/480 tokens, batch-a vs batch-b 51/434, batch-a vs batch-e 48/397, batch-c vs effects.test 45/323. The helpers are pure builders over immutable inputs, so a shared harness cannot couple the suites.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read packages/core/src/effects/batch-a.test.ts:14-70 and effects.test.ts:51-100 \u2014 `transport()` is byte-identical (`{ timeMs, beat, bar: Math.floor(beat / 4), beatInBar: beat % 4, bpm: 120, beatsPerBar: 4, playing: true }`), as are `ctx()`, `render<S>()` and `litCount()`."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "for f in batch-b batch-c batch-d batch-e; do sed -n '12,70p' $f.test.ts | grep -n '^function'; done",
+          "detail": "All five batch files declare the same function set at the same relative offsets; only batch-c/-d/-e add the identical `trig()` builder and batch-e swaps litCount for litIds."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json rows: batch-c.test.ts:12 vs batch-d.test.ts:12 = 63 lines/480 tokens (largest clone in the repo); batch-a:12 vs batch-b:12 = 51/434; batch-a:12 vs batch-e:11 = 48/397; batch-c:12 vs effects.test.ts:50 = 45/323; batch-a:14 vs batch-c:14 = 34/243."
+        },
+        {
+          "kind": "read",
+          "detail": "ls packages/core/src \u2014 there is no test-support module in the package; the harness has nowhere shared to live today."
+        }
+      ],
+      "proposed_fix": "Add packages/core/src/effects/effect-test-harness.ts exporting model/transport/ctx/trig/render/litCount/litIds/allFiniteInRange (with the current default args as parameters), and import it from all six suites. Test-only module, not re-exported from packages/core/src/index.ts, so the package's public surface is unchanged.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 8,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Only test scaffolding moves; every `it()` body, assertion and effect under test is untouched."
+      },
+      "fix_size_loc": 330,
+      "blast_radius": {
+        "files_touched": 7,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm test --filter core before/after: identical test counts and pass counts",
+          "npx jscpd packages/core/src/effects \u2192 the batch-* pairs disappear from the report"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0003",
+      "dedup_key": "bcae4c8b562eb23c",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/show-library-sync.ts",
+          "start_line": 14,
+          "end_line": 89,
+          "symbol": "ShowLibrarySync"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/song-library-sync.ts",
+          "start_line": 16,
+          "end_line": 77,
+          "symbol": "SongLibrarySync"
+        }
+      ],
+      "claim": "Both files declare a `{adopt|seed|noop}` plan union and a controller class with identical fields (`lastLibrarySig`, `serverStateSeen`) and identical method bodies for `librarySig`, `markServerStateSeen`, `planReconcile`, `planFollow`, `noteSynced` and `planPush` \u2014 the only difference is which (de)serializer is called and the type parameter. song-library-sync.ts's own header states it is \"Kept parallel to ShowLibrarySync so the two libraries reconcile identically\", i.e. the invariant is currently maintained by hand. This is the classic parity-drift hazard: a fix to one reconcile policy (e.g. the viewer-follow branch) silently misses the other library.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read both files in full. planReconcile bodies differ only in `deserializeShowLibrary` vs `deserializeSongLibrary`: `if (isViewer) return this.planFollow(raw); if (this.lastLibrarySig !== null) return { kind: 'noop' }; if (hasLocalLibrary) return { kind: 'seed' }; const incoming = deserialize\u2026(raw); return incoming ? { kind: 'adopt', library: incoming } : { kind: 'seed' };` \u2014 identical in both. planPush and planFollow are likewise identical modulo the serializer name."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: show-library-sync.ts:66-82 vs song-library-sync.ts:56-70 = 17 lines / 71 tokens (only the comment-free tail trips the token threshold; the semantic duplication spans both whole classes)."
+        },
+        {
+          "kind": "read",
+          "detail": "The territory map web-triggerlab.json flags this pair as a duplicated-code suspicion; reading both files confirms it rather than rejecting it."
+        }
+      ],
+      "proposed_fix": "Introduce one generic `LibrarySync<L, W>` in store/library-sync.ts parameterised by `{ serialize(l: L): W; deserialize(raw: unknown): L | null }`, and construct the two instances at their call sites (`new LibrarySync(showCodec)` / `new LibrarySync(songCodec)`). Both classes and both plan unions collapse into one class plus one generic `ReconcilePlan<L>`.",
+      "interface_delta": {
+        "exported_symbols_removed": 4,
+        "exported_symbols_added": 2,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Every branch (viewer-follow, once-per-session gate, local-wins seed, echo suppression, serverStateSeen push gate) survives verbatim in the generic body; nothing is dropped, only shared."
+      },
+      "fix_size_loc": 120,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test --filter web (store.server-library.test.ts, store.song-library.test.ts, persistence.songlibrary.test.ts cover both reconcile policies)"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0004",
+      "dedup_key": "f3210de39b18bba4",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.ts",
+          "start_line": 135,
+          "end_line": 183,
+          "symbol": "EffectDef/Preset/Bus"
+        },
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 117,
+          "end_line": 149,
+          "symbol": "EffectDef/Preset/Bus"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+          "start_line": 31,
+          "end_line": 44,
+          "symbol": "ParamSpec"
+        }
+      ],
+      "claim": "apps/web/src/lib/trigger-lab/sim.ts declares `EffectDef`, `Preset`, `Bus` and `Polyphony`, and sim.envelopes.ts declares `ParamSpec`, all of which packages/core/src/voice/types.ts already exports with byte-identical bodies (ParamSpec is a 14-line exact copy including its doc comments; Preset and Bus are exact; EffectDef shares the whole busId/scope/params/attackMs/sustainMs/releaseMs tail). core/voice/types.ts even documents the hand-maintained invariant (\"Structurally IDENTICAL to the web sim's TriggerSource \u2026 the shapes must stay byte-identical\"). sim.ts already imports from '@ledrums/core', and sim.envelopes.ts already demonstrates the correct pattern for exactly this problem (S23: `export type Envelope = voice.Envelope;`), so the fix has an in-repo precedent.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Diffed apps/web/src/lib/trigger-lab/sim.envelopes.ts ParamSpec against packages/core/src/voice/types.ts:102-115 \u2014 identical field-for-field and comment-for-comment (key/label/kind/min/max/step/unit/options/default/envable)."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/types.ts:137-149 `Preset` and `Bus` are identical to apps/web/src/lib/trigger-lab/sim.ts:167-179."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: sim.ts:157-183 vs packages/core/src/voice/types.ts:127-161 = 27 lines / 72 tokens."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/sim.envelopes.ts:1-30 documents the S23 precedent: shape/easing/sampling types were already de-duplicated by aliasing to `voice.*`, leaving these stragglers behind."
+        }
+      ],
+      "proposed_fix": "Replace the local declarations with aliases to core (`export type Preset = voice.Preset;` etc.), exactly as sim.envelopes.ts already does for the envelope types. Where the web genuinely needs extra fields (EffectDef's gallery-only `category`/`description`/`tags`), declare `export type EffectDef = voice.EffectDef & { category?: \u2026; description?: \u2026 }` rather than re-typing the shared core.",
+      "interface_delta": {
+        "exported_symbols_removed": 4,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Type-level change only; no runtime guard, validation or branch exists in these declarations."
+      },
+      "fix_size_loc": 70,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web",
+          "packages/core"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck \u2014 any structural drift between the web and core shapes surfaces as a compile error, which is the point",
+          "pnpm test"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0005",
+      "dedup_key": "0b395d4ed1baaa0d",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "start_line": 77,
+          "end_line": 103,
+          "symbol": "makeNode"
+        },
+        {
+          "path": "packages/core/src/voice/graph-integrity.ts",
+          "start_line": 42,
+          "end_line": 65,
+          "symbol": "anchorNode"
+        }
+      ],
+      "claim": "Both functions build a `GraphNode` by spelling out the same 18 default fields in the same order (mode:'oneshot', scope:'kit', effectId:'', presetId:'', busId:'', params:{}, env:{}, noRepeat:true, on:'value', valueMode:'gate', threshold:0.5, invert:false, bands:[0.5], p:0.5, mixBlendMode:'normal', delayMode:'time', ms:250, division:'1/8'). web's own comment admits \"defaults mirror the core engine defaults\". Because core's graph-integrity repairs/creates anchor nodes and web's makeNode creates authored nodes for the same persisted graph type, a default added on one side and not the other produces two different nodes for the same authored object \u2014 a silent behavioural divergence between preview and engine.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:77-103 and packages/core/src/voice/graph-integrity.ts:42-65 side by side \u2014 the field list and every literal value match exactly; the only differences are the `...over` spread and the `id`/`kind` binding."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"mixBlendMode: 'normal',\" --include=*.ts packages apps | grep -v test",
+          "detail": "Exactly two non-test sites: packages/core/src/voice/graph-integrity.ts:62 and apps/web/src/lib/trigger-lab/sim.graph-compilation.ts:97 \u2014 confirming these are the only two default tables and that they must agree."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: sim.graph-compilation.ts:79-101 vs graph-integrity.ts:44-65 = 23 lines / 83 tokens."
+        }
+      ],
+      "proposed_fix": "Export a single `makeGraphNode(kind, id, x, y, over?)` from packages/core/src/voice (next to the GraphNode type that both already share), have graph-integrity's anchorNode call it, and make the web's `makeNode` a thin re-export so its call sites are unchanged.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 1,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "No guard is removed; the default table is relocated to one owner and both callers keep their current behaviour."
+      },
+      "fix_size_loc": 45,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web",
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test (core voice graph-integrity suites + web store.autowire/store.splice cover node construction)",
+          "grep -rn \"mixBlendMode: 'normal',\" --include=*.ts packages apps | grep -v test \u2192 expect 1 site"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0006",
+      "dedup_key": "49236d1b4113cfa6",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/http/host-event.ts",
+          "start_line": 91,
+          "end_line": 120,
+          "symbol": "handleHostEventHttp"
+        },
+        {
+          "path": "apps/server/src/http/native-midi.ts",
+          "start_line": 48,
+          "end_line": 77,
+          "symbol": "handleNativeMidiHttp"
+        }
+      ],
+      "claim": "createHostEventHandler and createNativeMidiHandler open with the same ~28-line preamble: path match, 405 on non-POST, `isTrustedHost({remoteAddress, headers, url, hostToken})` \u2192 401, `req.setEncoding('utf8')`, chunk accumulation with a byte cap that `req.destroy()`s on overflow, and a `req.on('error')` \u2192 400 handler. Only the constants differ (`MAX_BODY` vs the literal `4096`) and the message text. native-midi.ts's header comment states it \"mirrors the inlined server route exactly\". This is duplicated security scaffolding: a hardening change to the trust check or the body cap must be applied twice, and one of the two sites has already drifted (named constant vs magic number).",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/server/src/http/host-event.ts:91-118 and apps/server/src/http/native-midi.ts:48-75 \u2014 identical statement-for-statement apart from the path constant, `MAX_BODY` vs `4096`, and the destroy() message."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: host-event.ts:93-115 vs native-midi.ts:50-72 = 23 lines / 109 tokens."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rln isTrustedHost apps/server/src",
+          "detail": "Four non-test call sites (host-event.ts, native-midi.ts, main.ts, pin-gate.ts); the two http/ routes are the pair that re-implements the full request scaffolding around it."
+        }
+      ],
+      "proposed_fix": "Add apps/server/src/http/trusted-post.ts exporting `createTrustedPostRoute({ path, hostToken, maxBody, onBody(raw, res) })` that owns the path/method/trust/body-cap/error handling, and reduce both handlers to their decode+dispatch bodies. Use one shared MAX_BODY constant so the 4096 literal disappears.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The fix relocates guards to one owner and removes none \u2014 the 405, the 401 trust gate, the body cap destroy() and the 400 error branch all remain, and both routes then share a single implementation. Flagging honestly: the change is guard-adjacent, so it warrants human review even though nothing is deleted."
+      },
+      "fix_size_loc": 90,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm test --filter server \u2014 host-event.test.ts and native-midi.test.ts already assert 405/401/400/204 and the oversize-body path; both must stay green unchanged"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0007",
+      "dedup_key": "53a5445cfb13a7e2",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/engine-host.ts",
+          "start_line": 112,
+          "end_line": 180,
+          "symbol": "EngineHost.loop/step"
+        },
+        {
+          "path": "apps/server/src/voice-engine-host.ts",
+          "start_line": 455,
+          "end_line": 536,
+          "symbol": "VoiceEngineHost.loop/step"
+        }
+      ],
+      "claim": "EngineHost and VoiceEngineHost each carry their own copy of the same real-time scheduler: identical `scheduleNext()`, identical `loop()` (wall delta, MAX_DT_MS clamp, accumulator drain in TICK_MS steps, backlog drop), and identical `step()` tails \u2014 the rolling 1s fps window, the transmit throttle (`transmitAccum += dt; if (>= txInterval) { -= txInterval; if (> txInterval) = 0; \u2026 }`), the identical preview throttle at PREVIEW_FPS, and the identical hit\u2192light latency close-out. The two copies have already drifted on the catch-up budget (6 steps vs 12), which is exactly the class of divergence that makes \"the render loop is deterministic\" hard to reason about across the two hosts.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/server/src/engine-host.ts:112-180 and apps/server/src/voice-engine-host.ts:455-536 \u2014 the transmit and preview throttle blocks are byte-identical including the clamp comment (`// clamp backlog`); loop() differs only in `performance.now()` vs `nowWall()` and `steps < 6` vs `steps < 12`."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: engine-host.ts:38-59 vs voice-engine-host.ts:81-102 = 22 lines / 75 tokens (the duplicated field block); the loop/step duplication is larger but falls under jscpd's token threshold because of the interleaved comments."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -n \"accumulator|transmitAccum|previewAccum|measuredFps|fpsTicks\" apps/server/src/engine-host.ts",
+          "detail": "Confirms both hosts declare the same six scheduler fields (accumulator, transmitAccum, previewAccum, measuredFps, fpsTicks, fpsWindowStart) plus pendingInputWall/lastLatencyMs."
+        }
+      ],
+      "proposed_fix": "Extract a `FramePacer` helper in apps/server/src (fields + `advance(dt, { onTransmit, onPreview })` + `tickWall(now)` + `stats()`), and have both hosts own an instance instead of the six duplicated fields. Make the catch-up budget a constructor option so the current 6-vs-12 difference is an explicit parameter rather than a drift.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The MAX_DT_MS clamp, the step-budget cap and the backlog-drop guard all move into the shared pacer intact; nothing is deleted. The 6-vs-12 difference becomes a parameter, not a removal."
+      },
+      "fix_size_loc": 150,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm test --filter server \u2014 engine-host.test.ts drives step(dt) deterministically and asserts transmit/preview cadence; must stay green",
+          "Compare getStats() fps/latency output before and after for a fixed dt sequence"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0008",
+      "dedup_key": "ee2c59ec06f6d475",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/render.ts",
+          "start_line": 205,
+          "end_line": 235,
+          "symbol": "renderVoice generator preamble"
+        },
+        {
+          "path": "packages/core/src/voice/generator-bridge.ts",
+          "start_line": 90,
+          "end_line": 115,
+          "symbol": "generator bridge preamble"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/render.ts",
+          "start_line": 78,
+          "end_line": 93,
+          "symbol": "mix-input synthetic voice"
+        },
+        {
+          "path": "packages/core/src/voice/compositor.ts",
+          "start_line": 96,
+          "end_line": 112,
+          "symbol": "mix-input synthetic voice"
+        }
+      ],
+      "claim": "Two separate blocks of the web preview renderer are hand-mirrored copies of core's render path. (1) The generator preamble \u2014 memoised `genDefaults` lookup, `{...defs}` overlay of live params, and the synthetic-trigger fill (seq from `v.id.slice(1)`, drumId, velocity, `note = round(velocity*127)`, timeMs, `ageMs = max(0, now - bornAtMs)`) \u2014 is identical in render.ts:205-232 and generator-bridge.ts:90-114, and render.ts's own comment says \"Keeping the formula identical to core keeps sim/engine output in step\". (2) The synthetic mix-input voice spread (scope/targetId/sourceDrumId/velocity/seed/generatorId/genState/mixInputs:undefined/modifiers/modState/modulations/params) is identical in render.ts:78-93 and compositor.ts:96-112. The invariant that preview matches output is enforced only by these comments.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/trigger-lab/render.ts:205-235 vs packages/core/src/voice/generator-bridge.ts:90-115 \u2014 the genDefaults memo block and the six genTrigger assignments are identical; only `genDefaultParams` vs `defaultParams` and `effectiveParams(v, sim)` vs `v.liveParams` differ."
+        },
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/trigger-lab/render.ts:78-93 vs packages/core/src/voice/compositor.ts:96-112 \u2014 the same 12 field assignments in the same order."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: render.ts:215-228 vs generator-bridge.ts:97-113 = 14 lines / 109 tokens; render.ts:80-92 vs compositor.ts:98-110 = 13 lines / 71 tokens; sim.ts:578-594 vs engine.ts:669-686 = 17 lines / 116 tokens (the same theme)."
+        }
+      ],
+      "proposed_fix": "Export the two pure fragments from packages/core/src/voice \u2014 `fillGeneratorTrigger(trig, v, timeMs)` and `resolveGeneratorParams(gen, liveParams, cache)` from generator-bridge.ts, and `synthesizeMixVoice(host, input)` from compositor.ts \u2014 and have apps/web/src/lib/trigger-lab/render.ts call them with its own param source. Core keeps ownership of the formula; the web keeps ownership of where the params come from.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 3,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The `age > 0 ? age : 0` floor and the `Number.isFinite(seq) && seq > 0` fallback move into the shared helpers unchanged; no branch is dropped."
+      },
+      "fix_size_loc": 110,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "apps/web",
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test \u2014 packages/core/src/voice/determinism.test.ts and the web sim suites both cover this path; frames must be unchanged"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0009",
+      "dedup_key": "f98de7a19a2cba92",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/sim.ts",
+          "start_line": 582,
+          "end_line": 600,
+          "symbol": "Sim.drainPendingFires"
+        },
+        {
+          "path": "packages/core/src/voice/engine.ts",
+          "start_line": 671,
+          "end_line": 690,
+          "symbol": "VoiceEngine.drainPendingFires"
+        }
+      ],
+      "claim": "The delay-node scheduler drain is written twice: the early-out, the `filter(f => f.fireAtMs <= timeMs)` due-set, the complementary re-filter of the queue, the `(fireAtMs, enqueueOrder)` stable sort and the `evalChildren(..., viaPrefix, seen, draft ?? null)` re-entry are identical in both. The web copy's comment says \"mirrors core engine.ts drainPendingFires\". Delay ordering is a determinism-critical path \u2014 the AGENTS.md contract is that the render loop is deterministic given (time, inputs, model) \u2014 and here the ordering rule exists in two places that must be kept in lockstep by hand.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/trigger-lab/sim.ts:582-600 and packages/core/src/voice/engine.ts:671-690 \u2014 five consecutive statements are identical, including `due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);`. Only the action-application tail differs (the sim inlines play/stop handling; core calls applyActions)."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: sim.ts:578-594 vs engine.ts:669-686 = 17 lines / 116 tokens."
+        }
+      ],
+      "proposed_fix": "Export a pure `takeDuePendingFires(queue, timeMs): { due, remaining }` from packages/core/src/voice/engine.ts (or a sibling scheduler module) that owns the partition + stable sort, and have both drain loops call it before applying their own actions.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The empty-queue early-out and the cycle-guard `seen` threading stay in both callers; only the partition/sort is shared."
+      },
+      "fix_size_loc": 50,
+      "blast_radius": {
+        "files_touched": 2,
+        "packages_touched": [
+          "apps/web",
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm test \u2014 packages/core/src/voice/eval-graph.delay-timeline.test.ts and apps/web store.delay.test.ts pin the ordering on both sides"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0010",
+      "dedup_key": "0beda57cf2181db3",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/EffectThumb.svelte",
+          "start_line": 81,
+          "end_line": 122,
+          "symbol": "IntersectionObserver + matchMedia $effects"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/SignalFace.svelte",
+          "start_line": 30,
+          "end_line": 65,
+          "symbol": "IntersectionObserver + matchMedia $effects"
+        }
+      ],
+      "claim": "The two canvas components carry identical copies of two `$effect` blocks: the IntersectionObserver visibility gate with the `hasBeenVisible` pre-layout guard (so a portaled panel's spurious `false` cannot kill the ticker subscription) and the `prefers-reduced-motion` matchMedia subscription with its handler + teardown. SignalFace's comment says \"Same guard as EffectThumb\". This is the largest non-test clone in the repo at 52 lines / 198 tokens, and it duplicates a subtle correctness guard rather than boilerplate \u2014 the pre-layout-false trap is exactly the kind of fix that gets applied to one copy only.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/trigger-lab/EffectThumb.svelte:81-122 and SignalFace.svelte:32-65 \u2014 the observer callback body (`hasBeenVisible = true; isVisible = true; \u2026 else if (hasBeenVisible) isVisible = false;`), the `typeof IntersectionObserver !== 'undefined'` feature test, the disconnect teardown, and the whole matchMedia block are identical."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: EffectThumb.svelte:typescript 79-130 vs SignalFace.svelte:typescript 29-73 = 52 lines / 198 tokens \u2014 the largest non-test clone in the report."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rln IntersectionObserver apps/web/src/lib; grep -rln \"matchMedia('(prefers-reduced-motion\" apps/web/src/lib",
+          "detail": "IntersectionObserver: EffectThumb.svelte, SignalFace.svelte (+ effect-thumb-ticker.ts, + their tests). reduced-motion: EffectThumb.svelte, SignalFace.svelte, ToastHost.svelte. Exactly two sites duplicate the pair."
+        }
+      ],
+      "proposed_fix": "Add apps/web/src/lib/trigger-lab/canvas-visibility.svelte.ts exporting `elementVisibility(getEl)` and `prefersReducedMotion()` rune helpers (next to the existing effect-thumb-ticker.ts), and have both components consume them. The pre-layout guard then exists once.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The `hasBeenVisible` guard, the `typeof IntersectionObserver !== 'undefined'` feature test and both teardown returns move into the shared helper intact."
+      },
+      "fix_size_loc": 90,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm test --filter web \u2014 EffectThumb.test.ts and SignalFace.test.ts both stub IntersectionObserver and assert the pause/resume behaviour",
+          "pnpm ui-shot on a surface hosting both components to confirm they still paint"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0011",
+      "dedup_key": "1b6664824ceeff27",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/canvas/elements.ts",
+          "start_line": 30,
+          "end_line": 68,
+          "symbol": "hash2/fade/valueNoise/fbm"
+        },
+        {
+          "path": "packages/core/src/effects/impl/perlin-clouds.ts",
+          "start_line": 7,
+          "end_line": 45,
+          "symbol": "hash2/fade/valueNoise/fbm"
+        }
+      ],
+      "claim": "`hash2` (`Math.sin(ix*127.1 + iy*311.7) * 43758.5453` scramble), `fade`, `valueNoise` (the full 14-line bilinear lattice interpolation) and the fbm accumulator are declared privately and identically in both files. packages/core/src/math.ts is the obvious owner and already hosts the package's other shared numeric primitives (clamp01, lerp, wrap, mulberry32, hashString) but has no noise section. Because both copies are used by rendering code that must be deterministic across runs, having two definitions of the same hash is a live drift hazard.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read packages/core/src/canvas/elements.ts:30-53 and packages/core/src/effects/impl/perlin-clouds.ts:7-31 \u2014 hash2, fade and valueNoise are byte-identical; fbm differs only in that elements.ts parameterises `octaves` while perlin-clouds hardcodes 3."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"127.1\" packages/core/src",
+          "detail": "Exactly two sites: canvas/elements.ts:31 and effects/impl/perlin-clouds.ts:8."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: canvas/elements.ts:30-56 vs effects/impl/perlin-clouds.ts:7-35 = 27 lines / 227 tokens."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -n \"^export\" packages/core/src/math.ts",
+          "detail": "math.ts exports clamp/clamp01/lerp/invLerp/wrap/mulberry32/hashString \u2014 the natural home, with no noise helpers today. Note effects/impl/fire.ts has a THIRD hash2 but with a different (imul avalanche) body, so it is a near-relative, not a clone."
+        }
+      ],
+      "proposed_fix": "Move hash2/fade/valueNoise/fbm(octaves) into packages/core/src/math.ts (or a new canvas/noise.ts) as exported pure functions and import them in both files, with perlin-clouds calling `fbm(x, y, 3)`. Leave fire.ts's distinct hash alone or migrate it deliberately in a separate change, since its output differs.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 4,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure numeric helpers with no guards or error branches."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm test --filter core \u2014 canvas determinism and effect conformance suites assert per-pixel output, so any change to the noise formula fails immediately"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0012",
+      "dedup_key": "979b3923abca00e5",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/network-adapters.ts",
+          "start_line": 32,
+          "end_line": 46,
+          "symbol": "ipToInt/intToIp"
+        },
+        {
+          "path": "packages/io/src/pixlite/sweep.ts",
+          "start_line": 28,
+          "end_line": 42,
+          "symbol": "ipToInt/intToIp"
+        }
+      ],
+      "claim": "`ipToInt` (4-part split, per-octet integer/range validation, throw on malformed, `>>> 0` accumulate) and `intToIp` are declared privately and byte-identically in both files. apps/server already depends on packages/io, so there is a dependency edge to carry a shared helper along; today two copies of the same address-validation rule exist, one reached from the network-adapter enumeration path and the other from the PixLite CIDR sweep.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/server/src/network-adapters.ts:32-46 and packages/io/src/pixlite/sweep.ts:28-42 \u2014 identical including the error message `invalid IPv4 address: ${addr}` and the `(n * 256 + o) >>> 0` accumulation."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rn \"function ipToInt|function intToIp|function expandCidr|function prefixFromMask\" --include=*.ts apps packages | grep -v test",
+          "detail": "Two ipToInt and two intToIp definitions; expandCidr exists only in io, prefixFromMask only in server \u2014 i.e. the shared primitives are the duplicated pair, the callers are genuinely different."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: apps/server/src/network-adapters.ts:27-46 vs packages/io/src/pixlite/sweep.ts:26-42 = 20 lines / 152 tokens."
+        }
+      ],
+      "proposed_fix": "Export ipToInt/intToIp from packages/io (e.g. a small `net/ipv4.ts` re-exported from the io index) and import them in apps/server/src/network-adapters.ts, deleting the server copies. Direction matters: io is the lower package, so it owns them.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "The malformed-address throw and the per-octet range validation are preserved verbatim in the single shared copy; the server's callers keep the same failure behaviour."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server",
+          "packages/io"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm typecheck",
+          "pnpm test \u2014 network-adapters tests cover CIDR/mask math and sweep tests cover expandCidr"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0013",
+      "dedup_key": "1701a3003084b72e",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/docks/Inspector.svelte",
+          "start_line": 218,
+          "end_line": 240,
+          "symbol": ".ihead"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/SectionInspector.svelte",
+          "start_line": 92,
+          "end_line": 114,
+          "symbol": ".ihead"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+          "start_line": 258,
+          "end_line": 280,
+          "symbol": ".ihead"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/PlayNodeInspector.svelte",
+          "start_line": 228,
+          "end_line": 244,
+          "symbol": ".ihead"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/ModifierNodeInspector.svelte",
+          "start_line": 134,
+          "end_line": 149,
+          "symbol": ".ihead"
+        }
+      ],
+      "claim": "The same inspector-title treatment \u2014 `.ihead` (flex row, space-3 gap/padding, hairline bottom border), `.titles` (flex:1; min-width:0), `h3` (text-md/700/--ink) and `.sub` (text-2xs, mono, --text-faint) \u2014 is written out in five separate component style blocks. AGENTS.md requires UI work to use or extend the design system, and lib/ui already hosts PanelHeader as the canonical panel title bar, so this is an un-extracted variant of an existing system component rather than a one-off.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read apps/web/src/lib/app/docks/Inspector.svelte:218-240 and inspectors/SectionInspector.svelte:92-114 \u2014 the four rules are byte-identical, in the same order."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rl \"\\.ihead {\" apps/web/src/lib",
+          "detail": "Five files: docks/Inspector.svelte, inspectors/ModifierNodeInspector.svelte, inspectors/PlayNodeInspector.svelte, inspectors/SectionInspector.svelte, inspectors/TriggerSourceInspector.svelte."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: Inspector.svelte:css 218-240 vs SectionInspector.svelte:css 92-114 = 23 lines / 144 tokens; same block vs TriggerSourceInspector.svelte:css 258-280 = 23/144; vs PlayNodeInspector 228-244 = 17/93; vs ModifierNodeInspector 134-149 = 16/93."
+        }
+      ],
+      "proposed_fix": "Add an `InspectorHeader.svelte` primitive to apps/web/src/lib/ui (title + optional sub + trailing snippet), register it in apps/web/src/lib/styleguide/sections/ and regenerate docs/design-system.html with `pnpm design-system`, then replace the five local copies.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "CSS only; no behaviour, guard or validation is involved."
+      },
+      "fix_size_loc": 130,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": false,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm ui-shot against the inspector surfaces before/after and compare captures (the tool also surfaces console errors)",
+          "pnpm design-system to regenerate the styleguide in the same change"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0014",
+      "dedup_key": "3b10e3717beb467d",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/DrumZonesList.svelte",
+          "start_line": 218,
+          "end_line": 246,
+          "symbol": ".note-row/.learn"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+          "start_line": 289,
+          "end_line": 317,
+          "symbol": ".note-row/.learn"
+        },
+        {
+          "path": "apps/web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte",
+          "start_line": 147,
+          "end_line": 175,
+          "symbol": ".note-row/.learn"
+        }
+      ],
+      "claim": "The MIDI-learn affordance \u2014 a `.note-row` two-column grid plus a 29px-high `.learn` pill with its hover/active and disabled states \u2014 is written out identically in three inspector style blocks. It is a recurring interactive control with its own interaction contract (active-while-learning), which is precisely what the design system is for; today a change to the learn button's affordance has to be made in three files.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read DrumZonesList.svelte:218-246, TriggerSourceInspector.svelte:289-317 and PatchZoneInspector.svelte:147-175 \u2014 the `.note-row` grid and the entire `.learn` rule set (including `.learn:hover:not(:disabled), .learn.active { border-color: var(--accent); color: var(--ink); }` and `.learn:disabled { opacity: 0.45 }`) are byte-identical in all three."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json: DrumZonesList.svelte:css 216-253 vs TriggerSourceInspector.svelte:css 287-324 = 38 lines / 259 tokens; DrumZonesList.svelte:css 216-246 vs PatchZoneInspector.svelte:css 145-175 = 31 lines / 208 tokens; plus two further overlapping pairs at 20 lines each."
+        }
+      ],
+      "proposed_fix": "Add a `LearnButton.svelte` (or extend the existing Pill/IconButton primitives with a `learn` variant) in apps/web/src/lib/ui, add it to the styleguide section set, regenerate docs/design-system.html, and replace the three copies.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "CSS only; the disabled state remains expressed via the same :disabled selector in the shared component."
+      },
+      "fix_size_loc": 100,
+      "blast_radius": {
+        "files_touched": 5,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": false,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm ui-shot on the Patch and Trigger-source inspectors before/after",
+          "pnpm design-system regenerated in the same change"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "duplicated-code-0015",
+      "dedup_key": "e07ee9871a0ff5c4",
+      "lens": "duplicated-code",
+      "criterion": "duplication-threshold",
+      "criterion_is_mechanical": true,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/PasteFallbackDialog.svelte",
+          "start_line": 47,
+          "end_line": 145,
+          "symbol": "style block"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/PasteSongDialog.svelte",
+          "start_line": 87,
+          "end_line": 198,
+          "symbol": "style block"
+        }
+      ],
+      "claim": "PasteFallbackDialog and PasteSongDialog share ~85 lines of identical style rules: the `.head`/`h2` title bar, `.body` column, `.hint` caption, the `.paste-area` textarea with its focus-visible ring, `.actions` row, and the full `.ghost`/`.primary` button pair including hover/disabled/active-scale and the prefers-reduced-motion override. Their scripts and markup have genuinely diverged (PasteSongDialog adds a destination SegmentedControl and a clipboard-read attempt), so only the chrome is duplicated \u2014 but the chrome is the part that must stay consistent, and there is no shared text Button primitive in lib/ui to hang it on.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "Read PasteFallbackDialog.svelte:47-145 in full and diffed the whitespace-stripped files: the script/markup diverge (destination control, showText flow) while the style block matches from `.head` through the reduced-motion block."
+        },
+        {
+          "kind": "tool-output",
+          "tool": "jscpd",
+          "detail": "jscpd-report.json flags three overlapping CSS ranges for this pair: 95-144 vs 148-197 = 50 lines / 295 tokens; 74-95 vs 126-147 = 22/163; 48-60 vs 87-99 = 13/87."
+        },
+        {
+          "kind": "grep",
+          "tool": "Bash",
+          "command": "grep -rl \"scale: 0.96\" --include=*.svelte apps/web/src",
+          "detail": "14 components re-implement the press-scale button affordance, confirming there is no shared Button primitive; lib/ui has IconButton but no text Button."
+        }
+      ],
+      "proposed_fix": "Extract the shared dialog chrome into a `DialogShell`/`DialogActions` pair plus a text `Button` primitive in apps/web/src/lib/ui (the press-scale + reduced-motion contract belongs in one place), register them in the styleguide, regenerate docs/design-system.html, and reduce both dialogs to their distinct markup.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "CSS/markup extraction only; the disabled-button guard and the reduced-motion media query are carried into the shared primitive unchanged."
+      },
+      "fix_size_loc": 180,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": false,
+        "requires_mutation": true,
+        "steps": [
+          "pnpm ui-shot of both dialogs open, before/after",
+          "pnpm test --filter web for the paste flows",
+          "pnpm design-system regenerated in the same change"
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "duplicated-code",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

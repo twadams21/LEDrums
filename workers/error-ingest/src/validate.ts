@@ -5,11 +5,11 @@ export class ValidationError extends Error {}
 
 // Defensive server-side caps (the shipper already caps, but the Worker is the trust boundary). A
 // leaked token can annoy, not damage — oversized input is rejected outright.
-export const MAX_REPORTS_PER_BATCH = 500;
-export const MAX_MESSAGE_LEN = 8_000;
-export const MAX_STACK_LEN = 32_000;
-export const MAX_BREADCRUMBS = 50;
-export const MAX_STR = 512; // envelope + breadcrumb scalar fields
+const MAX_REPORTS_PER_BATCH = 500;
+const MAX_MESSAGE_LEN = 8_000;
+const MAX_STACK_LEN = 32_000;
+const MAX_BREADCRUMBS = 50;
+const MAX_STR = 512; // envelope + breadcrumb scalar fields
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -79,13 +79,13 @@ export function parseIngestBatch(body: unknown): IngestBatch {
 
 // --- Project backups (#123) --------------------------------------------------
 
-export const MAX_BACKUPS_PER_BATCH = 100;
-export const MAX_KEY_SEGMENT_LEN = 200;
+const MAX_BACKUPS_PER_BATCH = 100;
+const MAX_KEY_SEGMENT_LEN = 200;
 
 /** A path segment (`machine`, `key`) is safe to compose into an R2 object key iff it is a non-empty,
  * bounded string with no separators or dot-dot — the Worker is the trust boundary for the key, so a
  * leaked token can never traverse out of the `backups/` prefix or collide across machines. */
-export function safeKeySegment(v: unknown, field: string): string {
+function safeKeySegment(v: unknown, field: string): string {
   const s = str(v, field, MAX_KEY_SEGMENT_LEN);
   if (s.length === 0) throw new ValidationError(`${field} must be non-empty`);
   if (s.includes('/') || s.includes('\\') || s.includes('..')) throw new ValidationError(`${field} has an illegal path char`);

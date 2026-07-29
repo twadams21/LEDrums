@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/plan-review.schema.json",
+  "title": "Deep Review Plan Refutation",
+  "description": "One reviewer's adversarial attack on ONE Phase 7 plan variant. PRODUCER: Phase 8 (08-refutations/<initiative>.json) — two reviewers x three variants = six items per initiative. CONSUMER: Phase 9, which synthesises from what SURVIVED these attacks rather than from what was proposed. FILE SHAPE: the artifact is a collection.schema.json envelope whose `items` are these objects — this schema validates one element, not the file. The reviewer's job is to BREAK the plan, not to rank it: agreement is the expensive path here, which is why an all-clear demands a written justification and a scored rubric rather than a shrug.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "initiative_id",
+    "variant_reviewed",
+    "reviewer",
+    "attacks",
+    "rubric_scores",
+    "overall"
+  ],
+  "properties": {
+    "initiative_id": {
+      "type": "string",
+      "pattern": "^INIT-[0-9]{2}-[a-z0-9-]+$",
+      "description": "Joins to plan.schema.json initiative_id and the key in 04-ledger.json `initiatives`."
+    },
+    "variant_reviewed": {
+      "type": "string",
+      "enum": [
+        "opus",
+        "sonnet",
+        "fable",
+        "synthesis"
+      ],
+      "description": "Which plan variant this attack targets — same vocabulary as plan.schema.json `variant`, so the two artifacts join on (initiative_id, variant). Phase 8 reviews the three Phase 7 variants; 'synthesis' is reserved for a re-attack on a Phase 9 plan."
+    },
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "effort"
+      ],
+      "description": "Reviewer provenance. Stamped by the ORCHESTRATOR from the runtime pane footer, never self-reported. MUST differ from the reviewed plan's provenance.model — a model cannot attack its own design.",
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        }
+      }
+    },
+    "attacks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Each a specific attempt to break the plan. Not a list of preferences — an attack names a way the plan produces a wrong or unshippable result. At least one is required: a reviewer that attempted nothing has not reviewed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim",
+          "severity",
+          "evidence",
+          "survives"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "minLength": 20,
+            "description": "The attack, stated as a falsifiable assertion about the plan — 'step S3 deletes the only caller of X, so S5's parity check never exercises it'."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "fatal",
+              "major",
+              "minor"
+            ],
+            "description": "fatal = the plan cannot be repaired into a correct one without redesign. major = the plan is salvageable but the named step must change. minor = a real defect that does not threaten the approach."
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 15,
+            "description": "What backs the attack — a file:line, a command output, a git-history fact, or the plan's own contradiction. An attack from vibes is noise and wastes Phase 9's budget."
+          },
+          "survives": {
+            "type": "boolean",
+            "description": "Did the PLAN survive this attack? True = the plan already answers it (say where, in `plan_response`). False = the attack lands and the plan must change. This is the field Phase 9 filters on."
+          },
+          "plan_response": {
+            "type": "string",
+            "description": "Where in the plan the answer already lives, when survives is true. Required for a surviving attack — the schema enforces it, so 'it's fine' cannot pass as a rebuttal."
+          },
+          "repair": {
+            "type": "string",
+            "description": "The smallest change that would answer this attack, when survives is false. Phase 9 builds from these."
+          },
+          "targets_step": {
+            "type": "string",
+            "pattern": "^S[0-9]{1,3}$",
+            "description": "The plan step this attack targets, when it is step-local rather than about the whole approach."
+          }
+        }
+      }
+    },
+    "rubric_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "correctness_risk",
+        "parity_preservation",
+        "sequencing_realism",
+        "blast_radius_honesty",
+        "verification_strength"
+      ],
+      "description": "Anchored 1-5 integers so two reviewers' verdicts are comparable. In every axis 1 is the worst and 5 the best; 3 is 'acceptable, with named caveats'. Scores never override `overall` — they explain it.",
+      "properties": {
+        "correctness_risk": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "1 = the plan is likely to produce wrong behaviour and does not know it. 2 = a plausible correctness hole with no mitigation. 3 = correctness rests on a stated assumption that is probably true. 4 = correctness argued per step with one soft spot. 5 = every step's correctness follows from evidence in the plan."
+        },
+        "parity_preservation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "1 = deletes load-bearing slack (guards, error branches, retries) and calls it simplification. 2 = parity asserted, not evidenced. 3 = parity evidenced where coverage exists, gaps unacknowledged. 4 = gaps acknowledged with a stated compensating check. 5 = parity provable for every behaviour the plan touches, including 0%-coverage regions."
+        },
+        "sequencing_realism": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "1 = waves share a mutation seam; concurrent steps would corrupt each other. 2 = ordering is stated but a dependency is inverted. 3 = ordering works serially; concurrency claims are optimistic. 4 = waves are genuinely disjoint with one questionable pairing. 5 = every wave provably file-disjoint, dependencies explicit."
+        },
+        "blast_radius_honesty": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "1 = understates what it touches; packages/core or the render loop is hit without being named. 2 = named files are incomplete. 3 = roughly right, with one unlisted consumer. 4 = accurate file set, downstream effects mostly traced. 5 = full reach traced, including dynamic access and cross-package consumers."
+        },
+        "verification_strength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "1 = 'the suite passes' is the whole plan. 2 = verification exists but cannot fail for the reasons that matter. 3 = per-step checks, some of them model judgement. 4 = mostly non-model evidence with reproducible commands. 5 = every step falsifiable by evidence computed outside the model that wrote the plan."
+        }
+      }
+    },
+    "overall": {
+      "type": "string",
+      "enum": [
+        "sound",
+        "sound-with-repairs",
+        "unsound"
+      ],
+      "description": "sound = every attack was survived; the plan may proceed as written. sound-with-repairs = the approach holds but named repairs are required first (list them in required_repairs). unsound = at least one fatal attack landed; the approach must be redesigned, not patched."
+    },
+    "required_repairs": {
+      "type": "array",
+      "description": "The repairs Phase 9 must carry in. Required when overall is 'sound-with-repairs'.",
+      "items": {
+        "type": "string",
+        "minLength": 15
+      }
+    },
+    "no_findings_justification": {
+      "type": "string",
+      "description": "Required when overall is 'sound'. What was attacked and why each attempt failed to land. This is the guard against agreement-as-the-cheapest-path: an all-clear costs a written argument."
+    }
+  },
+  "allOf": [
+    {
+      "description": "ENFORCED: a surviving attack must say WHERE the plan answers it. Otherwise 'survives' is an opinion.",
+      "if": {
+        "type": "object",
+        "required": [
+          "attacks"
+        ],
+        "properties": {
+          "attacks": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": [
+                "survives"
+              ],
+              "properties": {
+                "survives": {
+                  "const": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "attacks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "anyOf": [
+                {
+                  "properties": {
+                    "survives": {
+                      "const": false
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "plan_response"
+                  ],
+                  "properties": {
+                    "plan_response": {
+                      "type": "string",
+                      "minLength": 15
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: 'sound' means nothing landed, and costs a written justification.",
+      "if": {
+        "type": "object",
+        "required": [
+          "overall"
+        ],
+        "properties": {
+          "overall": {
+            "const": "sound"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "no_findings_justification"
+        ],
+        "properties": {
+          "no_findings_justification": {
+            "type": "string",
+            "minLength": 40
+          },
+          "attacks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "survives": {
+                  "const": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: 'sound-with-repairs' must name the repairs, and at least one attack must actually have landed.",
+      "if": {
+        "type": "object",
+        "required": [
+          "overall"
+        ],
+        "properties": {
+          "overall": {
+            "const": "sound-with-repairs"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "required_repairs"
+        ],
+        "properties": {
+          "required_repairs": {
+            "type": "array",
+            "minItems": 1
+          },
+          "attacks": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": [
+                "survives"
+              ],
+              "properties": {
+                "survives": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "ENFORCED: 'unsound' requires a fatal attack that landed. A pile of minors is a repair list, not a redesign.",
+      "if": {
+        "type": "object",
+        "required": [
+          "overall"
+        ],
+        "properties": {
+          "overall": {
+            "const": "unsound"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "attacks": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": [
+                "severity",
+                "survives"
+              ],
+              "properties": {
+                "severity": {
+                  "const": "fatal"
+                },
+                "survives": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "packages/core": {"files": 132, "loc": 14466},
+  "packages/io": {"files": 14, "loc": 1402},
+  "packages/protocol": {"files": 2, "loc": 777},
+  "apps/server": {"files": 36, "loc": 6511},
+  "apps/web": {"files": 265, "loc": 43302},
+  "apps/desktop": {"files": 14, "loc": 2630},
+  "workers/error-ingest": {"files": 11, "loc": 801},
+  "scripts": {"files": 4, "loc": 643}
+}

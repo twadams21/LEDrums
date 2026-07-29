@@ -1,0 +1,268 @@
+{
+  "initiative_id": "INIT-04-server-runtime-hardening",
+  "variant": "sonnet",
+  "provenance": {
+    "model": "claude-sonnet-5",
+    "effort": "high"
+  },
+  "summary": "END-STATE FIRST: the target architecture for apps/server's runtime is a thin main.ts (env parsing + boot only) sitting on a createServerApp() composition root whose only state is instance fields, with one PersistedSlots registration point per persisted blob instead of five scattered edits, a render loop that survives a single throw, a boot path that survives a corrupt save file, and a WS transport that notices when a peer is actually gone. The shortest honest migration to that end state is NOT purely mechanical: main.ts's ~800 lines are the one shared mutation seam six of the eight findings in this initiative pass through, so most of this plan's waves are serial on that same file by necessity \u2014 even though the entire point of landing the extraction first (S1 -> S2) is to buy every future initiative a mutation seam that is not one god-file. What this plan deletes: the god-file's ~800 lines of undifferentiated module-scope state (replaced by ServerApp fields + PersistedSlots), the duplicated HTTP-route preamble in host-event.ts / native-midi.ts (replaced by one shared route), and ~20 unreachable optional-collaborator branches in the WS message handler (the six ClientMessageDeps collaborators become required, matching the single production wiring that has always supplied all six).",
+  "findings_addressed": [
+    "divergent-change-0004",
+    "resilience-hole-0001",
+    "resilience-hole-0002",
+    "resilience-hole-0004",
+    "resilience-hole-0005",
+    "resilience-hole-0013",
+    "speculative-generality-0002",
+    "duplicated-code-0006"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Extract PersistedSlots: one registration point per persisted blob",
+      "intent": "Introduce a small generic primitive, createPersistedSlot<T>(deps), that owns the FIVE things divergent-change-0004 shows scattered per persisted blob today (project / show library / song library): the boot loader, the live in-memory value (get/set), the debounced autosaver, the field this slot contributes to the `state` message, and the shutdown flush. Adding a future persisted slot (e.g. a rig-presets library) becomes ONE createPersistedSlot(...) call instead of five separate main.ts edits (loader, `let`, autosaver, stateMessage field, shutdown flush) -- this is the concrete interface-reduction move behind divergent-change-0004's proposed 'PersistedSlots registry'. Purely additive: no existing file is touched yet, so this step cannot regress anything that runs today.",
+      "files": [
+        "apps/server/src/persisted-slots.ts",
+        "apps/server/src/persisted-slots.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New apps/server/src/persisted-slots.test.ts unit-tests createPersistedSlot() against a fake disk (load / live-get / live-set / autosave-schedule / flush) in isolation from main.ts. pnpm --filter @ledrums/server test persisted-slots. pnpm typecheck."
+    },
+    {
+      "id": "S2",
+      "title": "Extract createServerApp(deps) composition root; shrink main.ts to boot glue",
+      "intent": "Move every module-level mutable closure in today's main.ts (project/`host`/`voiceHost`, the three PersistedSlot instances built from S1 for project/showLibrary/songLibrary, `oscListen`, `pinGate`, `tunnelControl`, `controllerMonitor`, `monitorBus`/`reporter`/`backupsQueue`, `clients`/`tunnelClients`/`wss`, `snapshotStore`, `statsTimer`) into fields returned by a single factory `createServerApp(env: NodeJS.ProcessEnv): ServerApp` where `ServerApp` exposes exactly what `boot()` and the process need: `{ server, wss, clients, host, voiceHost, oscInput, controllerMonitor, tunnelControl, pin, hostToken, statsTimer, snapshotTimer, autosaver, showLibraryAutosaver, songLibraryAutosaver, port, oscPort, voiceMode, monitor }`. main.ts becomes: read env -> `const app = createServerApp(process.env)` -> `boot(app)` -- target under 60 lines. Every closure that referenced module-level `let`s now closes over factory-local state instead, so the SAME code moves, it does not get rewritten -- this step is a behaviour-preserving relocation, not a logic change (the risk is entirely in getting closure capture/ordering right during the move, which is why it is flagged high and gets its own commit, alone in its wave).",
+      "files": [
+        "apps/server/src/server-app.ts",
+        "apps/server/src/server-app.test.ts",
+        "apps/server/src/main.ts"
+      ],
+      "risk": "high",
+      "verification": "pnpm --filter @ledrums/server run typecheck. Full existing server suite green (pnpm --filter @ledrums/server test) with ZERO test-file changes required for the handlers/voice-engine-host/client-registry/etc. suites -- those exercise collaborators directly, not main.ts, so an unbroken pass proves the extraction did not disturb the tested surface. main.ts/server-app.ts itself had NO prior tests at HEAD (confirmed: no boot.test.ts or main.test.ts exists), so this step also adds the first one: apps/server/src/server-app.test.ts constructs createServerApp() against a temp LEDRUMS_PROJECTS_DIR and asserts it returns a fully-wired ServerApp (host non-null, autosavers present, voiceHost present under LEDRUMS_ENGINE=voice) without calling .listen(). Manual boot smoke: `LEDRUMS_ENGINE=voice pnpm --filter @ledrums/server dev` plus a `pnpm ui-shot` capture of the running app confirming the state/model/output still render exactly as before the extraction.",
+      "reverses": "git revert this commit alone: server-app.ts is deleted and main.ts's prior 801-line body is restored verbatim -- this step makes no behaviour change, so the revert is content-identical to pre-step HEAD."
+    },
+    {
+      "id": "S3",
+      "title": "Extract createTrustedPostRoute; de-duplicate host-event/native-midi preambles",
+      "intent": "duplicated-code-0006: add createTrustedPostRoute({ path, hostToken, maxBody, onBody }) owning the path-match / method-gate / isTrustedHost / body-accumulation / overflow-destroy / request-error scaffolding both createHostEventHandler and createNativeMidiHandler currently re-implement byte-for-byte (host-event.ts:91-120, native-midi.ts:48-77) apart from the body cap -- named MAX_BODY in one, the bare literal 4096 in the other, exactly the drift the finding calls out. Both handlers keep their EXACT public signature `(deps) => (req, res) => boolean`; each now calls createTrustedPostRoute({ path, hostToken, maxBody, onBody: (raw, res) => {...} }) with one shared MAX_BODY constant closing the literal-vs-constant drift.",
+      "files": [
+        "apps/server/src/http/trusted-post.ts",
+        "apps/server/src/http/trusted-post.test.ts",
+        "apps/server/src/http/host-event.ts",
+        "apps/server/src/http/native-midi.ts"
+      ],
+      "risk": "low",
+      "verification": "New apps/server/src/http/trusted-post.test.ts pins the 405/401/oversize-body/malformed-payload behaviour standalone. Existing apps/server/src/http/host-event.test.ts and native-midi.test.ts run UNCHANGED and stay green -- they assert the exact same status codes/bodies today, so an unmodified pass is direct evidence of byte-identical externally-observable behaviour. pnpm --filter @ledrums/server test http. pnpm typecheck."
+    },
+    {
+      "id": "S4",
+      "title": "Contain a render-tick throw to one frame; blackout on process-fatal",
+      "intent": "resilience-hole-0001, corrected against current HEAD: the finding's cited `dispose()` does not exist on VoiceEngineHost -- the actual method is `stop()` (confirmed by direct read of voice-engine-host.ts:446-453), which already does `output.blackout(this.dmxMap); output.close();`. Wrap the tick body of `step()` (engine.tick(...) plus the transmit/preview frame calls, voice-engine-host.ts:493-537) in try/catch. On catch: emit one 'error' event on `this.monitorSink` (the channel `setMonitor`/`monitorVoiceDiagnostic` already use -- no new plumbing) naming the failure, increment a `consecutiveRenderFaults` counter (reset to 0 on any successful tick), and once it exceeds a threshold (5) call `this.stop()` itself -- clean blackout + close -- rather than let a permanently wedged effect spin the loop at 120fps emitting an error every frame forever; a single transient throw just skips that one frame and keeps ticking. Separately, in server-app.ts (post-S2), widen the `onFatal` hook passed to `installProcessErrorCapture` from `() => flushReportsSync()` to `() => { flushReportsSync(); voiceHost?.stop(); }` -- `onFatal` already runs inside installProcessErrorCapture's own try/catch before `exit(1)` (process-errors.ts:53-58), so a throwing `stop()` cannot mask the exit. This is COARSE (whole-tick) containment, chosen over generator-bridge-level per-voice isolation as the first, lowest-blast-radius line of defence -- per-voice quarantine inside packages/core's compositor.render loop over `this.voices.pool` is the sharper end-state but touches core's render hot path directly; it is named as a documented follow-on in open_questions rather than bundled here, so this step lands the critical 'one throw kills the show' fix without also taking on a core-internals change in the same commit.",
+      "files": [
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/voice-engine-host.test.ts",
+        "apps/server/src/server-app.ts"
+      ],
+      "risk": "high",
+      "verification": "New test in voice-engine-host.test.ts: construct a host whose `engine.tick` (or a stubbed generator effect) throws on a specific frame, drive `host.step(STEP)` directly (already public, exactly as resilience-hole-0001's own verification_plan specifies), and assert: (a) the throw does not escape `step()`, (b) a monitor 'error' event was emitted via `setMonitor`, (c) a subsequent non-throwing `step()` call still advances `engineTimeMs` and emits frames normally. Second test: force more than 5 consecutive throws and assert `stop()` is invoked (timer cleared, transport closed) rather than an infinite error-frame loop. pnpm --filter @ledrums/server test voice-engine-host. pnpm typecheck.",
+      "reverses": "Revert voice-engine-host.ts's try/catch and fault counter (loop/step return to their pre-step bodies verbatim); revert the one-line onFatal widening in server-app.ts back to `() => flushReportsSync()`. Independently revertable from S2's extraction."
+    },
+    {
+      "id": "S5",
+      "title": "Boot recovery ladder: quarantine a broken project file, fall back to snapshot/seed",
+      "intent": "resilience-hole-0002. Add `quarantineProjectFile(name, dir)` to projects.ts: renames a broken `<name>.json` to `<name>.corrupt-<ts>.json` (never deletes -- the drummer's bad file stays on disk for inspection) reusing the same `dir`/`join` plumbing `projectFilePath` already uses. In server-app.ts, construct `snapshotStore` BEFORE calling `initialProject()` (today it is built ~430 lines later, main.ts:580) using indirection over `host`/`liveShowLibrary`/`liveSongLibrary` (forward-referenced `let`s -- the same pattern main.ts already uses for `flushReportsSync`), so the SAME store instance serves both boot recovery (`list()` + `read()`, already on the SnapshotStore interface -- no interface change needed there) and its normal runtime duties (cadence/pre-risk/restore) once `host` is assigned a few lines later; nothing calls .snapshot()/.restore() before `host` exists, so the forward reference is never dereferenced early. Rewrite `initialProject()`'s file branch: try `loadProject(LIVE_PROJECT)`; on throw, `quarantineProjectFile(...)`, then try `snapshotStore.list()[0]` -> `snapshotStore.read(meta.id)` -> `parseProject(...)` + `assertProjectIntegrity`; if that ALSO throws (or no snapshot exists), fall back to `defaultProject()` (the existing seed path, unchanged). Widen the return type's `source` field from `'seed' | 'file'` to `'seed' | 'file' | 'snapshot' | 'recovered-seed'` and update the matching type in diagnostics.ts:13 (a label-only consumer, not an exhaustive switch -- confirmed by direct read, so the widen is additive there). Deliberately NOT bundled: moving `installProcessErrorCapture` ahead of the project load (the finding's secondary ask) -- `monitor`/`monitorBus`/`reporter` construction has its own dependency chain (`broadcastJson` closes over `clients`/`wss`, not yet constructed at that point in boot) that would need its own careful reordering; the recovery ladder already prevents the crash regardless of Monitor wiring order, so that reordering is left as an open question rather than risked in this commit.",
+      "files": [
+        "apps/server/src/server-app.ts",
+        "apps/server/src/projects.ts",
+        "apps/server/src/projects.test.ts",
+        "apps/server/src/diagnostics.ts"
+      ],
+      "risk": "medium",
+      "verification": "New apps/server/src/projects.test.ts cases: (1) write a truncated/invalid-JSON default.local.json into a temp LEDRUMS_PROJECTS_DIR with a valid snapshot present under backups/ and assert boot recovers with source 'snapshot' and the bad file renamed to *.corrupt-*.json; (2) same but with NO snapshot present, assert source 'recovered-seed' and boot still succeeds; (3) a schema-valid-but-dangling-drum-ref project (assertProjectIntegrity throws) hits the same ladder and recovers the same way. pnpm --filter @ledrums/server test. pnpm typecheck."
+    },
+    {
+      "id": "S6",
+      "title": "Server-side ws heartbeat: ping unresponsive peers, reap on failed pong",
+      "intent": "resilience-hole-0004 (server half). Add `createHeartbeatSweeper<S>({ clients, intervalMs, onDead })` in a new apps/server/src/ws-heartbeat.ts: every `intervalMs` (e.g. 15s) it `ping()`s every socket that answered the PREVIOUS sweep (tracked via a per-socket `isAlive` WeakMap -- the standard `ws` keepalive idiom) and `terminate()`s + calls `onDead` for any socket that did not pong since the last sweep. Wired into server-app.ts as `const sweeper = createHeartbeatSweeper({ clients, intervalMs: 15000, onDead: (ws) => { clients.remove(ws); controllerMonitor.dropWatcher(ws); broadcastPresence(); } })` -- the SAME cleanup the existing close/error handlers already run (client-registry.ts:60, today's main.ts:523-532), so a reaped peer is indistinguishable from a normal disconnect to every other subsystem. `sweeper.stop()` is added alongside the existing statsTimer/snapshotTimer clears in boot.ts's shutdown.",
+      "files": [
+        "apps/server/src/ws-heartbeat.ts",
+        "apps/server/src/ws-heartbeat.test.ts",
+        "apps/server/src/server-app.ts",
+        "apps/server/src/boot.ts"
+      ],
+      "risk": "medium",
+      "verification": "New apps/server/src/ws-heartbeat.test.ts: a fake socket exposing ping()/terminate()/on('pong', ...) that never pongs is terminated + onDead fires after exactly 2 sweeps (never on the very first -- the standard two-sweep grace so a fresh connection is not punished for not having ponged yet), while a socket that DOES pong survives indefinitely. pnpm --filter @ledrums/server test ws-heartbeat. pnpm typecheck."
+    },
+    {
+      "id": "S7",
+      "title": "Client watchdog: detect a half-open link, force-close and reconnect",
+      "intent": "resilience-hole-0004 (client half). Track `lastMessageAt` in `handleMessage()` (client.ts:221), updated on EVERY inbound frame -- binary preview frames arrive constantly during a live show, so this is a stronger liveness signal than the JSON stats frame alone. Start a watchdog `setInterval` alongside the socket (created in openSocket(), cleared in onclose/close()) that checks `Date.now() - lastMessageAt` against a fixed `STALE_MS` constant (e.g. 500ms -- an absolute constant, deliberately NOT derived from the current 10ms stats cadence, so it does not silently need retuning if resilience-hole-0005/S8 later reduces that cadence); when stale, call `ws.close()` -- the EXISTING onclose handler then does everything a real disconnect already does (onConnection('closed'), scheduleReconnect()), so this step adds detection only and reuses 100% of the existing reconnect/backoff machinery. `hit()` in trigger-lab/store.svelte.ts already falls back to local sim when `link !== 'open'` (store.svelte.ts:1716), so once the watchdog flips the link closed, offline play resumes automatically with zero store-side changes.",
+      "files": [
+        "apps/web/src/lib/ws/client.ts",
+        "apps/web/src/lib/ws/client.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "New apps/web/src/lib/ws/client.test.ts case (reusing the existing FakeWS + vi.useFakeTimers() harness already at the top of the file): connect, advance past STALE_MS with zero messages delivered, assert onConnection('closed') fired and a reconnect was scheduled. Second case: deliver a frame just under the STALE_MS boundary and assert the watchdog does NOT fire (no false positive on a healthy link). pnpm --filter @ledrums/web test ws/client. pnpm typecheck."
+    },
+    {
+      "id": "S8",
+      "title": "Backpressure: skip/reap slow WS peers; cap concurrent connections",
+      "intent": "resilience-hole-0005. Pull `broadcastJson` out as its own small testable unit (today it is a main.ts-local closure with no seam at all) and, before `ws.send(data)`, check `ws.bufferedAmount > MAX_BUFFERED_BYTES` (e.g. 1_000_000); skip the send and increment a per-socket `overBudgetSweeps` counter (a WeakMap<WebSocket, number>, mirroring S6's isAlive pattern); when a socket is over budget for N consecutive stats ticks (e.g. 20), `ws.terminate()` it and run S6's `onDead` cleanup directly rather than re-deriving it. Separately, add a `LEDRUMS_MAX_CLIENTS` env cap (default e.g. 8) checked in `wss.on('connection')` BEFORE `clients.admit(ws)`: over the cap, `ws.close(<a new distinct code>, 'too many connections')`, reusing the existing admitDecision/PIN-gate close-code vocabulary (pin-gate.ts) rather than inventing a new one. Left as a documented follow-on rather than bundled here: dropping the 100Hz stats cadence itself -- that is a product/UX call on stats-readout smoothness, not a resilience fix, and is flagged in open_questions.",
+      "files": [
+        "apps/server/src/server-app.ts",
+        "apps/server/src/server-app.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Unit-test the extracted broadcastJson with a fake socket reporting a large bufferedAmount and assert the send is skipped and the skip is counted; drive N consecutive over-budget sweeps and assert terminate() + S6's cleanup path fires. Connection-cap case: open LEDRUMS_MAX_CLIENTS + 1 fake connections and assert the last is closed with the distinct code. pnpm --filter @ledrums/server test. pnpm typecheck."
+    },
+    {
+      "id": "S9",
+      "title": "Redact client-facing error detail; rate-limit the error-frame path",
+      "intent": "resilience-hole-0013. In the ws.on('message') catch (today main.ts:510-518, lands in server-app.ts post-S2): stop sending `err.message` verbatim to the client. Generate a short correlation id (`randomUUID().slice(0,8)` -- randomUUID is already imported), send the client a stable generic message ('could not apply that change (ref <id>)'), and keep the FULL message/stack on the Monitor event exactly as today -- only the ws.send payload narrows. When `isViaCloudflare`/`tunnelClients.has(ws)` (already tracked at admit, main.ts:496), redaction is unconditional; whether a local dev socket may keep the fuller message for faster debugging is flagged in open_questions as a taste call. Add a per-socket error-frame rate limit: a WeakMap<WebSocket, {count, windowStart}> capping at e.g. 5 error frames/second -- beyond it, drop the ws.send (the Monitor event may still record every occurrence, since the Reporter already dedupes identical errors into one growing-count record per #122, so this alone does not cause telemetry amplification).",
+      "files": [
+        "apps/server/src/server-app.ts"
+      ],
+      "risk": "low",
+      "verification": "New test: send a malformed message over a tunnelClients-flagged fake socket and assert the returned error frame contains neither a filesystem path nor a Zod schema-path fragment, while a captured Monitor event still carries the full detail. Second case: send 50 malformed messages in a loop and assert at most 5 error frames were sent to the socket. pnpm --filter @ledrums/server test. pnpm typecheck."
+    },
+    {
+      "id": "S10",
+      "title": "Make ClientMessageDeps + snapshotPreRisk required; delete dead absent-collaborator branches",
+      "intent": "speculative-generality-0002. Drop the `?` from all six ClientMessageDeps fields (tunnelControl, isTunnelClient, monitor, listNetworkAdapters, backups, controller) and from ProjectHandlerDeps.snapshotPreRisk. Delete the now-dead fallbacks this makes unreachable: `?? true` at client-message.ts:342 and projects.ts:40, the `deps.backups &&` short-circuit at client-message.ts:441, and the ~20 `deps.x?.(...)` optional-chains across lines 215-306 collapse to plain `deps.x.(...)` calls -- behaviour-identical for the ONE production wiring, which already supplies all six (confirmed by the deletion-test verdict: 'main.ts has the only production construction and supplies all six collaborators'). `pnpm typecheck` after dropping the `?`s surfaces every call site that implicitly relied on the never-occurring absent configuration -- expected to be ONLY the test harnesses per the verdict.",
+      "files": [
+        "apps/server/src/handlers/client-message.ts",
+        "apps/server/src/handlers/client-message.test.ts",
+        "apps/server/src/handlers/projects.ts",
+        "apps/server/src/handlers/projects.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Drop the `?`s, run pnpm --filter @ledrums/server run typecheck -- every reported error is a test call site (client-message.test.ts's harness currently leaves backups/controller/etc. `undefined` in several cases to exercise the 'disabled' no-op branches; each becomes an EXPLICIT no-op stub object instead, per the verdict's own recommendation). Grep for a second non-test createClientMessageHandler( call site before committing (the deletion-test's own premise) -- none exists at HEAD, and server-app.ts's single call site (post-S2) already supplies all six. pnpm --filter @ledrums/server test. pnpm typecheck."
+    }
+  ],
+  "sequencing": [
+    [
+      "S1",
+      "S3",
+      "S10"
+    ],
+    [
+      "S2"
+    ],
+    [
+      "S4"
+    ],
+    [
+      "S5"
+    ],
+    [
+      "S6",
+      "S7"
+    ],
+    [
+      "S8"
+    ],
+    [
+      "S9"
+    ]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/server/src/server-app.ts",
+      "removed": [],
+      "added": [
+        "createServerApp",
+        "ServerApp"
+      ],
+      "net_interface_change": "increases",
+      "note": "A new composition-root factory is a deliberate, small increase in named surface in exchange for turning main.ts's ~800 lines of untested module-scope state into one testable, closed unit -- the same trade divergent-change-0004's own proposed_fix accepts (its own interface_delta already declares 'increases' for this move)."
+    },
+    {
+      "at": "apps/server/src/persisted-slots.ts",
+      "removed": [],
+      "added": [
+        "createPersistedSlot"
+      ],
+      "net_interface_change": "increases",
+      "note": "One small reusable primitive replacing five scattered per-slot edits (loader, live let, autosaver, stateMessage field, shutdown flush) -- the actual interface-reduction lever for FUTURE persisted slots, even though it is a net addition today."
+    },
+    {
+      "at": "apps/server/src/http/trusted-post.ts",
+      "removed": [],
+      "added": [
+        "createTrustedPostRoute"
+      ],
+      "net_interface_change": "increases",
+      "note": "One shared route scaffold replacing two duplicated ~28-line preambles; mirrors duplicated-code-0006's own declared 'increases' delta."
+    },
+    {
+      "at": "apps/server/src/ws-heartbeat.ts",
+      "removed": [],
+      "added": [
+        "createHeartbeatSweeper"
+      ],
+      "net_interface_change": "increases",
+      "note": "Purely additive liveness primitive; no existing guard removed."
+    },
+    {
+      "at": "apps/server/src/handlers/client-message.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "ClientMessageDeps' six optional fields become required, deleting ~20 unreachable deps.x?.() no-op branches and the two data-loss-guard fallbacks (`?? true`, `deps.backups &&`) they enabled -- the objective-function win the finding itself flags as 'reduces'."
+    },
+    {
+      "at": "apps/server/src/handlers/projects.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "ProjectHandlerDeps.snapshotPreRisk becomes required; the `?? true` fail-open default is deleted."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates",
+      "pnpm --filter @ledrums/server run typecheck (after every wave)",
+      "pnpm --filter @ledrums/server test (full server suite green after every wave, zero unrelated test-file edits required through S2)",
+      "pnpm --filter @ledrums/web test ws/client (S7)",
+      "New: apps/server/src/server-app.test.ts, persisted-slots.test.ts, http/trusted-post.test.ts, ws-heartbeat.test.ts, projects.test.ts additions, voice-engine-host.test.ts additions",
+      "Manual boot smoke + pnpm ui-shot capture of the running app after S2 (state/model/output render identically to pre-extraction HEAD)"
+    ],
+    "known_gaps": "main.ts/server-app.ts's module-scope wiring has ZERO existing unit coverage at HEAD (confirmed: no boot.test.ts or main.test.ts exists) -- S2's extraction is exactly what makes it testable for the first time, but until S2 lands, 'the suite is green' says nothing about the composition root itself, only about the collaborators it wires. The boot-recovery ladder (S5) is a genuinely hard-to-test path: real disk-full or truncated-mid-write scenarios cannot be reproduced deterministically, so its tests write already-corrupt files rather than corrupting them live -- this proves the RECOVERY LOGIC given a bad file, not that every real-world corruption mode reaches that logic identically. The WS liveness watchdogs (S6/S7) are proven with fake timers and fake sockets, which proves the state machine fires correctly at the chosen thresholds; it cannot prove those thresholds (500ms client stale-timeout, 15s server heartbeat) are well-tuned for a real half-open TCP connection on a shaky venue wifi or a Cloudflare tunnel drop -- that calibration is not provable in this repo without live-show telemetry, which is why S6/S9 surface their own trip events on the Monitor bus (so a mistuned threshold is at least VISIBLE after ship, rather than silently wrong). The render-loop fault containment (S4) is proven against a deliberately-throwing stub effect, not against the actual universe of real generator/effect bugs that could throw -- it proves containment given SOME throw, not that every core code path that could throw has been enumerated.",
+    "baseline_reference": "baseline sha 3708648; 2968 tests green at HEAD via `pnpm gates` (machine-mutex, full suite)."
+  },
+  "rollback_strategy": "Each wave lands as its own commit (or small commit group), so a regression discovered after landing is reverted at the wave that introduced it without touching earlier waves: S1 (isolated new file) and S3/S10 (isolated to http/ and handlers/ respectively) revert with a plain `git revert` of their commit. S2 (the composition-root extraction) is the single highest-risk commit in this plan -- everything from S4 onward is written AGAINST server-app.ts, so a revert of S2 after S4+ have landed requires reverting S4 through whichever wave is newest first, in reverse order, THEN S2 (each later wave's `reverses` note says how to undo just that wave). S4 and S5 each carry their own reverses/description for the same reason -- they are additive/guard-only, so reverting them individually never requires touching S2. S10 (required deps) is the one step whose revert is a real behaviour change back to today's fail-open shape: re-add the `?` to the six ClientMessageDeps fields and to snapshotPreRisk, re-add the three deleted fallback expressions verbatim, and revert the test-harness stub additions back to `undefined`.",
+  "estimated_loc": 1300,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should packages/core's per-voice/per-generator render call also gain quarantine granularity (skip just the one broken voice, not the whole tick), or is S4's whole-tick containment sufficient for now? The deeper fix touches compositor.render's hot loop over `this.voices.pool` directly, which this plan deliberately deferred.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Are a 500ms client stale-timeout (S7) and a 15s/2-sweep server heartbeat (S6) tuned right for the real deployment environments (LAN, Cloudflare tunnel, a shaky venue wifi), or should both be env-tunable from day one rather than hardcoded constants?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should the redacted client-facing error message (S9) still carry the full message on localhost/dev, or should redaction be unconditional so dev and prod paths never diverge (avoiding a 'works on my machine, redacted on tour' surprise during debugging)?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should moving installProcessErrorCapture ahead of the project load (so a boot-time crash also reaches the Monitor/Reporter pipeline, not just console.error) be pursued as a follow-on to S5, given it requires reordering monitorBus/reporter construction ahead of clients/wss existing?",
+      "blocks_execution": false,
+      "owner": "implementer"
+    },
+    {
+      "question": "What is an acceptable LEDRUMS_MAX_CLIENTS default for a room-PIN'd show (S8), and is the current 100Hz stats broadcast actually needed by any UI consumer today, or can it drop to something closer to the existing 30fps preview cadence?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "INIT-01 (single-render-stack) may retire the legacy EngineHost/VOICE_MODE branch entirely. If so, createServerApp (S2) should probably construct only VoiceEngineHost from the start rather than the dual-mode branching it inherits from today's main.ts. Should S2 land now supporting both modes, or should the two variants/synthesis pick a sequencing relative to INIT-01?",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    }
+  ]
+}

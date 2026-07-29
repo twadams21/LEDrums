@@ -45,9 +45,6 @@ export const {
   ease,
 } = voice;
 
-/** Named envelope shapes the editor seeds from (then reshapes into a curve). */
-export const ENV_KINDS: EnvKind[] = ['decay', 'rise', 'pluck', 'pulse'];
-
 // ---- Param primitives (local — mirrors of core voice param types — see S18) -------
 
 /** Mirrors core `voice.ParamValue` (S18): numbers/booleans plus `string` for enum choices

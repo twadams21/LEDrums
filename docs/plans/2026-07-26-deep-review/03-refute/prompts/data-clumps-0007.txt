@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   >=3 parameters travelling together across >=3 call sites.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: data-clumps-0007
+lens: data-clumps
+criterion: co-travelling-params
+severity: minor (author confidence: high)
+locations:
+  apps/web/src/lib/app/docks/patch-inspector.ts:113-133 (zoneMidiNote / zoneOscAddress / setZoneMidiNote / setZoneOscAddress)
+  apps/web/src/lib/app/docks/patch-inspector.ts:269-320 (addDeclaredZone / removeZone / moveZoneSlot)
+  packages/core/src/model/project-schema.ts:72-93 (midiNoteMapSchema / oscMapSchema / declaredZoneSchema)
+  packages/core/src/model/project-schema.ts:107-110 (triggerBindingSchema)
+
+claim: `{drumId, slot}` is the repo's trigger address, and it already exists as an object in four separate core schemas (midiNoteMapSchema:73-77, oscMapSchema:80-84, declaredZoneSchema:90-93, triggerBindingSchema:108-110) with no shared base — each re-declares `drumId: z.string(), slot: slotSchema`. In the web layer it is then exploded into positional params across seven functions in patch-inspector.ts, whose bodies immediately re-materialise it: `[...rest, { note, drumId, slot }]` (line 124), `{ ...map, zones: [...zones, { drumId, slot }] }` (line 274). moveZoneSlot (line 320) juggles four such addresses positionally in one function. Both `slot: number` params of `moveZoneSlot(map, drumId, oldSlot, newSlot)` are indistinguishable to the compiler.
+
+evidence the author gave:
+  [tool-output] python3 scratchpad/clump.py (top-level function param-name clustering across all 8 units) :: `('map','drumId','slot')` was the single most-repeated >=3-param signature in the repo — 4 exact hits (patch-inspector.ts:113, :118, :269, :277) before counting the 4-param setters and moveZoneSlot.
+  [read]  :: packages/core/src/model/project-schema.ts:72-93 — three consecutive schemas each ending in the same `drumId: z.string(); slot: slotSchema.default(0)` pair; the doc comment at line 64 literally names the concept: 'What a `(drum, slot)` hit DOES...'.
+  [grep] grep -rn 'drumId: string;' packages apps --include='*.ts' :: apps/web/src/lib/trigger-lab/midi-controller.svelte.ts:26 and apps/web/src/lib/app/docks/patch-inspector.ts:26 both carry ad-hoc `{ kind: 'zone'; drumId: string; slot: number }` variants of the same address.
+
+proposed fix: Add `export const zoneRefSchema = z.object({ drumId: z.string(), slot: slotSchema.default(0) })` to packages/core/src/model/project-schema.ts and define the three map schemas by extension (`zoneRefSchema.extend({ note: ... })`). Export `type ZoneRef = z.infer<typeof zoneRefSchema>`. Then reshape patch-inspector.ts's seven functions to `(map: InputMap, ref: ZoneRef, ...)`; moveZoneSlot becomes `(map, from: ZoneRef, to: ZoneRef)`, which makes the two slot numbers non-transposable.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"data-clumps-0007",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"co-travelling-params",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

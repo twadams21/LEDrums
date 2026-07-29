@@ -1,0 +1,209 @@
+{
+  "initiative_id": "INIT-07-patch-node-identity",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "plan-INIT-07",
+    "model": "claude-opus-5[1m]",
+    "effort": "medium"
+  },
+  "summary": "The Patch node-id grammar is minted in three modules and decoded in two, and the `output:` prefix is claimed by two builders with different payloads. The cheapest full retirement is subtraction first, unification second: `buildPatchTopology` (the v1 topology builder) has NO production caller — `PatchGraphView.svelte` only uses `topoDrumsFromKit`, and the v2 graph is built by `patch-zones.ts`/`patch-graph.ts` — so deleting it removes `triggerId`, `zoneNodeId`, `drumNodeId` AND the positional `outputId(index)` builder outright, which is what makes `output:` ambiguous in the first place. dead-code-0008 asked to un-export three arrows and was falsified by typecheck; deleting the only function that calls them retires it correctly instead. What remains is genuinely shared, so it gets ONE module: `patch-node-id.ts` with one encoder set and one TOTAL decoder returning a discriminated `PatchNodeRef`, replacing the two hand-rolled `split(':')` parsers in `describePatchNode` and `patchEditorFor`. `describePatchNode` then takes the outputs array and renders the display index, so the Inspector title agrees with the graph node's own label instead of printing a raw config id, and an unrecognised prefix reports stage `'unknown'` rather than silently posing as an input. Finally `{drumId, slot}` becomes `ZoneRef` — one zod base in core reused by the three input-map schemas, and one parameter object across the seven `patch-inspector.ts` editors, which makes `moveZoneSlot`'s two transposable slot numbers non-transposable. No new abstraction is introduced anywhere a single call site would be its only user.",
+  "findings_addressed": ["primitive-obsession-0008", "dead-code-0008", "data-clumps-0007"],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Delete the dead v1 topology builder and its private id grammar",
+      "intent": "Remove `buildPatchTopology` and everything only it uses from apps/web/src/lib/app/patch-topology.ts: the exports `buildPatchTopology`, `PatchTopology`, `TopologyOptions`, `STAGE_ORDER`, `triggerId`, `zoneNodeId`, `drumNodeId`, `outputId`, and the module-private `STAGE_ROLE` and `stackY`. Keep `PatchStage`, `PatchNodeData`, `PatchFlowNode`, `PatchFlowEdge`, `TopologyDrum`, `NODE_W`, `NODE_H`, `INPUT_ID`, `CONTROLLER_ID`, `hoopId`, `topoDrumsFromKit`, `describePatchNode`, `PatchNodeDescription` — all of those have live consumers. Delete the `describe('buildPatchTopology')` and the `buildPatchTopology(topoDrumsFromKit(...))` assertion inside `describe('topoDrumsFromKit')` blocks from patch-topology.test.ts, keeping the `topoDrumsFromKit` and `describePatchNode` blocks. This is the step that actually retires dead-code-0008: the three arrows die with their only caller rather than merely losing `export`. It also removes one of the two `output:` builders, so the collision at the heart of primitive-obsession-0008 stops existing instead of being adjudicated. FALLBACK if Trent vetoes the deletion (see open_questions #1): keep `buildPatchTopology` but move all five id arrows to module-private consts and rename `outputId` to `topologyRunNodeId` returning `run:<index>` so it no longer squats the `output:` prefix; the rest of the plan is unaffected.",
+      "files": [
+        "apps/web/src/lib/app/patch-topology.ts",
+        "apps/web/src/lib/app/patch-topology.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Before deleting: `git grep -n 'buildPatchTopology\\|STAGE_ORDER\\|PatchTopology\\|TopologyOptions' apps packages scripts` must show hits only in patch-topology.ts and patch-topology.test.ts (verified at baseline 3708648 — it does). After: `pnpm gates` green, and the test-count delta versus the 2968 baseline must exactly equal the number of `it(` blocks deleted from patch-topology.test.ts (count them and record the number in the commit message; an unexplained extra drop means something else was pinned by those tests). Then `pnpm ui-shot` the Patch Graph view and confirm the node graph still renders drums/hoops/outputs — proof the deleted builder was not feeding the live view.",
+      "reverses": "Single-commit revert; nothing depends on the deleted symbols after this step, and no later step reintroduces them."
+    },
+    {
+      "id": "S2",
+      "title": "Add patch-node-id.ts: one encoder set, one total decoder",
+      "intent": "New module apps/web/src/lib/app/patch-node-id.ts is the ONLY place the `<kind>[:<a>[:<b>]]` grammar is written or read. It exports the singleton ids `INPUT_ID='input'`, `CONTROLLER_ID='controller'`, `KIT_ID='kit'`, `TRIGGERS_ID='triggers'`; the encoders `hoopNodeId(ref: HoopRef)`, `outputNodeId(outputId: string)`, `drumNodeId(drumId)`, `triggerNodeId(drumId)`, `zoneNodeId(drumId, zone)` (signatures identical to today's so call sites do not churn); the type `PatchNodeRef = {kind:'input'} | {kind:'controller'} | {kind:'kit'} | {kind:'triggers'} | {kind:'trigger';drumId:string} | {kind:'zone';drumId:string;zone:string} | {kind:'drum';drumId:string} | {kind:'hoop';drumId:string;hoop:number} | {kind:'output';outputId:string} | {kind:'unknown';id:string}`; and the total decoder `parsePatchNodeId(id: string): PatchNodeRef`. The decoder carries the two defensive rules that exist today, verbatim: drum ids are rejoined across ':' (a drum id containing a colon must survive), and a hoop's index is the LAST segment parsed as a finite number, else `unknown`. It imports only `type { HoopRef }` from ./patch-routing so it stays leaf-level and cycle-free. NOTHING is rewired in this step — it lands as new code plus its own test, so the seam is proven before any consumer moves.",
+      "files": [
+        "apps/web/src/lib/app/patch-node-id.ts",
+        "apps/web/src/lib/app/patch-node-id.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New patch-node-id.test.ts contains a GOLDEN TABLE captured at baseline: for each of the ~20 ids the live app actually mints (`input`, `controller`, `kit`, `triggers`, `drum:kick`, `trigger:snare`, `hoop:kick:1`, `hoop:tom2:4`, `output:<a real OutputConfig.id from DEFAULT_KIT>`, `zone:tom1:edge`, plus the adversarial `hoop:weird:id:3`, `hoop:kick:x`, `output:`, `''`, `garbage`, `drum:`), assert (a) round-trip `parsePatchNodeId(encoder(x))` deep-equals the intended ref, and (b) `parsePatchNodeId(id)` matches, kind-for-kind and field-for-field, what the pre-existing `patchEditorFor(id)` returns at baseline for that same id (paste the baseline outputs in as literals — this is the parity oracle S3 will be checked against). `pnpm gates` green with test count = baseline-after-S1 + the new cases.",
+      "reverses": "Delete the two new files; no other file references them yet."
+    },
+    {
+      "id": "S3",
+      "title": "Rewire every id producer/consumer onto patch-node-id and delete the duplicates",
+      "intent": "Collapse the surviving duplicate builders and the second hand-rolled parser. In patch-graph.ts: delete `OUTPUT_PREFIX`, `hoopNodeId`, `parseHoopNodeId`, `outputNodeId`, `parseOutputNodeId`; import `hoopNodeId`/`outputNodeId` from ./patch-node-id and replace the two decode sites (`routingFromGraph`'s hoop and output reads) with `parsePatchNodeId` + a `kind` check. In patch-zones.ts: delete `drumZoneId` and `triggerNodeId` (byte-identical twins of patch-topology's `drumNodeId`/`triggerId`) and `CONTROLLER_ZONE_ID`/`KIT_ZONE_ID`/`TRIGGERS_ZONE_ID` (the first is the same string as `CONTROLLER_ID`); import `drumNodeId`, `triggerNodeId`, `CONTROLLER_ID`, `KIT_ID`, `TRIGGERS_ID` from ./patch-node-id. In patch-topology.ts: delete `INPUT_ID`, `CONTROLLER_ID`, `hoopId` (now owned by patch-node-id) and re-express `describePatchNode` over `parsePatchNodeId` — no `split(':')` left in the file. In docks/patch-inspector.ts: replace `patchEditorFor`'s 25-line parser body with `parsePatchNodeId` plus the one enrichment the Inspector needs, keeping the exported type name stable so the eight inspector components' props do not churn: `export type PatchEditor = Exclude<PatchNodeRef, {kind:'zone'}> | { kind:'zone'; drumId: string; zone: string; slot: number }`, and `patchEditorFor(id)` = decode, then for `kind:'zone'` attach `slot: zoneSlot(ref.zone)`. Update the three test files' imports. The `zone:` arm is retained deliberately even though S1 removed its last minter — see open_questions #2.",
+      "files": [
+        "apps/web/src/lib/app/patch-graph.ts",
+        "apps/web/src/lib/app/patch-zones.ts",
+        "apps/web/src/lib/app/patch-topology.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.ts",
+        "apps/web/src/lib/app/patch-graph.test.ts",
+        "apps/web/src/lib/app/patch-zones.test.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "MECHANICAL CENTRALISATION PROOF: `git grep -n \"split(':')\" apps/web/src/lib/app` returns exactly one hit, inside patch-node-id.ts; `git grep -n \"'hoop:\\|\\`hoop:\\|'output:\\|\\`output:\\|\\`drum:\\|\\`trigger:\\|\\`zone:\" apps/web/src` returns hits only in patch-node-id.ts and test fixtures. BEHAVIOUR: `pnpm gates` green with test count unchanged from S2 (no test deleted here); specifically patch-graph.test.ts's routingFromGraph round-trip cases, patch-zones.test.ts's buildZoneGraph node-id assertions, and patch-inspector.test.ts's patchEditorFor cases must pass untouched — if any of those needed an edit to go green, the refactor changed behaviour and must be reworked, not the test. Plus the S2 golden table still passes, now as a cross-check that patchEditorFor and parsePatchNodeId agree.",
+      "reverses": "Revert this commit only; S2's module becomes unused-but-harmless (knip will flag it), S1 stays landed."
+    },
+    {
+      "id": "S4",
+      "title": "Settle the output payload on OutputConfig.id and make an unknown id visible",
+      "intent": "Close the two behaviour defects primitive-obsession-0008 names. (a) `describePatchNode(id, drums, outputs)` gains a third parameter `outputs: ReadonlyArray<{ id: string }> = []`; for `kind:'output'` the title becomes `Output ${outputs.findIndex(o => o.id === ref.outputId) + 1}` when found, falling back to `Output ${ref.outputId}` when not — so the Inspector header matches the graph node's own label, which patch-zones.ts:212 already derives from array position, instead of printing a raw config-id slug. Inspector.svelte passes the outputs it already has in scope from the resolved project (`project?.kit.outputs ?? []`, using the same `project` binding the file already declares for the offline banner). (b) `PatchNodeDescription.stage` widens to `PatchStage | 'unknown'` and the `kind:'unknown'` ref returns stage `'unknown'` with title = the raw id — replacing today's `default:` arm that silently classified any unrecognised prefix as `'input'`. The widening is confined to the description type: `PatchStage` itself is NOT extended, so PatchNode.svelte's styling and patch-zones' `leafRole` map need no new arm.",
+      "files": [
+        "apps/web/src/lib/app/patch-topology.ts",
+        "apps/web/src/lib/app/patch-topology.test.ts",
+        "apps/web/src/lib/app/docks/Inspector.svelte"
+      ],
+      "risk": "medium",
+      "verification": "New cases in patch-topology.test.ts: `describePatchNode(outputNodeId('out-a'), [], [{id:'out-a'},{id:'out-b'}]).title === 'Output 1'`; `describePatchNode(outputNodeId('out-b'), [], [{id:'out-a'},{id:'out-b'}]).title === 'Output 2'`; `describePatchNode(outputNodeId('ghost'), [], [{id:'out-a'}]).title === 'Output ghost'`; `describePatchNode('bogus:thing').stage === 'unknown'`. UI EVIDENCE (the vitest suite cannot see this, and Inspector.svelte has no test): `pnpm ui-shot` the Patch Graph view, select each of an Output node, a Hoop node, a Drum zone and the Controller, and confirm the Inspector eyebrow/title in the capture matches the node's own label on the canvas — in particular that the Output node captioned 'Output 2' on canvas now also reads 'Output 2' in the Inspector. Capture the same four shots BEFORE this step for an explicit before/after pair, and check ui-shot's console-error read-out is clean.",
+      "reverses": "Revert this commit alone; S3's unified decoder is unaffected, describePatchNode falls back to the id-payload title."
+    },
+    {
+      "id": "S5",
+      "title": "ZoneRef: one zod base in core, one address object across the seven zone editors",
+      "intent": "Retire data-clumps-0007. In packages/core/src/model/project-schema.ts add `export const zoneRefSchema = z.object({ drumId: z.string(), slot: slotSchema.default(0) })` and `export type ZoneRef = z.infer<typeof zoneRefSchema>` immediately after `slotSchema`, then define the three address-carrying schemas from its shape while PRESERVING today's property order (zod's parse output follows shape order, and persisted-project JSON must not reshuffle): `midiNoteMapSchema = z.object({ note: z.number().int().min(0).max(127), ...zoneRefSchema.shape })`, `oscMapSchema = z.object({ address: z.string(), ...zoneRefSchema.shape })`, `declaredZoneSchema = zoneRefSchema`. `triggerBindingSchema` is deliberately NOT rebased: its `slot` is REQUIRED while the input-map schemas default it (the refuter flagged exactly this), and changing that would alter what a malformed persisted section parses to — leave it literal with a comment naming zoneRefSchema and why it does not extend it. In apps/web/src/lib/app/docks/patch-inspector.ts reshape the seven functions to take the address as one object: `zoneMidiNote(map, ref: ZoneRef)`, `zoneOscAddress(map, ref)`, `setZoneMidiNote(map, ref, note)`, `setZoneOscAddress(map, ref, address)`, `addDeclaredZone(map, ref)`, `removeZone(map, ref)`, and `moveZoneSlot(map, from: ZoneRef, to: ZoneRef)` — the last of which is the point: the two interchangeable `number` params become two named, non-transposable addresses. `zoneSlotsForDrum` and `availableSlots` keep `drumId`-only signatures (no clump). Update the three call-site files.",
+      "files": [
+        "packages/core/src/model/project-schema.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.test.ts",
+        "apps/web/src/lib/app/docks/inspectors/DrumZonesList.svelte",
+        "apps/web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte"
+      ],
+      "risk": "medium",
+      "verification": "SCHEMA PARITY (the part a green suite does not prove): add a temporary throwaway script under scratchpad that loads a real saved project JSON plus a hand-written pathological input map (missing `slot`, `slot: 0`, `slot: 7`, out-of-range `slot: 9`, extra unknown keys) and runs `inputMapSchema.parse` on both baseline and post-change builds, asserting `deepStrictEqual` AND `JSON.stringify` byte-equality (catches property-order drift from the shape spread) AND that the out-of-range case still throws with the same issue path. Record both outputs in the commit message; delete the script. Then `pnpm gates` green — patch-inspector.test.ts's zone-editing cases and packages/core's project-schema tests must pass with assertions unchanged apart from the mechanical call-shape edit. `pnpm ui-shot` the Drum inspector's zones list: add a zone, change its slot via the dropdown, set a MIDI note, remove it — the four gestures whose only coverage is manual (DrumZonesList.svelte is a .svelte file with no unit test).",
+      "reverses": "Revert this commit; core's schema returns to three literal address declarations. No data migration is involved — the persisted shape is identical by construction, which is what the byte-equality check proves."
+    },
+    {
+      "id": "S6",
+      "title": "Point the id-grammar comments at the one module that now owns it",
+      "intent": "Docs-truth sweep for the surface these steps moved: shell-nav.ts:15 documents the id grammar as 'minted by patch-topology.ts' and lists `zone:<drumId>:<zone>`; patch-graph.ts:20 and :43 point at patch-topology for the hoop-id base and 'kept decodable by patch-topology's describePatchNode'; docks/patch-inspector.ts:21 says 'The id grammar is minted by patch-topology.ts / patch-graph.ts'; packages/core/src/geometry/kit-schema.ts:508 says appended port ids match 'the patch graph's outputId(index)' — a function S1 deleted, and whose positional semantics were the bug. Rewrite all five to name patch-node-id.ts as the single owner, and correct the kit-schema.ts note to say port ids are `output:<OutputConfig.id>`. Comments only; no executable change.",
+      "files": [
+        "apps/web/src/lib/app/shell-nav.ts",
+        "apps/web/src/lib/app/patch-graph.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.ts",
+        "packages/core/src/geometry/kit-schema.ts"
+      ],
+      "risk": "low",
+      "verification": "`git grep -n 'patch-topology' apps packages` returns only real imports of the surviving type/helper exports plus this plan's own artifacts — no comment still claims patch-topology mints or decodes ids. `git diff --stat` for this step shows comment-line changes only (no non-comment line in the diff). `pnpm gates` green and the diff of `pnpm build` output unchanged in behaviour.",
+      "reverses": "Revert; comments only, zero runtime effect."
+    }
+  ],
+  "sequencing": [["S1"], ["S2"], ["S3"], ["S4", "S5"], ["S6"]],
+  "interface_deltas": [
+    {
+      "at": "apps/web/src/lib/app/patch-topology.ts",
+      "removed": [
+        "buildPatchTopology",
+        "PatchTopology",
+        "TopologyOptions",
+        "STAGE_ORDER",
+        "triggerId",
+        "zoneNodeId",
+        "drumNodeId",
+        "outputId",
+        "hoopId",
+        "INPUT_ID",
+        "CONTROLLER_ID"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Eleven exports gone. Survivors are the flow-node types, NODE_W/NODE_H, TopologyDrum, topoDrumsFromKit and describePatchNode — every one has a live consumer. The module stops being an id authority entirely."
+    },
+    {
+      "at": "apps/web/src/lib/app/patch-graph.ts",
+      "removed": ["hoopNodeId", "parseHoopNodeId", "outputNodeId", "parseOutputNodeId"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "The second `output:` builder and its bespoke decoder move to the one id module; patch-graph keeps only routing/layout responsibilities."
+    },
+    {
+      "at": "apps/web/src/lib/app/patch-zones.ts",
+      "removed": ["drumZoneId", "triggerNodeId", "CONTROLLER_ZONE_ID", "KIT_ZONE_ID", "TRIGGERS_ZONE_ID"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "drumZoneId/triggerNodeId were byte-identical twins of patch-topology's builders; CONTROLLER_ZONE_ID was the same string as CONTROLLER_ID under a second name."
+    },
+    {
+      "at": "apps/web/src/lib/app/patch-node-id.ts (new)",
+      "removed": [],
+      "added": [
+        "INPUT_ID",
+        "CONTROLLER_ID",
+        "KIT_ID",
+        "TRIGGERS_ID",
+        "hoopNodeId",
+        "outputNodeId",
+        "drumNodeId",
+        "triggerNodeId",
+        "zoneNodeId",
+        "parsePatchNodeId",
+        "PatchNodeRef"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate: this is where the 20 removed symbols above consolidate. Net across the four web surfaces is 20 exports removed for 11 added, and — the real measure — 5 encode sites collapse to 1 and 2 hand-rolled decoders collapse to 1 total decoder, mechanically provable by the single-`split(':')` grep in S3."
+    },
+    {
+      "at": "packages/core/src/model/project-schema.ts",
+      "removed": [],
+      "added": ["zoneRefSchema", "ZoneRef"],
+      "net_interface_change": "increases",
+      "note": "Two additions that dedupe three literal re-declarations of `{drumId, slot}` and give the web layer a name for the repo's trigger address. triggerBindingSchema deliberately does not join them (required vs defaulted slot), so this does not claim more reuse than it earns."
+    },
+    {
+      "at": "apps/web/src/lib/app/docks/patch-inspector.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "Same exports, smaller bodies: a 25-line bespoke parser becomes a call to parsePatchNodeId, and seven signatures lose 8 positional params in favour of ZoneRef objects. PatchEditor is kept as a name so the eight inspector components' props do not churn."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates — full suite under the machine mutex, green at every wave boundary; test count must equal 2968 minus exactly the buildPatchTopology `it(` blocks deleted in S1, plus the cases added in S2/S4/S5. Any other delta is a stop.",
+      "S2 golden table (apps/web/src/lib/app/patch-node-id.test.ts): ~20 real and adversarial ids, each asserted to decode to the SAME kind and fields the baseline `patchEditorFor` produced, with the baseline values pasted in as literals — the oracle that makes S3 a refactor rather than a rewrite.",
+      "Centralisation greps after S3: `git grep -n \"split(':')\" apps/web/src/lib/app` → exactly one hit (patch-node-id.ts); template-literal id greps for `hoop:`/`output:`/`drum:`/`trigger:`/`zone:` → only patch-node-id.ts and test fixtures.",
+      "Unchanged-assertion rule: patch-graph.test.ts, patch-zones.test.ts and patch-inspector.test.ts pass in S3 with their assertions untouched (import lines and call shapes may change; expected values may not). A test that had to be weakened to go green is a behaviour change in disguise.",
+      "S5 zod byte-parity script: parse a real saved project plus a pathological input map (missing slot, slot 0, slot 7, slot 9, unknown keys) through `inputMapSchema` on baseline and post-change builds; assert deepStrictEqual, JSON.stringify byte-equality (property order), and identical throw path for the out-of-range case.",
+      "pnpm ui-shot before/after pairs: Patch Graph view with an Output, a Hoop, a Drum zone and the Controller selected (S4's Inspector titles), and the Drum zones list through add-zone / change-slot / set-MIDI-note / remove-zone (S5's untested .svelte call sites). Console-error read-out clean in every capture.",
+      "knip re-run at the end: no new unused export introduced by patch-node-id.ts, and the S1 deletions no longer appear."
+    ],
+    "known_gaps": "A green suite cannot prove parity for the parts of this initiative that live in .svelte files. apps/web sits at 57.82% line coverage (00-coverage.json) and every consumer this plan touches at the edge — Inspector.svelte, DrumZonesList.svelte, PatchZoneInspector.svelte, PatchGraphView.svelte — has no unit test at all, so the S4 title change and the S5 call-shape change are invisible to vitest by construction. The replacement evidence there is the before/after `pnpm ui-shot` pairs named above plus svelte-check (`pnpm typecheck` runs svelte-check on apps/web, so a wrong prop shape in a .svelte file is a compile error, not a silent runtime one). Two further gaps: (1) the persisted-project schema has no snapshot test pinning JSON key ORDER, which is why S5 buys its own byte-equality script rather than trusting the suite; (2) S1's safety rests on a reachability argument (grep + typecheck + a rendered Patch view) rather than a test — no test can prove a function is uncalled, so the ui-shot of the still-correct graph is the evidence that the live view was never built by the deleted builder. Coverage for the surviving pure modules is good (patch-graph/patch-zones/patch-inspector all have substantial test files), so the risk concentrates entirely in the four .svelte edges.",
+    "baseline_reference": "baseline_sha 3708648, 2968 tests green at HEAD, apps/web coverage 57.82% lines (docs/plans/2026-07-26-deep-review/00-baseline.json + 00-coverage.json), plus fix batches 1-3 already landed (dead-code auto-fixes, residue, kit-mirror removal)."
+  },
+  "rollback_strategy": "Six commits, each independently revertable, ordered so that later reverts never strand earlier ones. S6 (comments) and S4/S5 revert freely. Reverting S3 leaves patch-node-id.ts unused-but-correct (knip will flag it) and everything back on the old builders; reverting S3 then S2 removes the module entirely. S1 is the only irreversible-in-spirit step — it deletes ~120 lines of source and ~160 lines of test — so it lands FIRST and ALONE, which means `git revert <S1 sha>` restores the v1 builder and its tests verbatim as long as nothing after it edits those hunks (S4 edits describePatchNode in the same file, so a late S1 revert wants `git revert -n` plus a manual re-apply of S4's describePatchNode body; note this in the S1 commit message). No feature flag is warranted: none of this is runtime-switchable, and no data migration exists — the persisted project shape is byte-identical by construction (proved in S5).",
+  "estimated_loc": 700,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "May `buildPatchTopology` be deleted outright? It is a fully tested 100-line v1 topology builder with zero production callers (PatchGraphView uses only topoDrumsFromKit; the live graph comes from patch-zones/patch-graph). Deleting it is what actually retires dead-code-0008 and dissolves the duplicate `output:` grammar — but a tested, exported builder can be a deliberate keep. If the answer is keep, S1 falls back to making its five id arrows module-private and renaming `outputId` to `topologyRunNodeId` (`run:<index>`) so it stops squatting the `output:` prefix; the rest of the plan is unchanged.",
+      "blocks_execution": true,
+      "owner": "trent"
+    },
+    {
+      "question": "Once the v1 builder is gone, nothing mints a `zone:<drumId>:<zone>` node id, which makes the Inspector's zone editor (PatchZoneInspector.svelte, reached via PatchEditor kind 'zone') unreachable in the running app — zone editing survives inside the Drum inspector's DrumZonesList. Is a per-zone Patch node a surface you still intend to add back, or should the zone arm and its component be retired in a follow-up? This plan deliberately KEEPS the zone arm (one branch in the decoder, no cost) rather than expanding scope into deleting a UI surface.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Confirm the operator-facing rule for an Output node's Inspector title: display the 1-based ARRAY POSITION in kit.outputs (matching the label patch-zones already paints on the node), which is what S4 implements — versus showing the OutputConfig.id, which is what the code accidentally does today when ids are non-numeric slugs. The two disagree the moment outputs are reordered or ids are not `0..n`.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should `triggerBindingSchema` also be rebased on `zoneRefSchema`? Its `slot` is required whereas the input-map schemas default it to 0, so sharing the base would change what a section with a missing `slot` parses to on persisted data. S5 leaves it alone by default; unifying it is a data-semantics call, not a refactor.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S6 edits a comment in packages/core/src/geometry/kit-schema.ts:508, the file INIT-08-kit-schema-split rewrites wholesale. Should S6's core comment be dropped from this initiative and folded into INIT-08 to avoid a pointless merge conflict, or does this land first?",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    }
+  ]
+}

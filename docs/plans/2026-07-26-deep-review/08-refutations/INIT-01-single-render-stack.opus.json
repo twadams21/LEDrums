@@ -1,0 +1,248 @@
+{
+  "artifact": "08-refutations/INIT-01-single-render-stack",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-01-single-render-stack/opus",
+    "model": "claude-opus-5[1m]",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-01-single-render-stack",
+      "variant_reviewed": "opus",
+      "reviewer": { "model": "claude-opus-5[1m]", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S7 does not remove the double-apply seam that divergent-change-0001 is about: after S7 every kit message is still applied twice — once by applyClientMessage(store, ...) and once by propagateToVoiceHost(voiceHost, ...) — so the plan ends with two reducers per message, exactly the shape the finding says must not be left in place.",
+          "severity": "major",
+          "evidence": "S7's intent only re-targets applyClientMessage's first argument from host.engine to the new ProjectStore; it never removes the propagateToVoiceHost call at apps/server/src/handlers/client-message.ts:513, and S8's deletion list covers the fourteen legacy composition arms only, leaving setKitTransform/setKitGlobal/setHoopConfig/setOutput on both paths. The engine-parity harness (S3) therefore becomes permanent scaffolding rather than a temporary gate.",
+          "survives": false,
+          "repair": "Add a step after S7 that makes ONE of the two the sole mutator for kit/output messages: either voiceHost.getProject() is the store (fable's S2 shape) and propagateToVoiceHost is the only reducer, or the store is authoritative and VoiceEngineHost derives its kit from it. Keep engine-parity.test.ts only until that collapse lands, then delete it as scaffolding.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S7 silently breaks the shared-object-reference invariant that makes today's autosave correct: main.ts constructs both hosts over the SAME project0 object, so VoiceEngineHost's in-place edits are visible to the autosaver; a separate ProjectStore object is not the object voiceHost mutates, so any voice-host-side in-place write (setKitGlobal's reconcileOutputs, setOutput, reloadKit) stops reaching the persisted file.",
+          "severity": "major",
+          "evidence": "apps/server/src/main.ts:157-163 documents the invariant verbatim: 'Both hosts share the same `project0` object by reference, so the voice host's in-place geometry/routing edits are visible through `host.engine.getProject()` — which is what the autosaver persists.' S7's ProjectStore is constructed independently and S7 never states that voiceHost is re-seeded from store.getProject().",
+          "survives": false,
+          "repair": "Construct VoiceEngineHost over store.getProject() (same object identity) and add an assertion to S7's tests that `voiceHost.getProject() === store.getProject()` holds after each mutator, plus after a loadProject/setProject swap — the swap is where identity is actually lost.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "findings_addressed lists duplicated-code-0011 while the plan explicitly refuses to implement it, so the initiative would close with one of its five findings untouched.",
+          "severity": "minor",
+          "evidence": "open_questions entry 5: 'This plan deliberately does NOT include it and recommends it be re-homed to INIT-13-core-surface-trims or shipped standalone', yet findings_addressed[3] = 'duplicated-code-0011'.",
+          "survives": false,
+          "repair": "Either drop duplicated-code-0011 from findings_addressed and make the re-homing a Phase 9 ledger decision, or add the 60-LOC math.ts noise consolidation as a leaf step in the last wave (it is file-disjoint from every other step).",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S2 edits apps/desktop/src-tauri/src/lib.rs but the plan's own verification gate cannot compile Rust, so the desktop shell change lands unverified by `pnpm gates`.",
+          "severity": "minor",
+          "evidence": "package.json:22-23 — `gates` = `with-gate-lock.mjs pnpm run gates:run`, and `gates:run` = `pnpm typecheck && pnpm test`. No cargo/tauri build participates. S2's live-path proof only boots the Node server, never the desktop shell.",
+          "survives": false,
+          "repair": "Add `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` (or `pnpm --filter @ledrums/desktop build`) to S2's verification, and confirm the deleted `.env(...)` block sets nothing else that the shell depends on.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S6 creates a second verbatim copy of Engine's 23 mutators inside packages/core and leaves BOTH copies live for four waves, and no test compares them — engine-parity.test.ts compares legacy-vs-voice, never Engine-vs-ProjectStore, so a transcription slip in the copy is caught only by hand-mirrored assertions written by the same implementer.",
+          "severity": "minor",
+          "evidence": "S6 intent: 'carrying VERBATIM copies of Engine's mutator section (engine.ts:250-437)'; S6 verification mirrors engine.test.ts assertions rather than differentially driving both objects. S9 (the deletion of the original) is four waves later.",
+          "survives": false,
+          "repair": "Make S6's test differential rather than mirrored: drive the same generated message stream through `new Engine(pA)` and `new ProjectStore(pB)` and assert deep-equal Projects — the same technique S3 already uses for the other pair, reusing its message table.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S13 changes what the offline preview renders while apps/web has no pixel-level test for the preview at all, so the step's acceptance bar rests on a human eyeballing two screenshots.",
+          "severity": "major",
+          "evidence": "Verified against source: core caps the pool at 256 slots (packages/core/src/voice/voice-pool.ts:15) where sim's array is unbounded, and mix-input seeds change from apps/web/src/lib/trigger-lab/sim.ts:496 `(seed ^ Math.imul(index+1, 0x9e3779b9))` to packages/core/src/voice/voice-pool.ts:172 `deriveSeed(slot.seed, index + 1)`.",
+          "survives": true,
+          "plan_response": "S13's verification names exactly these three deltas ('the preview gains core's 256-voice cap', canvas-scene resolution, 'mix-input seeds change from sim's seed ^ Math.imul(index+1, 0x9e3779b9) to core's deriveSeed') and gives each its own pinning assertion; behaviour_parity_evidence_plan.known_gaps (1) states plainly that render.ts has no test file and that the screenshot comparison is weaker than an assertion, which is why S13 lands alone in its wave with a single-file revert.",
+          "targets_step": "S13"
+        },
+        {
+          "claim": "S8 deletes fourteen reducer arms while packages/protocol still decodes those messages, so a client sending one gets a silent no-op — the same silent-drop class this initiative exists to remove.",
+          "severity": "minor",
+          "evidence": "S8's file list contains no protocol package file, so the ClientMessage union keeps the fourteen variants. I confirmed the premise that nothing in-repo sends them: grep across apps/web/src returns 0 hits for setParam/addLayer/addClip/setBinding/setActiveSection and the rest (only setTransport, 4 hits, survives).",
+          "survives": true,
+          "plan_response": "S8's verification requires it explicitly before the deletion: 'confirm packages/protocol still accepts them (a message the server now ignores must be a decode-level rejection or an explicit no-op, never a silent drop) — if any arm is still reachable, keep it on ProjectStore instead of deleting it.'",
+          "targets_step": "S8"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 4,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Collapse to a single reducer per kit/output message after S7 — the plan currently leaves applyClientMessage and propagateToVoiceHost both live, so the finding's mechanism survives the initiative.",
+        "Preserve (and assert) project-object identity between ProjectStore and VoiceEngineHost, or the autosaver stops seeing voice-host in-place edits (main.ts:157-163 invariant).",
+        "Reconcile findings_addressed with the plan body: either implement duplicated-code-0011 as a leaf step or drop it from the list.",
+        "Add a Rust build check to S2's verification — `pnpm gates` is typecheck+test only and cannot compile the src-tauri edit.",
+        "Make S6's ProjectStore test differential against Engine rather than a hand-mirrored copy of engine.test.ts's assertions."
+      ]
+    },
+    {
+      "initiative_id": "INIT-01-single-render-stack",
+      "variant_reviewed": "sonnet",
+      "reviewer": { "model": "claude-opus-5[1m]", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S8's acceptance bar — swap Sim's lifecycle for a full core RenderEngine and have all 14 sim suites pass UNMODIFIED — is provably unattainable, and the step names no expected deltas, no golden fixture and no fallback, so it cannot be repaired by editing a step; it needs the deltas designed in.",
+          "severity": "fatal",
+          "evidence": "Core's pool is fixed at 256 slots with oldest-releasing-first stealing (packages/core/src/voice/voice-pool.ts:15,83-101) where Sim's array is unbounded, and mix-input seeds differ concretely: apps/web/src/lib/trigger-lab/sim.ts:496 `(seed ^ Math.imul(index+1, 0x9e3779b9))` vs packages/core/src/voice/voice-pool.ts:172 `deriveSeed(slot.seed, index+1)`. S8 also swaps the whole engine (not just the pool), so the surface of change is strictly larger. S8's verification states any failure 'identifies a semantic gap ... not a test needing an update' — leaving the step with no green path.",
+          "survives": false,
+          "repair": "Split S8 into pool-adoption then envelope-tick adoption, enumerate the behaviour deltas (voice cap, canvas-scene resolution, mix-input seed derivation) as pinned assertions, and capture a pre-change golden fixture of per-frame voice tuples to replay — i.e. the shape the opus variant's S13/S14 use.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S7 deletes packages/core/src/engine/transport.ts, which the LIVE voice loop imports — the step cannot land green and the summary's end-state ('framebuffer.ts + render-context.ts survive') is factually wrong.",
+          "severity": "major",
+          "evidence": "apps/server/src/voice-engine-host.ts:2 imports `advanceTransport` and :484 calls it (`const { beat, state } = advanceTransport(config, this.beat, this.engineTimeMs, dt)`). grep for advanceTransport returns exactly voice-engine-host.ts, engine/engine.ts and engine/transport.ts.",
+          "survives": false,
+          "repair": "Keep engine/transport.ts (and its barrel export) out of the deletion set, as the opus variant's S9 does; optionally relocate it to a render/ directory in a separate mechanical step.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "The plan's only blocks_execution question is built on a false premise: LayersDock.svelte does not author Project.composition.layers/clips and sends none of the legacy reducer messages, so the initiative would stall waiting on a decision about a dock that does not do what the plan says it does.",
+          "severity": "major",
+          "evidence": "apps/web/src/lib/app/docks/LayersDock.svelte contains only bus/voice controls — store.setPolyphony, store.stopBus, store.setCrossfade, store.busLevelsDisplay — with zero ws sends. grep across apps/web/src for the fourteen discriminants ('setParam','setLayer','addLayer','removeLayer','addClip','removeClip','setActiveSection','setBinding','removeBinding','addSong','removeSong','addSection','removeSection','setSectionLayerClip') returns 0 hits each; only setTransport appears (4 hits).",
+          "survives": false,
+          "repair": "Replace OQ1 with the true question (should the legacy composition slice be frozen in the persisted schema or migrated?) and set blocks_execution:false; the fourteen arms are provably unreachable from the shipped client and need no dock decision to delete.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S6 makes voiceHost the sole host but VoiceEngineHost has no setProject and no transport reducer, and S5's extracted legacy-content.ts is never wired to anything — so after S6 a live setTransport message and the loadProject path both have no writer.",
+          "severity": "major",
+          "evidence": "apps/server/src/voice-engine-host.ts exposes getProject():179 and adoptPatch():278 and nothing resembling setProject/setTransport; the web really does send setTransport (4 hits in apps/web/src). S5's file list adds handlers/legacy-content.ts but no step names its caller or the Project instance it mutates.",
+          "survives": false,
+          "repair": "Add VoiceEngineHost.setTransport (writing composition.transport, which its loop at voice-engine-host.ts:483 already reads) and an explicit adopt/setProject path for loadProject, and name legacy-content.ts's caller and target object in S5.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S6's verification asks for a grep over src-tauri returning zero LEDRUMS_ENGINE hits, but no step in the plan edits src-tauri/lib.rs, so the check can never pass.",
+          "severity": "minor",
+          "evidence": "behaviour_parity_evidence_plan check: 'grep -rn \"LEDRUMS_ENGINE|VOICE_MODE\" apps packages scripts src-tauri after S6 returns zero hits'. S6's files are main.ts, boot.ts, engine-host.ts only; scripts/dev.mjs:32 and apps/desktop/src-tauri/src/lib.rs:386 are never touched by any step.",
+          "survives": false,
+          "repair": "Add scripts/dev.mjs and apps/desktop/src-tauri/src/lib.rs to S6's file set (with a cargo check, since `pnpm gates` is typecheck+test only per package.json:23), or narrow the grep to the paths the plan actually edits.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "The risk ratings are inverted relative to the actual danger, which makes them useless as a scheduling signal: a pure numeric helper move and an additive diagnostic are rated 'high' while the two steps that rewrite the preview's rendering are rated 'medium'.",
+          "severity": "minor",
+          "evidence": "S2 (move hash2/fade/valueNoise/fbm to math.ts) risk 'high' and S3 (additive unresolved-id ledger) risk 'high'; S8 (replace Sim's whole lifecycle with a hosted RenderEngine) risk 'medium' and S9 (delete render.ts's compositing loop) risk 'medium'.",
+          "survives": false,
+          "repair": "Re-rate: S2/S3 low-to-medium (both fully covered by per-pixel determinism suites), S8/S9 high — and put S8 alone in its own wave with a single-file revert.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S3 adds getUnresolvedIds() to the RenderEngine interface without naming the second implementation, so the step's file list is incomplete and typecheck will break outside the listed files.",
+          "severity": "minor",
+          "evidence": "packages/core/src/voice/engine.ts:817 `createVoiceBusEngine` and :821 `createNullEngine` both produce RenderEngine (interface at :124); only the former is discussed. The web preview also hosts a RenderEngine after S8, and nothing drains its ledger — only apps/server/src/main.ts's stats tick reads it.",
+          "survives": false,
+          "repair": "Name createNullEngine in S3's file list and state the browser-side sink (or explicitly scope the diagnostic to the server host).",
+          "targets_step": "S3"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 2,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 2,
+        "verification_strength": 2
+      },
+      "overall": "unsound",
+      "required_repairs": [
+        "Redesign S8: enumerate the concrete behaviour deltas of adopting core voice semantics and pin them with a golden fixture; 'all 14 suites pass unmodified' is an unattainable acceptance bar.",
+        "Remove engine/transport.ts from the S7 deletion set — apps/server/src/voice-engine-host.ts:484 calls advanceTransport on the live path.",
+        "Rewrite OQ1: LayersDock does not author layers/clips and sends none of the legacy messages, so nothing should block on it.",
+        "Give S6 a real answer for setTransport and loadProject: VoiceEngineHost has neither a transport reducer nor setProject today.",
+        "Fix the risk ratings and the src-tauri grep check so the plan's own gates are achievable."
+      ]
+    },
+    {
+      "initiative_id": "INIT-01-single-render-stack",
+      "variant_reviewed": "fable",
+      "reviewer": { "model": "claude-opus-5[1m]", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S5 deletes packages/core/src/engine/transport.ts although the live voice loop imports advanceTransport from it — and S5's own intent text contradicts itself by listing TransportState among the imports it says must be kept.",
+          "severity": "major",
+          "evidence": "apps/server/src/voice-engine-host.ts:2 imports advanceTransport and :484 calls it. S5 intent: 'Keep framebuffer.ts and render-context.ts — the only files in that directory voice/ ... actually import (verified: ... import only Framebuffer/RenderContext/TransportState/Trigger)' while transport.ts is in the deletion list.",
+          "survives": false,
+          "repair": "Keep engine/transport.ts and its barrel export; delete only engine.ts, compositor.ts, modulation.ts, control-state.ts and their tests.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "The Q1 gate is sequenced after the step it is supposed to gate: S3 (wave 3) deletes applyClientMessage entirely, so by the time S4 (wave 4) asks whether any of the fourteen messages is live, the promised remedy ('it is kept and gets a voice-path reducer instead') has already been destroyed and the messages spend a whole wave decoded-but-ignored.",
+          "severity": "major",
+          "evidence": "sequencing = [[S1],[S2],[S3,S6],[S4,S5,S8],[S7,S9]]; S3's intent deletes 'applyClientMessage from apps/server/src/input-router.ts (lines 133-247)'; S4's intent says it is 'Gated on Trent confirming no out-of-repo client (Q1)'.",
+          "survives": false,
+          "repair": "Resolve Q1 before S3, or have S3 keep the fourteen arms (retargeted at whatever store survives) and delete them inside S4 once the answer is in — so the reducer and the protocol variant die in the same commit.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S7 claims all existing sim suites pass UNMODIFIED after adopting core VoicePool; that is not achievable, because adopting the pool changes at least the voice cap and the mix-input seed derivation.",
+          "severity": "major",
+          "evidence": "packages/core/src/voice/voice-pool.ts:15 caps the pool at 256 with oldest-releasing-first stealing where sim's array is unbounded; mix-input seeds move from apps/web/src/lib/trigger-lab/sim.ts:496 `(seed ^ Math.imul(index+1, 0x9e3779b9))` to packages/core/src/voice/voice-pool.ts:172 `deriveSeed(slot.seed, index+1)`, so RNG-backed Mix members render differently in the preview.",
+          "survives": false,
+          "repair": "State those deltas as expected, pin each with its own assertion, and capture a pre-change golden fixture of per-frame voice tuples (id/effectId/busId/phase/level/seed) to replay — the cell-by-cell table in S7's intent is a good start but is described as a discovery activity, not as committed evidence.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S2 collapses to a single reducer with no pre-deletion differential harness, so the only proof that the seven surviving propagate arms agree with the legacy arms they replace is three hand-extended forwarding tests plus the one drift a human already spotted by reading.",
+          "severity": "major",
+          "evidence": "S2's verification names kit-transform-forwarding.test.ts, one new setTransport test and a state-message JSON diff. The drift it fixes (hoopSpacingMm/diameterIn dropped by propagateToVoiceHost) was found by reading, not by any suite — evidence that the existing tests do not enumerate discriminants and would not catch a second instance.",
+          "survives": false,
+          "repair": "Insert a differential test before S2 that drives every structural ClientMessage discriminant through both `applyClientMessage(new Engine(pA), ...)` and `propagateToVoiceHost(new VoiceEngineHost(pB), ...)` and asserts deep-equal Projects, encoding today's known drift as explicit assertions; delete it once S3 lands.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S1 edits apps/desktop/src-tauri/src/lib.rs but the plan verifies only with `pnpm gates`, which cannot compile Rust — the desktop shell change ships unverified.",
+          "severity": "minor",
+          "evidence": "package.json:22-23: `gates` runs `gates:run` = `pnpm typecheck && pnpm test`; no cargo step anywhere in the root scripts. S1's boot smoke exercises the Node server only.",
+          "survives": false,
+          "repair": "Add `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` to S1's verification and confirm the removed `.env(...)` block carried nothing else.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S9 describes the ledger as living on a 'VoiceBusEngine' class, but the render engine is a factory-produced interface with a second implementation the step never names, so its file list is incomplete.",
+          "severity": "minor",
+          "evidence": "packages/core/src/voice/engine.ts:124 declares `export interface RenderEngine`, :817 `createVoiceBusEngine` and :821 `createNullEngine`; adding getUnresolvedIds to the interface obliges createNullEngine to implement it, and the web-hosted engine (after S7) has no sink for the ledger.",
+          "survives": false,
+          "repair": "Name createNullEngine in S9's files and state whether the diagnostic is server-only; keep the accessor optional on the interface if the null engine should stay trivial.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S2 re-points the authoritative store onto voiceHost while both hosts currently share one Project object by reference, so the step risks losing the invariant that keeps autosave correct.",
+          "severity": "major",
+          "evidence": "apps/server/src/main.ts:157-163 documents the shared-reference invariant explicitly, and notes that references split after the first loadProject/adoptPatch.",
+          "survives": true,
+          "plan_response": "S2's intent names exactly this mechanism ('reaches the voice host only via the shared project0 object reference, which silently splits after the first loadProject/adoptPatch') and resolves it in the safe direction — voiceHost.getProject() becomes the authoritative read for the autosaver, readCurrent, output settings and the state message — with a state-message byte-diff and a setTransport-through-autosave assertion as evidence, plus Q3 asking whether the split has already produced user-visible bugs.",
+          "targets_step": "S2"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 2,
+        "sequencing_realism": 2,
+        "blast_radius_honesty": 3,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Remove engine/transport.ts from S5's deletion set — apps/server/src/voice-engine-host.ts:484 calls advanceTransport on the live render path.",
+        "Move the Q1 gate ahead of S3, or keep the fourteen reducer arms until S4 so the reducer and the protocol variant die together instead of leaving a wave of silently-ignored messages.",
+        "Replace S7's 'all suites green unmodified' bar with enumerated behaviour deltas (256-voice cap, mix-input seed derivation) plus a pre-change golden fixture of per-frame voice tuples.",
+        "Add a pre-deletion differential harness over every structural ClientMessage discriminant before S2 collapses to one reducer.",
+        "Add a Rust build check to S1 and name createNullEngine (plus the browser-side sink) in S9's blast radius."
+      ]
+    }
+  ]
+}

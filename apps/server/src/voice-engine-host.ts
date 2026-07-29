@@ -219,11 +219,11 @@ export class VoiceEngineHost {
     this.reloadKit();
   }
 
-  /** Edit KIT-GLOBAL fields (mirror + Advatek/kit config: expanded, LED density, hoop count,
-   * default hoop spacing, per-output pixel cap) and rebuild geometry live. Kit-global, not
+  /** Edit KIT-GLOBAL fields (Advatek/kit config: expanded, LED density, hoop count, default
+   * hoop spacing, per-output pixel cap) and rebuild geometry live. Kit-global, not
    * per-drum — the whole model reflects; density/hoopCount/expanded change the DMX patch too,
    * so reloadKit rebuilds the model AND dmxMap AND re-applies output. */
-  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'mirror' | 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
+  setKitGlobal(partial: Partial<Pick<KitGlobalConfig, 'expanded' | 'ledDensityPxPerM' | 'hoopCount' | 'defaultHoopSpacingMm' | 'maxPixelsPerOutput'>>): void {
     Object.assign(this.kit.global, partial);
     // Static port set sized by `expanded` (4 normal / 8 expanded) — flipping the mode reconciles
     // the count. No-op when `expanded` is unchanged. Mutation parity with Engine.setKitGlobal.

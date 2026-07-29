@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   An unhandled failure path with a PLAUSIBLE trigger. INVERSE POLARITY — this finding proposes ADDING code. Refute it if the path is already handled, or if no realistic trigger exists.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: resilience-hole-0011
+lens: resilience-hole
+criterion: unhandled-failure-path
+severity: minor (author confidence: high)
+locations:
+  packages/core/src/modifiers/chain.ts:47 (applyModifierChain)
+  packages/core/src/engine/engine.ts:230-231 (Engine.renderLayer)
+
+claim: `applyModifierChain` does `const def = tryGetModifier(link.modifierId); if (!def) continue;` and `renderLayer` does `const effect = tryGetEffect(clip.effectId); if (!effect) return;`. Skipping rather than throwing on the render path is the right call — the hot loop must not fault on stale authored data, and the comments say so. What is missing is any record that it happened. A show authored against a build that had `modifier:bloom`, opened on a build that renamed it, produces a layer that renders unmodified (or a clip that renders nothing) with identical UI, identical stats, and nothing in the Monitor stream. The drummer's only symptom is 'this one looks wrong now' with no path from symptom to cause, and the maintainer has no telemetry to detect that a rename shipped without a content migration. The registries are exactly where a rename regression would be caught cheaply.
+
+evidence the author gave:
+  [read]  :: packages/core/src/modifiers/chain.ts:47 — `if (!def) continue; // unknown id → skip (never throw on the render path)`. No counter, no callback, no set of seen-unknown ids.
+  [read]  :: packages/core/src/engine/engine.ts:230-231 — `const effect = tryGetEffect(clip.effectId); if (!effect) return;` — same silent skip.
+  [read]  :: packages/core/src/modifiers/chain.ts:10-11 — the module docstring explicitly documents the skip as intentional, confirming this is a deliberate design with a missing diagnostic rather than an oversight in the guard itself.
+
+proposed fix: Keep the render-path behaviour identical, but add a core-pure, allocation-free 'unresolved id' ledger: a `Set<string>` on the engine (not a module global — determinism must hold) that records each distinct unknown modifier/effect id the first time it is skipped, exposed via a `getUnresolvedIds()` accessor. The server reads it once per stats tick and, on a newly-added id, emits ONE `error` Monitor event ('effect "x" is not registered — this layer renders nothing'), which reaches the UI and the #122 reporter. First-occurrence-only keeps it off the hot path in cost terms.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"resilience-hole-0011",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"unhandled-failure-path",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

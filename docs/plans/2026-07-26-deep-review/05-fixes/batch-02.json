@@ -1,0 +1,54 @@
+{
+  "artifact": "05-fixes/batch-02",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "05-fixes",
+    "lane": "batch-02",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true
+  },
+  "items": [
+    {
+      "finding_id": "dead-code-0002",
+      "files_touched": [
+        "apps/web/src/lib/app/views/PatchMirrorControl.svelte",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/trigger-routing.ts",
+        "apps/web/src/lib/trigger-lab/store/project-resync.ts",
+        "apps/web/src/lib/trigger-lab/store.routing.test.ts",
+        "apps/web/src/lib/trigger-lab/store/project-resync.test.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.test.ts",
+        "packages/protocol/src/schemas.ts",
+        "packages/protocol/src/schemas.test.ts",
+        "apps/server/src/input-router.ts",
+        "apps/server/src/handlers/voice-input.ts",
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/kit-global-forwarding.test.ts",
+        "packages/core/src/geometry/kit-schema.ts",
+        "packages/core/src/geometry/pixel-model.ts",
+        "packages/core/src/geometry/mirror.test.ts",
+        "packages/core/src/geometry/flip.test.ts",
+        "packages/core/src/engine/engine.ts",
+        "docs/design-system.html"
+      ],
+      "mutations_applied": 23,
+      "pre_fix_sha": "5423e09",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates", "pnpm design-system"],
+        "detail": "19 files changed, 61 insertions(+), 347 deletions(-). Per-package gates counts: workers/error-ingest 31, packages/io 76, packages/core 859, packages/protocol 10, apps/server 410, apps/web 1582 = 2968."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": "a7c46eb",
+      "notes": "SCOPE EXPANDED per Trent's 2026-07-29 decision: the kit-mirror feature is removed end-to-end (client AND server), not just the orphaned component. The finding's option (b) was taken.\n\nBOUNDARY FOUND DURING TRACING — the brief's premise that 'the setKitGlobal client path' is dead is WRONG and that part was NOT removed. `setKitGlobal` is a shared kit-global message that also carries the live C1/C2 Advatek/kit config (expanded, ledDensityPxPerM, hoopCount, defaultHoopSpacingMm, maxPixelsPerOutput), edited by reachable UI: PatchKitInspector.svelte, PatchControllerInspector.svelte, and apps/web/src/lib/app/shot-seam.ts. So the message, the store's setKitGlobal method, Engine.setKitGlobal, VoiceEngineHost.setKitGlobal, the input-router/voice-input cases and client-message.ts:524's reloadOutputSettings gate all SURVIVE. Only the `mirror` FIELD was cut from each of them. Likewise packages/core/src/modifiers/impl/mirror.ts is an unrelated spatial modifier effect and is untouched.\n\nWHAT WAS REMOVED: kitGlobalSchema.mirror (core); reflectWorld + every mirror application in buildPixelModel (core); 'mirror' from the Engine/VoiceEngineHost setKitGlobal Pick unions; mirrorSchema + the `mirror` field on the setKitGlobal protocol message; the msg.mirror forwarding in input-router.ts and handlers/voice-input.ts; store.setKitMirror; KitGlobalPartial.mirror; the mirror branch of projectResyncMessages; PatchMirrorControl.svelte.\n\nEXPORTED SYMBOLS REMOVED (2): store.setKitMirror (TriggerLab public method) and the PatchMirrorControl component default export. reflectWorld was module-private. The finding predicted 1 removed symbol; the extra one is the expanded server/client scope Trent approved.\n\nTEST COUNT: 2981 baseline - 13 removed = 2968, exactly as measured. The 13 removed tests are ALL mirror-only:\n  packages/core/src/geometry/mirror.test.ts (whole file, 7 tests): mirror 'x' negates world X; mirror 'y' negates world Y; reflects tangent+normal+effect origin identically; is an involution; preserves pixel count and index order; leaves the DMX map byte-identical regardless of mirror; composes with flip.\n  apps/server/src/kit-global-forwarding.test.ts (3): forwards mirror to engine.setKitGlobal; forwards mirror to voiceHost.setKitGlobal; forwards mirror:'none' explicitly.\n  apps/web/src/lib/trigger-lab/store/project-resync.test.ts (2): emits only setKitGlobal when the mirror differs; does not carry expanded when only the mirror moved.\n  apps/web/src/lib/trigger-lab/store.routing.test.ts (1): sets the kit-global mirror live.\nThree further tests used `mirror` merely as a convenient kit-global field while asserting SURVIVING behaviour; they were RETARGETED onto `expanded`/`maxPixelsPerOutput` rather than deleted, so their coverage is unchanged: 'emits every changed slice at once (mixed edit)' (project-resync), 'undoes a kit-global edit — restores kit.global.expanded and re-sends setKitGlobal' and 'interleaves cleanly — undo peels the last edit first' (store.routing).\n\nNO KIT SCHEMA VERSION BUMP: kitGlobalSchema is non-strict, so a persisted project carrying a legacy `mirror` key is silently stripped by parseKit. No migration is needed and none was added.\n\ndocs/design-system.html was regenerated with `pnpm design-system` (AGENTS.md non-negotiable); the only diff is the auto-globbed source-pointer map dropping PatchMirrorControl plus the bundled kitGlobalSchema losing its mirror field."
+    }
+  ]
+}

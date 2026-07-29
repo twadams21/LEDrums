@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledrums.local/deep-review/map.schema.json",
+  "title": "Deep Review Module Map",
+  "description": "One mapping lane's territory report. PRODUCER: Phase 1 lanes (01-map/<lane>.json). CONSUMER: Phase 2 lenses, which use it to target files rather than sweep 70k LOC blind.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lane", "scope", "modules", "seams", "suspicions", "coverage_notes"],
+  "properties": {
+    "lane": { "type": "string" },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["paths", "files_read"],
+      "properties": {
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "files_read": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "modules": {
+      "type": "array", "minItems": 1,
+      "description": "One entry per coherent module in scope. A module is anything with an interface and an implementation — not necessarily one file.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "paths", "responsibility", "public_interface", "depends_on", "depth"],
+        "properties": {
+          "name": { "type": "string" },
+          "paths": { "type": "array", "items": { "type": "string" } },
+          "responsibility": { "type": "string", "minLength": 20, "description": "One sentence. If you need 'and' twice, it probably does too much — say so in suspicions." },
+          "public_interface": { "type": "array", "items": { "type": "string" }, "description": "Exported symbols callers actually use." },
+          "depends_on": { "type": "array", "items": { "type": "string" } },
+          "depth": {
+            "type": "string", "enum": ["deep", "shallow", "mixed"],
+            "description": "deep = lots of behaviour behind a small interface. shallow = interface nearly as complex as the implementation (a pass-through). Judgement call — say why in notes."
+          },
+          "loc": { "type": "integer", "minimum": 0 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "seams": {
+      "type": "array",
+      "description": "Places where behaviour could be altered without editing in that place — where an interface already lives, or obviously should.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["at", "kind", "why"],
+        "properties": {
+          "at": { "type": "string" },
+          "kind": { "type": "string", "enum": ["existing", "missing", "leaky"] },
+          "why": { "type": "string" }
+        }
+      }
+    },
+    "suspicions": {
+      "type": "array",
+      "description": "Leads for Phase 2, NOT findings. Do not investigate deeply — flag and move on. Phase 2 lenses decide.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["lens", "where", "hunch"],
+        "properties": {
+          "lens": { "type": "string", "enum": ["dead-code","duplicated-code","speculative-generality","middle-man","data-clumps","primitive-obsession","repeated-switches","divergent-change","resilience-hole","boundary-violation"] },
+          "where": { "type": "string" },
+          "hunch": { "type": "string", "minLength": 15 }
+        }
+      }
+    },
+    "coverage_notes": { "type": "string", "description": "Anything in scope you could NOT assess, and why. An honest gap beats a confident guess." }
+  }
+}

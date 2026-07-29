@@ -11,7 +11,7 @@ export const ROUTE_GROUP_KEY = 'route';
 export const MODULATE_GROUP_KEY = 'modulate';
 export const MODIFIER_GROUP_PREFIX = 'modifier:';
 
-export const ENVELOPE_PRESETS = [
+const ENVELOPE_PRESETS = [
   { id: 'pluck', name: 'Pluck', hint: 'fast hit decay' },
   { id: 'stab', name: 'Stab', hint: 'short hold' },
   { id: 'swell', name: 'Swell', hint: 'slow rise' },
@@ -19,7 +19,7 @@ export const ENVELOPE_PRESETS = [
   { id: 'custom', name: 'Custom', hint: 'flat editable shape' },
 ] as const;
 
-export const LFO_PRESETS = [
+const LFO_PRESETS = [
   { id: 'sine', name: 'Sine', hint: 'smooth cycle' },
   { id: 'triangle', name: 'Triangle', hint: 'linear rise/fall' },
   { id: 'saw', name: 'Saw', hint: 'ramp wave' },

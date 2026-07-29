@@ -1,0 +1,232 @@
+{
+  "artifact": "08-refutations/INIT-02-store-decomposition.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-02-store-decomposition/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-02-store-decomposition",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-02-store-decomposition/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S4's premise 'still zero store-internal uses' for MidiController is false: store.svelte.ts contains 11 `this.midi.*` uses beyond the forwarders — openInput at :979, release at :1016, applyNoteLearn at :1065 and :1467, applyCcLearn at :1078, startLearn at :1915, cancelLearn at :1919 — so the step's stated risk basis is wrong even though the mechanic happens to survive (the field name `midi` is unchanged, so internal uses compile untouched).",
+          "severity": "minor",
+          "evidence": "grep -n 'this\\.midi\\.' apps/web/src/lib/trigger-lab/store.svelte.ts returns 11 hits: lines 815,821,826,830 (forwarder bodies) plus 979,1016,1065,1078,1467,1915,1919 (real internal uses in the MIDI forwarding / lifecycle paths).",
+          "survives": false,
+          "repair": "Correct S4's text: the field keeps its name so the ~7 non-forwarder internal uses (openInput/release/applyNoteLearn/applyCcLearn/startLearn/cancelLearn) are unaffected by publishing it; the implementer must NOT retarget them and must not treat 'zero internal uses' as a checkable precondition, because it fails.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "The S8/S12 diff-shape gate is weaker than the plan claims: the rg -v whitelist passes ANY +/- line containing a renamed-accessor substring, so a changed expected value on a line that also contains `store.library.` (e.g. `expect(store.library.songs.length).toBe(3)` -> `toBe(2)`) slips through, and equal per-file numstat is preserved by any 1-for-1 line edit — the gate cannot actually detect a weakened assertion on a retargeted line.",
+          "severity": "minor",
+          "evidence": "S8 verification: \"git diff -U0 | rg '^[+-]' | rg -v 'store\\\\.arrangement\\\\.|\\\\.activeSectionId|...'\" — the -v filter excludes whole lines by substring, and every retargeted assertion line necessarily contains the new accessor substring, so edits to the rest of that line are invisible to the gate.",
+          "survives": false,
+          "repair": "Replace the rg gate with a rename-normalised diff: `git show <base>:file | sed 's/store\\.activeSectionId/store.arrangement.activeSectionId/g; ...' | diff - file` must be empty per file — a mechanical proof that the ONLY change is the accessor path, which is what the step already claims.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "divergent-change-0002 is the initiative's critical finding and this plan answers it with a member-count/LOC ratchet test plus a header comment (S1/S22) while explicitly leaving node/graph authoring, undo, clipboard, WS link, persistence, transport, backups and OSC status converging on a ~3,250-line store.svelte.ts — so the churn axes measured by the finding (Patch Graph v2, undo semantics, splice-on-drop, Mix rows, Backups, OSC panel) still land in one file.",
+          "severity": "major",
+          "evidence": "Finding divergent-change-0002 (severity critical) claims cross-axis convergence on store.svelte.ts; opus S22 intent concedes 'which still converge on store.svelte.ts (node/graph authoring, undo, clipboard/paste, WS link, persistence, transport, backups, OSC/tunnel status)'.",
+          "survives": true,
+          "plan_response": "The plan defends this scoping explicitly and escalates rather than guesses: summary ('Deliberately NOT in scope: a third grand facade... the authoring-document cluster is entangled with undo snapshots, the sim and persistence in a way no mechanical move survives'), known_gaps item (4) ('divergent-change-0002's actual claim... is a claim about FUTURE commits and is unprovable by any run today. The ratchet in S1/S22 is an honest substitute'), and open_questions[2] puts the stop-vs-follow-on decision to Trent with blocks_execution false. Given the settled fact that R20-R24-style leaf extraction is the failure mode being repaired, refusing a third mechanical facade is a defensible answer the plan argues, not an omission."
+        },
+        {
+          "claim": "S1's surface instrument assumes `new TriggerLab()` is constructible in the node/vitest env and that Svelte 5 compiles class $state/$derived fields to prototype accessors so the prototype walk plus Object.keys captures all 397 members; if either assumption fails the ratchet undercounts silently and every later 'exact EXPECTED_MEMBERS diff' verification is theatre.",
+          "severity": "major",
+          "evidence": "S1 intent relies on Object.getOwnPropertyNames(Object.getPrototypeOf(store)) ∪ Object.keys(store); Svelte compiler output shape is an implementation detail of svelte 5.x and could route some fields through symbols or instance-defined accessors.",
+          "survives": true,
+          "plan_response": "S1's verification includes a bite-proof ('temporarily add `get __probe()`... confirm the test FAILS naming __probe') and pins the count to the independently measured 397 at HEAD, so a silent undercount is caught at authoring time; store.*.test.ts suites already construct the store under this test env (S16 intent cites 'store.*.test.ts already does exactly that'), so constructibility is demonstrated, not assumed."
+        },
+        {
+          "claim": "Publishing `arrangement`/`library` instead of `sections`/`shows` could be a phantom constraint if the collision were mismeasured, forcing needless naming churn on ~500 call sites.",
+          "severity": "minor",
+          "evidence": "Verified at HEAD: store.svelte.ts:577 `get shows(): { id: string; name: string }[]` and :925 `get sections(): Section[]`; repo-wide `.sections` refs = 177 and `.shows` refs = 44, matching the plan's 176/40 counts.",
+          "survives": true,
+          "plan_response": "The collision is real (verified above) and the plan both routes around it (S6/S10 intents name the exact counts) and surfaces the rename-later option as open_questions[0] for Trent with the cost stated ('one extra mechanical rename pass over ~500 sites'). The names are measured, not asserted."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 5,
+        "blast_radius_honesty": 4,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S4: strike the false 'zero store-internal uses' precondition for midi; note the 7 real internal uses at store.svelte.ts:979-1919 stay valid because the field name is unchanged.",
+        "S8/S12: replace the substring rg -v diff gate with a rename-normalised diff (sed old->new on the base version, require empty diff) so a weakened assertion on a retargeted line cannot pass."
+      ]
+    },
+    {
+      "initiative_id": "INIT-02-store-decomposition",
+      "variant_reviewed": "sonnet",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-02-store-decomposition/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S8 is not executable as written: it discovers the `shows` name collision mid-step and tells the implementer to 'rename the view-list getter to `library.shows.list` or keep it as `library.showsList` -- pick one and use it consistently', while open_questions[1] simultaneously marks the facade naming as blocks_execution:true owned by Trent — so the plan both delegates and blocks the same decision, and an implementer reaching S8 has no unambiguous instruction.",
+          "severity": "major",
+          "evidence": "sonnet.json S8 intent (the bracketed 'NOTE this collides in name... pick one') vs open_questions[1] ('Are these the names you want... blocks_execution: true'). Verified the collision is real: store.svelte.ts:577 `get shows(): {id,name}[]` (44 `.shows` refs), :925 `get sections(): Section[]` (177 `.sections` refs).",
+          "survives": false,
+          "repair": "Resolve naming before execution: adopt measured non-colliding names (opus's `library`/`arrangement`, or Trent's choice) in the plan text, and rewrite S8/S9 to state the exact final member names — no in-step 'pick one'.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S10 lands the AuthoringStore extraction — self-described as ~3000 LOC across '~100+ consumer files' — as ONE commit with no intermediate resting state; if anything is discovered late (a template-only consumer, a host-callback cycle with undo/sim/persistence) the only move is wholesale revert, and the plan's own open_questions[0] doubts the step belongs in this initiative at all. A step the plan itself proposes deferring is not a plan, it is a placeholder.",
+          "severity": "major",
+          "evidence": "S10 verification: 'this is the step where a missed call site is most likely, given the estimated ~100+ consumer files'; risk marked high; open_questions[0] asks whether S10 should 'get ticketed separately'. Contrast: the same plan's S5-S9 correctly do one controller at a time precisely because big-bang moves are the failure mode.",
+          "survives": false,
+          "repair": "Cut S10 from this initiative (make it the follow-on the open question describes), or restructure it into the additive->retarget->delete strangler shape used for S5-S9 with a named sub-cluster order (clipboard, undo, wiring, node CRUD) so each commit has a durable resting state.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S7's files list is wrong: it names only device-link-store.svelte.ts, store.svelte.ts and AppSettingsDialog.svelte, but the dominant consumers of the 12 monitor forwarders are PatchControllerInspector.svelte (~13 hits per the middle-man-0001 census), shot-seam.ts (writes `store.controllerStatus = ...`, 6 controllerStatus references verified at HEAD) and store.controller.test.ts (~20 hits) — none listed, while AppSettingsDialog is primarily a MIDI consumer.",
+          "severity": "major",
+          "evidence": "grep -c controllerStatus apps/web/src/lib/app/shot-seam.ts = 6; opus S5 (independent measurement of the same step) lists PatchControllerInspector.svelte 13 hits, shot-seam.ts 4 write hits, store.controller.test.ts 20 hits; sonnet S7 files: only 3 entries.",
+          "survives": false,
+          "repair": "Fix S7's files list to include apps/web/src/lib/app/docks/inspectors/PatchControllerInspector.svelte, apps/web/src/lib/app/shot-seam.ts and apps/web/src/lib/trigger-lab/store.controller.test.ts; keep the step's own grep for `.controllerStatus =` writers as the completeness check.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S6 delegates its own inventory to the implementer — '7 forwarders (... confirm exact member list via rg ... before deleting)' — so the step's scope is whatever a future grep returns, and the count itself is contested (opus measured 6 midi forwarders, the finding said 7).",
+          "severity": "minor",
+          "evidence": "sonnet S6 intent text; opus baseline_reference: 'midi 6'; middle-man-0001 evidence: 'midi 7'. The plan never reconciles the discrepancy, it outsources it.",
+          "survives": false,
+          "repair": "Enumerate the exact forwarder member names in the step (midiLearnTarget, midiDevices, midiAvailable, midiUnavailableReason, startMidiLearn, cancelMidiLearn, plus whichever seventh the census finds or a note that 6 is correct), as S7/S8 do for their clusters.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "dependencies_on_other_initiatives names INIT-01-single-render-stack and INIT-06-graph-node-type-model with no direction, reason, or ordering constraint anywhere in the plan — Phase 9 cannot schedule against an unexplained edge, and if it means 'must land after', S3/S10's graph-wiring edits collide with INIT-06's NodeKind redesign in an unstated order.",
+          "severity": "minor",
+          "evidence": "sonnet.json dependencies_on_other_initiatives: [\"INIT-01-single-render-stack\", \"INIT-06-graph-node-type-model\"] — the strings appear nowhere else in the document; graph-wiring.ts:20 directionOk switches on NodeKind, the seam INIT-06 changes.",
+          "survives": false,
+          "repair": "State each dependency's direction and reason (e.g. 'S3/S10 touch graph-wiring.ts signatures; land before INIT-06's NodeKind redesign because renames rebase over structural change, not vice versa'), or drop the entries.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "The parity story for the two big retarget steps rests on 'must stay green with zero assertion changes' with no mechanical gate — nothing in the plan can detect a retargeted test whose assertion was quietly weakened to get green, which the opus variant identifies as the dominant risk (80% of call sites are in test files).",
+          "severity": "minor",
+          "evidence": "sonnet S8/S9 verification text asserts 'zero assertion changes' but specifies no diff-shape check, no numstat balance, no rename-normalised diff; behaviour_parity_evidence_plan checks likewise say 'ZERO assertion diffs' without a command that would fail on one.",
+          "survives": false,
+          "repair": "Add a per-step mechanical gate: rename-normalised diff (apply the accessor rename to the base version with sed, require empty diff against the new version) for every *.test.ts touched in S8/S9/S10.",
+          "targets_step": "S8"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 2,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 2,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Resolve the facade naming (shows/sections collisions) in the plan text before execution; delete the in-step 'pick one' and the blocking open question by getting Trent's answer into the synthesis.",
+        "Remove S10 from this initiative or restructure it into strangler-shaped sub-steps with durable resting states; a single ~3000-LOC/100-file commit the plan itself proposes deferring is not landable as written.",
+        "Correct S7's files list (add PatchControllerInspector.svelte, shot-seam.ts, store.controller.test.ts).",
+        "Enumerate the midi forwarder members in S6 instead of delegating the inventory to a future grep, reconciling the 6-vs-7 count.",
+        "Add a mechanical assertion-preservation gate (rename-normalised diff) to S8/S9/S10 test retargets.",
+        "State direction and reason for the INIT-01/INIT-06 dependency edges or drop them."
+      ]
+    },
+    {
+      "initiative_id": "INIT-02-store-decomposition",
+      "variant_reviewed": "fable",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-02-store-decomposition/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S1-S5's 'un-export the *Host interfaces (zero external importers)' cannot compile as written: store.svelte.ts IS an external importer of every Host — it imports the types and uses them in `satisfies` clauses on the inline host literals — so un-exporting ControllerTestHost/SectionsControllerHost/etc. breaks the exact file the step edits, and the plan never mentions the satisfies clauses.",
+          "severity": "major",
+          "evidence": "store.svelte.ts:79 `import { SectionsController, type SectionsControllerHost } from './sections-controller.svelte';` and :397 `} satisfies SectionsControllerHost);`, :538 `} satisfies ShowsControllerHost);` — verified at HEAD. The plan's interface_deltas claim 'zero external importers — un-exported, not relocated' is false for all five.",
+          "survives": false,
+          "repair": "Either keep the Host interfaces exported (defer their removal to the open Host-collapse question) or, in the same commit, delete the corresponding `satisfies XHost` annotations and type imports in store.svelte.ts — stating which, per controller, in each step.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S4/S5 publish the controllers under the NAMES of the deleted array-typed forwarders — `get sections(): SectionsController` replaces `get sections(): Section[]` (177 `.sections` refs repo-wide, 89 in trigger-lab tests) and `get shows(): ShowsController` replaces `get shows(): {id,name}[]` (44 refs) — so every existing array read becomes a type error whose fix is the double-hop `store.sections.sections` (SectionsController's own derived is named `sections`, verified at sections-controller.svelte.ts:79). The claimed 'green unmodified except mechanical store.sections.* repoints' hides a type-changing rewrite of ~220 call sites plus a permanent x.sections.sections readability trap, and open_questions[4] only licenses renaming on collision 'with an existing TriggerLab member' — which, post-deletion, no longer exists, so the trap is kept by instruction.",
+          "severity": "major",
+          "evidence": "Verified at HEAD: store.svelte.ts:577 and :925 (the colliding getters); sections-controller.svelte.ts:79 `sections = $derived.by((): Section[] =>`; repo-wide grep counts `.sections` = 177, `.shows` = 44. The opus variant independently measured the same collision and concluded a different name or a ~500-site rename pass is required.",
+          "survives": false,
+          "repair": "Name the published seams so member access reads once (e.g. `arrangement`/`library` per the opus measurement, or Trent's naming answer), OR explicitly plan the two-hop shape with the full 220-site retarget counted in scope and LOC — the current text does neither.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S9 treats `this.link === 'open'` as save success ('saved() only when the local writes returned true OR the server sync path actually ran (this.link === 'open')') — but the WS send is fire-and-forget with no ack, so with quota exceeded and the link open the indicator still claims Saved on unproven delivery; the finding's realistic trigger (large library + Safari private mode) is precisely a case where the local write fails while the link may be open.",
+          "severity": "minor",
+          "evidence": "resilience-hole-0007 evidence notes syncShowToServer only gates on link state; opus open_questions[1] establishes the same fact ('client.send is fire-and-forget with no ack, so the web cannot know delivery'). fable S9 intent text quotes the OR-gate.",
+          "survives": false,
+          "repair": "Gate saved() on local-write success only (conservative default), and record the link-open question as the existing open question for Trent — or name the OR-gate as a deliberate product choice with its false-'Saved' window stated.",
+          "targets_step": "S9"
+        },
+        {
+          "claim": "S8 silently commits to rewriting the graph-wiring test suite: deleting canConnect/canReconnect orphans 53 references in graph-wiring.test.ts (the 456-line suite that pins every WireRejection reason), and TriggerGraphView's 5 validity checks all become inline `classify* === null` expressions — yet the step's verification claims the test stays 'green with WireEnds-shaped calls' as if only call shape changes, with no assertion-preservation gate on what is in fact the largest single test rewrite in the plan.",
+          "severity": "minor",
+          "evidence": "grep -c 'canConnect|canReconnect' apps/web/src/lib/trigger-lab/store/graph-wiring.test.ts = 53; canSplice (graph-wiring.ts:126) also routes through the internals and its suite is never named in S8's verification.",
+          "survives": false,
+          "repair": "Either keep canConnect/canReconnect as one-line conveniences over the new WireEnds signatures (they are API sugar, not middle-men across a boundary) or add the 53-reference test rewrite and store.splice.test.ts to S8's stated scope with a rename-normalised diff gate.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "estimated_loc 1050 is not credible against the plan's own inputs: the middle-man census counts ~580 store-qualified call sites (~460 in tests) for the 75 forwarders alone, before the ~220 type-changing `.sections`/`.shows` rewrites the S4/S5 naming forces, the 53-reference graph-wiring test rewrite, and the LibrarySync/shell-nav/save-status steps — and every step is rated the same flat 'medium' risk, including the 38-file S5, which is flattery by uniformity.",
+          "severity": "minor",
+          "evidence": "opus baseline_reference (independent measurement of the same migration): ~580 store-qualified call sites in 27 files, ~460 in tests; opus estimated_loc for a comparable-but-smaller-churn plan is 2600. fable claims 1050 with strictly more forced churn under its naming choice.",
+          "survives": false,
+          "repair": "Re-estimate from the census (roughly 2.5-3x the current figure) and differentiate risk: S5 (38 files) and S4 (177-ref type change) are higher-risk than S7 (3 files, one consumer).",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "The sequencing waves that pair steps ([S2,S7] and [S3,S6]) could collide on shared files, corrupting the one-commit-per-wave rollback story.",
+          "severity": "minor",
+          "evidence": "Checked file sets at HEAD: S2 edits store.svelte.ts + controller-monitor.svelte.ts + app call sites; S7 edits shell-nav.ts/shell-store.svelte.ts/shell-nav.test.ts — disjoint. S3 edits store.svelte.ts + midi-controller.svelte.ts + inspector call sites; S6 edits store/library-sync files + shows-controller.svelte.ts — disjoint.",
+          "survives": true,
+          "plan_response": "The sequencing section pairs only file-disjoint steps — S7's files (apps/web/src/lib/app/shell-*) share nothing with S2's, and S6's files (store/show-library-sync.ts, store/song-library-sync.ts, store/library-sync.ts, shows-controller.svelte.ts) share nothing with S3's — and rollback_strategy states 'later waves touch disjoint files from earlier ones by construction', which the file lists bear out."
+        },
+        {
+          "claim": "Deleting all forwarders without any surface instrument means the plan cannot prove a member was removed rather than relocated, and the 339->~264 claim is only a regex count run by the same party that wrote the change.",
+          "severity": "minor",
+          "evidence": "behaviour_parity_evidence_plan relies on 'TriggerLab public-member regex count ... <= 270 after S5' and the middle-man python census — both informal scripts, neither checked in, versus opus's committed store.surface.test.ts ratchet with exact-member diffs per step.",
+          "survives": true,
+          "plan_response": "The checks section commits to two concrete, reproducible commands run at stated checkpoints ('Forwarder census: re-run middle-man-0001's python scan ... 75 at baseline, must be 0 after S5' and the member-count regex '339 at baseline, <= 270 after S5'), each anchored to independently-measured baseline numbers — weaker than a checked-in ratchet but falsifiable evidence computed outside vitest, which is what the attack demands."
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 2,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 3,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Fix the Host un-export steps: store.svelte.ts imports and `satisfies`-uses every Host interface (verified :79, :397, :538), so each S1-S5 commit must either keep the export or delete the satisfies annotation and type import in the same diff.",
+        "Resolve the shows/sections naming: publishing the controllers under the deleted array-getters' names forces ~220 type-changing call-site rewrites and a store.sections.sections double-hop the plan neither counts nor acknowledges — rename the seams or plan the rewrite explicitly.",
+        "S9: gate saved() on local-write success only, or explicitly own the false-'Saved' window that link==='open' creates under quota failure.",
+        "S8: scope the 53-reference graph-wiring.test.ts rewrite and store.splice.test.ts, or retain canConnect/canReconnect as sugar over the WireEnds signatures.",
+        "Re-estimate LOC from the ~580-call-site census and differentiate per-step risk instead of flat medium."
+      ]
+    }
+  ]
+}

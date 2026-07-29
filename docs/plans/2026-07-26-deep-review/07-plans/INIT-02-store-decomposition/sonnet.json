@@ -1,0 +1,292 @@
+{
+  "initiative_id": "INIT-02-store-decomposition",
+  "variant": "sonnet",
+  "provenance": {
+    "model": "claude-sonnet-5",
+    "effort": "high"
+  },
+  "summary": "TriggerLab (apps/web/src/lib/trigger-lab/store.svelte.ts, 3641 lines, 339 public members, 120 commits touching it in the last 400) is a god object because five prior extractions (R20-R24) moved implementation out but re-published every member back as a one-line forwarder, so the file never got smaller and the boundary bought nothing. The end state is three named, owned facades on TriggerLab -- `library` (shows/songs/sections -- the authored-document library and its server sync), `device` (PixLite controller monitor/test-pattern/MIDI plus the WS-link-adjacent scalars), and `authoring` (graphs/nodes/edges/undo/clipboard/wiring -- the actual render-feeding document) -- with TriggerLab itself shrinking to a ~300-line composition root that owns only sim lifecycle, the render snapshot, autosave scheduling, and WS message dispatch to the three facades. This plan gets there by finishing what R20-R24 started rather than reverting it: fold the five already-extracted controllers behind two of the three facades (killing all 75 forwarders, the concrete ask in middle-man-0001 and speculative-generality-0001), then extract the third facade (authoring) for the graph-editing surface that never got touched by R20-R24 and is the actual source of the 32-commit, cross-cutting churn in divergent-change-0002. Three small, fully independent fixes (a generic LibrarySync, a named WireEnds struct, and a real failure path for the autosave indicator) ride along because they sit in the same territory and two of them are prerequisites for the facade work touching the same files. Steps are sequenced almost entirely serially: every step after the first wave edits store.svelte.ts, so slices sharing that mutation seam cannot run concurrently -- itself a symptom of the problem being fixed.",
+  "findings_addressed": [
+    "divergent-change-0002",
+    "middle-man-0001",
+    "speculative-generality-0001",
+    "duplicated-code-0003",
+    "resilience-hole-0007",
+    "data-clumps-0005",
+    "speculative-generality-0007"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Inline shell-nav's five transitions into ShellStore; keep only types + parseSearch",
+      "intent": "Resolves speculative-generality-0007. shell-nav.ts's setView/select/clearSelection/isSelected have exactly one production consumer (ShellStore) and the only invariant (clear selection on view change, shell-nav.ts:46-48) is two lines. Fold the four transitions into ShellStore as methods (the setter keeps the `selection: null` line inline), delete them from shell-nav.ts, and keep only View/Selection/PatchNodeId/ShellNav types, VIEWS, and parseSearch (which has real URL-parsing edge cases and stays a pure, separately-testable function) in shell-nav.ts. Interface shrinks from 5 exported transition functions + wrapper forwarders to 0 exported transitions.",
+      "files": [
+        "apps/web/src/lib/app/shell-nav.ts",
+        "apps/web/src/lib/app/shell-store.svelte.ts",
+        "apps/web/src/lib/app/shell-nav.test.ts"
+      ],
+      "risk": "low",
+      "verification": "pnpm typecheck; rewrite shell-nav.test.ts's setView/select/clearSelection/isSelected cases against `new ShellStore()` (Svelte 5 runes run fine in the node/vitest component env already used by other *.svelte.ts test files); pnpm test -- shell-nav.test.ts must still pin the view-switch-clears-selection invariant; rg -n \"from '.*shell-nav'\" apps/web/src must return only shell-store.svelte.ts and its own test (parseSearch/types only) to confirm no other consumer regressed."
+    },
+    {
+      "id": "S2",
+      "title": "Collapse ShowLibrarySync + SongLibrarySync into one generic LibrarySync<L, W>",
+      "intent": "Resolves duplicated-code-0003. store/show-library-sync.ts and store/song-library-sync.ts are two classes with identical fields (lastLibrarySig, serverStateSeen) and identical method bodies for librarySig/markServerStateSeen/planReconcile/planFollow/noteSynced/planPush, differing only in which (de)serializer they call. Introduce `LibrarySync<L, W>` in a new store/library-sync.ts parameterised by `{ serialize(l: L): W; deserialize(raw: unknown): L | null }`, with `ReconcilePlan<L>` replacing both `ReconcilePlan`/`SongReconcilePlan` unions. shows-controller.svelte.ts constructs `new LibrarySync(showCodec)` and `new LibrarySync(songCodec)` where showCodec/songCodec wrap serializeShowLibrary/deserializeShowLibrary and serializeSongLibrary/deserializeSongLibrary respectively. Delete store/show-library-sync.ts and store/song-library-sync.ts.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/store/library-sync.ts",
+        "apps/web/src/lib/trigger-lab/store/show-library-sync.ts",
+        "apps/web/src/lib/trigger-lab/store/song-library-sync.ts",
+        "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts"
+      ],
+      "risk": "low",
+      "verification": "pnpm typecheck; pnpm test -- store.server-library.test.ts store.song-library.test.ts persistence.songlibrary.test.ts (the three suites the finding's own verification_plan names as covering both reconcile policies) must stay green with zero assertion changes; every branch (viewer-follow, once-per-session gate, local-wins seed, echo suppression, serverStateSeen push gate) must survive verbatim in the generic body per the finding's removes_failure_path note."
+    },
+    {
+      "id": "S3",
+      "title": "Name the wire-endpoint data clump as WireEnds in graph-wiring.ts",
+      "intent": "Resolves data-clumps-0005. `fromId, toId, fromPort?, toPort?` travel as an unnamed 4-slot positional tuple through classifyConnection/classifyReconnect/canConnect/canReconnect/sameSlot in store/graph-wiring.ts, re-spelled at 8 call sites including two deliberate from/to swaps in TriggerGraphView.svelte (565, 573) that a positional transposition bug could silently invert. Add `export interface WireEnds { from: string; to: string; fromPort?: string; toPort?: ToPort }`, change the four exported functions' signatures to take `(graph, w: WireEnds)` (classifyReconnect/canReconnect keep their leading edgeId), and update the two call sites in store.svelte.ts (connect/reconnect/canSplice, ~2663-2735) plus the five in TriggerGraphView.svelte to named-field object literals.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+        "apps/web/src/lib/trigger-lab/store/graph-wiring.test.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/app/views/TriggerGraphView.svelte"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck; pnpm test -- store/graph-wiring.test.ts store.autowire.test.ts store.splice.test.ts (pin each WireRejection reason and its precedence, unchanged); pnpm ui-shot on the Trigger Graph view to confirm invalid-drop styling still fires, specifically the reverse-drag path at TriggerGraphView.svelte:565 (the one behaviour a from/to transposition would silently break, per the finding)."
+    },
+    {
+      "id": "S4",
+      "title": "Give the autosave write path a real failure result; stop claiming 'Saved' on a swallowed error",
+      "intent": "Resolves resilience-hole-0007. writeStoredLibrary/writeStoredSongLibrary in shows-controller.svelte.ts are void functions with a bare `catch { /* ignore */ }`, so scheduleSave (store.svelte.ts:1288-1310), the beforeunload flush (:1256-1264), and stopAutosave (:1269-1286) all call saveStatusCtl.saved() unconditionally regardless of whether the local write or the server push actually succeeded -- a QuotaExceededError (large show + Safari private mode) or an offline link makes the UI say 'Saved' while the only copy of the user's work evaporates on refresh. Change both write functions to return `{ ok: true } | { ok: false; reason: 'quota' | 'unavailable' | 'error'; message: string }` (still never throwing). Add an `'error'` member to the `SaveStatus` union in save-status.ts and an `error(message: string)` transition on SaveStatusController (parallel to `saving()`/`saved()`, same min-visible-window discipline). In scheduleSave, call `saveStatusCtl.saved()` only when the local write succeeded; call `saveStatusCtl.error(...)` when it failed, naming the cause. Add the 'Saving failed -- export your show' affordance to SaveIndicator.svelte for the error state.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/save-status.ts",
+        "apps/web/src/lib/trigger-lab/save-status.test.ts",
+        "apps/web/src/lib/app/chrome/SaveIndicator.svelte"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck; new save-status.test.ts case driving SaveStatusController through saving() -> error(msg) and asserting it never silently reaches 'saved'; new store test stubbing localStorage.setItem to throw QuotaExceededError, driving an authored edit past SAVE_DEBOUNCE_MS, and asserting store.saveStatus lands on 'error' not 'saved' and no exception escapes the $effect; pnpm test -- store.autosave.test.ts store.persistence.test.ts must stay green for the happy path; pnpm ui-shot on the TopBar/SaveIndicator surface to confirm the new failure banner renders (AGENTS.md UI non-negotiable)."
+    },
+    {
+      "id": "S5",
+      "title": "Create DeviceLinkStore; fold ControllerTest into it as the forwarder-killing tracer",
+      "intent": "Begins resolving middle-man-0001 and speculative-generality-0001, and lays the first stone of the `device` facade divergent-change-0002 asks for. ControllerTest is the smallest of the five R20-R24 controllers (3 forwarders -- setControllerTestData/backToLive/controllerTakeover -- 2 external call sites), exactly the tracer middle-man-0001's own proposed_fix names. Create apps/web/src/lib/trigger-lab/device-link-store.svelte.ts exporting `DeviceLinkStore`, constructed once by TriggerLab as `readonly device = new DeviceLinkStore(...)` and owning `readonly controllerTest = new ControllerTest(host)` (host wiring unchanged, just relocated). Delete the 3 forwarders and the private `controllerTest` field from TriggerLab. Retarget the 2 call sites (OutputPill.svelte, PatchControllerInspector.svelte) from `store.controllerTakeover`/`store.setControllerTestData(...)`/`store.backToLive()` to `store.device.controllerTest.takeover`/`.setTestData(...)`/`.backToLive()`.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/device-link-store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/app/chrome/OutputPill.svelte",
+        "apps/web/src/lib/app/docks/inspectors/PatchControllerInspector.svelte",
+        "apps/web/src/lib/trigger-lab/store.controller.test.ts"
+      ],
+      "risk": "low",
+      "verification": "pnpm typecheck -- every stale `store.controllerTakeover`/`store.setControllerTestData`/`store.backToLive` reference surfaces as a compile error, giving the exact repoint list (per middle-man-0001's own verification_plan); pnpm test -- store.controller.test.ts; pnpm ui-shot on the Controller panel + OutputPill to confirm the test-data takeover banner still renders."
+    },
+    {
+      "id": "S6",
+      "title": "Fold MidiController into DeviceLinkStore; kill its 7 forwarders",
+      "intent": "Continues middle-man-0001/speculative-generality-0001. Move `private readonly midi = new MidiController(...)` construction into DeviceLinkStore as `readonly midi`. Delete the 7 forwarders on TriggerLab (midiLearnTarget, midiDevices, midiAvailable, midiUnavailableReason, startLearn/cancelLearn/applyNoteLearn-applyCcLearn call sites -- confirm exact member list via `rg -n \"this\\.midi\\.\" apps/web/src/lib/trigger-lab/store.svelte.ts` before deleting). TriggerLab's own internal per-event forwarding (`forwardMidi`/`receiveInputEcho`, which stays on TriggerLab per midi-controller.svelte.ts's own doc comment because it is entangled with the offline sim and S04 activity badges) now calls `this.device.midi.applyNoteLearn(...)` etc. instead of `this.midi.applyNoteLearn(...)`. Retarget the ~7 external consumer files to `store.device.midi.X`.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/device-link-store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/app/chrome/AppSettingsDialog.svelte",
+        "apps/web/src/lib/app/docks/inspectors/PatchZoneInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/DrumZonesList.svelte",
+        "apps/web/src/lib/app/docks/inspectors/CcNodeInspector.svelte",
+        "apps/web/src/lib/app/docks/inspectors/TriggerSourceInspector.svelte",
+        "apps/web/src/lib/trigger-lab/store.cc.test.ts",
+        "apps/web/src/lib/trigger-lab/store.echo-gate.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck; pnpm test -- store.cc.test.ts store.echo-gate.test.ts (MIDI-learn bind + CC-node learn behaviour must be unchanged); pnpm ui-shot on AppSettingsDialog's MIDI device list and one inspector's learn button to confirm the empty-state copy and arm/bind flow still render."
+    },
+    {
+      "id": "S7",
+      "title": "Fold ControllerMonitor into DeviceLinkStore; kill its 12 forwarders (completes the device facade)",
+      "intent": "Completes middle-man-0001/speculative-generality-0001 for the device side and completes the `device` facade for divergent-change-0002. Move `private readonly monitor = new ControllerMonitor(...)` into DeviceLinkStore as `readonly controllerMonitor` (named to avoid colliding with TriggerLab's own unrelated monitorEvents/monitorTypeFilter fields, which are the trigger-log monitor, a different concern). Delete the 12 forwarders (watchController, networkAdapters, controllerRecommendation, requestNetworkAdapters, discoverControllers, adoptController, setControllerAuth, identifyController, controllerStatus get/set, controllerCandidates) plus TriggerLab's internal `this.monitor.ingestStatus/ingestDiscovery/ingestNetworkAdapters/clearOnLinkDrop` call sites in its WS message handler, which become `this.device.controllerMonitor.ingestStatus(...)` etc. Retarget the 3 external consumer files, INCLUDING the ui-shot seam that writes `store.controllerStatus = ...` directly (grep `rg -n \"\\.controllerStatus\\s*=\" apps/web scripts/ui-shot` before deleting the setter -- this is the one caller the finding's evidence didn't enumerate as a read).",
+      "files": [
+        "apps/web/src/lib/trigger-lab/device-link-store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/app/chrome/AppSettingsDialog.svelte"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck; rg -n \"\\.controllerStatus\\s*=\" apps/web scripts/ui-shot to enumerate every writer of the ui-shot injection seam and confirm each is retargeted to `store.device.controllerMonitor.status = ...`; pnpm test -- any store.*.test.ts referencing controller discovery/adopt/identify; pnpm ui-shot on the Controller panel (status/candidates/adapters) to confirm the confidence-chain UI is unchanged."
+    },
+    {
+      "id": "S8",
+      "title": "Create LibraryStore; fold ShowsController into it, kill its 35 forwarders",
+      "intent": "Begins the `library` facade for divergent-change-0002 and resolves middle-man-0001/speculative-generality-0001 for shows/songs. Create apps/web/src/lib/trigger-lab/library-store.svelte.ts exporting `LibraryStore`, constructed once as `readonly library = new LibraryStore(...)` and owning `readonly shows = new ShowsController(host)` (the S2-refactored LibrarySync instances travel with it). Delete all ~35 get/set/method forwarders on TriggerLab (activeShowId, songs, songRefs, activeSongId, songLibrary, shows [the view list -- NOTE this collides in name with the new facade property `library.shows`; rename the view-list getter to `library.shows.list` or keep it as `library.showsList` -- pick one and use it consistently], activeShow, resolvedView, resolvedSongs, songLibraryList, newShow/openShow/saveShow/saveShowAs/renameShow/deleteShow/closeShow/exportSongToLibrary/importSongReference/removeSongReference/detachSongReference/renameLibrarySong/deleteLibrarySong/showsUsingSong/setActiveSong/createSong/renameSong/duplicateSong/removeSong). Retarget the ~21 consumer files (ShowBrowser.svelte, TopBar.svelte, and the store.*.test.ts suites) to `store.library.X`.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/library-store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/app/chrome/ShowBrowser.svelte",
+        "apps/web/src/lib/app/chrome/ShowBrowser.test.ts",
+        "apps/web/src/lib/app/chrome/TopBar.svelte",
+        "apps/web/src/lib/trigger-lab/store.shows.test.ts",
+        "apps/web/src/lib/trigger-lab/store.song-library.test.ts",
+        "apps/web/src/lib/trigger-lab/store.server-library.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck -- the compiler enumerates every stale `store.newShow`/`store.songs`/etc reference across the ~21 files the finding's blast_radius names; pnpm test -- store.shows.test.ts store.song-library.test.ts store.server-library.test.ts must stay green with zero assertion changes (only the access path through which they call the store changes); pnpm ui-shot on ShowBrowser + TopBar (show switcher, song list) to confirm the library UI is pixel-unchanged."
+    },
+    {
+      "id": "S9",
+      "title": "Fold SectionsController into LibraryStore; kill its 18 forwarders (completes the library facade)",
+      "intent": "Completes middle-man-0001/speculative-generality-0001 for sections and completes the `library` facade. Move `private readonly sectionsCtl = new SectionsController(...)` construction into LibraryStore as `readonly sections`, wiring its host's `activeSong`/`songs`/`setSongs` reads directly against the sibling ShowsController instance now that both live in the same object (a genuine deepening -- no more bouncing every read through TriggerLab). Delete the 18 forwarders on TriggerLab (activeSectionId get/set, sectionClipboard get/set, `sections` [the array getter -- now free to reuse this exact name since `library.sections` is the natural home for both the controller AND, via a `.list` sub-accessor or a rename, avoid the same collision noted in S8], addGraphToSection/removeGraphFromSection/setSectionGraphs/moveSection/moveGraphPlacement/setLook/addSongSection/renameSection/removeSection/copySection/pasteSection/duplicateSection). Retarget the ~18 consumer files.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/library-store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/sections-controller.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.sections.test.ts",
+        "apps/web/src/lib/app/views/TriggerGraphView.svelte",
+        "apps/web/src/lib/app/views/SectionsView.svelte"
+      ],
+      "risk": "medium",
+      "verification": "pnpm typecheck across the full app (the compiler enumerates every stale `store.activeSectionId`/`store.addGraphToSection`/etc reference); pnpm test -- store.sections.test.ts store.looks.test.ts must stay green unchanged; pnpm ui-shot on the Sections view (add/rename/remove/reorder/copy-paste, look recall) to confirm the section-arrangement UI is pixel-unchanged; grep to confirm zero remaining forwarder members on TriggerLab whose entire body is `this.<ctl>.<x>` (the mechanical scan middle-man-0001's own evidence used) -- this should now return 0 across all five former controllers."
+    },
+    {
+      "id": "S10",
+      "title": "Extract AuthoringStore: move the graph/node/edge/undo/clipboard authoring surface off TriggerLab",
+      "intent": "Resolves the remaining, larger half of divergent-change-0002 -- the actual cross-cutting churn (OSC panel, Backups dialog, Patch Graph v2 zone canvas, undo-stack semantics, id minting, splice-on-drop, kit-global mutators, Mix layer rows all converge on TriggerLab because the graph-authoring document -- graphs/graphNames/effects/presets/selectedGraph/settingsBlock/galleryBlock/envTarget/liveNodePositions/the undo stack/the system + patch clipboards/patchLabels, plus the connect/reconnect/removeNode/moveNode/undo/redo/copy*/paste*/splice methods -- is the one thing R20-R24 never touched, because it IS the render-feeding document, not a peripheral concern. Create apps/web/src/lib/trigger-lab/authoring-store.svelte.ts exporting `AuthoringStore`; TriggerLab constructs `readonly authoring = new AuthoringStore(host)` where the host supplies exactly the sim/render/WS/library cross-cutting reads (toAuthored/applyShow/resetAuthoredToSeed/normalizeGraphs/isViewer/linkOpen/send) that must stay on TriggerLab per the existing ShowsControllerHost pattern. Delete every corresponding member from TriggerLab (this is the bulk of what remains of the 339-member surface after S5-S9) and retarget every non-test caller across apps/web/src/lib/app/views, docks, and inspectors -- realistically most of the app's authoring UI. This step alone is expected to shrink store.svelte.ts from its post-S9 size (roughly 2000-2200 lines) to a ~300-500 line composition root, which is the actual resolution of the divergent-change-0002 churn claim: the OSC-panel / Backups / Patch-Graph-zone-canvas / Mix-row changes that used to land in TriggerLab now land in the facade whose change-axis they actually belong to (device or authoring), not in a single file that sees all of them.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/authoring-store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+        "apps/web/src/lib/trigger-lab/store/graphs.ts",
+        "apps/web/src/lib/trigger-lab/render.ts"
+      ],
+      "risk": "high",
+      "reverses": "Land as one commit gated on full pnpm gates green; revert with a single `git revert <sha>` -- because the step only relocates state/methods (no persisted-format or wire-protocol change), a revert restores every deleted TriggerLab member and removes the authoring-store.svelte.ts import graph in one operation with no partial state to reconcile.",
+      "verification": "pnpm typecheck across the ENTIRE apps/web workspace (this is the step where a missed call site is most likely, given the estimated ~100+ consumer files); pnpm test -- the full trigger-lab test suite (all store.*.test.ts, sim.*.test.ts, clipdoc*.test.ts) must stay green with zero assertion changes; pnpm ui-shot across every authoring surface (Trigger graph, Objects, Sections, Patch, Monitor views per shell-nav's VIEWS) since this is the step most likely to silently break a component that reads a moved field without a compile error (a Svelte `{#each}` over a renamed prop, for instance); confirm the render loop's frame timing is unaffected by running the existing sim determinism suite (sim-determinism.test.ts) unchanged -- this step must not touch render.ts's actual per-frame logic, only where TriggerLab sources the data render.ts already consumes."
+    }
+  ],
+  "sequencing": [
+    [
+      "S1",
+      "S2"
+    ],
+    [
+      "S3"
+    ],
+    [
+      "S4"
+    ],
+    [
+      "S5"
+    ],
+    [
+      "S6"
+    ],
+    [
+      "S7"
+    ],
+    [
+      "S8"
+    ],
+    [
+      "S9"
+    ],
+    [
+      "S10"
+    ]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/web/src/lib/app/shell-nav.ts",
+      "removed": [
+        "setView",
+        "select",
+        "clearSelection",
+        "isSelected"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Four transition functions fold into ShellStore; shell-nav.ts keeps only types, VIEWS, and parseSearch."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab/store/show-library-sync.ts + store/song-library-sync.ts",
+      "removed": [
+        "ShowLibrarySync",
+        "SongLibrarySync",
+        "ReconcilePlan",
+        "SongReconcilePlan"
+      ],
+      "added": [
+        "LibrarySync<L,W>",
+        "ReconcilePlan<L>"
+      ],
+      "net_interface_change": "reduces",
+      "note": "Two near-identical classes + two near-identical plan unions collapse into one generic each."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+      "removed": [],
+      "added": [
+        "WireEnds"
+      ],
+      "net_interface_change": "reduces",
+      "note": "One named interface replaces an unnamed 4-slot positional tuple re-spelled at 8+ call sites."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab/shows-controller.svelte.ts",
+      "removed": [],
+      "added": [
+        "WriteResult (discriminated result type for writeStoredLibrary/writeStoredSongLibrary)"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate: adds a result channel so the autosave path can distinguish a real failure from a flush, per resilience-hole-0007. The try/catch that keeps persistence from throwing into the render loop is preserved verbatim."
+    },
+    {
+      "at": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+      "removed": [
+        "~75 one-line forwarder members across showsCtl (35), sectionsCtl (18), monitor (12), midi (7), controllerTest (3)"
+      ],
+      "added": [
+        "library",
+        "device",
+        "authoring (three public facade properties)"
+      ],
+      "net_interface_change": "reduces",
+      "note": "TriggerLab's public surface goes from 339 members (mostly pass-through) to an estimated 15-25 members (sim lifecycle, render snapshot, autosave scheduling, WS dispatch) plus 3 facade properties. This is the plan's central objective-function move."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates (machine-mutex, full 2968+-test suite) after every step lands, never `pnpm test` alone",
+      "pnpm typecheck after every step -- the compiler enumerates every stale call site as a compile error, which is the primary parity evidence for a pure rename/relocate step (per middle-man-0001's own verification_plan)",
+      "pnpm test -- <the specific store.*.test.ts / sim.*.test.ts suites named per step> must show ZERO assertion diffs, only import/access-path diffs, proving the moved logic runs identically",
+      "pnpm ui-shot on every UI surface each step touches (Trigger Graph, Sections, ShowBrowser/TopBar, Controller panel, AppSettingsDialog, SaveIndicator) per AGENTS.md's UI verification non-negotiable -- catches a Svelte binding that silently reads a renamed/moved prop without a compile error",
+      "for S10 specifically: sim-determinism.test.ts unchanged, to confirm the AuthoringStore extraction did not perturb the render loop's frame-by-frame determinism"
+    ],
+    "known_gaps": "store.svelte.ts's own lifecycle wiring -- the $effect blocks that drive Sim from resolvedView, the beforeunload/stopAutosave teardown, and the raw WS message dispatch switch -- has thin-to-no direct unit coverage; it is exercised only indirectly through the higher-level store.*.test.ts suites and manual dev-server use. Moving this wiring in S10 (and to a lesser extent S5-S9) cannot be proven by a green suite alone: a stale reference inside an uncovered branch of the WS dispatch would only surface at runtime against a live server (`pnpm dev` + a real Art-Net/sACN session), not in CI. The plan's answer is ui-shot sweeps across every view PLUS an explicit manual smoke pass connecting a live server before S10 is called done -- this is process discipline substituting for coverage the codebase does not have, not a claim that coverage exists. Separately, resilience-hole-0007's quota-exhaustion path (S4) is proven only against a stubbed localStorage.setItem throw, not a real quota-exhausted browser session -- the discriminated-result plumbing is verified, but the real-world trigger point (exact bytes before Safari private mode throws) is not.",
+    "baseline_reference": "Phase 0 baseline sha 3708648; 2968 tests green at HEAD on feat/ota-discord-announce as of this plan, after the landed dead-code and kit-mirror-removal batches."
+  },
+  "rollback_strategy": "Every step lands as its own commit gated on pnpm gates green, so `git revert <sha>` undoes exactly one step: S1-S4 are pure file-local or two-file mechanical changes with no persisted-format change, trivially revertible. S5-S9 each add exactly one facade property and delete exactly one controller's forwarders in the same commit, so reverting restores the deleted forwarders and removes the facade property atomically -- there is no partial state, because the compiler (not a runtime check) is what enforces that every caller moved in the same commit as the forwarders it depended on. S10 is the one step large enough that a genuinely partial land is a real risk (some views retargeted to store.authoring.*, others still referencing deleted members) -- if that happens mid-flight, the correct move is to revert S10's single commit wholesale (typecheck will fail loudly and immediately on any half-migrated state, which is a safety property here, not a risk) rather than hand-patch forward. No step touches a persisted document format, a wire-protocol message shape, or migrates data, so there is nothing that requires a forward-only fix once reverted.",
+  "estimated_loc": 4900,
+  "dependencies_on_other_initiatives": [
+    "INIT-01-single-render-stack",
+    "INIT-06-graph-node-type-model"
+  ],
+  "open_questions": [
+    {
+      "question": "Should S10 (AuthoringStore extraction, ~3000 LOC across ~100 consumer files, the step that actually resolves divergent-change-0002's churn claim) land within this initiative's execution pass, or should S1-S9 (device + library facades, ~1900 LOC) ship first as their own initiative and S10 get ticketed separately once the smaller facades have proven the pattern in production for a cycle?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "The plan names the three facade properties `library`, `device`, and `authoring` on TriggerLab. Are these the names you want on the public surface every view component will reference going forward, or do you want different naming (e.g. matching a planned Svelte 5 context-based DI pattern instead of constructor-injected composition)? Getting this wrong after S8/S9 land means re-touching the ~40 files already retargeted.",
+      "blocks_execution": true,
+      "owner": "trent"
+    },
+    {
+      "question": "Should DeviceLinkStore (S5-S7) also absorb the WS-link-adjacent scalar fields currently direct on TriggerLab (link, latencyMs, output, outputPacketsPerSec, project, tunnel, oscListen, lastOscHeard, presence, backups, authRequired, authFailCount, serverError, serverFrame, serverModel) as a further step, or are those intentionally left on TriggerLab because they feed the render snapshot directly and mixing them into a facade risks an extra indirection in the per-frame read path?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Now that middle-man-0001/speculative-generality-0001 are resolved by exposing the five controllers as named facade properties instead of forwarders, do you want the narrow injected Host interfaces (ShowsControllerHost, SectionsControllerHost, etc.) kept as-is for testability, or collapsed further so each controller just takes the owning facade (or TriggerLab) as `this` -- speculative-generality-0001's own evidence found zero second implementations of any Host interface, so the narrowness may still be pure overhead even after the forwarders are gone?",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ]
+}

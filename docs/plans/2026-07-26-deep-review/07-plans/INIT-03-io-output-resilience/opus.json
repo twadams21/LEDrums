@@ -1,0 +1,235 @@
+{
+  "initiative_id": "INIT-03-io-output-resilience",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-03-io-output-resilience",
+    "model": "claude-opus-5[1m]",
+    "effort": "high"
+  },
+  "summary": "Close the Art-Net/sACN silent-failure hole with the smallest independently-landable steps, reusing surfaces that already exist rather than adding new ones. The load-bearing observation: `OutputStatus.lastError` is ALREADY on the wire (packages/protocol/src/index.ts:110), already validated by outputStatusSchema, and already renders as a pulsing red ERR pill (apps/web/src/lib/app/chrome/output-pill.ts) and a panel row. So the entire resilience fix can land with ZERO wire-protocol change, ZERO zod-schema change, ZERO UI change — the transports gain the OscInputStatus-shaped status seam, OutputManager subscribes to it and writes the existing `lastError` plus the existing `onMonitor` sink (already bound at main.ts:466-467), and the operator sees ERR. That is why this plan routes the subscription through OutputManager instead of main.ts as the finding proposed: OutputManager is where `lastError` and the monitor sink already live, main.ts is a 935-line god-file, and the deep-module surface of the server does not grow by one symbol. Ten steps, each a separate green commit, ordered so that the transport seam is inert (nobody subscribes) until S6 flips it on — meaning a single `git revert` of S6 restores byte-exact pre-change server behaviour without unwinding anything in packages/io. Parity paranoia drives the ordering: the socket lifecycle in artnet.ts/sacn.ts has ZERO test coverage at baseline (packages/io only tests the pure encoders), so S1 builds a hermetic characterization net that PINS today's silent failure BEFORE any adapter is touched. On the universe-domain finding the plan deliberately refuses the rewrite: it lands a pure predicate and a graded diagnostic, and leaves the 0-based-to-1-based renumbering — which would break every operator who already compensated with `startUniverse: 1` — as an explicit question for Trent.",
+  "findings_addressed": [
+    "resilience-hole-0003",
+    "primitive-obsession-0006",
+    "duplicated-code-0012"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Characterization net: hermetic socket-lifecycle tests that pin today's silent failure",
+      "intent": "packages/io has zero coverage of the UDP socket lifecycle — artnet.test.ts and sacn.test.ts exercise only `encodeArtDmx` / `encodeE131` / `sacnMulticastAddress`. Nothing may be changed in a 0%-coverage region until a net exists under it. This step adds no production code: it records, as executable assertions, exactly what ArtNetOutput and SacnOutput do today, including the bug. Later steps flip those assertions, and the diff of the test file becomes the behaviour-change record.",
+      "files": [
+        "packages/io/src/artnet.socket.test.ts",
+        "packages/io/src/sacn.socket.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New file packages/io/src/artnet.socket.test.ts: (a) 'happy path delivers a packet' — bind a `dgram.createSocket('udp4')` receiver on 127.0.0.1 port 0, read its `address().port`, construct `new ArtNetOutput({ host: '127.0.0.1', port: boundPort, iface: '127.0.0.1' })`, `nextFrame()`, `send(1, new Uint8Array(512))`, and await a message-event promise (no fixed sleeps; vitest timeout 2000ms) asserting the received buffer starts with `Art-Net\\0` and is 530 bytes. (b) 'a bind failure is currently silent' — construct `new ArtNetOutput({ host: '127.0.0.1', port: boundPort, iface: '203.0.113.9' })` (TEST-NET-3, RFC 5737, never assigned to a NIC), assert `send()` does not throw, assert the receiver gets nothing within 300ms, and assert the object exposes no status channel (`expect('onStatus' in out).toBe(false)`) — the assertion S4 inverts. Mirror both in sacn.socket.test.ts against 127.0.0.1 with an explicit `host` (unicast, no multicast join needed in CI). Close every socket in `afterEach`. Run: `pnpm gates`.",
+      "reverses": "Delete the two new test files; no production code was touched."
+    },
+    {
+      "id": "S2",
+      "title": "De-duplicate ipToInt/intToIp into packages/io/src/net/ipv4.ts",
+      "intent": "Four private declarations of two byte-identical functions (apps/server/src/network-adapters.ts:32-46 and packages/io/src/pixlite/sweep.ts:28-42) collapse to two exported ones in the lower package. apps/server already depends on @ledrums/io, so the edge exists. Mechanical and behaviour-preserving by construction: the `invalid IPv4 address: ${addr}` throw and the per-octet range check move verbatim, so `listNetworkAdapters`'s skip-a-bad-NIC try/catch and `expandCidr`'s throw keep firing identically.",
+      "files": [
+        "packages/io/src/net/ipv4.ts",
+        "packages/io/src/net/ipv4.test.ts",
+        "packages/io/src/index.ts",
+        "packages/io/src/pixlite/sweep.ts",
+        "apps/server/src/network-adapters.ts"
+      ],
+      "risk": "low",
+      "verification": "New packages/io/src/net/ipv4.ts exports `ipToInt(addr: string): number` and `intToIp(n: number): string`, copied character-for-character from packages/io/src/pixlite/sweep.ts:28-42 (including the error message text and the `(n * 256 + o) >>> 0` accumulation). Add `export * from './net/ipv4';` to packages/io/src/index.ts. Delete both private copies; `sweep.ts` imports from `'../net/ipv4'`, `network-adapters.ts` imports `{ ipToInt, intToIp } from '@ledrums/io'`. New packages/io/src/net/ipv4.test.ts pins the failure path that the copies carried: `expect(() => ipToInt('1.2.3')).toThrow('invalid IPv4 address: 1.2.3')`, `expect(() => ipToInt('1.2.3.256')).toThrow()`, `expect(() => ipToInt('a.b.c.d')).toThrow()`, `expect(ipToInt('255.255.255.255')).toBe(4294967295)`, `expect(intToIp(ipToInt('192.168.1.50'))).toBe('192.168.1.50')`. Existing apps/server/src/network-adapters.test.ts and packages/io/src/pixlite/sweep.test.ts must pass UNCHANGED — that is the parity proof. Run: `pnpm gates`, then `grep -rn 'function ipToInt\\|function intToIp' apps packages` must return exactly one hit each.",
+      "reverses": "`git revert` this commit; the private copies return and no other step depends on this file."
+    },
+    {
+      "id": "S3",
+      "title": "Add the PixelOutputStatus seam to packages/io/src/interfaces.ts (type-only, optional method)",
+      "intent": "Give PixelOutput the observability channel it has never had, mirroring `OscInputStatus` (packages/io/src/osc.ts:205-216) exactly so the house pattern from d1d6eb9 is applied rather than reinvented. `onStatus` is declared OPTIONAL, which is the whole risk-first point: every existing implementor — the two real adapters and the `FakeOutput` classes inside apps/server/src/output-manager.test.ts — still satisfies the interface with no edit, so this commit changes no call graph and no runtime byte.",
+      "files": [
+        "packages/io/src/interfaces.ts"
+      ],
+      "risk": "low",
+      "verification": "Add `export interface PixelOutputStatus { state: 'ready' | 'error'; error?: string; code?: string }` and `onStatus?(handler: (s: PixelOutputStatus) => void): void;` to `PixelOutput`, with a doc comment stating the latch-and-replay contract (the latest status is retained and replayed to a late subscriber) copied in spirit from osc.ts:275-280. Verification that this is inert: `pnpm typecheck` passes with no edit to artnet.ts, sacn.ts, output-manager.ts or any test; and `git diff --stat` for this commit shows exactly one file. Add a compile-time proof in packages/io/src/interfaces.ts's own test surface is unnecessary — instead assert it in S4's test file. Run: `pnpm gates`.",
+      "reverses": "`git revert`; nothing implements or calls `onStatus` until S4."
+    },
+    {
+      "id": "S4",
+      "title": "ArtNetOutput implements PixelOutputStatus — replace the total swallow",
+      "intent": "Turn `this.socket.on('error', () => {})` (artnet.ts:49) and the send-completion `() => {}` (artnet.ts:74) into status emissions. The transmit path's semantics do not change: `send()` keeps its `if (!this.ready) return;` early return, the packet encoding is untouched, and the emit happens inside dgram's asynchronous callbacks — off the render loop's stack — so the fire-and-forget non-negotiable holds. Two hardenings the finding did not name: (1) the per-send emit is rate-limited by a latch-on-change plus a 1000ms floor, so a 44Hz x N-universe error storm cannot flood the Monitor bus; (2) subscriber invocation is wrapped in try/catch, because a throwing handler inside an unhandled dgram callback would crash the server process — strictly worse than the swallow being fixed.",
+      "files": [
+        "packages/io/src/artnet.ts",
+        "packages/io/src/artnet.socket.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "In ArtNetOutput add `private statusHandlers`, `private lastStatus: PixelOutputStatus | null = null`, `private lastEmitMs = 0`, `onStatus(h)` (pushes and immediately replays `lastStatus` when set), and `private emitStatus(s)` (latches, then calls each handler inside try/catch; for `state: 'error'` skips the emit when `s.code === lastStatus?.code` AND `Date.now() - lastEmitMs < 1000`). Wire: `this.socket.on('error', (err: NodeJS.ErrnoException) => this.emitStatus({ state: 'error', error: err.message, ...(err.code ? { code: err.code } : {}) }))`; `onBound` emits `{ state: 'ready' }` after setting `this.ready = true`; `this.socket.send(pkt, this.port, this.host, (err) => { if (err) this.emitStatus({ state: 'error', error: err.message, ...((err as NodeJS.ErrnoException).code ? { code: (err as NodeJS.ErrnoException).code } : {}) }); })`. Tests in artnet.socket.test.ts: (a) INVERT S1's silent-bind assertion — `iface: '203.0.113.9'` now yields an `onStatus` error whose `code` is `EADDRNOTAVAIL` (accept `EADDRNOTAVAIL` or `EINVAL`, asserting `state === 'error'` and a non-empty `error`) within 2000ms; (b) the happy path emits `{ state: 'ready' }` and the loopback receiver still gets the identical 530-byte `Art-Net\\0` packet from S1 — byte-compare against the S1 expectation; (c) a subscriber attaching AFTER the bind resolves is replayed the latched status; (d) 200 synthetic error emissions in one tick produce at most 2 handler calls (rate limiter); (e) `out.onStatus(() => { throw new Error('boom'); })` followed by a real send does not throw out of `send()` and does not emit an `uncaughtException` (assert via `process.listeners` count unchanged and `expect(() => out.send(1, bytes)).not.toThrow()`). Run: `pnpm gates`.",
+      "reverses": "`git revert` this commit restores the `() => {}` swallow. Safe at any time because nothing subscribes until S6; reverting S4 while S6 is landed leaves `onStatus` undefined on ArtNetOutput and S6's optional-chained `this.output.onStatus?.(...)` becomes a no-op — the pre-change behaviour exactly."
+    },
+    {
+      "id": "S5",
+      "title": "SacnOutput implements PixelOutputStatus, including the swallowed multicast-interface failure",
+      "intent": "Same seam, same shape as S4, plus the sACN-specific hole the finding did not enumerate: sacn.ts:97-102 wraps `setMulticastInterface(opts.iface)` and `setMulticastTTL(16)` in a bare `catch { /* ignore */ }`. When a stale `iface` makes that call fail, multicast silently leaves the DEFAULT NIC instead of the one the operator chose — a rig that is dark for a reason nothing reports. Emitting an error status from that catch while STILL setting `this.ready = true` preserves the transmit behaviour exactly and only adds the diagnosis.",
+      "files": [
+        "packages/io/src/sacn.ts",
+        "packages/io/src/sacn.socket.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Add the identical `statusHandlers` / `lastStatus` / `onStatus` / rate-limited, try/catch-guarded `emitStatus` members to SacnOutput (the duplication with S4 is deliberate and named in open_questions — the two classes are already parallel and a shared base class would be a bigger change than this initiative earns). Wire: `this.socket.on('error', ...)` emits instead of swallowing; the bind callback emits `{ state: 'ready' }` after `this.ready = true`; the inner `catch (err)` around `setMulticastInterface`/`setMulticastTTL` emits `{ state: 'error', error: `multicast interface ${opts.iface} unavailable: ${String(err)}`, code: 'EMCASTIFACE' }` and then still falls through to `this.ready = true`. Tests in sacn.socket.test.ts: (a) happy path — loopback unicast receiver gets the identical 638-byte E1.31 packet asserted in S1 (byte-compare) AND a `{ state: 'ready' }` status; (b) `new SacnOutput({ iface: '203.0.113.9', host: '127.0.0.1', port: boundPort })` emits `state: 'error'` yet `send()` still delivers to the receiver — proving observability was added and transmit behaviour was NOT changed; (c) latch-and-replay for a late subscriber; (d) rate-limiter and throwing-subscriber tests mirroring S4(d)/(e). Run: `pnpm gates`.",
+      "reverses": "`git revert` this commit restores both swallows. Independent of S4 (different file, different class), and inert until S6 for the same optional-method reason."
+    },
+    {
+      "id": "S6",
+      "title": "OutputManager subscribes to transport status and writes the EXISTING lastError + monitor sink",
+      "intent": "The step that turns the seam on — and the reason this plan needs no protocol, schema, or UI change. `OutputStatus.lastError` (packages/protocol/src/index.ts:110) already reaches every client on `state` and on every `stats` tick, and apps/web/src/lib/app/chrome/output-pill.ts already branches on it BEFORE the LIVE branch, so a transport fault immediately reads as a pulsing red ERR with the message in the tooltip. `onMonitor` is already bound to the Monitor bus at main.ts:466-467 via `setOutputMonitor`. So the whole wiring is one subscription inside `applySettings`, and the server's public interface does not grow by a single symbol.",
+      "files": [
+        "apps/server/src/output-manager.ts",
+        "apps/server/src/output-manager.test.ts"
+      ],
+      "risk": "high",
+      "verification": "In `applySettings`, immediately after `this.output = this.factory(settings)` succeeds (output-manager.ts:108), take a monotonically increasing `const gen = ++this.transportGen;` and call `this.output.onStatus?.((s) => { if (gen !== this.transportGen) return; if (s.state !== 'error') return; this.lastError = s.code ? `${s.code}: ${s.error ?? 'transport error'}` : (s.error ?? 'transport error'); this.monitorError('Output transport error', settings, this.lastError); });`. The generation guard is the parity-critical detail: `teardown()` (output-manager.ts:125-132) drops `this.output` but the dead socket can still emit afterwards, and without the guard a torn-down transport would write `lastError` for a transport that no longer exists. `this.lastError = null` at line 110 already clears on every re-arm, so the latch resets exactly where the existing contract says it does. Do NOT touch `sendFrame`, `blackout`, `status()`, or the state machine. New tests in apps/server/src/output-manager.test.ts, extending the existing local `FakeOutput` with an `onStatus`/`emit` pair: (a) 'a transport error reaches lastError' — arm, emit `{ state: 'error', error: 'bind failed', code: 'EADDRNOTAVAIL' }`, assert `m.status().lastError` contains `EADDRNOTAVAIL`; (b) 'a transport error reaches the monitor bus' — capture `onMonitor` events, assert one with `type: 'error'` and `source: 'server/output'`; (c) 'a ready status does not touch lastError' — emit `{ state: 'ready' }` after a send throw latched an error, assert the send error is still reported (proves the transport channel cannot silently clear a send-path fault); (d) 'a status from a torn-down transport is ignored' — arm, capture the fake, `applySettings(disabled)`, then emit an error from the captured fake, assert `m.status().lastError` is unchanged; (e) 'a factory whose PixelOutput has no onStatus still arms' — the optional-method compatibility proof, using a bare fake with only nextFrame/send/close. Every one of the ~30 existing OutputManager tests must pass unchanged. Run: `pnpm gates`.",
+      "reverses": "`git revert` of this ONE commit restores byte-exact pre-initiative server behaviour: the io status seam stays landed but has no subscriber, so ArtNetOutput/SacnOutput emit into an empty handler list and `lastError` reverts to send/blackout throws only. This is the designated rollback boundary for the whole initiative."
+    },
+    {
+      "id": "S7",
+      "title": "Pure protocol-universe domain predicate in packages/io/src/universe.ts",
+      "intent": "Give the universe-domain invariant (primitive-obsession-0006) a single named home without branding a type across packages/core. packages/io has no dependency on @ledrums/core (packages/io/package.json declares none), so the protocol union is declared locally and structurally matches `Project['output']['protocol']`. Pure, no IO, no sockets, no callers yet — a step that cannot break anything.",
+      "files": [
+        "packages/io/src/universe.ts",
+        "packages/io/src/universe.test.ts",
+        "packages/io/src/index.ts"
+      ],
+      "risk": "low",
+      "verification": "New packages/io/src/universe.ts exports `export type OutputProtocolTag = 'artnet' | 'sacn';`, `export const SACN_UNIVERSE_MIN = 1;`, `export const SACN_UNIVERSE_MAX = 63999;`, `export function universeDomain(protocol: OutputProtocolTag): { min: number; max: number }` (artnet → `{ min: 0, max: 32767 }` per the 15-bit field at artnet.ts:22-23; sacn → `{ min: 1, max: 63999 }` per ANSI E1.31), and `export function isUniverseValid(protocol: OutputProtocolTag, universe: number): boolean` (integer check plus range). Doc comment records WHY: `sacnMulticastAddress(0)` yields `239.255.0.0`, which is not a valid E1.31 universe group, so a universe-0 sACN stream is multicast into a hole. Add `export * from './universe';` to packages/io/src/index.ts. New packages/io/src/universe.test.ts: `isUniverseValid('sacn', 0) === false`, `isUniverseValid('sacn', 1) === true`, `isUniverseValid('sacn', 63999) === true`, `isUniverseValid('sacn', 64000) === false`, `isUniverseValid('artnet', 0) === true`, `isUniverseValid('artnet', 32768) === false`, `isUniverseValid('sacn', 1.5) === false`; plus a cross-check test asserting `sacnMulticastAddress(0) === '239.255.0.0'` and `sacnMulticastAddress(SACN_UNIVERSE_MIN) === '239.255.0.1'`, documenting the exact defect. Run: `pnpm gates`. No production file outside packages/io/src/index.ts changes.",
+      "reverses": "`git revert`; no caller exists until S8."
+    },
+    {
+      "id": "S8",
+      "title": "Graded universe-domain audit in OutputManager.applySettings (detect, do not renumber)",
+      "intent": "Make the dark-universe condition visible at arm time, at the one place that knows both the protocol and the DmxMap, without touching packages/core, buildDmxMap, or a single transmitted byte. The response is GRADED on purpose: when SOME universes are out of the protocol's domain the operator gets a Monitor row (informative, pill unchanged); only when EVERY universe is out of domain — the unambiguous whole-rig-is-dark case — does it also set `lastError` and turn the pill red. This grading is what makes the step safe to ship: the default kit on sACN produces universes [0, 1] (packages/core/src/geometry/dmx-map.test.ts:87), so universe 1 is valid, the partial branch fires, and no existing operator gets a surprise red pill on upgrade.",
+      "files": [
+        "apps/server/src/output-manager.ts",
+        "apps/server/src/output-manager.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "In `applySettings`, after `this.universeCount = dmxMap.universes.length` and before the state branch, compute `const bad = dmxMap.universes.filter((u) => !isUniverseValid(settings.protocol === 'sacn' ? 'sacn' : 'artnet', u.universe)).map((u) => u.universe);`. Emit at most once per settings+topology signature by folding the check into the existing `settingsMonitorSignature` dedup (extend that signature string with `|${bad.length}`), so a 44Hz caller cannot spam. When `bad.length > 0 && bad.length < dmxMap.universes.length`: `this.onMonitor?.({ type: 'output', direction: 'out', source: 'server/output', destination: outputDestination(settings), label: 'Universes outside protocol range', detail: ... })`. When `bad.length > 0 && bad.length === dmxMap.universes.length`: `this.lastError = ...; this.monitorError('Every universe is outside the protocol range', settings, this.lastError);`. `sendFrame` and `blackout` are NOT touched — the wire output is identical in every case. New tests: (a) 'sACN with the default 0-based map warns but does not error' — universes [0,1], protocol sacn → one `type: 'output'` monitor event, `status().lastError === null`; (b) 'sACN with every universe out of range sets lastError' — a single-universe map at 0 → `lastError` non-null and a `type: 'error'` monitor event; (c) 'Art-Net with universe 0 is silent' — universe 0 is legal Art-Net, assert no warning event at all; (d) 'the audit does not change transmitted bytes' — capture the FakeOutput's sends for the [0,1] sACN case and byte-compare against the same fixture run before this step (the existing 'armed transmits one packet per universe' fixture). Run: `pnpm gates`.",
+      "reverses": "`git revert` this commit; it is independent of S6 (different code path in the same file — rebase the hunks if reverting S6 first) and removes only diagnostics."
+    },
+    {
+      "id": "S9",
+      "title": "Non-negotiable regression locks: no sync IO in the loop, no flood, no crash-by-subscriber",
+      "intent": "The three ways this initiative could violate AGENTS.md's non-negotiables are each given a named, failing-if-broken test, so a later refactor cannot quietly reintroduce them. These are guard tests, not coverage padding: each one asserts a property the plan claims and that nothing else in the suite would catch.",
+      "files": [
+        "apps/server/src/output-manager.test.ts",
+        "packages/io/src/artnet.socket.test.ts"
+      ],
+      "risk": "low",
+      "verification": "(a) 'sendFrame performs no work proportional to status subscribers' — register 100 status handlers on the FakeOutput, run 100 `sendFrame` calls, assert zero handler invocations (status is emitted only from socket callbacks, never from the send path itself). (b) 'a transport error storm is bounded' — emit 1000 identical-code error statuses from the FakeOutput within one fake-clock second (`OutputManager` is constructed with the existing injectable `now`), assert the number of `type: 'error'` monitor events is <= 2; if the rate limiting is proven to live entirely in the adapters (S4/S5) rather than the manager, assert instead that the manager forwards every emission it receives AND that the adapter-level test (e) in S4 caps emissions — state which of the two holds in the commit message. (c) 'a throwing monitor sink cannot kill an armed transport' — set `onMonitor` to a thrower, emit a transport error, assert `sendFrame` still runs and does not throw. (d) In artnet.socket.test.ts, a real-socket timing lock: with a bound loopback receiver, measure that 44 successive `send()` calls return in under 50ms total (`performance.now()` delta) — a coarse but real guard that nothing in the new code made the send path synchronous or blocking. Run: `pnpm gates`.",
+      "reverses": "Delete the added test cases; no production code in this step."
+    },
+    {
+      "id": "S10",
+      "title": "docs-truth pass on every comment that asserts the old silent-failure contract",
+      "intent": "Three prominent doc comments currently describe the world this initiative just changed. Leaving them is a documentation lie that will mislead the next reader into re-deriving the same finding. Comment-only, zero behaviour.",
+      "files": [
+        "packages/io/src/interfaces.ts",
+        "apps/server/src/output-manager.ts",
+        "apps/web/src/lib/app/chrome/output-pill.ts"
+      ],
+      "risk": "low",
+      "verification": "(1) packages/io/src/interfaces.ts — the `PixelOutput` header keeps 'Fire-and-forget' (still true) and gains a sentence that transport liveness is now observable via `onStatus`, mirroring `OscInput`. (2) apps/server/src/output-manager.ts — the class doc at lines 70-74 currently says 'any transition away from armed, or a send error, emits a blackout failsafe'; add that an ASYNCHRONOUS transport fault now latches `lastError` and emits a monitor error but does NOT blackout (there is nothing to blacken — the socket is already not transmitting), so the distinction is recorded rather than inferred. (3) apps/web/src/lib/app/chrome/output-pill.ts — its header says 'a socket can be open and green while output is actually failing (lastError set, packets 0)'; extend it to state that `lastError` now also carries bind-time and send-completion transport faults from packages/io, so ERR fires on a stale-iface bind failure that previously showed LIVE. Verification: `pnpm gates` green, and `grep -rn 'no status\\|swallow\\|() => {}' packages/io/src/artnet.ts packages/io/src/sacn.ts` returns no error-swallowing callback. Reviewer reads the three diffs against the shipped behaviour.",
+      "reverses": "`git revert`; comment-only."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2"],
+    ["S3", "S7"],
+    ["S4", "S5"],
+    ["S6"],
+    ["S8"],
+    ["S9"],
+    ["S10"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/io (src/index.ts public surface)",
+      "removed": [],
+      "added": [
+        "PixelOutputStatus",
+        "PixelOutput.onStatus (optional method)",
+        "ipToInt",
+        "intToIp",
+        "OutputProtocolTag",
+        "universeDomain",
+        "isUniverseValid",
+        "SACN_UNIVERSE_MIN",
+        "SACN_UNIVERSE_MAX"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate. A resilience initiative buys observability with interface, and the objective function cannot be satisfied by a plan that removes the ability to see a dark rig. Two mitigations: (1) ipToInt/intToIp are a net REDUCTION in total declarations — four private copies become two shared exports, which is the whole point of duplicated-code-0012; (2) `onStatus` is optional, so no existing implementor is forced to grow. The universe symbols are pure predicates with no runtime cost and no caller in the hot path."
+    },
+    {
+      "at": "apps/server/src/output-manager.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "The scoring claim of this variant. The entire server-side resilience fix lands behind surfaces that already exist — `OutputStatus.lastError`, `OutputManager.onMonitor`, `status()` — so `OutputManager`'s public methods are byte-identical before and after, no symbol is added to apps/server, and `packages/protocol` is not touched at all. An old web client talking to a new server and a new client talking to an old server both keep working, because the wire shape did not change."
+    },
+    {
+      "at": "packages/protocol",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "Explicitly untouched. The finding's proposed fix implied new wire fields; reusing `lastError` avoids a zod schema change, avoids the `_LockOutputStatus` type assertion churn in packages/protocol/src/schemas.ts:452, and avoids any UI work at all."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates — after EVERY step, not only at the end; each of S1..S10 is its own green commit. Baseline is 2968 tests at sha 3708648 plus the fix batches already landed tonight; the count must only ever rise.",
+      "S2 parity: apps/server/src/network-adapters.test.ts and packages/io/src/pixlite/sweep.test.ts pass with ZERO edits — the dedup is proven by the untouched consumers, not by a new test.",
+      "S2 residue check: `grep -rn 'function ipToInt' apps packages` and `grep -rn 'function intToIp' apps packages` each return exactly one hit.",
+      "S3 inertness: `git show --stat` for the S3 commit lists exactly packages/io/src/interfaces.ts, and `pnpm typecheck` passes with no other file edited — proof the optional method broke no implementor.",
+      "S4/S5 wire parity: the loopback receive-socket assertions byte-compare the 530-byte Art-Net packet and the 638-byte E1.31 packet against the exact expectations recorded in S1, BEFORE the adapters were touched.",
+      "S4/S5 failure-path proof: `new ArtNetOutput({ iface: '203.0.113.9' })` and `new SacnOutput({ iface: '203.0.113.9' })` emit an onStatus error within 2000ms — the assertion S1 recorded as impossible.",
+      "S6 non-regression: all ~30 existing tests in apps/server/src/output-manager.test.ts pass unchanged, including 'armed transmits one packet per universe', 'blacks out the rig when transitioning armed -> disabled', and 'records a send error without crashing'.",
+      "S8 byte parity: the FakeOutput send capture for the default sACN [0,1] fixture is byte-compared against the same capture taken before S8 — the audit must be provably diagnostic-only.",
+      "S9 timing lock: 44 successive send() calls against a bound loopback receiver complete in under 50ms.",
+      "Manual hardware gate (not automatable, see known_gaps): arm sACN against the PixLite, run `tcpdump -i <nic> udp port 5568` alongside, unplug the ethernet cable, and observe (a) an 'Output transport error' Monitor row and a red ERR pill within one second, (b) no change to the packet stream shape while the link is healthy. Record the result on the initiative's Notion row."
+    ],
+    "known_gaps": "The single largest gap is the reason S1 exists: at baseline the UDP socket lifecycle in packages/io/src/artnet.ts and packages/io/src/sacn.ts has ZERO test coverage — artnet.test.ts and sacn.test.ts exercise only the pure encoders (encodeArtDmx, encodeE131, sacnMulticastAddress). A green 2968-test suite at HEAD therefore proves nothing whatsoever about bind, ready-gating, or send-completion behaviour, and 'the suite still passes' would be a meaningless parity claim for S4/S5. What replaces it: S1's hermetic characterization tests, written and landed BEFORE any adapter edit, which pin today's behaviour including the bug, so every later change is measured against recorded fact rather than intuition; and the RFC 5737 TEST-NET-3 address 203.0.113.9, which is guaranteed never assigned to a real NIC and therefore makes the bind-failure path a deterministic, network-free unit test. Three things remain genuinely unprovable in CI and are handed to the manual gate above: (1) real multicast egress on the correct NIC after `setMulticastInterface` — CI has no second NIC and no multicast-capable fabric, so the sACN iface tests use unicast to 127.0.0.1 and prove only that the diagnostic fires, not that packets reached the right wire; (2) the actual ethernet-to-wifi hot-swap, which cannot be simulated because Node's dgram gives no hook for a NIC disappearing under a bound socket; (3) whether the operator NOTICES the red pill mid-show, which is a human-factors question no test answers. Additionally, the universe-domain work (S7/S8) is verified only against the DmxMap shape, not against a real controller: whether a PixLite ignores a universe-0 sACN stream in practice is asserted from the E1.31 spec and from the existing 0-to-1 conversion at apps/web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:59-62, not from a packet capture, and the plan deliberately does not renumber anything on that unverified basis.",
+    "baseline_reference": "sha 3708648, 2968 tests green under `pnpm gates`, plus fix batches 1-3 already landed (12 dead-code auto-fixes, dead-code residue, kit-mirror removal with the mirror FIELD gone at every layer and setKitGlobal surviving)."
+  },
+  "rollback_strategy": "Ten separate commits on one branch, each independently revertible, with S6 as the designated single-commit rollback boundary. The ordering is built for this: S3, S4, S5 and S7 are INERT — `onStatus` is an optional method with no subscriber and `isUniverseValid` has no caller — so nothing observable changes until S6 flips the subscription on and S8 adds the audit. Backing the initiative out therefore has three tiers. (1) Show-day panic: `git revert` the S6 commit alone. The io status seam stays landed but emits into an empty handler list, and server behaviour returns byte-exact to pre-initiative — `lastError` again reflects only synchronous send/blackout throws. If S8 has also landed, revert S8 first (it touches the same file). (2) Diagnostic too loud: revert S8 alone to drop the universe audit while keeping the transport-error surfacing. (3) Full withdrawal: revert S10, S9, S8, S6, S5, S4, S3, S2, S1 in reverse order; S2 is the only one with a consumer outside packages/io (apps/server/src/network-adapters.ts) and its revert restores the private copies. Nothing in this plan persists state, migrates data, or changes a wire format: `packages/protocol` is untouched, `outputStatusSchema` is unchanged, and no zod schema, project file, or kit file gains or loses a field — so there is no forward-incompatible artifact to unwind and no version skew between an old client and a new server in either direction. The one irreversible-in-spirit change is operator expectation: once a drummer has seen the ERR pill fire on a dead socket, reverting means going back to a silent rig, which is a product decision rather than a technical one.",
+  "estimated_loc": 620,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should a transport `lastError` auto-clear when frames start flowing again, or stay latched until the operator re-arms? Today `lastError` is sticky (cleared only on transport re-construction at output-manager.ts:110), so a single transient EHOSTUNREACH will pin the pill red for the rest of the show even after the network recovers. Sticky is the honest-but-annoying choice; auto-clearing risks hiding a flapping link. This plan ships sticky because it matches the existing contract exactly, but the show-floor call is Trent's.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "When a bind fails from a stale iface (the ethernet-to-wifi headline scenario), should the adapter attempt an automatic re-bind — with backoff, and possibly falling back to the default interface — or stay strictly observe-only? This plan is observe-only: auto-recovery changes live-path behaviour mid-show and could start transmitting from an interface the operator did not choose, which is a different failure, not a smaller one.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "sACN universe numbering: should `buildDmxMap` become protocol-aware and emit 1-based universes for sACN, or should the 0-based map stand with the operator setting `startUniverse: 1` per output? Renumbering silently changes the wire for every existing project — including rigs where the operator ALREADY compensated at the controller or with startUniverse, which would break them. This plan therefore only detects and reports (S7/S8) and does not renumber. The renumbering is an architecture-and-migration call that belongs to Trent and, if taken, deserves its own initiative with a kit-schema migration.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Is S8's grading right — Monitor row when SOME universes are out of the protocol domain, red ERR pill only when ALL of them are? The grading was chosen because the default kit on sACN yields universes [0, 1], so the partial branch fires and no current user gets a surprise red pill on upgrade. If Trent would rather any dark universe read as an error, S8 collapses to a single loud branch and the upgrade becomes visibly noisier for existing sACN projects.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "ArtNetOutput and SacnOutput will carry an identical ~25-line status block after S4/S5. Extract a shared `StatusEmitter` helper inside packages/io, or accept the duplication? This plan accepts it: the two classes are already structurally parallel, a shared base class or mixin is a bigger structural move than a resilience initiative earns, and the duplication is small, adjacent, and obvious. Phase 9 should decide whether a sibling variant's extraction is worth the extra blast radius.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    },
+    {
+      "question": "Which layer owns the error-storm rate limit — the adapters (S4/S5, where the socket callback fires) or OutputManager (S6, where the Monitor bus is)? This plan puts it in the adapters so the cap holds for any future subscriber, and S9(b) has a branch for asserting whichever placement ships. An implementer can settle this from the code without escalating.",
+      "blocks_execution": false,
+      "owner": "implementer"
+    }
+  ]
+}

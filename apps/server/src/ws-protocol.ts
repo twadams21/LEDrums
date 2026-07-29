@@ -8,7 +8,6 @@ import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '
 // types here so the server's existing `./ws-protocol` import paths keep working; this
 // module owns the server-side runtime helpers (decode/encode/serialize) below.
 export type {
-  BackupReason,
   BackupSnapshotMeta,
   ClientMessage,
   ControllerStatus,
@@ -20,15 +19,11 @@ export type {
   OscListenInfo,
   OutputStatus,
   MonitorEvent,
-  MonitorEventType,
-  SerializedDrum,
   SerializedModel,
   ServerMessage,
   ShowLibraryBlob,
   SongLibraryBlob,
   TunnelInfo,
-  TunnelStatus,
-  VoiceStats,
 } from '@ledrums/protocol';
 
 // ---------------------------------------------------------------------------

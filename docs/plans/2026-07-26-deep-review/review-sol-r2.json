@@ -1,0 +1,263 @@
+{
+  "reviewer": "gpt-5.6-sol(high)",
+  "target": "docs/plans/2026-07-26-deep-review/SPEC.md",
+  "round": 2,
+  "verdict": "BLOCK",
+  "verdict_rationale": "The revised design adds a positive-verification gate that can contaminate its own evidence because code-removal checks have no isolation or serialization contract. The run is also not launchable as written: the attested wrapper is absent, and the undefined admission/cost variables can expand the stated 25–45-verifier phase to 135 Opus-high calls.",
+  "strongest_objection": "Phase 3b turns a wide, per-finding verification fan-out into mutation-based experiments—remove a symbol, build, and run the suite—but only Phase 5 is assigned worktrees. Under the stated concurrency, two dead-code candidates can be removed in the same checkout before either suite runs, so each lane can attribute a green result to its own deletion even though it actually tested the combined patch; restoration can race as well. That produces exactly the confident wrong evidence the split was introduced to prevent, so the new correctness gate is unsound until every experiment is isolated or the experiments are serialized against the pinned baseline.",
+  "scores": {
+    "D1_soundness": {
+      "score": 0,
+      "why": "Matches the 0 anchor: a core mechanism cannot work safely as described. Phase 3b requires symbol-removal experiments while Phase 3 is wide and no isolation appears until Phase 5, so evidence can be cross-contaminated."
+    },
+    "D2_completeness": {
+      "score": 0,
+      "why": "Matches the 0 anchor: Phase 4 consumes verified survivors and eligibility facts that no phase artifact contract reliably produces; 3b evidence/status and the load-bearing-slack fields are not defined at the seam."
+    },
+    "D3_cost_realism": {
+      "score": 0,
+      "why": "Matches the 0 anchor: the arithmetic fails as a launch constraint. `N_MAX` caps findings, but each finding costs one or three Opus-high calls, so 45 admitted findings can mean 135 verifiers, while `batch_size` and the per-run probe wrappers are undefined."
+    },
+    "D4_failure_modes": {
+      "score": 0,
+      "why": "Matches the 0 anchor: overlapping Phase 3b mutations can produce a confident green verdict attributed to the wrong deletion with no required signal that another candidate was present in the checkout."
+    },
+    "D5_evidence": {
+      "score": 0,
+      "why": "Matches the 0 anchor: the load-bearing claim that the nonce wrapper, probe script, and transcript are committed is contradicted by the repository and execution environment; the only located wrapper is a scratchpad file with no nonce logic."
+    },
+    "D6_scope": {
+      "score": 3,
+      "why": "Matches the 3 anchor: the phases still have identifiable consumers and the defects are chiefly soundness and contract failures, not an entire redundant phase or unjustified expansion."
+    },
+    "D7_fix_integrity": {
+      "score": 0,
+      "why": "Matches the 0 anchor: A3 is claimed as committed but is absent, A10 is contradicted by unchanged discard language and omitted from the seam list, and several other fixes are present only as unenforced prose or introduce new failure paths."
+    }
+  },
+  "fix_regression": [
+    {
+      "adjudication_id": "A1",
+      "status": "introduced_new_problem",
+      "evidence": "The per-lens table landed in Solution, but `≥N` is undefined for duplication and divergent-change criteria, and Speculative Generality and Middle Man label the model-judged deletion test as mechanical. The table therefore does not supply an executable criterion for every lens it marks mechanical."
+    },
+    {
+      "adjudication_id": "A2",
+      "status": "introduced_new_problem",
+      "evidence": "Phase 3 is split into 3a and 3b, but 3b specifies mutation-based proof for dead code without a worktree or serialization contract, gives no mechanical procedure for the other checked lenses, and has no explicit evidence artifact at the Phase 3 seam."
+    },
+    {
+      "adjudication_id": "A3",
+      "status": "absent",
+      "evidence": "SPEC says the nonce-capable `codex-agent.sh`, probe, and transcript are committed. No such tracked artifacts exist; the only located LEDrums wrapper is under `~/.cctmp/.../scratchpad/codex-agent.sh`, and reading it shows no nonce generation, provenance header, or validator."
+    },
+    {
+      "adjudication_id": "A4",
+      "status": "landed",
+      "evidence": "The Testing Decisions section now names `pnpm gates`, `scripts/with-gate-lock.mjs`, and the shell worker caps accurately. `package.json`, the lock script, the live environment, and `~/.zshenv` confirm the mutex and effective max of 2."
+    },
+    {
+      "adjudication_id": "A5",
+      "status": "landed",
+      "evidence": "Phase 0 step 2 now requires version-pinned `pnpm dlx` acquisition and records resolved versions. Independent checks confirm the five tools are absent from PATH and undeclared in workspace manifests, so the acquisition step addresses the verified baseline."
+    },
+    {
+      "adjudication_id": "A6",
+      "status": "absent",
+      "evidence": "The finding schema is still named but not defined, and Phase 0 does not schedule writing it. REVIEW-RESPONSE explicitly carries this forward as unresolved, so it is recorded here as required but not raised again as a standalone finding."
+    },
+    {
+      "adjudication_id": "A7",
+      "status": "prose_only",
+      "evidence": "The zero-interface guard/error-path ineligibility sentence landed, but no earlier phase produces the exported-interface delta and safety-path classification that deterministic Phase 4 needs to enforce it before a Phase 5 diff exists."
+    },
+    {
+      "adjudication_id": "A8",
+      "status": "landed",
+      "evidence": "The scope table is explicitly marked stale and superseded, and Phase 0 step 1 requires regeneration at a pinned green SHA with the exact `git ls-files` filter command recorded."
+    },
+    {
+      "adjudication_id": "A9",
+      "status": "introduced_new_problem",
+      "evidence": "The fixed total is disclaimed and formulas plus an admission cap were added, but `N_MAX` and `batch_size` are undefined, the cap counts findings rather than one-or-three verifier calls, and one global wrapper formula conflicts with Phase 5's explicit one-wrapper-per-worktree rule."
+    },
+    {
+      "adjudication_id": "A10",
+      "status": "introduced_new_problem",
+      "evidence": "Phase 3 now says refuted findings are retained in `03-refuted.json`, but Solution and User Story 4 still require them to be discarded, and the phase-artifact seam omits `03-refuted.json`. The retained records also do not measure a false-negative rate without an independent ground-truth sample."
+    },
+    {
+      "adjudication_id": "A11",
+      "status": "landed",
+      "evidence": "Phase 0 step 3 now calibrates one real end-to-end lane and replaces the trivial three-lane probe extrapolation with measured wrapper boot cost and Sol throughput before the broad fan-out."
+    },
+    {
+      "adjudication_id": "A12",
+      "status": "landed",
+      "evidence": "The rejection is correct rather than a missing fix: `env` and `~/.zshenv` show live Vitest min/max thread and fork settings of 1/2, and `with-gate-lock.mjs` respects them via nullish defaults."
+    },
+    {
+      "adjudication_id": "A13",
+      "status": "landed",
+      "evidence": "No initiative-count finding is re-raised. The revised note makes the scaling variables explicit as Phase 7=`3I`, Phase 8=`2I`, Phase 9=`I`, which is consistent with the adjudication that eight Phase 8 agents represented two reviewers across four initiatives in the earlier example rather than four total initiatives implied elsewhere."
+    },
+    {
+      "adjudication_id": "A14",
+      "status": "landed",
+      "evidence": "The revised transport section now distinguishes bare-CLI proxy routing, which it says was proven, from wrapper fidelity, which it admits the original probe did not prove. The missing nonce implementation remains an A3 regression rather than a renewed claim that routing itself is unproven."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "dimension": "D1",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Implementation Decisions → The phases → Phase 3b",
+      "quote": "For dead code: grep for dynamic-access patterns (string-keyed registries, dynamic import, reflection), confirm the bundler tree-shakes it, and confirm the suite stays green with the symbol removed.",
+      "claim": "Phase 3b requires code-removal experiments but provides neither per-candidate worktree isolation nor serialization, so concurrent verification can test combined patches and misattribute the result.",
+      "failure_scenario": "Two admitted dead-code findings target different symbols in the same package. Their 3b lanes remove both symbols in the shared checkout before either runs the build and suite; both lanes see green and each records independent proof for its own deletion, even though neither deletion was tested alone. A restore race can also leave one lane testing a checkout different from the one it reports.",
+      "would_change_my_mind": "A Phase 3b contract that creates a disposable worktree at the pinned baseline for every mutation experiment, records the exact diff and HEAD used for each result, and prevents another candidate's patch from entering that checkout; a fully serialized equivalent would also refute this.",
+      "recommendation": "Run every mutation-based 3b check in its own disposable worktree at the pinned SHA, or serialize all such checks; add the candidate diff hash and tested commit to the verdict artifact."
+    },
+    {
+      "id": "F2",
+      "dimension": "D7",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Solution → per-lens acceptance criteria; Testing Decisions",
+      "quote": "Speculative Generality | Deletion test | ✅",
+      "claim": "The criteria table calls model-judged tests mechanical, while Phase 3b requires non-model evidence and Testing Decisions says the deletion test is applied by a model; several other mechanical rows also have no verification procedure or resolved threshold.",
+      "failure_scenario": "A Speculative Generality or Middle Man finding survives 3a. To pass 3b, the workflow must either ask a model to apply the deletion test, contradicting the non-model gate, improvise an unstated oracle, or route every such finding to structural planning despite the table declaring it mechanically verifiable. Duplicated Code and Divergent Change additionally cannot apply their `≥N` thresholds because N is never set.",
+      "would_change_my_mind": "A table that classifies deletion-test and semantic-history criteria as non-mechanical, plus explicit deterministic 3b procedures and concrete thresholds for every row still marked mechanical.",
+      "recommendation": "Reclassify Speculative Generality, Middle Man, and semantic history checks as non-mechanical unless a reproducible oracle is defined; specify the 3b command/evidence contract and numeric thresholds for every mechanical or partial criterion."
+    },
+    {
+      "id": "F3",
+      "dimension": "D2",
+      "severity": "major",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Solution → load-bearing-slack protection; Phase 4",
+      "quote": "a finding whose fix changes no exported interface while removing a guard, error branch, or failure path is ineligible for Phase 5 auto-fix regardless of model confidence",
+      "claim": "The A7 admission rule is not enforceable at Phase 4 because no preceding phase is required to compute the proposed fix's exported-interface delta or classify removed safety paths, and the actual diff does not exist until Phase 5.",
+      "failure_scenario": "A finder labels a file-local fallback branch as dead code and proposes a sub-50-LOC deletion. Phase 4's plain JavaScript can see size and locality but has no required `removes_guard`, `removes_failure_path`, or interface-before/after data, so it routes the candidate to Phase 5 before the safety rule can be evaluated.",
+      "would_change_my_mind": "A defined finding/verdict field set populated before Phase 4, with a deterministic rule that sends unknown or safety-positive values to structural review, or a dry-run diff stage that computes these facts before triage.",
+      "recommendation": "Make the protection fail closed: add required safety-removal and interface-delta fields produced before Phase 4, and route `unknown` to structural planning; alternatively classify every deletion as structural until a dry-run diff is inspected."
+    },
+    {
+      "id": "F4",
+      "dimension": "D5",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Implementation Decisions → The wrapper primitive",
+      "quote": "`codex-agent.sh`, the probe script, and its transcript are committed to the output root so the claim is reproducible rather than reported.",
+      "claim": "The A3 fix is asserted but not implemented: the repository contains none of the claimed committed artifacts, and the only located scratchpad wrapper has no nonce or provenance validation.",
+      "failure_scenario": "Run A starts in a fresh session that cannot resolve the old scratchpad path, so Sol lanes fail outright; or it reuses the scratchpad wrapper, whose implementation directly execs `claude` without generating or validating a nonce, leaving wrapper self-answer and wrong-model relay undetected while the workflow reports schema-valid results.",
+      "would_change_my_mind": "Tracked, referenced wrapper and probe files containing nonce generation, child-bound nonce injection, workflow-side validation, a model-identity source not based on model self-report, and a committed successful transcript from that exact implementation.",
+      "recommendation": "Commit the wrapper, validator, probe, and transcript before Run A; reference exact paths and hashes from the spec, and fail the transport preflight if any artifact or attestation field is missing."
+    },
+    {
+      "id": "F5",
+      "dimension": "D7",
+      "severity": "major",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "Solution; User Stories; Phase 3a; Seams",
+      "quote": "Findings that do not survive are discarded, not noted.",
+      "claim": "The A10 retention fix is internally contradictory and absent from the artifact contract: top-level requirements still mandate discard, Phase 3 mandates `03-refuted.json`, and the seam list exposes only `03-verdicts.json`.",
+      "failure_scenario": "A workflow author follows Solution and User Story 4 and drops refuted records, so the later false-negative audit has no data; another author follows Phase 3 and writes `03-refuted.json`, but Run B/C and future sessions do not treat it as a declared seam or know its schema/consumer. Either implementation can claim conformance to a different part of the spec.",
+      "would_change_my_mind": "Consistent retention language throughout, `03-refuted.json` in the seam list with a schema and named consumer, and an independent sampling procedure that can turn retained records into an actual false-negative estimate.",
+      "recommendation": "Remove the discard requirements, declare the full refuted-record artifact and consumer, and describe a ground-truth sample; retaining model verdicts alone is not a false-negative-rate measurement."
+    },
+    {
+      "id": "F6",
+      "dimension": "D3",
+      "severity": "critical",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "The phases table; Phase 3 admission cap; Further Notes → budget",
+      "quote": "Phase 3 accepts at most `N_MAX` findings, ranked by severity × blast radius.",
+      "claim": "The new cap does not bound the stated cost centre: `N_MAX` is undefined and caps findings while the actual Opus-high cost is one or three refuters per finding; the wrapper formula likewise uses an undefined homogeneous `batch_size` despite Phase 5 requiring one wrapper per worktree.",
+      "failure_scenario": "Phase 0 admits 45 findings because the table still presents 25–45 Phase 3 agents. If all fixes exceed 50 LOC or touch `packages/core`, the spec launches 135 Opus-high refuters, then reaches the 70% usage wall mid-gate. Choosing `N_MAX=15` to preserve a 45-call ceiling instead drops the expected intake below the table's low scenario. Separately, `ceil(sol_lanes/batch_size)` undercounts Phase 5 and the three mandatory transport-probe reruns because those wrappers cannot be pooled as one homogeneous batch.",
+      "would_change_my_mind": "A formula that caps total verifier calls or predicted Opus tokens rather than findings, defines all variables from calibration, allocates the 1-vote/3-vote mix, sums wrappers per phase/run including probe reruns and one-per-worktree lanes, and gives low/base/high numerical scenarios below the usage threshold.",
+      "recommendation": "Replace `N_MAX` with an explicit verifier-call/token budget and an admission algorithm whose total votes fit it; calculate wrappers as a sum of per-phase terms and include all A/B/C preflight probes."
+    },
+    {
+      "id": "F7",
+      "dimension": "D2",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "User Stories 16; Seams; Phase 10",
+      "quote": "I want each phase to emit a machine-readable artifact against a documented schema, so that a later phase can consume it without re-deriving it from prose.",
+      "claim": "The declared data flow violates its own machine-readable contract: Phase 4, Phase 9, and Phase 10 emit Markdown, while Phase 10 is said to render from the Phase 2 finding schema even though initiative grouping, plan dependencies, risk, and payoff arise later.",
+      "failure_scenario": "Phase 4 groups four findings into one structural initiative, and Phase 9's Markdown synthesis introduces dependency edges and a migration order. Phase 10 receives no canonical structured initiative or synthesis record containing those fields, so it must parse/reason over prose and re-derive risk/payoff—the exact seam failure User Story 16 forbids—and a future session can rank the same material differently.",
+      "would_change_my_mind": "Canonical JSON artifacts with schemas for triage/initiative grouping, synthesis, and ranking inputs, with Markdown generated only as a view, plus an explicit Phase 10 input list that includes the later plan metadata.",
+      "recommendation": "Make `04-ledger.json`, `09-synthesis/<initiative>.json`, and `10-ranked.json` canonical and generate the `.md` files from them; name every Phase 10 input and field owner."
+    },
+    {
+      "id": "F8",
+      "dimension": "D4",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Phase 3 → Admission cap",
+      "quote": "Anything dropped is logged with its count and reason; a bounded intake must never read as full coverage.",
+      "claim": "Count-only logging destroys the individual unverified findings before human review, recreating the false-negative data loss A10 fixed for refuted findings and preventing the cap from being audited or resumed.",
+      "failure_scenario": "Phase 2 emits 120 candidates and `N_MAX` admits 45. The remaining 75 are represented only as a count and generic capacity reason; a real high-payoff issue misranked by model-assigned severity cannot be inspected, sampled, re-admitted after a usage reset, or routed to the structural track, yet the final output has no record of what was omitted.",
+      "would_change_my_mind": "A full `03-deferred.json` containing every dropped finding, rank components, admission reason, and source artifact, plus a named later consumer or sampling/re-admission path.",
+      "recommendation": "Retain complete deferred records rather than counts, publish admitted/deferred denominators by lens, and allow a later run or human to promote deferred candidates without rerunning Phase 2."
+    }
+  ],
+  "assumptions_made": [
+    "I infer that Phase 3b checks are performed per finding and may overlap because Phase 3 is described as a wide per-finding agent gate and no separate serial 3b executor is specified.",
+    "I interpret `N_MAX` literally as a cap on findings, not verifier calls, because that is the spec's wording; the one-versus-three vote rule therefore multiplies the call count after admission.",
+    "I infer that deterministic Phase 4 is intended to enforce the Phase 5 ineligibility rule because it is the sole triage/split phase before fixing begins.",
+    "I treat Markdown as non-canonical machine-readable data unless a schema or structured sidecar is specified; none is named for Phases 4, 9, or 10.",
+    "I interpret `committed to the output root` as git-tracked in this repository at review time, not merely planned for a future Phase 0 step.",
+    "I do not infer an initiative count from the fixed-looking Phase 7–9 table; A13's rejected round-1 interpretation is not reused."
+  ],
+  "checked_independently": [
+    {
+      "claim": "The nonce-capable wrapper, probe, and transcript are committed and reproducible.",
+      "scope_searched": "Ran `git ls-files 'docs/plans/2026-07-26-deep-review/**' 'scripts/**'`; `find docs scripts` for codex/probe names; `find $PWD $HOME/.twux $HOME/.claude` for `codex-agent.sh` and probe names; `find $HOME/.cctmp` for the same; `git log --all --name-only` and `git log -S` for wrapper/nonce history; read the located workflow script and scratchpad `codex-agent.sh`.",
+      "result": "contradicted",
+      "detail": "No tracked wrapper, validator, probe transcript, or nonce implementation exists. The global workflow script points to a session scratchpad wrapper, and that wrapper directly execs `claude` with no nonce logic."
+    },
+    {
+      "claim": "Full gates are machine-serialized and the effective interactive Vitest cap is 2.",
+      "scope_searched": "Read root `package.json` and `scripts/with-gate-lock.mjs`; ran `env | grep` for all VITEST min/max variables; grepped `~/.zshenv` and `~/.zshrc`; searched git history for the gate/test-lock scripts.",
+      "result": "confirmed",
+      "detail": "`pnpm gates` uses the external `~/.ledrums/locks/gates.lock` mutex. The live environment and `~/.zshenv` set min=1/max=2 for threads and forks; the gate script uses `??=` defaults, so 2 remains effective."
+    },
+    {
+      "claim": "The five Phase 0 audit tools are not available from the current workspace/environment and need acquisition.",
+      "scope_searched": "Ran `command -v` for `knip`, `ts-prune`, `depcheck`, `madge`, and `jscpd`; used `git grep` across all package manifests and `pnpm-lock.yaml`; inspected the pnpm/npm global-bin locations reported by their CLIs.",
+      "result": "confirmed",
+      "detail": "All five are absent from PATH and have no workspace manifest or lockfile declaration."
+    },
+    {
+      "claim": "twux's default live-child width cap is 3.",
+      "scope_searched": "Checked the live environment for `TWUX_MAX_WIDE`, grepped `~/.zshenv` and `~/.zshrc`, and searched `~/.twux` shell/docs/config files for `TWUX_MAX_WIDE` and max-wide definitions.",
+      "result": "confirmed",
+      "detail": "No environment override is active; the installed twux documentation and routing implementation describe a default cap of 3."
+    },
+    {
+      "claim": "The revised spec defines `N_MAX`, `batch_size`, and a complete Phase 3/refuted artifact contract somewhere outside the quoted paragraphs.",
+      "scope_searched": "Grepped every `.md` and `.json` under `docs/plans/2026-07-26-deep-review/` for `N_MAX`, `batch_size`, `03-refuted`, `03-verdicts`, `mechanical verification`, and `acceptance criterion`; inspected the full SPEC and the directory's complete file list.",
+      "result": "contradicted",
+      "detail": "`N_MAX` and `batch_size` are referenced but never assigned or derived. `03-refuted.json` appears in Phase 3 prose and review materials but not in the SPEC seam list, and no 3b evidence schema/artifact is defined."
+    }
+  ],
+  "no_findings_justification": "",
+  "coverage_gaps": [
+    "Per the review brief, I did not run builds, tests, package acquisition, proxy calls, or a live nonce experiment; findings about 3b concurrency and nonce semantics are based on the specified control flow plus the inspected existing artifacts.",
+    "The finding schema is explicitly carried forward as unresolved in REVIEW-RESPONSE, so I recorded A6 as absent in `fix_regression` but did not duplicate that known issue as a standalone finding.",
+    "The actual structural-initiative count `I`, deduped finding distribution, 1-vote/3-vote mix, and calibrated wrapper throughput do not exist before Run A, so I could assess formula completeness but not produce corrected numeric costs.",
+    "I did not reassess the carried-forward Phase 8 effort-tier choice or the `apps/web` partition choice because the rubric marks the spec's carried-forward unresolved items out of bounds."
+  ]
+}

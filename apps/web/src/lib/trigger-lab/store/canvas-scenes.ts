@@ -19,7 +19,7 @@ import { mapParamSpec } from '../fixtures';
 import { defaultParams, type EffectDef, type GraphNode, type Preset, type TriggerGraph } from '../sim';
 
 /** The bus canvas nodes default onto (the always-on base layer). */
-export const CANVAS_BUS_ID = 'base';
+const CANVAS_BUS_ID = 'base';
 
 /** A fresh authored scene — one drifting stripe field, ready to tweak in the JSON editor. */
 export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasScene {

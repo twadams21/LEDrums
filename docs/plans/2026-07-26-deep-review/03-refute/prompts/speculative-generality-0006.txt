@@ -1,0 +1,40 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   THE DELETION TEST: imagine the module gone. If complexity VANISHES it was a pass-through (finding stands). If complexity REAPPEARS across N callers it was earning its keep (finding falls). Also: one adapter = hypothetical seam, TWO adapters = real seam.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: speculative-generality-0006
+lens: speculative-generality
+criterion: deletion-test
+severity: major (author confidence: high)
+locations:
+  packages/core/src/voice/modulation-parity.ts:1-101 (MODULATION_PARITY_CASES / PARITY_PHASES / legacyEnvValue / mappingEnvValue / ParityCase)
+  packages/core/src/voice/index.ts:20-26 (export { … } from './modulation-parity')
+
+claim: modulation-parity.ts exists to prove that a legacy per-param envelope sweep and its equivalent Mapping agree sample-for-sample across the S33→S35 migration. Its own header says so, and its instruction — "Importable + reusable — do not inline these into a test file" — is what put it in the production barrel at voice/index.ts:20-26. The migration has shipped: apps/web/src/lib/trigger-lab/store/hydrate.ts:283 now bakes the envelope→mapping conversion at hydrate time, and the only production use of the modulation model is `envelopeToMapping` from modulation.ts (live in modifier-graph.ts:43). `legacyEnvValue` (modulation-parity.ts:86) is a hand-copied historical formula with NO production counterpart anywhere in the tree — it is a frozen replica of code that no longer exists. Grepping all five exported symbols finds exactly two consumers, both test files: packages/core/src/voice/modulation.test.ts:17-20 and apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:37-40. Five symbols of a pure library's public API are a test fixture; every downstream package that imports `voice` gets them in autocomplete and in the API-compatibility surface.
+
+evidence the author gave:
+  [grep] rg -n "MODULATION_PARITY_CASES|legacyEnvValue|mappingEnvValue|PARITY_PHASES|ParityCase" -g '!node_modules' -g '!dist' -g '!*.json' :: Consumers outside the defining file: packages/core/src/voice/index.ts:21-25 (the barrel re-export), packages/core/src/voice/modulation.test.ts:17-20/223-231, apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:37-40. Zero production consumers.
+  [read]  :: modulation-parity.ts:1-12 header — "Legacy env-sweep ↔ modulation-mapping PARITY FIXTURE (S33 → S35)… S35's EnvMap→envelope-node migration reuses these cases + helpers to prove pre-migration behaviour is byte-preserved after the legacy field is removed." The migration it was staged for is complete.
+  [grep] rg -n "envelopeToMapping" -g '!node_modules' -g '!*.md' | grep -v test :: Production users of the modulation model are modifier-graph.ts:21/43 and web hydrate.ts:243/283 — none of them touch the parity module. `legacyEnvValue` has no production analogue at all.
+
+proposed fix: Keep the regression value, drop the public surface. Move modulation-parity.ts to a test-only location that both suites can still import (a `packages/core/src/voice/__fixtures__/` file, or a dedicated `@ledrums/core/testing` subpath export), and delete the five re-exports from voice/index.ts. The cross-package import from the web test is the only reason it is in the barrel; a `testing` subpath serves that honestly and keeps fixtures out of the production API contract.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"speculative-generality-0006",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"deletion-test",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

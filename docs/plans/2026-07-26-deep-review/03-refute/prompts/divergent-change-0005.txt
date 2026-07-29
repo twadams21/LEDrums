@@ -1,0 +1,41 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   One logical change requires edits in >=4 files, evidenced from >=3 commits in git log.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: divergent-change-0005
+lens: divergent-change
+criterion: change-scatter
+severity: major (author confidence: high)
+locations:
+  packages/core/src/geometry/kit-schema.ts:5-236 (zod schemas + inferred types)
+  packages/core/src/geometry/kit-schema.ts:244-456 (migration transforms + migrateKit)
+  packages/core/src/geometry/kit-schema.ts:466-542 (drumHoopCount / logicalOutputCount / logicalOutputsForPhysical / reconcileOutputs)
+
+claim: One file holds three independent change axes: (1) the zod schema surface and its inferred types (lines 5-236), (2) the v1→v7 migration ladder — `shiftOutputHoops`, `splitOutputDataLines`, `shiftDrumOriginToCentre`, `shiftDrumToHoops`, `isRawVec3` and `migrateKit` (lines 244-456), and (3) derived query/reconciliation helpers that are pure functions OF a parsed kit — `drumHoopCount`, `drumDensity`, `logicalOutputCount`, `logicalOutputsForPhysical`, `reconcileOutputs` (lines 466-542). Git confirms these are genuinely unrelated reasons to change: 15 commits, some adding a schema field (0491a13 per-output RGB order, 85e6995 per-hoop attributes), some adding a migrator (b5495d8 v?→expanded, cba77b5 1-based indexing, 182ed74 v6→7), and some changing only a derived query (4890f0f drumHoopCount, c0bfbec reconcileOutputs).
+
+evidence the author gave:
+  [grep] grep -n "^export |^function |^const " packages/core/src/geometry/kit-schema.ts :: `grep -n '^export |^function ' packages/core/src/geometry/kit-schema.ts` shows the three clusters cleanly separated by line range: schemas end at 236, migration helpers run 244-394, migrateKit/parseKit at 395-465, derived helpers 466-542.
+  [git-history] for c in $(git log --format='%h' -60 -- packages/core/src/geometry/kit-schema.ts); do git log -1 --format='%h %s' $c; done :: 15 commits, distinct reasons: 46eeca7 (output ids), c0bfbec (reconcileOutputs), 48eca04 (flat rgbOrder + invariant), 182ed74 (v6→7 migrator), 4890f0f (drumHoopCount), 0491a13 (per-output RGB order), 85e6995 (per-hoop model attrs), 6350289 (drum origin), b5495d8 (expanded-mode + migrator), cba77b5 (1
+  [tool-output] wc -l packages/core/src/geometry/kit-schema.ts :: wc -l = 542, and CURRENT_KIT_VERSION = 7 at line 200 with the whole ladder below it — every future kit version adds a transform to this same file.
+
+proposed fix: Split by change axis inside packages/core/src/geometry/: `kit-schema.ts` keeps only the zod declarations + inferred types + `parseKit`; `kit-migrations.ts` takes `CURRENT_KIT_VERSION`, the four shift/split transforms, `isRawVec3` and `migrateKit` (parseKit calls into it); `kit-queries.ts` takes `drumHoopCount`, `drumDensity`, `PIXLITE_PHYSICAL_OUTPUTS`, `logicalOutputCount`, `logicalOutputsForPhysical` and `reconcileOutputs`. Re-export all three from geometry's existing barrel so no consumer import changes.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"divergent-change-0005",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"change-scatter",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

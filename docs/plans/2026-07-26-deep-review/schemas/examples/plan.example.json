@@ -1,0 +1,82 @@
+{
+  "initiative_id": "INIT-03-io-output-resilience",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-03/opus",
+    "model": "claude-opus-5",
+    "effort": "high",
+    "run_id": "runC-011"
+  },
+  "summary": "Close the Art-Net/sACN silent-failure path by replacing the swallowing error handlers with a single reporting seam, and by deriving the send gate from live socket state rather than a ready flag set once in the bind callback.",
+  "findings_addressed": [
+    "resilience-hole-0003",
+    "duplicated-code-0012"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Introduce an OutputFault sink behind the transport interface",
+      "intent": "Both adapters currently install on('error', () => {}), so a stale interface after an ethernet-to-wifi switch fails silently. One sink behind the existing interface means the adapters gain reporting without gaining surface.",
+      "files": [
+        "packages/io/src/output-fault.ts",
+        "packages/io/src/index.ts"
+      ],
+      "risk": "medium",
+      "verification": "New unit test asserts an emitted socket error reaches the sink; madge confirms packages/core still does not import packages/io."
+    },
+    {
+      "id": "S2",
+      "title": "Derive the send gate from socket state in both adapters",
+      "intent": "Replace the bind-callback ready flag in the Art-Net and sACN adapters with a state read, so a socket that dies after bind stops reporting itself as sendable.",
+      "files": [
+        "packages/io/src/artnet.ts",
+        "packages/io/src/sacn.ts"
+      ],
+      "risk": "high",
+      "verification": "Existing io suite green plus a new test that closes the socket mid-run and asserts sends stop and a fault is reported; output adapters stay fire-and-forget (no await added to the render path).",
+      "reverses": "Revert this step's commit alone; S1's sink is additive and can stay in place with no caller."
+    }
+  ],
+  "sequencing": [
+    [
+      "S1"
+    ],
+    [
+      "S2"
+    ]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/io",
+      "removed": [
+        "ArtNetAdapter.ready",
+        "SacnAdapter.ready"
+      ],
+      "added": [
+        "OutputFault"
+      ],
+      "net_interface_change": "reduces",
+      "note": "Two per-adapter flags collapse into one shared fault type."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates on committed HEAD, compared against the Phase 0 baseline test count",
+      "pnpm typecheck reports 0 errors",
+      "madge boundary check: packages/core reaches neither Node, DOM nor @ledrums/io"
+    ],
+    "known_gaps": "Neither adapter's socket path is exercised against real hardware in CI, so a green suite does not prove a live PixLite still receives frames; that check is a manual bench run before the initiative is called done.",
+    "baseline_reference": "Phase 0 baseline sha 3708648, 2981 tests passing."
+  },
+  "rollback_strategy": "Two commits, one per step, landed in order. Reverting S2 restores the previous gate with no data or config migration; reverting S1 afterwards removes the sink. No persisted state changes, so rollback is pure git.",
+  "estimated_loc": 260,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should a reported output fault surface in the UI as a banner, or only in the server log for this initiative?",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ]
+}

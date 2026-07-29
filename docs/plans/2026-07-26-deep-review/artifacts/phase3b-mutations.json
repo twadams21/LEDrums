@@ -1,0 +1,173 @@
+{
+  "_comment": "Phase 3b mutation definitions for the dead-code wave. Each entry is the SMALLEST edit that the finding's proposed_fix describes. 'unexport' drops the export keyword at the given symbol's declaration; 'delete-file' removes a file; 'delete-lines' removes an inclusive line range. Verification is workspace-wide `pnpm typecheck`, which resolves every cross-package reference \u2014 if a symbol is genuinely unreferenced the tree still compiles, and if anything reaches it the compile fails and the finding is FALSIFIED.",
+  "_baseline_sha": "3708648",
+  "_excluded": {
+    "dead-code-0002": "RESOLVED \u2014 Trent 2026-07-29: kit mirror REMOVED deliberately. Delete PatchMirrorControl.svelte AND the now-unreachable setKitGlobal client path. Server half is still live and tested (input-router.ts:186, voice-input.ts:149, client-message.ts:524); whether that capability also goes is a separate call.",
+    "dead-code-0001": "HOLD \u2014 Trent 2026-07-29: 'i think patch copy paste was meant to be fixed or change, i cant remember.' Product question, not cleanup. store.copyPatch() (store.svelte.ts:2079) and trigger-lab/patch-diff.ts are still live; both components were un-mounted by 39b7d6b (Patch Graph v2). Do NOT delete pending his decision."
+  },
+  "mutations": [
+    {
+      "id": "dead-code-0001",
+      "kind": "delete-file",
+      "files": [
+        "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
+        "apps/web/src/lib/app/views/PatchDiffDialog.svelte"
+      ]
+    },
+    {
+      "id": "dead-code-0003",
+      "kind": "unexport",
+      "file": "apps/web/src/lib/trigger-lab/store/hydrate.ts",
+      "symbols": [
+        "withDrumSource",
+        "unionTriggerSources",
+        "hydratePadNames",
+        "resolveGraphAliases",
+        "splitModulationSources",
+        "migrateGen3Graphs",
+        "sanitizeGraphsIntegrity",
+        "sanitizeGraphsIntegrityWithActions",
+        "NO_SYSTEM_ACTIONS"
+      ]
+    },
+    {
+      "id": "dead-code-0004",
+      "kind": "unexport",
+      "file": "apps/server/src/show-library.ts",
+      "symbols": [
+        "showLibraryPath"
+      ]
+    },
+    {
+      "id": "dead-code-0005",
+      "kind": "unexport",
+      "file": "apps/web/src/lib/trigger-lab/sim.envelopes.ts",
+      "symbols": [
+        "ENV_KINDS"
+      ]
+    },
+    {
+      "id": "dead-code-0006",
+      "kind": "unexport",
+      "file": "apps/web/src/lib/app/views/mix-layer-rows.ts",
+      "symbols": [
+        "isMixRowHandleId",
+        "MIX_ROW_HANDLE_PREFIX"
+      ]
+    },
+    {
+      "id": "dead-code-0007",
+      "kind": "unexport",
+      "file": "workers/error-ingest/src/validate.ts",
+      "symbols": [
+        "MAX_REPORTS_PER_BATCH",
+        "safeKeySegment"
+      ]
+    },
+    {
+      "id": "dead-code-0008",
+      "kind": "unexport",
+      "file": "apps/web/src/lib/app/patch-topology.ts",
+      "symbols": [
+        "triggerId",
+        "zoneNodeId",
+        "drumNodeId"
+      ]
+    },
+    {
+      "id": "dead-code-0009",
+      "kind": "unexport",
+      "file": "apps/web/src/lib/app/patch-graph.ts",
+      "symbols": [
+        "DEFAULT_OUTPUT_SCALARS"
+      ]
+    },
+    {
+      "id": "dead-code-0010",
+      "kind": "unexport-multi",
+      "targets": [
+        {
+          "file": "apps/web/src/lib/trigger-lab/store/ids.ts",
+          "symbols": [
+            "reserveId"
+          ]
+        },
+        {
+          "file": "apps/web/src/lib/trigger-lab/store/transport.ts",
+          "symbols": [
+            "showSig"
+          ]
+        },
+        {
+          "file": "apps/web/src/lib/trigger-lab/store/graphs.ts",
+          "symbols": [
+            "OUTPUT_ANCHOR_ID",
+            "firstEffectId"
+          ]
+        },
+        {
+          "file": "apps/web/src/lib/trigger-lab/store/canvas-scenes.ts",
+          "symbols": [
+            "CANVAS_BUS_ID"
+          ]
+        },
+        {
+          "file": "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+          "symbols": [
+            "blockChildren"
+          ]
+        },
+        {
+          "file": "apps/web/src/lib/trigger-lab/clipdoc.ts",
+          "symbols": [
+            "makeDefaultMint"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dead-code-0011",
+      "kind": "unexport",
+      "file": "apps/web/src/lib/app/views/align-guides.ts",
+      "symbols": [
+        "ALIGN_THRESHOLD"
+      ]
+    },
+    {
+      "id": "dead-code-0012",
+      "kind": "unexport",
+      "file": "apps/server/src/boot.ts",
+      "symbols": [
+        "lanUrls"
+      ]
+    },
+    {
+      "id": "dead-code-0013",
+      "kind": "unexport",
+      "file": "packages/io/src/pixlite/protocol.ts",
+      "symbols": [
+        "parseStatistic"
+      ]
+    },
+    {
+      "id": "dead-code-0014",
+      "kind": "delete-names-from-export-type",
+      "file": "apps/server/src/ws-protocol.ts",
+      "names": [
+        "BackupReason",
+        "MonitorEventType",
+        "SerializedDrum",
+        "TunnelStatus",
+        "VoiceStats"
+      ]
+    },
+    {
+      "id": "dead-code-0015",
+      "kind": "unexport",
+      "file": "apps/web/scripts/vite-plugin-source-manifest.mjs",
+      "symbols": [
+        "buildSourceManifest"
+      ]
+    }
+  ]
+}

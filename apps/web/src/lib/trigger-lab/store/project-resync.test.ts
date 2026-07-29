@@ -39,14 +39,6 @@ describe('projectResyncMessages', () => {
     expect(msgs[0]).toMatchObject({ t: 'setKitTransform', drumId });
   });
 
-  it('emits only setKitGlobal when the mirror differs', () => {
-    const restored = defaultProject();
-    restored.kit.global.mirror = 'none';
-    const live = structuredClone(restored);
-    live.kit.global.mirror = 'x';
-    expect(projectResyncMessages(live, restored)).toEqual([{ t: 'setKitGlobal', mirror: 'none' }]);
-  });
-
   it('carries expanded on setKitGlobal, emitted BEFORE setKitOutputs (undo across the Expanded toggle)', () => {
     // N1: `expanded` is the sole driver of the output count. An undo that flips Expanded back must
     // re-apply the mode ahead of the outputs, else the engine reconciles the restored ports against
@@ -67,15 +59,6 @@ describe('projectResyncMessages', () => {
     expect(msgs.find((m) => m.t === 'setKitGlobal')).toMatchObject({ expanded: false });
   });
 
-  it('does not carry expanded when only the mirror moved (partial stays minimal)', () => {
-    const restored = defaultProject();
-    restored.kit.global.mirror = 'none';
-    const live = structuredClone(restored);
-    live.kit.global.mirror = 'x';
-    // Same expanded on both sides → the setKitGlobal partial is mirror-only.
-    expect(projectResyncMessages(live, restored)).toEqual([{ t: 'setKitGlobal', mirror: 'none' }]);
-  });
-
   it('emits only setInputMap when the input map differs', () => {
     const restored = defaultProject();
     const live = structuredClone(restored);
@@ -93,7 +76,7 @@ describe('projectResyncMessages', () => {
   it('emits every changed slice at once (mixed edit)', () => {
     const restored = defaultProject();
     const live = structuredClone(restored);
-    live.kit.global.mirror = 'y';
+    live.kit.global.expanded = !restored.kit.global.expanded;
     live.output.fps = 12;
     const kinds = projectResyncMessages(live, restored).map((m) => m.t).sort();
     expect(kinds).toEqual(['setKitGlobal', 'setOutput']);

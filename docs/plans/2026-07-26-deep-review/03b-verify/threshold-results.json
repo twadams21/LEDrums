@@ -1,0 +1,146 @@
+[
+  {
+    "finding_id": "duplicated-code-0001",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "3 clone(s), largest 31 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0002",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "10 clone(s), largest 45 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0003",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "1 clone(s), largest 17 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0004",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "1 clone(s), largest 27 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0006",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "1 clone(s), largest 23 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0010",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "1 clone(s), largest 52 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0011",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "1 clone(s), largest 27 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0012",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "1 clone(s), largest 20 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0013",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "5 clone(s), largest 23 lines across 5 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "duplicated-code-0014",
+    "lens": "duplicated-code",
+    "outcome": "threshold-confirmed",
+    "detail": "4 clone(s), largest 38 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+  },
+  {
+    "finding_id": "data-clumps-0001",
+    "lens": "data-clumps",
+    "outcome": "threshold-confirmed",
+    "detail": "5 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+  },
+  {
+    "finding_id": "data-clumps-0002",
+    "lens": "data-clumps",
+    "outcome": "threshold-confirmed",
+    "detail": "8 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+  },
+  {
+    "finding_id": "data-clumps-0003",
+    "lens": "data-clumps",
+    "outcome": "threshold-confirmed",
+    "detail": "4 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+  },
+  {
+    "finding_id": "data-clumps-0004",
+    "lens": "data-clumps",
+    "outcome": "threshold-confirmed",
+    "detail": "5 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+  },
+  {
+    "finding_id": "data-clumps-0005",
+    "lens": "data-clumps",
+    "outcome": "threshold-confirmed",
+    "detail": "6 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+  },
+  {
+    "finding_id": "data-clumps-0007",
+    "lens": "data-clumps",
+    "outcome": "threshold-confirmed",
+    "detail": "4 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+  },
+  {
+    "finding_id": "repeated-switches-0001",
+    "lens": "repeated-switches",
+    "outcome": "threshold-confirmed",
+    "detail": "discriminant 'NodeKind' co-occurs with switch/case in 16 files (>=3)"
+  },
+  {
+    "finding_id": "repeated-switches-0002",
+    "lens": "repeated-switches",
+    "outcome": "threshold-confirmed",
+    "detail": "discriminant 'NodeKind' co-occurs with switch/case in 16 files (>=3)"
+  },
+  {
+    "finding_id": "divergent-change-0001",
+    "lens": "divergent-change",
+    "outcome": "threshold-confirmed",
+    "detail": "14 commits co-change >=2 of 5 cited files (>=3 commits, >=5 files)"
+  },
+  {
+    "finding_id": "divergent-change-0002",
+    "lens": "divergent-change",
+    "outcome": "threshold-confirmed",
+    "detail": "120 commits touch apps/web/src/lib/trigger-lab/store.svelte.ts, co-changing 420 distinct files (>=3 commits)"
+  },
+  {
+    "finding_id": "divergent-change-0003",
+    "lens": "divergent-change",
+    "outcome": "threshold-confirmed",
+    "detail": "21 commits co-change >=2 of 3 cited files (>=3 commits, >=3 files)"
+  },
+  {
+    "finding_id": "divergent-change-0004",
+    "lens": "divergent-change",
+    "outcome": "threshold-confirmed",
+    "detail": "39 commits touch apps/server/src/main.ts, co-changing 242 distinct files (>=3 commits)"
+  },
+  {
+    "finding_id": "divergent-change-0005",
+    "lens": "divergent-change",
+    "outcome": "threshold-confirmed",
+    "detail": "15 commits touch packages/core/src/geometry/kit-schema.ts, co-changing 90 distinct files (>=3 commits)"
+  },
+  {
+    "finding_id": "divergent-change-0007",
+    "lens": "divergent-change",
+    "outcome": "threshold-confirmed",
+    "detail": "6 commits touch apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte, co-changing 40 distinct files (>=3 commits)"
+  }
+]

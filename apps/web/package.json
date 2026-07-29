@@ -9,6 +9,7 @@
     "design-system": "vite build --config vite.design-system.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reporter=json",
     "test:watch": "vitest",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json"
   },

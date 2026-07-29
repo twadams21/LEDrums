@@ -1,0 +1,139 @@
+{
+  "reviewer": "claude-fable-5 (runtime: High — verify against your pane footer, not the twux registry)",
+  "target": "docs/plans/2026-07-26-deep-review/SPEC.md",
+  "round": 3,
+  "verdict": "BLOCK",
+  "verdict_rationale": "The v3 verdict constraint binds: D5 scores 0 because the spec's claim that 'a verdict with required: true and a null worktree_path is invalid against the schema' is demonstrably false — I validated exactly such an instance with ajv and it passes. This is a narrow BLOCK: 12 of 13 fixes landed and the nonce guard survived live execution end-to-end; a small schema conditional, three required-field additions, and repathing the committed probe would dissolve it.",
+  "strongest_objection": "The machine-checked gate between a model's opinion and automatic code deletion is thinner than the spec claims, in three ajv-provable ways. First, SPEC Phase 3b states 'a verdict with `required: true` and a null `worktree_path` is invalid against the schema' — it is not: verdict.schema.json contains no if/then conditional, only a prose description on the field, and an instance with isolation.required=true, worktree_path=null, outcome='verified', disposition='auto-fix' validates cleanly, so the confident-wrong combined-patch evidence B1 was accepted to prevent passes the exact check the spec says stops it. Second, every field the disposition rule keys on is optional: findings omitting criterion_is_mechanical, verification_plan.requires_mutation, or provenance.nonce_verified all validate, so a lane can silently drop the guards v3 added and no validator objects. Third, the committed regression probe (artifacts/codex-mix-probe.js) hardcodes a session scratchpad path and shells THAT copy of codex-agent.sh — which differs from the tracked launcher by 96 lines and contains no nonce logic at all — so 're-run it before each of runs A/B/C' either regression-tests the wrong, known-buggy launcher and reports transport green, or fails outright once the scratchpad is garbage-collected. What was actually run is real — I reproduced NONCE-TEST.md's three cases exactly and drove a live proxied lane through mint→receipt→verify→mismatch — but the enforcement story for Run A's destructive tail is still prose.",
+  "scores": {
+    "D1_soundness": {"score": 2, "why": "Anchor 2: works in the common case with unaddressed failure paths — the transport regression test as committed exercises the stale scratchpad launcher rather than the production artifact, and optional gate fields let 3b run unisolated without any validator complaint."},
+    "D2_completeness": {"score": 2, "why": "Anchor 2: an output shape a downstream phase cannot rely on — findings and verdicts missing criterion_is_mechanical, requires_mutation, or nonce_verified validate against the schemas, so Phase 4's disposition rule can receive inputs that silently lack the exact fields it keys on."},
+    "D3_cost_realism": {"score": 3, "why": "Anchor 3: realistic, dominant cost identified, knob offered — REFUTER_BUDGET=90 expressed in the unit that costs money, recalculated from Phase 0 calibration, with WRAPPER_BATCH_SIZE bound. The stale 'On budget' note (25–45 agents, pre-B4 model) contradicts it but doesn't change the decision-grade model, which is the budget."},
+    "D4_failure_modes": {"score": 2, "why": "Anchor 2: named, but a mitigation is asserted rather than demonstrated — the 3b isolation schema enforcement is asserted and disproven by validation, and the nonce guard's coverage is overstated (it proves the script ran, not that the relayed payload is the child's output; the ledger accepts rows from any same-user writer, demonstrated by a forged receipt validating)."},
+    "D5_evidence": {"score": 0, "why": "Anchor 0: a load-bearing claim is false — 'a verdict with required: true and a null worktree_path is invalid against the schema' (Phase 3b) fails under ajv draft-2020 validation of exactly that instance, and 'requires the child to echo it in a provenance header alongside the model id it actually booted' misdescribes the implementation (the script itself prints the provenance line carrying the REQUESTED model spec; the child never sees the nonce)."},
+    "D6_scope": {"score": 3, "why": "Anchor 3: tight, each phase and artifact has an identified consumer — the rewritten seam table names producer, schema, and consumers per row; nothing speculative was added in v3."},
+    "D7_fix_integrity": {"score": 1, "why": "Anchor 1: a fix is present as prose but not operationalised — B1's isolation discipline landed as Phase 3b prose and a schema field, but the claimed schema enforcement does not exist, so nothing mechanical enforces it. The other 12 fixes landed (verified individually, several by execution)."}
+  },
+  "fix_regression": [
+    {"adjudication_id": "B1", "status": "prose_only", "evidence": "Phase 3b prose landed in full (per-candidate worktree from pinned baseline, pnpm gates serialisation, twux pool cap 3), and verdict.schema.json has the isolation object. But the claimed enforcement — 'verdict.schema.json makes a null worktree_path invalid when required: true' — is false: no if/then conditional exists, and ajv (draft 2020-12) validates {required: true, worktree_path: null, baseline_sha: 'e50da8d'} inside a disposition:'auto-fix' verdict. The constraint lives only in a description string."},
+    {"adjudication_id": "B2", "status": "landed", "evidence": "Executed, not just read. artifacts/codex-agent.sh and verify-nonce.sh are tracked (e50da8d), executable, and behave exactly as NONCE-TEST.md records: I reproduced Test 1 (recorded nonce cd6228ee… validates, exit 0), Test 2 (fabricated nonce rejected, exit 1), Test 3 (wrong model, exit 2), and additionally drove a live proxied lane end-to-end: minted nonce e3cfe65e…, child answered 'MODEL=gpt-5.6-luna(low) NONCE-LIVE-OK', receipt written, verify exit 0, wrong-model exit 2. Error paths verified: no args→3, non-hex→1, missing prompt→2, empty prompt→2, missing conf→2. Residual overstatements in the spec's description filed as F2; the stale probe path as F4."},
+    {"adjudication_id": "B3", "status": "landed", "evidence": "schemas/finding.schema.json and verdict.schema.json exist, tracked, compile under ajv draft 2020-12; examples/finding.valid.json validates and examples/finding.invalid.json fails as intended. The blocking statement is explicit in §Seams: 'Run A does not start until it and verdict.schema.json validate.' Caveat filed as F3: three gate-critical fields are optional, and verdict.schema.json has no examples at all."},
+    {"adjudication_id": "B4", "status": "landed", "evidence": "Admission cap re-expressed in calls: REFUTER_BUDGET=90 Opus-5-high calls, refuters-per-finding rule (3 if >50 LOC or touches_core, else 1), admission by severity × files_touched until budget exhaustion, WRAPPER_BATCH_SIZE=4, budget recalculated from Phase 0 calibration and recorded in 00-baseline.md. Arithmetic checks: 20×3+30×1=90→50 findings, 10×3+60×1=90→70 findings, matching the stated ~50–70 typical admissions. Caveat: the 'On budget' further-note still states the pre-B4 model (F5)."},
+    {"adjudication_id": "B5", "status": "landed", "evidence": "All thresholds bound in the criteria table: duplication ≥2 sites/≥12 lines/≥90% token-similarity via jscpd, data clumps ≥3/≥3, repeated switches ≥3, divergent change ≥4 files/≥3 commits. No unbound N remains (grep '≥N' returns nothing). A retune-once-before-Phase-2 rule freezes them for cross-lane comparability."},
+    {"adjudication_id": "B6", "status": "landed", "evidence": "'Mechanical' is redefined as 'decidable without model judgement'; the deletion test is explicitly reclassified non-mechanical ('a thought experiment a model performs'); the table gains an auto-fix-eligible column routing all four non-mechanical lenses to the structural track; a boundary-violation lens (madge) was added as mechanical."},
+    {"adjudication_id": "B7", "status": "landed", "evidence": "interface_delta and removes_failure_path are in finding.schema.json's required list with the 'unknown' escape on net_interface_change routing to the structural track; removes_failure_path requires a ≥10-char justification; verdict.schema.json's disposition description encodes the full ineligibility clause. Ajv confirms the examples respect this."},
+    {"adjudication_id": "B8", "status": "landed", "evidence": "grep -i 'discard' in SPEC.md returns only retention language: line 93 ('never discarded and never reduced to a count') and line 336 ('retained in 03-refuted.json rather than discarded'). User Story 4 now reads 'kept out of the actionable ledger but retained in full'. No contradictory site remains."},
+    {"adjudication_id": "B9", "status": "landed", "evidence": "03-unadmitted.json specified as complete finding objects against finding.schema.json ('never as a count'), with the rationale (a count cannot be re-examined or re-admitted) stated, and a seam-table row naming future runs and audit as consumers."},
+    {"adjudication_id": "B10", "status": "landed", "evidence": "'JSON is canonical; Markdown is a rendered view' rule present; 04-ledger.json, 09-synthesis/<initiative>.json, and 10-ranked.json all exist as JSON with .md views; the seam table gives every artifact a schema, producer, and consumers."},
+    {"adjudication_id": "B11", "status": "landed", "evidence": "Seam contract rewritten with rows for 03-refuted.json, 03-unadmitted.json, schemas/, codex-agent.sh, verify-nonce.sh, and the probe (I count 17 rows; the adjudication says 16 — immaterial). Caveat filed as F4: the probe row promises 'transcripts' but the committed p0.txt/probe-exports.txt/probe-protocol.txt are prompt INPUTS, not output transcripts."},
+    {"adjudication_id": "B12", "status": "landed", "evidence": "The false present-tense claim is replaced by an accurate parenthetical describing the v2 failure, and the check it names passes: git ls-files docs/plans/2026-07-26-deep-review/ returns 27 tracked files at HEAD e59e99c (24 added by e50da8d exactly as claimed, +3 round-3 docs from e59e99c). All artifacts and schemas are genuinely tracked."},
+    {"adjudication_id": "B13", "status": "landed", "evidence": "REVIEW-RUBRIC-v3.md contains the verdict-vs-score constraint table (any 0 → BLOCK; any 1 → BLOCK/REVISE; min 2 → REVISE/PWC; min ≥3 → PWC/PROCEED) and the explicit 'stricter, not looser' framing. This review complies with it — the constraint is why the verdict below the scores is BLOCK."}
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "dimension": "D7",
+      "severity": "major",
+      "confidence": "high",
+      "novel": false,
+      "spec_section": "The phases → Phase 3 → 3b isolation (re-raise of B1 — the fix's operationalisation failed)",
+      "quote": "a verdict with `required: true` and a null `worktree_path` is invalid against the schema",
+      "claim": "The schema does not enforce this — the constraint exists only as a description string, and an instance violating it validates.",
+      "failure_scenario": "A Phase 3b lane under time pressure skips worktree creation and emits {isolation: {required: true, worktree_path: null, baseline_sha: 'e50da8d'}, outcome: 'verified'}. Validation passes (ajv draft 2020-12, reproduced), Phase 4 reads disposition auto-fix, and a deletion verified against a tree contaminated by a concurrent experiment reaches Phase 5 — the exact combined-patch false-green B1 was accepted to prevent, passing through the check the spec says stops it.",
+      "would_change_my_mind": "A verdict.schema.json revision where the same instance fails validation — e.g. an if/then making worktree_path type 'string' when required is true — plus valid/invalid verdict examples proving it, as finding.schema.json already has.",
+      "recommendation": "Add the conditional (if isolation.required===true then worktree_path: {type: 'string', minLength: 1}) and commit schemas/examples/verdict.{valid,invalid}.json exercising it."
+    },
+    {
+      "id": "F2",
+      "dimension": "D5",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "The wrapper primitive",
+      "quote": "requires the child to echo it in a provenance header alongside the model id it actually booted",
+      "claim": "The implementation does neither: codex-agent.sh itself prints the provenance line (the child never sees the nonce), the model id shown is the REQUESTED spec verbatim (not what booted), and the nonce+ledger pair proves the script ran — not that the relayed payload is the child's output or that the ledger row came from the script.",
+      "failure_scenario": "Three demonstrated gaps. (1) Live run: the provenance line carries model=gpt-5.6-luna(low) because that was argv[1] — if the proxy remapped the tier, the provenance could not tell. (2) A wrapper that runs the script (getting a genuine, validating nonce) but then edits or substitutes the child's answer while relaying passes verify-nonce.sh untouched, since only the nonce is checked — and the Workflow wrapper must re-encode output into a schema-forced return anyway, so payload rewriting is the normal path, not an exotic one. (3) A forged ledger row appended by a plain printf validated with exit 0 in my test — 'a receipts ledger that only it writes' is unenforced; any same-user bash process can write it, and the wrapper is a same-user bash process.",
+      "would_change_my_mind": "For (1)-(2): the child instructed (in codex-agent.sh, not per-prompt) to open its reply with the nonce and its self-reported model, and verify-nonce checking the payload's first line. For (3): a stated accepted-residual-risk note, since same-user tamper-proofing is genuinely hard without a separate principal.",
+      "recommendation": "Rewrite the spec paragraph to describe what is actually implemented and its residual gaps, and have codex-agent.sh inject 'begin your reply with NONCE=<nonce> MODEL=<your model id>' into the child prompt so the payload itself carries provenance."
+    },
+    {
+      "id": "F3",
+      "dimension": "D2",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Seams (phase artifact contracts) + schemas/",
+      "quote": "Every phase validates its inputs against the declared schema and rejects on failure",
+      "claim": "The fields the disposition and isolation rules key on — criterion_is_mechanical, verification_plan.requires_mutation, provenance.nonce_verified — are all optional, so schema validation passes artifacts that silently omit the guards v3 added.",
+      "failure_scenario": "A Phase 2 lane emits a finding without criterion_is_mechanical and without requires_mutation (both validate — ajv-reproduced). Phase 3b's isolation trigger mirrors requires_mutation, which is undefined → falsy in the workflow's JS → the mutation experiment runs in the shared checkout with no schema violation anywhere. Likewise a proxied lane omitting provenance.nonce_verified never trips the 'false fails the lane' rule, because the field simply isn't there. Validation-and-reject, the spec's own defence, cannot catch what the schema never requires.",
+      "would_change_my_mind": "Ajv rejecting findings missing these fields — i.e. criterion_is_mechanical and verification_plan.requires_mutation added to their required lists, and nonce_verified conditionally required when the lane is proxied (or unconditionally, defaulting false for native lanes).",
+      "recommendation": "Add criterion_is_mechanical and requires_mutation to the required arrays; require nonce_verified in provenance; regenerate the invalid example to prove each rejection."
+    },
+    {
+      "id": "F4",
+      "dimension": "D1",
+      "severity": "major",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Testing Decisions → 'The transport is already tested' + Seams (probe row)",
+      "quote": "Re-run it before each of runs A/B/C; if a lane reports the wrong export count, the proxy or tier map has drifted.",
+      "claim": "The committed probe cannot serve as the transport regression test: codex-mix-probe.js hardcodes SP='/Users/trent/.cctmp/.../748ebb42-.../scratchpad' and shells THAT codex-agent.sh — which differs from the tracked launcher by 96 diff lines and contains no nonce or receipts logic — and the committed 'transcripts' (p0.txt, probe-exports.txt, probe-protocol.txt) are prompt inputs, not output records.",
+      "failure_scenario": "Before Run A the probe is re-run as the spec instructs. Either the scratchpad still exists — and the probe green-lights the transport by exercising the stale launcher with the known cd-before-cat bug and no fidelity guard, so 'transport tested' is asserted about code that never runs in production — or the session scratchpad has been garbage-collected and the probe fails with a missing-path error that says nothing about the proxy or tier map. In both branches the regression test does not test the regression it exists for. The probe's headline numbers (3/3, 35s, 63,500 tokens) also remain unreproducible since no output transcript is committed.",
+      "would_change_my_mind": "A committed probe whose SP points at docs/plans/2026-07-26-deep-review/artifacts/ (or resolves the script relative to the repo), plus an actual output transcript committed beside it.",
+      "recommendation": "Change SP to the tracked artifacts directory, have lanes write prompts to a temp dir, commit one real output transcript, and relabel the prompt files as prompts."
+    },
+    {
+      "id": "F5",
+      "dimension": "D3",
+      "severity": "minor",
+      "confidence": "high",
+      "novel": true,
+      "spec_section": "Further Notes → On budget",
+      "quote": "Phase 3 is the cost centre — 25–45 Opus 5 high agents. The available knob is refuter count",
+      "claim": "This note still states the pre-B4 cost model and contradicts the admission section, which caps the phase at REFUTER_BUDGET=90 calls (worst case 90, not 45) with the budget itself as the knob.",
+      "failure_scenario": "An operator sizing Run A from Further Notes plans for ≤45 Opus-high calls and a usage-window budget to match; the admission rule lawfully spends up to 90, hitting the 70%-window house rule mid-phase and stranding half-verified findings — or, conversely, the operator distrusts the numbers entirely because two sections disagree.",
+      "would_change_my_mind": "The note restated in budget terms, or a pointer from it to the admission-cap section as authoritative.",
+      "recommendation": "Rewrite the two sentences to name REFUTER_BUDGET as both the bound and the knob, and drop the agent-count range or mark it superseded like the phase table."
+    },
+    {
+      "id": "F6",
+      "dimension": "D5",
+      "severity": "minor",
+      "confidence": "medium",
+      "novel": true,
+      "spec_section": "artifacts/NONCE-TEST.md → Nonce uniqueness",
+      "quote": "Four consecutive runs produced `1d673f62…`, `81936d95…`, `746f791f…`, `08483a18…`, `cd6228ee…` — distinct every time",
+      "claim": "The receipts ledger contains exactly one receipt (cd6228ee…), so four of the five nonces in this 'verbatim' record match no receipt and the uniqueness demonstration is not reproducible from the committed evidence.",
+      "failure_scenario": "A future session auditing wrapper fidelity runs verify-nonce.sh against any of the four earlier nonces from the committed test record and gets 'no-matching-receipt — FAIL THE LANE', concluding either that the ledger was tampered with or that NONCE-TEST.md is not the verbatim record it claims to be; the guard's own test document fails its own verifier for 4 of its 5 exhibits.",
+      "would_change_my_mind": "An explanation in NONCE-TEST.md that the first four runs predated the receipts feature (with the ledger showing all subsequent nonces), or ledger rows for all five.",
+      "recommendation": "Add one sentence to NONCE-TEST.md stating which runs predate the receipts ledger, so the committed evidence and the verifier agree."
+    }
+  ],
+  "assumptions_made": [
+    "Assumed the brief's 'RUN the artifacts' authorization covers one live proxied call through codex-agent.sh (spending proxy tokens) and creating test files in my session scratchpad; all receipt-writing tests used CODEX_AGENT_RECEIPTS overrides pointing at scratchpad files, so the real ledger at ~/.twux/codex-agent-receipts.tsv was read but never written.",
+    "Assumed the four NONCE-TEST nonces absent from the ledger predate the receipts feature (earlier script iterations) rather than indicating tampering — F6 asks the doc to say which.",
+    "Assumed ajv 2020-12 resolved from the repo's node_modules (Ajv v8, strict:false, allErrors) is the 'ajv' the brief permits; no package was installed.",
+    "Assumed the scratchpad directory 748ebb42-… referenced by the committed codex-mix-probe.js is the original probe session's scratchpad, inferred from its contents matching the probe's file names."
+  ],
+  "checked_independently": [
+    {"claim": "All 24 files now tracked (B2/B12); git ls-files docs/plans/2026-07-26-deep-review/ is the check", "scope_searched": "git ls-files docs/plans/2026-07-26-deep-review/; git show --stat e50da8d; git show --stat e59e99c; git status --porcelain", "result": "confirmed", "detail": "e50da8d added exactly 24 files including SPEC, schemas, examples, and all artifacts; e59e99c added 3 more (adjudication + round-3 briefs); 27 tracked at HEAD, working tree clean apart from this review's own output."},
+    {"claim": "NONCE-TEST.md Tests 1–3 are reproducible verbatim", "scope_searched": "Executed artifacts/verify-nonce.sh against the real ledger: recorded nonce + right model, fabricated 32-hex nonce, recorded nonce + wrong model", "result": "confirmed", "detail": "Exit codes 0/1/2 and output lines matched the committed transcript exactly, including the issued=2026-07-26T11:08:08Z timestamp from the ledger row."},
+    {"claim": "codex-agent.sh works end-to-end through the proxy with nonce attestation", "scope_searched": "Executed artifacts/codex-agent.sh 'gpt-5.6-luna(low)' with a fresh prompt, CODEX_AGENT_RECEIPTS pointed at a scratchpad ledger; then verify-nonce.sh on the minted nonce", "result": "confirmed", "detail": "Exit 0; provenance line CODEX-PROVENANCE nonce=e3cfe65e… model=gpt-5.6-luna(low) exit=0; child replied 'MODEL=gpt-5.6-luna(low) NONCE-LIVE-OK'; receipt appended; verify exit 0 on the right model and exit 2 against 'claude-opus-5'. Error paths: no args→3, non-hex→1, unmatched nonce→1, missing prompt→2, empty prompt→2, missing conf→2 — all as documented in the script headers."},
+    {"claim": "A verdict with required: true and a null worktree_path is invalid against the schema (SPEC Phase 3b; adjudication B1)", "scope_searched": "ajv draft 2020-12 (repo node_modules) compiling schemas/verdict.schema.json; validated a disposition:'auto-fix' instance with isolation {required: true, worktree_path: null, baseline_sha: 'e50da8d'}; read the schema for if/then/allOf conditionals", "result": "contradicted", "detail": "The instance VALIDATES. The schema has no conditional; the non-null requirement exists only in the worktree_path description string. F1."},
+    {"claim": "Schemas are ajv-validated against passing and failing examples (B3)", "scope_searched": "ajv compile of finding.schema.json; validated schemas/examples/finding.valid.json and finding.invalid.json; ls schemas/examples/", "result": "confirmed", "detail": "valid passes, invalid fails as intended. Only finding has examples; verdict.schema.json has none — which is how F1's gap survived authoring."},
+    {"claim": "Gate-critical fields are enforced by the schemas", "scope_searched": "ajv validation of mutated copies of finding.valid.json: deleted criterion_is_mechanical, verification_plan.requires_mutation, provenance.nonce_verified; also a dead-code lens paired with deletion-test criterion", "result": "contradicted", "detail": "All four mutations validate — the three fields are optional and lens↔criterion pairing is unconstrained. F3."},
+    {"claim": "The receipts ledger is written only by codex-agent.sh", "scope_searched": "Appended a hand-crafted row to a CODEX_AGENT_RECEIPTS override file via printf, then ran verify-nonce.sh on it", "result": "contradicted", "detail": "The forged receipt validated with exit 0. Any same-user process can write the ledger; 'only it writes' is a convention, not an enforcement. Part of F2."},
+    {"claim": "The committed probe re-tests the production transport (Testing Decisions)", "scope_searched": "Read artifacts/codex-mix-probe.js; diff of scratchpad 748ebb42 codex-agent.sh vs artifacts/codex-agent.sh; grep -i nonce on the scratchpad copy; cat of the three committed probe .txt files", "result": "contradicted", "detail": "SP hardcodes the session scratchpad; that launcher differs by 96 lines and has zero nonce/receipt logic; the committed .txt files are prompt inputs, not output transcripts. F4."},
+    {"claim": "No 'discarded' contradiction remains (B8)", "scope_searched": "grep -n -i discard docs/plans/2026-07-26-deep-review/SPEC.md", "result": "confirmed", "detail": "Two hits, both retention language (lines 93, 336); User Story 4 rephrased."},
+    {"claim": "All thresholds bound (B5)", "scope_searched": "grep '≥N' SPEC.md; read of the criteria table and admission-cap section", "result": "confirmed", "detail": "No unbound N; duplication 12/90%, scatter 4/3, clumps 3/3, switches 3; REFUTER_BUDGET=90 and WRAPPER_BATCH_SIZE=4 are concrete values with a recalculation rule."},
+    {"claim": "Environment claims still hold at round 3", "scope_searched": "cat ~/.zshenv; which knip/ts-prune/depcheck/madge/jscpd; git rev-parse HEAD; ls ~/.twux/codex-agent-receipts.tsv", "result": "confirmed", "detail": "VITEST caps (2) live; all five audit tools still absent from PATH; HEAD e59e99c; receipts ledger exists at the default path with exactly one row — which is also the basis of F6."},
+    {"claim": "Phase-count arithmetic and REFUTER_BUDGET consistency", "scope_searched": "Row arithmetic on the phase table; worked the admission formula at both extremes; grep '25–45'", "result": "confirmed", "detail": "Table still sums 79–100 (flagged as superseded); budget maths internally consistent (50–70 findings at 90 calls); the un-flagged 'On budget' note contradicts the budget — F5."}
+  ],
+  "no_findings_justification": null,
+  "coverage_gaps": [
+    "Did not execute codex-mix-probe.js as a Workflow — that requires spawning a three-agent workflow, beyond a review's remit; the mixed-transport-inside-Workflow claim still rests on the round-1 probe, whose output transcript is not committed (F4).",
+    "Did not run pnpm gates, the test suite, or twux worktree pool operations (forbidden by the brief), so the 3b serialisation path is verified only by reading with-gate-lock.mjs, not by exercising it.",
+    "Did not test the 502-on-full-id-pin claim or the claude -p stdin-stall claim — both need live negative probes beyond the single authorized happy-path call.",
+    "The probe's quantitative claims (35s wall, 63,500 subagent tokens) remain unverifiable from committed evidence."
+  ]
+}

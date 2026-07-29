@@ -1,0 +1,374 @@
+{
+  "initiative_id": "INIT-06-graph-node-type-model",
+  "variant": "synthesis",
+  "provenance": {
+    "phase": "9",
+    "lane": "synthesis/INIT-06-graph-node-type-model",
+    "model": "claude-opus-5[1m]",
+    "effort": "high"
+  },
+  "summary": "Opus's risk-first strangler is the surviving skeleton — it was the only variant both reviewers rated sound-with-repairs, and the only one whose waves were independently verified file-disjoint. Sonnet's shadow-type-then-flip was ruled UNSOUND (its wave 3 retypes core's cross-package dispatch to a discriminated union while apps/web still hands it flat nodes, so the monorepo root typecheck it demands after every wave cannot be green); fable's same-name flip was broken as a single unlandable mega-step that omitted the 26 files using `Partial<GraphNode>`. Both rivals also proposed persisted-format changes their own rollback strategies denied. So GraphNode's flat 40-field interface STAYS as the persisted/authoring record, untouched, migration-free, and compiler-enforced totality is bought three cheaper ways: the live bug first (trigger-flow-projection.ts:34 spells only 'play', so every real effect node falls to `default` and its effectId never enters the projection cache); every per-kind dispatch converted from a defaulting switch to a Record with no default arm, already house idiom here (trigger-node-meta.ts:32/63/87); and a derived view union NodeView whose arms are mechanically `Pick<GraphNode,…>`, adopted by two consumers and no more. Where an attack landed on opus's version and a rival's survived, the rival's is grafted: applyModifierChain now constructs its ModifierContext PER CALL at the caller (sonnet's form) rather than hoisting one per frame and mutating it, because both reviewers showed the hoist silently changes aliasing for any modifier that retains ctx — per-call keeps today's allocation count AND today's aliasing exactly; the test-only subpath export lands pre-flight-first with a build gate (fable's ordering + sonnet's `pnpm build`); and the drum-id hazard becomes a committed characterisation test rather than a new integrity issue code, because emitting a new TriggerGraphIssueCode changes what hydrate surfaces to the user and no reviewer priced that. Two repairs are the synthesis's own, from reading the source both reviewers stopped short of: scope-lint.ts:37-51 is a FIFTH hand-rolled copy of the hoop-target grammar still filtering `>= 0` after the A1 1-based cutover (S13), and NodeSignalPreview's `kind` prop is a component-local 6-member vocabulary that renames randomMod→'random', so opus's instruction to route it through nodeIsModSource was not executable as written (S5). Fourteen steps, five waves, thirteen commits, zero persisted bytes changed.",
+  "findings_addressed": [
+    "primitive-obsession-0001",
+    "primitive-obsession-0003",
+    "primitive-obsession-0009",
+    "repeated-switches-0001",
+    "repeated-switches-0002",
+    "data-clumps-0001",
+    "data-clumps-0003",
+    "data-clumps-0004",
+    "middle-man-0003"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Fix the dead 'effect' arm in triggerNodeSignature (live bug, red-first)",
+      "intent": "repeated-switches-0001 is a LIVE defect, not a smell. graph-integrity.ts:148/154 rewrite every `play` node to `effect` during normalizeTriggerGraphToGen3, and hydrate.ts:400/418/455 run that normalisation on every graph reaching the store — so trigger-flow-projection.ts:34's `case 'play':` arm is unreachable and every real effect node falls to `default: return base` at line 51. Its effectId / playType / canvasScene therefore never enter the projection signature, so projectTriggerFlowNodes reuses the previous flow-node object verbatim when an effect node's effect changes. Ship the smallest possible correction — `case 'play': case 'effect':` — ahead of all type work so the user-visible fix is not hostage to a refactor.",
+      "files": [
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+        "apps/web/src/lib/app/views/trigger-flow-projection.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Write the test FIRST in trigger-flow-projection.test.ts: triggerNodeSignature for a kind:'effect' node with effectId:'a' must differ from the same node with effectId:'b', and likewise for playType and canvasScene. Confirm it is RED at HEAD — that failure IS the proof the arm is dead — then add the fallthrough case and confirm GREEN. Then `pnpm gates`. State explicitly in the commit message that this step deliberately CHANGES behaviour: more cache misses and more xyflow node rebuilds for effect nodes.",
+      "reverses": "git revert the single commit; the fallthrough case and its three assertions are the entire diff."
+    },
+    {
+      "id": "S2",
+      "title": "Hoop-target grammar: three named parse policies, one format helper",
+      "intent": "primitive-obsession-0003 without the type change. Verified at HEAD: the `\"<drumId>#<h>[,<h>]\"` grammar is spelled in FIVE places (scope.ts:41 parse, scope.ts:90 fromPixelSet encode, scope-inspector.ts:33 encodeHoopTarget, persistence.ts:171 shiftHoopTargetTo1Based, scope-lint.ts:37 staticScope) and parseHoopTarget's three behaviour flags are supplied as anonymous literals at four call sites carrying exactly three distinct policies. Name the policies and single-source the formatter so the ambiguity becomes readable — without promoting targetId to a ScopeTarget union (272 matches across 38 files) and without removing parseHoopTarget's emptyFallback/sourceDrumOnNoHash fallback branches, which the finding itself flagged as removes_failure_path. Two of the five sites are deliberately EXCLUDED and recorded as residue rather than silently claimed: persistence.ts:171 is a version-gated 0-based→1-based migration whose `Number.isInteger` filter intentionally admits index 0 where parseHoopTarget filters `>= 1`, so routing it through the shared parse would change the migration; scope-lint.ts is handled separately in S13 because it is a behaviour change with its own suite.",
+      "files": [
+        "packages/core/src/voice/scope.ts",
+        "packages/core/src/voice/scope.parse.test.ts",
+        "packages/core/src/voice/compositor.ts",
+        "apps/web/src/lib/trigger-lab/render.ts",
+        "apps/web/src/lib/app/docks/inspectors/scope-inspector.ts",
+        "apps/web/src/lib/app/docks/inspectors/scope-inspector.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Export `HOOP_TARGET_POLICIES = { compositor: {sourceDrumOnNoHash:true, emptyFallback:'first', sort:false}, inspector: {sourceDrumOnNoHash:true, emptyFallback:'none', sort:true}, resolver: {sourceDrumOnNoHash:false, emptyFallback:'sentinel', sort:true} } satisfies Record<string, ParseHoopTargetOptions>`. These three literals are VERIFIED against HEAD: compositor.ts:36 and render.ts:30 both pass the compositor set; scope-inspector.ts:25 passes the inspector set; scope.ts:65 (toPixelSet) passes the resolver set — four call sites, three policies. scope.parse.test.ts:9-11 already declares the same three as local consts, so the test file becomes the assertion that the exported presets equal what every caller passes today: replace those local consts with imports of the presets and the suite fails if any preset drifts. Repoint all four call sites. Move `encodeHoopTarget` (dedupe, drop <1, sort) from scope-inspector.ts:33 into scope.ts and re-export; add a private `formatHoopTarget(drumId, indices)` = `${drumId}#${indices.join(',')}` used by BOTH encodeHoopTarget and fromPixelSet (scope.ts:90). PARITY HAZARD, must be honoured: fromPixelSet keeps calling the NON-normalising formatHoopTarget — its indices can legitimately be the `[-1]` sentinel from emptyFallback:'sentinel', which encodeHoopTarget's `>= 1` filter would silently erase into `\"drum#\"`; add a scope.parse.test.ts case pinning fromPixelSet of a sentinel hoop set. Add a CHARACTERISATION test named `documents-unescaped-drumid-limitation` asserting the CURRENT (wrong) result of round-tripping a drumId containing '#' — do NOT fix it and do NOT add a new TriggerGraphIssueCode for it (a new issue code flows through normalizeTriggerGraphToGen3 into hydrate's user-visible issue list, a behaviour change no reviewer priced); see open question 1. Verify with `pnpm gates` plus specifically scope.parse.test.ts, scope-lint.test.ts, persistence.hoop-migration.test.ts and clipdoc.hoop-migration.test.ts, all unchanged in expectation.",
+      "reverses": "git revert; the web-side encodeHoopTarget deletion and the core addition are in one commit so the revert restores both together."
+    },
+    {
+      "id": "S3",
+      "title": "Evict modulation-parity fixtures from core's shipped surface (pre-flight first)",
+      "intent": "middle-man-0003. packages/core/src/voice/index.ts:20-26 hand-picks five symbols out of modulation-parity.ts — including legacyEnvValue, a reimplementation of the SUPERSEDED envelope formula — purely so apps/web's hydrate.envmap.test.ts can reach a fixture through `voice.legacyEnvValue` (core/index.ts:73 does `export * as voice from './voice'`). That publishes deliberately-wrong math on the shipped API where an implementer could call it. Give the fixtures a test-only entry point and shrink core's public voice namespace by five names.",
+      "files": [
+        "packages/core/package.json",
+        "packages/core/src/test-fixtures.ts",
+        "packages/core/src/voice/index.ts",
+        "packages/core/src/voice/modulation.test.ts",
+        "apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts"
+      ],
+      "risk": "low",
+      "verification": "PRE-FLIGHT ORDERING IS PART OF THE STEP (a subpath export is a novel pattern here — packages/core/package.json `exports` currently holds only `\".\"`). FIRST: add `\"./test-fixtures\": \"./src/test-fixtures.ts\"` to the exports map, create packages/core/src/test-fixtures.ts re-exporting modulation-parity, repoint packages/core/src/voice/modulation.test.ts to a relative import and hydrate.envmap.test.ts to '@ledrums/core/test-fixtures', and run `pnpm typecheck` for BOTH packages plus `pnpm gates` — the barrel block is still present at this point, so a resolution failure costs nothing. ONLY THEN delete lines 20-26 of voice/index.ts. Then the two gates the attacks demanded: (a) `pnpm build` for apps/web AND the Tauri desktop sidecar bundle (packages/core's own `build` script is `tsc --noEmit`, so tsc alone proves nothing about what bundles — the sidecar is the only consumer that resolves core outside Bundler resolution), and grep the built apps/web bundle output for `legacyEnvValue` and `MODULATION_PARITY_CASES`: both must be ABSENT, which is also the only real evidence for the tree-shaking win this step claims; (b) `grep -rn 'legacyEnvValue\\|MODULATION_PARITY_CASES\\|PARITY_PHASES\\|mappingEnvValue' apps packages --include='*.ts' --include='*.svelte' | grep -v node_modules` returns hits ONLY in modulation-parity.ts, test-fixtures.ts and the two test files.",
+      "reverses": "git revert. If the exports subpath fights vite/vitest or the sidecar build during the pre-flight, STOP: keep the block in voice/index.ts, land only the grep guard, and record the toolchain limitation — do not force the entry point."
+    },
+    {
+      "id": "S4",
+      "title": "Tie MOD_SOURCE_KINDS to NodeKind with satisfies + a narrowing predicate",
+      "intent": "repeated-switches-0002, first half. modulation-graph.ts:30 declares the six modulation-source kinds as a bare `as const` array with no link to the NodeKind union, and isModSourceKind (line 33) takes `kind: string` and returns `boolean`, so it can neither be checked against NodeKind nor narrow a caller. Additive typing only: no dispatch changes yet, so this commit is provably behaviour-identical.",
+      "files": [
+        "packages/core/src/voice/modulation-graph.ts",
+        "packages/core/src/voice/modulation-graph.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Change to `export const MOD_SOURCE_KINDS = [...] as const satisfies readonly NodeKind[];`, add `export type ModSourceKind = (typeof MOD_SOURCE_KINDS)[number];`, and change the predicate to `export function isModSourceKind(kind: string): kind is ModSourceKind`. The function BODY is unchanged, so runtime behaviour is byte-identical. Confirm the predicate widening breaks nothing at its six existing callers (TriggerGraphView.svelte:575/595, node-options.ts:61, sim.graph-compilation.ts:57/59/68) — each passes a NodeKind or a string, both still assignable. Prove the new enforcement by mutation: temporarily append `'bogus'` to the array and confirm `pnpm typecheck` now errors on the satisfies clause (it does not today); revert the mutation. `pnpm gates` green — modulation-graph, modulation-cc/lfo/osc/random-note suites unchanged.",
+      "reverses": "git revert; three type-level edits, no runtime diff."
+    },
+    {
+      "id": "S5",
+      "title": "Delete the web's hand-spelled mod-source enumerations (corrected scope)",
+      "intent": "repeated-switches-0002, second half — with opus's scope corrected against the source. (a) TriggerNode.svelte:127 hardcodes `kind === 'envelope' || kind === 'lfo' || kind === 'cc' || kind === 'note' || kind === 'osc' || kind === 'randomMod'` even though the SAME FILE already imports `nodeIsModSource` at line 41 and uses it at line 260 — a genuinely mechanical, zero-semantic-delta swap. (b) NodeSignalPreview.svelte is NOT the parallel ladder both the finding and opus's plan assumed: its `kind` prop is a component-local union `'envelope'|'lfo'|'cc'|'note'|'osc'|'random'` that deliberately renames randomMod→'random' at the boundary (TriggerNode.svelte:199-200 does the rename), and it has exactly ONE caller. Routing it through nodeIsModSource is not executable; instead retype the prop as `voice.ModSourceKind` and delete the boundary rename, so a seventh source kind forces a compile decision here too and one vocabulary replaces two. (c) add-node-taxonomy.ts's Modulate group is likewise NOT derivable from MOD_SOURCE_KINDS as fable's variant proposed — envelope and lfo each expand into five named PRESETS with distinct ids/labels/hints (lines 74-91), so deriving would change the palette. Leave the palette shape alone and instead replace add-node-taxonomy.test.ts's hardcoded id list with a PARITY assertion, which is exactly what the verdict on repeated-switches-0002 said the test was missing.",
+      "files": [
+        "apps/web/src/lib/app/views/TriggerNode.svelte",
+        "apps/web/src/lib/app/views/NodeSignalPreview.svelte",
+        "apps/web/src/lib/app/views/add-node-taxonomy.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "(a) Replace TriggerNode.svelte:127 with `$derived(nodeIsModSource(kind))` — the import already exists at line 41, so the diff is one line. (b) Change NodeSignalPreview's Props.kind to `voice.ModSourceKind`, rewrite its three internal `kind === 'random'` comparisons (randomDensity at ~line 46, the label ladder at ~line 175, the `class:cc` binding) to `'randomMod'`, and change TriggerNode.svelte:200 to pass kind=\"randomMod\"; svelte-check must be clean and the rendered label strings must be byte-identical (assert the six labels in a small unit test over the label expression, extracted to a pure helper if needed). (c) Add to add-node-taxonomy.test.ts: `expect(new Set(modulateItems.map(i => i.previewKind))).toEqual(new Set(voice.MOD_SOURCE_KINDS))` — every mod-source kind must be reachable from the Modulate palette and no other kind may appear there; keep the existing id-list assertion so a palette change still has to be deliberate. Because these are Svelte components with near-zero unit coverage, a green suite is NOT the evidence: run `pnpm ui-shot` (pin UI_SHOT_BASE to the pool's TWUX_DEV_PORT; patch dock target is `.idock`) capturing the Trigger Graph with one node of EACH of the six source kinds on canvas plus the add-node palette open, diff against the same shots taken at HEAD before the edit, and confirm ui-shot reports zero console errors. Per AGENTS.md this UI touch also gets a /make-interfaces-feel-better pass — which must find nothing to change, since the visual output is required to be identical.",
+      "reverses": "git revert; TriggerNode returns to its literal ladder and NodeSignalPreview to its local vocabulary. (a), (b) and (c) are one commit deliberately: reverting (b) alone would leave TriggerNode passing a kind the component no longer accepts."
+    },
+    {
+      "id": "S6",
+      "title": "triggerNodeSignature: switch → Record<NodeKind, SigFn>, no default arm",
+      "intent": "primitive-obsession-0009 plus the durable half of repeated-switches-0001. S1 makes the effect arm reachable; this makes the drift impossible to reintroduce. The `default: return base` at line 51 is what let the whole bug class exist — it silently absorbs kinds. Replacing the switch with an exhaustive Record keyed on NodeKind means adding a kind is a compile error here, using the repo's existing idiom (trigger-node-meta.ts:32/63/87 already declare `Record<NodeKind, …>` tables).",
+      "files": [
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+        "apps/web/src/lib/app/views/trigger-flow-projection.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Define `type SigFn = (n: GraphNode, base: string, graph: TriggerGraph | null | undefined) => string;` and `const KIND_SIG: Record<NodeKind, SigFn> = { … }` with an explicit entry for all 19 canonical kinds plus the legacy 'play' key (which shares the effect entry). PARITY REQUIREMENT with the count stated correctly — both reviewers landed the same attack on opus's 'eight', and the source confirms TEN: trigger-flow-projection.ts:31-52 has nine arms covering eight canonical kinds (switch, modifier, mix, cc, note, osc, randomMod, lfo) plus legacy 'play', so post-S1 exactly TEN canonical kinds legitimately contribute nothing — trigger, all, random, sequence, chance, toggle, delay, scope, output, envelope. Each of those ten gets an explicit `() => base` entry, so 'contributes nothing' is a decision on the page rather than a fallthrough. The GOLDEN TABLE, not the count, is the authority: add a table test that, for every member of a locally-listed 19-kind array, asserts the new signature string equals a golden captured from HEAD-after-S1 (generate the goldens by running the same table against the pre-refactor function at this commit's parent). A miscount fails that test. Then `pnpm gates`.",
+      "reverses": "git revert restores the switch; S1's correctness does not depend on this step, and S1's committed test still pins the effect arm."
+    },
+    {
+      "id": "S7",
+      "title": "applyModifierChain: 8 positional params → ModifierContext, constructed per call",
+      "intent": "data-clumps-0004. chain.ts:34-45 takes (chain, state, fb, range, model, timeMs, dt, modCtx?) and line 44 immediately does `const ctx: ModifierContext = { model, timeMs, dt }` — the clump already has a public name (modifiers/types.ts:43-48) and is already what every modifier's `apply` receives (types.ts:64). `timeMs` and `dt` are adjacent bare numbers, so a transposition at any of the three production call sites type-checks silently, and the apps/web sim mirror (render.ts:265) can drift from the core bridge independently.",
+      "files": [
+        "packages/core/src/modifiers/chain.ts",
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/generator-bridge.ts",
+        "apps/web/src/lib/trigger-lab/render.ts",
+        "packages/core/src/modifiers/modifiers.s30.test.ts",
+        "packages/core/src/modifiers/modifiers.s31.test.ts",
+        "packages/core/src/modifiers/modifiers.s32.test.ts",
+        "packages/core/src/modifiers/slice.test.ts",
+        "packages/core/src/modifiers/trail.test.ts",
+        "packages/core/src/voice/modifier-graph.test.ts"
+      ],
+      "risk": "high",
+      "verification": "New signature `applyModifierChain(chain, state, fb, range, ctx: ModifierContext, modCtx?: ModSampleCtx)` — 6 params, no new exported symbol. ALIASING REPAIR (both reviewers landed this attack on opus's and fable's identical 'hoist one ctx per frame and mutate ctx.timeMs per voice' instruction): the caller constructs the ModifierContext PER CALL, exactly where chain.ts:44 constructs it today — sonnet's form, and the only one that is provably semantics-preserving. Today one ctx is allocated per applyModifierChain call; after the change one ctx is allocated per applyModifierChain call, at the caller instead of the callee. Allocation count identical, aliasing identical, no modifier can observe a difference. Do NOT hoist-and-mutate: a per-frame mutated object would let any modifier that retains its ctx reference read whatever the LAST voice wrote, and neither the suites nor an allocation harness can detect that. BELT AND BRACES, also demanded by both reviewers: audit every modifier for ctx escape — `grep -n 'ctx' packages/core/src/modifiers/impl/*.ts` and confirm no impl assigns the ctx parameter into its state slot or module scope (at HEAD thirteen impls take `_ctx` and ignore it outright); document in modifiers/types.ts that ModifierContext is a BORROWED, per-call view that must not be retained. Then `pnpm typecheck` enumerates all ~33 call sites and the compiler can no longer accept a model/timeMs/dt transposition. Then `pnpm gates`, with modifiers.s30/s31/s32, slice, trail, modifier-graph and determinism.test.ts (seeded, the strongest parity oracle in the repo) green unchanged. Finally the heap-delta harness (uncommitted scratch, `node --expose-gc`, 10_000 compositor.render() calls over a 4-voice/2-modifier show, heapUsed delta at HEAD vs branch): must not increase — with per-call construction it must be flat, and a rise means the refactor accidentally moved an allocation into an inner loop.",
+      "reverses": "git revert the single commit — it is deliberately atomic across packages/core and the apps/web sim mirror precisely so the two cannot be reverted apart and left disagreeing on argument order."
+    },
+    {
+      "id": "S8",
+      "title": "applyEffectiveParams: 6 positional params → (voice, FrameModCtx)",
+      "intent": "data-clumps-0001. The tuple {timeMs,bpm,cc,osc,notes} travels the voice path under three names: compositor.ts:80 already declares `type FrameModCtx = Omit<ModSampleCtx,'phase'>` and modCtxFor consumes it, yet the sibling export applyEffectiveParams (line 61) takes the same five members positionally and rebuilds them internally at line 71, and engine.ts:711 explodes five adjacent engine fields at the call. Export FrameModCtx and make it the parameter.",
+      "files": [
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/engine.ts",
+        "packages/core/src/voice/compositor.test.ts",
+        "packages/core/src/voice/modulation.test.ts",
+        "packages/core/src/voice/modulation-graph.test.ts"
+      ],
+      "risk": "high",
+      "verification": "Export FrameModCtx from compositor.ts (currently a private alias at line 80) and change the signature to `applyEffectiveParams(v: Voice, frame: FrameModCtx): ParamValues`, dropping the internal re-bundle at line 71 in favour of `{ phase: voicePhase(v, frame.timeMs), ...frame }` — the same single allocation the line already makes, and only when the voice has modulations. VoiceEngine gains ONE private mutable `frameMod: FrameModCtx` field, refreshed at the top of tick() (engine.ts:694-699, where this.timeMs/this.bpm are already assigned) and passed to every applyEffectiveParams call in the line-711 sweep, so the per-voice loop allocates nothing new. HARD CONSTRAINT, and the reason opus's version survived the aliasing attack where fable's did not: leave CompositorFrame's shape ALONE and keep render()'s single conversion at compositor.ts:193-199 — the engine's mutable scratch must NEVER cross the host seam into compositor state. Explicitly reject fable's 'compositor.render can now reuse rather than hand-copy'. Apply the same escape audit as S7: grep compositor.ts and engine.ts for any assignment of the frameMod reference into a voice, a modifier state slot or a pending/delay descriptor; a retained reference would read later-frame values. Verify: `pnpm typecheck` names every call site; then `pnpm gates` with compositor.test.ts (40KB, the densest suite on this path), engine.test.ts, modulation-cc/lfo/osc/random-note.test.ts and determinism.test.ts green UNCHANGED — determinism is what catches a mis-threaded bpm or a dropped table. Re-run the S7 heap-delta harness and confirm no per-frame allocation increase.",
+      "reverses": "git revert the single commit; the private frameMod field on VoiceEngine is introduced and removed together with the signature change, so no half-state exists."
+    },
+    {
+      "id": "S9",
+      "title": "eval-graph: EvalCursor replaces the 8-slot forwarded tuple",
+      "intent": "data-clumps-0003. evalGraphGen3 → evalGraphGen3FromPlan (line 269) and evalChildren → evalGraphGen3From → evalGraphGen3FromPlan (lines 625, 274) all carry the identical 8-slot positional tuple (state, graph|plan, pad, startIds, ctx, viaPrefix, seen, draft). Six of eight are one traversal cursor; `viaPrefix: string` sits adjacent to `pad: string` and `seen` is invariant-carrying, so a swap type-checks cleanly across three hops. Confine the change to one file by keeping evalChildren's exported signature intact.",
+      "files": [
+        "packages/core/src/voice/eval-graph.ts"
+      ],
+      "risk": "high",
+      "verification": "Introduce `interface EvalCursor { state: EvalState; pad: string; ctx: TriggerCtx; viaPrefix: string; seen: Set<string> }`, NOT exported (file-local). evalGraphGen3FromPlan / evalGraphGen3From become `(cursor: EvalCursor, plan|graph, startIds, draft)`. The exported `evalChildren` (line 615) keeps its exact current parameter list and constructs the cursor — it is the engine's pending-fire drain entry point (engine.ts:687) and apps/web sim.ts:595 calls the same seam, so its signature must not move; blast radius stays one file, confirmed by `git diff --stat` showing a single path. The delay-enqueue site at eval-graph.ts:565-578 already builds a named descriptor object carrying {pad, ctx, childIds, viaPrefix, seen, draft} — cross-check the cursor construction field-for-field against it, since a mismatch there is the exact transposition this step exists to make impossible. Verify: `pnpm gates` with eval-graph.delay-timeline, eval-graph.fanin-coalescing, eval-graph.mix, eval-graph.playtype, engine.delay-overlap and determinism.test.ts green unchanged — these pin the R13/R14 fan-in and delay-drain semantics a transposed `seen` or `viaPrefix` would break.",
+      "reverses": "git revert; one file, no exported surface changed, so nothing downstream can be left half-migrated."
+    },
+    {
+      "id": "S10",
+      "title": "Add NodeView: a per-kind view union derived from GraphNode by Pick",
+      "intent": "primitive-obsession-0001, the strangler seam — and the step that makes this plan's bet explicit. GraphNode stays exactly as it is: 40 fields, 27 optional, the persisted record. Alongside it, a new module publishes a discriminated VIEW of the same object, one arm per kind, each arm built from `Pick<GraphNode, …>` so a field's type can never diverge from the record's. Purely additive: no consumer changes in this step, so it cannot regress anything.",
+      "files": [
+        "packages/core/src/voice/node-view.ts",
+        "packages/core/src/voice/node-view.test.ts",
+        "packages/core/src/voice/index.ts"
+      ],
+      "risk": "low",
+      "verification": "Shape: `type Base = Pick<GraphNode,'id'|'x'|'y'>;` `type View<K extends NodeKind, F extends keyof GraphNode> = Base & { kind: K } & Pick<GraphNode, F>;` then one arm per kind (effect|play carrying mode/scope/targetId/effectId/playType/canvasScene/presetId/busId/params/env/modInputs; modifier carrying modifierId/bypass/params/env/modInputs; mix carrying mixBlendMode; switch carrying on/valueMode/threshold/invert/bands; chance carrying p; delay carrying delayMode/ms/division; random carrying noRepeat; scope carrying scope/targetId; output carrying scope/targetId; trigger carrying source; lfo carrying lfo; cc carrying ccController/ccChannel/ccSource/oscAddress; osc carrying oscAddress; note carrying noteNumber/noteChannel/noteMode/noteReleaseMs; randomMod carrying randomDistribution/randomSteps; envelope carrying env; all|sequence|toggle carrying base only), plus `export function narrowNode(n: GraphNode): NodeView { return n as NodeView; }` — ONE cast in the whole codebase, at one seam, commented. ASSERTION REPAIR (opus's reviewer landed this): DROP the `_Sound` assertion `GraphNode & {kind:K} extends Extract<NodeView,{kind:K}>` — it is vacuous, because the flat record is a structural supertype of every Pick-based arm, so it holds for any partition including an empty one and proves nothing. Keep only the two assertions that bite, and add the one that catches real omissions: (a) TOTALITY — `type _Total = Exclude<NodeKind, NodeView['kind']> extends never ? true : never`, so a new kind with no arm fails to compile; (b) NO ORPHAN FIELDS — `type _Orphans = Exclude<keyof GraphNode, KeysOfUnion<NodeView>>` must be `never`, so adding a field to GraphNode without assigning it to a kind fails to compile; (c) PER-KIND FIELD USAGE — a test-owned table enumerating, for each kind, the GraphNode fields that site-level code actually reads for that kind (seeded from the S6 KIND_SIG entries, nodeModSource's six builders, and each *NodeInspector.svelte's field reads), asserting each arm's key set is a SUPERSET of its kind's enumerated usage. That is the assertion that would have caught the cc arm's missing ccSource/oscAddress, which _Sound cannot. Add one runtime assertion so vitest counts the file. Export from voice/index.ts. `pnpm gates` — test count rises, nothing else moves.",
+      "reverses": "git revert; the module has no consumers at this point, so removal is a pure deletion."
+    },
+    {
+      "id": "S11",
+      "title": "First NodeView consumer: the projection signature Record",
+      "intent": "Prove the seam on the site that motivated it. After S6 the signature Record is total over kinds but each SigFn still receives the flat GraphNode, so it can still read a field belonging to another kind — which is precisely how the cc arm came to omit ccSource/oscAddress and the modifier arm to omit bypass (primitive-obsession-0009). Typing each entry against its own NodeView arm makes those omissions visible and makes cross-kind field reads a compile error.",
+      "files": [
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+        "apps/web/src/lib/app/views/trigger-flow-projection.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Retype the Record as `{ [K in NodeKind]: (n: Extract<NodeView,{kind:K}>, base: string, graph: TriggerGraph|null|undefined) => string }` and dispatch through `const v = narrowNode(n); KIND_SIG[v.kind](v as never, base, graph)` — the single dispatch-site widening is unavoidable in TS for keyed-Record dispatch and is confined to one line. PARITY FIRST: land the retype producing byte-identical signature strings, re-running the S6 golden table unchanged. THEN, as a clearly separated follow-on in the same commit, add the three fields the finding names (ccSource and oscAddress on the cc arm, bypass on the modifier arm) with their own red-first tests, and state in the commit message that this is an intentional behaviour change — more xyflow rebuilds when those fields toggle — mirroring S1. If either addition causes a visible xyflow regression in the ui-shot check, drop the addition and keep the retype: the retype is the durable win. Evidence beyond the suite: `pnpm ui-shot` on the Trigger Graph, toggling a cc node between MIDI and OSC source and a modifier node's bypass, confirming the node face updates and no wire vanishes (the R01/GH#80 class), zero console errors.",
+      "reverses": "git revert restores the flat-GraphNode Record from S6; S10's NodeView stays and remains harmless."
+    },
+    {
+      "id": "S12",
+      "title": "Second NodeView consumer: nodeModSource dispatch Record in core",
+      "intent": "repeated-switches-0002's durable half, and the proof that NodeView works inside packages/core, not just in the web view layer. modulation-graph.ts:50-77 switches on node.kind and ends `default: return null` — a silent fail-open for any unlisted kind, with no compiler link to MOD_SOURCE_KINDS. Convert to a Record keyed by ModSourceKind (from S4) with each entry typed against its NodeView arm, guarded by the S4 type predicate so the fail-open is PRESERVED rather than removed.",
+      "files": [
+        "packages/core/src/voice/modulation-graph.ts",
+        "packages/core/src/voice/modulation-graph.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "`const MOD_SOURCE_BY_KIND: { [K in ModSourceKind]: (n: Extract<NodeView,{kind:K}>) => ModSource } = { … }` with the six existing bodies moved across VERBATIM including every `??` default — env→defaultEnvelope('decay'), lfo→defaultLfoSettings(), ccController→1, ccChannel→null, oscAddress→'', noteNumber→60, noteChannel→null, noteMode→'gate', noteReleaseMs→0, randomDistribution→'linear', randomSteps→4. These are load-bearing back-compat for graphs authored before each field existed and must not shift; diff them line-by-line against HEAD as part of review. Body becomes `if (!isModSourceKind(node.kind)) return null; return MOD_SOURCE_BY_KIND[node.kind](narrowNode(node) as never);` — the null fail-open for a stray non-source wire (relied on by resolveNodeModulations' `if (!source) continue`) survives verbatim, satisfying the finding's removes_failure_path caveat. Prove enforcement by mutation: add a seventh member to MOD_SOURCE_KINDS and confirm `pnpm typecheck` now errors in BOTH the satisfies clause and the Record (today it errors nowhere); revert. `pnpm gates` with modulation-graph, modulation-cc/lfo/osc/random-note, modifier-graph and determinism.test.ts green unchanged.",
+      "reverses": "git revert restores the switch and its `default: return null`; S4's typing stays and is independently useful."
+    },
+    {
+      "id": "S13",
+      "title": "Align scope-lint's private hoop parse with the post-A1 1-based grammar",
+      "intent": "The synthesis's own finding, missed by all three variants and both reviewers: packages/core/src/voice/scope-lint.ts:37-51 is a FIFTH hand-rolled copy of the hoop-target grammar and it is out of step with the A1 cutover. It uses `targetId.split('#')` (so a drumId containing '#' loses its tail differently from every other site) and filters `Number.isInteger(v) && v >= 0`, admitting hoop index 0, where scope.ts:53 filters `v >= 1` because hoops are 1-based after A1. Consequence: a node targeting `\"kick#0\"` resolves at runtime to the empty sentinel but the empty-scope lint sees hoop {0} and treats the branch as alive — a false negative in exactly the diagnostic that exists to surface wired-but-inert branches. Route staticScope through S2's shared parse under an explicit named policy so the lint and the resolver can no longer disagree.",
+      "files": [
+        "packages/core/src/voice/scope-lint.ts",
+        "packages/core/src/voice/scope-lint.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "CHARACTERISATION FIRST: add a scope-lint.test.ts case pinning today's behaviour for a `\"kick#0\"` hoop target (the lint does NOT flag the branch) and confirm it is green at HEAD — that is the proof the divergence is real and not a reading. Then replace staticScope's inline parse with `parseHoopTarget(targetId, null, HOOP_TARGET_POLICIES.resolver)` mapped onto StaticScope (the resolver policy is the one scope.ts's own toPixelSet uses, so lint and runtime share one decoder), keeping the `drum: null` wildcard semantics and the bare-target `hoops: [0]` sentinel decision explicit rather than incidental. Flip the characterisation test to the corrected expectation and label it a deliberate behaviour change in the commit message: the lint now flags a 0-index hoop target as provably empty. Run the whole scope-lint.test.ts suite: any OTHER expectation that moves is a signal the existing suite encoded the leniency on purpose — if so, STOP, revert to the inline parse, and record it as a residue with the characterisation test retained. `pnpm gates` green; no render-path file is touched, so `git diff --stat -- packages/core/src/voice/compositor.ts packages/core/src/voice/engine.ts packages/core/src/voice/eval-graph.ts` must be empty for this commit.",
+      "reverses": "git revert; scope-lint.ts returns to its private parse and the characterisation test reverts with it. This step is deliberately last-in-wave and file-isolated so backing it out cannot disturb S2's grammar consolidation."
+    },
+    {
+      "id": "S14",
+      "title": "Acceptance: measured kind-mutation probe across every dispatch site",
+      "intent": "The whole initiative's claim is 'adding a kind now produces compile errors instead of silent defaults'. That claim is not proven by any green suite — it is proven by mutating the union and reading the compiler, against a MEASURED baseline rather than an assumed one. This step produces the evidence and is never committed.",
+      "files": [
+        "packages/core/src/voice/types.ts"
+      ],
+      "risk": "low",
+      "verification": "BASELINE FIRST (the repair both reviewers demanded — opus's plan asserted that only render-plan.ts errors at baseline, which is false: apps/web/src/lib/app/views/trigger-node-meta.ts:32/63/87 already declare three `Record<NodeKind, …>` tables and apps/web/src/lib/styleguide/sections/SectionComposites.svelte:84 a fourth). On a scratch worktree at baseline sha 3708648, append `| '__probe'` to CanonicalGraphNodeKind — the probe is named ONCE, here, and every other step references it rather than restating an ordinal — and record the FULL error list from BOTH `pnpm typecheck` AND `pnpm --filter @ledrums/web check`. The svelte-check run is not optional: `tsc --noEmit` does not read .svelte templates, so a Record<NodeKind,…> inside a component is invisible to the probe without it. Repeat on a scratch worktree at the branch head. The DELTA between the two error lists is the initiative's measured deliverable and belongs in the completion report; the honest expected gain is {node-view.ts _Total, trigger-flow-projection.ts KIND_SIG, modulation-graph.ts MOD_SOURCE_BY_KIND}. EXPECTED STILL SILENT, and therefore reported as remaining gaps rather than claimed as fixed: eval-graph.ts's void mod-source arms (eval-graph.ts:581-588), add-node-taxonomy.ts's palette groups, TriggerNode.svelte's isStateKind ladder, graph-integrity.ts's anchorNode default fill, sim.graph-compilation.ts's makeNode, and store.svelte.ts's hand-guarded mutators. In the same scratch worktree also record `grep -rl 'Partial<GraphNode>' packages/core/src apps/web/src | wc -l` — 26 at HEAD — because that cascade is what any future flip of GraphNode itself must pay, and it is the number open question 2 needs. Then `git checkout -- packages/core/src/voice/types.ts` and confirm `git status` clean on both worktrees.",
+      "reverses": "Discard the working-tree edit; this step must never reach a commit — a probe kind in a commit would ship a bogus NodeKind."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2", "S3"],
+    ["S4", "S7", "S10", "S13"],
+    ["S5", "S6", "S8"],
+    ["S9", "S11", "S12"],
+    ["S14"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/core (voice namespace, packages/core/src/voice/index.ts:20-26)",
+      "removed": ["MODULATION_PARITY_CASES", "PARITY_PHASES", "legacyEnvValue", "mappingEnvValue", "ParityCase"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Five names leave the shipped surface, one of them (legacyEnvValue) a reimplementation of superseded envelope math. They move to a new '@ledrums/core/test-fixtures' subpath — a second ENTRY POINT, not a second public API: nothing in the production graph may import it, guarded by S3's grep AND by the built-bundle grep the refutation forced into the step."
+    },
+    {
+      "at": "packages/core/src/voice/scope.ts",
+      "removed": [],
+      "added": ["HOOP_TARGET_POLICIES", "encodeHoopTarget"],
+      "net_interface_change": "increases",
+      "note": "Deliberate. Two names bought in core (reachable via voice/index.ts:16's `export * from './scope'`) to delete one duplicated encoder in apps/web, replace anonymous option literals at four call sites with three named policies, and give scope-lint (S13) a shared decoder. The alternative — the finding's ScopeTarget union — adds two names AND rewrites 38 files AND removes two fallback branches; this buys most of the legibility for none of the risk."
+    },
+    {
+      "at": "apps/web/src/lib/app/docks/inspectors/scope-inspector.ts",
+      "removed": ["encodeHoopTarget"],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Re-exported from core instead; the hoop-target ENCODER is now spelled in exactly one module. The decoder reaches four of five sites — persistence.ts:171's version-gated 0-based migration is deliberate residue (S2)."
+    },
+    {
+      "at": "packages/core/src/voice/modulation-graph.ts",
+      "removed": [],
+      "added": ["ModSourceKind"],
+      "net_interface_change": "increases",
+      "note": "One type alias. It converts isModSourceKind from a boolean into a narrowing predicate, which is what lets S12's Record dispatch exist without an unchecked index, and it deletes one inline six-literal ladder in TriggerNode.svelte plus one component-local vocabulary in NodeSignalPreview.svelte (S5)."
+    },
+    {
+      "at": "apps/web/src/lib/app/views/NodeSignalPreview.svelte (props)",
+      "removed": ["kind: 'envelope'|'lfo'|'cc'|'note'|'osc'|'random' (component-local vocabulary with a randomMod→'random' boundary rename)"],
+      "added": ["kind: voice.ModSourceKind"],
+      "net_interface_change": "reduces",
+      "note": "One vocabulary replaces two across a one-caller boundary. Not a module export, but it is a real surface: the rename was the reason the six-kind set was spelled a sixth time."
+    },
+    {
+      "at": "packages/core/src/voice/node-view.ts (new)",
+      "removed": [],
+      "added": ["NodeView", "narrowNode"],
+      "net_interface_change": "increases",
+      "note": "The honest cost of this plan's central bet, and the one the opus reviewer pressed hardest on. Two names buy per-kind field discipline at every adopting consumer WITHOUT changing GraphNode's 40-field record, without a persistence migration and without touching hydrate. If open question 2 resolves to flipping GraphNode itself, NodeView is deleted at that point and this becomes 'reduces'; if it resolves to keeping the flat record, these two names are permanent and must earn their keep at every adopted site."
+    },
+    {
+      "at": "packages/core/src/modifiers/chain.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "No symbol change; applyModifierChain goes 8 params → 6 by consuming the already-public ModifierContext. Interface per unit of behaviour falls with no new name. The construction moves from callee to caller with identical allocation and aliasing."
+    },
+    {
+      "at": "packages/core/src/voice/compositor.ts",
+      "removed": [],
+      "added": ["FrameModCtx"],
+      "net_interface_change": "reduces",
+      "note": "One type promoted from private alias to export; applyEffectiveParams goes 6 params → 2 and stops re-bundling internally. Parameters removed (4) exceed names added (1). CompositorFrame is deliberately NOT reshaped — it is the host-facing seam and the barrier that keeps the engine's mutable scratch from crossing into compositor state."
+    },
+    {
+      "at": "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "Same exported functions; a defaulting switch over 19 kinds becomes a total Record whose entries are typed per NodeView arm. The gain is enforcement, not surface."
+    },
+    {
+      "at": "packages/core/src/voice/scope-lint.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "No exported change; a private hand-rolled parse is replaced by the shared decoder under a named policy. The gain is that the lint and the resolver can no longer disagree about what a hoop target means."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates after EVERY step (machine-mutex, typecheck + full suite). Baseline: 2968 tests green at sha 3708648 plus the fix batches already landed tonight. Test count may only RISE, never fall; a step that lowers it has deleted coverage and must be rejected.",
+      "packages/core/src/voice/determinism.test.ts — the strongest parity oracle in the repo (seeded, whole-pipeline). Green and UNCHANGED after S7, S8, S9, S12 and S13; any edit to that file during those steps is disqualifying evidence.",
+      "S1 red-first: the new triggerNodeSignature effect-id assertion must FAIL at HEAD before the fix and pass after. That failure IS the proof the 'play'-only arm was dead.",
+      "S6 golden table: a 19-kind table test capturing triggerNodeSignature output at HEAD-after-S1 and asserting byte-identical output after the switch→Record conversion. The table, not a hardcoded count, is the authority on which TEN canonical kinds are no-ops.",
+      "S13 characterisation-first: a scope-lint.test.ts case pinning today's non-flagging of a `\"kick#0\"` hoop target must be GREEN at HEAD before the parse is changed, then flipped to the corrected expectation. Any OTHER scope-lint expectation that moves aborts the step.",
+      "S2 preset equality: scope.parse.test.ts's three local option consts (lines 9-11) are replaced by imports of HOOP_TARGET_POLICIES, so the suite itself asserts the exported presets equal what all four call sites pass today.",
+      "S3 build gate: `pnpm build` for apps/web AND the Tauri desktop sidecar after the subpath export lands, plus a grep of the built apps/web output confirming `legacyEnvValue` and `MODULATION_PARITY_CASES` are ABSENT — packages/core's own build script is `tsc --noEmit`, so typecheck alone proves nothing about bundling.",
+      "S4/S12 mutation probe: append a seventh member to MOD_SOURCE_KINDS, confirm typecheck errors where it did not before, revert.",
+      "S7/S8 ctx-escape audit: grep every packages/core/src/modifiers/impl/*.ts for any assignment of the ctx parameter into state or module scope, and grep compositor.ts/engine.ts for any retention of the frameMod reference in a voice, a modifier state slot or a pending/delay descriptor. This is the check that covers what the allocation harness cannot — a retained reference is invisible to heap deltas and to every named suite.",
+      "Heap-delta harness (uncommitted scratch, node --expose-gc): 10_000 compositor.render() calls over a 4-voice/2-modifier show, heapUsed delta measured at HEAD and on the branch after S7 and after S8. Must not increase — with per-call ModifierContext construction it must be flat; a rise means an allocation moved into an inner loop. This is the only evidence that the render loop's zero-allocation discipline (AGENTS.md) survived, because no test in the repo measures allocation.",
+      "S14 acceptance probe, measured on BOTH sides: append `| '__probe'` to CanonicalGraphNodeKind on scratch worktrees at baseline sha 3708648 and at the branch head, running `pnpm typecheck` AND `pnpm --filter @ledrums/web check` each time. The DELTA between the two error lists is the initiative's measured deliverable; the baseline list already contains trigger-node-meta.ts's three Record<NodeKind,…> tables and SectionComposites.svelte's fourth, which must not be claimed as a gain.",
+      "pnpm ui-shot captures for S5 and S11 (Trigger Graph with one node of each of the six modulation-source kinds; the add-node palette open; Node Editor drawer for envelope + lfo; a cc node toggled MIDI↔OSC; a modifier's bypass toggled), diffed against the same shots taken at HEAD, with zero console errors reported by the tool. Pin UI_SHOT_BASE to the pool's TWUX_DEV_PORT.",
+      "Persisted-shape invariant: `git diff` across the whole initiative must show ZERO changes to apps/web/src/lib/trigger-lab/persistence.ts, apps/web/src/lib/trigger-lab/clipdoc.ts, apps/web/src/lib/trigger-lab/store/hydrate.ts, packages/core/src/voice/graph-integrity.ts and sim.graph-compilation.ts's makeNode defaults. This plan changes no persisted byte and adds no TriggerGraphIssueCode; the diff is the proof, and persistence.test.ts / persistence.hoop-migration.test.ts / clipdoc.test.ts / clipdoc.hoop-migration.test.ts green unchanged is the corroboration.",
+      "`git diff --stat -- packages/io apps/server` must be empty for the whole initiative — no output path is touched, so Art-Net/sACN parity holds by non-participation rather than by test."
+    ],
+    "known_gaps": "Six regions a green suite cannot speak for. (1) SVELTE COMPONENTS. TriggerNode.svelte (20KB) has a 2.7KB test file, NodeSignalPreview.svelte has none, and the 12 *NodeInspector.svelte files are effectively 0% covered. S5's predicate swap, prop retype and S11's field additions are proven by ui-shot before/after captures plus a manual click-through of one node of each of the six source kinds — screenshots and a console-error-free run, not assertions. If a capture cannot be obtained, S5 does not land. (2) TSC IS BLIND TO .SVELTE. `tsc --noEmit` does not read component templates, so kind-dispatch inside a component (SectionComposites.svelte:84's Record<NodeKind,…>, TriggerNode's isStateKind ladder) is invisible to any typecheck-based probe; S14 runs svelte-check on both sides for exactly this reason, and every claim about compile-enforced totality is scoped to what those two tools together can see. (3) XYFLOW HANDLE MEASUREMENT. The point of triggerNodeSignature is to control when xyflow re-measures handle bounds in a live browser; vitest can prove the signature STRING changed but not that a wire stops vanishing (R01/GH#80). Evidence there is a scripted manual repro — add a flow edge into a Mix node, add a second, confirm both render — plus the existing projectionDesyncIds dev assertion returning empty. (4) PER-FRAME ALLOCATION AND ALIASING. Nothing in 2968 tests fails if S7/S8 move an allocation into an inner loop or let a context object escape; the heap-delta harness and the escape audit are the substitutes, and the harness is a scratch measurement, not a gate CI will hold in future. (5) NO RUNTIME SCHEMA ON PERSISTED NODES. persistence.ts:121 and :461 cast raw JSON straight to `Record<string, TriggerGraph>` with a bare `as`; nothing validates a persisted GraphNode's shape at runtime, and a real user's multi-year-old show blob is never exercised by CI — only synthetic v1/v2 fixtures are. This plan neither adds nor needs such validation because it changes no persisted byte, but any future flip of GraphNode does (open question 3). (6) THE DEFERRED RESIDUE, stated rather than claimed away. primitive-obsession-0001 is severity critical and this plan does NOT touch the call-site-enforced invariants its verdict cited — graph-integrity.ts's 13-field anchorNode default fill, sim.graph-compilation.ts's makeNode filler, store.svelte.ts:2840-2875's hand-guarded mutators, graph-wiring.ts:20-24's kind-derived legality. GraphNode itself never changes, so those sites are measured by S14's probe and reported as remaining gaps, not fixed. Finally, four steps deliberately DO change behaviour and must not be defended as parity: S1 (the effect arm starts running), S11's second half (ccSource/oscAddress/bypass enter the signature), S13 (the empty-scope lint now flags 0-index hoop targets), and S5's prop retype (byte-identical rendered output required, but the vocabulary at the boundary changes). Each is red-first or characterisation-first with the change stated in its commit message.",
+    "baseline_reference": "sha 3708648, 2968 tests green under `pnpm gates`, plus fix batches 1-3 already landed tonight (12 dead-code auto-fixes, dead-code residue, kit-mirror removal with the mirror FIELD gone at every layer and setKitGlobal surviving as a live-kit-config carrier)."
+  },
+  "rollback_strategy": "Fourteen steps, thirteen commits (S14 never commits). Every commit is independently revertable and the plan is ordered so that reverting any single one leaves a coherent tree: the type-level steps (S4, S10) are additive with no consumers at land time, so reverting a consumer (S11, S12) never orphans behaviour; the two cross-package steps — S3's exports map plus test repoints, and S7's core-plus-sim-mirror signature change — are each deliberately ATOMIC so core and its apps/web mirror cannot be reverted apart and left disagreeing on argument order; S5 is atomic across TriggerNode and NodeSignalPreview because reverting the component's prop retype alone would leave its one caller passing a kind it no longer accepts. There is no data migration anywhere in this plan and no persisted byte changes — GraphNode's shape, makeNode's defaults, hydrate, persistence.ts and clipdoc.ts are untouched by construction, asserted as a check above, and no new TriggerGraphIssueCode is introduced, so hydrate's user-visible issue list is unchanged too. Nothing here is one-way and no feature flag is needed. Full back-out is `git revert` of the thirteen commits in reverse wave order, returning the tree to baseline plus the fix batches. Partial back-out under time pressure: keep waves 1-2 (the live bug fix, the grammar consolidation, the fixture eviction, the modifier-chain clump, the lint alignment) and revert waves 3-4 wholesale — the value in waves 1-2 does not depend on NodeView existing.",
+  "estimated_loc": 950,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Can a drumId ever contain '#' or ',' — i.e. is the unescaped hoop-target encoding (`\"<drumId>#<hoop>,<hoop>\"`) a real live bug or only theoretical? If drum ids are constrained by the kit editor, S2's characterisation test documents a non-issue and we stop. If they are free text, this is a silent wrong-target bug that needs an escaping decision AND a migration for already-persisted shows — and only then is fable's proposed graph-integrity diagnostic worth its cost, since a new TriggerGraphIssueCode flows through normalizeTriggerGraphToGen3 into hydrate's user-visible issue list and would start warning on graphs that are silent today.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should GraphNode itself eventually become the discriminated union, or does the derived NodeView permanently satisfy the goal? The adoption gate is now reachable and measured rather than aspirational: TWO adopted consumers (S11, S12) plus S14's measured probe delta, not opus's unreachable 'five consumers'. The flip is priced by what the refutations established, and any future plan must budget all of it: 26 files use `Partial<GraphNode>` and collapse to id/kind/x/y the moment GraphNode is a union (both reviewers confirmed the count independently); per-kind arms must preserve each field's CURRENT optionality or provide provable normalize-time defaulting per newly-required field, or the flat record stops being assignable mid-migration; no wave may leave the monorepo root typecheck red, which is what made sonnet's variant unsound; and a forward-compat fixture must prove a pre-flip build reads a post-flip save BEFORE the flip merges, since post-flip saves omit the 13 filler fields and nothing validates a persisted node at runtime. Sonnet's honest budget for that work was ~2400 LOC over five waves. Deciding 'flip it eventually' changes nothing about these 14 steps; deciding 'flip it now' rejects this plan's central bet.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should a runtime schema (zod or equivalent) validate a persisted GraphNode's shape at the persistence.ts / clipdoc.ts boundary, given that persistence.ts:121 and :461 cast raw JSON with a bare `as` and nothing checks a real user's multi-year-old show blob? This plan neither needs nor adds it — it changes no persisted byte — but it is a precondition for the flip in question 2, and it may belong beside INIT-08-kit-schema-split rather than here.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "The legacy 'play' NodeKind alias: normalizeTriggerGraphToGen3 rewrites every persisted 'play' node to 'effect' on load, yet 'play' remains in the union and forces a duplicate key in every Record this plan introduces (S6, S10, S12). Is it retained only for persisted back-compat — in which case it belongs on a persisted shape rather than on the authoring NodeKind — or does something still author it? Fable's variant proposed eradicating it and both reviewers broke that step as scoped, so the cost is now known: it requires defining PersistedGraphNode and PersistedTriggerGraph (a kind alias alone cannot type a whole node whose kind is 'play') and threading them through hydrate's six pre-normalisation migrations, persistence.ts's cast and clipdoc's load path; and the completion gate cannot be a `=== 'play'` grep, which misses `case 'play':` — the exact spelling at this initiative's own bug site. Deliberately not attempted here.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S11's second half adds ccSource/oscAddress/bypass to the projection signature, which increases xyflow node rebuilds when those fields toggle. Is a slightly less-cached graph canvas an acceptable trade for correctness, or is the rebuild cost visible enough on a large section graph that the omission was tacitly intentional?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Scheduling against INIT-01-single-render-stack, resolved here rather than passed on: S2 and S7 both edit apps/web/src/lib/trigger-lab/render.ts, the sim mirror INIT-01 exists to retire. Neither ordering is unsafe and neither initiative blocks the other, so dependencies_on_other_initiatives is empty; the only cost of running this one first is that INIT-01 later deletes two small edits for free. Recommendation for Phase 10: if both are scheduled in the same window, prefer INIT-01 first purely to avoid the duplicated edit — otherwise proceed. Does Trent want that preference encoded as a hard ordering?",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ],
+  "synthesis_inputs": {
+    "variants_considered": ["opus", "sonnet", "fable"],
+    "refutations_consumed": [
+      "docs/plans/2026-07-26-deep-review/08-refutations/INIT-06-graph-node-type-model.fable.json",
+      "docs/plans/2026-07-26-deep-review/08-refutations/INIT-06-graph-node-type-model.opus.json"
+    ],
+    "rationale": "SKELETON: opus, unchanged in shape. It is the only variant both reviewers rated sound-with-repairs (rubrics 4/4/5/4/5 and 4/5/5/4/4), the only one whose waves were independently verified pairwise file-disjoint, and the only one that touches no persisted byte. Sonnet was rated UNSOUND by the opus reviewer on a fatal attack that holds: its wave 3 retypes core's cross-package dispatch (graph-integrity, render-plan, modulation-graph, eval-graph) to GraphNodeUnion while apps/web still hands those functions flat nodes until waves 5-6, so the monorepo-root typecheck its own parity plan demands after every wave cannot be green; it also carried two blocks_execution open questions and hard dependencies on INIT-01 and INIT-02. Fable was broken on blast-radius honesty by both reviewers (2/2): its single S4 commit omitted the 26 files using `Partial<GraphNode>` including the web app's only node mint, and its S3 'play' eradication needed PersistedGraphNode/PersistedTriggerGraph types it never defined. Both rivals' flips were dropped; their sizing discoveries were kept as pricing for the deferred decision.\n\nGRAFTS where an attack landed on opus and a rival's version survived: (1) S7's ModifierContext is now constructed PER CALL at the caller — sonnet's explicit instruction ('build one ModifierContext per voice/range from values it already holds, not per-frame-alloc') — instead of opus's and fable's identical hoist-and-mutate, which both reviewers showed silently changes aliasing for any modifier retaining ctx while keeping the allocation harness green. Per-call construction reproduces today's allocation count and today's aliasing exactly. (2) S3 adopts fable's pre-flight ordering (land the subpath and repoint the imports FIRST, verify, only then delete the barrel block) plus sonnet's `pnpm build` for apps/web and the Tauri sidecar, plus a built-bundle grep — since packages/core's build script is only `tsc --noEmit`, typecheck proved nothing about what ships. (3) The forward-compat gate fable invented (a filler-stripped fixture loading green at the pre-step sha) is carried into open question 2 as a mandatory precondition of any future flip, since this plan strips nothing.\n\nREPAIRS to landed attacks on opus: S6's 'eight () => base entries' is corrected to TEN, enumerated and verified against trigger-flow-projection.ts:31-52 (nine arms covering eight canonical kinds plus legacy 'play'), with the golden table made the authority so a miscount fails a test. S10's `_Sound` assertion is DELETED as vacuous — the flat record is a structural supertype of every Pick-based arm, so it holds for any partition — and replaced by a per-kind field-USAGE table that can actually fail when an arm omits a field its kind's code reads. S14's probe now measures the baseline at 3708648 first rather than asserting it, because trigger-node-meta.ts:32/63/87 already declare three Record<NodeKind,…> tables at baseline. S2 no longer claims 'one grammar site': persistence.ts:171 is stated residue with the verified reason (its 0-based-aware `Number.isInteger` filter deliberately differs from parseHoopTarget's `>= 1`, so routing it through the shared parse would change a version-gated migration). Opus's NodeView adoption gate of '≥5 consumers' — unreachable with only two scheduled — is lowered to 'two consumers plus the measured probe delta' in open question 2.\n\nDROPPED because both reviewers broke it: fable's 'play' eradication from the runtime NodeKind (kept as a priced open question), fable's conditional deletion of parseHoopTarget's policy flags (all three have distinct live callers, verified at scope.ts:34-38 and the four call sites, so the honest audit yields zero deletions — opus's named presets replace it), fable's derivation of the Modulate palette from MOD_SOURCE_KINDS, and every version of the union flip.\n\nSYNTHESIS-OWN REPAIRS from reading the source both reviewers stopped short of: opus's S5 instructed routing NodeSignalPreview's 'is this a source at all' decision through nodeIsModSource, but that file has no such decision — its `kind` prop is a component-local six-member vocabulary that renames randomMod→'random' at its single caller, so S5 retypes the prop to ModSourceKind and deletes the rename instead. Fable's derivation of add-node-taxonomy was likewise not executable: envelope and lfo expand into five named presets each, so the palette shape must stay and only the test becomes a parity assertion. And S13 is entirely new: scope-lint.ts:37-51 is a FIFTH hand-rolled copy of the hoop-target grammar still filtering `>= 0` after the A1 1-based cutover, so the empty-scope lint and the runtime resolver disagree about `\"kick#0\"` — a false-negative in the diagnostic that exists to surface inert branches, fixed characterisation-first with an explicit abort if the existing suite turns out to encode the leniency deliberately.",
+    "attacks_addressed": [
+      "opus/S7 + fable/S7 (both reviewers): hoisting one ModifierContext per frame and mutating it changes aliasing for any modifier that retains ctx; neither the suites nor a heap harness can catch it — ANSWERED: per-call construction at the caller (sonnet's form) plus a committed ctx-escape audit and a borrowed-view contract note in modifiers/types.ts.",
+      "opus/S6 + fable-reviewer on opus/S6: 'eight () => base entries' contradicts a ten-kind list — ANSWERED: corrected to TEN, enumerated and verified against source, with the golden table as the authority.",
+      "opus/S10 (opus reviewer): the _Sound assertion is vacuous width-subtyping and proves nothing — ANSWERED: assertion deleted; _Total and _Orphans kept; a per-kind field-usage table added that fails on a real omission such as the cc arm's missing ccSource.",
+      "opus/S10 (opus reviewer): the '≥5 adopted consumers' flip gate is unreachable when only two adoptions are scheduled — ANSWERED: gate lowered to two consumers plus the measured S14 probe delta, recorded in open question 2.",
+      "opus/S2 (opus reviewer): the step claims one grammar site but omits persistence.ts — ANSWERED: claim restated as three-of-five sites with persistence.ts as explicit residue and the verified reason it must not be routed through the shared parse; scope-lint.ts, the fifth site, becomes its own step.",
+      "opus/S3 (opus reviewer): a subpath export pointing at src/ can resolve under vitest and still break the shipped bundle; the step never builds — ANSWERED: `pnpm build` for apps/web and the Tauri sidecar plus a built-bundle grep added, with fable's pre-flight ordering so a failure costs nothing.",
+      "opus/S13 (opus reviewer): the probe delta is measured against a mis-stated baseline; trigger-node-meta.ts already errors at 3708648 — ANSWERED: baseline measured first on a scratch worktree at 3708648, and svelte-check added alongside tsc because .svelte Record<NodeKind> tables are invisible to `tsc --noEmit`.",
+      "opus (opus reviewer, survives:true but strengthened): the plan bills primitive-obsession-0001 as addressed while leaving every call-site-enforced invariant the verdict cited untouched — ANSWERED: the residue is enumerated in known_gaps (6) and in S14's EXPECTED STILL SILENT list, and open question 2 now carries a priced, measured flip decision instead of an aspiration.",
+      "sonnet/S6 (opus reviewer, FATAL): retyping cross-package core signatures to a union mid-migration cannot leave the root typecheck green — ANSWERED by dropping the sonnet skeleton entirely and recording the constraint ('no wave may leave the monorepo root typecheck red') as a mandatory condition on any future flip in open question 2.",
+      "sonnet/S4 (fable reviewer): making kind-specific fields REQUIRED on union arms is a runtime lie for optional persisted fields and breaks flat→union assignability — ANSWERED: carried into open question 2 as a hard precondition (arms must preserve current optionality or provide provable normalize-time defaulting per field).",
+      "sonnet/S14 + sonnet/S15 (both reviewers): the flip and the ScopeTarget codec change persisted/on-disk shape while the rollback strategy denies any irreversible migration — ANSWERED: no persisted byte changes anywhere in this plan (asserted by a git-diff check), the ScopeTarget union is not attempted, and fable's forward-compat fixture gate is written into open question 2 as a precondition of any future flip.",
+      "sonnet/S2 (fable reviewer): UI-touching edits verified only by a unit-test filter, contrary to AGENTS.md — ANSWERED: S5 requires ui-shot captures diffed against HEAD with zero console errors, and does not land without them.",
+      "sonnet/S11 (opus reviewer): rewriting the node factory across 21 parity-oracle test files is rated 'low' — ANSWERED: that sweep is not in this plan; the 26-file `Partial<GraphNode>` cascade it belongs to is measured in S14 and priced into open question 2.",
+      "fable/S4 (both reviewers): the union flip omits the 26 files using Partial<GraphNode> and is an unlandable mega-step — ANSWERED: flip dropped; the measured count becomes the sizing input for the deferred decision.",
+      "fable/S3 (opus reviewer): removing 'play' from NodeKind needs PersistedGraphNode/PersistedTriggerGraph threaded through hydrate, persistence and clipdoc, and the `=== 'play'` grep gate misses `case 'play':` — ANSWERED: not attempted; both costs written into open question 4 so the decision is priced.",
+      "fable/S8 (opus reviewer): sharing the engine's mutable FrameModCtx with compositor.render turns a per-frame copy into cross-seam aliasing — ANSWERED: S8 explicitly rejects it, keeps render()'s single conversion and CompositorFrame's shape, and adds a frameMod escape audit.",
+      "fable/S10 (opus reviewer): the conditional 'delete each flag with a single live value' yields zero deletions because all three parseHoopTarget flags have distinct live callers — ANSWERED: replaced by opus's named policy presets, with the three literals verified against all four call sites at HEAD.",
+      "fable/S10 (both reviewers): apps/web/src/lib/app/views/scope-inspector.ts does not exist — ANSWERED: S2 uses the real path, apps/web/src/lib/app/docks/inspectors/scope-inspector.ts.",
+      "fable/S6 + fable/S4 (opus reviewer): the mutation probe drifts between '20th' and '21st' kind across steps — ANSWERED: the probe is named once in S14 as `__probe` appended to CanonicalGraphNodeKind, and every other step references it rather than restating an ordinal.",
+      "fable/S2 (fable reviewer): the test-only subpath export has no contingency if resolution fails — ANSWERED: S3 carries both the pre-flight ordering and an explicit fallback (keep the barrel, land only the grep guard, do not force the entry point)."
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   Unreachable from ANY entry point AND no dynamic-access pattern (string-keyed registry, dynamic import, reflection, template literal) resolves to it. NOTE: a symbol used only inside its own module is NOT deletable — but dropping its `export` IS valid and reduces interface by 1.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: dead-code-0006
+lens: dead-code
+criterion: unreachable-and-no-dynamic-access
+severity: minor (author confidence: high)
+locations:
+  apps/web/src/lib/app/views/mix-layer-rows.ts:21-23 (isMixRowHandleId)
+
+claim: isMixRowHandleId is a predicate over mix-row handle ids with zero call sites — the only repo occurrence is its declaration at mix-layer-rows.ts:21. The neighbouring MIX_ROW_HANDLE_PREFIX it consumes is itself only used inside this module. Svelte handle ids are passed as strings, but nothing looks this predicate up dynamically; svelte:component / registries are not used in this file's consumers.
+
+evidence the author gave:
+  [tool-output]  :: knip.json: apps/web/src/lib/app/views/mix-layer-rows.ts → exports: [MIX_ROW_HANDLE_PREFIX line 15, isMixRowHandleId line 21].
+  [grep] grep -rn "\bisMixRowHandleId\b" apps packages workers --include=*.ts --include=*.svelte | wc -l :: Count = 1 (declaration only). MIX_ROW_HANDLE_PREFIX by contrast has 3 hits, all inside mix-layer-rows.ts (lines 15, 18, 22).
+
+proposed fix: Delete isMixRowHandleId (3 lines) and drop the `export` keyword from MIX_ROW_HANDLE_PREFIX at line 15 — it is then a purely internal constant used at line 18 only.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"dead-code-0006",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"unreachable-and-no-dynamic-access",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

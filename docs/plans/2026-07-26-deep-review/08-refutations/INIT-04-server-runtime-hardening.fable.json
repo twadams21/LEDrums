@@ -1,0 +1,235 @@
+{
+  "artifact": "08-refutations/INIT-04-server-runtime-hardening.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-04-server-runtime-hardening/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "initiative_id": "INIT-04-server-runtime-hardening",
+      "variant_reviewed": "opus",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-04-server-runtime-hardening/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "Wave ['S16','S18'] is not file-disjoint: S16's files include apps/server/src/boot.ts (shutdown clears the heartbeat sweep) and S18's files also include apps/server/src/boot.ts (shutdown flush wiring for persisted slots). Two concurrent implementers would both edit boot.ts's shutdown path and corrupt each other.",
+          "severity": "major",
+          "evidence": "Plan S16.files = [ws-connection.ts, ws-connection.test.ts, boot.ts]; S18.files = [persisted-slot.ts, persisted-slot.test.ts, main.ts, boot.ts]; sequencing lists [\"S16\", \"S18\"] as one wave. boot.ts exists at apps/server/src/boot.ts (5.9K) and owns the timer-clearing shutdown both steps must touch.",
+          "survives": false,
+          "repair": "Split the wave: land S16 and S18 serially (either order works — they are independent), or move S18's boot.ts flush wiring into its main.ts edit and keep boot.ts out of S18's file set.",
+          "targets_step": "S16"
+        },
+        {
+          "claim": "The S0 smoke digest cannot be made byte-identical across two runs: the monitor replay array, stats-frame count within the capture window, and autosave/persistence rows are timing-dependent, so the whole parity mechanism the plan rests on will fail its own acceptance gate and every main.ts step loses its oracle.",
+          "severity": "major",
+          "evidence": "main.ts:748 statsTimer fires every 10ms; the number of stats frames received before 'first 3' stabilises depends on scheduling; monitor bus retains 300 events and replays on connect.",
+          "survives": true,
+          "plan_response": "S0's verification makes digest stability a hard, pre-trust acceptance gate: 'the two identical runs must be byte-identical, otherwise the normaliser is incomplete and no later step may cite it' — capture is bounded (first state message, first 3 stats frames, replayed monitor events) and the normaliser strips every volatile field named (time, createdAt, latencyMs, fps, timeMs, beat, uptimeMs, ports, ids). The plan fails closed if the instrument cannot be stabilised rather than citing a flaky one.",
+          "targets_step": "S0"
+        },
+        {
+          "claim": "S2's test strategy depends on injecting a fake voice.RenderEngine through the VoiceEngineHost constructor — if no such injection seam exists the whole per-frame-catch verification is unexecutable as written.",
+          "severity": "major",
+          "evidence": "Verified at HEAD: apps/server/src/voice-engine-host.ts:117-119 — constructor(project, engine: voice.RenderEngine | null = null) does accept an injected engine, and setMonitor (line 558) exists for the monitor-sink assertion.",
+          "survives": true,
+          "plan_response": "S2's verification says 'driving the host with an injected voice.RenderEngine fake (the constructor already accepts one)' — the claim is stated in the plan and checks out against source: voice-engine-host.ts:117-119 and setMonitor at :558.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S10's 'snapshot' rung is underspecified: SnapshotStore.read() returns a SnapshotBundle (multi-file: project + show/song libraries), not a Project. The step never says how a bundle becomes a bootable Project (which member, parsed how, integrity-checked where, outputs reconciled or not), so an implementer must invent the mapping in the recovery path — the exact place inventing is most dangerous.",
+          "severity": "minor",
+          "evidence": "apps/server/src/backups/snapshot-store.ts:56-65 — read(id) returns SnapshotBundle | null; SnapshotStoreDeps.readCurrent returns SnapshotFiles (plural files). S10's text says 'try the newest snapshot' and its test asserts source 'snapshot', but no sentence names bundle.files → parseProject → assertProjectIntegrity → reconcileOutputs.",
+          "survives": false,
+          "repair": "One sentence in S10: the snapshot rung extracts the project member from the bundle's files, runs it through the same parseProject + assertProjectIntegrity pipeline as loadProject (reusing projects.ts, not duplicating it), and a bundle whose project member fails continues down the ladder.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "The plan's two riskiest guards (S12 slow-peer terminate, S16 pong reaper) can disconnect a healthy client and no unit test in the plan can detect that, so the plan ships a live-show regression risk with only model-asserted safety.",
+          "severity": "major",
+          "evidence": "Fake sockets with settable bufferedAmount / controllable pong cannot reproduce a real browser under main-thread load or a real Slow-3G tunnel; the failure mode is exactly the one outside the harness.",
+          "survives": true,
+          "plan_response": "known_gaps item (3) names this precisely ('The failure they can cause — dropping a client that was actually fine — is exactly the one a fake socket cannot reproduce') and both steps carry MANDATORY manual live checks recorded in the PR body: S12 (three tabs, one Slow-3G, 60s, no healthy peer dropped) and S16 (LAN phone to airplane mode, reaped within two sweeps). Constants are named and test-pinned so retuning is a visible one-line change.",
+          "targets_step": "S12"
+        },
+        {
+          "claim": "S13's connection cap could let an unauthorised dial consume a slot and lock out a legitimate viewer (cap checked before auth), or conversely regress the 4401 path — the classic ordering bug in admission guards.",
+          "severity": "minor",
+          "evidence": "pin-gate.ts admission and clients.admit are separate steps in the connection handler (main.ts:470-533); ordering between the new cap and the PIN decision is where the bug would live.",
+          "survives": true,
+          "plan_response": "S13's verification pins the ordering explicitly: 'Assert the cap is checked AFTER the PIN/host-token admit decision... a test with 32 admitted clients plus one wrong-PIN dial must still return close code 4401, not 4429.'",
+          "targets_step": "S13"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 5,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 5,
+        "verification_strength": 5
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "Serialize S16 and S18 (both edit apps/server/src/boot.ts) — the wave as written violates file-disjointness.",
+        "Specify S10's bundle→Project mapping: snapshot rung parses the bundle's project member through the existing parseProject + assertProjectIntegrity pipeline and falls through the ladder on failure."
+      ]
+    },
+    {
+      "initiative_id": "INIT-04-server-runtime-hardening",
+      "variant_reviewed": "sonnet",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-04-server-runtime-hardening/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S2 relocates ~800 lines of 0%-coverage wiring in ONE commit with parity evidence that cannot fail: the existing suite never imports main.ts (so 'zero test-file changes' proves nothing about the move), the new server-app.test.ts only asserts fields are non-null, and the rest is a manual ui-shot. A closure-capture or construction-ordering bug in the move ships green and is found by the drummer.",
+          "severity": "fatal",
+          "evidence": "Confirmed at HEAD: no test imports main.ts (no main.test.ts; boot.test.ts does not exist — ls apps/server/src). The plan's own known_gaps admits \"until S2 lands, 'the suite is green' says nothing about the composition root itself\" — i.e. the evidence for the single highest-risk commit is admitted to be absent at the moment it is needed. Contrast: the opus variant builds a boot-digest smoke harness BEFORE touching main.ts for exactly this reason.",
+          "survives": false,
+          "repair": "Before S2, add a boot-parity instrument (a smoke run that boots the real server in both engine modes against a temp projects dir and digests the banner + first state message + monitor rows), captured at pre-S2 HEAD and diffed after; and/or decompose the move into per-leaf verbatim extractions provable by git-show range diffs instead of one 800-line relocation.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S7's STALE_MS of 500ms will false-positive on healthy links: one GC pause, one Cloudflare tunnel hiccup, or one server-side event-loop stall >500ms force-closes the socket and triggers reconnect churn mid-show. Both rival variants independently chose 5000ms for the same watchdog; 500ms is tied to the current 10ms cadence in exactly the way the step claims to avoid.",
+          "severity": "major",
+          "evidence": "Plan S7 text: 'a fixed STALE_MS constant (e.g. 500ms)'. The stats producer is a Node setInterval (main.ts:748) with no delivery guarantee under load; a reconnect tears down and re-arms the editor session state. The plan's own known_gaps concedes the thresholds are 'not provable in this repo without live-show telemetry' yet picks the aggressive end.",
+          "survives": false,
+          "repair": "Raise STALE_MS to seconds-scale (3-5s, several multiples of any plausible stall), matching the two rival variants, and keep the Monitor trip-event so a mistuned value is visible.",
+          "targets_step": "S7"
+        },
+        {
+          "claim": "S4's auto-stop after 5 consecutive faulting frames turns one persistently-throwing authored effect into a FULL rig blackout plus a dead output (stop() clears the timer and closes the transport with no restart path) roughly 42ms into the fault at 120fps — a mid-show product-posture decision made unilaterally inside a design step, where both rival variants route exactly this call to Trent as an open question.",
+          "severity": "major",
+          "evidence": "voice-engine-host.ts:446-453 — stop() clears the timer, blackout, output.close(); nothing in the plan restarts a stopped host, so the drummer's whole kit goes dark and stays dark until app relaunch. AGENTS.md/ai-work-system: product-taste calls escalate to Trent; opus open_question 3 and fable open_question 2 both do so for this exact posture. Sonnet's open_questions ask about quarantine granularity but never about auto-stop-to-dark.",
+          "survives": false,
+          "repair": "Ship the per-frame catch + monitor event only (transient skip); route the escalation posture (keep-rendering-latched vs auto-dark after N) to Trent as an open question before wiring stop() into the catch.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "S1/S2's PersistedSlot contract ('owns the live in-memory value (get/set)') cannot hold the project slot: the project's live value is host.engine state (the autosaver reads through host.engine.getProject(), and voiceHost mutates the same object in place), so a slot-owned get/set copy creates a dual source of truth or a lying accessor. The plan builds the primitive around three slots when only two fit it.",
+          "severity": "major",
+          "evidence": "main.ts:155-163 — project0 is shared by reference between EngineHost and VoiceEngineHost ('the voice host's in-place geometry/routing edits are visible through host.engine.getProject() — which is what the autosaver persists'). The opus variant hit the same wall and explicitly excluded the project slot ('it reads through host.engine.getProject(), not a stored blob — folding it in is not attempted'); sonnet's S2 lists 'the three PersistedSlot instances... for project/showLibrary/songLibrary' with no accommodation.",
+          "survives": false,
+          "repair": "Scope createPersistedSlot to the two blob slots (show/song libraries); the project slot keeps its existing autosaver reading through the engine, with a one-line comment saying why it is not a slot.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "S10 is internally inconsistent about when it runs: it is scheduled in wave 1 (before S2 exists), but its verification instructs checking 'server-app.ts's single call site (post-S2) already supplies all six' — a file that does not exist in wave 1. An implementer following the text cannot execute the check as written.",
+          "severity": "minor",
+          "evidence": "sequencing: [[\"S1\",\"S3\",\"S10\"],[\"S2\"],...] puts S10 before S2; S10.verification references server-app.ts (created only by S2).",
+          "survives": false,
+          "repair": "Reword S10's verification to check the main.ts call site (main.ts:618-663) since S10 lands pre-S2; S2's move then carries the already-required deps forward.",
+          "targets_step": "S10"
+        },
+        {
+          "claim": "S5's forward-referenced snapshotStore (constructed before host exists) dereferences uninitialised state if any store method touching readCurrent/applyRestored runs before host assignment — e.g. the cadence timer or an early pre-risk call.",
+          "severity": "major",
+          "evidence": "createSnapshotStore's deps.readCurrent closes over host/liveShowLibrary/liveSongLibrary; snapshot cadence today starts at main.ts:595 via a separate setInterval.",
+          "survives": true,
+          "plan_response": "S5's intent addresses this directly: 'nothing calls .snapshot()/.restore() before host exists, so the forward reference is never dereferenced early' — boot recovery uses only list()/read(), which are confirmed on the SnapshotStore interface (snapshot-store.ts:56-65) and read only the backups directory, not the live engine; the cadence timer remains wired after host construction.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "S9's file list omits the test file its verification requires ('New test: send a malformed message over a tunnelClients-flagged fake socket...') — the step's only named file is server-app.ts, so the promised test has no declared home and the redaction logic lands inline in the one module the plan admits is hard to test.",
+          "severity": "minor",
+          "evidence": "S9.files = [\"apps/server/src/server-app.ts\"]; S9.verification demands two new test cases. Contrast fable's S9 (pure clientErrorMessage in ws-protocol.ts with ws-protocol.test.ts) and opus's S15 (ws-connection.test.ts) which both name the test's location.",
+          "survives": false,
+          "repair": "Extract the redaction as a pure function in a tested module (ws-protocol.ts or the extracted connection handler) and add its test file to S9's file set.",
+          "targets_step": "S9"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 2,
+        "parity_preservation": 2,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 3,
+        "verification_strength": 2
+      },
+      "overall": "unsound",
+      "required_repairs": [
+        "S2 (the 800-line composition-root relocation) must not land on evidence that cannot fail — add a pre-move boot-parity instrument or decompose into verbatim per-leaf extractions with git-show range proofs; as written this is the redesign the approach needs.",
+        "Raise S7's STALE_MS from 500ms to seconds-scale.",
+        "Remove S4's auto-stop-to-blackout escalation from the design and route the fault posture to Trent.",
+        "Exclude the project slot from createPersistedSlot; it is engine-owned state, not a blob.",
+        "Fix S10's wave-1 verification to reference main.ts, and give S9's tests a declared file."
+      ]
+    },
+    {
+      "initiative_id": "INIT-04-server-runtime-hardening",
+      "variant_reviewed": "fable",
+      "reviewer": { "phase": "8", "lane": "attack/INIT-04-server-runtime-hardening/fable", "model": "claude-fable-5", "effort": "low" },
+      "attacks": [
+        {
+          "claim": "S4's hoist of installProcessErrorCapture above initialProject() ignores the dependency chain it drags along: the capture needs `monitor` → monitorBus → broadcastJson, and broadcastJson dereferences `const clients` (main.ts:232) at call time. Hoisted above line 137, a boot-time throw fires the handler, which emits to the monitor, which calls broadcastJson while `clients` is still in its temporal dead zone — the handler itself throws ReferenceError and the crash is neither captured nor reported, defeating the step's entire purpose. The plan late-binds only onFatalCleanup and never mentions the monitor chain.",
+          "severity": "major",
+          "evidence": "main.ts order at HEAD: initialProject() called at :155; wss at :228; clients at :232; broadcastJson at :239 (dereferences clients at call time); monitorBus at :246; installProcessErrorCapture at :263. S4's text names only the flushReportsSync/onFatalCleanup late-binding. The opus variant's S6 identified the same chain and required a mutable broadcastSink indirection to break it.",
+          "survives": false,
+          "repair": "Adopt the mutable-sink pattern: construct monitorBus over a `let broadcastSink = () => {}` at the top of the file, install the capture there, and assign broadcastSink = broadcastJson once clients/wss exist — plus a fault-injection check that a probe throw after the hoist actually reaches stdout/reporting.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "The plan cites a test that does not exist as parity evidence: known_gaps (c) says main.ts wiring order for S4 'is evidenced by diff line order plus boot.test.ts staying green' — there is no boot.test.ts anywhere in the repo, so the stated compensating check for a 0%-coverage region is fictional.",
+          "severity": "major",
+          "evidence": "ls apps/server/src at HEAD: boot.ts exists (5.9K) with NO boot.test.ts; no main.test.ts either. The sonnet variant independently confirms: 'no boot.test.ts or main.test.ts exists'.",
+          "survives": false,
+          "repair": "Replace the phantom citation with real evidence: either a fault-injection probe under a boot smoke run (opus S6's approach) or a new minimal boot test; do not count nonexistent suites as parity checks.",
+          "targets_step": "S4"
+        },
+        {
+          "claim": "Four steps (S4, S6 wiring, S8 wiring, S9 wiring) edit main.ts — a file no test imports — and their verification is 'pnpm gates' plus greps. Gates cannot fail for a main.ts wiring bug (wrong onDead body, backpressure verdict wired to the wrong loop, limiter installed on the wrong catch), so the plan's parity claims for the composition root are asserted, not evidenced. The plan has no boot-level instrument at all.",
+          "severity": "major",
+          "evidence": "apps/server coverage excludes main.ts (0% — no importer, confirmed by test-file listing); fable's verifications for S6/S8/S9 main.ts wiring are 'grep showing all three broadcast loops route through the verdict' and suite-green — greps prove presence of a call, not correctness of the wiring. known_gaps (c) concedes 'main.ts has no unit harness by design' but offers no substitute beyond the nonexistent boot.test.ts and diff reading.",
+          "survives": false,
+          "repair": "Add one cheap end-to-end check reused across the main.ts steps: boot the real server against a temp projects dir, connect a ws client, and assert the handful of behaviours these steps wire (error frame redacted, monitor row present, peer reaped) — or import the opus variant's smoke-digest harness wholesale.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "S2 contradicts itself on the guard values and its own parity gate: it says maxBody is a 'named per-route argument' AND that 'the drifted constants unify'. host-event's cap is 2048 (not the finding's implied shared value) and its existing test destroys on a 4096-char body — if an implementer reads 'unify' and picks one shared MAX_BODY, either the host-event test breaks (unified to 4096: 4096 chars no longer exceeds the cap) or native-midi's contract changes (unified to 2048), violating the step's 'tests pass UNCHANGED' verification either way.",
+          "severity": "minor",
+          "evidence": "apps/server/src/http/host-event.ts:9 `const MAX_BODY = 2048`; native-midi.ts:72 literal 4096; host-event.test.ts ~:205 sends 'x'.repeat(4096) and asserts destroy. The plan also asserts '~56 deleted vs ~45 added' against caps it mis-models as one value.",
+          "survives": false,
+          "repair": "Delete the 'constants unify' sentence: keep 2048 and 4096 as explicit per-route maxBody arguments (the opus variant's stance), and route unification to synthesis as a separate guard-value question.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "S8's slow-peer termination is tuned to kill healthy clients: strikes are counted per broadcast call and broadcastJson runs at 100Hz (stats every 10ms), so 'terminate at 3 consecutive over-threshold sweeps' means a peer whose bufferedAmount stays over 1MB for ~30ms of wall clock is terminated. A single large state broadcast plus a preview frame burst on a briefly-stalled but healthy tab can exceed 1MB for 30ms; the guard disconnects a legitimate editor mid-show. (Opus chose 30 sweeps ≈300ms for the same mechanism and still demands a manual Slow-3G live check.)",
+          "severity": "major",
+          "evidence": "main.ts:748-770 statsTimer interval is 10ms, so backpressureVerdict is consulted ~100x/sec per socket; fable S8: 'terminate at 3 consecutive over-threshold sweeps'. No manual live check is required by the step — its verification is a truth table plus grep.",
+          "survives": false,
+          "repair": "Decouple the strike clock from broadcast cadence (count on S6's keepalive sweep, or require over-threshold for seconds, not milliseconds) and add the manual throttled-tab live check before merge.",
+          "targets_step": "S8"
+        },
+        {
+          "claim": "The plan lists divergent-change-0004 in findings_addressed while actually refusing its fix (no factory, no registry, main.ts stays ~750 lines of module-scope state) — the finding's cost, 'every feature edits the root', is not paid down and the claim of addressing it is inflated.",
+          "severity": "minor",
+          "evidence": "findings_addressed includes divergent-change-0004; the design contains no decomposition step; the verdict for the finding confirmed the change-scatter criterion mechanically (39 commits, 242 co-changed files).",
+          "survives": true,
+          "plan_response": "The refusal is explicit and routed, not hidden: the summary states 'divergent-change-0004 is treated by shrinking main.ts through the deletions above... the honest bulk of its shrink is INIT-01's deletion to make — duplicating it here would be scope creep', and open_questions[2] hands Trent the explicit residual decision ('If INIT-01 is deferred or descoped, do you want a structural factory extraction as a follow-up...'). Deferral-with-owner is a legitimate disposition; Phase 9 can weigh it against the opus strangler."
+        },
+        {
+          "claim": "S3's per-frame catch could mask a systematically broken engine forever with only rate-limited monitor rows: the loop keeps ticking, output keeps latching the last good frame per effect, and there is no UI escalation — the drummer may not learn the show is degraded.",
+          "severity": "minor",
+          "evidence": "S3's design: 'CONTINUE... NO per-voice/per-effect quarantine machinery'; the only signal is one monitor error event per 1000ms.",
+          "survives": true,
+          "plan_response": "open_questions[1] routes exactly this posture to Trent with the alternative costed ('if you want auto-dark after N seconds of continuous faulting, that is a ~5-line addition to the same catch'), and S3's verification pins the throttled monitor stream so the degradation is at least observable in the Monitor panel. The posture is a flagged product call, not an unexamined default.",
+          "targets_step": "S3"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 3,
+        "parity_preservation": 2,
+        "sequencing_realism": 4,
+        "blast_radius_honesty": 4,
+        "verification_strength": 3
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S4 must break the monitor→broadcastJson→clients TDZ chain (mutable broadcastSink) before hoisting the capture, and must drop the nonexistent boot.test.ts citation for a real check.",
+        "Add a boot-level end-to-end instrument for the four main.ts-wiring steps; gates+grep cannot fail for wiring bugs in a 0%-coverage file.",
+        "S8: decouple slow-peer strikes from the 100Hz broadcast cadence (3 strikes = ~30ms today) and add a manual throttled-client live check.",
+        "S2: remove the contradictory 'constants unify' sentence; keep 2048/4096 as explicit per-route arguments."
+      ]
+    }
+  ]
+}

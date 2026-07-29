@@ -1,0 +1,47 @@
+{
+  "finding_id": "dead-code-0003",
+  "files_touched": [
+    "apps/web/src/lib/app/desktop/update-banner.svelte.ts"
+  ],
+  "mutations_applied": 1,
+  "pre_fix_sha": "3708648",
+  "worktree_path": "/Users/trent/.twux/worktrees/rev5-batch01",
+  "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+      "pnpm typecheck",
+      "pnpm gates"
+    ],
+    "detail": "1 file changed, 1 insertion(+), 9 deletions(-)"
+  },
+  "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+  },
+  "commit_sha": "9c1f4ae",
+  "provenance": {
+    "phase": "5",
+    "lane": "batch01",
+    "model": "claude-sonnet-4-6",
+    "effort": "low",
+    "run_id": "runB-001"
+  },
+  "review": {
+    "standards_verdict": "clean",
+    "spec_verdict": "clean",
+    "findings": [],
+    "parity_check": {
+      "baseline_test_count": 2981,
+      "post_fix_test_count": 2981,
+      "accepted": true,
+      "reason": "Unchanged test count; the removed export had no dedicated test."
+    },
+    "reviewer": {
+      "model": "claude-opus-5",
+      "effort": "low",
+      "run_id": "runB-006"
+    }
+  }
+}

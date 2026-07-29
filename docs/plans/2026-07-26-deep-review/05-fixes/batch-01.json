@@ -1,0 +1,307 @@
+{
+ "artifact": "05-fixes/batch-01",
+ "schema_version": "3",
+ "baseline_sha": "3708648",
+ "produced_by": {
+  "phase": "05-fixes",
+  "lane": "batch-01",
+  "model": "claude-sonnet-5",
+  "effort": "medium",
+  "nonce_verified": true
+ },
+ "items": [
+  {
+   "finding_id": "dead-code-0003",
+   "files_touched": [
+    "apps/web/src/lib/trigger-lab/store/hydrate.ts"
+   ],
+   "mutations_applied": 9,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "18 lines changed in hydrate.ts (9 exports dropped); whole-tree diffstat 17 files changed, 27 insertions(+), 32 deletions(-)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 9,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0004",
+   "files_touched": [
+    "apps/server/src/show-library.ts"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (showLibraryPath)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0005",
+   "files_touched": [
+    "apps/web/src/lib/trigger-lab/sim.envelopes.ts"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (ENV_KINDS)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0006",
+   "files_touched": [
+    "apps/web/src/lib/app/views/mix-layer-rows.ts"
+   ],
+   "mutations_applied": 2,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "2 exports dropped (isMixRowHandleId, MIX_ROW_HANDLE_PREFIX)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 2,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0007",
+   "files_touched": [
+    "workers/error-ingest/src/validate.ts"
+   ],
+   "mutations_applied": 2,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "2 exports dropped (MAX_REPORTS_PER_BATCH, safeKeySegment)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 2,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0009",
+   "files_touched": [
+    "apps/web/src/lib/app/patch-graph.ts"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (DEFAULT_OUTPUT_SCALARS)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0010",
+   "files_touched": [
+    "apps/web/src/lib/trigger-lab/store/ids.ts",
+    "apps/web/src/lib/trigger-lab/store/transport.ts",
+    "apps/web/src/lib/trigger-lab/store/graphs.ts",
+    "apps/web/src/lib/trigger-lab/store/canvas-scenes.ts",
+    "apps/web/src/lib/trigger-lab/sim.graph-compilation.ts",
+    "apps/web/src/lib/trigger-lab/clipdoc.ts"
+   ],
+   "mutations_applied": 7,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "7 exports dropped across 6 files (reserveId, showSig, OUTPUT_ANCHOR_ID, firstEffectId, CANVAS_BUS_ID, blockChildren, makeDefaultMint)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 7,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0011",
+   "files_touched": [
+    "apps/web/src/lib/app/views/align-guides.ts"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (ALIGN_THRESHOLD)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0012",
+   "files_touched": [
+    "apps/server/src/boot.ts"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (lanUrls)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0013",
+   "files_touched": [
+    "packages/io/src/pixlite/protocol.ts"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (parseStatistic)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0014",
+   "files_touched": [
+    "apps/server/src/ws-protocol.ts"
+   ],
+   "mutations_applied": 5,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "5 names dropped from an export type union (BackupReason, MonitorEventType, SerializedDrum, TunnelStatus, VoiceStats)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 5,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  },
+  {
+   "finding_id": "dead-code-0015",
+   "files_touched": [
+    "apps/web/scripts/vite-plugin-source-manifest.mjs"
+   ],
+   "mutations_applied": 1,
+   "pre_fix_sha": "3708648",
+   "worktree_path": "/Users/trent/.twux/worktrees/review",
+   "verification": {
+    "typecheck_errors": 0,
+    "gates_tests": 2981,
+    "gates_pass": true,
+    "commands": [
+     "pnpm typecheck",
+     "pnpm gates"
+    ],
+    "detail": "1 export dropped (buildSourceManifest)"
+   },
+   "interface_delta_actual": {
+    "exported_symbols_removed": 1,
+    "exported_symbols_added": 0
+   },
+   "commit_sha": "3f6f8af356e63e4454de1d403d62629cea395fa7"
+  }
+ ]
+}

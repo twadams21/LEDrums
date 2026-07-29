@@ -1,0 +1,42 @@
+You are an ADVERSARIAL REFUTER. Your job is to KILL this finding, not to agree with it.
+
+A code-quality review produced the finding below. Findings that survive refutation get acted on
+— some automatically. False positives are expensive. You are the gate.
+
+## Rules
+1. **Try to refute it.** Look for the caller it missed, the dynamic access it did not grep for,
+   the semantic difference behind the surface similarity, the guard that already handles the case.
+2. **DEFAULT TO REFUTED UNDER UNCERTAINTY.** If you cannot satisfy yourself that the finding is
+   true, it is refuted. "Probably right" is refuted.
+3. **Apply EXACTLY this criterion — do not substitute your own:**
+   >=2 sites, >=12 lines each, >=90% token similarity, SEMANTICALLY equivalent. Consolidation must REDUCE total interface, not relocate it.
+4. Read the actual code at the cited locations. Do not reason from the claim alone.
+5. READ-ONLY. No edits, no tests, no builds.
+
+## The finding
+id: duplicated-code-0008
+lens: duplicated-code
+criterion: duplication-threshold
+severity: major (author confidence: high)
+locations:
+  apps/web/src/lib/trigger-lab/render.ts:205-235 (renderVoice generator preamble)
+  packages/core/src/voice/generator-bridge.ts:90-115 (generator bridge preamble)
+  apps/web/src/lib/trigger-lab/render.ts:78-93 (mix-input synthetic voice)
+  packages/core/src/voice/compositor.ts:96-112 (mix-input synthetic voice)
+
+claim: Two separate blocks of the web preview renderer are hand-mirrored copies of core's render path. (1) The generator preamble — memoised `genDefaults` lookup, `{...defs}` overlay of live params, and the synthetic-trigger fill (seq from `v.id.slice(1)`, drumId, velocity, `note = round(velocity*127)`, timeMs, `ageMs = max(0, now - bornAtMs)`) — is identical in render.ts:205-232 and generator-bridge.ts:90-114, and render.ts's own comment says "Keeping the formula identical to core keeps sim/engine output in step". (2) The synthetic mix-input voice spread (scope/targetId/sourceDrumId/velocity/seed/generatorId/genState/mixInputs:undefined/modifiers/modState/modulations/params) is identical in render.ts:78-93 and compositor.ts:96-112. The invariant that preview matches output is enforced only by these comments.
+
+evidence the author gave:
+  [read]  :: Read apps/web/src/lib/trigger-lab/render.ts:205-235 vs packages/core/src/voice/generator-bridge.ts:90-115 — the genDefaults memo block and the six genTrigger assignments are identical; only `genDefaultParams` vs `defaultParams` and `effectiveParams(v, sim)` vs `v.liveParams` differ.
+  [read]  :: Read apps/web/src/lib/trigger-lab/render.ts:78-93 vs packages/core/src/voice/compositor.ts:96-112 — the same 12 field assignments in the same order.
+  [tool-output]  :: jscpd-report.json: render.ts:215-228 vs generator-bridge.ts:97-113 = 14 lines / 109 tokens; render.ts:80-92 vs compositor.ts:98-110 = 13 lines / 71 tokens; sim.ts:578-594 vs engine.ts:669-686 = 17 lines / 116 tokens (the same theme).
+
+proposed fix: Export the two pure fragments from packages/core/src/voice — `fillGeneratorTrigger(trig, v, timeMs)` and `resolveGeneratorParams(gen, liveParams, cache)` from generator-bridge.ts, and `synthesizeMixVoice(host, input)` from compositor.ts — and have apps/web/src/lib/trigger-lab/render.ts call them with its own param source. Core keeps ownership of the formula; the web keeps ownership of where the params come from.
+
+## Output — return ONLY this JSON object, no prose, no fence
+{"finding_id":"duplicated-code-0008",
+ "refuted":true or false,
+ "reasoning":"<at least 2 sentences: what you checked, what you found, why it stands or falls>",
+ "criterion_applied":"duplication-threshold",
+ "counter_evidence":"<the specific caller/guard/difference you found, with file:line — or \"none found\" if you could not refute it>",
+ "confidence":"high|medium|low"}

@@ -1,0 +1,123 @@
+{
+  "artifact": "08-refutations/INIT-05-pin-auth-hardening.fable",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "8",
+    "lane": "attack/INIT-05-pin-auth-hardening/fable",
+    "model": "claude-fable-5",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "dropped": [],
+  "items": [
+    {
+      "initiative_id": "INIT-05-pin-auth-hardening",
+      "variant_reviewed": "opus",
+      "reviewer": {
+        "phase": "8",
+        "lane": "attack/INIT-05-pin-auth-hardening/fable",
+        "model": "claude-fable-5",
+        "effort": "low"
+      },
+      "attacks": [
+        {
+          "claim": "S2's escalation-alert spec is internally inconsistent, so its own verification case (h) cannot be implemented unambiguously: 'cooldown doubling per failure past the free allowance' plus 'alert at most once per escalation' implies one alert per post-allowance failure — 12 raw recordFailure calls with freeAttempts=5 yields 7 escalations, yet test (h) demands 'exactly 3 non-null alerts across 12 failures'. An implementer must invent either a different definition of 'escalation' or an unstated call sequence (interleaved allow()/clock advances) to make the numbers meet, and two implementers will invent different ones.",
+          "severity": "major",
+          "evidence": "opus.json S2 intent ('doubling per failure past the free allowance', 'ONLY on crossing into cooldown and then at most once per escalation') vs S2 verification (h) ('assert exactly 3 non-null alerts across 12 failures'). No sequence of 12 bare recordFailure calls under the stated policy produces 3 escalations: failures 6..12 each either double the cooldown (7 alerts) or are all inside one cooldown (1 alert). Neither reading gives 3.",
+          "survives": false,
+          "repair": "Define 'escalation' operationally in S2 — e.g. an alert fires when a bucket transitions from allowed to cooling (recordFailure while allow(key).ok is true and the new failure count exceeds freeAttempts) — and rewrite test (h) as an explicit scripted sequence of allow/recordFailure/clock-advance calls with the expected alert positions, so the count follows from the script rather than from a guessed semantics.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "The blast radius omits apps/desktop: src-tauri/lib.rs states the contract 'The server accepts ANY non-empty LEDRUMS_PIN' twice (doc comment on parse_pin and a Rust test named parses_non_numeric_pin_matching_server_behavior), and S1's boot-time minimum makes both statements false. S6 claims to update documentation 'where operators actually read them' but names only the pin-gate.ts header, leaving a cross-language docs-truth breach that will mislead the next person touching the desktop banner parser.",
+          "severity": "minor",
+          "evidence": "apps/desktop/src-tauri/src/lib.rs:242 ('The server accepts ANY non-empty `LEDRUMS_PIN`, so the token is captured up to the next whitespace or `)`') and lib.rs:674 (test comment repeating the claim). opus.json S6 files list contains only apps/server/src/pin-gate.ts and the probe artifact; interface_deltas and every step's files field name no apps/desktop path.",
+          "survives": false,
+          "repair": "Add the two lib.rs comment sites to S6's file list (comment-only edit: 'accepts any LEDRUMS_PIN of at least MIN_PIN_LENGTH characters; charset still unconstrained, so the parser must not assume digits'). No Rust behaviour change — the parser and its non-numeric test remain correct.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "The global tier is an attacker-operable denial-of-service switch against the legitimate remote drummer, and the plan never names this availability regression: 100 failed handshakes per 60s (trivial for one attacker via the tunnel) put EVERY non-trusted peer into a renewable maxMs cooldown, so the drummer's remote phone — which today can always connect with the right PIN — can be locked out indefinitely for the cost of ~2 requests/second. known_gaps discusses the global tier only as 'efficacy against a distributed guess'; the induced-lockout cost of that same tier appears nowhere.",
+          "severity": "minor",
+          "evidence": "opus.json S2 intent: 'a GLOBAL tier of globalFailures = 100 inside windowMs that applies one shared maxMs cooldown to every non-trusted peer'; behaviour_parity_evidence_plan.known_gaps third gap discusses only parameter judgement, not legitimate-user lockout; open question 1 covers messaging of the 4401, not availability. Trading PIN-compromise for attacker-controlled denial is a defensible design, but it is a product-visible regression that must be stated, not implied.",
+          "survives": false,
+          "repair": "State the trade-off explicitly in S2's intent and known_gaps ('an active attacker can hold remote access closed; the monitor alert with scope global is the operator's signal'), and consider exempting peers with a recorded prior success in the current run from the global tier — recordSuccess already exists to carry that bit.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "The final wave pairs S5 and S6 concurrently but both list docs/plans/2026-07-26-deep-review/artifacts/pin-throttle-probe.json in their files — the wave is not file-disjoint, so two implementers running the stated schedule write the same artifact.",
+          "severity": "minor",
+          "evidence": "opus.json sequencing [[\"S1\",\"S2\"],[\"S3\"],[\"S4\"],[\"S5\",\"S6\"]]; S5 files includes docs/plans/2026-07-26-deep-review/artifacts/pin-throttle-probe.json and S6 files lists the same path.",
+          "survives": false,
+          "repair": "Drop the artifact path from S6's files (S6 only references the probe output, it does not produce it), or serialize S6 after S5.",
+          "targets_step": "S6"
+        },
+        {
+          "claim": "S5's before-state run ('Run the same script against baseline sha 3708648') is not executable as written: the probe script does not exist at the baseline sha, and the plan never says how a baseline server is obtained (separate worktree, separate build, which port/env) on a repo whose working branch has all six steps landed. An implementer either invents a worktree procedure or silently skips the baseline run and the parity artifact loses its 'before' half.",
+          "severity": "minor",
+          "evidence": "opus.json S5 verification: 'Run the same script against baseline sha 3708648 to capture the before-state'; scripts/pin-throttle-probe.mjs is created by S5 itself, so it is absent at 3708648, and no step describes checking out or building the baseline server.",
+          "survives": false,
+          "repair": "Specify the mechanism in S5: `git worktree add <scratch> 3708648`, build there, boot that server, run the HEAD copy of the probe against its port; record both runs' shas inside the JSON artifact.",
+          "targets_step": "S5"
+        },
+        {
+          "claim": "peerKeyFrom's declared signature accepts headers as Record<string, string | string[] | undefined> but the spec only defines behaviour for the string case ('returns cf:<cf-connecting-ip>'); when Node surfaces a repeated header as string[] — or when isViaCloudflare is true via cdn-loop alone with cf-connecting-ip absent — the key is unspecified, and a naive template interpolation yields 'cf:1.2.3.4,5.6.7.8' or 'cf:undefined', silently merging distinct peers into one bucket.",
+          "severity": "minor",
+          "evidence": "opus.json S2 intent signature: 'peerKeyFrom(remoteAddress: string | null | undefined, headers: Record<string, string | string[] | undefined>)'; apps/server/src/pin-gate.ts:111-115 shows isViaCloudflare returns true when EITHER cf-connecting-ip OR cdn-loop is present, so the cloudflare-but-no-cf-connecting-ip branch is reachable.",
+          "survives": false,
+          "repair": "Specify: array header → first element; via-cloudflare with absent/empty cf-connecting-ip → fall through to ip:<remoteAddress>; add both as cases in admission-throttle.test.ts.",
+          "targets_step": "S2"
+        },
+        {
+          "claim": "Changing admitDecision's third parameter from a positional boolean to an options object breaks consumers the plan never names — any call site passing `true`/`false` outside main.ts and pin-gate.test.ts would silently coerce or fail.",
+          "severity": "major",
+          "evidence": "Grep of apps/server/src at HEAD: admitDecision is called only at apps/server/src/main.ts:486 and in apps/server/src/pin-gate.test.ts (cases at lines 52-75) — exactly the two sites the plan names. A boolean third argument would also be a type error against AdmitContext, so `pnpm typecheck` catches any missed site rather than coercing.",
+          "survives": true,
+          "plan_response": "behaviour_parity_evidence_plan.checks[1]: 'pnpm typecheck — proves the admitDecision signature change has exactly the call sites the plan names (main.ts:486 and pin-gate.test.ts) and no silent boolean-to-object coercion elsewhere.' My independent grep confirms the named call-site set is complete.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "Reusing close code 4401 for throttled refusals makes the web client's PIN overlay tell a cooling-down drummer 'incorrect PIN' when their PIN is correct, and pauses its reconnect loop (apps/web/src/lib/ws/client.ts:205-208) — a UX lie the plan ships knowingly.",
+          "severity": "minor",
+          "evidence": "apps/web/src/lib/ws/client.ts:205-208 pauses reconnect on WS_CLOSE_INVALID_PIN; a throttled correct-PIN attempt closes with the same code.",
+          "survives": true,
+          "plan_response": "The summary states the trade explicitly ('the cost is that a throttled legitimate user sees incorrect PIN... recorded as an open question rather than silently widened into a UI initiative') and open_questions[0] escalates the 4429-vs-4401 decision to Trent with blocks_execution:false. The cost is named, bounded, and routed to the owner — that is an answered attack, not a hole.",
+          "targets_step": "S3"
+        },
+        {
+          "claim": "S1's boot-time throw on a sub-4-character LEDRUMS_PIN turns a today-working configuration into a server that refuses to start — including under the desktop sidecar and scripts/dev.mjs, where the failure surfaces as an opaque dead process rather than a clear message.",
+          "severity": "minor",
+          "evidence": "apps/server/src/main.ts:86 calls resolvePin at module top level; apps/desktop/src-tauri/src/lib.rs:375-394 spawns the server inheriting the user environment, so an inherited short LEDRUMS_PIN kills the sidecar at boot.",
+          "survives": true,
+          "plan_response": "S1 intent argues fail-closed over silent-drop ('a silently-dropped PIN means an OPEN server') and rollback_strategy names this as 'the single operator-visible irreversibility... a server configured with a sub-4-character LEDRUMS_PIN will refuse to boot — the fix is to set a longer PIN, and it must be called out in the release note.' The throw message text is specified in S1, so the failure is not opaque in the server log.",
+          "targets_step": "S1"
+        },
+        {
+          "claim": "The constant-time property of credentialsEqual is asserted but no test can prove it, so the primitive-obsession finding's core security claim rests on unverifiable evidence.",
+          "severity": "minor",
+          "evidence": "Timing assertions in vitest are inherently flaky; nothing in pin-gate.test.ts can measure comparison timing reliably.",
+          "survives": true,
+          "plan_response": "known_gaps second gap concedes exactly this and substitutes structural evidence: 'both credentials provably route through the single timingSafeEqual call site; grep must show zero remaining `=== pin` comparisons in pin-gate.ts'. That is the strongest evidence available for this property and it is falsifiable by a command.",
+          "targets_step": "S1"
+        }
+      ],
+      "rubric_scores": {
+        "correctness_risk": 4,
+        "parity_preservation": 4,
+        "sequencing_realism": 3,
+        "blast_radius_honesty": 3,
+        "verification_strength": 4
+      },
+      "overall": "sound-with-repairs",
+      "required_repairs": [
+        "S2: define 'escalation' operationally and rewrite verification (h) as an explicit scripted call sequence whose expected alert count follows from the definition — the current spec and test count contradict each other.",
+        "S2: specify peerKeyFrom for string[] headers and for via-cloudflare requests lacking cf-connecting-ip (fall through to ip:<remoteAddress>), with test cases for both.",
+        "S2/known_gaps: state the global-tier trade-off — an active attacker can hold remote access closed at ~2 req/s — and either accept it explicitly or exempt previously-succeeded peers from the global cooldown.",
+        "S6: remove the pin-throttle-probe.json artifact from S6's files (or serialize S6 after S5) so the final wave is file-disjoint.",
+        "S5: specify the baseline-run mechanism (git worktree at 3708648, build there, run the HEAD probe script against that server) so the before-state half of the parity artifact is actually producible.",
+        "S6: extend the docs pass to apps/desktop/src-tauri/src/lib.rs:242 and :674, whose comments assert the now-false 'accepts ANY non-empty LEDRUMS_PIN' contract."
+      ]
+    }
+  ]
+}

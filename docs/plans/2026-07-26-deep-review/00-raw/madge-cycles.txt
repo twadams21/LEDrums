@@ -1,0 +1,64 @@
+--- packages/core
+- Finding files
+Processed 201 files (1.4s) 
+
+✖ Found 5 circular dependencies!
+
+1) src/modifiers/types.ts > src/voice/modulation.ts > src/voice/envelope.ts > src/voice/easing.ts > src/voice/types.ts
+2) src/voice/modulation.ts > src/voice/envelope.ts > src/voice/easing.ts > src/voice/types.ts
+3) src/voice/engine.ts > src/voice/diagnostics.ts
+4) src/voice/render-plan.ts > src/voice/reachability-lint.ts
+5) src/voice/render-plan.ts > src/voice/scope-lint.ts
+
+--- packages/io
+- Finding files
+Processed 24 files (587ms) 
+
+✔ No circular dependency found!
+
+--- packages/protocol
+- Finding files
+Processed 136 files (996ms) 
+
+✖ Found 6 circular dependencies!
+
+1) ../core/src/modifiers/types.ts > ../core/src/voice/modulation.ts > ../core/src/voice/envelope.ts > ../core/src/voice/easing.ts > ../core/src/voice/types.ts
+2) ../core/src/voice/modulation.ts > ../core/src/voice/envelope.ts > ../core/src/voice/easing.ts > ../core/src/voice/types.ts
+3) ../core/src/voice/diagnostics.ts > ../core/src/voice/engine.ts
+4) ../core/src/voice/render-plan.ts > ../core/src/voice/reachability-lint.ts
+5) ../core/src/voice/render-plan.ts > ../core/src/voice/scope-lint.ts
+6) src/index.ts > src/schemas.ts
+
+--- apps/server
+- Finding files
+Processed 219 files (1.3s) 
+
+✖ Found 6 circular dependencies!
+
+1) ../../packages/core/src/modifiers/types.ts > ../../packages/core/src/voice/modulation.ts > ../../packages/core/src/voice/envelope.ts > ../../packages/core/src/voice/easing.ts > ../../packages/core/src/voice/types.ts
+2) ../../packages/core/src/voice/modulation.ts > ../../packages/core/src/voice/envelope.ts > ../../packages/core/src/voice/easing.ts > ../../packages/core/src/voice/types.ts
+3) ../../packages/core/src/voice/diagnostics.ts > ../../packages/core/src/voice/engine.ts
+4) ../../packages/core/src/voice/render-plan.ts > ../../packages/core/src/voice/reachability-lint.ts
+5) ../../packages/core/src/voice/render-plan.ts > ../../packages/core/src/voice/scope-lint.ts
+6) ../../packages/protocol/src/index.ts > ../../packages/protocol/src/schemas.ts
+
+--- apps/web
+- Finding files
+Processed 558 files (2.1s) (35 warnings)
+
+✖ Found 7 circular dependencies!
+
+1) ../../packages/core/src/modifiers/types.ts > ../../packages/core/src/voice/modulation.ts > ../../packages/core/src/voice/envelope.ts > ../../packages/core/src/voice/easing.ts > ../../packages/core/src/voice/types.ts
+2) ../../packages/core/src/voice/modulation.ts > ../../packages/core/src/voice/envelope.ts > ../../packages/core/src/voice/easing.ts > ../../packages/core/src/voice/types.ts
+3) ../../packages/core/src/voice/diagnostics.ts > ../../packages/core/src/voice/engine.ts
+4) ../../packages/core/src/voice/render-plan.ts > ../../packages/core/src/voice/reachability-lint.ts
+5) ../../packages/core/src/voice/render-plan.ts > ../../packages/core/src/voice/scope-lint.ts
+6) ../../packages/protocol/src/index.ts > ../../packages/protocol/src/schemas.ts
+7) src/lib/trigger-lab/sim.ts > src/lib/trigger-lab/sim.graph-compilation.ts
+
+--- workers/error-ingest
+- Finding files
+Processed 15 files (538ms) 
+
+✔ No circular dependency found!
+

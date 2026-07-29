@@ -1,0 +1,1248 @@
+{
+  "artifact": "03-refuted",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "3",
+    "lane": "refute+verify",
+    "model": "gpt-5.6-sol + tooling",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "phase3"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "finding_id": "duplicated-code-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The repeated default-field block is structurally similar and long enough, but the cited functions are not semantically equivalent under the required criterion. `makeNode` is a general authored-node factory for every `NodeKind`, arbitrary IDs, and caller overrides, whereas `anchorNode` can only synthesize reserved trigger/output anchors with `id === kind`; normalization preserves authored nodes rather than recreating them with these defaults, so the claimed two constructions of the same authored object do not occur. The proposed shared exported factory would also retain the web-facing factory while adding a core interface, relocating or increasing interface rather than reducing it.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "duplicated-code-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both cited implementations and the claimed catch-up drift is intentional proportional behavior, not accidental divergence: EngineHost runs at 60 fps with a six-step budget, while VoiceEngineHost runs at 120 fps with a twelve-step budget, so each can consume the same clamped 100 ms wall-time interval. The full step regions also fail the >=90% token-similarity and semantic-equivalence requirements because VoiceEngineHost advances time before computing transport and calls tick with absolute time plus transport, while EngineHost directly ticks before advancing time; their frame and DMX-map access paths also differ. Only smaller pacing/throttle fragments are equivalent, and extracting them behind advance/tickWall/stats plus callback hooks would introduce a new host-to-helper interface rather than reduce total interface.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "duplicated-code-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both cited pairs against the full functions, not just the matching assignments. The Mix fragments are embedded in semantically different constructors: the web version spreads the entire host voice, while core explicitly selects fields, consumes input.liveParams/specs, forces active/level/deckGain values, and does not inherit every host field; the generator paths also obtain effective parameters at different lifecycle layers. Most decisively, the proposed consolidation adds three exported cross-package helpers and their parameter contracts, so it relocates and enlarges the interface rather than reducing total interface as the criterion requires.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "duplicated-code-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I compared the complete methods and their queue representations, not just the clone detector's overlapping window. Only the five-line early-out/partition/sort skeleton at apps/web/src/lib/trigger-lab/sim.ts:588-592 and packages/core/src/voice/engine.ts:680-684 is semantically equivalent; the remaining method bodies differ in queue shape, evaluator state/pad semantics, and action application, so there are not two semantically equivalent blocks of at least 12 lines with at least 90% token similarity. The reported 17-line jscpd ranges begin in unrelated preceding code and mostly include comments and structural boilerplate, rather than two equivalent executable units. Exporting a helper for the five shared lines would also introduce a new core API for behavior currently private, relocating or increasing interface rather than satisfying the required interface-reduction condition.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "duplicated-code-0015",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both complete style blocks and confirmed that several long sequences exceed 12 lines and are effectively identical, especially the textarea rules and button-state rules. However, the required consolidation criterion is conjunctive, and the proposed DialogShell/DialogActions/Button extraction would introduce three component interfaces for two callers rather than reduce total interface; moreover, the repository already defines and documents the shared text-button vocabulary globally, so a new Button primitive would relocate an existing interface rather than eliminate duplication. The remaining dialog chrome is not wholly semantically equivalent: PasteFallbackDialog capitalizes its dynamic heading, while PasteSongDialog deliberately does not, and PasteSongDialog adds action spacing for its field-based layout.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "boundary-violation-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the inherited compiler libraries, all searched core references, and the actual perfNow call sites. The DOM lib does leave a potential enforcement gap, but the only production ambient usage is the cross-host Performance API, not a DOM object: performance exists in browser workers and Node as well as Window contexts, and engine.ts:814 explicitly guards its absence and falls back to 0. Rewriting the same lookup through globalThis would only change how TypeScript obtains the type; it would not remove or alter the runtime host-clock access, so the cited code does not establish packages/core reaching the DOM under the required criterion. Additionally, package typechecking includes test files with performance.now references at packages/core/src/engine/engine.test.ts:179-182 and packages/core/src/canvas/canvas-determinism.test.ts:181-187, so the claim that engine.ts is the single reference preventing a DOM-free lib setting is mechanically false.",
+            "criterion_applied": "import-boundary",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "boundary-violation-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the cited CI workflow, package scripts, core manifest, core source imports/dynamic imports, and the reported Madge cycles. The repository does lack an automated boundary-specific CI gate, but that is a process-enforcement gap rather than the criterion\u2019s required defect: no current packages/core import reaches Node, DOM, @ledrums/io, or @ledrums/protocol, and the apparent core cycles inspected are broken at runtime by type-only imports. Because the finding identifies neither an actual forbidden dependency nor a runtime cycle that matters, it falls outside the exact import-boundary criterion and is refuted.",
+            "criterion_applied": "import-boundary",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "boundary-violation-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the complete dependency path at the cited locations. The links from modifiers/types.ts to modulation.ts, voice/types.ts to modifiers/types.ts and modulation.ts, envelope.ts to types.ts, and easing.ts to types.ts are all `import type` declarations and are erased at runtime; the remaining runtime path modulation.ts \u2192 envelope.ts \u2192 easing.ts does not return to modulation.ts, so there is no runtime cycle that actually matters. I also found no Node, DOM, or @ledrums/io dependency in the examined core modules. Madge's reported static cycle and its repetition across compilation units may be maintainability noise, but that does not satisfy the supplied import-boundary criterion.",
+            "criterion_applied": "import-boundary",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "boundary-violation-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the cited imports and their surrounding declarations. The only back-edges are explicit `import type` statements, so they are erased from emitted JavaScript and do not create runtime cycles; the cited modules also do not reach Node, DOM, or `@ledrums/io`. The claim may identify a type-ownership preference, but that is outside the exact criterion, which requires a forbidden core import or a runtime cycle that actually matters.",
+            "criterion_applied": "import-boundary",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "boundary-violation-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The finding fails the stated criterion: all cited imports are in apps/web, not packages/core, so they do not make core reach Node, DOM, or @ledrums/io, and no runtime cycle is identified. Its factual premise is also false for sim.envelopes.ts, which uses voice as a runtime value to export applyModulations, envelopeToMapping, envShape, sampleEnvelope, and other functions; converting that import to import type would make the module invalid. The other three imports appear type-only, but unnecessary web-to-core runtime imports are outside the exact import-boundary criterion provided.",
+            "criterion_applied": "import-boundary",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "boundary-violation-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the cited module and confirmed that `voice` is a runtime import used by `nodeHasOutput`, `nodeHasInput`, and `nodeIsModSource`, so the header's type-only statement is inaccurate. However, the exact criterion is not comment accuracy: it requires packages/core to reach Node/DOM/@ledrums/io or a consequential runtime cycle. This dependency runs in the permitted direction from apps/web to packages/core, and `isModSourceKind` is a pure core helper with no reverse application import, so the finding does not satisfy the import-boundary criterion.",
+            "criterion_applied": "import-boundary",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the actual launch scripts and found a missed official product entry point: the documented production-style `pnpm start` command invokes the server directly without setting `LEDRUMS_ENGINE`, so `main.ts` selects and starts the legacy `EngineHost`. The deletion test therefore fails the finding: deleting `EngineHost` removes behavior used by that entry point, and preserving it would require its distinct layer/clip engine, reducer, lifecycle, input, and output responsibilities to reappear elsewhere; moreover, `EngineHost` and `VoiceEngineHost` are two concrete, semantically different adapters rather than a single hypothetical seam.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I confirmed the rescaling-percent defect: Slider.svelte:43-44 passes display=\"60%\" and inputValue=\"0.6\" to inferUnit, whose fallback at Slider.svelte:70 returns the entire \"60%\" string, so the rendered control shows a raw 0.6 input beside 60%. However, under the required deletion test this speculative-generality finding falls: deleting inference does not make the formatting complexity vanish; it redistributes explicit unit/status/numeric-format decisions across multiple live caller families, including raw-preserving suffix formatting, numeric-only precision formatting, dynamic ParamSpec units, and the disabled \"swept\" state. The percent behavior is a real correctness/API-contract defect, but it does not establish that the shared formatting seam is unearned.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The preset-only analysis missed the generic dynamic dispatch in scripts/ui-shot/ui-shot.mjs:151-156 and documented ad hoc captures that invoke every disputed mechanism through external aliases. Under the deletion test, removing these stores and DEV branches loses the demonstrated ability to hold otherwise-transient invalid-wire, splice, canvas-drop, lint, and section-drag states; reproducing those captures would require equivalent complexity in interaction automation or another synthetic-state adapter, so the capability is neither uncalled nor hypothetical.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I confirmed there are no production callers, but the exact deletion test still defeats the finding: deleting modulation-parity.ts would force its parity cases, phase matrix, and frozen historical formula to reappear across two independent callers\u2014the core modulation regression suite and the web hydration-migration suite. Those suites exercise different adapters/paths (`mappingEnvValue` through the modulation model versus `migrateGraphEnvMaps` through graph hydration), so this is a real shared seam rather than a pass-through whose complexity vanishes; moving it may change API hygiene, but the specified criterion does not justify deleting or condemning the module.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The deletion test fails: removing these forwarding exports does not make the dependency complexity vanish; it redistributes it across multiple callers that currently consume one cohesive web-simulation API. For example, store.svelte.ts imports Sim and numerous web-local graph types together with defaultAdsr, adsrToPoints, and the envelope types from './sim', while render.ts imports the web-local Sim/Voice types together with core-backed applyModulations; deletion forces both callers to split their imports and expose the core voice namespace directly. The two-adapter condition is also satisfied: the core compositor applies the canonical modulation implementation for the real engine, while the web renderer applies it for the offline simulation, and the facade preserves a stable web-domain boundary between them. ENV_KINDS itself appears dead and may be deleted independently, but that does not establish that the enclosing forwarding seam fails the specified criterion.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both barrels and their callers. Under the deletion test, removing the re-exports does not make the boundary complexity vanish: it redistributes direct `@ledrums/protocol` knowledge across dozens of server and web callers and splits cohesive imports that currently obtain a side-specific codec and its associated wire types from one module, as shown in `apps/server/src/main.ts:56-65` and `apps/web/src/lib/ws/client.ts:3-20`. The server and web modules are two real consumer adapters with opposite-direction decoding/encoding responsibilities, and their differing export lists match differing consumer needs rather than proving erroneous contract drift; therefore the forwarding is earning its keep as each adapter's local type surface.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "speculative-generality-0010",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The deletion test does not support the finding: removing FakePixliteClient would not make the controller-monitor testing complexity vanish; its controllable identity, statistics, failures, delays, and call recording would have to be recreated in apps/server/src/controller-monitor.test.ts, which exercises the PixliteClient boundary directly. The criterion explicitly says two adapters make a real seam, and PixliteClient has exactly two implementations\u2014HttpPixliteClient and FakePixliteClient\u2014while HttpTransport is a distinct lower-level seam that tests HTTP serialization, authentication, queueing, response handling, and timeout behavior without duplicating socket-server scaffolding; deleting either layer merely relocates its complexity rather than eliminating it.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "middle-man-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The deletion test does not support this finding: deleting either cited app-local module would force its runtime adapter behavior to reappear elsewhere\u2014server decoding, encoding, model serialization, effect serialization, and frame conversion in apps/server/src/ws-protocol.ts:38-113, and validated inbound-frame decoding in apps/web/src/lib/ws/protocol-types.ts:31-68. There are two concrete adapters, not a hypothetical seam, and central callers deliberately consume each adapter's runtime operation and associated contract types through one cohesive local import; the non-identical type lists match different server/web responsibilities rather than proving required lockstep duplication.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "middle-man-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the actual package boundary and callers rather than treating zero direct imports of selected symbols as proof that the barrel is unnecessary. Deleting packages/core/src/voice/index.ts would not make complexity vanish: @ledrums/core exposes only its root entry point, which deliberately publishes voice as a namespace, and both the server runtime adapter and the web/offline adapter consume that namespace across many underlying voice modules; removing the barrel would reproduce deep-module import and API-selection complexity across those callers. The unused-symbol evidence may justify a separate export-hygiene review, but under the required deletion test this module is earning its keep, and the server plus web implementations satisfy the two-adapter real-seam rule.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "middle-man-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I applied the deletion test to the package entry point rather than treating re-export syntax itself as evidence of a middle-man. Deleting packages/io/src/index.ts would not make complexity vanish: the package has no exported subpaths, so imports currently spread across server production and test files would need to be rewritten and package.json would need multiple new entry points; moreover, the root joins a real two-adapter seam, with ArtNetOutput and SacnOutput both implementing PixelOutput. The blanket surface may independently merit API curation, but that is not evidence that the package boundary is a deletion-test middle-man, and the proposed fix itself retains that boundary as another barrel.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "middle-man-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the cited barrel, registry, production lookup sites, and all modifier API consumers. Deleting the modifiers export block does not make complexity vanish: because @ledrums/core exposes only its root entry point, multiple web callers would need replacement package exports, forbidden deep imports, or duplicated registry/chain behavior; the unused individual names may be dead exports, but that is not evidence that the block is a deletion-test middle-man. The suggested listModifiers().find() to tryGetModifier() cleanup is valid, but it strengthens rather than eliminates this cross-package seam.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "data-clumps-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both dependency interfaces, every production factory invocation, the shutdown path, restore path, and the individual mutation handlers. The three values travel together across only two production call sites\u2014createClientMessageHandler at apps/server/src/main.ts:618-624 and boot at apps/server/src/main.ts:780-795\u2014while apps/server/src/boot.ts:124-128 is internal use rather than a third parameter-passing call site; moreover, the autosavers are semantically independent and are used apart for project mutations at apps/server/src/handlers/client-message.ts:471-535, show-library updates at :352-356, and song-library updates at :372-376. Therefore the exact >=3 parameters across >=3 call sites criterion is not met.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "data-clumps-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the GeneratorBridge declaration and implementation plus all three renderVoice call sites. The alleged clump consists only of `start` and `end`, which is two parameters, so it fails the exact criterion requiring at least three parameters travelling together across at least three call sites; additionally, the third caller computes and passes standalone bounds rather than holding a PixelRange.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the resolver, its production callers, the authoring controls, and its tests. The alleged membership and prefix-grammar invariants are not two independent invariants: membership in the nine canonical values fully subsumes the spelling/prefix form, while authoring call sites already restrict choices to options generated directly from DELAY_DIVISIONS; moreover, accepting unknown persisted strings and degrading to a quarter note is explicitly documented and regression-tested behavior rather than an unguarded accidental fallthrough. Therefore the primitive does not satisfy the exact criterion of a domain concept with at least two independent invariants enforced at call sites.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The cited shapes are not identical domain concepts: the voice/UI ParamSpec adds the envelope-authoring invariant `envable`, and `mapParamSpec` is a semantic adapter that marks only numeric parameters envelope-able while normalizing defaults according to the source discriminant. The widened ModParamSpec is an internal structural compatibility view, and every production call site supplies either the required, closed-union voice ParamSpec or effects/modifier ParamSpec; no production caller constructs a spec with neither discriminator, a typo, or conflicting discriminators. Therefore the hypothetical malformed states are admitted by the compatibility interface but are not invariants repeatedly enforced at call sites, so the exact domain-concept-with-at-least-two-call-site-invariants criterion is not satisfied.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I confirmed that the percentage caller at apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte:75 produces the claimed incorrect \"0.5 50%\" readout through the fallback at apps/web/src/lib/ui/Slider.svelte:70. However, the exact primitive-obsession criterion is not met: `format` does not consistently represent a (numeric value, unit) domain concept, because shipped callers also use it for transformed numeric displays and non-measurement status text such as `swept`, and I found no pair of measurement invariants enforced across call sites. This is a real Slider formatting-contract/correctness defect, but not evidence that a primitive is standing in for a domain concept with at least two call-site-enforced invariants.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The claimed transport failure is not reachable through the actual desktop call path: the shell always creates its initial token as 64 lowercase hexadecimal characters and overwrites LEDRUMS_HOST_TOKEN when spawning the sidecar, while the server\u2019s own fallback generator also produces hexadecimal. Arbitrary tokens injected when running the server independently do not pass through Rust\u2019s raw HTTP request builder; the web client transports them with URLSearchParams, which encodes reserved characters symmetrically. HostToken::set is permissive, but its production correction source is the token banner from that same shell-injected or server-minted sidecar, so no concrete caller supplying a reserved-character token was found; consequently the asserted second call-site-enforced invariant and failure scenario do not satisfy the criterion.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0011",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The asserted domain distinction no longer exists in the current model: the store explicitly defines pad-keyed and generated-key graphs as generic graphs that rename, duplicate, and delete uniformly, and those operations contain no key-kind branch. Physical triggering is determined by the graph trigger node's editable TriggerSource rather than its record key, while unionTriggerSources uses the fixture-derived pad set only to back-fill missing sources during legacy hydration; therefore the string key does not stand for a domain concept with two or more call-site-enforced invariants.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0012",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked every repository caller of lfoValue: the only production caller is sourceValue at packages/core/src/engine/modulation.ts:38, where source.shape is inferred from the four-member Zod enum at packages/core/src/model/project-schema.ts:13; the other direct caller is the bounded four-shape test loop at packages/core/src/engine/modulation.test.ts:44-46. More importantly, the cited declarations represent distinct LFO models rather than one shared waveform concept: the legacy clip LFO is a four-waveform, fixed-Hz source, while the voice LFO adds phase, tempo-synchronised rate modes, and deterministic sample-and-hold semantics at packages/core/src/voice/lfo.ts:24-41 and 93-100. For the exact criterion, the shape string has only one call-site invariant\u2014membership in the legacy four-shape vocabulary\u2014not at least two invariants enforced at call sites, so the primitive-obsession finding does not qualify.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0013",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The criterion is not satisfied: the domain concept already exists as the named, discriminated `state` member of `ServerMessage`, and every field is validated by a strict Zod object before dispatch. The sole production callback merely assigns independent fields and passes the two libraries to reconciliation; it does not enforce two or more cross-field invariants at the call site, so the positional signature may be less maintainable but is not primitive obsession under the specified criterion.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "primitive-obsession-0014",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the actual producers and consumers of both fields. `OscEvent.address` has only one independently enforced domain invariant: the OSC parser rejects values not beginning with `/` at packages/io/src/osc.ts:81-83; case sensitivity and exact `Map` lookup at packages/core/src/voice/modulation.ts:92-95 are ordinary string-comparison semantics, not additional invariants enforced at call sites. The authored `GraphNode.oscAddress` validation gap is real, but it is a separate model field and does not establish that either primitive at the cited locations carries at least two enforced invariants; renaming `OscInputStatus.address` would not fix that gap.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the cited definitions and the alleged third enumeration is not independent: KIND_OPTS is derived directly from NODE_KINDS, so it requires no lockstep edit of its own. ROUTE_KINDS and the Modulate items are mutually exclusive semantic palette groups inside one taxonomy; a new kind is placed in one applicable group, not edited across both, while the exhaustive Record<NodeKind, ...> metadata maps force the compiler to flag any newly added NodeKind. The cited evidence therefore establishes at most two unenforced independent sites\u2014NODE_KINDS and one palette-group placement\u2014not the required three.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both cited ladders and searched the NodeKind handling sites for a third kind-default dispatch. Only addNode and changeKind repeat this default-seeding discrimination, so the required >=3-place threshold is not met; other NodeKind switches classify, render, or label nodes rather than seed these defaults. The alleged CC drift is also not behavioral: ccSource is explicitly optional with absence defined as MIDI, the store getter applies `node.ccSource ?? 'midi'`, and core resolves a `cc` node directly as MIDI CC regardless of that field.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked all four cited locations. Only Inspector.svelte and TriggerNode.svelte switch directly on the runtime `node.kind` discriminant; AddPalette.svelte switches on the separate optional presentation field `AddItem.previewKind`, while add-node-taxonomy.ts is a curated catalog of user-addable items rather than a switch over NodeKind. The claimed lockstep failure also does not occur generically: Inspector.svelte:124-141 has a catch-all node branch that renders ContainerNodeInspector, TriggerNode.svelte:329 renders thumbnails only for independently classified source/state kinds, and AddPalette.svelte:82-107 generically constructs non-special preview nodes. Protected or migration-only kinds are intentionally absent from the palette, so these surfaces have different coverage obligations and do not satisfy the criterion of the same discriminant being switched in at least three places.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked all four cited sites and they do not implement the same partition of ClientMessage['t']. ENGINE_INPUTS is an authorization allowlist; monitorInput is optional ingress presentation invoked before authorization; handleVoiceInput is mode-dependent dispatch whose legacy branch deliberately consumes voice-only messages while allowing midi/osc to fall through; and the midi|osc check is reached only after voice dispatch returns false, making it specifically the legacy reducer latency seam. Adding a variant therefore does not inherently require the same lockstep membership in three or more places, and fireGraph being monitored while remaining editor-gated is a semantic difference rather than evidence of taxonomy drift.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the cited metadata maps, the summary function, its caller, and the other NodeKind switches. The three Records are exhaustive visual metadata, but kindSummary is deliberately a partial, semantically different operation: TriggerNode handles trigger, play/effect, and modifier summaries before calling it, while kinds such as output intentionally have no summary; the other NodeKind switches likewise cover purpose-specific subsets, so adding a variant does not require lockstep edits across them. Therefore the exact repeated-discriminant criterion is not met.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked all cited locations and searched the repository for switches on a `.t` discriminant. Only `WSClient.dispatch` switches on `ServerMessage.t`; `serverMessageSchema` declares the discriminated union and `WSCallbacks` declares named callback fields, so neither is another switch on the same discriminant, while the other repository switches operate on `ClientMessage.t`. The alleged silent-drop hazard may exist, but it does not satisfy the exact criterion requiring the same discriminant to be switched in at least three places.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "repeated-switches-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked both cited switches and confirmed the claimed exhaustiveness asymmetry: nodeCategory covers the full NodeKind union through a value-returning switch, while the traversal switch has no exhaustiveness assertion. However, the exact criterion requires the same discriminant to require lockstep edits in at least three switch sites, and this finding establishes only two; the other core switch on GraphNode.kind is deliberately a partial classifier whose default handles every non-modulation kind, so adding a flow-node variant does not require editing it. The two-site issue may be independently valid, but it does not satisfy the repeated-discriminant threshold and is therefore refuted under the required criterion.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "divergent-change-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I confirmed the duplicated four waveform formulas at packages/core/src/engine/modulation.ts:8-21 and packages/core/src/voice/lfo.ts:72-100, but that establishes only a two-site implementation edit; even a shared vocabulary change adds packages/core/src/model/project-schema.ts:6-14 for three production files, still below the required four-file threshold. Git history also does not provide the required evidence from three commits: the cited implementations were introduced separately in 29c9311 and aea6c0a, while the other S36 commits added web wiring and tests rather than demonstrating three historical instances of one waveform change scattered across four or more files.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "divergent-change-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I inspected the component, its extracted collaborators, the eight cited commits, and the 400-commit churn histogram. The evidence shows several distinct features integrating with the graph view, not one logical change requiring edits in at least four files across at least three commits; moreover, the alleged non-rendering responsibilities are already substantially extracted, leaving the component with Svelte/xyflow binding and event coordination. The churn claim is also inaccurate at current HEAD: the file has 15 touches, not 16, and is not the repository's third-most-changed file when all repository files are counted.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "divergent-change-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The stated scatter is three edit sites across only two files: the interface is in packages/protocol/src/index.ts, while both the schema and lock assertion are in packages/protocol/src/schemas.ts:440-472. Git history contains only two post-introduction commits that add a hand-written payload, matching schema, and lock (c7bf94d for OscListenInfo and fbd63a2 for BackupSnapshotMeta); the only third commit touching both files is d5bed06, which introduced the schema system itself rather than evidencing another payload-field change. Although the two feature commits touched 26 and 10 files overall, those additional files implement the OSC and backup features and do not show that changing the payload declaration itself requires edits in four or more files. Therefore the required evidence of one logical change needing >=4 files across >=3 commits is absent.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "resilience-hole-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "I checked the production socket construction and the sole production onFrame callback. The default factory creates a native WebSocket and sets binaryType to \"arraybuffer\" before installing the message handler, so compliant browser and Tauri WebView sockets deliver binary messages through the synchronous ArrayBuffer branch; the only alternate factory usages are test fakes, and none emits Blob data. I also checked the allegedly more likely callback failure: the production callback only assigns the received Uint8Array to a $state field, with no decoding, indexing, or other realistically throwing operation. A rejection is theoretically possible if a non-production/custom WSLike supplies a Blob whose arrayBuffer() rejects, but no realistic application trigger was found, so the proposed added handling fails the plausible-trigger requirement.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    },
+    {
+      "finding_id": "resilience-hole-0012",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": true,
+            "reasoning": "The claimed abandoned-trigger loss mechanism is incorrect: the legacy engine retains and re-presents recent triggers for up to 6000 ms, so triggers after the one that encounters the cap are eligible for processing on later frames rather than being irretrievably discarded. In the primary voice host, each generator instance receives exactly one synthetic trigger, making the 64-emission cap unreachable; where a live stream can reach it, the cap is an explicit handled degradation policy, not an unhandled failure path. Advancing lastSeq for an already-expired trigger is also intentional consumption of a trigger that can no longer produce a live emission; moving the assignment after that check would repeatedly reconsider stale triggers. A drop counter could be an observability enhancement, but its absence does not establish the required unhandled failure path, and adding a field to internal EmitterState would not itself surface host statistics.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "refuted"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "refuted",
+      "disposition_reason": "refuted at 3a"
+    }
+  ]
+}

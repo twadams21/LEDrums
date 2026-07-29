@@ -1,0 +1,150 @@
+{
+  "reviewer": "gpt-5.6-sol(high)",
+  "target": "docs/plans/2026-07-26-deep-review/SPEC.md",
+  "verdict": "BLOCK",
+  "verdict_rationale": "The chosen transport is neither reproducible from the repository nor proven by evidence that distinguishes a proxied worker from the native wrapper's documented silent fallback. The sole false-positive gate also substitutes adversarial model opinion for the independently reproducible evidence the spec itself requires, so the resulting ledger cannot safely drive automatic deletion.",
+  "strongest_objection": "The three-lane probe does not prove that either alleged codex lane ran through the proxy: its only reported oracle is that two easy repository facts were correct, but the spec explicitly admits that the native Opus wrapper can answer the task itself and return a confident response without launching the subprocess. That exact bypass would also pass the stated probe, and there is no tracked launcher, probe transcript, proxy request record, or child-produced attestation in the repository to distinguish the intended path from the silent fallback. Under that failure, the pipeline confidently reports a mixed-model run while actually spending the Anthropic window on the wrong model, invalidating the transport, diversity, and cost claims at once.",
+  "scores": {
+    "D1_soundness": {
+      "score": 0,
+      "why": "A core mechanism cannot run reproducibly as described because no phase produces the absent launcher, and the stated probe cannot distinguish the intended proxied execution from the wrapper's admitted silent bypass."
+    },
+    "D2_completeness": {
+      "score": 0,
+      "why": "Phases 1, 2, 5, 7, and 8 consume an untracked launcher, while Phases 3 and 4 consume a finding schema whose actual fields and validation artifact are never produced."
+    },
+    "D3_cost_realism": {
+      "score": 0,
+      "why": "The phase-row arithmetic tops out at about 100 stated agents rather than 110, counts wrappers and proxied lanes inconsistently, and gives mutually incompatible implied structural-initiative counts."
+    },
+    "D4_failure_modes": {
+      "score": 0,
+      "why": "A wrapper can return a schema-valid answer from the wrong model with no signal, and a plausible false finding can survive one model refuter without any independently reproduced proof."
+    },
+    "D5_evidence": {
+      "score": 0,
+      "why": "Several checkable claims are contradicted by the repository: the test-lock path and two-worker cap do not exist, five required audit tools are unavailable, and the measured scope table is stale at current HEAD."
+    },
+    "D6_scope": {
+      "score": 3,
+      "why": "Each named phase has an identifiable consumer and no whole phase is demonstrably redundant, although several contracts are too underspecified to execute safely."
+    }
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "dimension": "D4",
+      "severity": "critical",
+      "confidence": "high",
+      "spec_section": "Implementation Decisions → Transport: Opus 5 drives, codex agents run inside the Workflow",
+      "quote": "This was proven, not assumed. A three-lane probe ran one native and two proxied `gpt-5.6-luna(low)` agents concurrently, all schema-forced: 3/3 returned, 0 errors, 35s, 63,500 subagent tokens.",
+      "claim": "The probe's correctness oracle does not attest which model executed the work, so it cannot rule out the wrapper's explicitly documented silent fallback, and neither the launcher nor probe evidence is tracked in the repository.",
+      "failure_scenario": "A native Opus-low wrapper ignores or imperfectly follows the launcher-only prompt, reads `packages/io/src/osc.ts` itself, and returns the seven correct exports in the required schema. The probe still reports 3/3 and correct ground truth, but production Sol lanes are actually native Opus calls, silently consuming the usage window and eliminating the promised cross-model split; a fresh session additionally has no tracked `codex-agent.sh` to invoke at all.",
+      "would_change_my_mind": "A repository-tracked launcher plus a persisted probe artifact showing proxy-side request/model records or process-level child attestations that the wrapper cannot fabricate, together with a fail-closed check that rejects any result lacking that evidence.",
+      "recommendation": "Add the launcher and probe to the output root, restrict the wrapper to launching rather than repository inspection, and require machine-validated child/model attestation before accepting any proxied lane result."
+    },
+    {
+      "id": "F2",
+      "dimension": "D1",
+      "severity": "critical",
+      "confidence": "high",
+      "spec_section": "Implementation Decisions → The phases → Phase 3 — Verify",
+      "quote": "Each deduped finding is attacked by Opus 5 at high effort, prompted to refute, defaulting to refuted under uncertainty, applying the deletion test as the criterion. Findings above a size or blast-radius threshold get three independent refuters; the rest get one. Survivors only proceed.",
+      "claim": "Failure to refute is treated as confirmation even though Phase 3 requires no independent reproduction or non-model evidence, directly contradicting the spec's own testing rule that correctness must not be established by asking another model.",
+      "failure_scenario": "Sol reports a small web helper as dead because static search finds no caller; the helper is reached through a string-keyed registry or dynamic import that both Sol and one Opus refuter miss. Because the proposed deletion is under 50 LOC and outside `packages/core`, one failed refutation promotes it to the survivor ledger, the existing suite lacks that runtime path, and Phase 5 automatically deletes live behavior.",
+      "would_change_my_mind": "A Phase 3 contract requiring each survivor to include independently reproduced evidence such as exhaustive reference resolution including dynamic registries, a failing-before/passing-after reachability check, runtime coverage, or another falsifiable repository oracle rather than a model verdict alone.",
+      "recommendation": "Split Phase 3 into adversarial refutation and positive verification; only independently reproduced findings may enter auto-fix, while model-only survivors remain hypotheses for human or structural planning."
+    },
+    {
+      "id": "F3",
+      "dimension": "D1",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Solution",
+      "quote": "The objective function is depth, not line count. Borrowed from `/codebase-design`: the goal is less interface per unit of behaviour, not fewer lines. Removing a guard does not shrink a module's interface, so it scores zero under this measure. Every deletion claim must pass the deletion test — imagine the module gone; if complexity vanishes it was a pass-through, if complexity reappears across N callers it was earning its keep.",
+      "claim": "The objective is prose rather than an admission rule: no artifact records interface before/after, behavior preserved, or a minimum score, and the module-deletion thought experiment does not evaluate internal branches, helpers, tests, or guards that the fleet will also propose deleting.",
+      "failure_scenario": "An identifying lane labels an internal retry helper and its error branch as Middle Man or duplication. Removing them changes no exported interface, so the stated metric is zero, but neither the finding schema nor Phase 4 has a rule that rejects zero-interface deletions; the deletion test is inapplicable because no module is removed, and a file-local Phase 5 fixer can still produce a smaller, less resilient implementation that passes happy-path tests.",
+      "would_change_my_mind": "A machine-readable finding field set showing the concrete interface removed, before/after caller count, preserved behavior evidence, failure-path classification, and an explicit gate that bars automatic fixes with zero measured interface reduction or any guard/retry/error-path effect.",
+      "recommendation": "Operationalize the objective in the finding and verdict schemas and make zero-interface or failure-path deletions ineligible for Phase 5 regardless of model confidence."
+    },
+    {
+      "id": "F4",
+      "dimension": "D3",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Implementation Decisions → The phases",
+      "quote": "| | **Total** | **~79–110** | | | |",
+      "claim": "The total is not derivable from the table and the per-initiative phases imply incompatible initiative counts, so neither total agent count nor token projection is decision-grade.",
+      "failure_scenario": "Summing the stated rows gives 79 at the low end and about 100 at the high end, not 110. Separately, Phase 8's eight reviewers at two per initiative implies four initiatives, which would require 12 Phase 7 variants and four Phase 9 synthesis agents, not 14 and six; proxied subprocess lanes are also omitted where the table counts only wrappers. The orchestrator therefore reaches the 70% launch refusal at an unplanned point or underestimates the number of queued workers.",
+      "would_change_my_mind": "A parameterized formula using deduped findings, trivial batches, and structural initiatives, with an explicit definition of whether each count includes wrapper agents and subprocess workers, and totals that reconcile for every phase.",
+      "recommendation": "Replace fixed row guesses with formulas and show low/base/high scenarios for both native calls and proxied subprocesses, then derive wrapper and token totals from those same variables."
+    },
+    {
+      "id": "F5",
+      "dimension": "D5",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Testing Decisions",
+      "quote": "`pnpm test` is serialised behind `scripts/test-lock.sh` with vitest capped at 2 workers; concurrent sweeps have previously wedged this machine, so fix lanes must not run the suite in parallel.",
+      "claim": "This safety claim is false at current HEAD: `scripts/test-lock.sh` does not exist, `pnpm test` directly runs `pnpm -r run test`, and the only lock is `scripts/with-gate-lock.mjs` behind `pnpm gates` with a default cap of four workers.",
+      "failure_scenario": "Two or more Phase 5 worktrees follow the spec and invoke `pnpm test`; none acquires the machine-wide gate lock, each Vitest package uses its normal worker defaults, and the exact concurrent-sweep machine wedge the spec cites can recur before Phase 6 receives test proof.",
+      "would_change_my_mind": "Repository evidence that `pnpm test` itself routes through a machine-wide lock and sets both Vitest maximums to two in every worktree.",
+      "recommendation": "Require Phase 5 lanes to use the existing `pnpm gates` command and state its actual four-worker cap, or change the repository harness before launch and then re-verify the claim."
+    },
+    {
+      "id": "F6",
+      "dimension": "D2",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Solution",
+      "quote": "Phase 0 runs `knip`, `ts-prune`, `depcheck`, `madge` and `jscpd` before any agent reads a file.",
+      "claim": "None of the five required tools is installed, declared in any package manifest, or available on PATH, and the spec gives no pinned acquisition command despite making Phase 0 a prerequisite.",
+      "failure_scenario": "A fresh session starts Run A and the first Phase 0 command fails with command-not-found; using ad hoc `pnpm dlx` instead downloads floating versions over the network, making the supposedly reproducible baseline depend on undeclared tool versions and availability while dependency/toolchain changes are explicitly out of scope.",
+      "would_change_my_mind": "Tracked package declarations or exact version-pinned invocation commands for all five tools, including configuration and the versions recorded in `00-baseline.md`.",
+      "recommendation": "Specify pinned `pnpm dlx <tool>@<version>` commands or add an audit-tool manifest before Run A, and record each resolved version in the baseline artifact."
+    },
+    {
+      "id": "F7",
+      "dimension": "D2",
+      "severity": "major",
+      "confidence": "high",
+      "spec_section": "Implementation Decisions → Seams (phase artifact contracts)",
+      "quote": "The finding schema (`02`) is the load-bearing one: Phase 3's prompts read it, Phase 4's split keys off it, Phase 10's table renders from it.",
+      "claim": "The spec names a load-bearing schema but never defines its fields or provides a schema artifact, so three downstream phases consume an output shape that no earlier phase guarantees.",
+      "failure_scenario": "The duplicated-code lane emits `files` and `evidence`, the resilience lane emits `location` and `missing_guard`, and the tooling lane emits tool-native records. Plain JavaScript cannot deterministically deduplicate, compute the proposed fix size/blast radius, or render Phase 10 without inventing conversions during the run, violating the promised no-rederivation seam and making Phase 3 prompts inconsistent by lane.",
+      "would_change_my_mind": "A checked-in JSON Schema or equivalent exact object definition for findings, verdicts, triage, fix proof, plans, and reviews, plus validation at every write boundary.",
+      "recommendation": "Add the actual schema files before execution and make every phase reject invalid artifacts rather than repairing or interpreting them ad hoc."
+    },
+    {
+      "id": "F8",
+      "dimension": "D5",
+      "severity": "minor",
+      "confidence": "high",
+      "spec_section": "Implementation Decisions → Scope",
+      "quote": "| `apps/desktop` (incl. ~1,727 Rust) | 2,894 | 14 |\n| Tests | 42,430 | — |",
+      "claim": "The supposedly measured current scope is one commit stale: the same tracked-file method now yields 3,064 non-test desktop source lines across 15 files and 42,524 `.test.ts`/`.test.mjs` lines.",
+      "failure_scenario": "Run A treats the scope table as current ground truth and omits the newly tracked `ota-announce.mjs` from desktop mapping while understating tests by its 94-line test file; the source total is now 70,165 lines across 468 files rather than the table's 467.",
+      "would_change_my_mind": "A documented counting rule that intentionally excludes the OTA announcement source and test despite both being tracked, hand-written code in an in-scope unit.",
+      "recommendation": "Regenerate the scope table from the pinned Phase 0 HEAD and record the exact file-selection command beside it."
+    }
+  ],
+  "no_findings_justification": "Not applicable: the review contains both critical and major findings.",
+  "checked_against_repo": [
+    "Reproduced the source-count method from tracked non-test TypeScript/JavaScript/Svelte/Rust files: apps/web 43,302/265, packages/core 14,466/132, apps/server 6,511/36, packages/io 1,402/14, packages/protocol 777/2, and scripts 643/4 match; apps/desktop is now 3,064/15 rather than 2,894/14.",
+    "Counted tracked `.test.ts` and `.test.mjs` files at current HEAD: 42,524 lines, exactly 94 above the stated 42,430 because `apps/desktop/scripts/ota-announce.test.mjs` is now tracked.",
+    "Verified `apps/desktop/web-dist/` and `apps/desktop/src-tauri/target/` are ignored by nested `.gitignore` files and have no tracked files.",
+    "Scanned non-test `packages/core/src` imports: no `node:*`, DOM, `@ledrums/io`, or Node IO imports were found; the only external import specifier is `zod`.",
+    "Checked command availability, root `node_modules/.bin`, and package manifests for knip, ts-prune, depcheck, madge, and jscpd: all five are absent.",
+    "Checked root and workspace package scripts plus `scripts/`: `pnpm test` is unlocked, `scripts/test-lock.sh` is absent, and `pnpm gates` alone uses `scripts/with-gate-lock.mjs`, whose default Vitest maxima are four.",
+    "Searched tracked repository files and the deep-review output root: no `codex-agent.sh`, mixed-model workflow implementation, probe transcript, proxy request evidence, or artifact schemas are present.",
+    "Inspected the installed twux tier map: `opus` maps to `gpt-5.6-sol`, full-id pins bypass the map, `codex_env_prefix()` injects the four tier variables, and `TWUX_MAX_WIDE` defaults to 3; those specific transport premises are accurate.",
+    "Verified the machine reports 16 logical CPUs, consistent with a Workflow cap of 14 under the stated `min(16, cores-2)` rule."
+  ],
+  "coverage_gaps": [
+    "Did not rerun the mixed-model probe because the task forbids tests and state-changing execution, and no reproducible probe script or transcript is tracked.",
+    "Could not independently verify which model served the prior proxied requests or the reported 63,500-token accounting because proxy-side logs and request identifiers are absent.",
+    "Did not run the five audit tools, the test suite, builds, coverage, or any Phase 5 mutation.",
+    "Could not evaluate real Phase 3 precision/recall because its prompt, finding schema, refuter threshold implementation, and sample findings do not exist as artifacts.",
+    "Could not calibrate Anthropic five-hour-window consumption from agent tokens because the spec supplies no usage-to-token measurements for Opus 5 high calls."
+  ]
+}

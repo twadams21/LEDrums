@@ -1,0 +1,259 @@
+{
+  "initiative_id": "INIT-06-graph-node-type-model",
+  "variant": "fable",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-06-plan-fable",
+    "model": "claude-fable-5",
+    "effort": "medium"
+  },
+  "summary": "Subtraction-first redesign of the graph-node type model. The keystone move is eradicating the legacy 'play' kind from the runtime NodeKind (it survives only inside the load codec), which deletes ~38 hand-maintained `kind === 'play' || kind === 'effect'` pair-sites and fixes the live repeated-switches-0001 bug at its root instead of patching one more site. GraphNode then becomes a discriminated union that EXPORTS NO NEW SYMBOLS (the union replaces the flat interface under the same two names, GraphNode and NodeKind; per-kind payloads stay unexported, narrowed via `n.kind`), which lets us delete the 13 filler-required fields, graph-integrity's hand-filled default block, and hydrate's filler defaulting. Every enumeration of the mod-source set collapses to one `satisfies`-checked constant; triggerNodeSignature's leaky switch becomes a total Record<NodeKind, fn>. The three voice-path parameter clumps are folded into types that ALREADY EXIST (ModifierContext, FrameModCtx, a file-local EvalCursor) — zero new public abstractions. The targetId string is deliberately NOT promoted to a ScopeTarget union: 272 call sites of churn to add structure that two functions (parseHoopTarget/fromPixelSet) already confine is net addition, so we instead delete parseHoopTarget's per-caller policy flags and reject '#'/',' in drum ids at graph-integrity. The parity-fixture middle-man block is simply deleted from core's public voice surface. Every step removes more interface than it adds; persisted shows keep loading because the flat persisted shape remains the codec input and normalizeTriggerGraphToGen3 remains the single ingress.",
+  "findings_addressed": [
+    "repeated-switches-0001",
+    "repeated-switches-0002",
+    "primitive-obsession-0001",
+    "primitive-obsession-0003",
+    "primitive-obsession-0009",
+    "data-clumps-0001",
+    "data-clumps-0003",
+    "data-clumps-0004",
+    "middle-man-0003"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Kill the live signature bug: make the effect arm reachable in triggerNodeSignature",
+      "intent": "apps/web/src/lib/app/views/trigger-flow-projection.ts:34 spells only `case 'play'` while every store graph is normalised to 'effect', so effect nodes fall to `default: return base` and effectId/playType/canvasScene changes never invalidate the projection cache. Change line 34 to `case 'play': case 'effect':`. This is the 1-line stop-the-bleeding fix; S6 later deletes the whole switch. Add a unit test in a new apps/web/src/lib/app/views/trigger-flow-projection.test.ts: triggerNodeSignature({kind:'effect', effectId:'a', ...}) !== same node with effectId:'b' (asserting it FAILS before the fix is the honest-red step).",
+      "files": [
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+        "apps/web/src/lib/app/views/trigger-flow-projection.test.ts"
+      ],
+      "risk": "low",
+      "verification": "New test trigger-flow-projection.test.ts red-then-green (effectId discrimination for kind 'effect'); `pnpm gates` green at 2968+1."
+    },
+    {
+      "id": "S2",
+      "title": "Delete the modulation-parity re-export block from core's public voice surface",
+      "intent": "packages/core/src/voice/index.ts:20-26 publishes MODULATION_PARITY_CASES, PARITY_PHASES, legacyEnvValue, mappingEnvValue and ParityCase — test fixtures including deliberately-superseded envelope math — through the shipped @ledrums/core API, for exactly two test-file consumers. Delete the export block. Repoint packages/core/src/voice/modulation.test.ts at a direct relative import from './modulation-parity'. For the one cross-package consumer, apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts:37-40, add a single subpath entry to packages/core/package.json exports: \"./testing/modulation-parity\" mapping to the source file, and repoint the test. Net: -5 public symbols, +1 test-only subpath; legacyEnvValue leaves the shipped surface.",
+      "files": [
+        "packages/core/src/voice/index.ts",
+        "packages/core/package.json",
+        "packages/core/src/voice/modulation.test.ts",
+        "apps/web/src/lib/trigger-lab/store/hydrate.envmap.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "`grep -rn 'voice.legacyEnvValue\\|MODULATION_PARITY_CASES' apps packages --include='*.ts' | grep -v test | grep -v modulation-parity` returns zero hits; both parity test files still run the same assertion count; `pnpm gates` green."
+    },
+    {
+      "id": "S3",
+      "title": "Eradicate 'play' from the runtime NodeKind; confine it to the load codec",
+      "intent": "In packages/core/src/voice/types.ts, change `NodeKind = CanonicalGraphNodeKind | LegacyGraphNodeKind` to `NodeKind = CanonicalGraphNodeKind` and keep LegacyGraphNodeKind ('play') only as part of a widened ingress alias `PersistedNodeKind = NodeKind | LegacyGraphNodeKind` consumed solely by normalizeTriggerGraphToGen3 in packages/core/src/voice/graph-integrity.ts (its play->effect rewrite at lines 148/154 stays, typed against the widened input). PRECONDITION AUDIT inside this step: enumerate every TriggerGraph ingress (hydrate.ts:400/418/455, clipdoc.ts load path, any server-side show load in apps/server that feeds evalGraph) and confirm each calls normalizeTriggerGraphToGen3 before graphs reach store or engine; if one does not, add the normalize call there. Then let `pnpm typecheck` enumerate every now-dead `=== 'play'` comparison and DELETE each pair-site down to the single 'effect' spelling — expected sites include apps/web/src/lib/trigger-lab/store.svelte.ts:2568/2790/2842, apps/web/src/lib/app/views/TriggerNode.svelte:60, Inspector.svelte:132, trigger-flow-projection.ts (S1's `case 'play':` label goes away), and BlockKind in types.ts drops the legacy member. Pair-sites in hydrate.ts's pre-normalisation migrations (143/191/257/263/324/348) are the codec boundary and KEEP their 'play' handling, typed against PersistedNodeKind. Zod schemas in clipdoc.ts / store.svelte.ts keep accepting 'play' (persisted back-compat is untouched).",
+      "files": [
+        "packages/core/src/voice/types.ts",
+        "packages/core/src/voice/graph-integrity.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/hydrate.ts",
+        "apps/web/src/lib/trigger-lab/clipdoc.ts",
+        "apps/web/src/lib/app/views/TriggerNode.svelte",
+        "apps/web/src/lib/app/views/Inspector.svelte",
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts"
+      ],
+      "risk": "high",
+      "verification": "`grep -rn \"=== 'play'\" apps/web/src/lib packages/core/src --include='*.ts' --include='*.svelte' | grep -v test | grep -v hydrate.ts | grep -v graph-integrity.ts` returns zero; new fixture test loads a persisted show containing a legacy kind:'play' node through hydrate and asserts it evals identically to its kind:'effect' twin; `pnpm gates` green.",
+      "reverses": "Single commit; `git revert` restores the widened NodeKind and all pair-sites verbatim — no persisted data changed shape, so revert is complete."
+    },
+    {
+      "id": "S4",
+      "title": "GraphNode flat interface -> discriminated union with zero new exported symbols",
+      "intent": "Replace the 113-line flat GraphNode interface (types.ts:246-358, 40 fields / 27 optional / 13 filler-required) with a discriminated union PUBLISHED UNDER THE SAME NAME: an internal GraphNodeBase {id; kind; x; y; modInputs?} plus internal per-kind payload interfaces (TriggerNode kind:'trigger' + source?; EffectNode kind:'effect' + mode/scope/effectId/playType?/canvasScene?/presetId/busId/targetId?/params/env; ModifierNode + modifierId?/bypass?/params/env; MixNode + mixBlendMode?; SwitchNode + on/valueMode/threshold/invert/bands; ChanceNode + p; RandomNode + noRepeat; DelayNode + delayMode/ms/division; ScopeNode + scope/targetId?; and the six mod-source kinds carrying only their own fields; all/sequence/toggle/output carry base only). Export ONLY `GraphNode` (the union) and `NodeKind` — per-kind interfaces stay module-private; consumers narrow via `n.kind === 'x'` or `Extract<GraphNode, {kind: K}>`. DELETE the now-unnecessary filler machinery this makes dead: the literal default-fill block in graph-integrity.ts (~line 65, incl. `division: '1/8'` on non-delay nodes) and equivalent filler defaulting in hydrate. Persistence is a codec, not a mirror: the zod node schemas in clipdoc.ts / store.svelte.ts stay flat-and-loose (accept old shows with filler fields), and normalizeTriggerGraphToGen3 becomes the single flat->union narrowing point (drop fields foreign to the kind, default the kind's own missing fields exactly as hydrate does today). Save path serialises the narrowed node as-is — a strict subset of the old flat shape, which pre-refactor readers already hydrate-default (the optional-field back-compat contract documented in types.ts), so no migration is written. Fix every typecheck failure by narrowing at the site — each failure is a place the flat record was hiding a kind assumption; makeNode in store.svelte.ts becomes per-kind construction and loses its filler arguments.",
+      "files": [
+        "packages/core/src/voice/types.ts",
+        "packages/core/src/voice/graph-integrity.ts",
+        "packages/core/src/voice/eval-graph.ts",
+        "packages/core/src/voice/render-plan.ts",
+        "packages/core/src/voice/modulation-graph.ts",
+        "packages/core/src/voice/modifier-graph.ts",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/hydrate.ts",
+        "apps/web/src/lib/trigger-lab/persistence.ts",
+        "apps/web/src/lib/trigger-lab/clipdoc.ts",
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+        "apps/web/src/lib/app/views/graph-to-flow.ts",
+        "apps/web/src/lib/app/views/TriggerNode.svelte",
+        "apps/web/src/lib/app/views/Inspector.svelte"
+      ],
+      "risk": "high",
+      "verification": "Round-trip fixture test: pre-refactor persisted shows (flat nodes with filler fields, one per kind, plus one legacy 'play' node) -> hydrate -> normalize -> save -> reload, asserting kind/edge/per-kind-field equality; mutation probe: temporarily add a 20th kind to CanonicalGraphNodeKind and record which files typecheck forces to change (must include render-plan.ts nodeCategory and the union), then remove it; `pnpm gates` green; `pnpm ui-shot` capture of the Trigger Lab graph view (all node kinds placed, inspectors open) pixel-compared against a pre-step capture.",
+      "reverses": "Single commit revert restores the flat interface. Shows saved by the union build are readable by the reverted build because dropped filler fields are hydrate-defaulted there (proven by a fixture test committed BEFORE this step: a filler-stripped show loads green at the pre-S4 sha)."
+    },
+    {
+      "id": "S5",
+      "title": "One mod-source set: satisfies-checked constant + total Record dispatch, five longhand copies deleted",
+      "intent": "In packages/core/src/voice/modulation-graph.ts: declare `MOD_SOURCE_KINDS = ['envelope','lfo','cc','note','osc','randomMod'] as const satisfies readonly NodeKind[]`, add `type ModSourceKind = (typeof MOD_SOURCE_KINDS)[number]`, and rewrite nodeModSource's switch as `const MOD_SOURCE_BUILDERS: Record<ModSourceKind, (n: Extract<GraphNode,{kind: ModSourceKind}>) => ModSource>` with a `kind in MOD_SOURCE_BUILDERS` guard returning null for non-sources — the fail-open `default: return null` behaviour is preserved as a lookup miss, per the finding's removes_failure_path caveat. Then DELETE the longhand copies: apps/web/src/lib/app/views/TriggerNode.svelte:127 uses nodeIsModSource(kind) (already exported at sim.graph-compilation.ts:68); NodeSignalPreview.svelte:169/176 likewise; apps/web/src/lib/app/views/add-node-taxonomy.ts:88-91 derives the Modulate group items from MOD_SOURCE_KINDS instead of relisting; the inert-arm list in eval-graph.ts:582-588 becomes an isModSourceKind check. Only render-plan.ts nodeCategory keeps its own exhaustive switch (it is already compiler-enforced and covers all kinds, not just sources).",
+      "files": [
+        "packages/core/src/voice/modulation-graph.ts",
+        "packages/core/src/voice/eval-graph.ts",
+        "apps/web/src/lib/app/views/TriggerNode.svelte",
+        "apps/web/src/lib/app/views/NodeSignalPreview.svelte",
+        "apps/web/src/lib/app/views/add-node-taxonomy.ts"
+      ],
+      "risk": "high",
+      "verification": "Mutation probe: add a temporary 7th mod-source kind to the union and to MOD_SOURCE_KINDS — typecheck must now error in MOD_SOURCE_BUILDERS (and taxonomy must pick it up derived, not silently omit it); revert probe; add-node-taxonomy.test.ts updated to derive its expectation from MOD_SOURCE_KINDS rather than hardcoding; `pnpm gates` green.",
+      "reverses": "Single-commit revert; no persisted data or public API involved beyond the ModSourceKind type alias, which the revert removes cleanly."
+    },
+    {
+      "id": "S6",
+      "title": "triggerNodeSignature: delete the leaky switch, replace with a total Record<NodeKind, fn>",
+      "intent": "Replace the switch in apps/web/src/lib/app/views/trigger-flow-projection.ts:31-52 (which silently defaults 10 kinds to `base`) with `const SIGNATURE_FIELDS: Record<NodeKind, (n: GraphNode, graph?: TriggerGraph|null) => string>` — kinds with no handle-affecting fields get an explicit `() => ''` entry appended to base, so 'no extra identity' is a decision the compiler forces per kind, not a default. Fold the known omissions in while we are here: the 'cc' entry adds ccSource/oscAddress, the 'modifier' entry adds bypass. Adding a 21st kind now fails typecheck at this Record instead of producing a stale xyflow node (the R01/GH#80 vanishing-wire class). Net LOC approximately even; net behaviour-carrying interface unchanged; the comment-enforced extension point is deleted.",
+      "files": [
+        "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+        "apps/web/src/lib/app/views/trigger-flow-projection.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Mutation probe: temporary 20th kind in NodeKind makes trigger-flow-projection.ts a typecheck error (it does not today — that is the finding); tests from S1 still green plus new cases: cc node ccSource 'midi'->'osc' changes the signature, modifier bypass toggle changes it; `pnpm gates` green."
+    },
+    {
+      "id": "S7",
+      "title": "applyModifierChain: 8 params -> 6 by taking the ModifierContext it already builds",
+      "intent": "packages/core/src/modifiers/chain.ts:34 takes (chain, state, fb, range, model, timeMs, dt, modCtx?) and its first body line assembles {model, timeMs, dt} into the already-exported ModifierContext. Change the signature to (chain, state, fb, range, ctx: ModifierContext, modCtx?) and DELETE the internal assembly. Callers: compositor.ts:243 and generator-bridge.ts:152 each hoist ONE ModifierContext per frame and mutate ctx.timeMs per voice (preserving the render-loop zero-alloc contract — no per-voice/per-range object construction); apps/web/src/lib/trigger-lab/render.ts:265 (sim mirror) does the same; the ~30 core test call sites update mechanically. No new exported symbol; the transposable timeMs/dt adjacent-number hazard is deleted at every call site.",
+      "files": [
+        "packages/core/src/modifiers/chain.ts",
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/generator-bridge.ts",
+        "apps/web/src/lib/trigger-lab/render.ts"
+      ],
+      "risk": "high",
+      "verification": "`pnpm typecheck` enumerates all ~33 call sites; modifier suites (modifiers.s30/s31/s32, slice, trail, modulation, generator-bridge parity) green under `pnpm gates`; reviewer confirms exactly one ModifierContext allocation per frame per owner (compositor, bridge, sim) — grep for `ModifierContext = {` inside any per-voice loop must be empty.",
+      "reverses": "Single-commit revert restores the positional signature; pure signature reshaping, no data or protocol involvement."
+    },
+    {
+      "id": "S8",
+      "title": "applyEffectiveParams takes FrameModCtx; the five-way positional spread is deleted",
+      "intent": "compositor.ts:80 already names the exact tuple as `type FrameModCtx = Omit<ModSampleCtx,'phase'>` while its sibling export applyEffectiveParams(v, timeMs, bpm, cc?, osc?, notes?) at line 61 re-lists the same five members positionally and engine.ts:711 explodes five sibling fields at the call. Export FrameModCtx from compositor.ts (the one addition this plan makes, replacing three names for one tuple with one), change the signature to applyEffectiveParams(v: Voice, frame: FrameModCtx), and have VoiceEngine hold a single FrameModCtx field mutated in place per tick (zero-alloc scratch discipline, same as today) passed to both applyEffectiveParams and compositor.render's frameCtx construction at compositor.ts:195-201 — which can now reuse rather than hand-copy. CompositorFrame (the host-facing seam) stays as-is; render() keeps its single conversion.",
+      "files": [
+        "packages/core/src/voice/compositor.ts",
+        "packages/core/src/voice/engine.ts"
+      ],
+      "risk": "high",
+      "verification": "`pnpm typecheck` enumerates engine.ts:711 plus modulation.test.ts / modulation-graph.test.ts call sites; those suites pin the sweep semantics and must pass unchanged in expectation under `pnpm gates`; reviewer confirms the engine allocates zero FrameModCtx objects per tick (single mutated field).",
+      "reverses": "Single-commit revert; FrameModCtx export disappears with it, no other module will have adopted it inside this initiative's window."
+    },
+    {
+      "id": "S9",
+      "title": "eval-graph: fold the 8-slot traversal tuple into a file-local EvalCursor",
+      "intent": "evalGraphGen3 / evalGraphGen3From / evalGraphGen3FromPlan (eval-graph.ts:256-286) and evalChildren (:615-626) forward an identical 8-slot positional tuple where `viaPrefix: string` sits beside `pad: string` and a swap type-checks clean. Introduce a NON-exported `interface EvalCursor { state: EvalState; pad: string; ctx: TriggerCtx; viaPrefix: string; seen: Set<string> }`; internal signatures become (cursor, plan|graph, startIds, draft). evalChildren KEEPS its exported 8-param signature as the public seam (it is called from the engine's pending-fire drain at engine.ts:687 and sim.ts:595) and constructs the cursor — churn confined to one file, zero public-surface change. The `seen` cycle guard, `plan.fatal` early returns and unknown-child skip stay byte-identical.",
+      "files": [
+        "packages/core/src/voice/eval-graph.ts"
+      ],
+      "risk": "high",
+      "verification": "`pnpm gates` green — the eval-graph/trigger-graph suites pin R13/R14 fan-in and delay-drain semantics and would catch a transposed cursor member; `git diff --stat` confirms the change is single-file; exported signature of evalChildren unchanged (checked via typecheck of apps/web sim.ts caller).",
+      "reverses": "Single-file, single-commit revert; no exported symbol changes to unwind."
+    },
+    {
+      "id": "S10",
+      "title": "parseHoopTarget: delete the per-caller policy flags; reject '#'/',' drum ids at integrity check",
+      "intent": "Deliberately DECLINE the 250-LOC ScopeTarget union promotion (272 targetId matches across 38 files; the structure already exists confined behind parseHoopTarget/fromPixelSet, and the refuter showed the claimed clipdoc migration duplication is false — clipdoc reuses the persistence walker). Instead: audit the callers of parseHoopTarget (packages/core/src/voice/scope.ts:65-69 and apps/web/.../scope-inspector.ts:25 are the two known option sets); for each of the three flags (sourceDrumOnNoHash, emptyFallback, sort) that turns out to have a single caller or a single live value, delete the flag and inline the behaviour at the owning site or as the default. Add one check to checkTriggerGraphIntegrity in packages/core/src/voice/graph-integrity.ts flagging any node whose targetId's drum segment contains '#' or ',' (the unescapable-encoding hazard becomes a surfaced diagnostic instead of silent wrong routing), plus a unit test pinning that a drum id 'a#b' is flagged. Future index-base migrations remain string rewrites in persistence.ts — accepted cost under this stance, recorded in the open question for Trent.",
+      "files": [
+        "packages/core/src/voice/scope.ts",
+        "packages/core/src/voice/graph-integrity.ts",
+        "apps/web/src/lib/app/views/scope-inspector.ts"
+      ],
+      "risk": "high",
+      "verification": "New graph-integrity unit test: drum id containing '#' produces a diagnostic; routing-integrity and persistence hoop-migration suites unchanged-green under `pnpm gates`; parseHoopTarget's options parameter measurably smaller (flag count in the signature reduced, each deletion justified by the caller audit in the commit message).",
+      "reverses": "Single-commit revert restores the flag surface; the integrity diagnostic is additive and reverts with it."
+    }
+  ],
+  "sequencing": [
+    ["S1", "S2"],
+    ["S3"],
+    ["S4"],
+    ["S5", "S6"],
+    ["S7", "S9", "S10"],
+    ["S8"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/core (voice barrel, packages/core/src/voice/index.ts)",
+      "removed": [
+        "MODULATION_PARITY_CASES",
+        "PARITY_PHASES",
+        "legacyEnvValue",
+        "mappingEnvValue",
+        "ParityCase"
+      ],
+      "added": [
+        "@ledrums/core/testing/modulation-parity (test-only subpath export)",
+        "FrameModCtx (type)"
+      ],
+      "net_interface_change": "reduces",
+      "note": "Five production-surface symbols (including superseded envelope math) leave the shipped API; the subpath is reachable only by tests and the FrameModCtx type replaces three existing names for the same tuple."
+    },
+    {
+      "at": "packages/core/src/voice/types.ts",
+      "removed": [
+        "LegacyGraphNodeKind membership in NodeKind",
+        "GraphNode's 13 filler-required cross-kind fields (as reachable surface on non-owning kinds)"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "GraphNode and NodeKind keep their names; the union's per-kind payload interfaces are deliberately NOT exported — consumers narrow on n.kind. LegacyGraphNodeKind survives only in the codec-input alias."
+    },
+    {
+      "at": "packages/core/src/modifiers/chain.ts + packages/core/src/voice/compositor.ts",
+      "removed": [
+        "applyModifierChain positional params model/timeMs/dt",
+        "applyEffectiveParams positional params timeMs/bpm/cc/osc/notes"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Both signatures shrink onto types that already exist (ModifierContext) or already named the tuple (FrameModCtx). Param lists are interface; 8->6 and 6->2."
+    },
+    {
+      "at": "packages/core/src/voice/scope.ts",
+      "removed": [
+        "parseHoopTarget policy flags shown by the caller audit to have one live value"
+      ],
+      "added": [],
+      "net_interface_change": "reduces",
+      "note": "Exact flag count removed is determined by the S10 audit; at minimum the options object shrinks."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates green at the end of every wave, compared against the Phase 0 baseline (2968 tests at sha 3708648); each wave is a separate green commit",
+      "Round-trip fixture test (committed in S4, kept forever): pre-refactor persisted shows — one node of every kind with flat filler fields, plus one legacy kind:'play' node — hydrate -> normalize -> save -> reload with kind/edge/per-kind-field equality asserted",
+      "Forward-compat proof BEFORE S4 merges: a filler-stripped show fixture loads green at the pre-S4 sha, proving reverted builds read post-S4 saves",
+      "Eval parity golden: for the fixture graphs, capture evalGraph action streams (kinds, order, payload fields) at baseline sha and assert byte-equal after S3, S4, S5 and S9",
+      "Mutation probes as one-shot evidence: temporary 20th NodeKind must break typecheck at the union, render-plan nodeCategory, SIGNATURE_FIELDS (S6) and MOD_SOURCE_BUILDERS (S5) — recorded as command output in the wave's PR, then removed",
+      "grep gates: zero non-test `=== 'play'` outside hydrate.ts/graph-integrity.ts after S3; zero non-test references to the five deleted parity symbols after S2",
+      "pnpm ui-shot captures of the Trigger Lab graph view (every node kind placed, inspector open, add-node palette open) before wave 2 and after waves 3 and 4, pixel-compared"
+    ],
+    "known_gaps": "Three regions where a green suite proves nothing. (1) Svelte inspector components and the xyflow handle-measurement path are UI-runtime behaviour with near-zero unit coverage — the projection-cache staleness class (S1/S6) is only observable in a browser; the replacing evidence is the ui-shot capture set plus a manual check that dragging a wire into a Mix node after an effectId change attaches correctly. (2) Any server-side show ingress that feeds evalGraph without passing hydrate may be 0%-covered for legacy 'play' shows; the replacing evidence is S3's explicit ingress audit (enumerated in the PR) plus the new legacy-'play' fixture test. (3) The zero-alloc claims in S7/S8 are asserted by no test; the replacing evidence is the reviewer's grep-verified check that no ModifierContext/FrameModCtx literal is constructed inside a per-voice loop, optionally a manual heap snapshot on the dev rig. Timing-dependent render behaviour is untouched by construction — no step alters scheduling, only how already-adjacent values are packaged.",
+    "baseline_reference": "Phase 0 baseline: sha 3708648, 2968 tests green via pnpm gates (post fix-batches 1-3: dead-code auto-fixes, residue, kit-mirror removal)."
+  },
+  "rollback_strategy": "Every wave lands as an independent green commit and reverts in reverse wave order with plain `git revert` — the plan writes NO data migration and never changes what the zod schemas accept, so no persisted show is ever stranded by a code revert. The only one-way ratchet is S4's save-path field-stripping (post-S4 saves omit filler fields); it is de-fanged before S4 merges by the forward-compat fixture test proving a filler-stripped show loads green at the pre-S4 sha via the documented optional-field hydrate defaults. S1 is deliberately independent of S6 so the live-bug fix survives even if the Record refactor is backed out.",
+  "estimated_loc": 1050,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "This plan deliberately declines the ScopeTarget discriminated-union promotion for targetId (primitive-obsession-0003's proposed fix): 272 call sites of churn to add structure already confined behind parseHoopTarget/fromPixelSet is net addition under the subtraction stance, and the refuter showed the claimed clipdoc migration duplication was false. Accepted cost: future hoop-index-base changes stay string rewrites in persistence.ts. Does Trent ratify keeping the string codec, or want the full union scheduled (if so, it belongs beside INIT-07-patch-node-identity where node/target identity is already being redesigned)?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "S3 and S4 rewrite large regions of apps/web/src/lib/trigger-lab/store.svelte.ts, which is INIT-02-store-decomposition's primary mutation seam. Which initiative goes first? This plan works either before or after INIT-02, but interleaving them mid-flight guarantees conflicts — synthesis/Phase 10 should serialise them explicitly.",
+      "blocks_execution": false,
+      "owner": "synthesis"
+    },
+    {
+      "question": "S3's ingress audit: if a server-side or clipdoc path is found that feeds TriggerGraphs to evalGraph without normalizeTriggerGraphToGen3, the implementer adds the normalize call at that ingress rather than retaining any runtime 'play' handling. Confirm no such path is intentionally normalize-free (e.g. a raw-graph debug route).",
+      "blocks_execution": false,
+      "owner": "implementer"
+    },
+    {
+      "question": "S4 keeps per-kind node interfaces unexported (consumers use Extract<GraphNode,{kind:K}>). If any external consumer — the Tauri desktop sidecar or a planned plugin surface — needs named per-kind types, exporting them is a 5-line follow-up, but under this stance they stay private until a second real caller exists. Acceptable?",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ]
+}

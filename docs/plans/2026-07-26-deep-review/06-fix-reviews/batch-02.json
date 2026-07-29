@@ -1,0 +1,84 @@
+{
+  "artifact": "06-fix-reviews/batch-02",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "6",
+    "lane": "fix-review/batch-02",
+    "model": "claude-opus",
+    "effort": "low",
+    "nonce_verified": false
+  },
+  "items": [
+    {
+      "finding_id": "dead-code-0002",
+      "files_touched": [
+        "apps/web/src/lib/app/views/PatchMirrorControl.svelte",
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/trigger-routing.ts",
+        "apps/web/src/lib/trigger-lab/store/project-resync.ts",
+        "apps/web/src/lib/trigger-lab/store.routing.test.ts",
+        "apps/web/src/lib/trigger-lab/store/project-resync.test.ts",
+        "apps/web/src/lib/app/docks/patch-inspector.test.ts",
+        "packages/protocol/src/schemas.ts",
+        "packages/protocol/src/schemas.test.ts",
+        "apps/server/src/input-router.ts",
+        "apps/server/src/handlers/voice-input.ts",
+        "apps/server/src/voice-engine-host.ts",
+        "apps/server/src/kit-global-forwarding.test.ts",
+        "packages/core/src/geometry/kit-schema.ts",
+        "packages/core/src/geometry/pixel-model.ts",
+        "packages/core/src/geometry/mirror.test.ts",
+        "packages/core/src/geometry/flip.test.ts",
+        "packages/core/src/engine/engine.ts",
+        "docs/design-system.html"
+      ],
+      "mutations_applied": 23,
+      "pre_fix_sha": "5423e09",
+      "worktree_path": "/Users/trent/.twux/worktrees/review",
+      "verification": {
+        "typecheck_errors": 0,
+        "gates_tests": 2968,
+        "gates_pass": true,
+        "commands": ["pnpm typecheck", "pnpm gates", "pnpm design-system"],
+        "detail": "19 files changed, 61 insertions(+), 347 deletions(-). Per-package gates counts: workers/error-ingest 31, packages/io 76, packages/core 859, packages/protocol 10, apps/server 410, apps/web 1582 = 2968."
+      },
+      "interface_delta_actual": {
+        "exported_symbols_removed": 2,
+        "exported_symbols_added": 0
+      },
+      "commit_sha": "a7c46eb",
+      "review": {
+        "standards_verdict": "findings",
+        "spec_verdict": "findings",
+        "findings": [
+          {
+            "severity": "nit",
+            "note": "AGENTS.md's ui-shot non-negotiable and the finding's own verification_plan step 3 ('pnpm ui-shot against the Patch view to confirm no mirror control is visible today') were NOT run — verification.commands lists only pnpm typecheck / pnpm gates / pnpm design-system. In practice the omission is vacuous: PatchMirrorControl has had no importer since 39b7d6b, independently re-verified here (rg for 'PatchMirrorControl' across the repo returns zero hits outside docs/plans and the pre-fix design-system bundle), so no rendered surface can change and the deadness rests on the import graph — which fix.schema.json's own parity_check note accepts as the correct evidence for a 0%-coverage region. Recorded because the evidence chain that landed is weaker than the one the finding specified, not because the conclusion is in doubt.",
+            "location": "apps/web/src/lib/app/views/PatchMirrorControl.svelte"
+          },
+          {
+            "severity": "minor",
+            "note": "Record inaccuracy in 05-fixes/batch-02.json notes: it says THREE tests were retargeted off `mirror` onto surviving fields, but FOUR were. The unlisted fourth is store.routing.test.ts:96 'carries hoopCount + defaultHoopSpacingMm and leaves mirror untouched' -> '...leaves the other globals untouched', whose unrelated-field-preserved assertion moved from a hardcoded `expect(kit.global.mirror).toBe('none')` literal onto a captured-before `maxPixelsPerOutput` value. All four retargets were read line by line: assertion COUNT and SHAPE are unchanged in every one ('undoes a kit-global edit' and 'interleaves cleanly' are structural clones of the mirror originals with expanded substituted; 'emits every changed slice at once (mixed edit)' still asserts kinds toEqual ['setKitGlobal','setOutput']), so no assertion was weakened — only the batch record undercounts. Note the `expanded` substitution arguably strengthens two of them, since expanded also drives reconcileOutputs whereas mirror did not.",
+            "location": "docs/plans/2026-07-26-deep-review/05-fixes/batch-02.json"
+          },
+          {
+            "severity": "nit",
+            "note": "Predicted-vs-actual interface drift, recorded for the audit trail only: the finding's interface_delta predicted 1 exported symbol removed, interface_delta_actual is 2 (store.setKitMirror plus the PatchMirrorControl default export). This is EXPECTED and approved — Trent's 2026-07-29 decision took the finding's option (b) and expanded the scope end-to-end. Independently confirmed that reflectWorld was module-private in pixel-model.ts, so the count of 2 is exact. Separately, the finding's own evidence block contains a factual ERROR that the implementer correctly caught and refused to act on: it claims 'No apps/web caller survives' for setKitGlobal. Verified false — PatchKitInspector.svelte:33/43/53/63, PatchControllerInspector.svelte:160 and shot-seam.ts:442 all call store.setKitGlobal today. Blindly executing option (b) as literally written would have removed a live C1/C2 kit-config path. The narrowing to the `mirror` FIELD only is the correct call.",
+            "location": "docs/plans/2026-07-26-deep-review/02-findings/_all.json"
+          }
+        ],
+        "parity_check": {
+          "baseline_test_count": 2981,
+          "post_fix_test_count": 2968,
+          "accepted": true,
+          "reason": "Counted from the diff, not trusted from the report: `git diff 5423e09 a7c46eb -- '*.test.ts'` yields 15 removed `it(`/`test(` lines and 2 added, net -13, which is exactly 2981 - 2968. The 2 added lines are renames of retargeted survivors ('carries hoopCount + defaultHoopSpacingMm and leaves the other globals untouched', 'undoes a kit-global edit'), so 13 test cases were genuinely deleted: mirror.test.ts 7 (whole file), kit-global-forwarding.test.ts 3, project-resync.test.ts 2, store.routing.test.ts 1. Every deleted title is mirror-only. No it.each / it.skip / it.only anywhere in the diff, so no case multiplies. Coverage loss from the 2 deleted project-resync tests is nil: they asserted the setKitGlobal partial stays minimal across two fields, and with mirror gone globalPartial has a single field (`expanded`), making minimality degenerate; the surviving 'carries expanded on setKitGlobal, emitted BEFORE setKitOutputs' still pins the ordering invariant those tests shared."
+        },
+        "reviewer": {
+          "model": "claude-opus",
+          "effort": "low"
+        }
+      }
+    }
+  ]
+}

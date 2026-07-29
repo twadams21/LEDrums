@@ -195,7 +195,6 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
       return { structural: true };
     case 'setKitGlobal':
       engine.setKitGlobal({
-        ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
         ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
         ...(msg.ledDensityPxPerM !== undefined ? { ledDensityPxPerM: msg.ledDensityPxPerM } : {}),
         ...(msg.hoopCount !== undefined ? { hoopCount: msg.hoopCount } : {}),

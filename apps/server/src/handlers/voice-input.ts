@@ -148,7 +148,6 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
       break;
     case 'setKitGlobal':
       voiceHost.setKitGlobal({
-        ...(msg.mirror !== undefined ? { mirror: msg.mirror } : {}),
         ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
         ...(msg.ledDensityPxPerM !== undefined ? { ledDensityPxPerM: msg.ledDensityPxPerM } : {}),
         ...(msg.hoopCount !== undefined ? { hoopCount: msg.hoopCount } : {}),

@@ -1,0 +1,1932 @@
+{
+  "artifact": "03-verdicts",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "3",
+    "lane": "refute+verify",
+    "model": "gpt-5.6-sol + tooling",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "phase3"
+  },
+  "dropped": [],
+  "items": [
+    {
+      "finding_id": "dead-code-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both component bodies, all repository references to their names and unique UI strings, the application and styleguide entry points, and the web source\u2019s dynamic-import and registry patterns. PatchClipboardToolbar has no importer, while PatchDiffDialog is imported only by that unreachable toolbar; the generated design-system artifact merely contains their filenames in the build-time source-pointer manifest and neither imports nor renders either component, so it does not make the cluster reachable.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "2 files changed, 383 deletions(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the component itself, all repository references to its basename, the reachable PatchGraphView/AuthorShell chain, Svelte imports, dynamic imports, import.meta.glob-style loading, and the filesystem-generated source manifest. PatchMirrorControl.svelte has no importer or runtime dynamic-access path; the source-manifest plugin only records its path as string metadata, while surviving web setKitGlobal calls edit other kit-global fields and do not make this mirror control reachable.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "The finding itself states it 'needs a human product call rather than a blind auto-delete' \u2014 PatchMirrorControl fronts a live server capability (setKitGlobal). Routed to the structural track, NOT verified as an auto-fix candidate."
+    },
+    {
+      "finding_id": "dead-code-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read apps/web/src/lib/trigger-lab/store/hydrate.ts and searched the repository for direct imports, namespace imports, barrel re-exports, string-keyed access, dynamic imports, import.meta.glob, and reflection-like access involving all nine names. The eight functions are referenced only inside hydrate.ts's normalizeGraphs pipeline, so removing only their export modifiers preserves behavior, while NO_SYSTEM_ACTIONS at apps/web/src/lib/trigger-lab/store/hydrate.ts:441 has no references and is deletable under the stated criterion.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 9 insertions(+), 9 deletions(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read apps/server/src/show-library.ts and confirmed showLibraryPath only delegates to the module-local store.path and is not used elsewhere in that module. A repository-wide symbol search found no caller beyond its declaration, and searches for namespace imports, re-export barrels, require calls, computed property access, and dynamic imports involving show-library found no route to it; apps/server is also a private package with no exported package entry point.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read apps/web/src/lib/trigger-lab/sim.envelopes.ts and confirmed ENV_KINDS is a standalone exported array with no in-module consumer. A repository-wide symbol search found only its declaration plus review documentation, while searches for namespace imports, wildcard re-exports, dynamic imports, import.meta.glob access, and string-keyed ENV_KINDS access found no runtime path; sim.ts also does not re-export it, and @ledrums/web is private. The finding therefore satisfies the criterion: the value is unreachable from every discovered entry point and no dynamic-access pattern resolves to it.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the declaration and every repository reference to isMixRowHandleId, MIX_ROW_HANDLE_PREFIX, mix-layer-rows, and the generated mix-edge: handle format. isMixRowHandleId occurs only at apps/web/src/lib/app/views/mix-layer-rows.ts:21, while all consumers use named static imports of mixLayerRowsFor or mixRowHandleId; no namespace import, barrel re-export, dynamic import, import.meta.glob, reflection, registry, or computed property access can resolve the predicate. MIX_ROW_HANDLE_PREFIX is likewise used only by mixRowHandleId and the dead predicate within its own module, so deleting the predicate and making the prefix non-exported satisfies the stated criterion.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 2 insertions(+), 2 deletions(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read workers/error-ingest/src/validate.ts and confirmed that all eight symbols are load-bearing only through same-module references. Repository-wide searches found no static imports of these names, namespace imports, re-exports, dynamic imports, reflection, registry lookup, or computed string-key access resolving to them; the only consumers of validate.ts import parseIngestBatch, parseBackupBatch, and ValidationError. The worker package is private and has no declaration or package-export surface requiring these exports, so removing only the eight export modifiers satisfies the criterion without deleting reachable implementation code.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 2 insertions(+), 2 deletions(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the declarations and callers in apps/web/src/lib/app/patch-topology.ts:113-117 and confirmed triggerId, zoneNodeId, and outputId are used only internally at lines 178, 189, and 217. I also checked every direct importer of patch-topology, namespace/dynamic imports, re-exports, and string-keyed references; none exposes or dynamically resolves these three exports, so removing only their export modifiers validly reduces the public interface without deleting reachable helpers or changing behavior.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "falsified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 3 insertions(+), 3 deletions(-)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "survived 3a but FALSIFIED by typecheck \u2014 a real reference exists"
+    },
+    {
+      "finding_id": "dead-code-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked every code import of patch-graph.ts and found only named imports; neither STAGE_ORDER nor DEFAULT_OUTPUT_SCALARS is imported by any consumer, and no namespace import, computed property access, dynamic import, reflection, registry, or template-literal access resolves either export. DEFAULT_OUTPUT_SCALARS is used only as routingFromGraph's in-module default at apps/web/src/lib/app/patch-graph.ts:233, so its implementation must remain but its export can be dropped; STAGE_ORDER is used by its declaring module at apps/web/src/lib/app/patch-topology.ts:137, while the patch-graph import at :29 exists solely for the unused re-export at :337 and can be removed with that re-export.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0010",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read each declaration and confirmed that reserveId, showSig, firstEffectId, OUTPUT_ANCHOR_ID, CANVAS_BUS_ID, blockChildren, and makeDefaultMint are referenced only by their declaring modules. I also checked namespace imports, re-exports, computed property access, dynamic imports, registries, and reflection patterns: the namespace consumers use other statically named members, and although blockChildren is re-exported by apps/web/src/lib/trigger-lab/sim.ts:54, no entry point imports or dynamically resolves it. Therefore the implementations remain locally reachable, but their exports are unused and can be removed under the stated criterion.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "6 files changed, 7 insertions(+), 7 deletions(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0011",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited declarations and confirmed that each symbol has exactly one static use within its own module: add-node-taxonomy.ts:70/79, align-guides.ts:61, and monitor.ts:24/39. I also checked imports, re-export barrels, namespace imports, dynamic imports, and string-keyed references across the web source and found no external or dynamic access resolving to any of these exports; therefore removing only their export modifiers preserves their internal behavior while reducing the public interface.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0012",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read both declarations and their call sites, then searched the repository for direct imports, re-exports, namespace access, dynamic imports, string-keyed lookups, reflection, and template-literal resolution. `lanUrls` is referenced only internally at apps/server/src/boot.ts:75, while `localNicSubnets` is referenced only as the default implementation at apps/server/src/controller-monitor.ts:170; the tests import other controller-monitor exports but not this function, and `@ledrums/server` is private with no package export map or barrel entry. Under the stated criterion, both functions must remain defined because they are internally reachable, but removing their `export` keywords is valid and reduces the interface without changing behavior.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0013",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the declaration and confirmed that parseStatistic is called only by parseStatisticResponse within packages/io/src/pixlite/protocol.ts:182; repository-wide searches found no external caller, namespace-based access, string-keyed lookup, dynamic import, reflection, or template-literal resolution. The finding overstates its public blast radius because packages/io/src/pixlite/index.ts:43 re-exports only PixliteError from protocol.ts, so parseStatistic does not reach the @ledrums/io root barrel; nevertheless, under the stated criterion, removing the unused export remains valid and reduces protocol.ts's module interface without deleting the internally reachable function.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0014",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked every repository reference to the five names and every static, type-query, namespace, re-export, require, and dynamic-import reference to ws-protocol. None of the five names is consumed through this barrel: TunnelStatus is imported directly from @ledrums/protocol at apps/server/src/tunnel-control.ts:1, while the other server-side matches are only the re-export declaration or comments; @ledrums/server is private and exposes no package entry point for external consumers, and no string-keyed or reflective access resolves these type exports. The finding therefore survives: removing these five re-exports reduces the interface without affecting internal type dependencies such as SerializedModel referring to SerializedDrum in the source protocol package.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 5 deletions(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "dead-code-0015",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read apps/web/scripts/vite-plugin-source-manifest.mjs and confirmed buildSourceManifest is called only internally by sourceManifestPlugin at line 50. Repository-wide searches found that both actual entry points, apps/web/vite.config.ts:4 and apps/web/vite.design-system.config.ts:11, import only sourceManifestPlugin; no named, namespace, re-export, reflective, string-keyed, or dynamic-import access to buildSourceManifest exists, so removing only its export preserves its internal use while reducing the public interface.",
+            "criterion_applied": "unreachable-and-no-dynamic-access",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "verified",
+        "isolation": {
+          "required": true,
+          "worktree_path": "/Users/trent/.twux/worktrees/rev3b",
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "pnpm typecheck"
+        ],
+        "detail": "1 file changed, 1 insertion(+), 1 deletion(-)"
+      },
+      "disposition": "auto-fix",
+      "disposition_reason": "survived 3a and mechanically verified by workspace typecheck"
+    },
+    {
+      "finding_id": "duplicated-code-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the actual declarations in store.controller.test.ts:14-34, store.songs.test.ts:11-31, and object-rows.test.ts:17-37, and confirmed that each exceeds 12 lines and that the first two class bodies are effectively verbatim, comfortably exceeding 90% token similarity. object-rows.test.ts:26 uses `this.m.get(k) ?? null` instead of the other sites' `has` check, but because the map is typed `Map<string, string>` and values are inserted as strings, the implementations are semantically equivalent; consolidating 37 local classes into one test-support export plus imports materially reduces the total duplicated interface rather than merely relocating it.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "3 clone(s), largest 31 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (3 clone(s), largest 31 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked all six cited suites and found that batch-c.test.ts:14-72 and batch-d.test.ts:14-72 duplicate the model, transport, ctx, trig, render, and litCount helpers across roughly 59 lines; these implementations are token-identical and semantically equivalent, including the same model default. The broader claim overstates uniformity because batch-a/b omit trig, batch-e uses litIds, and the finite-range helpers have different assertion/boolean contracts, but the exact criterion only requires two qualifying sites, and the batch-c/batch-d pair independently exceeds 12 lines and 90% similarity. Moving those shared pure builders into one test-only harness would replace multiple suite-local helper sets with one reusable interface rather than merely relocating an equal number of interfaces.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "10 clone(s), largest 45 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (10 clone(s), largest 45 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read both controller implementations, their serializers/deserializers, exported-plan usages, and the shared caller. The clone exceeds the stated threshold: the two classes contain matching state fields and multiple contiguous method bodies of at least 12 lines with only library type and codec identifiers substituted, and both callers apply the resulting plans with the same reconciliation sequence at apps/web/src/lib/trigger-lab/shows-controller.svelte.ts:574-595. The codecs have different validation details, but those differences are already isolated behind equivalent serialize/deserialize contracts and do not change the controllers' reconciliation semantics; consolidating the two exported classes and two plan unions into one generic controller and one plan union would reduce rather than merely relocate the interface.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "1 clone(s), largest 17 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (1 clone(s), largest 17 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited declarations directly. ParamSpec is a 14-line, field-for-field and comment-for-comment duplicate at apps/web/src/lib/trigger-lab/sim.envelopes.ts:59 and packages/core/src/voice/types.ts:102, while the adjacent Preset/Bus regions at apps/web/src/lib/trigger-lab/sim.ts:167 and packages/core/src/voice/types.ts:137 are each 13-line exact duplicates; these types are semantically equivalent because show-builder passes the web values into voice.Show by structural assignment. EffectDef is not itself byte-identical because the web type adds gallery/authoring metadata at apps/web/src/lib/trigger-lab/sim.ts:146-157, but that does not kill the finding: the two independent exact duplicate regions already satisfy the threshold, and aliasing them to voice types removes hand-maintained declarations without adding a new interface or dependency seam because sim.envelopes.ts already imports voice.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "1 clone(s), largest 27 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (1 clone(s), largest 27 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read both handlers and checked their server wiring and route tests. The blocks at apps/server/src/http/host-event.ts:91-120 and apps/server/src/http/native-midi.ts:48-77 each exceed 12 lines and contain the same path ownership, POST gate, isTrustedHost authorization, UTF-8 accumulation, overflow destruction, request-error response, and end-callback structure; the path, cap, and diagnostic strings are parameters rather than semantic differences in that scaffolding. Both handlers are independently instantiated in apps/server/src/main.ts:675-685 with the same captured hostToken model, and their tests confirm matching route/method/trust/body-limit behavior. A shared trusted-POST route would replace two request-lifecycle implementations with one configuration boundary plus route-specific body callbacks, reducing rather than merely moving the duplicated behavioral interface.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "1 clone(s), largest 23 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (1 clone(s), largest 23 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0010",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both cited implementations directly. EffectThumb.svelte:85-124 and SignalFace.svelte:34-67 each contain more than 12 lines implementing the same two behaviors with effectively identical control flow, guards, state transitions, browser feature checks, listener setup, and teardown; the only material differences are comments and formatting, so the clone satisfies the >=90% token-similarity and semantic-equivalence requirements. Repository-wide search found no additional implementation or existing shared guard that changes this assessment, and consolidating four local effect blocks behind two shared reactive helpers would reduce the duplicated behavioral surface rather than merely rename or relocate it.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "1 clone(s), largest 52 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (1 clone(s), largest 52 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0011",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both cited implementations and their call sites. The hash2, fade, and valueNoise functions are semantically identical across packages/core/src/canvas/elements.ts:30-53 and packages/core/src/effects/impl/perlin-clouds.ts:7-32, while the fbm bodies are equivalent when the parameterized implementation receives the constant octave count 3 used by perlin-clouds; consolidating them into one implementation would remove the duplicated callable surface rather than merely wrap or relocate both copies.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "1 clone(s), largest 27 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (1 clone(s), largest 27 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0012",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both cited blocks and their callers: apps/server/src/network-adapters.ts:32-46 and packages/io/src/pixlite/sweep.ts:28-42 contain the same two implementations, spanning 15 lines at each site with effectively 100% token similarity and identical validation, conversion, errors, and unsigned arithmetic. Their different callers do not impose different semantics, and apps/server/package.json:15-19 already establishes the dependency on @ledrums/io; replacing four private declarations with two shared implementations reduces the total helper interface rather than merely relocating duplicate wrappers.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "1 clone(s), largest 20 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (1 clone(s), largest 20 lines across 2 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0013",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited style blocks and markup. Inspector.svelte:218-239, SectionInspector.svelte:92-113, and TriggerSourceInspector.svelte:258-279 contain the same 22-line four-rule block byte-for-byte, exceeding the required two sites, 12 lines, and 90% token similarity; the rules also serve the same semantic purpose of laying out and styling an inspector title, subtitle, and optional adjacent controls. PanelHeader.svelte:31-66 is not itself equivalent because it uses a fixed-height uppercase panel-bar treatment and has no subtitle or leading-content contract, but that does not refute the duplicated inspector-header variant: one focused component can own the repeated structure and styling while exposing only the genuinely varying title, subtitle, leading, eyebrow, and trailing content, reducing five local styling contracts to one.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "5 clone(s), largest 23 lines across 5 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (5 clone(s), largest 23 lines across 5 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "duplicated-code-0014",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the rendered button markup and the complete scoped CSS at all three cited locations. The 29-line `.note-row`/`.learn` blocks are identical and describe the same MIDI-learn control contract: an input beside a pill button that toggles an active listening state; the differing learn targets and disabled conditions are caller-provided state, not semantic differences in the control, so a shared component would remove three style interfaces rather than merely relocate them.",
+            "criterion_applied": "duplication-threshold",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "4 clone(s), largest 38 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (4 clone(s), largest 38 lines across 3 files (semantic equivalence + interface reduction NOT machine-checkable)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "speculative-generality-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked all five controller definitions and searched the repository for their classes, Host interfaces, constructors, and imports. The only production constructions are the inline hosts in apps/web/src/lib/trigger-lab/store.svelte.ts:386-397, apps/web/src/lib/trigger-lab/store.svelte.ts:481-494, apps/web/src/lib/trigger-lab/store.svelte.ts:519-538, and apps/web/src/lib/trigger-lab/store.svelte.ts:805-811; no second adapter or independent caller exists. The controllers contain real state and behavior, so deleting them would reconcentrate that logic in the store rather than erase it, but under the specified deletion test it reappears in only one composition root\u2014not across N callers\u2014and the duplicated store forwarding surface remains. Therefore these are hypothetical one-adapter seams and the finding stands.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "speculative-generality-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked every createClientMessageHandler and handleProjectMessage caller, the production wiring, both test harnesses, and the risky mutation branches. Deleting the optional configurations makes their branching complexity vanish rather than reappear across multiple real adapters: main.ts has the only production construction and supplies all six collaborators, while handleProjectMessage has only the client-message handler as its production caller; the test-only disabled-backup case is an intentional fake configuration, not a second runtime adapter, and can use an explicit stub. The omission hazard is real because both loadProject and setProject proceed when backups is absent, so removing backups from the sole production object literal would compile and silently bypass the pre-risk snapshot guard.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "speculative-generality-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the reducer, its wrapper, its tests, and all production references. The transition functions have exactly one production adapter in ShellStore at apps/web/src/lib/app/shell-store.svelte.ts:43-55; deleting them would move the same state transitions into that class without reproducing complexity across multiple callers, while App.svelte's direct shell-nav import is only for parseSearch and does not establish a second transition adapter. The deletion test therefore supports the finding: this is a hypothetical one-adapter seam rather than a boundary earning its keep across two implementations.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "speculative-generality-0011",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked all code references, barrel exports, registry consumers, graph-integrity consumers, and the cited pixel-grid tests. `nearestPixelWithin` is referenced only by tests for itself, while production effects use `nearestPixelIdWithin`; `assertTriggerGraphIntegrity` and `listCanvasScenes` have no callers at all, and `@ledrums/core` is private, so there is no supported external-consumer uncertainty. Under the deletion test, removing these functions does not redistribute meaningful complexity across callers: the object allocation and distance recomputation disappear, the unused throwing policy disappears, and the unused registry enumeration disappears. No second adapter or real seam was found.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "middle-man-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited delegators and searched the repository for direct construction or use of all five controllers. Every controller is instantiated only once inside TriggerLab, while the tests exercise their behavior exclusively through TriggerLab; deleting the flat forwarders would remove the delegation layer without forcing controller logic or guards to reappear across callers, only requiring callers to use a named collaborator path. The controller modules contain real implementation logic, but they currently have only one adapter and the store's forwarding methods add no semantic transformation, validation, or policy, so under the deletion test the claimed boundary remains hypothetical and the finding stands.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "middle-man-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited module, both test consumers, the core root and voice barrels, the package export map, and repository-wide symbol references. Deleting the re-export block makes this production-facing complexity vanish: there are no production callers, the same-package test already imports the fixture directly, and only the web migration test requires a test-only package seam; that is one adapter, not the two adapters required to establish a real production seam. The current root namespace also causes the parity tables and legacy formula to appear in the shipped desktop sidecar bundle despite having no runtime caller, confirming that the barrel is publishing test-harness implementation rather than earning its keep across callers.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "middle-man-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the current caller graph, the wrapper, and each mounted child. Overlays.svelte has only one consumer at apps/web/src/App.svelte:107, merely forwards the same store prop, and contributes no state, condition, layout, styling, or API adaptation; the children independently derive visibility from store state at EffectGallery.svelte:37/149, ClipSettings.svelte:20-23/35, and EnvelopeEditor.svelte:20-27/54. Under the deletion test, removing the wrapper moves three imports and three mounts into the sole caller without causing complexity to reappear across multiple callers, and there is only one hypothetical mount-point seam rather than two adapters demonstrating a real seam.",
+            "criterion_applied": "deletion-test",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "data-clumps-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the declarations and actual production call path. The same five values travel together through at least three call sites: VoiceEngine passes them positionally to applyEffectiveParams at packages/core/src/voice/engine.ts:711, passes them again within the CompositorFrame argument to compositor.render at packages/core/src/voice/engine.ts:713-717, and applyEffectiveParams forwards them in a ModSampleCtx literal to applyModulations at packages/core/src/voice/compositor.ts:71; render additionally converts the frame back into FrameModCtx at packages/core/src/voice/compositor.ts:195-201 and passes it through multiple modCtxFor calls. I found no semantic distinction that breaks the clump: this.bpm is assigned from transport.bpm at packages/core/src/voice/engine.ts:698, and the CC, OSC, and note tables are the identical engine fields in both paths.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "5 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (5 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "data-clumps-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited prop declarations and actual component invocations. The exact threshold is met: `onChange`, `disabled`, `ariaLabel`, and `class` travel together at three distinct call sites\u2014both child controls inside EasePicker and the Select in ModulationParamsSection\u2014so the finding survives even though the declarations are not perfectly identical.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "8 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (8 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "data-clumps-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked all three cited forwarding calls. The exact criterion is satisfied: at least three parameters travel together across three call sites\u2014evalGraphGen3FromPlan at packages/core/src/voice/eval-graph.ts:259 and :274, and evalGraphGen3From at :625\u2014with the latter also receiving the same deferred-evaluation values from production callers at packages/core/src/voice/engine.ts:687 and apps/web/src/lib/trigger-lab/sim.ts:595. The claim overstates that all three functions merely forward arguments: evalGraphGen3 constructs the traversal state and evalGraphGen3From compiles and validates a render plan, but those semantic differences do not defeat the specified co-travelling-params threshold.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "4 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (4 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "data-clumps-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the implementation and all three non-test callers. The exact trio model, timeMs, and dt travels together positionally at packages/core/src/voice/compositor.ts:244, packages/core/src/voice/generator-bridge.ts:152, and apps/web/src/lib/trigger-lab/render.ts:265, and packages/core/src/modifiers/chain.ts:44 immediately assembles those values into the existing ModifierContext shape, so the stated threshold of at least three parameters across at least three call sites is met.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "5 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (5 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "data-clumps-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked every production declaration and invocation returned by the repository search. The same four values travel together through classifyConnection, classifyReconnect, canConnect, canReconnect, sameSlot, the store connect/reconnect methods, canSplice, and five TriggerGraphView validation calls, comfortably satisfying the exact threshold of at least three co-travelling parameters across at least three call sites. The deliberate endpoint reversal at TriggerGraphView.svelte:565 and :573 is semantically correct, but it does not refute the data clump.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "6 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (6 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "data-clumps-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the implementations and external callers in PatchZoneInspector.svelte and DrumZonesList.svelte. The three parameters `InputMap`, `drumId`, and `slot` travel together at substantially more than three call sites, including lookups, setters, declaration, and removal operations; callers frequently source `drumId` and `slot` from the same existing zone editor or list-row context. The schemas also independently repeat the same two-field address shape, although `triggerBindingSchema.slot` is required while the input-map schemas default it; that parsing distinction constrains the proposed schema composition but does not defeat the stated co-travelling-parameter criterion.",
+            "criterion_applied": "co-travelling-params",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "4 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (4 call sites confirmed present (>=3). Param-count is stated in the claim but is not independently machine-counted here) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "primitive-obsession-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the actual GraphNode definition and its authoring/runtime callers. The criterion is satisfied: NodeKind represents the domain concept of a graph node role, while multiple kind-dependent invariants are enforced procedurally at call sites\u2014wiring legality is derived from source and target kinds in apps/web/src/lib/trigger-lab/store/graph-wiring.ts:20-24 and mutation methods repeatedly reject fields on incompatible kinds in apps/web/src/lib/trigger-lab/store.svelte.ts:2840-2875; protected anchor kinds are also separately guarded during add, remove, and kind changes at apps/web/src/lib/trigger-lab/store.svelte.ts:2561-2565,2653-2659,2779-2783. Central helpers and the exhaustive category switch in packages/core/src/voice/render-plan.ts:49-77 reduce some duplication, but they do not tie kind-specific payload fields to the kind at the GraphNode type boundary, so they confirm rather than refute the presence of at least two call-site-enforced invariants.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "primitive-obsession-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the model, parser, authoring path, store mutators, and migration. The exact criterion is satisfied: callers enforce at least two invariants around the primitive\u2014scope and target shape must agree (`commitSelection` selects the matching scope before encoding, while `setScope` clears stale `targetId`), and hoop targets must contain unique, sorted, integer, 1-based indices (`encodeHoopTarget`). The three parser options represent deliberate differences in malformed/backward-compatible input handling rather than three invariants by themselves, and the claimed clipdoc string-rewrite duplication is inaccurate because clipdoc reuses the persistence walker; neither point eliminates the independently verified call-site invariants.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "primitive-obsession-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked every PixelOutput.send caller and both transport implementations. OutputManager passes patch.universe unchanged at apps/server/src/output-manager.ts:211 and :241; the default/flat DMX map deliberately begins at zero in packages/core/src/geometry/dmx-map.ts:99-102; and SacnOutput writes that same value into both the E1.31 framing field and multicast address at packages/io/src/sacn.ts:113-115. The schema and UI enforce that authored startUniverse values are nonnegative integers, but neither performs the protocol-specific 0-based-to-1-based conversion or enforces the sACN 1..63999 range, so they do not refute the finding; the code elsewhere explicitly converts the same internal zero-based universe to a one-based PixLite device value at apps/web/src/lib/app/docks/inspectors/PatchOutputInspector.svelte:59-62, confirming that the base-offset invariant is real and boundary-specific.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "primitive-obsession-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited builders, their production callers, the Inspector decoder, and the graph-to-routing/wiring adapters. Although buildPatchTopology and its positional outputId builder appear to be legacy code with no production caller outside tests, the string primitive still represents patch-node identity and carries at least two invariants enforced across call sites: output payloads must round-trip an OutputConfig.id through buildZoneGraph/routingFromGraph/patchEditorFor, and prefixes plus payload shapes determine node stage, legal chain-wire source type, and decoded domain references such as 1-based hoop indices. The active graph also demonstrates the claimed presentation mismatch: output nodes are labelled by array position in patch-zones.ts, while describePatchNode reconstructs the Inspector title from the raw id payload.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "primitive-obsession-0009",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the projection helper, its view-level caller, the flow converter, and the live TriggerNode component. The finding overstates the specific omissions: `TriggerNode` reads the current store node reactively, so `modifier.bypass`, `ccSource`, and `oscAddress` can update displayed content without rebuilding the xyflow object, while `graphToFlowNodes` snapshots only kind and position; nevertheless, the string still represents the domain concept of projection-reuse identity, and callers enforce multiple invariants around it\u2014reuse is graph-scoped, requires both a previous object and signature equality, preserves the previous object for selection-only changes, and writes the cache only after successful projection\u2014so the exact criterion is satisfied.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "primitive-obsession-0010",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both credential paths, their callers, and the focused tests. The room PIN and host-session token are semantically distinct\u2014the PIN is a human-entered, optionally disabled sharing code, while the host token is a machine-generated proof used only with loopback and non-Cloudflare guards\u2014but the criterion still holds because each string represents a credential domain concept and the host token alone has at least two invariants enforced outside its type: minimum injected strength in resolveHostToken and constant-time comparison in isTrustedHost. The tests also confirm that short explicit room PINs are currently intentional behavior, but that semantic difference only challenges the proposed single shared parser and six-character rule; it does not refute the primitive-obsession finding under the supplied criterion.",
+            "criterion_applied": "domain-concept-with-invariants",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "repeated-switches-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the canonical NodeKind definition, the normalization boundary, the cited projection switch, and the other web discriminant sites. Gen3 normalization rewrites `play` to `effect`, while `triggerNodeSignature` handles only `play`; NodeKind is independently discriminated in well over three web locations, and defaults or ad hoc conditionals mean TypeScript does not enforce lockstep handling of a new canonical variant at this switch. TriggerNode does read the live store node reactively, which may reduce some visible stale-data consequences, but it does not refute the exact repeated-discriminant criterion or make the projection signature include the canonical effect fields.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "discriminant 'NodeKind' co-occurs with switch/case in 16 files (>=3)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (discriminant 'NodeKind' co-occurs with switch/case in 16 files (>=3)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "repeated-switches-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited implementations and the canonical NodeKind union. The same node.kind classification is independently repeated in MOD_SOURCE_KINDS/isModSourceKind (packages/core/src/voice/modulation-graph.ts:30-35), nodeModSource (packages/core/src/voice/modulation-graph.ts:49-76), the evaluator\u2019s inert arms (packages/core/src/voice/eval-graph.ts:582-588), nodeCategory (packages/core/src/voice/render-plan.ts:49-77), TriggerNode\u2019s preview classification and dispatch (apps/web/src/lib/app/views/TriggerNode.svelte:127 and 182-201), and the add taxonomy (apps/web/src/lib/app/views/add-node-taxonomy.ts:64-92). Although render-plan.ts and the UI metadata Records force some edits when NodeKind expands, nothing enforces that a newly categorized modulation-source kind is also present in MOD_SOURCE_KINDS, nodeModSource, TriggerNode\u2019s preview dispatch, and the Modulate palette; the taxonomy test at apps/web/src/lib/app/views/add-node-taxonomy.test.ts:17-33 merely hardcodes the current list rather than deriving or parity-checking it, so the repeated-discriminant criterion is satisfied.",
+            "criterion_applied": "repeated-discriminant",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "discriminant 'NodeKind' co-occurs with switch/case in 16 files (>=3)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (discriminant 'NodeKind' co-occurs with switch/case in 16 files (>=3)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "divergent-change-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the runtime dispatch and both engine paths are live: apps/server/src/main.ts:70-72 defaults an unset LEDRUMS_ENGINE to legacy, apps/server/src/main.ts:157-167 always constructs EngineHost and persists host.engine.getProject(), apps/server/src/boot.ts:72-73 starts whichever engine mode is selected, and apps/server/src/handlers/client-message.ts:509-513 applies mutations through the legacy reducer before propagating them to VoiceEngineHost in voice mode. The exact change-scatter criterion is satisfied by at least three commits: 39b7d6b changed 20 files for Patch Graph v2/node-layout propagation across protocol, both server paths, core, and web; 7c89cef changed 11 files to add kit-global/color/per-hoop mutation parity across both hosts and their reducers/tests; and a8e05cd changed 8 files to keep per-hoop materialization behavior aligned across legacy Engine, VoiceEngineHost, web optimistic state, and shared geometry. The duplicated paths have already drifted, as confirmed by apps/server/src/input-router.ts:177-179, and the current comments explicitly describe mutation parity requirements rather than a guard or shared reducer that removes the scatter.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "14 commits co-change >=2 of 5 cited files (>=3 commits, >=5 files)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (14 commits co-change >=2 of 5 cited files (>=3 commits, >=5 files)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "divergent-change-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I inspected the current TriggerLab composition root and four distinct non-merge commits touching it. At least three independently satisfy the exact change-scatter criterion: Backups dialog commit 8787de5 changed 6 files and added backup state/callback/actions at apps/web/src/lib/trigger-lab/store.svelte.ts:552, apps/web/src/lib/trigger-lab/store.svelte.ts:1556, and apps/web/src/lib/trigger-lab/store.svelte.ts:2211; Patch Graph zone-canvas commit 39b7d6b changed 20 files and added project-layout coordination around apps/web/src/lib/trigger-lab/store.svelte.ts:2088; Mix-layer commit ba8f0df changed 11 files and added live positions and Mix mutators represented currently at apps/web/src/lib/trigger-lab/store.svelte.ts:375 and related graph-authoring methods; OSC discoverability commit c7bf94d changed 26 files and added OSC transport state and WS adoption represented currently by the OscListenInfo import at apps/web/src/lib/trigger-lab/store.svelte.ts:49. These are separate logical changes, each requiring edits across at least four files, across more than three commits, while each converges on TriggerLab, so the stated criterion is met even after excluding merge commits and without relying on the disputed raw touch count.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "120 commits touch apps/web/src/lib/trigger-lab/store.svelte.ts, co-changing 420 distinct files (>=3 commits)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (120 commits touch apps/web/src/lib/trigger-lab/store.svelte.ts, co-changing 420 distinct files (>=3 commits)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "divergent-change-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "The graph-evaluation portion of the claim is stale: Sim now normalizes legacy graphs and delegates directly to core's voice.evalGraph at apps/web/src/lib/trigger-lab/sim.ts:400-405. However, the remaining offline voice lifecycle is still independently mirrored, including mono-bus stealing at apps/web/src/lib/trigger-lab/sim.ts:445-455 versus packages/core/src/voice/voice-pool.ts:103-113, and git history satisfies the exact criterion in at least three coherent logical changes: e7dbdca changed 5 files for delayed-Mix supersession, e497fd9 changed 10 files for overlap-based Mix timelines, and 0b9dd3d changed 20 files for Mix route composition, each editing both web-sim and core voice concerns.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "21 commits co-change >=2 of 3 cited files (>=3 commits, >=3 files)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (21 commits co-change >=2 of 3 cited files (>=3 commits, >=3 files)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "divergent-change-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read the current module-level wiring in apps/server/src/main.ts, including the live project and library slots at lines 155-209, stateMessage at lines 446-462, snapshot integration at lines 559-596, handler dependency assembly at lines 618-663, OSC state at lines 692-744, and boot dependencies at lines 780-801. The exact change-scatter criterion is met by at least three single-purpose commits touching main.ts and four or more files: e361d8a changed 7 files for fail-closed pre-risk snapshots, fbd63a2 changed 10 files for SnapshotStore wiring, 448ce81 changed 10 files for song-library persistence/messages, and e70cec9 changed 4 files for per-voice stats; therefore the finding survives even though extracted handlers and route factories provide some local seams.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "39 commits touch apps/server/src/main.ts, co-changing 242 distinct files (>=3 commits)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (39 commits touch apps/server/src/main.ts, co-changing 242 distinct files (>=3 commits)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "divergent-change-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I inspected packages/core/src/geometry/kit-schema.ts:5-542 and confirmed that it contains the schema/type declarations, cumulative migration ladder, and derived query/reconciliation helpers described. The exact change-scatter criterion is satisfied by at least three coherent logical changes that each edited at least four files: b5495d8 (expanded-output model/migration, 6 files), 85e6995 (first-class hoops, 6 files), 0491a13 (per-output RGB order, 6 files), with 6350289 (origin convention, 6 files) and 182ed74 (Output=data-run migration, 11 files) providing additional evidence; therefore the finding survives refutation.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "15 commits touch packages/core/src/geometry/kit-schema.ts, co-changing 90 distinct files (>=3 commits)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (15 commits touch packages/core/src/geometry/kit-schema.ts, co-changing 90 distinct files (>=3 commits)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "divergent-change-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I read the full component and inspected every cited commit. The exact change-scatter criterion is satisfied by at least three independent logical changes: 0360c10 spread test-pattern/takeover work across ControllerStatusPanel, OutputStatusPanel, PatchControllerInspector, and output-status.ts; 4731718 spread controller authentication across those three panel layers plus the store and CommitInput; and da3342d spread subnet adoption across server handlers, protocol, controller state, and the same panel chain. The current code confirms these are distinct concerns composed in ControllerStatusPanel rather than merely cosmetic variations: discovery/adoption is at lines 109-123 and 166-206, health/status at 216-278, authentication at 280-294, and test-pattern takeover at 217-239 and 310-361.",
+            "criterion_applied": "change-scatter",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": true,
+        "outcome": "inconclusive",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        },
+        "commands": [
+          "jscpd / git log / grep threshold measurement"
+        ],
+        "detail": "6 commits touch apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte, co-changing 40 distinct files (>=3 commits)"
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "threshold confirmed (6 commits touch apps/web/src/lib/app/docks/inspectors/ControllerStatusPanel.svelte, co-changing 40 distinct files (>=3 commits)) but criterion has a non-mechanical component, so not auto-fix eligible"
+    },
+    {
+      "finding_id": "resilience-hole-0001",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the timer callback, engine/compositor/generator call chain, process-fatal handling, graceful-shutdown hooks, desktop sidecar supervision, and authored Canvas validation. The render path has no exception boundary: apps/server/src/voice-engine-host.ts:455-459 invokes loop from setTimeout, packages/core/src/voice/engine.ts:694-719 reaches compositor.render, and packages/core/src/voice/generator-bridge.ts:78-141 directly invokes gen.render. A plausible trigger exists through the shipped Canvas JSON editor: apps/web/src/lib/trigger-lab/store/canvas-scenes.ts:126-139 validates only that elements is an array and sampler is an object, so an element such as {\"kind\":\"gradient\"} is accepted; packages/core/src/canvas/elements.ts:97-100 then dereferences the missing stops field during rendering. The protocol's show validation is intentionally shallow at packages/protocol/src/schemas.ts:62-75, so it does not close that path. The resulting uncaught exception exits at apps/server/src/process-errors.ts:42-58; main's fatal hook only flushes reports at apps/server/src/main.ts:259-263, while blackout occurs only through VoiceEngineHost.stop at apps/server/src/voice-engine-host.ts:446-452. SIGINT/SIGTERM cleanup is irrelevant to process.exit(1), and the desktop merely surfaces a terminated sidecar without restarting it at apps/desktop/src-tauri/src/lib.rs:495-506.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0002",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I verified that `initialProject()` synchronously calls `loadProject()` during module evaluation before `installProcessErrorCapture()` is installed, and neither path catches JSON, schema-validation, or referential-integrity exceptions (`apps/server/src/main.ts:137-155`, `apps/server/src/main.ts:259-263`, `apps/server/src/projects.ts:54-63`). Atomic temp-file replacement prevents the claimed disk-full truncation mechanism, but plausible invalid persisted state remains: `setInputMap` is schema-checked only for shape and is applied without `assertProjectIntegrity`, so a schema-valid mapping containing a nonexistent drum ID can be autosaved at `apps/server/src/handlers/client-message.ts:509-535` and then terminate the next boot. Existing snapshots cannot handle that boot failure because `snapshotStore` is not created until after successful project and host initialization (`apps/server/src/main.ts:580-590`).",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0003",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both UDP adapters and their actual caller. ArtNetOutput and SacnOutput swallow socket error events and ignore send-callback errors at packages/io/src/artnet.ts:49-74 and packages/io/src/sacn.ts:95-115; a bind error therefore leaves ready false indefinitely, causing every later send to return silently. OutputManager's guards at apps/server/src/output-manager.ts:107-115 and apps/server/src/output-manager.ts:201-229 handle only synchronous constructor/send throws, while still incrementing packetsSent and emitting packet summaries after the adapter silently drops work, so they do not handle these asynchronous failures. A stale configured interface is a plausible EADDRNOTAVAIL trigger, and PixelOutput provides no status channel at packages/io/src/interfaces.ts:3-9 through which the manager could learn of it.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0004",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the complete client socket lifecycle, the store's authority gates, the server connection handler, the broadcast loop, and the client registry. WSClient changes connection state only from onopen/onclose and has no message-age or heartbeat watchdog (apps/web/src/lib/ws/client.ts:198-218); during a half-open connection, readyState can remain OPEN and send() can successfully enqueue into the browser rather than throw, while hit() returns without firing the offline simulation because store.link remains 'open' (apps/web/src/lib/ws/client.ts:298-307; apps/web/src/lib/trigger-lab/store.svelte.ts:1708-1737). The server's 10 ms stats broadcasts generate traffic that should eventually make TCP/ws report close or error, and those handlers remove the peer, but there is no bounded application-level timeout; until the transport stack reports failure, the stale editor remains registered and the browser continues displaying an open link. A Wi-Fi interruption or suspended network path is a plausible trigger for a live-performance outage lasting through that detection window, so the unhandled failure path survives.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0005",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the cited broadcast, connection-admission, stats-production, preview-stream, and disconnect paths. `statsTimer` broadcasts every 10ms, `broadcastJson` and `broadcastBinary` gate only on OPEN state, and the server contains no `bufferedAmount`, ping/pong heartbeat, termination, or slow-consumer handling; close/error cleanup therefore does not prevent an OPEN but non-draining socket from accumulating queued data. The trigger is plausible without an attack: voice telemetry can contain up to 256 active voice summaries, and an authenticated remote phone or temporarily stalled TCP connection receives that 100 Hz JSON stream alongside the approximately 30 fps binary preview. `ClientRegistry.admit` is intentionally additive and has no capacity limit, while the PIN gate performs only equality checking and supplies no admission-rate or connection-count control.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0006",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the WebSocket admission path, both PIN-gate implementations, the tunnel manager, client registry, and message authorization. A tunnel request with an incorrect PIN is only closed with code 4401 at apps/server/src/main.ts:486-490; no server-side attempt accounting, throttling, lockout, or refusal monitoring exists, while apps/server/src/pin-gate.ts:68-84 generates a six-digit PIN and the quick tunnel adds no application-level access control. The trigger is plausible once an attacker knows the intentionally shared tunnel URL: repeated independent WebSocket handshakes can search the 1,000,000-value space, and a successful client can claim the editor role through the ungated takeover path at apps/server/src/handlers/client-message.ts:179-186. Plain equality at apps/server/src/pin-gate.ts:35 and apps/server/src/pin-gate.ts:58 is also confirmed, although remote timing exploitation is substantially less compelling than the unthrottled finite-space guessing path.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0007",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the local writers, autosave status controller, server-sync gates, WebSocket send behavior, and visible indicator. The path is unhandled: localStorage failures are swallowed, server synchronization is skipped when the link is offline, and scheduleSave still calls saved() unconditionally, causing the UI to claim persistence even though the only current copy may remain in memory; quota exhaustion, blocked storage, or private-mode storage failure are plausible triggers. The beforeunload and stopAutosave paths likewise make unchecked last-chance local writes, although they do not themselves transition the indicator.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0008",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the transport, queue, production wiring, Worker routes, and Monitor integration. The finding survives because a plausible token rotation produces a persistent 401: the token is captured once at boot in apps/server/src/main.ts:287-297, every non-2xx becomes an untyped error in apps/server/src/telemetry/transport.ts:21, and apps/server/src/telemetry/ship-queue.ts:147-174 retains and retries the complete batch without status-specific handling; queue failures use the local logger rather than the Monitor bus, as explicitly established at apps/server/src/telemetry/ship-queue.ts:21-23. A schema-incompatible item can likewise make the Worker's whole-batch parser return 400 at workers/error-ingest/src/index.ts:77-89, while the append-only backups queue eventually evicts oldest entries under its caps at apps/server/src/telemetry/ship-queue.ts:118-126 and apps/server/src/main.ts:321-326. The 413 example is overstated specifically for backups because that queue is capped at 8,000,000 serialized item bytes while the Worker permits 16,000,000 bytes, but this partial counterexample does not eliminate the realistic unhandled 401 and 400 paths.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0010",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked every route in the Worker entry point and the concrete D1/R2 adapters. Storage rejections propagate through ingestBatch, listReports, ingestBackups, listBackups, and getBackup without any response-producing catch, and D1/R2 service faults or schema drift are plausible triggers; Cloudflare observability being enabled may record an uncaught exception, but it does not turn that failure into the structured HTTP response required by the criterion. I also confirmed that both POST routes fully await req.text() before checking raw.length, which measures UTF-16 code units rather than the request body's UTF-8 byte size, so those guards do not enforce their declared byte limits.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0011",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked both cited render paths, the active voice generator bridge, registry behavior, show construction, and authored modifier handling. Effect renames are partially protected by the permanent alias policy and alias rewriting in packages/core/src/effects/aliases.ts:1-6 and apps/web/src/lib/trigger-lab/show-builder.ts:52-54, but unknown effect ids still pass through unchanged, modifiers have no equivalent alias or validation, and the authoring store explicitly permits unresolved modifier ids at apps/web/src/lib/trigger-lab/store.svelte.ts:2618-2629; those ids are then silently skipped at packages/core/src/modifiers/chain.ts:48-49 with no diagnostic. The trigger is plausible because the chain documentation itself identifies stale authored data as expected input, and the active voice path likewise silently drops an unknown generator at packages/core/src/voice/generator-bridge.ts:79-80, so the failure remains unhandled even if the legacy Engine.renderLayer path is not the primary runtime.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    },
+    {
+      "finding_id": "resilience-hole-0013",
+      "refutation": {
+        "votes": [
+          {
+            "refuted": false,
+            "reasoning": "I checked the WebSocket catch, protocol decoder, project-message handler, Monitor bus, and Reporter. The path is real: any PIN-admitted socket can repeatedly send malformed frames before the editor gate, and an editor\u2014including one that claimed the role through `takeover`\u2014can trigger synchronous `loadProject` filesystem or validation failures whose raw messages are returned by the outer catch; there is no per-socket response or Monitor-event rate limit. The Reporter does deduplicate identical errors into one queued record with an increasing count, so the finding overstates queue-entry multiplication, and decode validation is flattened into a single-line message rather than returning a raw multiline ZodError; however, every occurrence still emits an error frame, broadcasts a Monitor event, invokes `Reporter.observe`, increments the report count, and upserts the queue, while handler failures can expose filesystem paths or validation details. Those partial mitigations do not handle the plausible disclosure and amplification path, so the finding survives.",
+            "criterion_applied": "unhandled-failure-path",
+            "provenance": {
+              "model": "gpt-5.6-sol",
+              "effort": "medium"
+            }
+          }
+        ],
+        "outcome": "survived"
+      },
+      "mechanical_verification": {
+        "attempted": false,
+        "outcome": "not-applicable",
+        "isolation": {
+          "required": false,
+          "worktree_path": null,
+          "baseline_sha": "3708648"
+        }
+      },
+      "disposition": "structural-track",
+      "disposition_reason": "non-mechanical criterion \u2014 never auto-fix eligible by design"
+    }
+  ]
+}

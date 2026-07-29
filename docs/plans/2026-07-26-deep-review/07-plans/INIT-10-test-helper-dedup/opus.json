@@ -1,0 +1,216 @@
+{
+  "initiative_id": "INIT-10-test-helper-dedup",
+  "variant": "opus",
+  "provenance": {
+    "phase": "7",
+    "lane": "INIT-10-test-helper-dedup",
+    "model": "claude-opus-5[1m]",
+    "effort": "medium"
+  },
+  "summary": "Retire the two largest clone clusters in the repo by giving each unit exactly one test-support module and importing it everywhere: apps/web/src/lib/test-support/mem-storage.ts (kills 37 verbatim `class MemStorage` declarations) plus apps/web/src/lib/test-support/ws-harness.ts (kills the 5-site Harness/harnessClient pair), and packages/core/src/test-support/effect-harness.ts (kills the model/transport/ctx/trig/render/litCount/litIds/finite-check helper set duplicated across batch-a..e, effects.test and u6-gap-fill). This is the smallest shape that fully retires duplicated-code-0001 and -0002: no new abstraction layer, no install/setup DSL, no change to a single `it()` body or assertion. Two deliberate departures from the findings' proposed fixes, both forced by reading the code. First, MemStorage does NOT go into apps/web/src/lib/trigger-lab/fixtures.ts — that file is production code (store.svelte.ts, seed.ts, hydrate.ts, PatchGraphView.svelte and six other shipping modules import it), so putting a test double there would drag a test class into the app graph. Second, the shared helpers keep the divergent parameters that today hide behind per-file defaults: `model(drums, hoopCount = 4)` makes `drums` REQUIRED because batch-a/b/e/u6 default it to 2 while batch-c/d/effects.test default it to 1 — a shared default would silently re-point half the core effect suite at a different pixel model with the suite still green, and a required parameter converts that risk into a tsc error at every unconverted call site. Likewise `render()` grows an optional `seed` because u6-gap-fill alone calls `createState(m, 123)`; since types.ts declares `createState?(model, seed?)`, passing `undefined` is indistinguishable from omitting the argument, so one signature serves all seven suites without behaviour drift. The whole initiative touches only *.test.ts files and two new test-only modules; zero product code, zero render-loop code, zero IO.",
+  "findings_addressed": ["duplicated-code-0001", "duplicated-code-0002"],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Add apps/web/src/lib/test-support/mem-storage.ts",
+      "intent": "Create the single home for the web unit's in-memory Storage double. Exports one symbol, `class MemStorage`, with the body that is already the majority form: `private m = new Map<string, string>()`, `get length()`, `key(i)`, `getItem(k)` using the `has`/`get!` form, `setItem(k, v)` coercing with `String(v)`, `removeItem(k)`, `clear()`. The one divergent copy (apps/web/src/lib/app/views/object-rows.test.ts uses `this.m.get(k) ?? null`) is semantically identical because the map is typed Map<string,string> and setItem coerces — the Phase 3 refuter checked exactly this and did not refute. Keep `m` private: the only file that declares it public (store.autosave.test.ts:14) never reads `storage.m` from a test body. Do NOT add `implements Storage`; that would require an `[name: string]: any` index signature which would erase type checking on the class's own members, so the existing `as unknown as Storage` casts at the call sites stay exactly as they are. This step adds the module only — no call site changes — so it lands green on its own.",
+      "files": ["apps/web/src/lib/test-support/mem-storage.ts"],
+      "risk": "low",
+      "verification": "`pnpm --filter @ledrums/web run typecheck` passes; `pnpm --filter @ledrums/web exec vitest run --reporter=json --outputFile=/tmp/web-after-S1.json` yields byte-identical test-name and status lists to the baseline capture (the new file matches no vitest include pattern — the repo has no vitest.config, so the default `**/*.{test,spec}.?(c|m)[jt]s?(x)` include cannot pick up mem-storage.ts; confirm the reported suite count is unchanged, not merely green)."
+    },
+    {
+      "id": "S2",
+      "title": "Convert web MemStorage batch A (18 files)",
+      "intent": "Delete the local `class MemStorage` declaration from the first 18 files and add `import { MemStorage } from '<relative>/test-support/mem-storage';` to each. Every `new MemStorage()` call site and every install form stays byte-identical — all five install shapes present in the tree are preserved as-is: the 33-site `(globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;`, the two `Object.defineProperty(globalThis, 'localStorage', { value: new MemStorage(), configurable: true })` sites, store.pin.test.ts's `globalThis.localStorage = ...` plus `sessionStore = new MemStorage()`, and store.system-toasts.test.ts's `seedLegacyBlob` local `const storage = new MemStorage()`. The 36 `afterEach` delete blocks are untouched. Files: apps/web/src/lib/app/views/object-rows.test.ts, apps/web/src/lib/trigger-lab/{enum-params,EnvelopeEditor,store.autosave,store.autowire,store.canvas-scenes,store.cc,store.clipboard,store.controller,store.delay,store.dock-source,store.echo-gate,store.graphs,store.id-collision,store.ids,store.lfo,store.looks,store.modifiers}.test.ts.",
+      "files": [
+        "apps/web/src/lib/app/views/object-rows.test.ts",
+        "apps/web/src/lib/trigger-lab/enum-params.test.ts",
+        "apps/web/src/lib/trigger-lab/EnvelopeEditor.test.ts",
+        "apps/web/src/lib/trigger-lab/store.autosave.test.ts",
+        "apps/web/src/lib/trigger-lab/store.autowire.test.ts",
+        "apps/web/src/lib/trigger-lab/store.canvas-scenes.test.ts",
+        "apps/web/src/lib/trigger-lab/store.cc.test.ts",
+        "apps/web/src/lib/trigger-lab/store.clipboard.test.ts",
+        "apps/web/src/lib/trigger-lab/store.controller.test.ts",
+        "apps/web/src/lib/trigger-lab/store.delay.test.ts",
+        "apps/web/src/lib/trigger-lab/store.dock-source.test.ts",
+        "apps/web/src/lib/trigger-lab/store.echo-gate.test.ts",
+        "apps/web/src/lib/trigger-lab/store.graphs.test.ts",
+        "apps/web/src/lib/trigger-lab/store.id-collision.test.ts",
+        "apps/web/src/lib/trigger-lab/store.ids.test.ts",
+        "apps/web/src/lib/trigger-lab/store.lfo.test.ts",
+        "apps/web/src/lib/trigger-lab/store.looks.test.ts",
+        "apps/web/src/lib/trigger-lab/store.modifiers.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Additive-diff gate: `git diff -U0 -- <the 18 paths> | grep '^+' | grep -v '^+++' | grep -v \"^+import { MemStorage }\"` must print nothing — i.e. the only lines ADDED across the batch are the 18 import statements; everything else is deletion. Then `grep -c 'class MemStorage' <each of the 18>` = 0, and a per-file vitest JSON diff (`pnpm --filter @ledrums/web exec vitest run --reporter=json`) showing the same fully-qualified test names in the same pass state as the S1 capture."
+    },
+    {
+      "id": "S3",
+      "title": "Convert web MemStorage batch B (19 files)",
+      "intent": "Same mechanical conversion for the remaining 19 declarations, split from S2 only so each lands as a separately reviewable green commit. Note two files that need care and are called out here so the implementer does not flatten them: store.pin.test.ts uses `MemStorage` as a TYPE (`let sessionStore: MemStorage;`) — the imported class satisfies that unchanged; store.system-toasts.test.ts instantiates MemStorage inside the `seedLegacyBlob(graphs)` helper rather than in a beforeEach, and that helper stays exactly where it is. Files: apps/web/src/lib/trigger-lab/{store.modulation-sources,store.modulation,store.node-clipboard,store.objects,store.patch-clipboard,store.persistence,store.pin,store.presets,store.report-error,store.routing,store.sections,store.server-library,store.shows,store.song-library,store.songs,store.splice,store.system-toasts,store.trigger-source,store.value-switch}.test.ts.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/store.modulation-sources.test.ts",
+        "apps/web/src/lib/trigger-lab/store.modulation.test.ts",
+        "apps/web/src/lib/trigger-lab/store.node-clipboard.test.ts",
+        "apps/web/src/lib/trigger-lab/store.objects.test.ts",
+        "apps/web/src/lib/trigger-lab/store.patch-clipboard.test.ts",
+        "apps/web/src/lib/trigger-lab/store.persistence.test.ts",
+        "apps/web/src/lib/trigger-lab/store.pin.test.ts",
+        "apps/web/src/lib/trigger-lab/store.presets.test.ts",
+        "apps/web/src/lib/trigger-lab/store.report-error.test.ts",
+        "apps/web/src/lib/trigger-lab/store.routing.test.ts",
+        "apps/web/src/lib/trigger-lab/store.sections.test.ts",
+        "apps/web/src/lib/trigger-lab/store.server-library.test.ts",
+        "apps/web/src/lib/trigger-lab/store.shows.test.ts",
+        "apps/web/src/lib/trigger-lab/store.song-library.test.ts",
+        "apps/web/src/lib/trigger-lab/store.songs.test.ts",
+        "apps/web/src/lib/trigger-lab/store.splice.test.ts",
+        "apps/web/src/lib/trigger-lab/store.system-toasts.test.ts",
+        "apps/web/src/lib/trigger-lab/store.trigger-source.test.ts",
+        "apps/web/src/lib/trigger-lab/store.value-switch.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Same additive-diff gate as S2 over these 19 paths (only `+import { MemStorage }` lines may be added). Repo-wide: `grep -rl 'class MemStorage' apps/web/src | wc -l` → 0 (baseline 37). Web vitest JSON test-name/status list identical to the S1 capture."
+    },
+    {
+      "id": "S4",
+      "title": "Add ws-harness.ts and convert the 5 harnessClient sites",
+      "intent": "Create apps/web/src/lib/test-support/ws-harness.ts exporting `interface Harness { cb: WSCallbacks | null; sent: ClientMessage[]; reconnects: string[] }`, `newHarness(): Harness` (returns `{ cb: null, sent: [], reconnects: [] }`) and `harnessClient(h: Harness): () => WSClient` whose stub implements `on`, `connect`, `close`, `send(m) { h.sent.push(m) }` and `reconnectWithPin(pin) { h.reconnects.push(pin) }`. This is a UNION of the two current shapes: store.pin.test.ts records reconnects and has a no-op `send`; store.{controller,server-library,patch-clipboard,song-library}.test.ts record sends and have no `reconnectWithPin`. Widening is inert in both directions — a recorder writing to an array no test reads changes nothing, and adding `reconnectWithPin` only matters if the store calls it, which only the pin flows do. Replace each file's local `interface Harness` + `harnessClient` with the import and replace every `{ cb: null, sent: [] }` / `{ cb: null, reconnects: [] }` object literal with `newHarness()`. Preserve the doc comment currently at store.server-library.test.ts:50-51 by moving it onto the shared `harnessClient`.",
+      "files": [
+        "apps/web/src/lib/test-support/ws-harness.ts",
+        "apps/web/src/lib/trigger-lab/store.controller.test.ts",
+        "apps/web/src/lib/trigger-lab/store.pin.test.ts",
+        "apps/web/src/lib/trigger-lab/store.server-library.test.ts",
+        "apps/web/src/lib/trigger-lab/store.patch-clipboard.test.ts",
+        "apps/web/src/lib/trigger-lab/store.song-library.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Pre-flight grep proving widening is inert: `grep -n 'h\\.sent\\|h\\.reconnects' apps/web/src/lib/trigger-lab/store.{controller,pin,server-library,patch-clipboard,song-library}.test.ts` — record which arrays each file asserts on, then confirm post-conversion that no assertion's expected value changed (store.pin.test.ts:165,170 assert `h.reconnects` toEqual ['4242'] and must still read exactly that). Then `pnpm --filter @ledrums/web exec vitest run store.controller store.pin store.server-library store.patch-clipboard store.song-library` — same test names, same pass count as baseline; and `grep -rc 'const harnessClient' apps/web/src` → 0 outside test-support.",
+      "reverses": "Revert this commit alone; it is disjoint from S2/S3 in every file except the four store.* files, where the two commits touch different regions (class declaration vs harness declaration) and revert independently."
+    },
+    {
+      "id": "S5",
+      "title": "Add packages/core/src/test-support/effect-harness.ts",
+      "intent": "Create the single core effects harness, exporting: `model(drums: number, hoopCount = 4): PixelModel` — drums REQUIRED, no default, because the current per-file defaults disagree (2 in batch-a/b/e/u6-gap-fill, 1 in batch-c/d/effects.test) and a shared default would silently re-point three suites at a different pixel model while staying green; `transport(beat = 0, timeMs = 0): TransportState`; `ctx(m, opts: Partial<RenderContext> = {}): RenderContext`; `trig(seq, drumId, note, velocity, ageMs): Trigger`; `render<S>(effect, m, c, params?, state?, seed?): Framebuffer` calling `effect.createState(m, seed)` — safe for all seven suites because packages/core/src/effects/types.ts:71 declares `createState?(model: PixelModel, seed?: number)`, so `createState(m, undefined)` is indistinguishable from `createState(m)`, and only u6-gap-fill.test.ts needs the `123` seed; `litCount(fb)`; `litIds(fb)`; `allFinite01(fb): boolean` (the boolean form batch-a calls `allFiniteInRange` and batch-d calls `allFinite01`); and `assertFinite01(fb, id)` (the `expect`-based per-channel form used by batch-c/-e/u6). Both finite-check forms are exported deliberately: collapsing them would either drop the per-channel failure message or turn a boolean check into a hidden assertion. The module imports `expect` from vitest; that is why it lives under a `test-support/` directory rather than beside the effects — see open_questions on the core-purity reading. Module only, no call sites converted, so it lands green alone.",
+      "files": ["packages/core/src/test-support/effect-harness.ts"],
+      "risk": "medium",
+      "verification": "`pnpm --filter @ledrums/core run typecheck` passes. Confirm the module is unreachable from the package's public surface: `grep -rn 'test-support' packages/core/src/index.ts` → no match, and `grep -rn \"from 'vitest'\" packages/core/src --include='*.ts' | grep -v '\\.test\\.ts' | grep -v test-support` → no match (the vitest import is confined to this one file). `pnpm --filter @ledrums/core exec vitest run --reporter=json` suite count unchanged (the .ts file is not matched by the default include).",
+      "reverses": "Delete the file; nothing imports it until S6/S7."
+    },
+    {
+      "id": "S6",
+      "title": "Convert the drums=2 core suites (batch-a, batch-b, batch-e, u6-gap-fill)",
+      "intent": "Delete the local model/transport/ctx/trig/render/litCount/litIds/allFiniteInRange/assertFinite01 declarations from packages/core/src/effects/{batch-a,batch-b,batch-e,u6-gap-fill}.test.ts and import from '../test-support/effect-harness'. Because `model` is now parameterless-free, every bare `model()` call in these four files becomes `model(2)` and every `model(n, h)` call keeps its explicit arguments — tsc fails loudly on any site the implementer misses, which is the whole point of dropping the default. u6-gap-fill.test.ts additionally rewrites its `render(effect, m, c, params, state)` calls to `render(effect, m, c, params, state, 123)` to preserve its `createState(m, 123)` seed; batch-a/b/e pass no seed. batch-a's `allFiniteInRange` call sites become `allFinite01`; batch-e's `assertFinite01` call sites are unchanged in name.",
+      "files": [
+        "packages/core/src/effects/batch-a.test.ts",
+        "packages/core/src/effects/batch-b.test.ts",
+        "packages/core/src/effects/batch-e.test.ts",
+        "packages/core/src/effects/u6-gap-fill.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Seed-preservation proof (the one place a green suite would lie): before converting u6-gap-fill.test.ts, run it with the harness `render` deliberately calling `createState(m)` instead of `createState(m, seed)` and confirm at least one test goes RED — if nothing goes red, the seed was never load-bearing and that fact is recorded; then restore the seed path and confirm green. Independently: `pnpm --filter @ledrums/core exec vitest run batch-a batch-b batch-e u6-gap-fill --reporter=json` produces the same fully-qualified test names and the same pass count as the pre-conversion capture, and `grep -n '^function model' packages/core/src/effects/batch-{a,b,e}.test.ts packages/core/src/effects/u6-gap-fill.test.ts` → 0 matches.",
+      "reverses": "Revert this commit; S5's module stays and is still consumed by S7 (or by nothing, harmlessly, if S7 has not landed)."
+    },
+    {
+      "id": "S7",
+      "title": "Convert the drums=1 core suites (batch-c, batch-d, effects.test)",
+      "intent": "Same conversion for packages/core/src/effects/{batch-c,batch-d,effects}.test.ts, kept in a separate commit precisely because these three carried `model(drums = 1, ...)` — every bare `model()` here becomes `model(1)`, and a mistaken `model(2)` would change the pixel model under a large fraction of the core effect suite. Separating the commit means a coverage or count regression is attributable to the drums=1 group without bisecting. batch-c/-d's multi-line `render<S>(...)` signature collapses to the shared single import; batch-d's `allFinite01` and batch-c's `assertFinite01` call sites keep their names.",
+      "files": [
+        "packages/core/src/effects/batch-c.test.ts",
+        "packages/core/src/effects/batch-d.test.ts",
+        "packages/core/src/effects/effects.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Default-drift proof: `grep -n 'model(' packages/core/src/effects/batch-c.test.ts packages/core/src/effects/batch-d.test.ts packages/core/src/effects/effects.test.ts` — every call site must carry an explicit first argument and it must be `1` wherever the pre-conversion source called `model()` bare (diff the two greps). Then `pnpm --filter @ledrums/core exec vitest run batch-c batch-d effects --reporter=json`: identical test names and pass count to the pre-conversion capture, plus `pnpm --filter @ledrums/core run test:coverage` showing core lines >= 97 and branches >= 86.41 (00-coverage.json baseline) — a silent model swap would show up as a coverage move even where assertions stay green.",
+      "reverses": "Revert this commit alone; batch-c/-d/effects.test return to their local helpers while S5/S6 remain valid."
+    },
+    {
+      "id": "S8",
+      "title": "Clone-count sweep and duplication evidence capture",
+      "intent": "Prove the initiative actually retired the clusters rather than relocating them, and leave the measurement in the review artifacts. No source changes: re-run the Phase 0 duplication tool over both units and record the delta against 00-raw's jscpd report — specifically that the named pairs are gone (web: store.controller vs store.server-library 50 lines, store.controller vs store.patch-clipboard 48, object-rows vs store.cc 40; core: batch-c vs batch-d 63/480 tokens, batch-a vs batch-b 51/434, batch-a vs batch-e 48/397, batch-c vs effects.test 45/323).",
+      "files": ["docs/plans/2026-07-26-deep-review/07-plans/INIT-10-test-helper-dedup/opus.json"],
+      "risk": "low",
+      "verification": "`./node_modules/.bin/jscpd --min-lines 12 --min-tokens 0 --threshold 100 --reporters json --output /tmp/jscpd-after apps/web/src packages/core/src` then assert: zero clone pairs whose both ranges start in `*.test.ts` file heads for the named files, and total clone count for packages/core/src/effects strictly below the baseline 57. Record before/after totals."
+    }
+  ],
+  "sequencing": [["S1", "S5"], ["S2", "S3", "S6"], ["S4", "S7"], ["S8"]],
+  "interface_deltas": [
+    {
+      "at": "apps/web/src/lib/test-support/mem-storage.ts (new test-only module)",
+      "removed": [
+        "37 file-local `class MemStorage` declarations across apps/web/src (store.*.test.ts ×35, enum-params.test.ts, EnvelopeEditor.test.ts, object-rows.test.ts)"
+      ],
+      "added": ["MemStorage"],
+      "net_interface_change": "reduces",
+      "note": "37 independently-maintained declarations of the same 19-line contract collapse to 1. Nothing is added to any shipping module's surface: the module is imported only by *.test.ts files, and deliberately NOT placed in apps/web/src/lib/trigger-lab/fixtures.ts, which despite its name is production code imported by store.svelte.ts, seed.ts, hydrate.ts, canvas-scenes.ts, graphs.ts, sections-controller.svelte.ts, PatchGraphView.svelte, PerformView.svelte, TriggerSourceInspector.svelte, patch-inspector.ts and trigger-source-label.ts."
+    },
+    {
+      "at": "apps/web/src/lib/test-support/ws-harness.ts (new test-only module)",
+      "removed": [
+        "5 file-local `interface Harness` declarations",
+        "5 file-local `harnessClient` factories"
+      ],
+      "added": ["Harness", "newHarness", "harnessClient"],
+      "net_interface_change": "reduces",
+      "note": "10 declarations become 3. The single Harness is the union of today's two shapes (sent-recording vs reconnect-recording), so the shared type is slightly wider than either local one — that is the price of one interface instead of five, and both extra recorders are inert unless asserted on."
+    },
+    {
+      "at": "packages/core/src/test-support/effect-harness.ts (new test-only module)",
+      "removed": [
+        "~45 file-local helper declarations: model ×7, transport ×7, ctx ×7, trig ×5, render ×7, litCount ×5, litIds ×2, allFiniteInRange/allFinite01 ×2, assertFinite01 ×3"
+      ],
+      "added": [
+        "model",
+        "transport",
+        "ctx",
+        "trig",
+        "render",
+        "litCount",
+        "litIds",
+        "allFinite01",
+        "assertFinite01"
+      ],
+      "net_interface_change": "reduces",
+      "note": "packages/core's PUBLIC surface is unchanged — package.json exports only ./src/index.ts and this module is never re-exported from it. `model` loses its default argument (drums becomes required): that is an interface widening at the call site, taken deliberately so tsc, not luck, catches the 1-vs-2 default divergence."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates (machine-mutex typecheck + full suite) at every wave boundary — expect the full 2968-test green baseline, with the TEST COUNT compared explicitly, not just the exit code.",
+      "Per-unit vitest JSON capture before the first commit and after each step: `pnpm --filter @ledrums/web exec vitest run --reporter=json --outputFile=/tmp/web-<step>.json` and the same for @ledrums/core; then diff the sorted list of fully-qualified test names AND their pass/fail status. A total-count match alone can hide a renamed or dropped test; the name-list diff cannot.",
+      "Additive-diff gate on every conversion step: `git diff -U0 -- <step files> | grep '^+' | grep -v '^+++'` must contain nothing but the new import lines (S2, S3) or nothing but import lines plus the explicit `model(1)` / `model(2)` / seed arguments (S6, S7). Any other added line in a conversion commit is scope creep and fails the step.",
+      "`grep -rl 'class MemStorage' apps/web/src | wc -l` → 0 (baseline 37); `grep -c 'const harnessClient' apps/web/src/lib/trigger-lab/*.test.ts` → 0; `grep -c '^function model' packages/core/src/effects/*.test.ts` → 0.",
+      "`pnpm test:coverage` per package compared to 00-coverage.json (core lines 97 / branches 86.41; web lines 57.82 / branches 84.47) — no downward move in either unit.",
+      "Deliberate red-check on the one semantically load-bearing divergence: with the shared `render` temporarily dropping the seed argument, u6-gap-fill.test.ts must go red (S6). If it stays green, the seed was never load-bearing and that is recorded as a finding rather than assumed.",
+      "jscpd re-run over apps/web/src and packages/core/src with the Phase 0 thresholds (min-lines 12, min-similarity 90) showing the named clone pairs gone (S8)."
+    ],
+    "known_gaps": "A green suite is the WEAKEST evidence available for this initiative, because the artefact being changed is the test scaffolding itself — the failure mode is a suite that still passes while testing less. Three specific places where green proves nothing, and what replaces it. (1) The core `model()` default divergence: batch-a/b/e/u6 default to 2 drums, batch-c/d/effects.test to 1. A shared default of either value would re-point half the effect suite at a different pixel model, and most of these assertions (litCount > 0, all channels finite in [0,1]) would still pass on the wrong model. Replacement evidence: `drums` is a REQUIRED parameter, so tsc fails at every call site that was not explicitly converted, plus the S7 grep diff proving every previously-bare `model()` became `model(1)` and every S6 one became `model(2)`, plus a coverage-delta check against 00-coverage.json. (2) u6-gap-fill's `createState(m, 123)` seed: dropping it would make stateful effects (comet-trails, confetti-burst) random-seeded, which a tolerance-style assertion may absorb. Replacement evidence: the deliberate red-check in S6 — the seed path is proven load-bearing (or proven not to be) by making the suite fail on purpose before trusting it. (3) The web unit sits at 57.82% line coverage, so the store.*.test.ts suites do not cover the majority of apps/web anyway; but this initiative touches no apps/web source file at all, only test files, so the uncovered region cannot regress — the parity claim there rests on the additive-diff gate (only import lines added, everything else deleted), which is a stronger and more direct proof than any test run. (4) Nothing in this initiative touches packages/core runtime code, packages/io, the server render loop, Art-Net/sACN output, or any timing-dependent path, so the usual 'a green suite cannot see the live output path' gap does not apply — no product byte changes.",
+    "baseline_reference": "Baseline sha 3708648 (00-baseline.json), 2968 tests green at HEAD after fix batches 1-3; coverage baseline 00-coverage.json (core 97/86.41, web 57.82/84.47); duplication baseline 00-raw/jscpd-report.json (57 core clones; web top-30 dominated by store.*.test.ts head pairs)."
+  },
+  "rollback_strategy": "Eight commits, one per step, each independently revertable and each green on its own. Revert order matters in one direction only: the module-introducing commits (S1, S4, S5) must not be reverted while their consumers are still landed, or the consumers get a dangling import — so back out consumers first (S2/S3 before S1, S6/S7 before S5; S4 is self-contained, its module and its five conversions ship together, so `git revert <S4>` is complete on its own). A full initiative rollback is `git revert` of S8..S1 in reverse order and restores the tree byte-for-byte, because every conversion commit is a pure deletion plus an import line. There is no feature flag, no data migration, no protocol change and no product code in any commit, so no rollback can affect a running instance; the blast radius of a bad revert is confined to whether the test suite compiles.",
+  "estimated_loc": 1180,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Does packages/core/src/test-support/effect-harness.ts importing `expect` from vitest violate the AGENTS.md core-purity non-negotiable? The rule says packages/core stays pure with no Node/DOM/IO imports; vitest is neither, it is already a devDependency of the package, and the module is unreachable from src/index.ts — but it does put a test-framework import inside packages/core/src for the first time. Alternatives if that reading is too loose: (a) drop `assertFinite01` from the shared module and export only the boolean `allFinite01`, leaving each suite to write its own `expect`, which costs the per-channel failure messages batch-c/-e/u6 rely on; (b) put the harness in a sibling package (@ledrums/test-support) at the cost of a new workspace package for ~90 lines.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should INIT-10 land before INIT-02-store-decomposition? INIT-02 will rewrite the same apps/web/src/lib/trigger-lab/store.*.test.ts files wholesale. Landing the dedup first shrinks INIT-02's diff and hands it a ready-made harness, but any INIT-02 branch already in flight would take 37 conflicting files. This is a merge-order call, not a design call, and no plan-internal reasoning can settle it.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Is `apps/web/src/lib/test-support/` and `packages/core/src/test-support/` the naming convention we want repo-wide? The tree has no test-support directory today and no established convention (`fixtures.ts` is taken and is production code). Whatever is chosen here becomes the precedent every later initiative copies.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "If the pre-flight grep in S4 shows a suite asserting on the exact SHAPE of the harness object (e.g. an `expect(h).toEqual({ cb, sent })` rather than on a field), the widened union Harness would break it — should the implementer then split into two narrow factories (harnessClientRecordingSends / harnessClientRecordingReconnects) instead of one union?",
+      "blocks_execution": false,
+      "owner": "implementer"
+    }
+  ]
+}

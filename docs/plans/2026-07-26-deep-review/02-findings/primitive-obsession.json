@@ -1,0 +1,1179 @@
+{
+  "artifact": "02-findings/primitive-obsession",
+  "schema_version": "3",
+  "baseline_sha": "3708648",
+  "produced_by": {
+    "phase": "2",
+    "lane": "primitive-obsession",
+    "model": "claude-opus-5",
+    "effort": "medium",
+    "nonce_verified": true,
+    "run_id": "wf_4a1f9f8f-73d"
+  },
+  "dropped": [
+    {
+      "candidate": "core-voice-fx.json: \"voice/engine.ts keeps per-node state in four raw Map<string,\u2026>; a missed clear() on one map on setShow would be invisible.\" \u2014 the headline lead handed to this lens.",
+      "why_rejected": "The leak does not exist. All four maps ARE cleared, on four consecutive lines: packages/core/src/voice/engine.ts:278-281 clears seqIndex, lastPick, latched and mixMemberSnapshots together, and 287-289 clears ccTable, oscTable and noteTable. Adjacency makes a future omission conspicuous rather than invisible. The `${statePrefix}#${nodeId}` key scheme is real (engine.ts:176, 516) but the prefix is built in exactly one place and never parsed back, so it is an opaque composite key, not a stringly-typed domain concept with call-site invariants. Rejected as a finding; the genuine defect in this file's neighbourhood is the GraphNode god-record the keys point into, which I report separately."
+    },
+    {
+      "candidate": "core-geom.json: \"canvas/sampler.ts UvMode as a bare string union alongside SamplerConfig \u2014 two overlapping projection vocabularies invite silent no-op fallthroughs on a typo.\"",
+      "why_rejected": "`UvMode` at packages/core/src/canvas/sampler.ts:23 is already a proper string-literal union `'cylindrical' | 'planar-xy' | 'planar-xz' | 'planar-yz'`, not a bare string. Its two consumers (`uvFor` at :34 and `renderUvField` at :53) both take the union type, so a typo is a compile error. The sampler.ts:3 header explicitly frames UvMode as the LEGACY projection kept for compatibility with the newer field path \u2014 a documented, typed, deliberate overlap. No invariant is enforced at a call site."
+    },
+    {
+      "candidate": "server.json: \"pin-gate.ts \u2014 pin, host token, remote address and url all as raw strings threaded through 14 exports; an argument-order mistake between pin and token would typecheck.\"",
+      "why_rejected": "The specific hazard claimed does not exist. No exported function takes both a pin and a token positionally: `isTrustedHost` (pin-gate.ts:195) takes a single named-object `HostTrustInput { remoteAddress, headers, url, hostToken }`, `admitDecision` (:212) takes `(url, gate: PinGate, trustedLocal: boolean)` where the gate is an interface and the boolean is distinct, and the PIN never travels beside the token in any signature. Argument-order confusion is structurally impossible here. I did find a real defect in this file \u2014 the asymmetric enforcement of the two credentials' invariants \u2014 but it is a different mechanism from the one the map guessed, so I report it on its own terms rather than crediting the hunch."
+    },
+    {
+      "candidate": "workers/error-ingest/src/validate.ts \u2014 unmapped unit, checked for stringly-typed wire fields.",
+      "why_rejected": "This is the counter-example the rest of the repo should copy. Every wire field passes through a typed narrowing helper (`str`/`num` at validate.ts:18-26) that throws `ValidationError` on a type or length violation, the caps are named exported constants (MAX_REPORTS_PER_BATCH, MAX_MESSAGE_LEN, MAX_STR at :8-12), and `safeKeySegment` (:88) enforces a separate invariant for the key path. The trust boundary is explicit in the header comment. No finding."
+    },
+    {
+      "candidate": "apps/desktop/src-tauri/src/native_midi.rs:30 `pub struct HostToken(Arc<Mutex<String>>)` \u2014 considered rejecting because a newtype is the textbook fix for primitive obsession.",
+      "why_rejected": "Rejected as a rejection \u2014 kept as a finding instead. The newtype's shape is right but it carries no invariant: `HostToken::new` (:33) and `HostToken::set` (:44) both accept `impl Into<String>` unconditionally, so it is a bare String wearing a type name. That is why I folded it into the host-token finding rather than treating the newtype's existence as evidence the concept is modelled."
+    },
+    {
+      "candidate": "web-rest.json: \"apps/web/src/lib/ui/* Props types \u2014 the tuple {onChange, disabled, ariaLabel, class} recurs in ~a dozen primitives with no shared base type.\"",
+      "why_rejected": "Out of scope for this lens as specified. The four fields recur together but share no invariant between them \u2014 `disabled` does not constrain `ariaLabel`, `onChange` does not constrain `class`. My criterion requires a domain concept with >=2 invariants enforced at call sites; this is repetition without a concept, i.e. a data-clump. Real, worth a shared `ControlProps` base, but it belongs to the data-clumps lens and reporting it here would be padding."
+    }
+  ],
+  "items": [
+    {
+      "id": "primitive-obsession-0001",
+      "dedup_key": "8ec77d436bf15f66",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "critical",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 246,
+          "end_line": 358,
+          "symbol": "GraphNode"
+        },
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 200,
+          "end_line": 240,
+          "symbol": "CanonicalGraphNodeKind"
+        }
+      ],
+      "claim": "`NodeKind` is a 19-member union (types.ts:200-219) but `GraphNode` (types.ts:246-358) is a single flat interface with 40 top-level fields, 27 of them optional, grouped only by `// play` / `// modifier` / `// lfo source` / `// cc source` comments. Nothing ties a field to the kind it belongs to. Worse, 13 fields are REQUIRED on every node regardless of kind \u2014 `mode: PlayMode`, `scope: Scope`, `effectId: string`, `presetId: string`, `busId: string`, `params`, `env`, `noRepeat`, `on: SwitchOn`, `valueMode`, `threshold`, `invert`, `bands`, `p`, `delayMode`, `ms`, `division` \u2014 so a `trigger` root node must carry an `effectId: ''`, a `p: 0` chance and a `division`. Every consumer therefore re-derives, by hand and unchecked, which fields a kind actually uses: `graph-integrity.ts:65` hand-fills the defaults, `trigger-flow-projection.ts:28` hand-lists per-kind signature fields, each `*NodeInspector.svelte` hand-picks its subset, `persistence.ts:190` filters migrations on `node.scope !== 'hoop'`. A discriminated union would make every one of those exhaustive.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/types.ts:246-358 read in full; `sed -n '246,358p' | grep -E '^  [a-zA-Z]+\\??:' | wc -l` returned 40 top-level fields, of which `grep -oE '^\\s+[a-zA-Z]+\\?:'` counted 27 optional.",
+          "command": "sed -n '246,358p' packages/core/src/voice/types.ts | grep -E '^  [a-zA-Z]+\\??:'"
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/types.ts:199-240 \u2014 LegacyGraphNodeKind ('play') plus CanonicalGraphNodeKind with 19 members: trigger, effect, all, random, sequence, switch, chance, toggle, delay, modifier, mix, scope, output, envelope, lfo, cc, note, osc, randomMod."
+        },
+        {
+          "kind": "grep",
+          "detail": "Downstream hand-maintained per-kind dispatch confirmed at apps/web/src/lib/app/views/trigger-flow-projection.ts:30-52 (switch over 9 of the 19 kinds, `default: return base`) and packages/core/src/voice/graph-integrity.ts:65 (literal default fill including `division: '1/8'`)."
+        }
+      ],
+      "proposed_fix": "Split GraphNode into a discriminated union keyed on `kind`: a `GraphNodeBase { id; kind; x; y }` plus per-kind payload interfaces (PlayNode, DelayNode, LfoNode, CcNode, ScopeNode, MixNode, SwitchNode, \u2026). Every per-kind switch in the codebase then becomes exhaustive under `strict`, and adding a 20th kind produces compile errors at each site that must handle it instead of a silent default branch. Do this as a mechanical type-level split first (payload fields keep their names), leaving persistence shapes untouched, then tighten hydrate to narrow on read.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 19,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds compile-time exhaustiveness; removes no runtime guard, validation, fallback or error branch. Hydrate's existing defaulting stays."
+      },
+      "fix_size_loc": 400,
+      "blast_radius": {
+        "files_touched": 40,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Introduce the union in packages/core/src/voice/types.ts alongside the existing flat interface.",
+          "Run `pnpm typecheck` and count the sites that fail to narrow \u2014 each is a place the flat record was hiding a kind assumption.",
+          "Add a 20th dummy kind to the union and confirm the compiler flags trigger-flow-projection.ts, graph-integrity.ts and every inspector, rather than silently defaulting."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0002",
+      "dedup_key": "28c975288699d076",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/delay.ts",
+          "start_line": 38,
+          "end_line": 58,
+          "symbol": "computeDelayMs"
+        },
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 350,
+          "end_line": 352,
+          "symbol": "GraphNode.division"
+        },
+        {
+          "path": "packages/core/src/voice/lfo.ts",
+          "start_line": 38,
+          "end_line": 39,
+          "symbol": "LfoSettings.division"
+        }
+      ],
+      "claim": "`DELAY_DIVISIONS` and `DelayDivision` are declared and exported at delay.ts:9-21 \u2014 the domain type exists. But `computeDelayMs(mode, ms, division: string, bpm)` takes bare `string` (delay.ts:42), `GraphNode.division` is `string` (types.ts:352), and `LfoSettings.division` is `string` (lfo.ts:39) even though its own doc says \"one of `DELAY_DIVISIONS`\". The resolver strips prefixes with `.replace()` and falls through to `else base = quarter` for anything unrecognised (delay.ts:48-52), so `'1/32'`, `'1/8T'`, `'1/2'` or a capitalisation slip all become a quarter note with no error, no lint and no test failure. Two invariants live at call sites and neither is enforced: membership in the 9-value set, and the prefix grammar (`dotted-`/`triplet-` + base). The failure is a musical timing bug \u2014 the least likely kind to be noticed in a unit test and the most damaging live.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/delay.ts:9-21 defines `DELAY_DIVISIONS` as const and `export type DelayDivision = (typeof DELAY_DIVISIONS)[number]`; delay.ts:42 then declares the parameter as `division: string` and delay.ts:52 comments `// '1/4' or any unknown \u2192 quarter note`."
+        },
+        {
+          "kind": "grep",
+          "detail": "Call sites keep the primitive: eval-graph.ts:558 `computeDelayMs(node.delayMode ?? 'time', node.ms ?? 0, node.division ?? '1/8', ctx.bpm)`; lfo.ts:57 `computeDelayMs('beats', 0, s.division, bpm)`.",
+          "command": "grep -rn 'division' packages/core/src/voice/*.ts | grep -v test"
+        }
+      ],
+      "proposed_fix": "Change the three declarations to `DelayDivision`: `computeDelayMs(mode, ms, division: DelayDivision, bpm)`, `GraphNode.division: DelayDivision`, `LfoSettings.division: DelayDivision`. Add a `parseDelayDivision(v: unknown): DelayDivision` that the persistence/hydrate boundary uses to coerce untrusted stored values (falling back to '1/4' explicitly and loudly at the one boundary that owns untrusted input), then make the resolver a total `Record<DelayDivision, number>` lookup with no `else` branch.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Replaces the `else base = quarter` silent fallback inside computeDelayMs with a total lookup, moving the fallback to a single explicit parse boundary. Net safety improves but a fallback branch is relocated, so flag it."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Retype the three declarations to DelayDivision and run `pnpm typecheck`; every site that cannot prove membership is a real unvalidated path.",
+          "Assert `computeDelayMs('beats', 0, '1/32', 120)` currently returns 500 (the quarter) rather than an eighth-of-that \u2014 proving the silent misinterpretation.",
+          "After the fix, confirm the persistence boundary is the only place a non-member string can enter."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0003",
+      "dedup_key": "7bf510f0961690ff",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/scope.ts",
+          "start_line": 41,
+          "end_line": 60,
+          "symbol": "parseHoopTarget"
+        },
+        {
+          "path": "packages/core/src/voice/scope.ts",
+          "start_line": 87,
+          "end_line": 91,
+          "symbol": "fromPixelSet"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/persistence.ts",
+          "start_line": 168,
+          "end_line": 182,
+          "symbol": "shiftHoopTargetTo1Based"
+        }
+      ],
+      "claim": "`GraphNode.targetId` (types.ts:274-281) encodes a structured domain value \u2014 a drum plus a set of 1-based hoop indices \u2014 as `\"<drumId>#<hoop>[,<hoop>]\"`. The structured type it should be already exists in the same file: `HoopTarget` / `PixelSet` (scope.ts:62-91), which the resolver immediately decodes into and re-encodes out of. Two costs are visible in the code. (a) `parseHoopTarget` needs THREE behaviour flags \u2014 `sourceDrumOnNoHash`, `emptyFallback: 'first'|'sentinel'|none`, `sort` \u2014 because the same string means different things to different callers; the string is genuinely ambiguous and each caller injects its own disambiguation policy. (b) The 0-based\u21921-based hoop cutover could not be a type change, so it became a STRING-REWRITE migration duplicated across persistence.ts:171 and clipdoc.ts:334, gated on `node.scope !== 'hoop'` \u2014 a filter that is a second, independent hand-maintained invariant. Additionally the encoding has no escaping: a drumId containing `#` or `,` silently produces the wrong target, unlike patch-graph.ts:54-62 which defensively rejoins its middle segments.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/scope.ts:41-60 \u2014 parseHoopTarget(targetId, sourceDrumId, {sourceDrumOnNoHash, emptyFallback, sort}); scope.ts:65-69 calls it with sourceDrumOnNoHash:false/emptyFallback:'sentinel'/sort:true while apps/web/.../scope-inspector.ts:25 calls it with a different option set."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/scope.ts:90 re-encodes: `{ scope: 'hoop', targetId: `${set.drumId}#${set.hoopIndices.join(',')}` }` \u2014 decode/encode round-trip through the string on every intersection."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/persistence.ts:156-197 \u2014 the whole B6/A1 migration block exists purely to rewrite these strings; migrateGraphHoopTargets gates on `node.scope !== 'hoop' || !node.targetId.includes('#')`."
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -rn targetId` across packages+apps reports 272 matches in 38 files \u2014 the primitive has spread wide.",
+          "command": "grep -rn \"targetId\" --include=*.ts --include=*.svelte packages apps | grep -v node_modules"
+        }
+      ],
+      "proposed_fix": "Promote `ScopeTarget` to a discriminated union carrying structure rather than a string: `{ scope: 'kit' } | { scope: 'drum'; drumId: string } | { scope: 'hoop'; drumId: string; hoopIndices: number[] }`. Keep the string form strictly as a persistence codec (`encodeScopeTarget` / `decodeScopeTarget`) applied once at load/save, so parseHoopTarget's three policy flags collapse: callers that today differ only in how they read an ambiguous string get an unambiguous value instead. Future index-base changes then become a codec version bump, not a rewrite scattered across persistence.ts and clipdoc.ts.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 2,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "parseHoopTarget's `emptyFallback` and `sourceDrumOnNoHash` fallbacks would be replaced by explicit union arms; those are fallback branches, so the change must be reviewed by a human even though it is a net tightening."
+      },
+      "fix_size_loc": 250,
+      "blast_radius": {
+        "files_touched": 20,
+        "packages_touched": [
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Add a test that a drum named `a#b` round-trips through fromPixelSet\u2192parseHoopTarget; it should fail today.",
+          "Introduce the union and run `pnpm typecheck` to enumerate every string-shaped call site.",
+          "Confirm the existing routing-integrity and persistence.hoop-migration suites still pass with the codec applied only at the persistence boundary."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0004",
+      "dedup_key": "61d567507fada684",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/voice/types.ts",
+          "start_line": 102,
+          "end_line": 116,
+          "symbol": "ParamSpec"
+        },
+        {
+          "path": "packages/core/src/effects/types.ts",
+          "start_line": 6,
+          "end_line": 21,
+          "symbol": "ParamSpec"
+        },
+        {
+          "path": "packages/core/src/voice/modulation.ts",
+          "start_line": 209,
+          "end_line": 223,
+          "symbol": "ModParamSpec"
+        }
+      ],
+      "claim": "`packages/core/src/voice/types.ts:102` and `packages/core/src/effects/types.ts:9` both export an interface named `ParamSpec` describing an effect parameter, with identical key/label/min/max/step/unit/options/default fields. The ONLY difference is the value-type discriminant: `kind: 'number'|'bool'|'enum'|'color'` versus `type: ParamType`. Rather than reconciling them, `modulation.ts:215` introduces `ModParamSpec { key: string; kind?: string; type?: string; min?; max? }` \u2014 both discriminants optional and both widened to bare `string` \u2014 with `isNumberSpec = (s) => (s.kind ?? s.type) === 'number'`. That helper is then duplicated verbatim at modulation-graph.ts:84. Consequences: a spec with NEITHER field satisfies the type; a typo'd `'numbre'` typechecks; a spec carrying both fields with different values resolves to `kind` with no diagnostic; and any non-number spec is silently dropped by `applyModulations` (modulation.ts:288, 295 \u2014 `if (!spec || !isNumberSpec(spec)) continue`) so a mapping onto a mis-tagged param is a completely invisible no-op. The web layer pays the same tax at fixtures.ts:90 `mapParamSpec`, a hand-written total conversion between the two shapes.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/types.ts:102-116 uses `kind:`; packages/core/src/effects/types.ts:9-21 uses `type: ParamType`. Field lists otherwise identical."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/modulation.ts:209-223 \u2014 the ModParamSpec doc explicitly says it exists to satisfy \"BOTH core param-spec shapes\"; both discriminants are `?: string`."
+        },
+        {
+          "kind": "grep",
+          "detail": "`isNumberSpec` defined twice with the same body: modulation.ts:223 and modulation-graph.ts:84.",
+          "command": "grep -rn 'ParamSpec' --include=*.ts --include=*.svelte packages apps | grep -v node_modules"
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/modulation.ts:286-300 \u2014 applyModulations skips silently on `!spec || !isNumberSpec(spec)` in both passes; no warning path exists."
+        }
+      ],
+      "proposed_fix": "Pick one discriminant name and one `ParamSpec`. The effects/types.ts shape (`type: ParamType`) is the one the public protocol already re-exports (packages/protocol/src/index.ts:102 pins `EffectSpec['paramSpec']` to core's ParamSpec), so rename voice's `kind` to `type` and delete voice/types.ts:102's interface in favour of a re-export. `ModParamSpec` and both copies of `isNumberSpec` then collapse to `spec.type === 'number'` on the real union, and fixtures.ts:mapParamSpec becomes the identity. If a genuine domain distinction exists between the two, name them differently (`VoiceParamSpec` / `GeneratorParamSpec`) so the collision cannot recur.",
+      "interface_delta": {
+        "exported_symbols_removed": 3,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Removes no guard. `applyModulations`'s skip-non-number branch stays; it merely becomes decidable rather than string-sniffed."
+      },
+      "fix_size_loc": 120,
+      "blast_radius": {
+        "files_touched": 15,
+        "packages_touched": [
+          "packages/core",
+          "packages/protocol",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Feed `applyModulations` a spec with `kind: 'numbre'` and confirm the mapping is silently dropped (no throw, no log) \u2014 the current failure mode.",
+          "Unify the discriminant, run `pnpm typecheck`, and confirm packages/protocol/src/protocol.test.ts's `expectTypeOf<EffectSpec['paramSpec']>().toEqualTypeOf<ParamSpec[]>()` still holds.",
+          "Confirm fixtures.map-param-spec.test.ts either collapses to identity or exposes a real remaining difference."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0005",
+      "dedup_key": "a32bfc9c9aff810e",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ui/Slider.svelte",
+          "start_line": 40,
+          "end_line": 71,
+          "symbol": "inferUnit"
+        },
+        {
+          "path": "apps/web/src/lib/ui/Slider.svelte",
+          "start_line": 160,
+          "end_line": 162,
+          "symbol": "unit span"
+        }
+      ],
+      "claim": "A displayed measurement is the pair (numeric value, unit). Slider throws the pair away and tries to recover the unit by string-diffing the caller's `format(value)` output against its own `formatNumber` output (Slider.svelte:44, 65-71). When neither `startsWith` nor `endsWith` matches, `inferUnit` returns the ENTIRE formatted string as the \"unit\" (line 70), which is then rendered in a `<span class=\"unit\">` next to the number input (lines 160-162). This fires on a shipped call: `apps/web/src/lib/app/docks/inspectors/ContainerNodeInspector.svelte:75` passes `format={pct}` where `pct = (v) => `${Math.round(v*100)}%`` (node-options.ts:116) with `min=0 max=1 step=0.01`. At value 0.5 the input shows \"0.5\" and the unit span shows \"50%\" \u2014 the control renders \"0.5 50%\". Same for ContainerNodeInspector.svelte:92/113/140, ModulationParamsSection.svelte:110 and EnvelopeEditor.svelte:67, i.e. every percentage slider in the app. The clean source of truth already exists one layer up: `ParamSpec.unit?: string`.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ui/Slider.svelte:40-44 \u2014 `inputValue = formatNumber(normalizedValue, precision)`, `display = format ? format(normalizedValue) : inputValue`, `unit = inferUnit(display, inputValue)`; lines 65-71 show the four-branch string diff ending in `return formatted`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ui/Slider.svelte:160-162 renders `{#if unit}<span class=\"unit\">{unit}</span>{/if}` alongside the numeric input, so the fallback string is displayed verbatim."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/node-options.ts:116 `export const pct = (v: number): string => `${Math.round(v * 100)}%``; consumed at ContainerNodeInspector.svelte:75 with step=0.01 \u2192 inputValue '0.5', display '50%', neither prefix nor suffix match \u2192 unit = '50%'."
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -rn 'format={' apps/web/src/lib --include=*.svelte` lists 15 call sites; the `pct`-style ones (0..1 domain, percent display) all hit the fallback branch, as does `format={(v) => enveloped ? 'swept' : ...}` at ModifierNodeInspector.svelte:74."
+        }
+      ],
+      "proposed_fix": "Delete `inferUnit`. Give Slider an explicit `unit?: string` prop and let callers pass the unit they already have (`ParamSpec.unit` at PlayNodeInspector/ModifierNodeInspector; a literal '%' / 'ms' / '\u00b0' elsewhere), with `format` responsible only for the numeric text. That makes the value/unit pair a declared contract instead of something guessed from a rendered string, and removes 7 lines of heuristics from a design-system primitive. Add the `unit` prop to the styleguide entry in the same change per AGENTS.md.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "inferUnit is a display heuristic, not a guard, validation, retry or error branch."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Render Slider with min=0 max=1 step=0.01 value=0.5 format={(v)=>`${Math.round(v*100)}%`} and read the DOM: expect input value '0.5' and .unit text '50%' \u2014 the duplicated display.",
+          "Capture the Gate-threshold row of ContainerNodeInspector with `pnpm ui-shot` to confirm the doubled readout is visible in the running app.",
+          "After adding the explicit `unit` prop, re-shoot and confirm a single readout."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0006",
+      "dedup_key": "bc828f1652d1b564",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/io/src/interfaces.ts",
+          "start_line": 5,
+          "end_line": 7,
+          "symbol": "PixelOutput.send"
+        },
+        {
+          "path": "packages/io/src/sacn.ts",
+          "start_line": 13,
+          "end_line": 15,
+          "symbol": "sacnMulticastAddress"
+        },
+        {
+          "path": "packages/core/src/geometry/dmx-map.ts",
+          "start_line": 100,
+          "end_line": 136,
+          "symbol": "buildDmxMap"
+        }
+      ],
+      "claim": "`PixelOutput.send(universe: number, ...)` (interfaces.ts:6) is the single seam behind which BOTH Art-Net and sACN sit, but the two protocols have different validity domains for that number: Art-Net universe is a 15-bit field where 0 is legal (artnet.ts:23-24 masks to `& 0x7f` on the MSB), while E1.31 universes run 1..63999 and 0 is reserved. The DMX map is 0-based \u2014 dmx-map.ts:102 seeds the cursor at 0 unless an output declares `startUniverse`, and dmx-map.test.ts:87 pins `[0, 1]` as the expected output. When `settings.protocol === 'sacn'` (output-manager.ts:54) that same 0 flows straight into `encodeE131(universe & 0xffff, \u2026)` (sacn.ts:49) and into `sacnMulticastAddress(0)` \u2192 `\"239.255.0.0\"` (sacn.ts:14), which is not a valid sACN universe group. No conversion, clamp, or validation exists at the seam or in either adapter. The invariants that should live on a `Universe` value object \u2014 protocol-specific range, and the base-offset relationship between Art-Net and sACN numbering \u2014 are enforced nowhere and depend on the operator manually setting `startUniverse: 1` on every output.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/io/src/interfaces.ts:5-7 declares `send(universe: number, channels: Uint8Array): void` as the sole protocol-agnostic seam; artnet.ts:74 and sacn.ts:109 both implement it with no range check."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/sacn.ts:13-15 `sacnMulticastAddress` and sacn.ts:112 `const host = this.opts.host ?? sacnMulticastAddress(universe)` \u2014 universe 0 targets 239.255.0.0."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/geometry/dmx-map.ts:102 `if (output.startUniverse !== undefined) cursor = output.startUniverse * CHANNELS_PER_UNIVERSE;` \u2014 otherwise the cursor starts at 0; dmx-map.test.ts:87 asserts `map.universes.map(u => u.universe)` equals `[0, 1]`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/output-manager.ts:54 `if (settings.protocol === 'sacn')` selects SacnOutput with the same DmxMap \u2014 the protocol choice is made far from the universe numbering."
+        }
+      ],
+      "proposed_fix": "Make the universe a checked domain value rather than a bare number. Either (a) parameterise `PixelOutput` with a protocol-aware universe validator so `SacnOutput.send` rejects/clamps 0 and emits a diagnostic through the existing monitor sink, or (b) preferably, have `buildDmxMap` take the target protocol and produce a protocol-correct base (1-based for sACN), with a `Universe` branded type carrying the range invariant so an Art-Net universe cannot be handed to a sACN transport unconverted. Surface the mismatch in the outputs UI rather than letting a whole show silently multicast to a dead group.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "increases"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds validation; removes none. Both adapters currently have no universe check at all."
+      },
+      "fix_size_loc": 90,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "packages/io",
+          "packages/core",
+          "apps/server"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Assert `sacnMulticastAddress(0) === '239.255.0.0'` and cross-check against E1.31's 239.255.x.y mapping for universes 1..63999 \u2014 0 has no valid group.",
+          "Build a default kit DMX map (no startUniverse) and confirm `map.universes[0].universe === 0`, then confirm output-manager routes it to SacnOutput unchanged when protocol==='sacn'.",
+          "On real hardware or a packet capture, confirm no controller acknowledges the universe-0 sACN stream."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0007",
+      "dedup_key": "379e96881bf542e2",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/desktop/src-tauri/src/native_midi.rs",
+          "start_line": 107,
+          "end_line": 120,
+          "symbol": "post"
+        },
+        {
+          "path": "apps/server/src/pin-gate.ts",
+          "start_line": 136,
+          "end_line": 155,
+          "symbol": "resolveHostToken"
+        },
+        {
+          "path": "apps/desktop/src-tauri/src/native_midi.rs",
+          "start_line": 44,
+          "end_line": 54,
+          "symbol": "HostToken::set"
+        }
+      ],
+      "claim": "The host token is the credential that lets a connection bypass the room PIN (pin-gate.ts:195 `isTrustedHost`). It has at least two invariants: minimum entropy, and being safe to place in a URL query and an HTTP request line. Only the first is enforced, and only on one of three paths. `resolveHostToken` (pin-gate.ts:151) accepts any injected `LEDRUMS_HOST_TOKEN` of length >= 32 with no charset check. The Rust shell then interpolates it raw: `format!(\"POST {path}?hostToken={host_token} HTTP/1.1\\r\\n\u2026\")` (native_midi.rs:111-113) with no percent-encoding, while the Node side reads it back through `new URL(url).searchParams.get('hostToken')` (pin-gate.ts:161), which percent-DECODES. The encode/decode pair is asymmetric: a token containing `+` decodes to a space, `&` truncates it, `%` may decode to a different byte \u2014 the desktop MIDI bridge then fails `safeEqual` and silently 401s with no user-visible cause. The same raw value is spliced into a URL fragment at lib.rs:258 (`http://127.0.0.1:{port}/#hostToken={token}`). Compounding it, `HostToken::set` (native_midi.rs:44-54) accepts any `String` with zero validation and is fed from a regex scrape of the sidecar's stdout (`Host token: ([^\\s]+)`, sidecar_progress.rs:29) \u2014 so the shell's live credential is whatever a log line said, with only \"no whitespace\" as its guarantee. The Rust newtype `HostToken` looks like the right abstraction but carries no invariant at all.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/desktop/src-tauri/src/native_midi.rs:107-120 \u2014 `fn post(port: u16, host_token: &str, path: &str, body: &str)` builds the request line by direct interpolation of host_token; three adjacent `&str` params also make an argument-order swap compile."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:151-155 \u2014 `resolveHostToken` checks only `injected.length >= MIN_HOST_TOKEN_LENGTH` (32); pin-gate.ts:159-166 `hostTokenFromUrl` uses `searchParams.get`, which percent-decodes."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/desktop/src-tauri/src/lib.rs:258 `format!(\"http://127.0.0.1:{port}/#hostToken={token}\")`; lib.rs:458-464 adopts a stdout-scraped token via `host_token.set(&token)`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/desktop/src-tauri/src/native_midi.rs:44-53 \u2014 `set(&self, token: impl Into<String>) -> bool` stores any string; apps/desktop/src-tauri/src/sidecar_progress.rs:29 regex `Host token: ([^\\s]+)` is the only filter."
+        }
+      ],
+      "proposed_fix": "Give the token a constructor that enforces both invariants in both languages: a `HostToken::parse(&str) -> Option<HostToken>` (Rust) and a `parseHostToken(raw: string): HostToken | null` (TS) that require >= 32 chars AND a strict `[0-9a-f]` (or at minimum URL-unreserved) charset \u2014 mint_host_token and generateHostToken already satisfy it. Make `HostToken::set` and `resolveHostToken` reject anything else instead of adopting it, and make the Rust `post` take a `&HostToken` rather than a positional `&str` so it cannot be confused with `path`/`body`. That collapses the encode/decode asymmetry to a non-issue by construction rather than by luck.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Strictly adds validation. The existing MIN_HOST_TOKEN_LENGTH fail-closed behaviour is preserved and extended."
+      },
+      "fix_size_loc": 70,
+      "blast_radius": {
+        "files_touched": 5,
+        "packages_touched": [
+          "apps/desktop",
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Set `LEDRUMS_HOST_TOKEN` to a 40-char value containing `+` and confirm `resolveHostToken` accepts it, then confirm `hostTokenFromUrl('/ws?hostToken=' + token)` returns the value with `+` turned into a space \u2014 proving the encode/decode asymmetry.",
+          "Feed sidecar_progress::parse_host_token a line `Host token: a&b` and confirm HostToken::set adopts it and post() emits a request line whose query is truncated at the ampersand.",
+          "After the fix, confirm both parsers reject those values and the desktop bridge falls back to the minted token rather than authenticating with a corrupted one."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0008",
+      "dedup_key": "acbd72467dfd4665",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/patch-topology.ts",
+          "start_line": 113,
+          "end_line": 117,
+          "symbol": "outputId"
+        },
+        {
+          "path": "apps/web/src/lib/app/patch-graph.ts",
+          "start_line": 64,
+          "end_line": 72,
+          "symbol": "outputNodeId / parseOutputNodeId"
+        },
+        {
+          "path": "apps/web/src/lib/app/patch-topology.ts",
+          "start_line": 261,
+          "end_line": 287,
+          "symbol": "describePatchNode"
+        }
+      ],
+      "claim": "Patch node identity is a stringly-typed grammar `<kind>:<a>[:<b>]` (patch-topology.ts:110) with builders scattered across three modules, and the `output:` prefix is claimed by TWO builders with different payload semantics. `patch-topology.ts:117` builds `output:${index}` from a POSITIONAL index (used at line 217), while `patch-graph.ts:66` builds `OUTPUT_PREFIX + outputId` from an `OutputConfig.id` for round-trip decoding by `parseOutputNodeId` (line 71). Nothing distinguishes the two at the type level or at runtime: `parseOutputNodeId('output:0')` produced by the topology builder returns `\"0\"` as if it were a config id, and conversely `describePatchNode` (patch-topology.ts:282-283) renders any output node's payload as the human-facing number \u2014 so a v2 output node keyed by its config id displays a raw id where the operator expects \"Output 2\". The same duplication exists for other kinds: `drumNodeId` (patch-topology.ts:115) and `drumZoneId` (patch-zones.ts:48) are two independent definitions of the identical string, as are `triggerId` (topology:113) and `triggerNodeId` (zones:50). `describePatchNode`'s `default:` arm (line 285) then classifies any unrecognised prefix as stage `'input'` rather than erroring, so a mismatched encoding surfaces as a wrongly-staged node, never as a failure.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/patch-topology.ts:113-117 \u2014 five id builders including `outputId = (index: number) => `output:${index}``, used at line 217 `const oId = outputId(index)`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/patch-graph.ts:46 `const OUTPUT_PREFIX = 'output:'`; :64-72 `outputNodeId(outputId: string)` / `parseOutputNodeId` round-trip an OutputConfig.id; used at patch-graph.ts:149 `outputNodeId(output.id)`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/patch-topology.ts:282-285 \u2014 `case 'output': return { stage:'output', title: `Output ${a ?? ''}` }` then `default: return { stage: 'input', title: id }`."
+        },
+        {
+          "kind": "grep",
+          "detail": "Duplicate builders confirmed: patch-topology.ts:115 `drumNodeId` vs patch-zones.ts:48 `drumZoneId`; patch-topology.ts:113 `triggerId` vs patch-zones.ts:50 `triggerNodeId` \u2014 same output strings, separate declarations, and patch-zones.ts:42's comment reasons about collisions by hand."
+        }
+      ],
+      "proposed_fix": "Make the node-id grammar one module with one encoder and one total decoder returning a discriminated `PatchNodeRef` union (`{kind:'hoop'; drumId; hoop} | {kind:'output'; outputId} | {kind:'drum'; drumId} | \u2026`). Delete the duplicate builders in patch-zones.ts and settle the `output:` payload on `OutputConfig.id` everywhere, giving describePatchNode the display index from the outputs array rather than from the id string. Replace describePatchNode's `default: stage 'input'` with an explicit `'unknown'` stage so a bad encoding is visible rather than mis-classified.",
+      "interface_delta": {
+        "exported_symbols_removed": 4,
+        "exported_symbols_added": 2,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Changing describePatchNode's `default` arm alters a fallback branch, so this needs human review despite being a tightening."
+      },
+      "fix_size_loc": 150,
+      "blast_radius": {
+        "files_touched": 8,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Assert `parseOutputNodeId(outputId(0)) === '0'` \u2014 the topology-built index decodes as a config id with no complaint.",
+          "Build a kit whose OutputConfig.id is a non-numeric slug and call describePatchNode(outputNodeId(id)); confirm the Inspector title reads `Output <slug>`.",
+          "After unification, confirm patch-topology.test.ts, patch-graph.test.ts and patch-zones.test.ts all pass against the single encoder."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0009",
+      "dedup_key": "576bbe03ab8ca08a",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+          "start_line": 28,
+          "end_line": 57,
+          "symbol": "triggerNodeSignature"
+        },
+        {
+          "path": "apps/web/src/lib/app/views/trigger-flow-projection.ts",
+          "start_line": 97,
+          "end_line": 110,
+          "symbol": "projectTriggerFlowNodes"
+        }
+      ],
+      "claim": "\"Has this node structurally changed?\" is a domain question answered by string concatenation. `triggerNodeSignature` (line 28) builds a `${id}:${kind}:pos=\u2026:mod=\u2026` base and then appends kind-specific fields for exactly 9 of the union's 19 kinds; everything else falls to `default: return base` (line 51). `projectTriggerFlowNodes` (line 102) uses signature equality to REUSE the previous flow-node object verbatim \u2014 so any field not in the signature can never trigger a rebuild of xyflow's measured handle bounds. The correctness of the whole memoisation therefore rests on a human keeping the concatenation in sync with a growing union, with no compiler help: adding a kind, or adding a handle-affecting field to an existing kind (e.g. `ccSource` and `oscAddress` are absent from the `cc` arm at line 40, `bypass` is absent from `modifier` at line 37), produces a stale node rather than an error. This is the R01/GH#80 \"vanishing wire\" class of bug the function's own comment describes it as fixing.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/trigger-flow-projection.ts:30-52 \u2014 switch covers switch/play/modifier/mix/cc/note/osc/randomMod/lfo; `default: return base` at line 51 catches trigger, effect, all, random, sequence, chance, toggle, delay, scope, output, envelope."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/app/views/trigger-flow-projection.ts:101-108 \u2014 `if (prev && cache.nodeSigs.get(fn.id) === sig) return \u2026 prev` reuses the previous object, so a signature miss means no rebuild."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/types.ts:200-219 lists 19 canonical kinds; the `cc` arm omits `ccSource`/`oscAddress` (types.ts:313, 316) and the `modifier` arm omits `bypass` (types.ts:291)."
+        }
+      ],
+      "proposed_fix": "Replace the concatenation with a structural comparison derived from the node itself. Once GraphNode is a discriminated union (see the GraphNode finding), the signature becomes an exhaustive `switch` with no `default`, so the compiler names every kind that must be handled; or better, drop the signature entirely and compare the small set of fields that actually affect xyflow handle identity (kind, modInputs params, mix row edge ids, switch band count) via a typed `handleIdentity(node, graph): string[]` that a test can enumerate per kind. Either way the extension point must be compiler-enforced, not comment-enforced.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 0,
+        "net_interface_change": "neutral"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Memoisation logic only; no guard, retry, timeout, or validation is removed."
+      },
+      "fix_size_loc": 60,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Toggle a `cc` node's `ccSource` from 'midi' to 'osc' and assert triggerNodeSignature is unchanged \u2014 proving the omission.",
+          "Add a hypothetical 20th kind and confirm no compile error is produced by trigger-flow-projection.ts today.",
+          "After the union refactor, remove the `default` arm and confirm typecheck fails until every kind is handled."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0010",
+      "dedup_key": "4121096178fd6177",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "apps/server/src/pin-gate.ts",
+          "start_line": 30,
+          "end_line": 37,
+          "symbol": "createPinGate.check"
+        },
+        {
+          "path": "apps/server/src/pin-gate.ts",
+          "start_line": 81,
+          "end_line": 85,
+          "symbol": "resolvePin"
+        },
+        {
+          "path": "apps/server/src/pin-gate.ts",
+          "start_line": 165,
+          "end_line": 172,
+          "symbol": "safeEqual"
+        }
+      ],
+      "claim": "pin-gate.ts holds two credentials, both typed `string | null`, and enforces their invariants asymmetrically because nothing in the type says they are the same kind of thing. The host token gets a minimum-strength gate (`MIN_HOST_TOKEN_LENGTH`, line 136, fail-closed at line 153) and a constant-time comparison (`safeEqual` via `timingSafeEqual`, lines 165-172, used at line 199). The room PIN \u2014 the credential that actually gates every remote client over a public Cloudflare tunnel \u2014 gets neither: `resolvePin` (line 82) accepts any non-empty `LEDRUMS_PIN` including a single character, and `check` compares with plain `===` (line 35, and again in the mutable gate at line 58), which is not constant-time. A `Secret`/`Credential` value type with `parse` (strength) and `equals` (constant-time) as its only operations would make the two paths identical by construction; as bare strings, the discipline has to be remembered twice and was only remembered once.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:30-37 and 50-64 \u2014 both PinGate implementations use `supplied === pin`, a short-circuiting comparison."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:81-85 \u2014 `resolvePin` returns `env.LEDRUMS_PIN?.trim()` if truthy, with no length or digit check, in contrast to resolveHostToken's `injected.length >= MIN_HOST_TOKEN_LENGTH` at line 152."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:165-172 `safeEqual` exists in the same file and is used only for the host token (line 199), never for the PIN."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/server/src/pin-gate.ts:9-19 header comment establishes the PIN as the sole gate for tunnel-origin (remote) clients, so it is the more exposed of the two credentials."
+        }
+      ],
+      "proposed_fix": "Introduce a single `Credential` value type in pin-gate.ts with `Credential.parse(raw, {minLength})` and `Credential.equals(a, b)` implemented over `timingSafeEqual`, and express both the PIN and the host token as `Credential`. Give the PIN a minimum length (a generated PIN is 6 digits; an explicit LEDRUMS_PIN shorter than that should be rejected loudly at boot rather than silently accepted) and route `PinGate.check` through `Credential.equals`. One type, one place the invariants live, both credentials covered.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a strength check and strengthens a comparison; removes no existing guard. The `pin === null` open-gate branch is preserved unchanged."
+      },
+      "fix_size_loc": 70,
+      "blast_radius": {
+        "files_touched": 3,
+        "packages_touched": [
+          "apps/server"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Confirm `resolvePin({ LEDRUMS_PIN: '1' }, true)` returns '1' \u2014 a one-character room PIN is accepted today.",
+          "Confirm createPinGate('123456').check uses `===` by reading lines 30-37, and contrast with isTrustedHost's safeEqual at line 199.",
+          "After the change, confirm pin-gate.test.ts still passes and add a case asserting a sub-minimum LEDRUMS_PIN is rejected at boot."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0011",
+      "dedup_key": "06cd979e792b8332",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "major",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/seed.ts",
+          "start_line": 13,
+          "end_line": 13,
+          "symbol": "padKey"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/hydrate.ts",
+          "start_line": 86,
+          "end_line": 95,
+          "symbol": "unionTriggerSources"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store/ids.ts",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "nid"
+        }
+      ],
+      "claim": "Two semantically different identifier kinds live in one `string`-keyed graph record: pad-bound graphs keyed `\"${drumId}:${zone}\"` (seed.ts:13) and authored graphs keyed `\"graph-<n>\"` (ids.ts:11-17, GENERATED_ID_RE). A pad graph is a built-in, permanently bound to a physical pad and given an implicit `drum` trigger source; an authored graph is user-created, freely renamable and deletable. Nothing at the type level distinguishes them, so every operation that must behave differently for the two has to re-derive the distinction. The only discriminator in the codebase is an ad-hoc membership set rebuilt from PADS at hydrate.ts:477 (`const padKeys = new Set(pads.map(padKey))`) and threaded as a parameter to hydrate.ts:89 \u2014 a set that is correct only as long as the caller remembers to build and pass it. Any other consumer of `store.graphs` (delete, rename, clone, section assignment) sees only `string` and must guess. A pad whose zone were ever named such that its key matched the generated grammar, or a kit rename that changes drumId, silently reclassifies a graph.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store/seed.ts:13 `export const padKey = (p: Pad): string => `${p.drumId}:${p.zone}``; seed.ts:43 keys the graph record by it."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store/ids.ts:11 `GENERATED_ID_RE = /^(show|graph|song|section|n|e|preset)-(\\d+)$/` and :16 `nid` \u2014 authored graphs are `graph-<n>`. store.svelte.ts:352 documents both grammars sharing the record."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store/hydrate.ts:86-95 \u2014 the discriminator is `padKeys.has(key) ? withDrumSource(graph, key) : graph`, with padKeys built at hydrate.ts:477 and passed in at :490."
+        },
+        {
+          "kind": "grep",
+          "detail": "`grep -n \"includes(':')|startsWith('graph-')|isPadKey\"` across store.svelte.ts and store/*.ts returns no structural discriminator \u2014 only the hydrate Set.",
+          "command": "grep -n \"includes(':')\\|startsWith('graph-')\\|isPadKey\\|padKeys\" apps/web/src/lib/trigger-lab/store.svelte.ts apps/web/src/lib/trigger-lab/store/*.ts"
+        }
+      ],
+      "proposed_fix": "Introduce a `GraphKey = { kind: 'pad'; drumId: string; zone: string } | { kind: 'authored'; id: string }` with encode/decode at the persistence boundary, or at minimum branded types `PadGraphKey` / `AuthoredGraphKey` so a function that must only accept one cannot be handed the other. Then the pad/authored distinction is available at every call site without a Set threaded through hydrate, and operations that are illegal on a pad graph (delete, rename) become type errors rather than runtime surprises.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 3,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds discrimination; removes no guard. The hydrate Set-based source injection is replaced by an equivalent structural check."
+      },
+      "fix_size_loc": 120,
+      "blast_radius": {
+        "files_touched": 10,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Enumerate every consumer of `store.graphs` keys and check which ones behave differently for pad vs authored graphs; count how many re-derive the distinction rather than receiving it.",
+          "Confirm hydrate.ts is the only place padKeys is computed, making every other consumer blind.",
+          "Introduce branded keys and run `pnpm typecheck` to surface the sites that were conflating the two."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0012",
+      "dedup_key": "aac8e1b779a454d4",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/core/src/engine/modulation.ts",
+          "start_line": 7,
+          "end_line": 21,
+          "symbol": "lfoValue"
+        },
+        {
+          "path": "packages/core/src/voice/lfo.ts",
+          "start_line": 21,
+          "end_line": 22,
+          "symbol": "LFO_WAVEFORMS"
+        },
+        {
+          "path": "packages/core/src/model/project-schema.ts",
+          "start_line": 13,
+          "end_line": 13,
+          "symbol": "lfo shape enum"
+        }
+      ],
+      "claim": "The same domain concept \u2014 an LFO waveform \u2014 is declared three times with two different vocabularies. `voice/lfo.ts:21` exports `LFO_WAVEFORMS = ['sine','triangle','saw','square','sample-hold']` and a derived `LfoWaveform` type. `model/project-schema.ts:13` declares a zod enum with only the first four. `engine/modulation.ts:8` declares `lfoValue(shape: string, \u2026)` \u2014 bare `string`, four cases, `case 'sine': default:` (line 19) so ANY unrecognised shape silently renders a sine. The Phase-1 hunch that the call site is untyped is a partial false positive: `sourceValue` (modulation.ts:38) passes the zod-validated `source.shape`, so today nothing bad reaches it. But `lfoValue` is an exported core function whose signature invites the failure, and the vocabularies have already diverged \u2014 `sample-hold` exists in the voice path and not in the clip path, so the two LFO subsystems cannot be reconciled or shared without discovering that by hand.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/core/src/engine/modulation.ts:8-21 \u2014 `export function lfoValue(shape: string, \u2026)` with `case 'sine': default: return 0.5 + 0.5*Math.sin(...)`."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/voice/lfo.ts:21-22 \u2014 `LFO_WAVEFORMS = ['sine','triangle','saw','square','sample-hold'] as const; export type LfoWaveform = \u2026` \u2014 five members, and a separate sampler implementation."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/core/src/model/project-schema.ts:13 \u2014 `shape: z.enum(['sine','triangle','square','saw']).default('sine')` \u2014 four members, so the call at modulation.ts:38 is in fact type-safe today."
+        }
+      ],
+      "proposed_fix": "Declare the waveform vocabulary once. Export a single `LfoWaveform` union from voice/lfo.ts (or a shared vocabulary module), derive the zod enum from it (`z.enum(LFO_WAVEFORMS)`), and retype `lfoValue(shape: LfoWaveform, \u2026)` with an exhaustive switch and no `default` arm \u2014 which will immediately surface whether the legacy clip path needs a `sample-hold` case or whether that path should be deleted. That decision is exactly the one the current bare `string` is hiding.",
+      "interface_delta": {
+        "exported_symbols_removed": 1,
+        "exported_symbols_added": 0,
+        "net_interface_change": "reduces"
+      },
+      "removes_failure_path": {
+        "value": true,
+        "justification": "Removes lfoValue's `default:` fallback to sine. The fallback is currently unreachable given the zod enum, but it is a fallback branch, so this must not auto-fix."
+      },
+      "fix_size_loc": 30,
+      "blast_radius": {
+        "files_touched": 4,
+        "packages_touched": [
+          "packages/core"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Confirm `lfoValue('sample-hold', t, 1)` returns a sine value today rather than an S&H value.",
+          "Derive the zod enum from LFO_WAVEFORMS and run `pnpm typecheck`; a compile error at modulation.ts:38 proves the vocabularies had diverged.",
+          "Run packages/core/src/engine/modulation.test.ts to confirm the four existing shapes are unaffected."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0013",
+      "dedup_key": "87e42ab1b9e7cbfe",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "medium",
+      "locations": [
+        {
+          "path": "apps/web/src/lib/ws/client.ts",
+          "start_line": 40,
+          "end_line": 52,
+          "symbol": "WSCallbacks.onState"
+        },
+        {
+          "path": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+          "start_line": 1322,
+          "end_line": 1322,
+          "symbol": "onState handler"
+        }
+      ],
+      "claim": "The server's whole state push is delivered as nine positional arguments (`project, model, effects, projects, output, showLibrary, songLibrary, tunnel, osc`) rather than one named `ServerState` object. Three consecutive slots are nullable (`ShowLibraryBlob | null`, `SongLibraryBlob | null`, `TunnelInfo | null`) and two consecutive slots are arrays (`EffectSpec[]`, `string[]`) \u2014 so at the call sites that pass empties or nulls, which is every test (store.song-library.test.ts:250 `(project, MODEL, [], [], OUTPUT, null, blob, null, OSC_LISTEN)`, store.pin.test.ts:81), the type system provides no positional protection at all. Adding a tenth field, or reordering two nullable slots, is a silent mis-wire. The sole real consumer (store.svelte.ts:1322) already destructures by renaming and discards two with `_effects, _projects`, which is the tell that a record was wanted.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/ws/client.ts:40-52 \u2014 nine-parameter callback signature; slots 6-8 are all `X | null`."
+        },
+        {
+          "kind": "grep",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:1322 `onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc) => {` \u2014 the only production consumer, ignoring two positions.",
+          "command": "grep -rn 'onState' apps/web/src --include=*.ts --include=*.svelte"
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.song-library.test.ts:250 and store.pin.test.ts:81 both invoke it with bare `[], [], \u2026, null, \u2026, null` literals, where TypeScript's inference offers no positional discrimination."
+        }
+      ],
+      "proposed_fix": "Change the callback to `onState?: (state: ServerState) => void` where `ServerState` is a named interface with the nine fields. The wire message already has named keys on the server side, so the change is confined to the client's decode and the single store handler plus two tests; every future field becomes an additive named property that cannot be mis-positioned.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 1,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Pure shape change to a callback signature; no guard, validation or fallback is touched."
+      },
+      "fix_size_loc": 50,
+      "blast_radius": {
+        "files_touched": 6,
+        "packages_touched": [
+          "apps/web"
+        ],
+        "touches_core": false
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": true,
+        "steps": [
+          "Swap the `showLibrary` and `songLibrary` arguments at store.song-library.test.ts:250 and check whether `pnpm typecheck` catches it (it does, since the blob types differ) \u2014 then try swapping the two `null` positions, which it does not.",
+          "Convert to the record form and confirm `pnpm typecheck` plus the ws and store suites pass.",
+          "Confirm the server-side emit site is unchanged (the wire message already carries named keys)."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    },
+    {
+      "id": "primitive-obsession-0014",
+      "dedup_key": "1375207f14d110fb",
+      "lens": "primitive-obsession",
+      "criterion": "domain-concept-with-invariants",
+      "criterion_is_mechanical": false,
+      "severity": "minor",
+      "confidence": "high",
+      "locations": [
+        {
+          "path": "packages/io/src/interfaces.ts",
+          "start_line": 13,
+          "end_line": 16,
+          "symbol": "OscEvent.address"
+        },
+        {
+          "path": "packages/io/src/osc.ts",
+          "start_line": 205,
+          "end_line": 215,
+          "symbol": "OscInputStatus.address"
+        }
+      ],
+      "claim": "Within one small package, `address: string` denotes two different domain concepts with different invariants. `OscEvent.address` (interfaces.ts:14) is an OSC path \u2014 must begin with '/', is case-sensitive, and is the key into the engine's live `oscTable` (voice/engine.ts:357, modulation.ts:92) where an exact-match miss reads as a silent 0. `OscInputStatus.address` (osc.ts:211) is an IPv4 bind interface, defaulting to `'0.0.0.0'`. Both are produced and consumed inside osc.ts, and both are emitted through the same class. The path invariant is enforced only at the parse boundary (osc.ts:81 comment: \"OSC 1.0 addresses always begin with '/'\"); anywhere else in the system \u2014 authored `GraphNode.oscAddress` (types.ts:316), which is only `.trim()`ed at store.svelte.ts:3594 \u2014 a user can save an address with no leading slash and the modulation source will read a permanent, silent 0 with no UI feedback. The protocol layer got this right (`OscListenInfo.hosts`, protocol/index.ts:300), which shows the naming collision is confined and cheap to fix.",
+      "evidence": [
+        {
+          "kind": "read",
+          "detail": "packages/io/src/interfaces.ts:13-16 `interface OscEvent { address: string; args: OscArg[] }` versus packages/io/src/osc.ts:205-215 `interface OscInputStatus { state; port; address: string; \u2026 }` with the doc \"The bound interface \u2014 `0.0.0.0` when listening on all of them.\""
+        },
+        {
+          "kind": "read",
+          "detail": "packages/io/src/osc.ts:81 comment establishes the leading-'/' invariant at parse time only; osc.ts:248 emits the network `address` from `this.socket.address()`."
+        },
+        {
+          "kind": "read",
+          "detail": "apps/web/src/lib/trigger-lab/store.svelte.ts:3594 `node.oscAddress = address.trim();` \u2014 the only normalisation applied to an authored OSC path; no leading-slash check. packages/core/src/voice/modulation.ts:92-95 `sampleOsc` returns `table.get(address) ?? 0` \u2014 an exact-match miss is indistinguishable from a real 0."
+        },
+        {
+          "kind": "read",
+          "detail": "packages/protocol/src/index.ts:293-303 names the network side `hosts: string[]`, avoiding the collision at the wire boundary."
+        }
+      ],
+      "proposed_fix": "Rename `OscInputStatus.address` to `boundHost` (matching the protocol layer's `hosts`) so `address` unambiguously means an OSC path throughout. Then introduce `OscAddress` as a branded string with a `parseOscAddress` that requires a leading '/', and apply it at the one place untrusted input enters \u2014 the store's `setOscAddress` (store.svelte.ts:3594) \u2014 surfacing an inline validation message instead of letting the operator save a source that can only ever read 0.",
+      "interface_delta": {
+        "exported_symbols_removed": 0,
+        "exported_symbols_added": 2,
+        "net_interface_change": "unknown"
+      },
+      "removes_failure_path": {
+        "value": false,
+        "justification": "Adds a validation at an authoring boundary; removes no existing guard. sampleOsc's neutral-0 fallback is deliberate and stays."
+      },
+      "fix_size_loc": 40,
+      "blast_radius": {
+        "files_touched": 5,
+        "packages_touched": [
+          "packages/io",
+          "packages/core",
+          "apps/web"
+        ],
+        "touches_core": true
+      },
+      "verification_plan": {
+        "mechanically_verifiable": true,
+        "requires_mutation": false,
+        "steps": [
+          "Set a `cc` node's ccSource to 'osc' and oscAddress to `fader1` (no slash); send `/fader1` over UDP and confirm the modulation stays at 0 with no error anywhere.",
+          "Confirm packages/io/src/osc.ts:81 rejects a slash-less address at parse time, so the table can never contain the slash-less key.",
+          "After the rename, confirm `grep -rn 'OscInputStatus' apps packages` compiles with no remaining `\\.address` on the network side."
+        ]
+      },
+      "initiative_id": null,
+      "provenance": {
+        "phase": "2",
+        "lane": "primitive-obsession",
+        "model": "claude-opus-5",
+        "effort": "medium",
+        "run_id": "wf_4a1f9f8f-73d",
+        "nonce_verified": true
+      }
+    }
+  ]
+}

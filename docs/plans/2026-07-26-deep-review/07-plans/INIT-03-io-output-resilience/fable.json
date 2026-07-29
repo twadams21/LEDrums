@@ -1,0 +1,131 @@
+{
+  "initiative_id": "INIT-03-io-output-resilience",
+  "variant": "fable",
+  "provenance": {
+    "phase": "7",
+    "lane": "plan-author-fable",
+    "model": "claude-fable-5",
+    "effort": "medium"
+  },
+  "summary": "Subtraction-first closure of the silent-output failure: instead of bolting a status channel onto two adapters that each carry their own copy of the same socket lifecycle, DELETE the duplicated lifecycle (create/error-swallow/bind-ready/gated-send/close-try-catch appears twice, ~60 lines) into one package-private BoundUdpSocket that already has two real callers, and fix the swallow exactly once there. Status reuses the proven OscInputStatus shape (latched, replayed on subscribe, emitted only on change — latching IS the rate limiter, so no rate-limiter abstraction is added). The Universe branded type proposed by primitive-obsession-0006 is rejected as a one-caller abstraction: the sACN 1..63999 invariant is enforced as a ~12-line diagnostic at the single seam where protocol meets universe numbering (OutputManager.applySettings), warn-only so wire behaviour is unchanged. The ipToInt/intToIp duplicate is resolved by deleting the server copies and exporting the existing io ones — no new module. Every step deletes more than it adds except the status seam itself, where addition is the point of the initiative; the dedup pays for it.",
+  "findings_addressed": [
+    "resilience-hole-0003",
+    "primitive-obsession-0006",
+    "duplicated-code-0012"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Delete server ipToInt/intToIp copies; export the existing io pair",
+      "intent": "duplicated-code-0012. Two byte-identical private ipToInt/intToIp pairs exist. Direction: io is the lower package and apps/server already depends on @ledrums/io. Mark the existing `ipToInt`/`intToIp` in packages/io/src/pixlite/sweep.ts as `export`, confirm they surface through packages/io/src/pixlite/index.ts and packages/io/src/index.ts re-export chains (add the named re-export only if `export *` does not already carry them). Then DELETE the private copies at apps/server/src/network-adapters.ts:32-46 and import the two symbols from '@ledrums/io'. No new file: creating net/ipv4.ts (the finding's proposal) is rejected — moving code is not deleting it, and sweep.ts already owns the only surviving copy.",
+      "files": [
+        "packages/io/src/pixlite/sweep.ts",
+        "packages/io/src/pixlite/index.ts",
+        "apps/server/src/network-adapters.ts"
+      ],
+      "risk": "low",
+      "verification": "grep -rn 'function ipToInt' apps packages --include=*.ts returns exactly one definition (packages/io/src/pixlite/sweep.ts). pnpm gates green — network-adapters tests cover CIDR/mask math (prefixFromMask, recommendControllerIp) and sweep tests cover expandCidr, both of which exercise the shared pair from both callers."
+    },
+    {
+      "id": "S2",
+      "title": "Collapse both adapters' socket lifecycle into one BoundUdpSocket; surface status once",
+      "intent": "resilience-hole-0003. ArtNetOutput and SacnOutput each privately duplicate the whole dgram lifecycle: createSocket, `socket.on('error', () => {})` (artnet.ts:49, sacn.ts:95), bind-callback-only `ready` flag (artnet.ts:58/72, sacn.ts:103/112), send gated silently on ready, close() wrapped in an identical try/catch. Create package-private packages/io/src/udp.ts exporting (from the file, NOT from the io index) class BoundUdpSocket: owns the socket, the bind (with optional iface address and optional reuseAddr/multicast setup hook), a latched PixelOutputStatus, and send(buf, port, host) whose completion-callback errors feed the same latch. Status shape mirrors OscInputStatus exactly: { state: 'ready' | 'error'; error?: string; code?: string }, latched, replayed to late subscribers, EMITTED ONLY WHEN IT DIFFERS from the latch — so a 44Hz stream of identical EADDRNOTAVAIL send failures produces one emission, and no separate rate-limiter type exists. Rewrite ArtNetOutput and SacnOutput as thin encode+delegate shells: both `on('error', () => {})` swallows deleted, both private ready flags deleted, both close() try/catch bodies deleted, both send() early-returns preserved in the one shared gate (a send before bind settles is still dropped — same behaviour, now with a visible latched status when the drop is caused by a bind failure). Add `PixelOutputStatus` and required method `onStatus(handler: (s: PixelOutputStatus) => void): void` to PixelOutput in packages/io/src/interfaces.ts (required, not optional — an optional status channel is a fail-open guard). Encoders encodeArtDmx/encodeE131/sacnMulticastAddress are untouched pure functions. Fire-and-forget is preserved by construction: status emission happens inside dgram callbacks, never on the send() call path, and send() never blocks or throws.",
+      "files": [
+        "packages/io/src/udp.ts",
+        "packages/io/src/interfaces.ts",
+        "packages/io/src/artnet.ts",
+        "packages/io/src/sacn.ts",
+        "packages/io/src/artnet.test.ts",
+        "packages/io/src/sacn.test.ts"
+      ],
+      "risk": "high",
+      "verification": "New io tests with real loopback sockets (mirroring the existing OSC status tests): (1) ArtNetOutput with iface '203.0.113.1' (TEST-NET, on no local NIC) emits onStatus state 'error' with code EADDRNOTAVAIL — at baseline nothing is emitted; (2) a subscriber attached AFTER the failure receives the latched error immediately (replay); (3) golden-packet parity: bind a receiver on 127.0.0.1, arm ArtNetOutput at it, await ready status, send(3, data), assert received bytes byte-equal encodeArtDmx(3, seq, data); same for SacnOutput with explicit host — proves the refactor changed no wire bytes; (4) repeated send failures emit exactly one status (latch dedup). Plus: grep \"on('error', () => {})\" packages/io/src returns nothing. pnpm gates green.",
+      "reverses": "Single commit; `git revert` restores the two self-contained adapter files, interfaces.ts, and deletes udp.ts — no other module imports udp.ts (it is not exported from the io index), and at this step no caller yet uses onStatus, so the revert is mechanically clean."
+    },
+    {
+      "id": "S3",
+      "title": "OutputManager subscribes to transport status and routes it to the Monitor bus",
+      "intent": "resilience-hole-0003, caller half. In OutputManager.applySettings (apps/server/src/output-manager.ts:99-123), immediately after `this.output = this.factory(settings)`, subscribe `this.output.onStatus(...)`: on state 'error' set this.lastError to `${code ?? 'error'}: ${error}` and call the EXISTING private monitorError('Output transport error', settings, detail) — the wiring OscInput already gets in main.ts, but done here because OutputManager already owns onMonitor and lastError, so zero new plumbing in main.ts and zero new exported surface. On state 'ready' after a previous error, clear this.lastError and emit one 'Output transport recovered' monitor row. Guard emissions from a torn-down transport by capturing the adapter instance in the closure and no-oping when `this.output !== instance`. No reconnect logic is added: today a signature change or re-arm recreates the transport, and that behaviour is kept verbatim (auto-rebind is new behaviour — Trent's call, see open questions). lastError already flows to the UI through status() -> OutputStatus.lastError, so the dark-rig diagnosis reaches the Monitor stream, the terminal (via the monitor bus), and the outputs UI with no UI change.",
+      "files": [
+        "apps/server/src/output-manager.ts",
+        "apps/server/src/output-manager.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "Unit tests with a fake OutputFactory returning a stub PixelOutput whose onStatus handler is captured: (1) stub emits {state:'error', code:'EADDRNOTAVAIL'} -> status().lastError contains 'EADDRNOTAVAIL' AND the onMonitor sink received a type:'error' event with source 'server/output' — at baseline neither happens; (2) stub emits ready after error -> lastError null and one 'recovered' row; (3) applySettings with a new signature tears down the old transport, and a late status emit from the OLD stub instance produces no monitor event and does not clobber lastError. pnpm gates green."
+    },
+    {
+      "id": "S4",
+      "title": "sACN universe-range diagnostic at the arm seam — no Universe type",
+      "intent": "primitive-obsession-0006, subtracted to its live invariant. The branded Universe type / protocol-aware buildDmxMap proposed by the finding is a one-seam abstraction touching packages/core and changing wire numbering — rejected here (and escalated, see open questions). The invariant that actually darkens a rig is checkable in ~12 lines at the ONE place protocol and universe numbering meet: in OutputManager.applySettings, when settings.protocol === 'sacn' and settings.state is 'armed' or 'dry-run', scan dmxMap.universes for any patch.universe < 1 or > 63999 and emit one monitorError row: \"sACN universes N..M out of E1.31 range 1..63999 — universe 0 multicasts to a dead group (239.255.0.0); set startUniverse: 1 on the output\". Warn-only: packets still transmit exactly as at baseline (parity-preserving), coalesced via the existing settingsMonitorSignature mechanism so it fires once per settings/map change, not per frame. Art-Net universe 0 stays legal and silent. Nothing exported, nothing added to core, no clamp, no conversion.",
+      "files": [
+        "apps/server/src/output-manager.ts",
+        "apps/server/src/output-manager.test.ts"
+      ],
+      "risk": "low",
+      "verification": "Unit tests: (1) protocol 'sacn' + dmxMap containing universe 0 -> exactly one type:'error' monitor event naming universe 0 and startUniverse, and sendFrame still transmits the same packets as baseline (packetsSent unchanged vs a control run); (2) protocol 'artnet' + universe 0 -> no event; (3) sacn + universes [1,2] -> no event; (4) repeated sendFrame calls emit no additional rows. pnpm gates green."
+    }
+  ],
+  "sequencing": [
+    ["S1"],
+    ["S2"],
+    ["S3"],
+    ["S4"]
+  ],
+  "interface_deltas": [
+    {
+      "at": "packages/io (index surface)",
+      "removed": [],
+      "added": [
+        "PixelOutputStatus",
+        "PixelOutput.onStatus",
+        "ipToInt",
+        "intToIp"
+      ],
+      "net_interface_change": "increases",
+      "note": "Deliberate. onStatus/PixelOutputStatus is the initiative's entire point — the output path today has NO observability surface at all, and the shape is a reuse of the proven OscInputStatus pattern, not a new idea. ipToInt/intToIp: +2 exports buys -4 private declarations and -15 duplicated lines; BoundUdpSocket is deliberately NOT exported from the io index (package-private, two internal callers), so the shared lifecycle adds zero public surface."
+    },
+    {
+      "at": "apps/server/src/network-adapters.ts",
+      "removed": [],
+      "added": [],
+      "net_interface_change": "neutral",
+      "note": "Two private function declarations deleted; public surface (listNetworkAdapters, recommendControllerIp, NicInfo, NicEnumerator) unchanged."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "checks": [
+      "pnpm gates — full suite green at every wave boundary, compared against the Phase 0 baseline count (2968 tests at 3708648)",
+      "Golden-packet loopback tests (S2): received UDP bytes on 127.0.0.1 byte-equal encodeArtDmx/encodeE131 output before and after the lifecycle collapse — the encoders are untouched pure functions and the loopback test proves the delegation path changed no wire bytes",
+      "grep \"on('error', () => {})\" packages/io/src -> zero matches after S2 (the swallow is provably gone, not relocated)",
+      "grep -rn 'function ipToInt' apps packages --include=*.ts -> exactly one definition after S1",
+      "S4 control test: with protocol 'sacn' and universe 0, packetsSent and the sent packet sequence are identical to a pre-change control run — the diagnostic is provably warn-only"
+    ],
+    "known_gaps": "The adapters' socket paths have ZERO behavioural coverage at baseline — only the pure encoders are tested — so a green suite proves nothing about bind/send/multicast behaviour there. Evidence that replaces it: (a) the new loopback integration tests in S2 use real dgram sockets on 127.0.0.1, covering bind, ready-gating, send bytes, and error latching against a real kernel; (b) what loopback cannot reach — setMulticastInterface/TTL on a real NIC, setBroadcast on the wire, and the actual ethernet-to-wifi iface-stale scenario — needs a one-time manual rig check before sign-off: arm output against the PixLite and confirm pixels; then switch the machine off the configured iface and confirm the Monitor shows the transport-error row within one frame interval (this exact check is the initiative's acceptance scenario). (c) Timing semantics are preserved by construction, not by test: sends before the bind settles are dropped at baseline and are still dropped after — the change is that a bind FAILURE now latches a visible status instead of dropping forever in silence.",
+    "baseline_reference": "Phase 0 baseline: sha 3708648, 2968 tests green under pnpm gates; fix batches 1-3 (dead-code, residue, kit-mirror removal) already landed on top."
+  },
+  "rollback_strategy": "Four waves, four commits, strictly reverse-revertable: S4 and S3 are server-local and revert independently; S2 reverts as one commit (udp.ts is imported only by artnet.ts/sacn.ts, and onStatus's only consumer is S3, which must be reverted first); S1 reverts by restoring the two private server helpers. No schema, persistence, or data migration is touched anywhere in the initiative, and no feature flag is needed because every step is either behaviour-preserving (S1, S2 wire bytes, S4 warn-only) or purely additive observability (S3).",
+  "estimated_loc": 340,
+  "dependencies_on_other_initiatives": [],
+  "open_questions": [
+    {
+      "question": "Should a sACN map containing universe 0 hard-block arming (refuse + error) instead of warn-only? Warn-only preserves parity, but an operator who arms a 0-based map onto sACN is transmitting to a dead multicast group either way — blocking is arguably the honest failure. Product call: does a show ever deliberately run sACN unicast (opts.host set) with universe 0, where packets DO arrive?",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should buildDmxMap become protocol-aware (auto 1-based numbering for sACN), as primitive-obsession-0006 proposed? That changes wire universe numbers for any existing sACN rig config without startUniverse set, touches packages/core, and re-patches controllers — a domain/hardware call, deliberately excluded from this plan.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "After a latched transport error (e.g. stale iface), should OutputManager auto-recreate the transport on a timer, or is the current contract — operator re-arms or changes settings after seeing the new error surface — the intended recovery path? This plan keeps the current contract; auto-rebind is new behaviour with flap risk on a bouncing NIC.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Should the S3 'Output transport recovered' row also broadcast a fresh stateMessage to connected UIs immediately (as the OSC onStatus handler in main.ts does), or is the next periodic status broadcast soon enough for the outputs indicator? Decidable from how often stateMessage already flows.",
+      "blocks_execution": false,
+      "owner": "implementer"
+    }
+  ]
+}
