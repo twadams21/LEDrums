@@ -258,3 +258,79 @@ describe('WSClient — room PIN (S3)', () => {
     expect(FakeWS.instances.length).toBe(2);
   });
 });
+
+describe('liveness watchdog (S5)', () => {
+  function makeWatchdogClient(opts: { watchdogMs?: number } = {}) {
+    FakeWS.instances = [];
+    const factory = (url: string): WSLike => new FakeWS(url);
+    const client = new WSClient({
+      url: 'ws://test/ws',
+      factory,
+      baseDelayMs: 10,
+      maxDelayMs: 100,
+      watchdogMs: opts.watchdogMs ?? 5000,
+      now: () => Date.now(), // fake-timer clock
+    });
+    return { client, factory };
+  }
+
+  it('force-closes a silent socket after the window and arms a reconnect', () => {
+    const { client } = makeWatchdogClient();
+    const states: string[] = [];
+    client.on({ onConnection: (st) => states.push(st) });
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    // No messages at all: two windows guarantee one stale check has fired.
+    vi.advanceTimersByTime(10_001);
+    expect(ws.readyState).toBe(3); // close() was called on the socket
+    expect(states).toContain('closed');
+    expect(client.reconnectAttempt).toBeGreaterThan(0); // reconnect armed
+  });
+
+  it('never closes a socket that keeps delivering messages', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(2500); // window/2
+      ws.emitText(JSON.stringify({ t: 'projects', names: [] }));
+    }
+    expect(ws.readyState).toBe(1); // still open after 10 windows
+    expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it('is disarmed after a 4401 auth close — no timer fires while auth-paused', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    ws.closeWith(WS_CLOSE_INVALID_PIN);
+    expect(client.hasAuthError).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(60_000);
+    expect(FakeWS.instances.length).toBe(1); // no watchdog-driven redial either
+  });
+
+  it('close() clears the watchdog timer', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    FakeWS.instances[0]!.open();
+    client.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('background-tab clamping cannot manufacture a false positive: staleness is message age, not tick count', () => {
+    const { client } = makeWatchdogClient();
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    // Simulate a hidden tab whose interval was clamped: nothing runs until t+19500,
+    // when a message arrives; the (late) interval callback then fires at t+20000.
+    vi.setSystemTime(Date.now() + 19_500);
+    ws.emitText(JSON.stringify({ t: 'projects', names: [] }));
+    vi.advanceTimersByTime(500); // the delayed interval callback fires once here
+    expect(ws.readyState).toBe(1); // NOT closed — last message is only 500ms old
+  });
+});
