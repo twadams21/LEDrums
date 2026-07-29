@@ -12,7 +12,6 @@ import { parsePatchNodeId } from './patch-node-id';
 export type PatchStage =
   | 'input'
   | 'trigger'
-  | 'zone'
   | 'drum'
   | 'hoop'
   | 'output'

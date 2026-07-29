@@ -37,8 +37,8 @@ describe('hoop node id ⇄ HoopRef (both 1-based, A1)', () => {
     expect(parsePatchNodeId('hoop:tom1:4')).toEqual({ kind: 'hoop', drumId: 'tom1', hoop: 4 });
   });
   it('rejects non-hoop / malformed ids', () => {
-    expect(parsePatchNodeId('output:1').kind).not.toBe('hoop');
-    expect(parsePatchNodeId('controller').kind).not.toBe('hoop');
+    expect(parsePatchNodeId('output:1')).toEqual({ kind: 'output', outputId: '1' });
+    expect(parsePatchNodeId('controller')).toEqual({ kind: 'controller' });
     expect(parsePatchNodeId('hoop:snare')).toEqual({ kind: 'unknown', id: 'hoop:snare' });
   });
 });
@@ -354,7 +354,7 @@ describe('rebuildOutputHalf (S02 self-heal): re-derive the output half from auth
 describe('live read-out (S5b): pixelRanges over routingFromGraph keys spans by output node id', () => {
   /* The Inspector's first/last-pixel read-out derives from the LIVE graph routing, not from a
      re-chunked snapshot of committed outputs. routingFromGraph keeps each output id equal to the
-     selected node's id (via parseOutputNodeId), so pixelRanges' byOutput resolves for a
+     selected node's id (via parsePatchNodeId), so pixelRanges' byOutput resolves for a
      just-added palette output ('output:new-N') and stays correct after an un-remounted drag. */
   const px = (): number => 10; // every hoop = 10px
 
@@ -371,7 +371,7 @@ describe('live read-out (S5b): pixelRanges over routingFromGraph keys spans by o
       edge('output:new-1', 'controller'),
     ];
     const { byOutput } = pixelRanges(routingFromGraph(nodes, edges), px);
-    expect(byOutput['new-1']).toEqual({ first: 0, last: 19 }); // output id = parseOutputNodeId('output:new-1')
+    expect(byOutput['new-1']).toEqual({ first: 0, last: 19 }); // output id = parsePatchNodeId('output:new-1').outputId
   });
 
   it('updates output spans after a drag-reorder of the OUTPUTS (y-order swap, no remount)', () => {

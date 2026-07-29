@@ -16,7 +16,6 @@
   import NodeCard from './NodeCard.svelte';
   import Activity from '@lucide/svelte/icons/activity';
   import Zap from '@lucide/svelte/icons/zap';
-  import Target from '@lucide/svelte/icons/target';
   import Disc3 from '@lucide/svelte/icons/disc-3';
   import Circle from '@lucide/svelte/icons/circle';
   import Plug from '@lucide/svelte/icons/plug';
@@ -35,7 +34,6 @@
   const STAGE_ICON: Record<PatchStage, Component> = {
     input: Activity,
     trigger: Zap,
-    zone: Target,
     drum: Disc3,
     hoop: Circle,
     output: Plug,

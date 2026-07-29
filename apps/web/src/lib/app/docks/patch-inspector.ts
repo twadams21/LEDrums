@@ -140,7 +140,10 @@ export type OutputProtocol = 'artnet' | 'sacn';
     protocol-domain: Art-Net universes are 0-based (cursor snap `startUniverse * 512`, dense
     stream starts on universe 0), sACN universes are 1-based (universe 0 is spec-invalid — the
     snap is `(startUniverse - 1) * 512` and the dense stream starts on universe 1). `startChannel`
-    stays the GLOBAL, 0-based DMX channel of the output's first pixel (core's `PixelDmx.channel`);
+    is the table's channel in a PROTOCOL-REBASED space: equal to core's `PixelDmx.channel` under
+    Art-Net, but core's value MINUS 512 under sACN (the web cursor seeds at 0 either way). Only
+    the derived universe read-outs and `fmtCh` (both invariant under that offset) are display-true —
+    never treat `startChannel` as the absolute wire channel;
     `startUniverse` is the PROTOCOL-DOMAIN universe of that channel (`floor(startChannel / 512)`,
     +1 under sACN), `null` for an unwired output (no pixels, no start).
 
