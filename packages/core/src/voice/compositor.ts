@@ -25,7 +25,7 @@ import type { UnresolvedIdSink } from './diagnostics';
 import { applyModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
-import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
+import { HOOP_TARGET_POLICIES, parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
 import type { MixInput, ParamValues, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
@@ -34,7 +34,7 @@ const num = (v: number | boolean | string | undefined, d: number): number => (ty
     `#`-qualified id with no valid indices falls back to `[1]` (hoops are 1-based, A1).
     Indices keep authoring order. */
 function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | null): HoopTarget {
-  return parseScopeTarget(targetId, sourceDrumId, { sourceDrumOnNoHash: true, emptyFallback: 'first', sort: false });
+  return parseScopeTarget(targetId, sourceDrumId, HOOP_TARGET_POLICIES.compositor);
 }
 
 /**

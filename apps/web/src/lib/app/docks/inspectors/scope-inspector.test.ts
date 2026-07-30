@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { voice } from '@ledrums/core';
 import { makeNode } from '../../../trigger-lab/sim.graph-compilation';
 import {
   describeSelection,
@@ -21,6 +22,23 @@ describe('scope inspector helpers', () => {
     expect(hoopLabel(4)).toBe('Hoop 4');
     expect(encodeHoopTarget('snare', [3, 1, 3])).toBe('snare#1,3'); // dedup + drop <1, sort
     expect(parseHoopTarget('snare#1,3', 'kick')).toEqual({ drumId: 'snare', hoops: [1, 3] });
+  });
+
+  // INIT-06 S2: the encoder is core's, re-exported — not a second copy that can drift from the
+  // decoder it has to round-trip with. Identity, not just equal output, is the assertion.
+  it('re-exports core encodeHoopTarget rather than keeping a local copy', () => {
+    expect(encodeHoopTarget).toBe(voice.encodeHoopTarget);
+  });
+
+  // The inspector's decode policy is the NAMED preset, not an anonymous literal at this call site.
+  it('decodes under the named inspector policy (explicit "none" stays empty, sorted)', () => {
+    expect(voice.HOOP_TARGET_POLICIES.inspector).toEqual({
+      sourceDrumOnNoHash: true,
+      emptyFallback: 'none',
+      sort: true,
+    });
+    expect(parseHoopTarget('snare#3,1', 'kick')).toEqual({ drumId: 'snare', hoops: [1, 3] }); // sorted
+    expect(parseHoopTarget('snare#x', 'kick')).toEqual({ drumId: 'snare', hoops: [] }); // not [1]
   });
 
   it('derives whole-kit, whole-drum, and multi-hoop selections from node scope', () => {

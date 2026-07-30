@@ -26,9 +26,48 @@ export interface ParseHoopTargetOptions {
   sort: boolean;
 }
 
+/**
+ * The three parse policies that actually exist in the tree, named instead of respelled as
+ * anonymous literals at each call site. Every production caller of {@link parseHoopTarget}
+ * passes one of these; `scope.parse.test.ts` imports them so the suite fails if a preset
+ * drifts from what a caller expects.
+ *
+ * - `compositor` — the render path (compositor.ts). Never render nothing: a hash-less id is the
+ *   source drum's hoop 1 and an unparseable index portion falls back to `[1]`. Authoring order.
+ * - `inspector` — the scope inspector UI. Same hash-less short-circuit, but an explicit "none"
+ *   selection stays empty rather than snapping back to hoop 1, and hoops display sorted.
+ * - `resolver` — scope intersection ({@link intersectScopeTargets}). Parses the drum id out of a
+ *   hash-less string rather than assuming the source drum, and uses the unmatchable `[-1]`
+ *   sentinel so an invalid hoop ref intersects to nothing instead of silently lighting hoop 1.
+ */
+export const HOOP_TARGET_POLICIES = {
+  compositor: { sourceDrumOnNoHash: true, emptyFallback: 'first', sort: false },
+  inspector: { sourceDrumOnNoHash: true, emptyFallback: 'none', sort: true },
+  resolver: { sourceDrumOnNoHash: false, emptyFallback: 'sentinel', sort: true },
+} as const satisfies Record<string, ParseHoopTargetOptions>;
+
 export interface HoopTarget {
   drumId: string | null;
   hoopIndices: number[];
+}
+
+/** The ONE place the `"<drumId>#<h>[,<h>]"` wire form is spelled. Deliberately does NOT
+    normalise its indices — {@link fromPixelSet} must be able to emit the `[-1]` sentinel that
+    the `resolver` policy produces, which {@link encodeHoopTarget}'s `>= 1` filter would erase
+    into a bare `"drum#"`. Callers that want normalisation go through encodeHoopTarget.
+    KNOWN LIMITATION: the separators are unescaped, so a drumId containing '#' or ',' does not
+    round-trip — pinned by the `documents-unescaped-drumid-limitation` characterisation test in
+    scope.parse.test.ts rather than fixed here (it would need an escaping decision). */
+function formatHoopTarget(drumId: string, indices: readonly number[]): string {
+  return `${drumId}#${indices.join(',')}`;
+}
+
+/** Encode an authoring hoop selection to a scope target id: deduped, sorted, indices < 1
+    dropped (hoops are 1-based per A1). The hoop-target ENCODER now lives in exactly one
+    module — the scope inspector re-exports this rather than keeping its own copy. */
+export function encodeHoopTarget(drumId: string, hoops: readonly number[]): string {
+  const normalized = [...new Set(hoops)].filter((v) => Number.isInteger(v) && v >= 1).sort((a, b) => a - b);
+  return formatHoopTarget(drumId, normalized);
 }
 
 /**
@@ -62,11 +101,7 @@ export function parseHoopTarget(
 function toPixelSet(target: ScopeTarget, sourceDrumId: string): PixelSet {
   if (target.scope === 'kit') return { kind: 'kit' };
   if (target.scope === 'drum') return { kind: 'drum', drumId: target.targetId || sourceDrumId };
-  const { drumId, hoopIndices } = parseHoopTarget(target.targetId, sourceDrumId, {
-    sourceDrumOnNoHash: false,
-    emptyFallback: 'sentinel',
-    sort: true,
-  });
+  const { drumId, hoopIndices } = parseHoopTarget(target.targetId, sourceDrumId, HOOP_TARGET_POLICIES.resolver);
   return { kind: 'hoop', drumId: drumId ?? sourceDrumId, hoopIndices };
 }
 
@@ -87,7 +122,9 @@ function intersectPixelSets(a: PixelSet, b: PixelSet): PixelSet | null {
 function fromPixelSet(set: PixelSet): ScopeTarget {
   if (set.kind === 'kit') return { scope: 'kit' };
   if (set.kind === 'drum') return { scope: 'drum', targetId: set.drumId };
-  return { scope: 'hoop', targetId: `${set.drumId}#${set.hoopIndices.join(',')}` };
+  // NON-normalising on purpose: hoopIndices here can be the resolver policy's `[-1]` sentinel,
+  // which encodeHoopTarget would filter away into a bare `"drum#"`. See formatHoopTarget.
+  return { scope: 'hoop', targetId: formatHoopTarget(set.drumId, set.hoopIndices) };
 }
 
 /** Strictly intersect a current route scope with another Scope node / Output scope.
