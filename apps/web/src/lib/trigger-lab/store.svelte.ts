@@ -374,12 +374,12 @@ export class TriggerLab {
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
 
   // --- setlist (songs → sections → flat ordered graph lists) ---------------
-  // `songs` / `songRefs` / `activeSongId` are owned by {@link library} (R23) — see the
-  // delegators alongside its field. The section-arrangement concern (the active-section
-  // pointer, the clipboard, the sections/activeSection deriveds, and section CRUD) is owned
-  // by {@link arrangement} (R24, store split 5/5), which is PUBLIC (INIT-02 S6): callers
-  // reach it as `store.arrangement.*` — the store no longer forwards any of it. The store
-  // supplies the active-song reads and the `songs` rune swap through the injected host.
+  // `songs` / `songRefs` / `activeSongId` are owned by {@link library} (R23). The
+  // section-arrangement concern (the active-section pointer, the clipboard, the
+  // sections/activeSection deriveds, and section CRUD) is owned by {@link arrangement}
+  // (R24, store split 5/5). Both collaborators are PUBLIC (INIT-02 S6/S10): callers reach
+  // them as `store.arrangement.*` / `store.library.*` and the store forwards NEITHER. The
+  // store supplies the active-song reads and the `songs` rune swap through the injected host.
   readonly arrangement = new SectionsController({
     isViewer: () => this.isViewer,
     activeSong: () => this.library.activeSong,
@@ -409,7 +409,7 @@ export class TriggerLab {
 
   // Shows / setlist / song-library state (showLibrary, activeShowId, songs, songRefs, activeSongId,
   // songLibrary) + its deriveds/CRUD/sync/persistence are owned by {@link library} (R23, store split
-  // 4/5). The store delegates its public surface via the accessors below.
+  // 4/5), reached directly as `store.library.*`.
 
   // Transient engine truth, adopted from the link — never computed locally (INIT-01 Decision 3).
   /** The engine's transport clock, from `stats.engine.timeMs`. 0 while the link is down. */
@@ -475,10 +475,10 @@ export class TriggerLab {
   });
   /** Shows / setlist / song-library (R23, store split 4/5) — the multi-show document library, the
       setlist songs, the canonical song pool, their resolved runtime view, and the server-library
-      cold-load/write-through sync, extracted into {@link ShowsController}. The store delegates its
-      public surface to this via the accessors + forwarders below, and supplies the authored-state
-      swap machinery, the graph model, the section-arrangement boundary (R24), and the WS link
-      through the injected host. */
+      cold-load/write-through sync, extracted into {@link ShowsController}. PUBLIC as
+      `store.library` (INIT-02 S10) — callers reach it directly, the store forwards nothing.
+      The store supplies the authored-state swap machinery, the graph model, the
+      section-arrangement boundary (R24), and the WS link through the injected host. */
   readonly library = new ShowsController({
     graphs: () => this.graphs,
     graphNames: () => this.graphNames,
@@ -500,125 +500,6 @@ export class TriggerLab {
     send: (msg) => this.client.send(msg),
   } satisfies ShowsControllerHost);
 
-  // --- shows / setlist / song-library state delegators (R23) — owned by library ---------------
-  /** Which show is live — its `authored` is what the authored runes mirror. */
-  get activeShowId(): string {
-    return this.library.activeShowId;
-  }
-  set activeShowId(id: string) {
-    this.library.activeShowId = id;
-  }
-  /** authored arrangement: songs, each with sections that hold a FLAT ordered list of graph KEYS. */
-  get songs(): Song[] {
-    return this.library.songs;
-  }
-  set songs(v: Song[]) {
-    this.library.songs = v;
-  }
-  /** Library-song references (S41): ids into {@link songLibrary} the active show resolves in. */
-  get songRefs(): string[] {
-    return this.library.songRefs;
-  }
-  set songRefs(v: string[]) {
-    this.library.songRefs = v;
-  }
-  /** which song the Sections view + Songs rail show. */
-  get activeSongId(): string {
-    return this.library.activeSongId;
-  }
-  set activeSongId(id: string) {
-    this.library.activeSongId = id;
-  }
-  /** The canonical song pool shows reference (S40) — a second server-authoritative library. */
-  get songLibrary(): SongLibrary {
-    return this.library.songLibrary;
-  }
-  set songLibrary(v: SongLibrary) {
-    this.library.songLibrary = v;
-  }
-  /** The show list for the browser UI — `{ id, name }` in insertion order. */
-  get shows(): { id: string; name: string }[] {
-    return this.library.shows;
-  }
-  /** The active show (id + name + its cached authored). null only before construction completes. */
-  get activeShow(): Show | null {
-    return this.library.activeShow;
-  }
-  /** The active song over the RESOLVED song list (local + referenced) — falls back to the first. */
-  get activeSong(): Song | null {
-    return this.library.activeSong;
-  }
-  /** The active show with its library references materialized in (S42). */
-  get resolvedView() {
-    return this.library.resolvedView;
-  }
-  /** The materialized song list (local + referenced) — the setlist the Songs rail + engine read. */
-  get resolvedSongs(): Song[] {
-    return this.library.resolvedSongs;
-  }
-  /** The song pool as id+name+usedBy for the library UI (delete-guard surface). */
-  get songLibraryList(): { id: string; name: string; usedBy: { id: string; name: string }[] }[] {
-    return this.library.songLibraryList;
-  }
-
-  // --- shows / setlist / song-library forwarders (R23) — thin, API-preserving ------------------
-  newShow(name?: string): string {
-    return this.library.newShow(name);
-  }
-  openShow(id: string): void {
-    this.library.openShow(id);
-  }
-  saveShow(): void {
-    this.library.saveShow();
-  }
-  saveShowAs(name: string): string {
-    return this.library.saveShowAs(name);
-  }
-  renameShow(id: string, name: string): void {
-    this.library.renameShow(id, name);
-  }
-  deleteShow(id: string): void {
-    this.library.deleteShow(id);
-  }
-  closeShow(): void {
-    this.library.closeShow();
-  }
-  exportSongToLibrary(songId: string): string | null {
-    return this.library.exportSongToLibrary(songId);
-  }
-  importSongReference(librarySongId: string): void {
-    this.library.importSongReference(librarySongId);
-  }
-  removeSongReference(librarySongId: string): void {
-    this.library.removeSongReference(librarySongId);
-  }
-  detachSongReference(librarySongId: string): string | null {
-    return this.library.detachSongReference(librarySongId);
-  }
-  renameLibrarySong(librarySongId: string, name: string): void {
-    this.library.renameLibrarySong(librarySongId, name);
-  }
-  deleteLibrarySong(librarySongId: string): { id: string; name: string }[] {
-    return this.library.deleteLibrarySong(librarySongId);
-  }
-  showsUsingSong(librarySongId: string): { id: string; name: string }[] {
-    return this.library.showsUsingSong(librarySongId);
-  }
-  setActiveSong(songId: string): void {
-    this.library.setActiveSong(songId);
-  }
-  createSong(name?: string): string {
-    return this.library.createSong(name);
-  }
-  renameSong(id: string, name: string): void {
-    this.library.renameSong(id, name);
-  }
-  duplicateSong(id: string): string | null {
-    return this.library.duplicateSong(id);
-  }
-  removeSong(id: string): void {
-    this.library.removeSong(id);
-  }
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -854,8 +735,8 @@ export class TriggerLab {
   selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
 
   // The resolved runtime view (`resolvedView`/`resolvedSongs`) + the `songLibraryList` are owned by
-  // {@link library} (R23) — the store exposes them via the getters alongside its field. Consumers
-  // (selectedGraph, graphLabel, showSource, the paste/clipboard region) read through those getters.
+  // {@link library} (R23). Consumers (selectedGraph, graphLabel, showSource, the paste/clipboard
+  // region) read them straight off `this.library` — there are no getters in between.
 
   // Read through the RESOLVED graphs (S42): selecting a referenced library graph opens the
   // library's rune-backed proxy, so editing its nodes writes through to the canonical copy
@@ -1221,9 +1102,9 @@ export class TriggerLab {
   }
 
   // Show CRUD (new/open/save/save-as/rename/delete/close) + song-library refs (export/import/
-  // detach/rename/delete/usedBy) live on {@link library} (R23); the store exposes them as thin
-  // forwarders alongside its field. The authored-state swap they drive (resetAuthoredToSeed /
-  // applyShow / normalizeGraphs / toAuthored) stays here and is reached through the injected host.
+  // detach/rename/delete/usedBy) live on {@link library} (R23) and are called there directly.
+  // The authored-state swap they drive (resetAuthoredToSeed / applyShow / normalizeGraphs /
+  // toAuthored) stays here and is reached through the injected host.
 
   // --- engine link plumbing ------------------------------------------------
 
