@@ -22,7 +22,7 @@
 
      Usage (rename):
        <CommitInput value={section.name} ariaLabel="Section name"
-         onCommit={(name) => { store.renameSection(id, name); editing = null; }}
+         onCommit={(name) => { store.arrangement.renameSection(id, name); editing = null; }}
          onCancel={() => (editing = null)} />
      Usage (number):
        <CommitInput type="number" min={0} max={127} value={note ?? ''} suffix="px"

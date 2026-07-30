@@ -14,10 +14,10 @@
 
      Usage:
        <EditableRow icon={ListMusic} label={song.name} active={song.id === activeId}
-         onclick={() => select(song.id)} onCommit={(name) => store.renameSong(song.id, name)}
+         onclick={() => select(song.id)} onCommit={(name) => store.library.renameSong(song.id, name)}
          actions={[
-           { label: 'Duplicate', icon: Copy, onSelect: () => store.duplicateSong(song.id) },
-           { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.removeSong(song.id) },
+           { label: 'Duplicate', icon: Copy, onSelect: () => store.library.duplicateSong(song.id) },
+           { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.library.removeSong(song.id) },
          ]} /> */
   import type { Component, Snippet } from 'svelte';
   import ListItem from './ListItem.svelte';
