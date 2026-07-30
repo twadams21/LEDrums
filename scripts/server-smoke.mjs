@@ -23,8 +23,11 @@
 //   IPs, randomUUIDs, mktemp absolute paths, host token, PIN, time/createdAt/
 //   latencyMs/fps/timeMs/beat/uptimeMs and all other stats VALUES.
 //
-// Usage: node scripts/server-smoke.mjs --engine voice|legacy [--out file.json]
-//                                      [--seed-corrupt]
+// Usage: node scripts/server-smoke.mjs [--out file.json] [--seed-corrupt]
+//
+// The `--engine voice|legacy` flag was REMOVED by INIT-01 S12: the legacy engine no longer exists,
+// so there is one boot to digest. Passing it now FAILS LOUDLY rather than being ignored — a silently
+// accepted dead flag is how a stale command keeps looking like it proved something.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -42,11 +45,10 @@ function argValue(flag) {
   const i = args.indexOf(flag);
   return i === -1 ? null : args[i + 1];
 }
-const engine = argValue('--engine');
 const outPath = argValue('--out');
 const seedCorrupt = args.includes('--seed-corrupt');
-if (engine !== 'voice' && engine !== 'legacy') {
-  console.error('usage: server-smoke.mjs --engine voice|legacy [--out file.json] [--seed-corrupt]');
+if (args.includes('--engine')) {
+  console.error('server-smoke.mjs: --engine was removed (INIT-01 S12 deleted the legacy engine); there is one boot to digest');
   process.exit(2);
 }
 
@@ -124,7 +126,6 @@ for (const k of Object.keys(env)) {
 }
 env.PORT = String(port);
 env.OSC_PORT = String(oscPort);
-env.LEDRUMS_ENGINE = engine;
 env.LEDRUMS_PROJECTS_DIR = projectsDir;
 env.LEDRUMS_TELEMETRY = 'off';
 
@@ -269,7 +270,6 @@ const banner = bannerRaw
 
 const digest = {
   harness: 'server-smoke/1',
-  engine,
   seedCorrupt,
   banner,
   lanUrlCount: lanCount,

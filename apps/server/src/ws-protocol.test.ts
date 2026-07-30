@@ -14,10 +14,6 @@ const samples: ClientMessage[] = [
   { t: 'cc', controller: 0, value: 5 },
   { t: 'programChange', value: 2 },
   { t: 'osc', address: '/ledrums/volume', value: 0.5 },
-  { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
-  { t: 'setLayer', layerId: 'base', opacity: 0.5, activeClipId: 'swirl' },
-  { t: 'removeLayer', layerId: 'x' },
-  { t: 'removeClip', layerId: 'x', clipId: 'y' },
   { t: 'setTransport', bpm: 128, playing: false },
   { t: 'setKitTransform', drumId: 'kick', localSpinDeg: 90 },
   { t: 'setOutput', state: 'armed', host: '10.0.0.5' },
@@ -38,6 +34,20 @@ describe('ws-protocol', () => {
     expect(() => decodeClient(JSON.stringify({ t: 'bogus' }))).toThrow(/Unknown client message/);
     expect(decodeClient(JSON.stringify({ t: 'tunnel', action: 'start' }))).toEqual({ t: 'tunnel', action: 'start' });
     expect(() => decodeClient('{}')).toThrow();
+  });
+
+  // S11: the fourteen retired composition messages are rejected by the SAME gate an unknown `t`
+  // hits — `clientMessageTypes` no longer contains them, so decodeClient throws "Unknown client
+  // message" and ws-connection turns that throw into an `error` frame. A stale client is told no;
+  // it is never silently ignored.
+  it('rejects a RETIRED composition message exactly like an unknown one (S11)', () => {
+    for (const t of ['setParam', 'setLayer', 'addLayer', 'removeLayer', 'addClip', 'removeClip',
+      'setActiveSection', 'setBinding', 'removeBinding', 'addSong', 'removeSong', 'addSection',
+      'removeSection', 'setSectionLayerClip'] as const) {
+      expect(() => decodeClient(JSON.stringify({ t }))).toThrow(/Unknown client message/);
+    }
+    // The one survivor of that family still decodes (4 senders in apps/web).
+    expect(decodeClient(JSON.stringify({ t: 'setTransport', bpm: 128 }))).toEqual({ t: 'setTransport', bpm: 128 });
   });
 
   it('rejects a known type carrying a malformed payload (schema validation)', () => {

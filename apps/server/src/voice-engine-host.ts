@@ -60,14 +60,14 @@ export const FRAME_FAULT_REPORT_WINDOW_MS = 1_000;
 const PREVIEW_FPS = 30; // WS preview broadcast throttle
 
 /**
- * Voice-mode host: owns a {@link voice.RenderEngine} (the trigger-graph / voice-bus
- * brain) and an {@link OutputManager}, running the SAME fixed-timestep discipline as
- * the legacy {@link EngineHost} (recursive `setTimeout` + accumulator + catch-up
- * clamp) but at 120fps. Transmit + preview streams are throttled independently of the
- * tick rate, exactly like the legacy host.
+ * THE host: owns a {@link voice.RenderEngine} (the trigger-graph / voice-bus brain), the one live
+ * Project, and an {@link OutputManager}, running a fixed-timestep loop at 120fps (recursive
+ * `setTimeout` + accumulator + catch-up clamp). Transmit + preview streams are throttled
+ * independently of the tick rate.
  *
- * This is a deliberately separate class (not a mode bolted onto EngineHost) so the
- * legacy layer/clip/binding path stays untouched and this is easy to rip out.
+ * It began as a deliberately separate class so the legacy layer/clip/binding host stayed untouched
+ * and the new one was easy to rip out. That bet paid the other way: INIT-01 S12 ripped out the
+ * legacy one, and this is what remains.
  */
 export class VoiceEngineHost {
   readonly engine: voice.RenderEngine;
@@ -292,15 +292,16 @@ export class VoiceEngineHost {
     this.reloadKit();
   }
 
-  /** Edit the live transport (BPM / play state / bar length). The loop reads
-   * `project.composition.transport` through {@link advanceTransport} on EVERY frame, so this write
-   * is the whole mechanism — no rebuild, no reload. Mirrors Engine.setTransport (mutation parity).
+  /** Edit the live transport (BPM / play state / bar length). The loop reads `project.transport`
+   * through {@link advanceTransport} on EVERY frame, so this write is the whole mechanism — no
+   * rebuild, no reload. THE only writer (S8).
    *
    * S5: without this the voice host had no transport WRITER at all and depended on the legacy
    * reducer mutating a project object it happened to share by reference — an invariant
-   * {@link adoptPatch} breaks the moment a patch is pasted. */
+   * {@link adoptPatch} breaks the moment a patch is pasted. (Decision 2 then moved the field out of
+   * the deleted `composition` slice to the top level; this is still its only write path.) */
   setTransport(partial: Partial<Transport>): void {
-    Object.assign(this.project.composition.transport, partial);
+    Object.assign(this.project.transport, partial);
   }
 
   /**
@@ -578,7 +579,7 @@ export class VoiceEngineHost {
 
   /** Compute the transport snapshot for the current engine time + dt. */
   private transport(dt: number): TransportState {
-    const config: Transport = this.project.composition.transport;
+    const config: Transport = this.project.transport;
     const { beat, state } = advanceTransport(config, this.beat, this.engineTimeMs, dt);
     this.beat = beat;
     return state;

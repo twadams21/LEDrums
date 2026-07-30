@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultProject, getHoopPixelRange, voice } from '@ledrums/core';
-import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
@@ -74,7 +73,9 @@ function nullController(): ClientMessageDeps<FakeSocket>['controller'] {
 
 function harness(opts: TunnelHarnessOpts = {}) {
   const clients = new ClientRegistry<FakeSocket>();
-  const host = new EngineHost(defaultProject());
+  // The shape main.ts builds since S12: ONE host, owning the one live Project, the render loop and
+  // the output. There is no second engine to wire and no mode to pick.
+  const voiceHost = new VoiceEngineHost(defaultProject());
   const autosaver = fakeAutosaver();
   const showLibraryAutosaver = fakeAutosaver();
   const songLibraryAutosaver = fakeAutosaver();
@@ -89,11 +90,11 @@ function harness(opts: TunnelHarnessOpts = {}) {
   };
   const stateMessage = (): ServerMessage => ({
     t: 'state',
-    project: host.engine.getProject(),
-    model: serializeModel(host.engine.getModel()),
+    project: voiceHost.getProject(),
+    model: serializeModel(voiceHost.getModel()),
     effects: [],
     projects: [],
-    output: host.getOutputStatus(),
+    output: voiceHost.getOutputStatus(),
     showLibrary: slot.lib,
     songLibrary: slot.songLib,
     tunnel: null,
@@ -106,10 +107,9 @@ function harness(opts: TunnelHarnessOpts = {}) {
     for (const s of clients) if (s !== sender && s.readyState === s.OPEN) s.send(data);
   };
 
-  const handle = createClientMessageHandler<FakeSocket>({
+  const handleInner = createClientMessageHandler<FakeSocket>({
     clients,
-    host,
-    voiceHost: null,
+    voiceHost,
     autosaver,
     showLibraryAutosaver,
     songLibraryAutosaver,
@@ -134,68 +134,11 @@ function harness(opts: TunnelHarnessOpts = {}) {
     monitor,
   });
 
-  /** Admit a fresh socket (mirrors main's connection handler) and return it. */
-  const join = (): FakeSocket => {
-    const s = new FakeSocket();
-    clients.admit(s);
-    return s;
-  };
-
-  return { clients, host, autosaver, showLibraryAutosaver, songLibraryAutosaver, slot, handle, join, monitor };
-}
-
-function voiceHarness() {
-  const base = harness();
-  const project = base.host.engine.getProject();
-  const voiceHost = new VoiceEngineHost(project);
-  voiceHost.setMonitor(base.monitor);
-  const handleInner = createClientMessageHandler<FakeSocket>({
-    clients: base.clients,
-    host: base.host,
-    voiceHost,
-    autosaver: base.autosaver,
-    showLibraryAutosaver: base.showLibraryAutosaver,
-    songLibraryAutosaver: base.songLibraryAutosaver,
-    broadcastJson: (msg) => {
-      for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer(msg));
-    },
-    broadcastPresence: () => {
-      for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer({ t: 'presence', ...base.clients.presenceFor(s) }));
-    },
-    broadcastState: () => {},
-    stateMessage: () => ({
-      t: 'state',
-      project,
-      model: serializeModel(voiceHost.getModel()),
-      effects: [],
-      projects: [],
-      output: voiceHost.getOutputStatus(),
-      showLibrary: base.slot.lib,
-      songLibrary: base.slot.songLib,
-      tunnel: null,
-      osc: { status: 'listening', port: 9000, hosts: [] },
-      recovery: null,
-    }),
-    setShowLibrary: (lib) => {
-      base.slot.lib = lib;
-    },
-    setSongLibrary: (lib) => {
-      base.slot.songLib = lib;
-    },
-    relayToOthers: (sender, msg) => {
-      const data = encodeServer(msg);
-      for (const s of base.clients) if (s !== sender && s.readyState === s.OPEN) s.send(data);
-    },
-    tunnelControl: { start: () => {}, stop: () => {} },
-    isTunnelClient: () => false,
-    listNetworkAdapters: () => [],
-    backups: { list: () => [], restore: () => false, snapshotPreRisk: () => true },
-    controller: nullController(),
-    monitor: base.monitor,
-  });
+  /** main.ts emits the server-ingress Monitor row for every input BEFORE dispatching (monitorInput);
+   * mirror it here so the graph-diagnostic tests observe the same event stream the server produces. */
   const handle = (msg: ClientMessage, ws: FakeSocket): void => {
     if (msg.t === 'midi') {
-      base.monitor({
+      monitor({
         type: 'input',
         direction: 'in',
         source: 'ws',
@@ -206,7 +149,17 @@ function voiceHarness() {
     }
     handleInner(msg, ws);
   };
-  return { ...base, voiceHost, handle };
+
+  /** Admit a fresh socket (mirrors main's connection handler) and return it. */
+  const join = (): FakeSocket => {
+    const s = new FakeSocket();
+    clients.admit(s);
+    return s;
+  };
+
+  voiceHost.setMonitor(monitor);
+
+  return { clients, voiceHost, autosaver, showLibraryAutosaver, songLibraryAutosaver, slot, handle, join, monitor };
 }
 
 function voiceEffect(id: string): voice.EffectDef {
@@ -278,7 +231,7 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
       expect(requiresEditor(t)).toBe(false);
     }
     // Authoring mutations are editor-only.
-    for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
+    for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setTransport', 'loadProject', 'saveProject'] as const) {
       expect(requiresEditor(t)).toBe(true);
     }
   });
@@ -395,9 +348,9 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
   });
 
   it('drops MIDI messages outside the app channel filter', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
-    host.engine.setInputMap({ ...host.engine.getProject().inputMap, midiChannel: 10 });
+    voiceHost.setInputMap({ ...voiceHost.getProject().inputMap, midiChannel: 10 });
 
     handle({ t: 'midi', note: 38, velocity: 100, on: true, channel: 9 }, editor);
     expect(editor.sent.some((m) => m.t === 'input')).toBe(false);
@@ -406,8 +359,8 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     expect(editor.sent.find((m) => m.t === 'input')).toMatchObject({ t: 'input', kind: 'midi', note: 38, channel: 10 });
   });
 
-  it('voice mode accepts viewer MIDI and emits inbound plus graph monitor events', () => {
-    const { handle, join, voiceHost, monitor } = voiceHarness();
+  it('accepts viewer MIDI and emits inbound plus graph monitor events', () => {
+    const { handle, join, voiceHost, monitor } = harness();
     join();
     const viewer = join();
     voiceHost.setShow(midiVoiceShow(38));
@@ -433,11 +386,11 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     );
   });
 
-  it('voice mode drops out-of-channel MIDI before graph diagnostics', () => {
-    const { handle, join, host, voiceHost, monitor } = voiceHarness();
+  it('drops out-of-channel MIDI before graph diagnostics', () => {
+    const { handle, join, voiceHost, monitor } = harness();
     const editor = join();
-    host.engine.setInputMap({ ...host.engine.getProject().inputMap, midiChannel: 10 });
-    voiceHost.setInputMap(host.engine.getProject().inputMap);
+    voiceHost.setInputMap({ ...voiceHost.getProject().inputMap, midiChannel: 10 });
+    voiceHost.setInputMap(voiceHost.getProject().inputMap);
     voiceHost.setShow(midiVoiceShow(38));
 
     handle({ t: 'midi', note: 38, velocity: 100, on: true, channel: 9 }, editor);
@@ -464,18 +417,18 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
 describe('setProject — bulk device re-rig (S45): validate → apply-once → persist → broadcast', () => {
   /** A valid patch derived from the live project, re-labelling + re-hosting the output so the
       apply is observable. Whole-document Project slices, exactly what a `patch` ClipDoc carries. */
-  function patchFrom(host: ReturnType<typeof harness>['host']) {
-    const cur = host.engine.getProject();
+  function patchFrom(store: ReturnType<typeof harness>['voiceHost']) {
+    const cur = store.getProject();
     return { name: 'Rig B', kit: cur.kit, inputMap: cur.inputMap, output: { ...cur.output, host: '10.0.0.9', protocol: 'sacn' as const } };
   }
 
-  it('validates, applies once, persists, and broadcasts fresh state (legacy engine)', () => {
-    const { handle, join, host, autosaver, monitor } = harness();
+  it('validates, applies once, persists, and broadcasts fresh state (the sole store)', () => {
+    const { handle, join, voiceHost, autosaver, monitor } = harness();
     const editor = join();
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
 
-    const applied = host.engine.getProject();
+    const applied = voiceHost.getProject();
     expect(applied.name).toBe('Rig B');
     expect(applied.output.host).toBe('10.0.0.9');
     expect(applied.output.protocol).toBe('sacn');
@@ -485,23 +438,23 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'system', label: 'Patch applied' }));
   });
 
-  it('leaves authored composition/setlist untouched (re-rigs only the device)', () => {
-    const { handle, join, host } = harness();
+  it('leaves the authored transport untouched (re-rigs only the device)', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
-    const before = host.engine.getProject();
-    const composition = before.composition;
-    const setlist = before.setlist;
+    // A tempo the drummer is playing to — a device re-rig must not move it. (Pre-Decision-2 this
+    // test guarded `composition` + `setlist`, the authored slices that no longer exist; `transport`
+    // is what survived of them and is the only authored field a patch could still clobber.)
+    voiceHost.setTransport({ bpm: 143, beatsPerBar: 7 });
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
 
-    expect(host.engine.getProject().composition).toEqual(composition);
-    expect(host.engine.getProject().setlist).toEqual(setlist);
+    expect(voiceHost.getProject().transport).toMatchObject({ bpm: 143, beatsPerBar: 7 });
   });
 
   it('rejects an invalid payload with a user-visible error and zero partial apply', () => {
-    const { handle, join, host, autosaver, monitor } = harness();
+    const { handle, join, voiceHost, autosaver, monitor } = harness();
     const editor = join();
-    const before = host.engine.getProject();
+    const before = voiceHost.getProject();
 
     // kit is required (a kit with no drums fails kitSchema.drums.min(1)); no state may change.
     handle({ t: 'setProject', patch: { kit: { drums: [] }, inputMap: {}, output: {} } } as unknown as ClientMessage, editor);
@@ -510,14 +463,14 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(err?.message).toMatch(/Invalid patch/);
     expect(editor.sent.some((m) => m.t === 'state')).toBe(false); // no broadcast
     expect(autosaver.markDirty).not.toHaveBeenCalled(); // not persisted
-    expect(host.engine.getProject()).toEqual(before); // zero apply
+    expect(voiceHost.getProject()).toEqual(before); // zero apply
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid)' }));
   });
 
   it('rejects a schema-valid but routing-invalid patch (hoop fan-out) with zero apply (F1)', () => {
-    const { handle, join, host, autosaver, monitor } = harness();
+    const { handle, join, voiceHost, autosaver, monitor } = harness();
     const editor = join();
-    const before = host.engine.getProject();
+    const before = voiceHost.getProject();
 
     // A shape-valid ClipDoc whose kit.outputs fans kick hoop 0 across two data lines — the exact
     // corruption setKitOutputs already rejects, now gated on the bulk re-rig path too. Validated
@@ -541,32 +494,38 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(err?.message).toMatch(/Invalid patch outputs/);
     expect(editor.sent.some((m) => m.t === 'state')).toBe(false); // no broadcast
     expect(autosaver.markDirty).not.toHaveBeenCalled(); // not persisted
-    expect(host.engine.getProject()).toEqual(before); // zero apply
+    expect(voiceHost.getProject()).toEqual(before); // zero apply
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid routing)' }));
   });
 
-  it('bulk-adopts the same slices into the voice host (single kit reload)', () => {
-    const { handle, join, host, voiceHost } = voiceHarness();
+  it('the autosaver and the wire read the SAME object the paste produced (one source of truth)', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
 
-    expect(voiceHost.getProject().name).toBe('Rig B');
-    expect(voiceHost.getProject().output.host).toBe('10.0.0.9');
-    expect(voiceHost.getProject().output.protocol).toBe('sacn');
+    // S8 asserted this as object identity against the legacy FOLLOWER; S12 deleted the follower, so
+    // what remains to assert is the property the identity existed to protect — what the wire
+    // describes is what the store holds. (Deep equality, not `toBe`: this harness's socket really
+    // encodes and decodes, so the frame is a wire copy by construction. The identity form of this
+    // assertion lives in store-authority.test.ts, whose sink keeps the object.)
+    const applied = voiceHost.getProject();
+    expect(applied.name).toBe('Rig B');
+    const broadcast = editor.sent.filter((m): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state').at(-1);
+    expect(broadcast!.project).toEqual(applied);
   });
 
   it('ignores a viewer setProject (read-only gate), applies once taken over', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     join(); // editor (c1)
     const viewer = join(); // c2
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
-    expect(host.engine.getProject().name).not.toBe('Rig B'); // rejected
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, viewer);
+    expect(voiceHost.getProject().name).not.toBe('Rig B'); // rejected
 
     handle({ t: 'takeover' }, viewer);
-    handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
-    expect(host.engine.getProject().name).toBe('Rig B'); // now accepted
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, viewer);
+    expect(voiceHost.getProject().name).toBe('Rig B'); // now accepted
   });
 });
 
@@ -622,7 +581,7 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
   });
 
   it('never touches voice-host routing on an invalid payload; applies a valid one', () => {
-    const { handle, join, voiceHost } = voiceHarness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     const spy = vi.spyOn(voiceHost, 'setKitOutputs');
 
@@ -673,7 +632,7 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
   });
 
   it('never touches voice-host routing on a routing-invalid (but schema-valid) payload', () => {
-    const { handle, join, voiceHost } = voiceHarness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     const spy = vi.spyOn(voiceHost, 'setKitOutputs');
 
@@ -769,93 +728,103 @@ describe('listNetworkAdapters (subnet-guidance read)', () => {
 
 describe('identifyHoop message (E1)', () => {
   it('maps (drumId, 1-based hoop) to the correct pixel range on the live host', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     handle({ t: 'identifyHoop', drumId: 'snare', hoop: 2, durationS: 0.5 }, editor);
-    const expected = getHoopPixelRange(host.engine.getModel(), 'snare', 2);
-    expect(host.getIdentifyRange()).toEqual(expected);
-  });
-
-  it('routes to the voice host when one is running', () => {
-    const { handle, join, voiceHost } = voiceHarness();
-    const editor = join();
-    handle({ t: 'identifyHoop', drumId: 'tom1', hoop: 1, durationS: 0.5 }, editor);
-    const expected = getHoopPixelRange(voiceHost.getModel(), 'tom1', 1);
+    const expected = getHoopPixelRange(voiceHost.getModel(), 'snare', 2);
     expect(voiceHost.getIdentifyRange()).toEqual(expected);
   });
 
+  it('maps a SECOND (drumId, hoop) pair independently — the range follows the request', () => {
+    const { handle, join, voiceHost } = harness();
+    const editor = join();
+    handle({ t: 'identifyHoop', drumId: 'tom1', hoop: 1, durationS: 0.5 }, editor);
+    expect(voiceHost.getIdentifyRange()).toEqual(getHoopPixelRange(voiceHost.getModel(), 'tom1', 1));
+    // Pre-S8 this route was `(voiceHost ?? host).identifyHoop` — two arms, two OutputManagers, and
+    // an identify that flashed nothing if it landed on the wrong one. One host, one range.
+    expect(voiceHost.getIdentifyRange()).not.toEqual(getHoopPixelRange(voiceHost.getModel(), 'snare', 2));
+  });
+
   it('durationS <= 0 clears any active identify', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0.5 }, editor);
-    expect(host.getIdentifyRange()).not.toBeNull();
+    expect(voiceHost.getIdentifyRange()).not.toBeNull();
     handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0 }, editor);
-    expect(host.getIdentifyRange()).toBeNull();
+    expect(voiceHost.getIdentifyRange()).toBeNull();
   });
 
   it('an unknown drum/hoop is a no-op (clears, never throws)', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     handle({ t: 'identifyHoop', drumId: 'nope', hoop: 99, durationS: 0.5 }, editor);
-    expect(host.getIdentifyRange()).toBeNull();
+    expect(voiceHost.getIdentifyRange()).toBeNull();
   });
 
   it('is editor-gated — a viewer cannot identify (deny-by-default)', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     join(); // editor
     const viewer = join();
     handle({ t: 'identifyHoop', drumId: 'kick', hoop: 1, durationS: 0.5 }, viewer);
-    expect(host.getIdentifyRange()).toBeNull();
+    expect(voiceHost.getIdentifyRange()).toBeNull();
   });
 });
 
-describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end parity)', () => {
+describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end through the sole reducer)', () => {
   it('setKitGlobal applies the Advatek/kit-global fields to the live engine kit + re-broadcasts state', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     editor.sent.length = 0; // ignore the admit-time state
     handle({ t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 }, editor);
-    expect(host.engine.getProject().kit.global).toMatchObject({
+    expect(voiceHost.getProject().kit.global).toMatchObject({
       expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300,
     });
     expect(editor.has('state')).toBe(true); // geometry/patch change → fresh state to every client
   });
 
-  it('setKitTransform color applies to the drum on the live engine kit', () => {
-    const { handle, join, host } = harness();
+  it('setKitTransform color applies to the drum on the live kit', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     handle({ t: 'setKitTransform', drumId: 'kick', color: '#ff8800' }, editor);
-    expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.color).toBe('#ff8800');
+    expect(voiceHost.getProject().kit.drums.find((d) => d.id === 'kick')!.color).toBe('#ff8800');
   });
 
-  it('setHoopConfig writes drum.hoops[hoopIndex-1] (1-based) on the live engine kit + re-broadcasts', () => {
-    const { handle, join, host } = harness();
+  it('setHoopConfig writes drum.hoops[hoopIndex-1] (1-based) on the live kit + re-broadcasts', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     editor.sent.length = 0;
-    const kickBefore = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!;
+    const kickBefore = voiceHost.getProject().kit.drums.find((d) => d.id === 'kick')!;
     expect(kickBefore.hoops).toBeDefined();
     const target = kickBefore.hoops![0]!.pixelCount + 10;
     handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: target, reverse: true }, editor);
-    const hoop0 = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
+    const hoop0 = voiceHost.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!;
     expect(hoop0).toMatchObject({ pixelCount: target, reverse: true });
     expect(editor.has('state')).toBe(true);
   });
 
-  it('setHoopConfig applies to the voice host too (live-render parity)', () => {
-    const { handle, join, voiceHost } = voiceHarness();
+  it('an in-place structural edit reaches the wire through the same object (S8)', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     const target = voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount + 7;
+
     handle({ t: 'setHoopConfig', drumId: 'snare', hoopIndex: 2, pixelCount: target }, editor);
-    expect(voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
+
+    // ONE reducer wrote ONE object, in place — and the `state` the clients receive describes that
+    // write, with no second arm that could have replayed it differently. This is the mechanism
+    // divergent-change-0001 asked for: no arm can drift from the other when there is no other arm.
+    const snare = () => voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount;
+    expect(snare()).toBe(target);
+    const broadcast = editor.sent.filter((m): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state').at(-1);
+    expect(broadcast!.project.kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
   });
 
   it('a viewer cannot mutate the kit (setHoopConfig is editor-gated, deny-by-default)', () => {
-    const { handle, join, host } = harness();
+    const { handle, join, voiceHost } = harness();
     join(); // editor
     const viewer = join();
-    const before = host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount;
+    const before = voiceHost.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount;
     handle({ t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: before + 50 }, viewer);
-    expect(host.engine.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount).toBe(before);
+    expect(voiceHost.getProject().kit.drums.find((d) => d.id === 'kick')!.hoops![0]!.pixelCount).toBe(before);
   });
 });
 
@@ -923,8 +892,8 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     };
   }
 
-  function patchFrom(host: ReturnType<typeof harness>['host']) {
-    const cur = host.engine.getProject();
+  function patchFrom(store: ReturnType<typeof harness>['voiceHost']) {
+    const cur = store.getProject();
     return { name: 'Rig B', kit: cur.kit, inputMap: cur.inputMap, output: { ...cur.output, host: '10.0.0.9', protocol: 'sacn' as const } };
   }
 
@@ -970,12 +939,12 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
 
   it('a bulk setProject takes a pre-risk snapshot BEFORE the mutation', () => {
     const backups = fakeBackups();
-    const { handle, join, host } = harness({ backups });
+    const { handle, join, voiceHost } = harness({ backups });
     const editor = join();
     // Assert ordering: snapshotPreRisk fires, and the project really did change (mutation happened).
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
     expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
-    expect(host.engine.getProject().name).toBe('Rig B');
+    expect(voiceHost.getProject().name).toBe('Rig B');
   });
 
   it('a REJECTED setProject takes no pre-risk snapshot (nothing was going to mutate)', () => {
@@ -989,12 +958,12 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
 
   it('REFUSES the setProject re-rig (fail-closed C1) when the pre-risk snapshot fails — no mutation', () => {
     const backups = fakeBackups({ snapshotPreRisk: () => false }); // safety snapshot WRITE failed
-    const { handle, join, host } = harness({ backups });
+    const { handle, join, voiceHost } = harness({ backups });
     const editor = join();
-    const before = host.engine.getProject().name;
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    const before = voiceHost.getProject().name;
+    handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
     expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
-    expect(host.engine.getProject().name).toBe(before); // NOT 'Rig B' — the mutation was refused
+    expect(voiceHost.getProject().name).toBe(before); // NOT 'Rig B' — the mutation was refused
     const err = editor.sent.find((m) => m.t === 'error');
     expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Backup failed') });
   });
@@ -1005,25 +974,25 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
         throw new Error('pre-risk safety snapshot failed; restore of 1000-boot refused (live state untouched)');
       },
     });
-    const { handle, join, host } = harness({ backups });
+    const { handle, join, voiceHost } = harness({ backups });
     const editor = join();
-    const before = host.engine.getProject();
+    const before = voiceHost.getProject();
     handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
     const err = editor.sent.find((m) => m.t === 'error');
     expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Restore aborted') });
-    expect(host.engine.getProject()).toBe(before); // nothing applied
+    expect(voiceHost.getProject()).toBe(before); // nothing applied
   });
 });
 
 describe('fail-closed pre-risk direction through the full handler (S9)', () => {
-  it('a loadProject with a failing pre-risk snapshot replies error and never reaches setProject', () => {
-    const { host, handle, join } = harness({
+  it('a loadProject with a failing pre-risk snapshot replies error and never reaches the store', () => {
+    const { voiceHost, handle, join } = harness({
       backups: { list: () => [], restore: () => false, snapshotPreRisk: () => false },
     });
-    const setProject = vi.spyOn(host.engine, 'setProject');
+    const adoptProject = vi.spyOn(voiceHost, 'adoptProject');
     const ws = join(); // first client = editor
     handle({ t: 'loadProject', name: 'p' }, ws);
-    expect(setProject).not.toHaveBeenCalled();
+    expect(adoptProject).not.toHaveBeenCalled();
     expect(ws.has('error')).toBe(true);
   });
 });

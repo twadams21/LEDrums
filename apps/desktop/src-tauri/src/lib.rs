@@ -376,9 +376,8 @@ fn spawn_sidecar(
             projects_dir.to_string_lossy().to_string(),
         )
         .env("LEDRUMS_WEB_ROOT", web_root.to_string_lossy().to_string())
-        // Engine: the server defaults to the voice-bus engine (INIT-01 S7), which is what the
-        // drummer's live rig runs, so the shell forces nothing here. A LEDRUMS_ENGINE=legacy
-        // override on the launching environment reaches the sidecar by normal env inheritance.
+        // Engine: the sidecar has exactly one (INIT-01 S12 deleted the legacy stack), so the shell
+        // forces nothing and there is no mode env var to pass through.
         .env("LEDRUMS_APP_VERSION", env!("CARGO_PKG_VERSION"))
         // Hand the sidecar the token we already hold, so the shell never has to scrape it back out
         // of stdout to authenticate the MIDI bridge or the app window (#139). The server prefers an

@@ -1,13 +1,19 @@
-import { TRIGGER_SLOT_COUNT, type Engine, type InputEvent, type InputMap, type voice } from '@ledrums/core';
+import { TRIGGER_SLOT_COUNT, type InputMap, type voice } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
-import type { ClientMessage } from './ws-protocol';
 
-export interface ReduceResult {
-  /** True when the change alters structure and clients should receive a fresh `state`. */
-  structural: boolean;
-  /** Optional monitor echo for the input panel. */
-  monitor?: { kind: 'midi' | 'osc'; label: string; value: number };
-}
+/**
+ * A raw hardware input, time-stamped — a MIDI note or an OSC address/value.
+ *
+ * This was exported from `@ledrums/core` (declared in the legacy engine, which consumed it as its
+ * queue element). INIT-01 S13 deleted that engine, and this file is now both the only producer
+ * ({@link midiToEvent} / {@link oscToEvent}) and the only consumer, so the type lives where it is
+ * used rather than on a package boundary nothing else crosses. NOT to be confused with
+ * `voice.InputEvent`, the voice engine's richer pad/graph-aware event.
+ */
+export type InputEvent =
+  | { kind: 'noteOn'; note: number; velocity: number; timeMs: number }
+  | { kind: 'noteOff'; note: number; timeMs: number }
+  | { kind: 'osc'; address: string; value: number; timeMs: number };
 
 /** A drum-zone pad resolved from the patch zone-map (the pad-bound graph it fires). */
 export interface ZonePad {
@@ -133,126 +139,4 @@ export function oscRecall(show: voice.Show | null | undefined, address: string, 
   const songIndex = parseSectionRecallAddress(address);
   if (songIndex === null) return null;
   return targetForIndices(show, songIndex, Math.floor(value));
-}
-
-/**
- * Apply a client message to the engine (the typed reducer, plan U8). Mutations are
- * explicit and type-safe — no generic path-mutation. Project IO (`loadProject`,
- * `saveProject`, `listProjects`) is handled by the host, not here.
- */
-export function applyClientMessage(engine: Engine, msg: ClientMessage, now: number): ReduceResult {
-  switch (msg.t) {
-    case 'midi':
-      engine.applyEvent(midiToEvent(msg.note, msg.velocity, msg.on, now));
-      return { structural: false, monitor: { kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127 } };
-    case 'osc':
-      engine.applyEvent({ kind: 'osc', address: msg.address, value: msg.value, timeMs: now });
-      return { structural: false, monitor: { kind: 'osc', label: msg.address, value: msg.value } };
-    case 'setParam':
-      engine.setParam(msg.layerId, msg.clipId, msg.key, msg.value);
-      return { structural: false };
-    case 'setLayer':
-      engine.setLayerProps(msg.layerId, {
-        ...(msg.blendMode !== undefined ? { blendMode: msg.blendMode } : {}),
-        ...(msg.opacity !== undefined ? { opacity: msg.opacity } : {}),
-        ...(msg.activeClipId !== undefined ? { activeClipId: msg.activeClipId } : {}),
-        ...(msg.name !== undefined ? { name: msg.name } : {}),
-      });
-      return { structural: true };
-    case 'addLayer':
-      engine.addLayer(msg.layer);
-      return { structural: true };
-    case 'removeLayer':
-      engine.removeLayer(msg.layerId);
-      return { structural: true };
-    case 'addClip':
-      engine.addClip(msg.layerId, msg.clip);
-      return { structural: true };
-    case 'removeClip':
-      engine.removeClip(msg.layerId, msg.clipId);
-      return { structural: true };
-    case 'setTransport':
-      engine.setTransport({
-        ...(msg.bpm !== undefined ? { bpm: msg.bpm } : {}),
-        ...(msg.playing !== undefined ? { playing: msg.playing } : {}),
-        ...(msg.beatsPerBar !== undefined ? { beatsPerBar: msg.beatsPerBar } : {}),
-      });
-      return { structural: true };
-    case 'setKitTransform':
-      engine.setKitTransform(msg.drumId, {
-        ...(msg.origin !== undefined ? { origin: msg.origin } : {}),
-        ...(msg.rotation !== undefined ? { rotation: msg.rotation } : {}),
-        ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
-        ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
-        // pixelsPerHoop was historically dropped on this legacy-engine path (the voice
-        // host already forwarded it) — forward it here too so literal LED counts apply.
-        ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
-        ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
-        ...(msg.diameterIn !== undefined ? { diameterIn: msg.diameterIn } : {}),
-        ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
-        ...(msg.color !== undefined ? { color: msg.color } : {}),
-      });
-      return { structural: true };
-    case 'setKitGlobal':
-      engine.setKitGlobal({
-        ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
-        ...(msg.ledDensityPxPerM !== undefined ? { ledDensityPxPerM: msg.ledDensityPxPerM } : {}),
-        ...(msg.hoopCount !== undefined ? { hoopCount: msg.hoopCount } : {}),
-        ...(msg.defaultHoopSpacingMm !== undefined ? { defaultHoopSpacingMm: msg.defaultHoopSpacingMm } : {}),
-        ...(msg.maxPixelsPerOutput !== undefined ? { maxPixelsPerOutput: msg.maxPixelsPerOutput } : {}),
-      });
-      return { structural: true };
-    case 'setHoopConfig':
-      engine.setHoopConfig(msg.drumId, msg.hoopIndex, {
-        ...(msg.pixelCount !== undefined ? { pixelCount: msg.pixelCount } : {}),
-        ...(msg.reverse !== undefined ? { reverse: msg.reverse } : {}),
-      });
-      return { structural: true };
-    case 'setKitNodeLayout':
-      engine.setKitNodeLayout(msg.nodeLayout);
-      return { structural: true };
-    case 'setOutput':
-      engine.setOutput({
-        ...(msg.state !== undefined ? { state: msg.state } : {}),
-        ...(msg.protocol !== undefined ? { protocol: msg.protocol } : {}),
-        ...(msg.host !== undefined ? { host: msg.host } : {}),
-        ...(msg.rgbOrder !== undefined ? { rgbOrder: msg.rgbOrder } : {}),
-        ...(msg.fps !== undefined ? { fps: msg.fps } : {}),
-        ...(msg.broadcast !== undefined ? { broadcast: msg.broadcast } : {}),
-        ...(msg.priority !== undefined ? { priority: msg.priority } : {}),
-        ...(msg.port !== undefined ? { port: msg.port } : {}),
-        ...(msg.iface !== undefined ? { iface: msg.iface } : {}),
-      });
-      return { structural: true };
-    case 'setActiveSection':
-      engine.setActiveSection(msg.songId, msg.sectionId);
-      return { structural: true };
-    case 'setBinding':
-      engine.setBinding(msg.sectionId, msg.binding);
-      return { structural: true };
-    case 'removeBinding':
-      engine.removeBinding(msg.sectionId, msg.drumId, msg.slot);
-      return { structural: true };
-    case 'addSong':
-      engine.addSong(msg.song);
-      return { structural: true };
-    case 'removeSong':
-      engine.removeSong(msg.songId);
-      return { structural: true };
-    case 'addSection':
-      engine.addSection(msg.songId, msg.section);
-      return { structural: true };
-    case 'removeSection':
-      engine.removeSection(msg.songId, msg.sectionId);
-      return { structural: true };
-    case 'setSectionLayerClip':
-      engine.setSectionLayerClip(msg.sectionId, msg.layerId, msg.clipId);
-      return { structural: true };
-    case 'setInputMap':
-      engine.setInputMap(msg.inputMap);
-      return { structural: true };
-    default:
-      // loadProject / saveProject / listProjects are handled by the host.
-      return { structural: false };
-  }
 }

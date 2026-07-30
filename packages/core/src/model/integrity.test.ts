@@ -18,17 +18,10 @@ describe('assertProjectIntegrity', () => {
     expect(kitDrumIds(defaultProject().kit)).toEqual(new Set(['kick', 'snare', 'tom1', 'tom2']));
   });
 
-  it('throws a named error when a setlist binding references a drum not in the kit', () => {
-    const p = defaultProject();
-    p.setlist.songs[0]!.sections[0]!.bindings.push({
-      drumId: 'tom', // the classic drift: kit defines tom1, content says tom
-      slot: 0,
-      layerId: 'trigger',
-      clipId: 'chase',
-    });
-    expect(() => assertProjectIntegrity(p)).toThrow(ReferentialIntegrityError);
-    expect(() => assertProjectIntegrity(p)).toThrow(/drum "tom"/);
-  });
+  // Decision 2 removed `project.setlist`, and with it the third referential walk this test drove
+  // (a section binding naming a drum the kit doesn't define — "kit says tom1, content says tom").
+  // The two inputMap walks below still cover that drift class on the Project, and the authored
+  // content's own version of it is `assertShowIntegrity`.
 
   it('throws when an input map note references an unknown drum', () => {
     const p = defaultProject();

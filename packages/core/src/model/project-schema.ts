@@ -49,15 +49,18 @@ export const layerSchema = z.object({
   activeClipId: z.string().nullable().default(null),
 });
 
+/**
+ * The authored transport — BPM, play state, bar length. A top-level Project slice since
+ * 11-decisions' Decision 2; it used to be `composition.transport`, the one live field of a
+ * `composition` slice whose other half (`layers`) belonged to the deleted legacy engine.
+ *
+ * The voice loop reads this every frame through `advanceTransport`, and VoiceEngineHost.setTransport
+ * is its only writer (INIT-01 S5/S8).
+ */
 export const transportSchema = z.object({
   bpm: z.number().positive().default(120),
   playing: z.boolean().default(true),
   beatsPerBar: z.number().int().positive().default(4),
-});
-
-export const compositionSchema = z.object({
-  layers: z.array(layerSchema).default([]),
-  transport: transportSchema.default({}),
 });
 
 /**
@@ -142,6 +145,18 @@ export const songSchema = z.object({
   sections: z.array(sectionSchema).default([]),
 });
 
+/**
+ * ORPHANED BY DECISION 2, deliberately left standing.
+ *
+ * `setlistSchema` and the leaf schemas above it (layer, clip, song, section, triggerBinding,
+ * sectionLayerClip, modulation, controlSource, curve) are no longer referenced by `projectSchema`,
+ * by `packages/protocol` (INIT-01 S11 deleted the fourteen messages that carried them), or by any
+ * app — verified by grep: ZERO consumers outside this file for every one of them.
+ *
+ * They are NOT deleted here. Decision 2's scope is the two Project FIELDS; trimming core's exported
+ * surface is INIT-13's initiative, and mixing the two would put a public-API change inside a data
+ * decision. Named here so that step has its list rather than re-deriving it.
+ */
 export const setlistSchema = z.object({
   songs: z.array(songSchema).default([]),
   activeSongId: z.string().nullable().default(null),
@@ -184,12 +199,25 @@ export const controllerSchema = z.object({
   auth: z.string().optional(),
 });
 
+/**
+ * The persisted Project.
+ *
+ * Decision 2 (11-decisions.md) REMOVED two slices: `composition` (layers + transport) and `setlist`
+ * (songs → sections → bindings). Both were the legacy layer/clip/binding engine's authored model,
+ * which INIT-01 S13 deleted; authored content now lives in the voice-bus Show, persisted as its own
+ * versioned blob. `composition.transport` was the single live field and is relocated to top-level
+ * {@link transportSchema} above.
+ *
+ * NO MIGRATION MACHINERY, per the greenfield posture (two users, no real show files): this schema is
+ * non-strict, so an older file carrying `composition`/`setlist` parses CLEAN and zod strips them.
+ * The cost is stated rather than hidden — such a file's authored BPM/bar length was nested under
+ * `composition`, so it is stripped too and `transport` takes its defaults (120 / playing / 4).
+ */
 export const projectSchema = z.object({
   name: z.string().default('Untitled'),
   kit: kitSchema,
-  composition: compositionSchema.default({}),
+  transport: transportSchema.default({}),
   inputMap: inputMapSchema.default({}),
-  setlist: setlistSchema.default({}),
   output: outputSettingsSchema.default({}),
   /** The adopted PixLite controller (group L). Optional — absent until one is adopted. */
   controller: controllerSchema.optional(),
@@ -198,9 +226,9 @@ export const projectSchema = z.object({
 /**
  * The device-portable slices of a Project — kit geometry (incl. output topology), the input
  * map, and output settings — carried by a `patch` ClipDoc (doc 11 / group K) and applied
- * WHOLESALE by the `setProject` bulk message. It deliberately excludes `composition` and
- * `setlist` (the authored show), so pasting a patch re-rigs the physical device without
- * touching authored content. `name` is optional (a patch may re-label the project). Every
+ * WHOLESALE by the `setProject` bulk message. It deliberately excludes the authored
+ * `transport`, so pasting a patch re-rigs the physical device without changing the tempo the
+ * drummer is playing to. `name` is optional (a patch may re-label the project). Every
  * slice is schema-validated here BEFORE any live state is touched — an invalid payload is a
  * user-visible error with zero partial apply. */
 export const projectPatchSchema = z.object({
@@ -218,7 +246,6 @@ export type Clip = z.infer<typeof clipSchema>;
 export type LayerRole = z.infer<typeof layerRoleSchema>;
 export type Layer = z.infer<typeof layerSchema>;
 export type Transport = z.infer<typeof transportSchema>;
-export type Composition = z.infer<typeof compositionSchema>;
 export type MidiNoteMap = z.infer<typeof midiNoteMapSchema>;
 export type OscMap = z.infer<typeof oscMapSchema>;
 export type DeclaredZone = ZoneRef;
@@ -227,7 +254,6 @@ export type TriggerBinding = z.infer<typeof triggerBindingSchema>;
 export type SectionLayerClip = z.infer<typeof sectionLayerClipSchema>;
 export type Section = z.infer<typeof sectionSchema>;
 export type Song = z.infer<typeof songSchema>;
-export type Setlist = z.infer<typeof setlistSchema>;
 export type OutputState = z.infer<typeof outputStateSchema>;
 export type OutputSettings = z.infer<typeof outputSettingsSchema>;
 export type Controller = z.infer<typeof controllerSchema>;

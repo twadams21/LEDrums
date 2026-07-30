@@ -4,7 +4,6 @@ import type { OscInput } from '@ledrums/io';
 import type { WebSocket, WebSocketServer } from 'ws';
 import type { Autosaver } from './autosave';
 import type { ClientRegistry } from './client-registry';
-import type { EngineHost } from './engine-host';
 import type { VoiceEngineHost } from './voice-engine-host';
 import type { MonitorDraft } from './monitor';
 
@@ -13,8 +12,9 @@ export interface BootDeps {
   server: Server;
   wss: WebSocketServer;
   clients: ClientRegistry<WebSocket>;
-  host: EngineHost;
-  voiceHost: VoiceEngineHost | null;
+  /** The render loop. There is exactly one (S12 deleted the other), so there is nothing to
+   * choose and no mode to be told about. */
+  voiceHost: VoiceEngineHost;
   oscInput: OscInput;
   /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
   controllerMonitor?: { stop(): void };
@@ -22,7 +22,6 @@ export interface BootDeps {
   wsKeepalive?: { disposeKeepalive(): void };
   port: number;
   oscPort: number;
-  voiceMode: boolean;
   /** The periodic-stats interval, cleared on shutdown. */
   statsTimer: ReturnType<typeof setInterval>;
   /** The 30-min backup-cadence interval (#123), cleared on shutdown. */
@@ -64,16 +63,15 @@ function lanUrls(p: number): string[] {
 }
 
 /**
- * Start listening and install graceful shutdown. Brings up the engine (voice or legacy)
- * once the socket is bound, prints the boot banner, and wires SIGINT/SIGTERM to a single
- * idempotent shutdown that stops the engine, closes IO, and flushes pending autosaves so a
- * clean exit never loses the last edit.
+ * Start listening and install graceful shutdown. Brings up THE engine once the socket is bound
+ * (S8: there is one), prints the boot banner, and wires SIGINT/SIGTERM to a single idempotent
+ * shutdown that stops the engine, closes IO, and flushes pending autosaves so a clean exit never
+ * loses the last edit.
  */
 export function boot(deps: BootDeps): void {
   deps.server.listen(deps.port, () => {
-    if (deps.voiceHost) deps.voiceHost.start();
-    else deps.host.start();
-    console.log(`LEDrums server listening on http://localhost:${deps.port}${deps.voiceMode ? ' [voice engine]' : ''}`);
+    deps.voiceHost.start();
+    console.log(`LEDrums server listening on http://localhost:${deps.port}`);
     for (const url of lanUrls(deps.port)) console.log(`  LAN: ${url}`);
     // Print the address a sender is actually configured with, not just the port — the whole
     // point of the OSC surface is that a user can answer "what do I type into Sensory
@@ -109,8 +107,7 @@ export function boot(deps: BootDeps): void {
     deps.controllerMonitor?.stop();
     deps.wsKeepalive?.disposeKeepalive();
     deps.tunnelControl.stop();
-    if (deps.voiceHost) deps.voiceHost.stop();
-    else deps.host.stop();
+    deps.voiceHost.stop();
     deps.oscInput.close();
     for (const ws of deps.clients) {
       try {

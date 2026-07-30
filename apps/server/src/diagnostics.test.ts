@@ -3,7 +3,6 @@ import { startupDiagnostics, type StartupDiagnosticsInput } from './diagnostics'
 
 function input(overrides: Partial<StartupDiagnosticsInput> = {}): StartupDiagnosticsInput {
   return {
-    voiceMode: true,
     port: 5174,
     oscPort: 9000,
     oscHosts: ['192.168.1.20'],
@@ -20,9 +19,16 @@ function input(overrides: Partial<StartupDiagnosticsInput> = {}): StartupDiagnos
 }
 
 describe('startupDiagnostics', () => {
-  it('reports voice vs legacy mode', () => {
-    expect(startupDiagnostics(input())[0]?.label).toContain('voice');
-    expect(startupDiagnostics(input({ voiceMode: false }))[0]?.label).toContain('legacy');
+  // S12: the first row used to name the engine mode ("Server started in legacy mode" was what the
+  // shipped `pnpm start` path emitted). There is one engine now, so it reports the fact, not a
+  // choice — and it must still carry the ports, which is the part an operator actually reads.
+  it('reports the server start with its ports', () => {
+    expect(startupDiagnostics(input())[0]).toMatchObject({
+      type: 'system',
+      source: 'server',
+      label: 'Server started',
+      detail: 'http=:5174; osc=:9000',
+    });
   });
 
   it('represents project and show-library sources', () => {
