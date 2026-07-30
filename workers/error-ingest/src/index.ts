@@ -29,81 +29,124 @@ function authed(req: Request, env: Env): boolean {
   return env.TELEMETRY_TOKEN.length > 0 && header === expected;
 }
 
+/**
+ * Fast reject on the CLIENT-DECLARED size, before `req.text()` buffers anything. Client-supplied and
+ * therefore advisory: a lying (or absent) content-length just falls through to {@link tooLarge}.
+ */
+function declaredTooLarge(req: Request, max: number): boolean {
+  const declared = Number(req.headers.get('content-length'));
+  return Number.isFinite(declared) && declared > max;
+}
+
+/**
+ * The authoritative size check, in BYTES. `raw.length` counts UTF-16 code units, which under-counts a
+ * non-ASCII stack trace (or an emoji-laden payload) by up to 3x — the cap has to be measured in the
+ * same units the Worker's limit is stated in.
+ */
+function tooLarge(raw: string, max: number): boolean {
+  return new TextEncoder().encode(raw).byteLength > max;
+}
+
+/**
+ * The routing body. Kept internal — the module's public surface stays `default.fetch`, which wraps
+ * this in the fault boundary below. It reads exactly `req.url`, `req.method`, `req.headers` and
+ * `req.text()` from the request, and nothing else.
+ */
+async function route(req: Request, env: Env): Promise<Response> {
+  const url = new URL(req.url);
+
+  if (!authed(req, env)) return error(401, 'unauthorized');
+
+  // POST /ingest — batch write.
+  if (req.method === 'POST' && url.pathname === '/ingest') {
+    if (declaredTooLarge(req, MAX_BODY_BYTES)) return error(413, 'payload too large');
+    const raw = await req.text();
+    if (tooLarge(raw, MAX_BODY_BYTES)) return error(413, 'payload too large');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return error(400, 'invalid JSON');
+    }
+    let batch;
+    try {
+      batch = parseIngestBatch(parsed);
+    } catch (err) {
+      return error(400, err instanceof ValidationError ? err.message : 'invalid batch');
+    }
+    const result = await ingestBatch(
+      {
+        store: d1Store(env.DB),
+        notify: createDiscordNotifier(env.DISCORD_WEBHOOK_URL),
+        now: Date.now(),
+        rateWindowMs: RATE_LIMIT_WINDOW_MS,
+        rateMaxNewRows: RATE_LIMIT_MAX_NEW_ROWS,
+      },
+      batch,
+    );
+    return json(result);
+  }
+
+  // GET /reports — token-authed JSON read API (machine/version/since filters).
+  if (req.method === 'GET' && url.pathname === '/reports') {
+    return json(await listReports(d1Store(env.DB), url));
+  }
+
+  // POST /backups — batch write of snapshot bundles to R2 (#123). Same envelope as /ingest (the
+  // shipper posts items under `reports`); the ROUTE distinguishes it. Bodies are opaque.
+  if (req.method === 'POST' && url.pathname === '/backups') {
+    if (declaredTooLarge(req, MAX_BACKUP_BODY_BYTES)) return error(413, 'payload too large');
+    const raw = await req.text();
+    if (tooLarge(raw, MAX_BACKUP_BODY_BYTES)) return error(413, 'payload too large');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return error(400, 'invalid JSON');
+    }
+    let batch;
+    try {
+      batch = parseBackupBatch(parsed);
+    } catch (err) {
+      return error(400, err instanceof ValidationError ? err.message : 'invalid batch');
+    }
+    return json(await ingestBackups(r2Store(env.BACKUPS), batch));
+  }
+
+  // GET /backups?machine= — token-authed listing of a machine's snapshots (metadata only).
+  if (req.method === 'GET' && url.pathname === '/backups') {
+    return json(await listBackups(r2Store(env.BACKUPS), url));
+  }
+
+  // GET /backups/object?key= — fetch one stored bundle body by full R2 key (agent debugging). The
+  // body is already JSON, so it is returned verbatim rather than re-wrapped.
+  if (req.method === 'GET' && url.pathname === '/backups/object') {
+    const result = await getBackup(r2Store(env.BACKUPS), url);
+    if (result.status === 200 && typeof result.body === 'string') {
+      return new Response(result.body, { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return json(result);
+  }
+
+  return error(404, 'not found');
+}
+
 export default {
+  /**
+   * The fault boundary. A D1 rate-limit, a post-migration schema mismatch, or an R2 outage inside
+   * {@link route} used to escape as a bare runtime 500 with no body — which the shipping client reads
+   * as "retry forever". Turning it into a structured 503 makes a storage outage honestly TRANSIENT by
+   * contract, which is what lets the client classify it (see apps/server/src/telemetry/transport.ts).
+   */
   async fetch(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(req.url);
-
-    if (!authed(req, env)) return error(401, 'unauthorized');
-
-    // POST /ingest — batch write.
-    if (req.method === 'POST' && url.pathname === '/ingest') {
-      const raw = await req.text();
-      if (raw.length > MAX_BODY_BYTES) return error(413, 'payload too large');
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return error(400, 'invalid JSON');
-      }
-      let batch;
-      try {
-        batch = parseIngestBatch(parsed);
-      } catch (err) {
-        return error(400, err instanceof ValidationError ? err.message : 'invalid batch');
-      }
-      const result = await ingestBatch(
-        {
-          store: d1Store(env.DB),
-          notify: createDiscordNotifier(env.DISCORD_WEBHOOK_URL),
-          now: Date.now(),
-          rateWindowMs: RATE_LIMIT_WINDOW_MS,
-          rateMaxNewRows: RATE_LIMIT_MAX_NEW_ROWS,
-        },
-        batch,
-      );
-      return json(result);
+    try {
+      return await route(req, env);
+    } catch (err) {
+      console.error('[ingest] route fault', err);
+      return json({
+        status: 503,
+        body: { error: 'storage unavailable', detail: err instanceof Error ? err.message : String(err) },
+      });
     }
-
-    // GET /reports — token-authed JSON read API (machine/version/since filters).
-    if (req.method === 'GET' && url.pathname === '/reports') {
-      return json(await listReports(d1Store(env.DB), url));
-    }
-
-    // POST /backups — batch write of snapshot bundles to R2 (#123). Same envelope as /ingest (the
-    // shipper posts items under `reports`); the ROUTE distinguishes it. Bodies are opaque.
-    if (req.method === 'POST' && url.pathname === '/backups') {
-      const raw = await req.text();
-      if (raw.length > MAX_BACKUP_BODY_BYTES) return error(413, 'payload too large');
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return error(400, 'invalid JSON');
-      }
-      let batch;
-      try {
-        batch = parseBackupBatch(parsed);
-      } catch (err) {
-        return error(400, err instanceof ValidationError ? err.message : 'invalid batch');
-      }
-      return json(await ingestBackups(r2Store(env.BACKUPS), batch));
-    }
-
-    // GET /backups?machine= — token-authed listing of a machine's snapshots (metadata only).
-    if (req.method === 'GET' && url.pathname === '/backups') {
-      return json(await listBackups(r2Store(env.BACKUPS), url));
-    }
-
-    // GET /backups/object?key= — fetch one stored bundle body by full R2 key (agent debugging). The
-    // body is already JSON, so it is returned verbatim rather than re-wrapped.
-    if (req.method === 'GET' && url.pathname === '/backups/object') {
-      const result = await getBackup(r2Store(env.BACKUPS), url);
-      if (result.status === 200 && typeof result.body === 'string') {
-        return new Response(result.body, { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return json(result);
-    }
-
-    return error(404, 'not found');
   },
 };

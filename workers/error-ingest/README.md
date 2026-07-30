@@ -27,6 +27,29 @@ All require `Authorization: Bearer <TELEMETRY_TOKEN>`.
 - `GET /backups/object?key=` — fetch one stored bundle body by its full R2 key (must be inside the
   `backups/` prefix). Returns the bundle JSON verbatim, or 404.
 
+## Failure responses
+
+Every failure is a JSON body `{ "error": <message> }`. The shipping client classifies on the STATUS,
+so these are a contract, not just diagnostics (`apps/server/src/telemetry/transport.ts`):
+
+| Status | Body                                                | Retryable | When                                                            |
+| ------ | --------------------------------------------------- | --------- | --------------------------------------------------------------- |
+| 401    | `{ error: 'unauthorized' }`                          | no        | Missing/wrong bearer token, or `TELEMETRY_TOKEN` unset.          |
+| 404    | `{ error: 'not found' }`                             | no        | Authed request to an unknown method+path.                        |
+| 413    | `{ error: 'payload too large' }`                     | no        | Body over the route's cap (see below).                           |
+| 400    | `{ error: 'invalid JSON' \| <validation message> }`  | no        | Unparseable body, or a batch that fails shape validation.        |
+| 503    | `{ error: 'storage unavailable', detail: <string> }` | **yes**   | Any fault escaping a route — D1 rate limit, schema mismatch, R2. |
+
+**Size caps are byte-accurate.** `/ingest` caps at 1,000,000 bytes and `/backups` at 16,000,000, both
+measured as **UTF-8 bytes**, not UTF-16 code units — a non-ASCII stack trace or an emoji-laden payload
+would otherwise under-count by up to 3x. Each route rejects twice: first on a declared
+`content-length` over the cap (a fast reject, before the body is buffered at all), then on the actual
+byte length after reading, since `content-length` is client-supplied and cannot be the only gate.
+
+The 503 is the load-bearing one: a bare runtime 500 with no body reads to the client as "retry
+forever", whereas a 503 says the fault is honestly transient. The client caps its own batches at
+900,000 bytes so a well-behaved shipper never provokes a 413 in the first place.
+
 ## One-time deploy (Trent — secrets are yours, do not commit them)
 
 Prereqs: `npm i -g wrangler` (or use `npx wrangler@4`), and `wrangler login`.
