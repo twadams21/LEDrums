@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 import { admitDecision, isTrustedHost, isViaCloudflare, type MutablePinGate } from './pin-gate';
+import { createAdmissionThrottle, peerKeyFrom, type AdmissionThrottle } from './admission-throttle';
 import type { ClientRegistry } from './client-registry';
 import type { MonitorDraft } from './monitor';
 import { randomBytes } from 'node:crypto';
@@ -54,6 +55,9 @@ export interface WsConnectionDeps<S extends ConnectionSocket> {
   onKeepaliveSweep?(): void;
   /** Env for the one-shot LEDRUMS_MAX_CLIENTS read (S16). Defaults to process.env. */
   env?: Record<string, string | undefined>;
+  /** PIN-failure accounting (INIT-05). Constructed here by default so main.ts gains no state of
+   * its own; injectable so tests can drive it on a fake clock instead of waiting out cooldowns. */
+  admissionThrottle?: AdmissionThrottle;
 }
 
 /** Max outbound `error` frames per socket per window (S15). All failures still emit
@@ -92,6 +96,7 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
   const { hostToken, pinGate, clients, tunnelClients, monitor, broadcastPresence, stateMessage, replayMonitor, monitorInput, handleClientMessage, dropWatcher } = deps;
   const log = deps.log ?? ((message: string, detail: string): void => console.error(message, detail));
   const maxClients = resolveMaxClients(deps.env ?? process.env);
+  const admissionThrottle = deps.admissionThrottle ?? createAdmissionThrottle();
 
   /** Reap wired to the exact body of the close handler below, so a reaped peer is
    * indistinguishable from a normal disconnect to every other subsystem (S13). */
@@ -121,8 +126,26 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
       url: req.url,
       hostToken,
     });
-    const decision = admitDecision(req.url, pinGate, { trustedLocal });
+    //
+    // Failure accounting (INIT-05, resilience-hole-0006): repeated refusals from one peer buy an
+    // escalating cooldown, so a 10^6 PIN space is no longer searchable at connection rate. The
+    // whole policy lives inside admitDecision — the handler only supplies the bucket key and
+    // forwards the escalation to the Monitor.
+    const peerKey = peerKeyFrom(req.socket.remoteAddress, req.headers);
+    const decision = admitDecision(req.url, pinGate, { trustedLocal, throttle: admissionThrottle, peerKey });
     if (!decision.ok) {
+      // ONE event per ESCALATION, never one per failed attempt: a guessing flood must not itself
+      // flood the 300-event Monitor bus or the per-event broadcast to every admitted client. The
+      // two labels are distinct because a `global` alert is the operator's ONLY signal that an
+      // attacker is holding remote access closed for everyone, and it must read differently at a
+      // glance from one noisy peer.
+      if (decision.alert) {
+        const { scope, key, failures, cooldownMs } = decision.alert;
+        const label = scope === 'global' ? 'Remote access cooling down (global)' : 'Repeated PIN refusals';
+        const detail = `${failures} failed attempts from ${key}; cooling down ${Math.round(cooldownMs / 1_000)}s`;
+        monitor({ type: 'error', direction: 'local', source: 'server/ws', destination: 'remote-access', label, detail });
+        log(`[ws] ${label}:`, detail);
+      }
       ws.close(decision.code, decision.reason);
       return;
     }
