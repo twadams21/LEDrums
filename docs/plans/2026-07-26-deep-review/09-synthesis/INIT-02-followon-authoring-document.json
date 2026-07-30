@@ -34,7 +34,8 @@
         "apps/web/src/lib/trigger-lab/store.surface.test.ts"
       ],
       "risk": "high",
-      "verification": "`pnpm gates` green; store.clipboard.test.ts, store.node-clipboard.test.ts, store.patch-clipboard.test.ts stay green with call-shape edits only. Undo/redo parity is the risk here \u2014 a characterization matrix over the snapshot boundaries comes FIRST, in the shape INIT-02 S15 used before unifying the two library syncs."
+      "verification": "`pnpm gates` green; store.clipboard.test.ts, store.node-clipboard.test.ts, store.patch-clipboard.test.ts stay green with call-shape edits only. Undo/redo parity is the risk here \u2014 a characterization matrix over the snapshot boundaries comes FIRST, in the shape INIT-02 S15 used before unifying the two library syncs.",
+      "reverses": "`git revert` per step, but with a caveat S1 does not have: the undo STACK is runtime state, not persisted, so reverting mid-cluster leaves any snapshots taken under the new shape unreadable by the old code. Revert between commits, not during a session \u2014 and if the characterization matrix has already landed, keep it: it is pure test addition and is the evidence a second attempt would need."
     },
     {
       "id": "S3",
