@@ -405,6 +405,76 @@ describe('graph-wiring — rejection reasons (classifyReconnect)', () => {
   });
 });
 
+/* data-clumps-0005 guard rail. TriggerGraphView's `validateDrop` deliberately SWAPS the two id
+   slots when the drag began at an INPUT handle — the dropped-on node becomes the source:
+
+     if (from.type === 'target') return canConnect(g, toId, from.nodeId, undefined, toPort);   // :565, :573
+
+   Both `fromId` and `toId` are `string` and both port slots are optional, so a transposition
+   type-checks silently. These cases reproduce that call shape verbatim (drag-origin id in the
+   `toId` slot, drop-target id in the `fromId` slot, `fromPort` always undefined) and assert BOTH
+   the reverse verdict and the forward one, so swapping the ids turns a green case red instead of
+   mis-validating a drag in the UI. */
+describe('graph-wiring — reverse-drag call shape (TriggerGraphView end-swap)', () => {
+  /** trigger → play, plus a Trail modifier, an envelope source and a container — all unwired. */
+  function g(): TriggerGraph {
+    return {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('play', 'p1', 200, 0),
+        makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
+        makeNode('envelope', 'env1', 0, 200),
+        makeNode('all', 'a1', 100, 300),
+      ],
+      edges: [],
+    };
+  }
+
+  it('accepts a reverse drag from a flow input onto an upstream node (and the forward spelling does not)', () => {
+    // drag begins at p1's flow `in` handle, releases on the trigger node body.
+    expect(canConnect(g(), 'trigger', 'p1', undefined, undefined)).toBe(true);
+    // the same two ids the other way round is direction-illegal — a transposition cannot pass.
+    expect(canConnect(g(), 'p1', 'trigger', undefined, undefined)).toBe(false);
+  });
+
+  it('accepts a reverse drag from a `mod` input onto a modifier (and not transposed)', () => {
+    // drag begins at p1's `mod` handle → toPortOf('mod'), releases on m1.
+    expect(canConnect(g(), 'm1', 'p1', undefined, 'mod')).toBe(true);
+    expect(canConnect(g(), 'p1', 'm1', undefined, 'mod')).toBe(false);
+  });
+
+  it('accepts a reverse drag from a `param:` row onto a modulation source (and not transposed)', () => {
+    // drag begins at p1's exposed `param:brightness` row, releases on the envelope.
+    expect(canConnect(g(), 'env1', 'p1', undefined, 'param:brightness')).toBe(true);
+    expect(canConnect(g(), 'p1', 'env1', undefined, 'param:brightness')).toBe(false);
+  });
+
+  it('reports `direction` for a reverse drag onto a node that cannot drive that port', () => {
+    // drag from p1's `mod` handle released on a container: `mod` wires leave modifiers only.
+    expect(classifyConnection(g(), 'a1', 'p1', undefined, 'mod')).toBe('direction');
+    expect(canConnect(g(), 'a1', 'p1', undefined, 'mod')).toBe(false);
+  });
+
+  it('reports `duplicate` for a reverse drag re-making a wire that already exists', () => {
+    const dup = g();
+    dup.edges.push({ id: 'e1', from: 'm1', to: 'p1', toPort: 'mod' });
+    expect(classifyConnection(dup, 'm1', 'p1', undefined, 'mod')).toBe('duplicate');
+    // transposed, the SAME arguments read as `direction`, not `duplicate` — the reason moves too.
+    expect(classifyConnection(dup, 'p1', 'm1', undefined, 'mod')).toBe('direction');
+  });
+
+  it('reports `cycle` for a reverse drag that closes a loop', () => {
+    const loop: TriggerGraph = {
+      nodes: [makeNode('random', 'a', 0, 0), makeNode('random', 'b', 100, 0)],
+      edges: [{ id: 'e1', from: 'a', to: 'b' }],
+    };
+    // drag begins at a's flow input, releases on b → b → a would close a↔b.
+    expect(classifyConnection(loop, 'b', 'a', undefined, undefined)).toBe('cycle');
+    // forward is merely a duplicate of e1 — a transposition changes the reason.
+    expect(classifyConnection(loop, 'a', 'b', undefined, undefined)).toBe('duplicate');
+  });
+});
+
 describe('canSplice (R08 wire-splice guard)', () => {
   /** a --(band-1)--> b --> c : a flow chain to splice a fresh node into. */
   function chain(): TriggerGraph {
@@ -440,6 +510,38 @@ describe('canSplice (R08 wire-splice guard)', () => {
     const g = chain();
     g.edges.push({ id: 'e3', from: 'x', to: 'c' });
     expect(canSplice(g, 'e2', 'x')).toBe(false);
+  });
+
+  /* canSplice makes TWO internal positional classifyConnection calls (graph-wiring.ts:132-135) —
+     `source → node` carrying the edge's fromPort, then `node → target` carrying its toPort. The
+     chain() fixture above is all-`random`, so it is direction-SYMMETRIC and would stay green if
+     those two calls had their ends or their ports transposed. These two cases are asymmetric on
+     purpose, so a transposition inside canSplice goes red. */
+  it('accepts a splice on a direction-ASYMMETRIC wire (bites an end transposition)', () => {
+    // trigger has no input and play has no output, so only `trigger → x → p1` classifies legal:
+    // reversing either internal call makes this false.
+    const g: TriggerGraph = {
+      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('play', 'p1', 200, 0), makeNode('random', 'x', 100, 200)],
+      edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
+    };
+    expect(canSplice(g, 'e1', 'x')).toBe(true);
+  });
+
+  it("keeps the edge's fromPort on the SOURCE→node wire only (bites a port transposition)", () => {
+    // x already feeds p1 on band-0. The spliced `x → p1` wire takes the DEFAULT source port, so it
+    // is not that duplicate; carrying e1's fromPort onto it instead would read as one and refuse.
+    const g: TriggerGraph = {
+      nodes: [
+        makeNode('switch', 's1', 0, 0, { on: 'value', valueMode: 'bands', bands: [0.3, 0.6] }),
+        makeNode('play', 'p1', 200, 0),
+        makeNode('random', 'x', 100, 200),
+      ],
+      edges: [
+        { id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' },
+        { id: 'e2', from: 'x', to: 'p1', fromPort: 'band-0' },
+      ],
+    };
+    expect(canSplice(g, 'e1', 'x')).toBe(true);
   });
 
   it('refuses a modulation wire (only flow wires splice)', () => {
