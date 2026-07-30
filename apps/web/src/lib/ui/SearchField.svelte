@@ -2,35 +2,45 @@
   /* Pill-shaped search input with a leading icon and a clear button. */
   import Search from '@lucide/svelte/icons/search';
   import X from '@lucide/svelte/icons/x';
+  import type { ControlProps } from './control-props';
 
-  type Props = {
+  type Props = ControlProps<string> & {
     value: string;
     placeholder?: string;
-    onChange?: (v: string) => void;
-    ariaLabel?: string;
-    class?: string;
   };
 
-  let { value = $bindable(''), placeholder = 'Search…', onChange, ariaLabel = 'Search', class: klass }: Props = $props();
+  let {
+    value = $bindable(''),
+    placeholder = 'Search…',
+    onChange,
+    disabled = false,
+    ariaLabel = 'Search',
+    class: klass,
+  }: Props = $props();
 
   function clear(): void {
+    // Fail closed in the handler, not only on the attribute: `disabled` + `pointer-events:
+    // none` already stop a real pointer, but a programmatic click still reaches a listener,
+    // and "disabled" has to mean inert wherever the call came from.
+    if (disabled) return;
     value = '';
     onChange?.('');
   }
 </script>
 
-<div class={['search', klass]}>
+<div class={['search', klass]} class:disabled>
   <Search size={14} class="search-icon" aria-hidden="true" />
   <input
     class="search-input"
     type="text"
     {placeholder}
+    {disabled}
     aria-label={ariaLabel}
     bind:value
     oninput={(e) => onChange?.(e.currentTarget.value)}
   />
   {#if value}
-    <button class="search-clear" type="button" onclick={clear} aria-label="Clear search">
+    <button class="search-clear" type="button" {disabled} onclick={clear} aria-label="Clear search">
       <X size={13} aria-hidden="true" />
     </button>
   {/if}
@@ -52,6 +62,12 @@
   .search:focus-within {
     border-color: var(--accent);
     color: var(--text);
+  }
+  /* Matches TextField's `.tf:disabled` treatment — the pill is the control here, so it
+     dims as one rather than leaving a live-looking frame around a dead input. */
+  .search.disabled {
+    opacity: 0.5;
+    pointer-events: none;
   }
   .search :global(.search-icon) {
     flex: none;

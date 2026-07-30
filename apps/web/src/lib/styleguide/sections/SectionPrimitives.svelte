@@ -19,6 +19,7 @@
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
+  import Eyebrow from '../../ui/Eyebrow.svelte';
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
   import Pill from '../../ui/Pill.svelte';
@@ -177,6 +178,45 @@
           <button class="ghost">Hover me</button>
         </Tooltip>
       </div>
+    </DemoCard>
+
+    <!-- Heads the value-control group: everything from here to the colour swatch speaks the
+         same four props. A type has no pixels of its own, so this card demos the contract's
+         one visible clause — `disabled` — across all nine at once. That is also the regression
+         guard: SearchField had no `disabled` at all until this contract was pulled out, and a
+         live-looking search pill next to eight dimmed controls is the drift returning. -->
+    <DemoCard
+      title="Value-control contract"
+      src="lib/ui/control-props"
+      note="Every value control speaks ControlProps&lt;T&gt;: onChange(v: T) · disabled · ariaLabel · class. T is what the control HANDS BACK, not what it renders — ColorSwatch takes three numeric params and reports one Hsv. The value prop stays with each control, because its name is the control's own business (value / checked / pressed / hue+saturation+brightness). Extend by intersection, and narrow the same way: EasePicker re-requires onChange, since it owns no state and is inert without one. IconButton is deliberately not a member — an action, not a value control, and its accessible name is `label`."
+      wide
+    >
+      {#each [false, true] as off (off)}
+        <div class="cp-state">
+          <Eyebrow>{off ? 'disabled' : 'enabled'}</Eyebrow>
+          <div class="comp-row">
+            <TextField value="Opening set" disabled={off} ariaLabel="Show name" class="cp-tf" />
+            <SearchField value="kick" disabled={off} />
+            <Select value="artnet" options={protocolOptions} disabled={off} ariaLabel="Protocol" />
+            <SegmentedControl value="arrange" options={modeOptions} disabled={off} ariaLabel="Mode" />
+          </div>
+          <div class="comp-row">
+            <Toggle pressed disabled={off} />
+            <Switch checked disabled={off} ariaLabel="Broadcast" />
+            <Slider
+              value={48}
+              min={0}
+              max={100}
+              disabled={off}
+              ariaLabel="Opacity"
+              format={(v) => `${v}%`}
+              class="cp-slider"
+            />
+            <ColorSwatch hue={30} saturation={1} brightness={1} disabled={off} />
+            <EasePicker value={{ fn: 'cubic', dir: 'inOut' }} onChange={() => {}} disabled={off} ariaLabel="Easing" />
+          </div>
+        </div>
+      {/each}
     </DemoCard>
 
     <DemoCard title="Text fields" src={['lib/ui/TextField', 'lib/ui/SearchField', 'lib/ui/Field']}>
@@ -606,6 +646,25 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
+  }
+  /* Value-control contract demo: TextField and Slider are full-width by design, so on a
+     shared row they need an explicit basis or they eat the row and the point of the
+     side-by-side comparison is lost. */
+  .comp-row :global(.cp-tf),
+  .comp-row :global(.cp-slider) {
+    width: 180px;
+    flex: none;
+  }
+  .cp-state {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  /* The two state groups read as one comparison, so they sit closer to each other than the
+     card body's default gap and the second is set off by a rule rather than more space. */
+  .cp-state + .cp-state {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle, var(--border));
   }
   /* ActionButton demo: the real `.actions` row it is extracted from — stretch siblings sharing the
      width at the panel's own gap, so the demo shows the control in the layout it was designed for.

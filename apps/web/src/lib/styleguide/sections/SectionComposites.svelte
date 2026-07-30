@@ -20,6 +20,14 @@
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
   import ControllerStatusPanel from '../../app/docks/inspectors/ControllerStatusPanel.svelte';
+  // The six children ControllerStatusPanel composes (INIT-09 S7) — each pure props in,
+  // callbacks out, so they demo on plain values with no stub store at all.
+  import ControllerBanners from '../../app/docks/inspectors/ControllerBanners.svelte';
+  import ControllerDiscovery from '../../app/docks/inspectors/ControllerDiscovery.svelte';
+  import ControllerReadout from '../../app/docks/inspectors/ControllerReadout.svelte';
+  import ControllerAuthField from '../../app/docks/inspectors/ControllerAuthField.svelte';
+  import ControllerTestPatterns from '../../app/docks/inspectors/ControllerTestPatterns.svelte';
+  import ControllerCandidates from '../../app/docks/inspectors/ControllerCandidates.svelte';
   import AdoptByIpRow from '../../app/docks/inspectors/AdoptByIpRow.svelte';
   import UniverseRxTable from '../../app/docks/inspectors/UniverseRxTable.svelte';
   import Monitor from '../../app/docks/Monitor.svelte';
@@ -419,6 +427,80 @@
       </div>
     </DemoCard>
 
+    <!-- The six children the panel above composes (INIT-09 S7). Demoed individually because each is
+         reusable on its own terms and, more practically, because the parent can only ever show one
+         combination at a time — a banner pair, an auth field mid-warning and an idle test rack are
+         three different moments of the same panel. Each takes plain values, so these are the real
+         components with no stub store between them and you. -->
+    <DemoCard
+      title="Controller banners"
+      src={['lib/app/docks/inspectors/ControllerBanners', 'lib/app/docks/inspectors/output-status']}
+      note="The panel's two LOUD callouts, one grammar in two deliberately different colour families. TAKEOVER (amber warn) is a state you CHOSE — the box is showing test data, not your live show — so it warns rather than errors and carries its own one-click exit. ALERT (live-red) is LOST or not-receiving: it borrows the S03 fault treatment so it reads as the same family as an output fault. Both fade+rise in and collapse to instant under reduced motion; the takeover's left edge breathes the whole time a pattern runs."
+    >
+      <div class="ctrl-child-demo">
+        <ControllerBanners takeover={ctrlTakeover.testPattern} onBackToLive={noop} host="192.168.1.50" />
+        <ControllerBanners alert host="192.168.1.50" />
+        <ControllerBanners alert lost host="192.168.1.50" quietFor="12s ago" />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Controller discovery guide"
+      src={['lib/app/docks/inspectors/ControllerDiscovery', 'lib/app/docks/inspectors/AdoptByIpRow']}
+      note="The 'different IP addresses' guide plus manual adopt — what an operator needs when Discover finds nothing: this PC's adapter subnet, a concrete IP to set the box to (one-tap copy), and a way to adopt a known address anyway. The panel renders it at BOTH moments that call for it: under a LOST alert, and in the un-adopted branch. With no adapter known the card hides and the adopt row stands alone, which still works."
+    >
+      <div class="ctrl-child-demo">
+        <ControllerDiscovery recommendation={ctrlRecommendation} onAdopt={noop} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Controller readout"
+      src={['lib/app/docks/inspectors/ControllerReadout', 'lib/app/docks/inspectors/UniverseRxTable']}
+      note="The adopted box's own numbers and the only part of the panel with no actions at all: identity (name / model / firmware / IP), then live health (frame rates, temperature, bank voltage, ethernet links), then per-universe rx. The em-dashes in the second copy are a LOST controller: an unmeasurable reading renders as a dash, never as a zero or a loading state. NB — the server does not actually clear these on a lost poll; it FREEZES the last-known universes, rates and health while flipping reachable false (controller-monitor.ts pollOnce), so a real LOST readout shows stale-but-real numbers. This stub blanks rates and health to make the dash treatment visible, and is the more legible demo rather than the faithful one."
+    >
+      <div class="ctrl-child-demo">
+        <ControllerReadout controller={ctrlReceiving} />
+        <ControllerReadout controller={ctrlLost} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Controller admin password (R29)"
+      src="lib/app/docks/inspectors/ControllerAuthField"
+      note="The one credential field on the panel. It never shows a stored value — only the server-side hash is kept — so it reads empty and clears after each set. The hint is derived from the device's own authReqd plus whether we're reaching it, never from a local 'did we set one?' flag that would lie the moment the box is re-flashed. When the device demands a password we don't have, the label takes the warn tone and the hint stops apologising and states the requirement."
+    >
+      <div class="ctrl-child-demo">
+        <ControllerAuthField onSetAuth={noop} />
+        <ControllerAuthField authReqd reachable onSetAuth={noop} />
+        <ControllerAuthField authReqd onSetAuth={noop} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Controller test patterns (S49)"
+      src="lib/app/docks/inspectors/ControllerTestPatterns"
+      note="Drives the controller's built-in test-data mode with no input source. The solid swatches double as the 'set colour' affordance — one click sends setColor across all ports and pixels, and White carries the W channel so an RGBW rig's white LEDs light too. Starting any pattern takes the box over, so the running control stays lit in the warn family, tying back to the banner above; the trailing Live button is dead until something IS running."
+    >
+      <div class="ctrl-child-demo">
+        <ControllerTestPatterns onTestData={noop} onBackToLive={noop} />
+        <ControllerTestPatterns takeover={{ op: 'setColor', color: [255, 0, 0, 0] }} onTestData={noop} onBackToLive={noop} />
+        <ControllerTestPatterns takeover={{ op: 'rgbwCycle' }} onTestData={noop} onBackToLive={noop} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Controller candidates"
+      src="lib/app/docks/inspectors/ControllerCandidates"
+      note="What Discover found — the panel's trailing block, answering one question ('what is out there?') three mutually exclusive ways: a ranked candidate list with Adopt-IP per row, a scanning-in-progress hint with a spinning radar, or the nothing-adopted-yet explainer. It renders whether or not a controller is already adopted, since a re-scan lists the neighbours too; `adopted` only decides whether the empty state explains Discover or says nothing at all."
+    >
+      <div class="ctrl-child-demo">
+        <ControllerCandidates candidates={ctrlCandidates} onAdopt={noop} />
+        <ControllerCandidates candidates={[]} scanning />
+        <ControllerCandidates candidates={[]} />
+      </div>
+    </DemoCard>
+
     <DemoCard
       title="Adopt-by-IP row"
       src="lib/app/docks/inspectors/AdoptByIpRow"
@@ -553,6 +635,14 @@
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: var(--space-4) var(--space-5);
     align-items: start;
+  }
+  /* The controller children stack their states vertically at the panel's own gap, so each card
+     reads as "the same component, three moments" rather than three unrelated things in a row. */
+  .ctrl-child-demo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: stretch;
   }
   .insp-demo {
     display: flex;

@@ -6,16 +6,13 @@
   import { type Component } from 'svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
+  import type { ControlProps } from './control-props';
 
   type Option = { value: string; label: string; icon?: Component; iconColor?: string; disabled?: boolean };
-  type Props = {
+  type Props = ControlProps<string> & {
     value: string;
     options: Option[];
-    onChange?: (v: string) => void;
-    disabled?: boolean;
     placeholder?: string;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let {

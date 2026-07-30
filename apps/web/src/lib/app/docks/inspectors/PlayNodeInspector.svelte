@@ -73,9 +73,11 @@
       return infos.map((d) => ({ value: d.id, label: d.label }));
     }
     if (node.scope === 'hoop') {
+      // The `"<drumId>#<h>"` wire form is core's to spell, not ours (06A reviewer NB) — a
+      // hand-built template here is a second grammar that drifts silently from the parser.
       return infos.flatMap((d) =>
         Array.from({ length: d.hoopCount }, (_, i) => ({
-          value: `${d.id}#${i + 1}`,
+          value: voice.encodeHoopTarget(d.id, [i + 1]),
           label: `${d.label} · Hoop ${i + 1}`,
         })),
       );

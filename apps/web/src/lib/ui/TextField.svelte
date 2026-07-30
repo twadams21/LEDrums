@@ -1,14 +1,12 @@
 <script lang="ts">
   /* Project-styled text input. `value` is bindable; `onChange` fires on input. */
-  type Props = {
+  import type { ControlProps } from './control-props';
+
+  type Props = ControlProps<string> & {
     value: string;
     placeholder?: string;
-    onChange?: (v: string) => void;
     mono?: boolean;
-    disabled?: boolean;
     id?: string;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let {

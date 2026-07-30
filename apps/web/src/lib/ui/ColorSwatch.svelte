@@ -10,8 +10,10 @@
      dependency-free. */
   import { hexToHsv, hsvToHex, type Hsv } from '@ledrums/core';
   import Spline from '@lucide/svelte/icons/spline';
+  import type { ControlProps } from './control-props';
 
-  type Props = {
+  // ControlProps<Hsv>: three numeric params in, one decoded Hsv back out of `onChange`.
+  type Props = ControlProps<Hsv> & {
     /** Hue in degrees (0..360). */
     hue: number;
     /** Saturation 0..1. */
@@ -20,11 +22,6 @@
     brightness: number;
     /** true → one or more of hue/sat/bri is driven by an envelope; show the badge. */
     modulated?: boolean;
-    disabled?: boolean;
-    /** Fired with the decoded HSV when the user picks a colour. */
-    onChange?: (hsv: Hsv) => void;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let {

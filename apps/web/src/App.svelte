@@ -10,7 +10,12 @@
   import { platformShortcutModifier } from './lib/app/primary-shortcut';
   import type { ShortcutEntry } from './lib/app/shortcuts';
   import Shell from './lib/app/AuthorShell.svelte';
-  import Overlays from './lib/app/Overlays.svelte';
+  /* Overlay layer — the summoned-on-demand drawers + modals. Each reads its own open
+     state off the engine store, so they need no wrapper: they mount here beside the
+     shell and render nothing until summoned. */
+  import EffectGallery from './lib/trigger-lab/EffectGallery.svelte';
+  import ClipSettings from './lib/trigger-lab/ClipSettings.svelte';
+  import EnvelopeEditor from './lib/trigger-lab/EnvelopeEditor.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
   // S08: the single app-root desktop-bridge start + the boot overlay it drives.
   import { desktopBridge } from './lib/app/desktop-bridge.svelte';
@@ -97,7 +102,9 @@
   <Shell {store} {shell} />
 </div>
 
-<Overlays {store} />
+<EffectGallery {store} />
+<ClipSettings {store} />
+<EnvelopeEditor {store} />
 
 <PinGate {store} />
 

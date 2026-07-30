@@ -4,21 +4,17 @@
      readout can never drift apart. Pass `value` one-way with `onChange`, or
      `bind:value` — both work. */
   import { Slider } from 'bits-ui';
+  import type { ControlProps } from './control-props';
 
-  type Props = {
+  type Props = ControlProps<number> & {
     value: number;
     min?: number;
     max?: number;
     step?: number;
-    disabled?: boolean;
-    /** Fired on every change; use this when `value` isn't a bindable local. */
-    onChange?: (v: number) => void;
     /** Formats the trailing readout (e.g. `v => v + 'ms'`). */
     format?: (v: number) => string;
     /** Hide the trailing readout when the caller renders its own. */
     showValue?: boolean;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let {

@@ -2,13 +2,10 @@
   /* Sliding on/off switch on Bits UI. Distinct from Toggle (a labelled button) —
      use for boolean settings. `checked` is bindable. */
   import { Switch } from 'bits-ui';
+  import type { ControlProps } from './control-props';
 
-  type Props = {
+  type Props = ControlProps<boolean> & {
     checked: boolean;
-    onChange?: (v: boolean) => void;
-    disabled?: boolean;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let { checked = $bindable(false), onChange, disabled = false, ariaLabel, class: klass }: Props = $props();
