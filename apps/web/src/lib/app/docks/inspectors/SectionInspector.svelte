@@ -42,7 +42,7 @@
       value={sectionName}
       placeholder="Section"
       ariaLabel="Section name"
-      onCommit={(v) => store.renameSection(sectionId, v)}
+      onCommit={(v) => store.arrangement.renameSection(sectionId, v)}
     />
   </Field>
 
@@ -60,7 +60,7 @@
           <Select
             value={looks[bus.id] ?? ''}
             options={lookOptions(bus.id)}
-            onChange={(v) => store.setLook(sectionId, bus.id, v === '' ? null : v)}
+            onChange={(v) => store.arrangement.setLook(sectionId, bus.id, v === '' ? null : v)}
             placeholder="None"
             ariaLabel={`${bus.name} look`}
           />

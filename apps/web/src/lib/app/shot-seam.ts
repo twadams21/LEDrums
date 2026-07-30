@@ -144,7 +144,7 @@ class ShotSeamImpl implements ShotSeam {
     if (!nameOrKey) return; // a pad graph is pre-selected on boot
     const key = this.resolveGraphKey(nameOrKey);
     if (!key) return;
-    const section = this.store.activeSectionId;
+    const section = this.store.arrangement.activeSectionId;
     if (section) this.store.selectGraphInSection(section, key);
     else this.store.selectedPadKey = key;
   }

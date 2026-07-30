@@ -16,7 +16,7 @@
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   const song = $derived(store.activeSong);
-  const section = $derived(store.activeSection);
+  const section = $derived(store.arrangement.activeSection);
   const graphs = $derived(section?.graphs ?? []);
 
   /** Hotkey label for the n-th card: 1–9, then 0 for the tenth; none beyond. */
@@ -35,7 +35,7 @@
   function newGraph(): void {
     if (!section) return;
     const key = store.createGraph();
-    store.addGraphToSection(section.id, key);
+    store.arrangement.addGraphToSection(section.id, key);
     shell.clearSelection();
   }
   function sourceSub(key: string): string {
@@ -61,7 +61,7 @@
         <button
           type="button"
           class="sectab"
-          class:on={sec.id === store.activeSectionId}
+          class:on={sec.id === store.arrangement.activeSectionId}
           onclick={() => store.setActiveSection(sec.id)}
         >
           {sec.name}<span class="cnt">{sec.graphs.length}</span>

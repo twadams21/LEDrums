@@ -38,7 +38,7 @@
   let editing = $state(false);
   let dragging = $state(false);
   let ghostEl = $state<HTMLDivElement | null>(null);
-  const current = $derived(store.activeSectionId === section.id && store.selectedPadKey === graphKey);
+  const current = $derived(store.arrangement.activeSectionId === section.id && store.selectedPadKey === graphKey);
   const reused = $derived(isReused(song, graphKey));
   const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.drums).sub);
 
@@ -61,7 +61,7 @@
     shell.setView('trigger');
   }
   function removeFromSection(): void {
-    store.removeGraphFromSection(section.id, graphKey);
+    store.arrangement.removeGraphFromSection(section.id, graphKey);
   }
 
   const actions = $derived<ContextMenuAction[]>([

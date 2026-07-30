@@ -22,7 +22,7 @@ function harness(blocked: boolean) {
     removeNode: vi.fn(),
     fireSectionGraph: vi.fn(),
     activeSong: { sections: [{ id: 's1' }, { id: 's2' }] },
-    activeSectionId: 's1',
+    arrangement: { activeSectionId: 's1' },
     setActiveSection: vi.fn(),
   };
   const shell: AppKeyShell = {

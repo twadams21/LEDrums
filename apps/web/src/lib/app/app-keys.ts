@@ -18,7 +18,7 @@ export interface AppKeyStore {
   removeNode(node: GraphNodeLike): void;
   fireSectionGraph(index: number): void;
   activeSong: { sections: readonly { id: string }[] } | null | undefined;
-  activeSectionId: string | null | undefined;
+  arrangement: { activeSectionId: string | null | undefined };
   setActiveSection(id: string): void;
 }
 
@@ -68,7 +68,7 @@ export function createAppKeyHandler(deps: AppKeyDeps): (e: AppKeyEvent) => void 
       if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
       const sections = store.activeSong?.sections ?? [];
       if (sections.length === 0) return;
-      const cur = sections.findIndex((s) => s.id === store.activeSectionId);
+      const cur = sections.findIndex((s) => s.id === store.arrangement.activeSectionId);
       const step = e.key === 'ArrowRight' ? 1 : -1;
       const next = sections[(cur + step + sections.length) % sections.length];
       if (next) store.setActiveSection(next.id);

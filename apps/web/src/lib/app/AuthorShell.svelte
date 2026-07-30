@@ -47,7 +47,7 @@
     const sel = shell.selection;
     if (!sel) return;
     if (sel.kind === 'section') {
-      const active = store.activeSectionId;
+      const active = store.arrangement.activeSectionId;
       if (active && active !== sel.sectionId) shell.select({ kind: 'section', sectionId: active });
     } else if (sel.kind === 'node') {
       // Drop a node selection only when a graph IS open and the node is genuinely gone from

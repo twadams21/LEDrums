@@ -46,7 +46,7 @@
   } = $props();
 
   let editing = $state(false);
-  const active = $derived(store.activeSectionId === section.id);
+  const active = $derived(store.arrangement.activeSectionId === section.id);
 
   let listEl = $state<HTMLDivElement | null>(null);
 
@@ -75,10 +75,10 @@
   }
 
   const actions = $derived<ContextMenuAction[]>([
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSection(section.id) },
+    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.arrangement.duplicateSection(section.id) },
     { label: 'Copy', icon: Copy, onSelect: () => void store.copySectionToClipboard(section.id) },
     { label: 'Paste', icon: ClipboardPaste, onSelect: () => void store.pasteSectionFromClipboard() },
-    { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.removeSection(section.id) },
+    { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.arrangement.removeSection(section.id) },
   ]);
 </script>
 
@@ -103,7 +103,7 @@
       {active}
       bind:editing
       onclick={selectSection}
-      onCommit={(name) => store.renameSection(section.id, name)}
+      onCommit={(name) => store.arrangement.renameSection(section.id, name)}
       {actions}
       renameLabel="Section name"
     >

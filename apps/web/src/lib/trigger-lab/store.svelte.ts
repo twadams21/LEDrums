@@ -512,7 +512,7 @@ export class TriggerLab {
     applyShow: (show) => this.applyShow(show),
     resetAuthoredToSeed: () => this.resetAuthoredToSeed(),
     normalizeGraphs: () => this.normalizeGraphs(),
-    setActiveSectionId: (id) => (this.activeSectionId = id),
+    setActiveSectionId: (id) => (this.arrangement.activeSectionId = id),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
     send: (msg) => this.client.send(msg),
@@ -1093,7 +1093,7 @@ export class TriggerLab {
       canvasScenes: this.canvasScenes,
       selectedPadKey: this.selectedPadKey,
       activeSongId: this.activeSongId,
-      activeSectionId: this.activeSectionId,
+      activeSectionId: this.arrangement.activeSectionId,
       bpm: this.bpm,
       velocity: this.velocity,
       beatsPerBar: this.beatsPerBar,
@@ -1124,7 +1124,7 @@ export class TriggerLab {
     this.canvasScenes = a.canvasScenes ?? [];
     if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
     if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
-    if (a.activeSectionId !== undefined) this.activeSectionId = a.activeSectionId;
+    if (a.activeSectionId !== undefined) this.arrangement.activeSectionId = a.activeSectionId;
     if (typeof a.bpm === 'number') this.bpm = a.bpm;
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
@@ -1340,8 +1340,8 @@ export class TriggerLab {
           this.engineSync.baselineTransport(cur);
           this.client.send({ t: 'setTransport', ...cur });
           // align the engine's active section with the store's current active section
-          if (this.activeSectionId) {
-            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
+          if (this.arrangement.activeSectionId) {
+            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangement.activeSectionId });
           }
         } else {
           // a drop means our next open must re-send the transport + Show
@@ -1481,7 +1481,7 @@ export class TriggerLab {
     return {
       buses: this.buses,
       graphs: rv.graphs,
-      sections: this.sections,
+      sections: this.arrangement.sections,
       // Send virtual canvas effects + their default presets alongside the real registry so
       // the engine's VoicePool can host `canvas:<id>` voices; scene docs register the generators.
       effects: [...rv.effects, ...this.canvasEffects],
@@ -1498,8 +1498,8 @@ export class TriggerLab {
     if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
     // setShow reseeds the active section to the first song/section — restore focus.
-    if (this.activeSectionId) {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
+    if (this.arrangement.activeSectionId) {
+      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangement.activeSectionId });
     }
   }
 
@@ -1592,7 +1592,7 @@ export class TriggerLab {
    * input-router — U3 — not this pad path.)
    */
   private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string; key: string }> {
-    const section = this.activeSection;
+    const section = this.arrangement.activeSection;
     // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
     // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
     const graphs = this.resolvedView.graphs;
@@ -1632,7 +1632,7 @@ export class TriggerLab {
       {@link hit} this does NOT filter by trigger-source match: it plays exactly the n-th graph
       the active section lists, and is a no-op when the section has fewer graphs. */
   fireSectionGraph(index: number): void {
-    const key = this.activeSection?.graphs[index];
+    const key = this.arrangement.activeSection?.graphs[index];
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
@@ -1674,7 +1674,7 @@ export class TriggerLab {
    * arrangement edit is local — but no look morphs, because the engine is the only renderer.
    */
   setActiveSection(sectionId: string): void {
-    this.activeSectionId = sectionId;
+    this.arrangement.activeSectionId = sectionId;
     if (this.link === 'open') {
       this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
     }
@@ -2000,7 +2000,7 @@ export class TriggerLab {
   async copySectionToClipboard(sectionId: string): Promise<void> {
     const section = this.findResolvedSection(sectionId);
     if (!section) return;
-    this.copySection(sectionId); // in-app fast path (no-op for a referenced song's section)
+    this.arrangement.copySection(sectionId); // in-app fast path (no-op for a referenced song's section)
     await this.writeClip(
       buildSectionClipDoc($state.snapshot(section), this.clipSources(), this.clipMeta()),
       'Section copied.',
@@ -2112,8 +2112,8 @@ export class TriggerLab {
   async pasteSectionFromClipboard(): Promise<void> {
     const text = await readClipboardText();
     if (text === null) {
-      if (this.sectionClipboard) {
-        this.pasteSection();
+      if (this.arrangement.sectionClipboard) {
+        this.arrangement.pasteSection();
         return;
       }
       this.pasteFallback = { context: 'section' };

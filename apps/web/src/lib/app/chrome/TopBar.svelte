@@ -23,7 +23,7 @@
 
   let { store }: { store: TriggerLab } = $props();
 
-  const activeName = $derived(store.activeSection?.name ?? '—');
+  const activeName = $derived(store.arrangement.activeSection?.name ?? '—');
   const showName = $derived(store.activeShow?.name ?? 'Untitled show');
   const sectionCount = $derived(store.activeSong?.sections.length ?? 0);
 
