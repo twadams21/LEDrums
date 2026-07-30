@@ -31,6 +31,7 @@
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import StatusPill from '../../../ui/StatusPill.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
+  import ActionButton from '../../../ui/ActionButton.svelte';
   import ReadRow from './ReadRow.svelte';
   import AdoptByIpRow from './AdoptByIpRow.svelte';
   import UniverseRxTable from './UniverseRxTable.svelte';
@@ -295,16 +296,14 @@
 
     <div class="actions">
       {#if outputDrift}
-        <button type="button" class="action wide" disabled={!canEdit} onclick={() => onAdopt?.(controller.host)}>
-          Point output here
-        </button>
+        <ActionButton wide disabled={!canEdit} onclick={() => onAdopt?.(controller.host)}>Point output here</ActionButton>
       {/if}
-      <button type="button" class="action" disabled={!canEdit} onclick={() => onIdentify?.()}>
+      <ActionButton disabled={!canEdit} onclick={() => onIdentify?.()}>
         <Lightbulb size={13} aria-hidden="true" /> Identify
-      </button>
-      <button type="button" class="action" disabled={!canEdit} onclick={() => onDiscover?.()}>
+      </ActionButton>
+      <ActionButton disabled={!canEdit} onclick={() => onDiscover?.()}>
         <Radar size={13} aria-hidden="true" /> Re-scan
-      </button>
+      </ActionButton>
     </div>
 
     <!-- Test patterns (S49): drive the controller's built-in test-data mode without an input source.
@@ -329,40 +328,21 @@
         {/each}
       </div>
       <div class="ops">
-        <button
-          type="button"
-          class="action"
-          class:on={takeover?.op === 'rgbwCycle'}
-          disabled={!canEdit}
-          aria-pressed={takeover?.op === 'rgbwCycle'}
-          onclick={() => sendOp('rgbwCycle')}
-        >
+        <ActionButton pressed={takeover?.op === 'rgbwCycle'} disabled={!canEdit} onclick={() => sendOp('rgbwCycle')}>
           RGBW cycle
-        </button>
-        <button
-          type="button"
-          class="action"
-          class:on={takeover?.op === 'colorFade'}
-          disabled={!canEdit}
-          aria-pressed={takeover?.op === 'colorFade'}
-          onclick={() => sendOp('colorFade')}
-        >
+        </ActionButton>
+        <ActionButton pressed={takeover?.op === 'colorFade'} disabled={!canEdit} onclick={() => sendOp('colorFade')}>
           Colour fade
-        </button>
-        <button
-          type="button"
-          class="action"
-          disabled={!canEdit || !takeoverActive}
-          onclick={() => onBackToLive?.()}
-        >
+        </ActionButton>
+        <ActionButton disabled={!canEdit || !takeoverActive} onclick={() => onBackToLive?.()}>
           <RotateCcw size={13} aria-hidden="true" /> Live
-        </button>
+        </ActionButton>
       </div>
     </div>
   {:else}
-    <button type="button" class="action wide discover" class:scanning disabled={!canEdit || scanning} onclick={() => onDiscover?.()}>
+    <ActionButton wide tone="discover" {scanning} disabled={!canEdit || scanning} onclick={() => onDiscover?.()}>
       <Radar size={13} aria-hidden="true" /> {scanning ? 'Discovering...' : 'Discover controllers'}
-    </button>
+    </ActionButton>
     {@render recommendationCard()}
     {@render adoptByIp()}
   {/if}
@@ -375,9 +355,12 @@
             <span class="cand-name">{c.nickname || c.prodName}</span>
             <span class="cand-meta">{c.prodName} · {c.host} · fw {c.fwVer}</span>
           </div>
-          <button type="button" class="action" disabled={!canEdit} onclick={() => onAdopt?.(c.host)}>
-            Adopt-IP
-          </button>
+          <!-- The button keeps the shared `stretch` metrics; where it sits in the candidate row
+               (hard right, no growth) is this panel's layout, so the wrapper owns it — same
+               division of labour as `.actions`. -->
+          <span class="cand-adopt">
+            <ActionButton disabled={!canEdit} onclick={() => onAdopt?.(c.host)}>Adopt-IP</ActionButton>
+          </span>
         </li>
       {/each}
     </ul>
@@ -569,77 +552,27 @@
     text-wrap: pretty;
   }
 
-  /* Actions — reuse the app's soft text-button vocabulary (cf. ShareInfo .action). Scale-on-press
-     for tactile feedback; hit area ≥ the row height. */
+  /* Actions — the ROW. The buttons themselves are lib/ui/ActionButton; this is only their layout. */
   .actions {
     display: flex;
     gap: var(--space-2);
     margin-top: var(--space-1);
-  }
-  .action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    flex: 1;
-    min-height: 30px;
-    padding: var(--space-1) var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    font-size: var(--text-xs);
-    color: var(--ink);
-    cursor: pointer;
-    transition:
-      border-color var(--dur-120) ease,
-      color var(--dur-120) ease,
-      scale var(--dur-120) ease;
-  }
-  .action :global(svg) {
-    flex: none;
-    opacity: 0.8;
-  }
-  .action:hover:not(:disabled) {
-    border-color: var(--border-strong);
-  }
-  .action:active:not(:disabled) {
-    scale: 0.96;
-  }
-  .action:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .action.wide {
-    width: 100%;
-    flex: none;
-  }
-  .action.discover {
-    color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
-  }
-  .action.discover:hover:not(:disabled) {
-    border-color: color-mix(in oklch, var(--accent) 60%, transparent);
-  }
-  .action.scanning :global(svg),
-  .scanning-row :global(svg) {
-    animation: scan-spin 1s linear infinite;
   }
   .scanning-row {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
   }
+  .scanning-row :global(svg) {
+    animation: scan-spin 1s linear infinite;
+  }
+  /* Svelte scopes keyframe names per component, so this hint's spinner cannot share ActionButton's
+     copy without promoting the animation to a `-global-` name. Three duplicated lines are the
+     cheaper trade — a deliberate decision, not an oversight. */
   @keyframes scan-spin {
     to {
       transform: rotate(360deg);
     }
-  }
-  /* An action currently driving the takeover (cycle / fade) reads as "on" in the warn family, so the
-     running pattern is obvious among its siblings. */
-  .action.on {
-    color: var(--warn);
-    border-color: color-mix(in oklch, var(--warn) 55%, transparent);
-    background: color-mix(in oklch, var(--warn) 14%, var(--surface-inset));
   }
 
   /* Test patterns (S49) — the drive controls. Kept visually quieter than the live-status readouts
@@ -840,7 +773,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .candidate .action {
+  /* Placement of the candidate's Adopt-IP, not the button itself: `flex: none` sizes the wrapper to
+     the button's own width and `margin-left: auto` pins it to the row's right edge. (Was
+     `.candidate .action` — a scoped selector cannot reach into ActionButton's markup.) */
+  .cand-adopt {
+    display: flex;
     flex: none;
     margin-left: auto;
   }

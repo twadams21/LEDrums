@@ -13,6 +13,7 @@
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import InspectorHeader from '../../../ui/InspectorHeader.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Spline from '@lucide/svelte/icons/spline';
   import Blend from '@lucide/svelte/icons/blend';
@@ -34,13 +35,13 @@
   }
 </script>
 
-<header class="ihead">
-  <span class="chip"><Blend size={16} aria-hidden="true" /></span>
-  <div class="titles">
-    <h3>{def?.name ?? 'Modifier'}</h3>
-    <span class="sub">{def?.category ?? 'none'} · modifier</span>
-  </div>
-</header>
+<!-- `subCase="capitalize"`: the category arrives lowercase off the definition, so the subtitle
+     reads "Temporal · Modifier". This was the ONE declaration the five copies did not share. -->
+<InspectorHeader title={def?.name ?? 'Modifier'} sub={`${def?.category ?? 'none'} · modifier`} subCase="capitalize">
+  {#snippet leading()}
+    <span class="chip"><Blend size={16} aria-hidden="true" /></span>
+  {/snippet}
+</InspectorHeader>
 
 <div class="bar">
   <label class="lblrow">
@@ -115,13 +116,6 @@
 </p>
 
 <style>
-  .ihead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
   .chip {
     display: inline-flex;
     align-items: center;
@@ -132,22 +126,6 @@
     border-radius: var(--radius-2);
     color: var(--role-mod);
     background: color-mix(in oklch, var(--role-mod) 16%, transparent);
-  }
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    text-transform: capitalize;
   }
   .bar {
     display: flex;

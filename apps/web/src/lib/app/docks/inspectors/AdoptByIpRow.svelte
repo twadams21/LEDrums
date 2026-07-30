@@ -1,8 +1,10 @@
 <script lang="ts">
-  /* Manual adopt-by-IP — a labelled IP input + Adopt, reusing the .action button vocabulary. Lets an
+  /* Manual adopt-by-IP — a labelled IP input + Adopt, on the shared ActionButton vocabulary. Lets an
      operator connect to a known controller even when Discover can't see it (still on a different
      subnet, across a router, or simply missed). Its placeholder seeds from the recommended IP so the
      "set the box, then adopt it" flow is one glance. Pure: local draft in, host out via onAdopt. */
+  import ActionButton from '../../../ui/ActionButton.svelte';
+
   let {
     recommendedIp,
     canEdit = true,
@@ -39,9 +41,8 @@
         if (e.key === 'Enter') submitAdopt();
       }}
     />
-    <button type="button" class="action" disabled={!canEdit || !adoptHost.trim()} onclick={submitAdopt}>
-      Adopt
-    </button>
+    <!-- `fit="label"`: sized to its own text beside the input, never stretching the row. -->
+    <ActionButton fit="label" disabled={!canEdit || !adoptHost.trim()} onclick={submitAdopt}>Adopt</ActionButton>
   </div>
 </div>
 
@@ -87,36 +88,6 @@
     opacity: 0.5;
     cursor: default;
   }
-
-  /* The Adopt button reuses the app's soft text-button vocabulary (cf. the panel .action). Sized to
-     its label here (auto width, wider inline padding) rather than stretching the row. */
-  .adopt-row .action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-    width: auto;
-    min-height: 30px;
-    padding: var(--space-1) var(--space-3);
-    background: var(--surface-inset);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    font-size: var(--text-xs);
-    color: var(--ink);
-    cursor: pointer;
-    transition:
-      border-color var(--dur-120) ease,
-      color var(--dur-120) ease,
-      scale var(--dur-120) ease;
-  }
-  .adopt-row .action:hover:not(:disabled) {
-    border-color: var(--border-strong);
-  }
-  .adopt-row .action:active:not(:disabled) {
-    scale: 0.96;
-  }
-  .adopt-row .action:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
+  /* The Adopt button's rules moved to lib/ui/ActionButton (`fit="label"`) — nothing about the
+     control is written out here any more. */
 </style>

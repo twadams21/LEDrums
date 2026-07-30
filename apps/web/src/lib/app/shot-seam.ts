@@ -128,6 +128,10 @@ export interface ShotSeam {
       state that must NEVER read as "incorrect", because during it the server refuses without
       comparing the PIN at all. A bare number is taken as the cooldown's seconds. */
   previewPinGate(kind?: 'wrong' | 'throttled' | string): void;
+  /** Select a section so SectionsView renders its detail aside (SectionInspector) — the only way
+      that inspector mounts, and it had no way in. `arg` matches a section by name (substring,
+      case-insensitive) or by 0-based index; omitted → the first section of the active song. */
+  selectSection(nameOrIdx?: string): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -444,6 +448,22 @@ class ShotSeamImpl implements ShotSeam {
       status === 'error' ? 'The song library could not be saved (quota: the quota has been exceeded).' : null;
   }
 
+  selectSection(nameOrIdx?: string): void {
+    this.shell.setView('sections');
+    // The active song's sections are a subset of the `resolvedSongs` list SectionsView resolves
+    // the selection against, so any id selected here resolves in the view.
+    const sections = this.store.library.activeSong?.sections ?? [];
+    if (sections.length === 0) return;
+    const idx = Number(nameOrIdx);
+    const target =
+      nameOrIdx === undefined
+        ? sections[0]
+        : Number.isInteger(idx) && idx >= 0 && idx < sections.length
+          ? sections[idx]
+          : sections.find((s) => s.name.toLowerCase().includes(nameOrIdx.toLowerCase()));
+    if (target) this.shell.select({ kind: 'section', sectionId: target.id });
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -528,6 +548,9 @@ class ShotSeamImpl implements ShotSeam {
         // count (8 expanded / 4 normal). Drives kit.outputs reconcile so the patch graph's output
         // half can be captured at either count. `expanded` / `expanded:on` → on; `expanded:off` → off.
         this.store.setKitGlobal({ expanded: arg !== 'off' });
+        break;
+      case 'section':
+        this.selectSection(arg);
         break;
       case 'mix-layers':
         this.mixWithLayers();

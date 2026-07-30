@@ -5,7 +5,7 @@
   import Field from '../../../ui/Field.svelte';
   import Select from '../../../ui/Select.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
-  import Radio from '@lucide/svelte/icons/radio';
+  import MidiLearnRow from '../../../ui/MidiLearnRow.svelte';
   import { onNum } from './forms';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
@@ -28,7 +28,11 @@
 {#if node.kind === 'cc'}
   <div class="kindbody">
     <Field layout="row" label="CC number" hint="1-127">
-      <div class="cc-row">
+      <MidiLearnRow
+        {learning}
+        onToggle={() =>
+          learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'cc-node', nodeId: node.id })}
+      >
         <CommitInput
           type="number"
           min={1}
@@ -38,19 +42,7 @@
           ariaLabel="CC controller number"
           onCommit={(v) => onNum(v, (n) => store.setCcController(node, n))}
         />
-        <button
-          type="button"
-          class="learn"
-          class:active={learning}
-          onclick={(e) => {
-            e.preventDefault();
-            learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'cc-node', nodeId: node.id });
-          }}
-        >
-          <Radio size={13} aria-hidden="true" />
-          {learning ? 'Listening' : 'Learn'}
-        </button>
-      </div>
+      </MidiLearnRow>
     </Field>
     <Field layout="row" label="Channel">
       <Select value={channel === null ? 'omni' : String(channel)} options={CHANNEL_OPTS} onChange={onChannel} ariaLabel="MIDI channel filter" />
@@ -71,32 +63,6 @@
   }
   .kindbody :global(.sel) {
     width: 100%;
-  }
-  .cc-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-2);
-    align-items: center;
-  }
-  .learn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .learn:hover,
-  .learn.active {
-    border-color: var(--accent);
-    color: var(--ink);
   }
   .hint {
     margin: 0;

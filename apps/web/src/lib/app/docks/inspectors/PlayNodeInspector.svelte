@@ -19,6 +19,7 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import InspectorHeader from '../../../ui/InspectorHeader.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
@@ -88,14 +89,14 @@
 {/each}
 
 {#if eff}
-  <header class="ihead">
-    <div class="thumb"><EffectThumb params={live} generatorId={eff.generatorId} labModel={store.labModel} w={72} h={40} /></div>
-    <div class="titles">
-      <h3>{eff.name}</h3>
-      <span class="sub">{node.scope}</span>
-    </div>
-    <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
-  </header>
+  <InspectorHeader title={eff.name} sub={node.scope}>
+    {#snippet leading()}
+      <div class="thumb"><EffectThumb params={live} generatorId={eff.generatorId} labModel={store.labModel} w={72} h={40} /></div>
+    {/snippet}
+    {#snippet trailing()}
+      <IconButton icon={Replace} label="Change effect" variant="soft" size={14} onclick={() => store.openGallery(node)} />
+    {/snippet}
+  </InspectorHeader>
 
   {#if isCanvas}
     <div class="sceneRow">
@@ -213,34 +214,12 @@
 {/if}
 
 <style>
-  .ihead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
   .thumb {
     line-height: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     padding: var(--space-0_5);
     flex: none;
-  }
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
   }
   .bar {
     display: flex;

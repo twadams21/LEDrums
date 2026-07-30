@@ -17,6 +17,7 @@
   import Select from '../../ui/Select.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
+  import InspectorHeader from '../../ui/InspectorHeader.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Spline from '@lucide/svelte/icons/spline';
   import Waves from '@lucide/svelte/icons/waves'; // S36
@@ -142,13 +143,9 @@
   {:else if sel?.kind === 'patch' && ed}
     {@const editor = ed}
     {@const d = describePatchNode(sel.nodeId, store.drums, project?.kit.outputs ?? [])}
-    <header class="ihead">
-      <div class="titles">
-        <Eyebrow>{d.stage}</Eyebrow>
-        <h3 class="patch-title">{patchLabel(store, sel.nodeId, d.title)}</h3>
-        <span class="sub">{d.sub}</span>
-      </div>
-    </header>
+    <!-- `class="patch-title"` dropped with the extraction: no CSS rule in apps/web/src ever
+         matched it. -->
+    <InspectorHeader eyebrow={d.stage} title={patchLabel(store, sel.nodeId, d.title)} sub={d.sub} />
 
     {#if editor.kind === 'input' || editor.kind === 'triggers' || editor.kind === 'unknown'}
       <div class="nodeinfo">
@@ -211,28 +208,6 @@
   .inspector:disabled :global(.slider),
   .inspector:disabled :global(.seg) {
     pointer-events: none;
-  }
-  .ihead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
   }
   /* shared node header: kind selector (grows) + remove button */
   .nodehead {

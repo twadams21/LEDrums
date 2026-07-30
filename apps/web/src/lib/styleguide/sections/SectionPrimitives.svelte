@@ -13,6 +13,9 @@
   import Slider from '../../ui/Slider.svelte';
   import ColorSwatch from '../../ui/ColorSwatch.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import ActionButton from '../../ui/ActionButton.svelte';
+  import InspectorHeader from '../../ui/InspectorHeader.svelte';
+  import MidiLearnRow from '../../ui/MidiLearnRow.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
@@ -48,6 +51,8 @@
   import Sparkles from '@lucide/svelte/icons/sparkles';
   import Cable from '@lucide/svelte/icons/cable';
   import Radio from '@lucide/svelte/icons/radio';
+  import Radar from '@lucide/svelte/icons/radar';
+  import Blend from '@lucide/svelte/icons/blend';
   import Disc3 from '@lucide/svelte/icons/disc-3';
   import Activity from '@lucide/svelte/icons/activity';
   import Wand2 from '@lucide/svelte/icons/wand-2';
@@ -129,6 +134,35 @@
         <button class="danger">Disarm</button>
         <button class="active">Toggled</button>
         <button disabled>Disabled</button>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Action button"
+      src="lib/ui/ActionButton"
+      note="The quiet inset action inside a panel — 30px, soft inset surface, scale-on-press — distinct from the base &lt;button&gt; vocabulary above and from the icon-only IconButton. Two fits, and they are a real delta rather than a preference: `stretch` (default) shares a row with its siblings and carries a 6px icon gap; `label` sits beside an input, sized to its own text with wider inline padding. `wide` is the full-width row-of-one; `discover` tints it accent as the primary way forward (spinning its icon while `scanning`); `pressed` lights the warn family for the control currently running, and sets aria-pressed with it."
+    >
+      <!-- Grouped the way the panel groups them: a row of stretch siblings, then the states, then
+           the full-width variants. Three per row keeps every label on one line at demo width — a
+           `stretch` button wrapping mid-word would read as a defect rather than as the contract. -->
+      <div class="ab-rows">
+        <div class="ab-row">
+          <ActionButton onclick={() => {}}>Identify</ActionButton>
+          <ActionButton onclick={() => {}}><Radar size={13} aria-hidden="true" /> Re-scan</ActionButton>
+          <ActionButton fit="label" onclick={() => {}}>Adopt</ActionButton>
+        </div>
+        <div class="ab-row">
+          <ActionButton pressed onclick={() => {}}>RGBW cycle</ActionButton>
+          <ActionButton disabled onclick={() => {}}>Disabled</ActionButton>
+        </div>
+      </div>
+      <div class="comp-stack">
+        <ActionButton wide tone="discover" onclick={() => {}}>
+          <Radar size={13} aria-hidden="true" /> Discover controllers
+        </ActionButton>
+        <ActionButton wide tone="discover" scanning disabled onclick={() => {}}>
+          <Radar size={13} aria-hidden="true" /> Discovering...
+        </ActionButton>
       </div>
     </DemoCard>
 
@@ -415,6 +449,49 @@
     </DemoCard>
 
     <DemoCard
+      title="Inspector header"
+      src="lib/ui/InspectorHeader"
+      wide
+      note="The inspector's identity block, retired from five hand-written copies (the patch branch of Inspector, SectionInspector, TriggerSourceInspector, PlayNodeInspector, ModifierNodeInspector). Optional eyebrow, bold title, mono sub, with `leading` and `trailing` snippets so a caller's thumb / role chip / actions keep their own styles. THREE HEADERS, THREE JOBS: PanelHeader is the fixed 38px uppercase strip atop a dock; AnchorHeader is the stand-in title for a PROTECTED graph anchor (tinted icon, no kind selector); this is the general inspector title inside a panel body. `subCase=&quot;capitalize&quot;` is the single variant — ModifierNodeInspector renders a lowercase category and title-cases it, and it must live here because the `.sub` element belongs to this component's template, where a caller's scoping hash never lands."
+    >
+      <div class="ph-demo">
+        <InspectorHeader eyebrow="Section" title="Intro" sub="Set 1 · #1" />
+      </div>
+      <div class="ph-demo">
+        <InspectorHeader title="Kick · Centre" sub="graph input">
+          {#snippet trailing()}
+            <IconButton icon={Copy} label="Duplicate graph" variant="soft" size={14} />
+          {/snippet}
+        </InspectorHeader>
+      </div>
+      <div class="ph-demo">
+        <InspectorHeader title="Trail" sub="temporal · modifier" subCase="capitalize">
+          {#snippet leading()}
+            <span class="ih-chip"><Blend size={16} aria-hidden="true" /></span>
+          {/snippet}
+        </InspectorHeader>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="MIDI learn row"
+      src="lib/ui/MidiLearnRow"
+      note="The 'type it, or hit Learn and play it' row — a value field paired with a 29px learn pill that lights accent and reads 'Listening' while armed. Retired from three hand-written copies (DrumZonesList, TriggerSourceInspector, CcNodeInspector). TARGET-AGNOSTIC ON PURPOSE: it takes `learning` + `onToggle`, never a learn-target descriptor, so each caller keeps its own store.midi.startLearn dispatch and a change to how targets are addressed never reaches this component. The field is the caller's snippet — their inputs genuinely differ. Deliberately NOT unified with ActionButton: the learn pill is 29px / text-2xs / weight 600 / muted against the action's 30px / text-xs / normal / ink."
+    >
+      <div class="comp-stack">
+        <MidiLearnRow learning={false} onToggle={() => {}}>
+          <CommitInput value="C4" mono autofocus={false} ariaLabel="Idle MIDI note" onCommit={() => {}} />
+        </MidiLearnRow>
+        <MidiLearnRow learning onToggle={() => {}}>
+          <CommitInput value="" placeholder="none" mono allowEmpty autofocus={false} ariaLabel="Armed MIDI note" onCommit={() => {}} />
+        </MidiLearnRow>
+        <MidiLearnRow learning={false} disabled onToggle={() => {}}>
+          <CommitInput value="" placeholder="none" mono allowEmpty autofocus={false} ariaLabel="Disabled MIDI note" onCommit={() => {}} />
+        </MidiLearnRow>
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Lint callout"
       src="lib/ui/LintCallout"
       note="Warn-toned inspector row for a node's render-plan lint finding (empty scope, not reaching Output, dead branch). Glyph + plain problem + one next step, copy shared with the lint strip and node badge so a finding reads identically everywhere. Warn, never the red fault alarm — it guides authoring."
@@ -529,6 +606,30 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
+  }
+  /* ActionButton demo: the real `.actions` row it is extracted from — stretch siblings sharing the
+     width at the panel's own gap, so the demo shows the control in the layout it was designed for.
+     The two rows are one group, hence the tighter inner gap than the card body's. */
+  .ab-rows,
+  .ab-row {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .ab-rows {
+    flex-direction: column;
+  }
+  /* Stands in for ModifierNodeInspector's role chip so the InspectorHeader demo shows what a
+     `leading` snippet is for — the caller owns this style, which is the whole point. */
+  .ih-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border-radius: var(--radius-2);
+    color: var(--role-mod);
+    background: color-mix(in oklch, var(--role-mod) 16%, transparent);
   }
   /* PanelHeader sits atop a panel — show it in a bordered surface so its border-bottom reads. */
   .ph-demo {

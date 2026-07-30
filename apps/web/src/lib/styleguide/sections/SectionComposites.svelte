@@ -32,7 +32,7 @@
   import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus } from '../../ws/protocol-types';
+  import type { ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus } from '../../ws/protocol-types';
   import type { InputBadgeView } from '../../trigger-lab/input-activity';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
 
@@ -70,6 +70,13 @@
   const ctrlTakeover: ControllerStatus = {
     ...ctrlReceiving,
     testPattern: { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 },
+  };
+  // R29 auth: a box that DEMANDS an admin password and isn't answering — the only state in which
+  // `.auth.needs` lights (authReqd && !reachable), so it is the one that gives the admin-password
+  // field capture coverage. Without it the field renders only in its calm variant.
+  const ctrlNeedsAuth: ControllerStatus = {
+    ...ctrlLost,
+    identity: { ...ctrlIdentity, authReqd: true },
   };
   const ctrlCandidates: DiscoveredController[] = [
     { host: '192.168.1.50', prodName: 'PixLite A16-S Mk3', nickname: 'Roof Left 1', fwVer: '1.4.2', authReqd: false, score: 100 },
@@ -127,8 +134,12 @@
     universeCount: 4,
     ...o,
   });
-  const pillStub = (link: TriggerLab['link'], output: OutputStatus | null = null) =>
-    ({ link, output }) as unknown as TriggerLab;
+  // `controllerTest` is not optional here: OutputPill reads `store.controllerTest.takeover`
+  // (S49 — a running test pattern drops the pill from LIVE to TEST), and the `as unknown as
+  // TriggerLab` cast below hides a missing sub-store from svelte-check, so omitting it threw
+  // at runtime and took the whole styleguide route down with it.
+  const pillStub = (link: TriggerLab['link'], output: OutputStatus | null = null, takeover: ControllerTestPattern | null = null) =>
+    ({ link, output, controllerTest: { takeover } }) as unknown as TriggerLab;
 
   /* ---- SaveIndicator (reads store.saveStatus + store.saveError) ----------------- */
   const saveStub = (saveStatus: TriggerLab['saveStatus'], saveError: string | null = null) =>
@@ -396,7 +407,7 @@
     <DemoCard
       title="Controller status panel (PixLite)"
       src={['lib/app/docks/inspectors/ControllerStatusPanel', 'lib/app/docks/inspectors/output-status']}
-      note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify, plus the S49 built-in test patterns (solid-colour swatches / RGBW cycle / colour fade). The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. The TAKEOVER state (a test pattern running) is the amber warn family — a loud but deliberate 'the box is showing test data, not your live show', with one-click Back-to-live. Un-adopted shows the Discover affordance + ranked candidates."
+      note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify, plus the S49 built-in test patterns (solid-colour swatches / RGBW cycle / colour fade). The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. The TAKEOVER state (a test pattern running) is the amber warn family — a loud but deliberate 'the box is showing test data, not your live show', with one-click Back-to-live. The AUTH-NEEDED state (R29 — the device reports authReqd and we aren't reaching it) raises the admin-password field out of its calm default: the label takes the fault tone and the hint stops apologising and states the requirement. Un-adopted shows the Discover affordance + ranked candidates."
       wide
     >
       <div class="panel-row">
@@ -404,6 +415,7 @@
         <ControllerStatusPanel controller={ctrlTakeover} takeover={ctrlTakeover.testPattern} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
         <ControllerStatusPanel controller={ctrlNotReceiving} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
         <ControllerStatusPanel controller={ctrlLost} candidates={[]} recommendation={ctrlRecommendation} outputHost="192.168.1.99" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
+        <ControllerStatusPanel controller={ctrlNeedsAuth} candidates={[]} outputHost="192.168.1.50" nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} onSetAuth={noop} />
         <ControllerStatusPanel controller={null} candidates={ctrlCandidates} recommendation={ctrlRecommendation} nowMs={CTRL_NOW} onDiscover={noop} onAdopt={noop} onIdentify={noop} onTestData={noop} onBackToLive={noop} />
       </div>
     </DemoCard>

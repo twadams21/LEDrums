@@ -20,6 +20,7 @@
   import { getThumbProjection, representativeAgeMs, type DotTable } from './thumb-projection';
   import { tryGetEffect } from '@ledrums/core';
   import { ticker } from './effect-thumb-ticker';
+  import { elementVisibility, prefersReducedMotion } from './canvas-visibility.svelte';
   import { triggerClock } from './signal-preview';
 
   interface Props {
@@ -47,8 +48,12 @@
   let canvas = $state<HTMLCanvasElement>();
   let genState = $state<unknown>(null);
   let genStateId = $state<string | null>(null); // Track which generatorId the state belongs to
-  let isVisible = $state(true); // starts visible; observer only pauses after confirmed visible
-  let prefersReduced = $state(false); // prefers-reduced-motion
+  // Both gates are the shared runes (canvas-visibility.svelte.ts) — SignalFace uses the same
+  // pair, including the pre-layout guard that keeps a portaled preview's ticker alive.
+  const visibility = elementVisibility(() => canvas);
+  const reducedMotion = prefersReducedMotion();
+  const isVisible = $derived(visibility.current);
+  const prefersReduced = $derived(reducedMotion.current);
 
   // Initialize or reset generator state when generatorId changes.
   // Uses the small thumb model (not labModel) so state geometry matches rendering.
@@ -78,50 +83,6 @@
     }
   });
 
-  // IntersectionObserver: detect when the canvas enters/leaves the viewport.
-  // Guard: only allow setting isVisible=false once we've confirmed the element
-  // was visible at least once — pre-layout false fires from portaled dialogs are
-  // ignored so the initial isVisible=true keeps the ticker subscription alive.
-  $effect(() => {
-    const cv = canvas;
-    if (!cv) return;
-
-    let hasBeenVisible = false;
-
-    const observer =
-      typeof IntersectionObserver !== 'undefined'
-        ? new IntersectionObserver(([entry]) => {
-            if (entry) {
-              if (entry.isIntersecting) {
-                hasBeenVisible = true;
-                isVisible = true;
-              } else if (hasBeenVisible) {
-                isVisible = false;
-              }
-              // Pre-layout false: hasBeenVisible is still false → leave isVisible=true.
-            }
-          })
-        : null;
-
-    if (observer) {
-      observer.observe(cv);
-      return () => observer.disconnect();
-    }
-  });
-
-  // Monitor prefers-reduced-motion media query.
-  $effect(() => {
-    const mq = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
-    if (!mq) return;
-
-    const handler = () => {
-      prefersReduced = mq.matches;
-    };
-    handler(); // Set initial value
-
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  });
 
   // Drawing logic: shared ticker subscription, gated by visibility and reduced-motion.
   $effect(() => {

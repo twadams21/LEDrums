@@ -21,7 +21,7 @@
   import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
   import Link2 from '@lucide/svelte/icons/link-2';
-  import Radio from '@lucide/svelte/icons/radio';
+  import MidiLearnRow from '../../../ui/MidiLearnRow.svelte';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
@@ -30,6 +30,7 @@
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import InspectorHeader from '../../../ui/InspectorHeader.svelte';
   import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import ReadRow from './ReadRow.svelte';
   import DrumZonesList from './DrumZonesList.svelte';
@@ -108,21 +109,20 @@
   );
 </script>
 
-<header class="ihead">
-  <div class="titles">
-    <h3>
-      {store.selectedPad
-        ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
-        : gkey
-          ? store.graphLabel(gkey)
-          : 'Trigger'}
-    </h3>
-    <span class="sub">graph input</span>
-  </div>
-  {#if gkey}
-    <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
-  {/if}
-</header>
+<InspectorHeader
+  title={store.selectedPad
+    ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
+    : gkey
+      ? store.graphLabel(gkey)
+      : 'Trigger'}
+  sub="graph input"
+>
+  {#snippet trailing()}
+    {#if gkey}
+      <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
+    {/if}
+  {/snippet}
+</InspectorHeader>
 <div class="trigbody">
   <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
   <Field layout="row" label="Trigger source">
@@ -178,7 +178,14 @@
       <p class="hint">CC 0 reserved for section recall.</p>
     {:else}
       <Field layout="row" label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
-        <div class="note-row">
+        <MidiLearnRow
+          {learning}
+          disabled={!gkey}
+          onToggle={() => {
+            if (!gkey) return;
+            learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'trigger', graphKey: gkey });
+          }}
+        >
           <CommitInput
             value={src.note === undefined ? '' : formatMidiNote(src.note)}
             placeholder="C4"
@@ -187,21 +194,7 @@
             ariaLabel="MIDI note"
             onCommit={(v) => gkey && commitMidiNote(gkey, v)}
           />
-          <button
-            type="button"
-            class="learn"
-            class:active={learning}
-            disabled={!gkey}
-            onclick={(e) => {
-              e.preventDefault();
-              if (!gkey) return;
-              learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'trigger', graphKey: gkey });
-            }}
-          >
-            <Radio size={13} aria-hidden="true" />
-            {learning ? 'Listening' : 'Learn'}
-          </button>
-        </div>
+        </MidiLearnRow>
       </Field>
       {#if heard}
         <div class="heard"><InputActivityBadge {...heard} /></div>
@@ -256,28 +249,6 @@
 </div>
 
 <style>
-  .ihead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-  }
   .trigbody {
     display: flex;
     flex-direction: column;
@@ -286,35 +257,6 @@
   }
   .trigbody :global(.sel) {
     width: 100%;
-  }
-  .note-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-2);
-    align-items: center;
-  }
-  .learn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .learn:hover:not(:disabled),
-  .learn.active {
-    border-color: var(--accent);
-    color: var(--ink);
-  }
-  .learn:disabled {
-    opacity: 0.45;
   }
   .hint {
     margin: 0;
