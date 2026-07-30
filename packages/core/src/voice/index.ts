@@ -54,6 +54,7 @@ export {
   isModSourceKind,
   ENVELOPE_NODE_KEY,
   MOD_SOURCE_KINDS,
+  type ModSourceKind,
 } from './modulation-graph';
 export {
   createDefaultCompositor,

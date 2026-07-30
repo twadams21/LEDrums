@@ -5,6 +5,8 @@ import {
   paramKeyOf,
   isModSourceKind,
   ENVELOPE_NODE_KEY,
+  MOD_SOURCE_KINDS,
+  type ModSourceKind,
 } from './modulation-graph';
 import { resolveModifierChain } from './modifier-graph';
 import { evalGraph, type EvalState, type PlayAction, type TriggerCtx } from './eval-graph';
@@ -12,7 +14,7 @@ import { VoicePool, type SpawnDeps } from './voice-pool';
 import { applyEffectiveParams } from './compositor';
 import { defaultEnvelope } from './envelope';
 import { Prng } from './prng';
-import type { Bus, EffectDef, Envelope, GraphEdge, GraphNode, TriggerGraph } from './types';
+import type { Bus, EffectDef, Envelope, GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
 
 /** Minimal all-kinds GraphNode (only the fields for its `kind` matter). */
 function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
@@ -89,6 +91,32 @@ describe('isModSourceKind', () => {
     expect(isModSourceKind('play')).toBe(false);
     expect(isModSourceKind('modifier')).toBe(false);
     expect(isModSourceKind('trigger')).toBe(false);
+  });
+
+  // INIT-06 S4. Type-level assertions — they cost nothing at runtime but fail the BUILD if the
+  // link between MOD_SOURCE_KINDS and NodeKind is broken. Proven by mutation: appending a member
+  // that is not a real NodeKind (e.g. 'bogus') errors on the `satisfies readonly NodeKind[]`
+  // clause, which it did NOT before this step. Verified by hand, then reverted.
+  it('is a narrowing predicate over a NodeKind-checked list, not a bare boolean', () => {
+    // (a) every member of the array is assignable to NodeKind — the satisfies clause, restated
+    //     here so the intent is visible in the suite and not only in the module.
+    const asKinds: readonly NodeKind[] = MOD_SOURCE_KINDS;
+    expect(asKinds).toHaveLength(6);
+
+    // (b) the predicate NARROWS. `kind` is a plain string; only inside the guard may it be
+    //     assigned to ModSourceKind. If isModSourceKind went back to returning `boolean`, the
+    //     assignment below stops compiling — that is the assertion.
+    const kind: string = 'lfo';
+    if (isModSourceKind(kind)) {
+      const narrowed: ModSourceKind = kind;
+      expect(MOD_SOURCE_KINDS).toContain(narrowed);
+    } else {
+      throw new Error("expected 'lfo' to narrow to ModSourceKind");
+    }
+
+    // (c) ModSourceKind is derived from the array, not respelled beside it.
+    const everyMember: ModSourceKind[] = [...MOD_SOURCE_KINDS];
+    expect(new Set(everyMember)).toEqual(new Set(['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod']));
   });
 });
 
