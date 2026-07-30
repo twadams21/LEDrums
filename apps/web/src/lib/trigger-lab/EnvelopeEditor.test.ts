@@ -19,7 +19,7 @@ const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() 
 function storeWithTarget(): { store: TriggerLab; nodeKey: string } {
   const store = new TriggerLab(fakeClient);
   store.createGraph('t');
-  const node = store.addNode('play', 0, 0)!;
+  const node = store.addNode('effect', 0, 0)!;
   store.pickEffect(node, 'gen:radial-wash');
   store.openEnv(node, 'hue');
   return { store, nodeKey: 'hue' };

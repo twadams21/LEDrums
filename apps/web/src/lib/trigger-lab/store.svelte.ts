@@ -151,7 +151,7 @@ export type { MidiLearnTarget };
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */
 function nodeHasParams(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier';
+  return node.kind === 'effect' || node.kind === 'modifier';
 }
 
 function isAnchorNode(node: GraphNode): boolean {
@@ -159,7 +159,7 @@ function isAnchorNode(node: GraphNode): boolean {
 }
 
 function isEffectNode(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'effect';
+  return node.kind === 'effect';
 }
 
 function envelopePresetAdsr(preset: string | undefined): AdsrShape {
@@ -2118,7 +2118,7 @@ export class TriggerLab {
     return this.selectableEffects.filter((e) => e.scope === scope);
   }
   effectOf(node: GraphNode) {
-    return node.kind === 'play' || node.kind === 'effect' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
+    return node.kind === 'effect' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
   }
   presetsForEffect(effectId: string): Preset[] {
     return this.allPresets.filter((p) => p.effectId === effectId);
@@ -2129,7 +2129,7 @@ export class TriggerLab {
   /** Live params shown for a play node — always its own node-local copy (a preset is a
       snapshot, not a live binding — S39). */
   liveParams(node: GraphNode): voice.ParamValues {
-    if (node.kind !== 'play' && node.kind !== 'effect') return {};
+    if (node.kind !== 'effect') return {};
     return node.params;
   }
 
@@ -2191,7 +2191,7 @@ export class TriggerLab {
     this.pushUndoSnapshot();
     const nodeId = this.freshNodeId(g);
     let node: GraphNode;
-    if (kind === 'play' || kind === 'effect') {
+    if (kind === 'effect') {
       node = makeNode('effect', nodeId, x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
     } else if (kind === 'modifier') {
       node = makeNode('modifier', nodeId, x, y, graphsLib.modifierNodeInit());
@@ -2413,7 +2413,7 @@ export class TriggerLab {
     const g = this.selectedGraph;
     node.kind = kind;
 
-    if (kind === 'play' || kind === 'effect') {
+    if (kind === 'effect') {
       if (!node.effectId) {
         const init = graphsLib.playNodeInit(this.effects, (id) => this.presetById(id));
         node.effectId = init.effectId;
@@ -2465,7 +2465,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if ((node.kind !== 'play' && node.kind !== 'effect') || node.mode === mode) return;
+    if ((node.kind !== 'effect') || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }
@@ -2474,7 +2474,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -2484,7 +2484,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }

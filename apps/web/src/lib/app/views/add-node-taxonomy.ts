@@ -34,13 +34,13 @@ export function buildAddGroups(): AddGroup[] {
     {
       key: EFFECT_GROUP_KEY,
       label: 'Effect',
-      icon: kindIcon.play,
-      tint: tint.play,
+      icon: kindIcon.effect,
+      tint: tint.effect,
       items: COLLECTIONS.map((c) => ({
         id: c.type,
         name: c.label,
-        icon: kindIcon.play,
-        tint: tint.play,
+        icon: kindIcon.effect,
+        tint: tint.effect,
         hint: c.blurb,
       })),
     },

@@ -20,7 +20,7 @@ describe('treeToGraph Gen3 compilation', () => {
 
     expect(graph.version).toBe(3);
     expect(graph.nodes.find((n) => n.id === 'p1')).toMatchObject({ kind: 'effect' });
-    expect(graph.nodes.some((n) => n.kind === 'play')).toBe(false);
+    expect(graph.nodes.map((n) => n.kind as string)).not.toContain('play');
     expect(graph.nodes.find((n) => n.id === 'output')).toMatchObject({ kind: 'output', scope: 'kit' });
     expect(graph.edges).toEqual(
       expect.arrayContaining([

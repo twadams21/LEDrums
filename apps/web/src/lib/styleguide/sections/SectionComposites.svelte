@@ -92,7 +92,6 @@
   /* ---- NodeCard faces ------------------------------------------------------- */
   const faceSubs: Record<NodeKind, string> = {
     trigger: 'kick · center',
-    play: 'Soft strike',
     effect: 'Soft strike',
     all: 'all at once',
     random: 'no-repeat',
@@ -277,7 +276,7 @@
           <NodeCard icon={kindIcon[k]} title={kindLabel[k]} sub={faceSubs[k]} tint={tint[k]} />
         {/each}
         {#if playFace}
-          <NodeCard icon={kindIcon.play} title={playFace.name} sub="with EffectThumb" tint={tint.play}>
+          <NodeCard icon={kindIcon.effect} title={playFace.name} sub="with EffectThumb" tint={tint.effect}>
             {#snippet thumb()}
               <EffectThumb params={defaults(playFace)} generatorId={playFace.generatorId} w={56} h={32} />
             {/snippet}
@@ -293,9 +292,9 @@
       wide
     >
       <div class="face-grid">
-        <NodeCard icon={kindIcon.play} title="Resting" sub="default" tint={tint.play} />
-        <NodeCard icon={kindIcon.play} title="Selected" sub="ring · in Inspector" tint={tint.play} selected />
-        <NodeCard icon={kindIcon.play} title="Drop target" sub="wire over node" tint={tint.play} dropTarget />
+        <NodeCard icon={kindIcon.effect} title="Resting" sub="default" tint={tint.effect} />
+        <NodeCard icon={kindIcon.effect} title="Selected" sub="ring · in Inspector" tint={tint.effect} selected />
+        <NodeCard icon={kindIcon.effect} title="Drop target" sub="wire over node" tint={tint.effect} dropTarget />
         <NodeCard icon={TriangleAlert} title="Stale node" sub="model missing" tint="var(--warn)" stale />
       </div>
     </DemoCard>

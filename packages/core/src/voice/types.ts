@@ -196,6 +196,12 @@ export function normalizeTriggerValue(fire: TriggerFire): number {
 
 // ---- Trigger graph (freeform node wiring) -----------------------------------
 
+/** INGEST-ONLY. `play` was the Gen2 spelling of an effect leaf. It is NOT part of
+    {@link NodeKind} — authoring can no longer produce it, no dispatch table has an arm for it,
+    and nothing downstream of the load seam may narrow on it. It survives here solely so
+    {@link import('./graph-integrity').normalizeTriggerGraphToGen3} — the ONE function that reads a
+    persisted or pasted document — can type its input honestly and rewrite the alias to `effect`
+    before anything else sees the graph. See {@link PersistedGraphNode}. */
 export type LegacyGraphNodeKind = 'play';
 export type CanonicalGraphNodeKind =
   | 'trigger'
@@ -235,9 +241,12 @@ export type BlockKind = LegacyGraphNodeKind | 'effect' | 'all' | 'random' | 'seq
 export type RandomDistribution = 'linear' | 'gaussian' | 'exponential' | 'logarithmic' | 'triangular' | 'beta' | 'stepped';
 export type NoteModMode = 'gate' | 'velocity';
 
-/** `play` is accepted only as a legacy persisted graph alias. Gen3 authoring and
-    normalisation must emit canonical `effect` nodes instead. */
-export type NodeKind = CanonicalGraphNodeKind | LegacyGraphNodeKind;
+/** The authoring node grammar — canonical kinds only. The legacy `play` alias was dropped here
+    (11-decisions.md, INIT-06 chunk 06C): it made every kind-keyed dispatch table carry a second
+    key for one behaviour, which is how `effect` came to be unsigned in the first place
+    (repeated-switches-0001 / S1). A persisted doc may still carry it — see
+    {@link LegacyGraphNodeKind} and {@link PersistedGraphNode} for the one seam that accepts it. */
+export type NodeKind = CanonicalGraphNodeKind;
 
 /**
  * A node in the freeform trigger graph. Carries every kind's fields (only the ones
@@ -391,6 +400,21 @@ export interface TriggerGraph {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+
+/**
+ * A node as it may arrive from OUTSIDE the app — a persisted show file, a pasted clip document,
+ * a sync packet — where the retired {@link LegacyGraphNodeKind} spelling can still appear.
+ *
+ * Deliberately a SUPERTYPE of {@link GraphNode} (only `kind` widens), so every canonical graph in
+ * the tree flows into the ingest seam without a cast, while the reverse needs the rewrite. That
+ * asymmetry is the point: it is a compile error to carry an un-normalized node INTO the app.
+ */
+export type PersistedGraphNode = Omit<GraphNode, 'kind'> & { kind: NodeKind | LegacyGraphNodeKind };
+
+/** {@link TriggerGraph} as it may arrive from outside the app — see {@link PersistedGraphNode}.
+    {@link import('./graph-integrity').normalizeTriggerGraphToGen3} takes this and returns a
+    canonical `TriggerGraph`; that narrowing IS the load seam. */
+export type PersistedTriggerGraph = Omit<TriggerGraph, 'nodes'> & { nodes: PersistedGraphNode[] };
 
 // ---- Section snapshots ------------------------------------------------------
 

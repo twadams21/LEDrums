@@ -18,7 +18,7 @@ const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() 
     exact shape that forces a migration + auto-wire on load. */
 function legacyGraph(): TriggerGraph {
   return {
-    nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
+    nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
     edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
   };
 }

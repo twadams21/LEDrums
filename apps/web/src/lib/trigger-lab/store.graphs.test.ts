@@ -123,7 +123,7 @@ describe('duplicateGraph (any graph)', () => {
     const clone = store.duplicateGraph(src)!;
     const beforeSrcNodes = store.graphs[src]!.nodes.length;
     store.selectedPadKey = clone;
-    store.addNode('play', 0, 0); // mutate only the clone's graph
+    store.addNode('effect', 0, 0); // mutate only the clone's graph
     expect(store.graphs[clone]!.nodes.length).toBe(beforeSrcNodes + 1);
     expect(store.graphs[src]!.nodes.length).toBe(beforeSrcNodes); // source untouched
   });

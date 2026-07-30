@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode, TriggerGraph } from './types';
+import type { GraphEdge, GraphNode, PersistedGraphNode, PersistedTriggerGraph, TriggerGraph } from './types';
 
 export type TriggerGraphIssueCode =
   | 'missing-trigger'
@@ -71,7 +71,32 @@ function isFlowEdge(edge: GraphEdge): boolean {
 }
 
 function isRenderLeafCandidate(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier' || node.kind === 'scope';
+  return node.kind === 'effect' || node.kind === 'modifier' || node.kind === 'scope';
+}
+
+/** The load seam's ONE rewrite: a persisted `play` leaf becomes the canonical `effect` it always
+    meant. Every node entering `nodes` goes through here, so no un-normalized kind can reach the
+    app — the type says so, not just the code path. */
+function canonicalize(node: PersistedGraphNode): GraphNode {
+  return node.kind === 'play' ? { ...node, kind: 'effect' } : (node as GraphNode);
+}
+
+/**
+ * The KIND rewrite on its own — {@link normalizeTriggerGraphToGen3} without the Gen3 migration.
+ *
+ * Exists because there are two ways a foreign graph enters the app and they need different
+ * amounts of repair. A LOADED show gets the full pass (anchors, auto-wire, edge repair). A PASTED
+ * ClipDoc must not: `parse` is a coercion, and its round-trip identity is pinned — reshaping a
+ * pasted doc's topology would silently rewrite content the user is moving between shows. What
+ * both paths DO owe is the grammar: after either, no node spells the retired alias, because
+ * nothing downstream has an arm for it.
+ *
+ * Alias-stable and idempotent: a graph with no legacy node keeps its reference, so a re-parse or
+ * an already-canonical doc costs nothing and cannot perturb an equality assertion.
+ */
+export function canonicalizeNodeKinds(graph: PersistedTriggerGraph): TriggerGraph {
+  if (!graph.nodes.some((n) => n.kind === 'play')) return graph as TriggerGraph;
+  return { ...graph, nodes: graph.nodes.map(canonicalize) };
 }
 
 function edgeIdFor(existing: Set<string>, base: string): string {
@@ -89,7 +114,7 @@ function issue(code: TriggerGraphIssueCode, message: string, partial: Partial<Tr
   return { code, message, ...partial };
 }
 
-export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIntegrityResult {
+export function normalizeTriggerGraphToGen3(graph: PersistedTriggerGraph): TriggerGraphIntegrityResult {
   const issues: TriggerGraphIssue[] = [];
   const legacy = graph.version !== 3;
   const sourceNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
@@ -98,7 +123,7 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
 
   const firstTrigger = sourceNodes.find((n) => n.kind === 'trigger');
   if (!firstTrigger) issues.push(issue('missing-trigger', 'Graph is missing a trigger anchor.'));
-  const trigger = firstTrigger ?? anchorNode('trigger', 0, 0);
+  const trigger = firstTrigger ? canonicalize(firstTrigger) : anchorNode('trigger', 0, 0);
 
   const legacyOutputs = legacy ? sourceNodes.filter((n) => n.kind === 'output') : [];
   const canonicalOutputs = legacy ? [] : sourceNodes.filter((n) => n.kind === 'output');
@@ -137,7 +162,7 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
     if (legacy && node.kind === 'output') {
       const id = node.id === OUTPUT_ANCHOR_ID ? `scope:${OUTPUT_ANCHOR_ID}` : node.id;
       if (id !== node.id) remap.set(node.id, id);
-      addNode({ ...node, id, kind: 'scope' });
+      addNode({ ...canonicalize(node), id, kind: 'scope' });
       continue;
     }
     if (!legacy && node.kind === 'output') continue;
@@ -145,13 +170,13 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
       const id = remappedNodeId(`${node.kind}:${OUTPUT_ANCHOR_ID}`);
       remap.set(node.id, id);
       issues.push(issue('reserved-output-id', 'Gen3 reserves id "output" for the terminal output anchor; node remapped.', { nodeId: node.id }));
-      addNode(node.kind === 'play' ? { ...node, id, kind: 'effect' } : { ...node, id });
+      addNode({ ...canonicalize(node), id });
       continue;
     }
     if (!legacy && node.kind === 'play') {
       issues.push(issue('persisted-play-in-gen3', 'Gen3 graph contained legacy play node; rewritten to effect.', { nodeId: node.id }));
     }
-    addNode(node.kind === 'play' ? { ...node, kind: 'effect' } : node);
+    addNode(canonicalize(node));
   }
 
   const anchorSource = legacy ? legacyOutputs[0] : canonicalOutputs[0];

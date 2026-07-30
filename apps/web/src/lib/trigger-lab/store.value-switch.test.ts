@@ -29,7 +29,7 @@ function withBandsSwitch(): { store: TriggerLab; sw: GraphNode; play: () => Grap
   store.setSwitchOn(sw, 'value');
   store.setValueMode(sw, 'bands');
   let i = 0;
-  const play = (): GraphNode => store.addNode('play', 400, (i++ - 1) * 50)!;
+  const play = (): GraphNode => store.addNode('effect', 400, (i++ - 1) * 50)!;
   return { store, sw, play };
 }
 
@@ -167,8 +167,8 @@ describe('velocity fold on hydrate', () => {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
         makeNode('switch', 'sw', 200, 0, { on: 'velocity' as unknown as SwitchOn }),
-        makeNode('play', 'a', 400, 0, { effectId: 'chase', presetId: 'chase:default' }),
-        makeNode('play', 'b', 400, 100, { effectId: 'sparkle', presetId: 'sparkle:default' }),
+        makeNode('effect', 'a', 400, 0, { effectId: 'chase', presetId: 'chase:default' }),
+        makeNode('effect', 'b', 400, 100, { effectId: 'sparkle', presetId: 'sparkle:default' }),
       ],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },

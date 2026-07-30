@@ -20,7 +20,7 @@ export interface ModTargetSpec {
     the resolved `effect` (the store resolves it — it is rune-backed); modifier nodes resolve
     purely via `listModifiers()`. Non-number params are excluded. */
 export function modTargetSpecs(node: GraphNode, effect: EffectDef | undefined): ModTargetSpec[] {
-  if (node.kind === 'play' || node.kind === 'effect') {
+  if (node.kind === 'effect') {
     return (effect?.params ?? [])
       .filter((s) => s.kind === 'number')
       .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));

@@ -42,16 +42,12 @@ type SigFn<K extends NodeKind> = (
     it reads no field at all, which makes it assignable to every arm's SigFn. */
 const baseOnly = (_n: unknown, base: string): string => base;
 
-/** Shared by the canonical `effect` key AND its legacy `play` alias, so the two spellings cannot
-    drift apart again — spelling only 'play' is exactly what made the arm dead (S1). The legacy key
-    is DELIBERATELY TEMPORARY: 11-decisions.md drops 'play' from the authoring union, tracked as
-    INIT-06 chunk 06C, which owns the persistence-side threading that removal requires.
-
-    The parameter is spelled as the two-arm union rather than annotated `SigFn<'effect' | 'play'>`:
-    TS compares two instantiations of a generic alias by its INFERRED VARIANCE, and measures `K`
-    here as covariant, so the alias form is rejected assigning to `SigFn<'effect'>` even though the
-    ordinary contravariant parameter check passes. Same type, structural comparison. */
-const effectSig = (n: voice.NodeViewOf<'effect' | 'play'>, base: string): string =>
+/** The effect leaf's contribution. It carried a second `play` key until 06C dropped that alias
+    from the authoring union — the two-key arrangement existed only so the spellings could not
+    drift, and spelling ONLY 'play' is exactly what made the arm dead in the first place (S1).
+    With one kind there is one key, and `triggerNodeSignature`'s own suite pins that a persisted
+    `play` node is rewritten to `effect` by the load normalizer before it can ever reach here. */
+const effectSig: SigFn<'effect'> = (n, base) =>
   `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
 
 /**
@@ -82,7 +78,6 @@ const KIND_SIG: { [K in NodeKind]: SigFn<K> } = {
   // --- carries structural fields ---
   switch: (n, base) => `${base}:on=${n.on}:valueMode=${n.valueMode}:bands=${(n.bands ?? []).join(',')}`,
   effect: effectSig,
-  play: effectSig, // legacy persisted alias — see effectSig; owned by chunk 06C
 
   modifier: (n, base) => `${base}:modifier=${n.modifierId ?? ''}`,
   mix: (n, base, graph) => `${base}:mix=${n.mixBlendMode ?? 'normal'}:rows=${mixRowSetSignature(graph, n.id)}`,

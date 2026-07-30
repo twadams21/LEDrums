@@ -5,8 +5,8 @@ import { migrateGen3Graph, normalizeGraphs, sanitizeGraphIntegrity } from './hyd
 const graph = (): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger'),
-    makeNode('play', 'p1', 100, 0, { effectId: 'gen:radial-wash' }),
-    makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' }),
+    makeNode('effect', 'p1', 100, 0, { effectId: 'gen:radial-wash' }),
+    makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' }),
   ],
   edges: [
     { id: 'e1', from: 'trigger', to: 'p1' },
@@ -33,7 +33,7 @@ describe('sanitizeGraphIntegrity', () => {
 
   it('delegates valid legacy graphs through core Gen3 normalization', () => {
     const valid: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 100, 0, { effectId: 'gen:radial-wash' })],
+      nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 100, 0, { effectId: 'gen:radial-wash' })],
       edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
     };
 
@@ -59,7 +59,7 @@ describe('migrateGen3Graph', () => {
     const legacy: TriggerGraph = {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
-        makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' }),
+        makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' }),
         makeNode('output', 'legacy-output', 420, 0, { scope: 'drum', targetId: 'snare' }),
       ],
       edges: [
@@ -86,7 +86,7 @@ describe('migrateGen3Graph', () => {
 
   it('wires unconnected legacy render leaves to the new Output anchor', () => {
     const migrated = migrateGen3Graph({
-      nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
+      nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
       edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
     });
 
@@ -119,14 +119,14 @@ describe('migrateGen3Graph', () => {
 
     const g = graphs.g!;
     expect(g.nodes.filter((n) => n.kind === 'output')).toHaveLength(1);
-    expect(g.nodes.some((n) => n.kind === 'play')).toBe(false);
+    expect(g.nodes.map((n) => n.kind as string)).not.toContain('play');
     expect(g.edges.every((e) => g.nodes.some((n) => n.id === e.from) && g.nodes.some((n) => n.id === e.to))).toBe(true);
     expect(g.edges).not.toContainEqual(expect.objectContaining({ from: 'p1', to: 'output' }));
   });
 
   it('is idempotent for already migrated Gen3 graphs', () => {
     const once = migrateGen3Graph({
-      nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
+      nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
       edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
     });
     expect(migrateGen3Graph(once)).toEqual(once);
@@ -160,7 +160,7 @@ describe('migrateGen3Graph', () => {
 
 describe('normalizeGraphs — system-action summary (R02)', () => {
   const legacy = (): TriggerGraph => ({
-    nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
+    nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
     edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
   });
 

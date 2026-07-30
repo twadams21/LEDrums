@@ -72,7 +72,7 @@ const buses: Bus[] = [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs
 function graphWithModifiers(modifierIds: readonly string[], effectId = 'fx'): TriggerGraph {
   const nodes: GraphNode[] = [
     node('trigger', 'trigger'),
-    node('play', 'p', { effectId, params: { brightness: 1 } }),
+    node('effect', 'p', { effectId, params: { brightness: 1 } }),
   ];
   const edges: GraphEdge[] = [{ id: 'e0', from: 'trigger', to: 'p' }];
   modifierIds.forEach((modifierId, i) => {

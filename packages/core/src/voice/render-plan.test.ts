@@ -69,7 +69,6 @@ describe('compileRenderPlan', () => {
       ['toggle', 'route-control'],
       ['delay', 'route-control'],
       ['effect', 'layer-producer'],
-      ['play', 'layer-producer'],
       ['scope', 'layer-transform'],
       ['modifier', 'layer-transform'],
       ['mix', 'collector'],

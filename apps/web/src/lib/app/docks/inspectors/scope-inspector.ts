@@ -84,7 +84,7 @@ function isFlowEdgeTo(edge: FlowEdge, nodeId: string): boolean {
 }
 
 function isScopeCarrier(node: GraphNode): boolean {
-  return node.kind === 'effect' || node.kind === 'play' || node.kind === 'scope' || node.kind === 'output';
+  return node.kind === 'effect' || node.kind === 'scope' || node.kind === 'output';
 }
 
 function targetKey(target: voice.ScopeTarget): string {

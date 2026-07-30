@@ -156,7 +156,7 @@ describe('evalGraph — typed play nodes (D3)', () => {
       version: 3,
       nodes: [
         node('trigger', 't'),
-        node('play', 'p', { effectId: 'canvas:stripe-band', playType: 'canvas', canvasScene: 'stripe-band' }),
+        node('effect', 'p', { effectId: 'canvas:stripe-band', playType: 'canvas', canvasScene: 'stripe-band' }),
         node('output', 'output', { scope: 'kit' }),
       ],
       edges: [edge('e1', 't', 'p'), edge('e2', 'p', 'output')],
@@ -169,7 +169,7 @@ describe('evalGraph — typed play nodes (D3)', () => {
   it('a hosted play node without playType (pre-migration persisted shape) still evals; fields stay undefined', () => {
     const graph: TriggerGraph = {
       version: 3,
-      nodes: [node('trigger', 't'), node('play', 'p', { effectId: 'plasma' }), node('output', 'output', { scope: 'kit' })],
+      nodes: [node('trigger', 't'), node('effect', 'p', { effectId: 'plasma' }), node('output', 'output', { scope: 'kit' })],
       edges: [edge('e1', 't', 'p'), edge('e2', 'p', 'output')],
     };
     const a = play(graph)!;

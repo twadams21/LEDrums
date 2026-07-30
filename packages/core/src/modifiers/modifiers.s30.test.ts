@@ -241,7 +241,7 @@ describe('S30 modifiers — end-to-end from the graph', () => {
     chain: ResolvedModifier[];
     total: number;
   } {
-    const play = gnode('play', 'p', { y: 100 });
+    const play = gnode('effect', 'p', { y: 100 });
     const graph: TriggerGraph = {
       nodes: [gnode('trigger', 'trigger'), play, gnode('modifier', 'm', { modifierId, params, y: 10 })],
       edges: [{ id: 'flow', from: 'trigger', to: 'p' } as GraphEdge, { id: 'mod', from: 'm', to: 'p', toPort: 'mod' } as GraphEdge],

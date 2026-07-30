@@ -408,8 +408,7 @@ function evalGraphGen3FromPlan(
       case 'trigger':
         pushKids(node, EMPTY_ROUTE);
         break;
-      case 'effect':
-      case 'play': {
+      case 'effect': {
         const draft = makePlayDraft(state, graph, node);
         if (!draft) break;
         via.set(node.id, labelFor(node, modeWord(node.mode)));

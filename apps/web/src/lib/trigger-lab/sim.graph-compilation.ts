@@ -59,10 +59,10 @@ export const nodeHasOutput = (kind: NodeKind): boolean => kind !== 'output' && !
 export const nodeHasInput = (kind: NodeKind): boolean => kind !== 'trigger' && !voice.isModSourceKind(kind);
 /** Whether a kind exposes a `mod` INPUT handle (a modifier chain lands here). Play nodes
     take modifiers; modifier nodes take upstream modifiers (mod→mod chains). */
-export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
+export const nodeHasModInput = (kind: NodeKind): boolean => kind === 'effect' || kind === 'modifier';
 /** Whether a kind carries exposable modulation-target params (play + modifier nodes). A
     `param:<key>` modulation wire may land only on these. */
-export const nodeHasParams = (kind: NodeKind): boolean => kind === 'play' || kind === 'effect' || kind === 'modifier';
+export const nodeHasParams = (kind: NodeKind): boolean => kind === 'effect' || kind === 'modifier';
 /** Whether a kind is a modulation SOURCE (wires from its output into a `param:<key>` input).
     Re-exported from core so the wiring layer and the resolver share one list. */
 export const nodeIsModSource = (kind: NodeKind): boolean => voice.isModSourceKind(kind);
@@ -166,7 +166,7 @@ export function treeToGraph(tree: Block): TriggerGraph {
     const kids = blockChildren(b);
     if (kids.length === 0) {
       node.y = row++ * ROW_H;
-      if (node.kind === 'effect' || node.kind === 'play') renderLeaves.push(node.id);
+      if (node.kind === 'effect') renderLeaves.push(node.id);
       return { id: node.id, y: node.y, maxDepth: depth };
     }
 

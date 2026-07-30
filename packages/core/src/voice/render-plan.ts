@@ -59,7 +59,6 @@ export function nodeCategory(kind: NodeKind): RenderPlanNodeCategory {
     case 'delay':
       return 'route-control';
     case 'effect':
-    case 'play':
       return 'layer-producer';
     case 'scope':
     case 'modifier':

@@ -207,7 +207,7 @@ function midiVoiceShow(note: number): voice.Show {
   const graph: voice.TriggerGraph = {
     nodes: [
       voiceNode('trigger', 'trigger', { source: { kind: 'midi', note } }),
-      voiceNode('play', 'play', { effectId: 'fx-flash', params: { brightness: 1 } }),
+      voiceNode('effect', 'play', { effectId: 'fx-flash', params: { brightness: 1 } }),
     ],
     edges: [{ id: 'e1', from: 'trigger', to: 'play' }],
   };

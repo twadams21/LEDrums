@@ -14,7 +14,7 @@ import {
 function playNode(id: string, over: Partial<GraphNode> = {}): GraphNode {
   return {
     id,
-    kind: 'play',
+    kind: 'effect',
     x: 0,
     y: 0,
     mode: 'oneshot',

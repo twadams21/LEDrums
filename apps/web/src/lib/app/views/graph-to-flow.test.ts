@@ -9,8 +9,8 @@ function fixture(): TriggerGraph {
     nodes: [
       makeNode('trigger', 'trigger', 0, 100),
       makeNode('all', 'a', 300, 100),
-      makeNode('play', 'p1', 600, 40, { effectId: 'swirl', presetId: 'swirl:default' }),
-      makeNode('play', 'p2', 600, 160, { effectId: 'chase', presetId: 'chase:default' }),
+      makeNode('effect', 'p1', 600, 40, { effectId: 'swirl', presetId: 'swirl:default' }),
+      makeNode('effect', 'p2', 600, 160, { effectId: 'chase', presetId: 'chase:default' }),
     ],
     edges: [
       { id: 'e0', from: 'trigger', to: 'a' },
@@ -36,7 +36,7 @@ describe('graphToFlowNodes', () => {
 
   it('carries each node kind into data for handle direction', () => {
     const byId = Object.fromEntries(graphToFlowNodes(fixture()).map((n) => [n.id, n.data.kind]));
-    expect(byId).toEqual({ trigger: 'trigger', a: 'all', p1: 'play', p2: 'play' });
+    expect(byId).toEqual({ trigger: 'trigger', a: 'all', p1: 'effect', p2: 'effect' });
   });
 });
 
@@ -56,7 +56,7 @@ describe('graphToFlowEdges', () => {
 
   it("maps an edge's fromPort to the xyflow sourceHandle (a value+bands switch band)", () => {
     const g: TriggerGraph = {
-      nodes: [makeNode('switch', 's', 0, 0, { on: 'value', valueMode: 'bands' }), makeNode('play', 'p', 300, 0)],
+      nodes: [makeNode('switch', 's', 0, 0, { on: 'value', valueMode: 'bands' }), makeNode('effect', 'p', 300, 0)],
       edges: [{ id: 'e0', from: 's', to: 'p', fromPort: 'band-1' }],
     };
     expect(graphToFlowEdges(g)[0]!.sourceHandle).toBe('band-1');
@@ -64,7 +64,7 @@ describe('graphToFlowEdges', () => {
 
   it('routes a modulation edge to its `param:<key>` targetHandle and flags it for styling', () => {
     const g: TriggerGraph = {
-      nodes: [makeNode('envelope', 'e', 0, 0), makeNode('play', 'p', 300, 0)],
+      nodes: [makeNode('envelope', 'e', 0, 0), makeNode('effect', 'p', 300, 0)],
       edges: [{ id: 'e0', from: 'e', to: 'p', toPort: 'param:brightness' }],
     };
     const [edge] = graphToFlowEdges(g);
@@ -74,7 +74,7 @@ describe('graphToFlowEdges', () => {
 
   it('flags a mod-chain wire distinctly from a modulation wire', () => {
     const g: TriggerGraph = {
-      nodes: [makeNode('modifier', 'm', 0, 0, { modifierId: 'trail' }), makeNode('play', 'p', 300, 0)],
+      nodes: [makeNode('modifier', 'm', 0, 0, { modifierId: 'trail' }), makeNode('effect', 'p', 300, 0)],
       edges: [{ id: 'e0', from: 'm', to: 'p', toPort: 'mod' }],
     };
     expect(graphToFlowEdges(g)[0]!.data).toEqual({ mod: true });

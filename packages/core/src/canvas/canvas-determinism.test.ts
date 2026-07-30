@@ -105,7 +105,7 @@ const bytes = (f: Float32Array): Buffer => Buffer.from(f.buffer, f.byteOffset, f
 
 /** A canvas play node — the scene resolves through the SAME voice/bridge path. */
 const canvasNode = (): GraphNode =>
-  node('play', 'p1', { effectId: 'cfx', playType: 'canvas', canvasScene: 'det-scene' });
+  node('effect', 'p1', { effectId: 'cfx', playType: 'canvas', canvasScene: 'det-scene' });
 const canvasEffect = (): EffectDef => effect('cfx', { generatorId: undefined });
 
 describe('byte-determinism at the compositor seam — canvas playType', () => {
@@ -120,7 +120,7 @@ describe('byte-determinism at the compositor seam — canvas playType', () => {
   it('a mixed show (canvas voice + hosted generator voice) replays byte-identically', () => {
     const s = (): Show =>
       showOf(
-        graphOf([canvasNode(), node('play', 'p2', { y: 100, effectId: 'hosted', playType: 'textures' })]),
+        graphOf([canvasNode(), node('effect', 'p2', { y: 100, effectId: 'hosted', playType: 'textures' })]),
         [canvasEffect(), effect('hosted', { generatorId: 'plasma' })],
       );
     const a = run(s(), script);

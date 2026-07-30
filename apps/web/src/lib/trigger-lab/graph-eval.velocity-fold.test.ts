@@ -34,7 +34,7 @@ function velocityGraph(n: number, edgeOrder?: number[]): TriggerGraph {
   ];
   for (let i = 0; i < n; i++) {
     const eff = EFFECT_IDS[i % EFFECT_IDS.length]!;
-    nodes.push(makeNode('play', `c${i}`, 400, i * 40, { effectId: eff, presetId: `${eff}:default` }));
+    nodes.push(makeNode('effect', `c${i}`, 400, i * 40, { effectId: eff, presetId: `${eff}:default` }));
   }
   const order = edgeOrder ?? [...Array(n).keys()];
   const edges: GraphEdge[] = [{ id: 'e-t', from: 'trigger', to: 'sw' }];
@@ -117,7 +117,7 @@ describe('foldVelocitySwitch — idempotency + untouched graphs', () => {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
         makeNode('switch', 'sw', 200, 0, { on: 'section' }),
-        makeNode('play', 'c0', 400, 0, { effectId: 'gen:chase-bands' }),
+        makeNode('effect', 'c0', 400, 0, { effectId: 'gen:chase-bands' }),
       ],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },

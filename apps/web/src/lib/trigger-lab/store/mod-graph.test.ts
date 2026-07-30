@@ -32,14 +32,14 @@ const effect: EffectDef = {
 
 describe('modTargetSpecs', () => {
   it('maps a play/effect node to its resolved effect number params', () => {
-    const node = makeNode('play', 'p', 0, 0, { effectId: 'swirl' });
+    const node = makeNode('effect', 'p', 0, 0, { effectId: 'swirl' });
     expect(modTargetSpecs(node, effect)).toEqual([
       { key: 'size', label: 'Size', min: 0, max: 1 },
       { key: 'hue', label: 'Hue', min: 0, max: 360 },
     ]);
   });
   it('returns [] for a play node with no resolved effect', () => {
-    expect(modTargetSpecs(makeNode('play', 'p'), undefined)).toEqual([]);
+    expect(modTargetSpecs(makeNode('effect', 'p'), undefined)).toEqual([]);
   });
   it('reads a modifier node purely from listModifiers()', () => {
     const node = makeNode('modifier', 'm', 0, 0, { modifierId: 'trail' });
@@ -52,14 +52,14 @@ describe('modTargetSpecs', () => {
 
 describe('modInputsOf', () => {
   it('returns the exposed rows, or [] when unset', () => {
-    expect(modInputsOf(makeNode('play', 'p'))).toEqual([]);
-    expect(modInputsOf(makeNode('play', 'p', 0, 0, { modInputs: [{ param: 'size' }] }))).toEqual([{ param: 'size' }]);
+    expect(modInputsOf(makeNode('effect', 'p'))).toEqual([]);
+    expect(modInputsOf(makeNode('effect', 'p', 0, 0, { modInputs: [{ param: 'size' }] }))).toEqual([{ param: 'size' }]);
   });
 });
 
 describe('availableModParams', () => {
   it('excludes already-exposed params', () => {
-    const node = makeNode('play', 'p', 0, 0, { effectId: 'swirl', modInputs: [{ param: 'size' }] });
+    const node = makeNode('effect', 'p', 0, 0, { effectId: 'swirl', modInputs: [{ param: 'size' }] });
     expect(availableModParams(node, effect)).toEqual([{ key: 'hue', label: 'Hue' }]);
   });
 });
@@ -107,8 +107,8 @@ describe('modSourcesFor', () => {
   it('resolves each source wire, carrying its invert, and skips dangling/non-source wires', () => {
     const nodes = [
       makeNode('cc', 'cc', 0, 0, { ccController: 7, ccChannel: null }),
-      makeNode('play', 'pl'), // play is not a mod source → skipped
-      makeNode('play', 'p'),
+      makeNode('effect', 'pl'), // play is not a mod source → skipped
+      makeNode('effect', 'p'),
     ];
     const edges: GraphEdge[] = [
       { id: 'e1', from: 'cc', to: 'p', toPort: 'param:size', invert: true },

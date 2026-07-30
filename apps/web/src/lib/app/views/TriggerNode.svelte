@@ -57,7 +57,7 @@
   const kind = $derived((data as { kind: NodeKind }).kind);
   // the live store node (reactive — Inspector edits flow straight through)
   const node = $derived(store.selectedGraph?.nodes.find((n) => n.id === id) ?? null);
-  const isEffectNode = $derived(node?.kind === 'play' || node?.kind === 'effect');
+  const isEffectNode = $derived(node?.kind === 'effect');
   const eff = $derived(node && isEffectNode ? store.effectOf(node) : undefined);
 
   // a value+bands switch fans out one source handle per band (the rest render a single
@@ -75,14 +75,14 @@
   const title = $derived.by(() => {
     if (!node) return '';
     if (node.kind === 'trigger') return 'Trigger';
-    if (node.kind === 'play' || node.kind === 'effect') return eff?.name ?? 'effect';
+    if (node.kind === 'effect') return eff?.name ?? 'effect';
     if (node.kind === 'modifier') return modifierName(node.modifierId);
     return kindLabel[node.kind];
   });
   // play-type sub-label (D3) — the node's collection name, shown as a NodeCard chip. Falls
   // back to the effect's own play type for graphs authored before the node carried one.
   const playTypeChip = $derived.by(() => {
-    if (!node || (node.kind !== 'play' && node.kind !== 'effect')) return undefined;
+    if (!node || (node.kind !== 'effect')) return undefined;
     const type = node.playType ?? eff?.playType ?? 'ambient';
     return collectionMeta(type).label;
   });
@@ -90,7 +90,7 @@
     if (!node) return '';
     // the resolved input source — drum · zone / MIDI note·CC / OSC address, or "unbound"
     if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
-    if (node.kind === 'play' || node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
+    if (node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
     if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
     return kindSummary(node);
   });
@@ -106,7 +106,7 @@
   // Exposed modulation-target rows (doc 10, S34): each renders its own labelled node-face row
   // with a `param:<key>` input handle scoped to modulation sources. Play + modifier nodes only.
   const modRows = $derived.by(() => {
-    if (!node || (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'modifier')) return [];
+    if (!node || (node.kind !== 'effect' && node.kind !== 'modifier')) return [];
     const rows = node.modInputs ?? [];
     if (rows.length === 0) return [];
     const specs = store.modTargetSpecs(node);
@@ -135,7 +135,7 @@
   const wiredChildren = $derived(
     store.selectedGraph ? store.selectedGraph.edges.filter((e) => e.from === id && !e.fromPort).length : 0,
   );
-  const Icon = $derived(kindIcon[kind] ?? kindIcon.play);
+  const Icon = $derived(kindIcon[kind] ?? kindIcon.effect);
   const chipTint = $derived(tint[kind] ?? 'var(--accent)');
 
   // Drum-link: a trigger node whose MIDI/OSC source is ALSO zone-mapped to a drum fires both
@@ -242,7 +242,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 35%' : 'top: 50%'} />
+    <Handle type="target" position={Position.Left} class={kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 35%' : 'top: 50%'} />
   {/if}
   {#if nodeHasModInput(kind)}
     <Handle
@@ -326,7 +326,7 @@
         tint={chipTint}
         typeChip={playTypeChip}
         selected={!!selected}
-        thumb={(kind === 'play' || kind === 'effect') && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
+        thumb={(kind === 'effect') && eff ? playThumb : isSourceKind ? sourceThumb : isStateKind ? stateThumb : undefined}
         badge={linkHint ? drumLinkBadge : undefined}
         leadHandles={cardHandles}
         footer={mixRows.length > 0 ? mixFooter : modRows.length > 0 ? paramFooter : undefined}

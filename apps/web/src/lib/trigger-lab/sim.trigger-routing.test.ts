@@ -17,7 +17,7 @@ import {
 /** trigger(source) → (a graph the offline resolver can match by source). */
 function sourcedGraph(source?: TriggerSource): TriggerGraph {
   return {
-    nodes: [makeNode('trigger', 'trigger', 0, 0, source ? { source } : {}), makeNode('play', 'p', 0, 0, { effectId: 'fxA' })],
+    nodes: [makeNode('trigger', 'trigger', 0, 0, source ? { source } : {}), makeNode('effect', 'p', 0, 0, { effectId: 'fxA' })],
     edges: [{ id: 'e0', from: 'trigger', to: 'p' }],
   };
 }

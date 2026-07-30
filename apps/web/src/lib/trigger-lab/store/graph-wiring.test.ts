@@ -22,7 +22,7 @@ function sampleGraph(): TriggerGraph {
     nodes: [
       makeNode('trigger', 'trigger', 0, 0),
       makeNode('random', 'r1', 100, 0),
-      makeNode('play', 'p1', 200, 0),
+      makeNode('effect', 'p1', 200, 0),
       makeNode('toggle', 't1', 100, 100),
       makeNode('envelope', 'env1', 0, 200),
     ],
@@ -98,7 +98,7 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
     return {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
-        makeNode('play', 'p1', 200, 0),
+        makeNode('effect', 'p1', 200, 0),
         makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
         makeNode('modifier', 'm2', 100, 200, { modifierId: 'trail' }),
         makeNode('all', 'a1', 100, 300),
@@ -163,7 +163,7 @@ describe('graph-wiring — modulation (param) port scoping', () => {
     return {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
-        makeNode('play', 'p1', 200, 0),
+        makeNode('effect', 'p1', 200, 0),
         makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
         makeNode('envelope', 'env1', 0, 200),
         makeNode('all', 'a1', 100, 300),
@@ -237,7 +237,7 @@ describe('graph-wiring validation — targeted verdicts (no throw)', () => {
     const g: TriggerGraph = {
       nodes: [
         makeNode('switch', 's1', 0, 0, { on: 'value', valueMode: 'bands', bands: [0.3, 0.6] }),
-        makeNode('play', 'p1', 100, 0),
+        makeNode('effect', 'p1', 100, 0),
       ],
       edges: [{ id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' }],
     };
@@ -332,7 +332,7 @@ describe('graph-wiring — rejection reasons (classifyConnection)', () => {
     const bands: TriggerGraph = {
       nodes: [
         makeNode('switch', 's1', 0, 0, { on: 'value', valueMode: 'bands', bands: [0.3, 0.6] }),
-        makeNode('play', 'p1', 100, 0),
+        makeNode('effect', 'p1', 100, 0),
       ],
       edges: [{ id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' }],
     };
@@ -421,7 +421,7 @@ describe('graph-wiring — reverse-drag call shape (TriggerGraphView end-swap)',
     return {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
-        makeNode('play', 'p1', 200, 0),
+        makeNode('effect', 'p1', 200, 0),
         makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
         makeNode('envelope', 'env1', 0, 200),
         makeNode('all', 'a1', 100, 300),
@@ -521,7 +521,7 @@ describe('canSplice (R08 wire-splice guard)', () => {
     // trigger has no input and play has no output, so only `trigger → x → p1` classifies legal:
     // reversing either internal call makes this false.
     const g: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('play', 'p1', 200, 0), makeNode('random', 'x', 100, 200)],
+      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('effect', 'p1', 200, 0), makeNode('random', 'x', 100, 200)],
       edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
     };
     expect(canSplice(g, 'e1', 'x')).toBe(true);
@@ -533,7 +533,7 @@ describe('canSplice (R08 wire-splice guard)', () => {
     const g: TriggerGraph = {
       nodes: [
         makeNode('switch', 's1', 0, 0, { on: 'value', valueMode: 'bands', bands: [0.3, 0.6] }),
-        makeNode('play', 'p1', 200, 0),
+        makeNode('effect', 'p1', 200, 0),
         makeNode('random', 'x', 100, 200),
       ],
       edges: [

@@ -90,7 +90,11 @@ export function extractSongClosure(song: Song, sources: ClosureSources, libraryS
   const presetIds = new Set<string>();
   for (const key of graphKeys) {
     for (const node of sources.graphs[key]!.nodes) {
-      if (node.kind !== 'play') continue; // modifier/lfo/cc/env nodes reach no effect or preset
+      // 06C: this read `!== 'play'`, and the load normalizer rewrites every `play` to `effect`
+      // before a graph can reach the store — so the body never ran and a song's closure carried
+      // no graph-reached effects or presets at all (only its section looks). Dropping the alias
+      // from the union is what surfaced it; `effect` is the kind that was always meant.
+      if (node.kind !== 'effect') continue; // modifier/lfo/cc/env nodes reach no effect or preset
       if (node.effectId) effectIds.add(node.effectId);
       if (node.presetId) presetIds.add(node.presetId);
     }

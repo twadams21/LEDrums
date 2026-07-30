@@ -23,7 +23,7 @@ import type { RenderPlanChild, RenderPlanIssue } from './render-plan';
 
 /** Layer producers — the only nodes that SEED a layer into the flow. */
 function isProducer(node: GraphNode): boolean {
-  return node.kind === 'effect' || node.kind === 'play';
+  return node.kind === 'effect';
 }
 
 /** Flow-chain nodes that CARRY/COLLECT a layer and so need one upstream (scope narrows; mix and

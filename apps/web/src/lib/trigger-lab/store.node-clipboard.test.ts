@@ -21,7 +21,7 @@ afterEach(() => {
 function freshGraph(): { store: TriggerLab; play: GraphNode } {
   const store = new TriggerLab(fakeClient);
   store.createGraph('test');
-  const play = store.addNode('play', 200, 0)!;
+  const play = store.addNode('effect', 200, 0)!;
   return { store, play };
 }
 

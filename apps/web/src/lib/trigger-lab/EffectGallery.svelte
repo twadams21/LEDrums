@@ -35,13 +35,13 @@
   let paramFilter = $state<string>(''); // '' = any parameter
 
   const block = $derived(store.galleryBlock);
-  const currentEffectId = $derived(block?.kind === 'play' || block?.kind === 'effect' ? block.effectId : null);
+  const currentEffectId = $derived(block?.kind === 'effect' ? block.effectId : null);
   const currentEffect = $derived(currentEffectId ? store.selectableEffects.find((e) => e.id === currentEffectId) : null);
   const currentMeta = $derived(currentEffect?.playType ? collectionMeta(currentEffect.playType) : null);
 
   // Snap the scope chip to the block being edited whenever the gallery opens, and reset filters.
   $effect(() => {
-    if (block?.kind === 'play' || block?.kind === 'effect') {
+    if (block?.kind === 'effect') {
       scope = 'all';
       collection = 'all';
       activeTags = [];

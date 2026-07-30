@@ -9,6 +9,7 @@ import {
   serialize,
   type RemapMint,
 } from './clipdoc';
+import { triggerNodeSignature } from '../app/views/trigger-flow-projection';
 import type { ClosureSources } from './store/song-library';
 import { nid } from './store/ids';
 import type { WSClient } from '../ws/client';
@@ -72,6 +73,36 @@ describe('paste materialize — graph', () => {
     expect(store.graphs['tg-1']).toBeDefined();
     // effects were reused (built-in / content-equal), never duplicated
     expect(store.effects.length).toBe(effectsBefore);
+  });
+
+  // INIT-06 06C R1 — MUTATION PARITY on the normalize gate. Hydrate runs every graph through
+  // `normalizeTriggerGraphToGen3` on the way in; paste is a SECOND way into `this.graphs` and
+  // ran no such gate, so a doc pasted from an older machine delivered its nodes verbatim. That
+  // was survivable while `play` was still a NodeKind — the projection had an arm for it. With
+  // the alias dropped from the union, `KIND_SIG` has no `play` key and the node crashes the
+  // projection instead of rendering. The lane contract is that a pasted old doc must still
+  // normalize and never crash, so the gate belongs on both paths, not just hydrate's.
+  it('normalizes a pasted doc carrying a legacy `play` node instead of storing it verbatim', () => {
+    const store = new TriggerLab(fakeClient);
+    const key = Object.keys(store.graphs)[0]!;
+    const doc = buildGraphClipDoc(key, sourcesOf(store));
+    const leaf = doc.payload.graph.nodes.find((n) => n.kind === 'effect');
+    if (!leaf) throw new Error('seed graph carries no effect leaf to downgrade'); // fixture guard
+    // Downgrade it to the old spelling, as a doc copied before the alias was dropped would carry.
+    // Cast in, exactly as the velocity-fold suite simulates a retired `SwitchOn`.
+    leaf.kind = 'play' as unknown as typeof leaf.kind;
+    store.deleteGraph(key);
+
+    const res = store.materializePaste(serialize(doc), { context: 'graph', mint: testMint() });
+
+    expect(res.ok).toBe(true);
+    const pasted = store.graphs['tg-1']!;
+    expect(pasted.nodes.map((n) => n.kind as string)).not.toContain('play');
+    const canonical = pasted.nodes.find((n) => n.id === leaf.id);
+    expect(canonical?.kind).toBe('effect');
+    // ...and the projection can actually sign it — the crash this guards is a missing KIND_SIG arm.
+    expect(() => triggerNodeSignature(canonical!, pasted)).not.toThrow();
+    expect(triggerNodeSignature(canonical!, pasted)).toContain(':effect:');
   });
 
   it('reserves a pasted graph’s carried node ids so a later node mint never collides', () => {
@@ -147,6 +178,38 @@ describe('paste materialize — song', () => {
     expect(res.ok).toBe(true);
     expect(store.library.songs.length).toBe(songsBefore); // show setlist untouched
     expect(store.library.songLibraryList.length).toBe(1);
+  });
+
+  // The song→Library route feeds `doc.deps.graphs` STRAIGHT into extractSongClosure without
+  // touching `this.graphs`, so the store-side normalize could never have covered it — only the
+  // parse-side gate does. Its closure walk narrows on the canonical kind, so an un-normalized
+  // `play` dep would silently contribute no effects or presets and the pool entry would be a
+  // song that renders nothing.
+  it('into the Song Library: a legacy `play` dep still contributes its effect closure', () => {
+    const store = new TriggerLab(fakeClient);
+    const song = store.library.resolvedView.songs[0]!;
+    const doc = buildSongClipDoc(song, sourcesOf(store));
+    const depGraphs = Object.values(doc.deps.graphs ?? {});
+    expect(depGraphs.length).toBeGreaterThan(0);
+    let downgraded = 0;
+    for (const g of depGraphs) {
+      for (const n of g.nodes) {
+        if (n.kind !== 'effect') continue;
+        n.kind = 'play' as unknown as typeof n.kind;
+        downgraded += 1;
+      }
+    }
+    expect(downgraded).toBeGreaterThan(0); // the doc must really carry effect leaves to downgrade
+
+    const res = store.materializePaste(serialize(doc), { context: 'song', songDest: 'library' });
+
+    expect(res.ok).toBe(true);
+    const entry = store.library.songLibraryList[0]!;
+    const pooled = store.library.songLibrary.songs[entry.id]!;
+    for (const g of Object.values(pooled.graphs)) {
+      expect(g.nodes.map((n) => n.kind as string)).not.toContain('play');
+    }
+    expect(pooled.effects.length).toBeGreaterThan(0); // the closure walk actually reached them
   });
 });
 

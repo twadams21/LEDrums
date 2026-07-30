@@ -89,7 +89,7 @@ describe('paramKeyOf', () => {
 describe('isModSourceKind', () => {
   it('is true only for modulation source kinds', () => {
     expect(isModSourceKind('envelope')).toBe(true);
-    expect(isModSourceKind('play')).toBe(false);
+    expect(isModSourceKind('effect')).toBe(false);
     expect(isModSourceKind('modifier')).toBe(false);
     expect(isModSourceKind('trigger')).toBe(false);
   });
@@ -133,7 +133,7 @@ describe('nodeModSource', () => {
     expect((src as { env: Envelope }).env.kind).toBe('decay');
   });
   it('returns null for a non-source node', () => {
-    expect(nodeModSource(node('play', 'p'))).toBeNull();
+    expect(nodeModSource(node('effect', 'p'))).toBeNull();
     expect(nodeModSource(node('modifier', 'm'))).toBeNull();
   });
 
@@ -151,12 +151,12 @@ describe('nodeModSource', () => {
       these by accident, and `resolveNodeModulations`' `if (!source) continue` still depends on
       it. `satisfies` keeps the list honest if a kind is renamed. */
   const NON_SOURCE_KINDS = [
-    'trigger', 'effect', 'play', 'all', 'random', 'sequence', 'switch',
+    'trigger', 'effect', 'all', 'random', 'sequence', 'switch',
     'chance', 'toggle', 'delay', 'modifier', 'mix', 'scope', 'output',
   ] as const satisfies readonly NodeKind[];
 
   it('preserves the fail-open for EVERY non-source kind, not just a sampled two', () => {
-    expect(NON_SOURCE_KINDS).toHaveLength(14); // 20 kinds - 6 sources
+    expect(NON_SOURCE_KINDS).toHaveLength(13); // 19 kinds - 6 sources
     for (const kind of NON_SOURCE_KINDS) {
       expect(nodeModSource(node(kind, `n-${kind}`))).toBeNull();
     }
@@ -188,7 +188,7 @@ describe('resolveNodeModulations', () => {
 
   it('resolves one envelope→param edge into one mapping, edge settings verbatim', () => {
     const g: TriggerGraph = {
-      nodes: [envNode('e', env), node('play', 'p')],
+      nodes: [envNode('e', env), node('effect', 'p')],
       edges: [edge('w', 'e', 'p', { toPort: 'param:brightness', amount: 0.75, invert: true, rangeMin: 0.2, rangeMax: 0.9 })],
     };
     const m = resolveNodeModulations(g, g.nodes[1]!);
@@ -205,7 +205,7 @@ describe('resolveNodeModulations', () => {
 
   it('defaults amount=1, invert=false, range=[0,1] when the edge omits them (no specs)', () => {
     const g: TriggerGraph = {
-      nodes: [envNode('e', env), node('play', 'p')],
+      nodes: [envNode('e', env), node('effect', 'p')],
       edges: [edge('w', 'e', 'p', { toPort: 'param:speed' })],
     };
     const m = resolveNodeModulations(g, g.nodes[1]!);
@@ -214,7 +214,7 @@ describe('resolveNodeModulations', () => {
 
   it('defaults the range to the param spec min/max and drops non-number params when specs are given', () => {
     const g: TriggerGraph = {
-      nodes: [envNode('e', env), node('play', 'p')],
+      nodes: [envNode('e', env), node('effect', 'p')],
       edges: [
         edge('w1', 'e', 'p', { toPort: 'param:size' }),
         edge('w2', 'e', 'p', { toPort: 'param:mode' }),
@@ -231,7 +231,7 @@ describe('resolveNodeModulations', () => {
 
   it('skips non-source wires and dangling sources, never throwing', () => {
     const g: TriggerGraph = {
-      nodes: [node('modifier', 'm'), node('play', 'p')],
+      nodes: [node('modifier', 'm'), node('effect', 'p')],
       edges: [
         edge('w1', 'm', 'p', { toPort: 'param:brightness' }), // a modifier is not a mod source
         edge('w2', 'ghost', 'p', { toPort: 'param:brightness' }), // dangling
@@ -242,7 +242,7 @@ describe('resolveNodeModulations', () => {
 
   it('resolves several envelope wires onto one param as several mappings (they sum at render)', () => {
     const g: TriggerGraph = {
-      nodes: [envNode('e1', env), envNode('e2', defaultEnvelope('decay')), node('play', 'p')],
+      nodes: [envNode('e1', env), envNode('e2', defaultEnvelope('decay')), node('effect', 'p')],
       edges: [
         edge('w1', 'e1', 'p', { toPort: 'param:brightness' }),
         edge('w2', 'e2', 'p', { toPort: 'param:brightness' }),
@@ -276,7 +276,7 @@ describe('evalGraph — play modulations + inert source', () => {
       version: 3,
       nodes: [
         node('trigger', 'trigger'),
-        node('play', 'p', { effectId: 'fx', params: { brightness: 0.5 } }),
+        node('effect', 'p', { effectId: 'fx', params: { brightness: 0.5 } }),
         envNode('e', defaultEnvelope('rise')),
         node('output', 'output', { scope: 'kit' }),
       ],
@@ -293,7 +293,7 @@ describe('evalGraph — play modulations + inert source', () => {
 
   it('leaves modulations undefined when nothing is wired', () => {
     const g: TriggerGraph = {
-      nodes: [node('trigger', 'trigger'), node('play', 'p', { effectId: 'fx' })],
+      nodes: [node('trigger', 'trigger'), node('effect', 'p', { effectId: 'fx' })],
       edges: [edge('t', 'trigger', 'p')],
     };
     expect(firstPlay(g)?.modulations).toBeUndefined();
@@ -302,7 +302,7 @@ describe('evalGraph — play modulations + inert source', () => {
   it('an envelope node fires no children (inert in trigger flow)', () => {
     // Even if a play node were (illegally) wired as a flow child of an envelope, eval emits nothing.
     const g: TriggerGraph = {
-      nodes: [node('trigger', 'trigger'), envNode('e', defaultEnvelope('rise')), node('play', 'p', { effectId: 'fx' })],
+      nodes: [node('trigger', 'trigger'), envNode('e', defaultEnvelope('rise')), node('effect', 'p', { effectId: 'fx' })],
       edges: [edge('t', 'trigger', 'e'), edge('flow', 'e', 'p')],
     };
     expect(evalGraph(freshState(), g, 'pad', ctx)).toEqual([]);
@@ -313,7 +313,7 @@ describe('evalGraph — play modulations + inert source', () => {
 
 describe('resolveModifierChain — modifier modulations', () => {
   it("bridges a modifier node's authored env into the link's modulations (group-H residual)", () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     // trail carries a numeric `decayMs` param — author an envelope on it.
     const trail = node('modifier', 'm', { modifierId: 'trail', params: { decayMs: 250, mode: 'add' }, env: { decayMs: defaultEnvelope('decay') } });
     const g: TriggerGraph = { nodes: [play, trail], edges: [edge('w', 'm', 'p', { toPort: 'mod' })] };
@@ -324,7 +324,7 @@ describe('resolveModifierChain — modifier modulations', () => {
   });
 
   it('resolves an envelope wired into a modifier param row', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const trail = node('modifier', 'm', { modifierId: 'trail', params: { decayMs: 250, mode: 'add' } });
     const env = envNode('e', defaultEnvelope('rise'));
     const g: TriggerGraph = {
@@ -336,7 +336,7 @@ describe('resolveModifierChain — modifier modulations', () => {
   });
 
   it('leaves modulations undefined when the modifier has no env and no param wires', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const trail = node('modifier', 'm', { modifierId: 'trail', params: { decayMs: 250, mode: 'add' } });
     const g: TriggerGraph = { nodes: [play, trail], edges: [edge('w', 'm', 'p', { toPort: 'mod' })] };
     expect(resolveModifierChain(g, play)[0]?.modulations).toBeUndefined();
@@ -358,7 +358,7 @@ describe('modulation graph — end to end (engine render path)', () => {
     return {
       nodes: [
         node('trigger', 'trigger'),
-        node('play', playId, { effectId: 'fx', params: { brightness: 0.5 } }),
+        node('effect', playId, { effectId: 'fx', params: { brightness: 0.5 } }),
         envNode('e', defaultEnvelope('rise')),
         node('output', 'output', { scope: 'kit' }),
       ],
@@ -384,8 +384,8 @@ describe('modulation graph — end to end (engine render path)', () => {
       version: 3,
       nodes: [
         node('trigger', 'trigger'),
-        node('play', 'p1', { effectId: 'fx', params: { brightness: 0.5 } }),
-        node('play', 'p2', { effectId: 'fx', params: { brightness: 0.5 } }),
+        node('effect', 'p1', { effectId: 'fx', params: { brightness: 0.5 } }),
+        node('effect', 'p2', { effectId: 'fx', params: { brightness: 0.5 } }),
         envNode('e', defaultEnvelope('rise')),
         node('output', 'output', { scope: 'kit' }),
       ],
