@@ -15,6 +15,7 @@
  */
 import { defaultEnvelope } from './envelope';
 import { defaultLfoSettings } from './lfo'; // S36
+import { narrowNode, type NodeViewOf } from './node-view'; // S12
 import type { ModParamSpec, ModSource } from './modulation';
 import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
 import type { Mapping } from './modulation';
@@ -60,34 +61,52 @@ export function paramKeyOf(toPort: GraphEdge['toPort']): string | null {
  * `envelope` node's shape lives in `node.env[ENVELOPE_NODE_KEY]`; a source wired before its
  * shape is authored falls back to a decay envelope so it still animates.
  */
+/**
+ * How each modulation-source kind builds its {@link ModSource} (repeated-switches-0002).
+ *
+ * Keyed by {@link ModSourceKind}, so this table and {@link MOD_SOURCE_KINDS} are now linked by
+ * the compiler: adding a kind to that array without a builder here is a compile error. The old
+ * `switch` had no such link — its `default: return null` silently absorbed any kind nobody had
+ * written a case for, which is the same fail-open shape as the projection's deleted `default`.
+ *
+ * Each entry is typed against its own {@link NodeView} arm, so a builder cannot read a field
+ * belonging to a different kind.
+ *
+ * Every `??` default below is moved across VERBATIM from the switch. They are load-bearing
+ * BACK-COMPAT for graphs authored before each field existed — a source wired before its shape is
+ * authored must still animate — so none of them may shift.
+ */
+const MOD_SOURCE_BY_KIND: { [K in ModSourceKind]: (n: NodeViewOf<K>) => ModSource } = {
+  envelope: (n) => ({ kind: 'envelope', env: n.env?.[ENVELOPE_NODE_KEY] ?? defaultEnvelope('decay') }),
+  // S36 — settings live on node.lfo; unset falls back to a default so it still animates
+  lfo: (n) => ({ kind: 'lfo', lfo: n.lfo ?? defaultLfoSettings() }),
+  // S37: controller/channel drive an engine CC-table read at sample time.
+  cc: (n) => ({ kind: 'cc', controller: n.ccController ?? 1, channel: n.ccChannel ?? null }),
+  osc: (n) => ({ kind: 'osc', address: n.oscAddress ?? '' }),
+  note: (n) => ({
+    kind: 'note',
+    note: n.noteNumber ?? 60,
+    channel: n.noteChannel ?? null,
+    mode: n.noteMode ?? 'gate',
+    releaseMs: n.noteReleaseMs ?? 0,
+  }),
+  randomMod: (n) => ({
+    kind: 'random',
+    value: 0,
+    distribution: n.randomDistribution ?? 'linear',
+    steps: n.randomSteps ?? 4,
+  }),
+};
+
 export function nodeModSource(node: GraphNode): ModSource | null {
-  switch (node.kind) {
-    case 'envelope':
-      return { kind: 'envelope', env: node.env?.[ENVELOPE_NODE_KEY] ?? defaultEnvelope('decay') };
-    case 'lfo': // S36 — settings live on node.lfo; unset falls back to a default so it still animates
-      return { kind: 'lfo', lfo: node.lfo ?? defaultLfoSettings() };
-    case 'cc': // S37: controller/channel drive an engine CC-table read at sample time.
-      return { kind: 'cc', controller: node.ccController ?? 1, channel: node.ccChannel ?? null };
-    case 'osc':
-      return { kind: 'osc', address: node.oscAddress ?? '' };
-    case 'note':
-      return {
-        kind: 'note',
-        note: node.noteNumber ?? 60,
-        channel: node.noteChannel ?? null,
-        mode: node.noteMode ?? 'gate',
-        releaseMs: node.noteReleaseMs ?? 0,
-      };
-    case 'randomMod':
-      return {
-        kind: 'random',
-        value: 0,
-        distribution: node.randomDistribution ?? 'linear',
-        steps: node.randomSteps ?? 4,
-      };
-    default:
-      return null;
-  }
+  // The fail-open is PRESERVED, deliberately: a stray non-source wire must resolve to nothing
+  // rather than throw, and `resolveNodeModulations`' `if (!source) continue` relies on it. What
+  // changed is that it is now guarded by the S4 type predicate at ONE named place, instead of
+  // being a `default:` arm that also swallowed every unhandled source kind.
+  if (!isModSourceKind(node.kind)) return null;
+  // Same single widening as the projection's dispatch: indexing with a union key yields a union
+  // of builders whose parameters TS intersects. Each ENTRY above is still checked against its arm.
+  return MOD_SOURCE_BY_KIND[node.kind](narrowNode(node) as never);
 }
 
 function specFor(specs: readonly ModParamSpec[], key: string): ModParamSpec | undefined {

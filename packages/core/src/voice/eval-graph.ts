@@ -253,37 +253,55 @@ function appendLabel(prefix: string, part: string): string {
   return prefix ? `${prefix} → ${part}` : part;
 }
 
+/**
+ * The traversal cursor the Gen3 eval hops forward unchanged (data-clumps-0003).
+ *
+ * `evalGraphGen3` → `evalGraphGen3From` → `evalGraphGen3FromPlan` used to forward these
+ * five as adjacent positional arguments, where `pad` and `viaPrefix` are both `string`
+ * and `seen` is invariant-carrying — so a swap type-checked cleanly across all three
+ * hops. Passing them as one named object makes that transposition unrepresentable.
+ *
+ * Deliberately NOT exported and NOT part of any signature that leaves this file: the
+ * exported {@link evalChildren} still takes its original positional list (the engine's
+ * pending-fire drain and the web sim both call it), and constructs the cursor here.
+ *
+ * Field-for-field the same five values {@link PendingDescriptor} carries across a delay
+ * enqueue (`pad`, `ctx`, `viaPrefix`, `seen` + the state the drain re-supplies) — the two
+ * are cross-checked at the delay site below, since a mismatch there is exactly the bug
+ * this type exists to make impossible.
+ */
+interface EvalCursor {
+  state: EvalState;
+  pad: string;
+  ctx: TriggerCtx;
+  viaPrefix: string;
+  seen: Set<string>;
+}
+
 function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
   const plan = compilePlan(state, graph);
   if (plan.fatal || !plan.triggerId) return [];
-  return evalGraphGen3FromPlan(state, plan, pad, [plan.triggerId], ctx, '', new Set(), null);
+  return evalGraphGen3FromPlan({ state, pad, ctx, viaPrefix: '', seen: new Set() }, plan, [plan.triggerId], null);
 }
 
 function evalGraphGen3From(
-  state: EvalState,
+  cursor: EvalCursor,
   graph: TriggerGraph,
-  pad: string,
   startIds: readonly string[],
-  ctx: TriggerCtx,
-  viaPrefix: string,
-  seen: Set<string>,
   initialDraft: PlayDraft | null,
 ): Action[] {
-  const plan = compilePlan(state, graph);
+  const plan = compilePlan(cursor.state, graph);
   if (plan.fatal) return [];
-  return evalGraphGen3FromPlan(state, plan, pad, startIds, ctx, viaPrefix, seen, initialDraft);
+  return evalGraphGen3FromPlan(cursor, plan, startIds, initialDraft);
 }
 
 function evalGraphGen3FromPlan(
-  state: EvalState,
+  cursor: EvalCursor,
   plan: RenderPlan,
-  pad: string,
   startIds: readonly string[],
-  ctx: TriggerCtx,
-  viaPrefix: string,
-  seen: Set<string>,
   initialDraft: PlayDraft | null,
 ): Action[] {
+  const { state, pad, ctx, viaPrefix, seen } = cursor;
   const graph = plan.graph;
   const byId = plan.nodesById;
   const buckets = new Map<string, BucketEntry[]>();
@@ -622,7 +640,7 @@ export function evalChildren(
   seen: Set<string>,
   draft: PlayDraft | null = null,
 ): Action[] {
-  return evalGraphGen3From(state, graph, pad, childIds, ctx, viaPrefix, seen, draft);
+  return evalGraphGen3From({ state, pad, ctx, viaPrefix, seen }, graph, childIds, draft);
 }
 
 /** Resolve which band a 0..1 value lands in against ascending cutoffs. N cutoffs →

@@ -174,6 +174,53 @@ describe('empty-scope lint', () => {
     expect(emptyScopeIds(graph)).toEqual([]);
   });
 
+  // INIT-06 S13 — CHARACTERISATION, written before the fix and green at HEAD to prove the
+  // divergence is real rather than a reading of the code.
+  //
+  // scope-lint.ts carried a FIFTH hand-rolled copy of the hoop-target grammar, and it had not
+  // been moved to the post-A1 1-based world: it filtered `v >= 0`, admitting hoop index 0, where
+  // scope.ts's resolver policy filters `v >= 1` and falls back to the unmatchable `[-1]`.
+  //
+  // Consequence: `"kick#0"` resolves at RUNTIME to the empty sentinel and renders nothing, but
+  // the lint saw hoop {0} and let it intersect, so the branch read as alive — a false negative in
+  // exactly the diagnostic that exists to surface wired-but-inert branches.
+  it('flags a hoop-0 target as provably empty (post-A1: hoops are 1-based)', () => {
+    // effect {0,1,2} → Output {0}. Runtime: {1,2} ∩ [-1] = ∅, the play is dropped and nothing
+    // lights. Before the fix the lint computed {0,1,2} ∩ {0} = {0} and stayed silent.
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 'trigger'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'hoop', targetId: 'kick#0,1,2' }),
+        node('output', 'output', { scope: 'hoop', targetId: 'kick#0' }),
+      ],
+      edges: [edge('trigger-fx', 'trigger', 'fx'), edge('fx-output', 'fx', 'output')],
+    };
+
+    expect(emptyScopeIds(graph)).toEqual(['output']);
+    expect(compileRenderPlan(graph).fatal).toBe(false);
+  });
+
+  // A SECOND divergence, found while routing the parse through scope.ts and not named in the
+  // plan: the private parse gave a bare (auto) hoop target `hoops: [0]`, while the resolver
+  // policy gives `[1]` — a bare hoop target resolves to hoop 1 of the firing drum at runtime.
+  // Since 0 matches no real hoop, the lint would have called a perfectly live bare hoop branch
+  // provably empty: a false POSITIVE, the opposite failure to the one above. No existing
+  // expectation covered a bare hoop target, so nothing in the suite encoded it on purpose.
+  it('does not flag a bare (auto) hoop target against hoop 1 — it resolves there at runtime', () => {
+    const graph: TriggerGraph = {
+      version: 3,
+      nodes: [
+        node('trigger', 'trigger'),
+        node('effect', 'fx', { effectId: 'plasma', scope: 'hoop' }), // no targetId → auto
+        node('output', 'output', { scope: 'hoop', targetId: 'kick#1' }),
+      ],
+      edges: [edge('trigger-fx', 'trigger', 'fx'), edge('fx-output', 'fx', 'output')],
+    };
+
+    expect(emptyScopeIds(graph)).toEqual([]);
+  });
+
   it('flags a chain empty only via a three-way hoop intersection', () => {
     // hoop {1,2} → hoop {2,3} → Output hoop {1,3} on one drum: pairwise all overlap, but the
     // running intersection is {2} then ∅ — the accumulation (not pairwise) catches it.

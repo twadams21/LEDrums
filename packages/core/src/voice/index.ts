@@ -17,6 +17,7 @@ export * from './modulation';
 export * from './scope';
 export * from './graph-integrity';
 export * from './render-plan';
+export { narrowNode, type NodeView, type NodeViewOf } from './node-view';
 // middle-man-0003: the five fixtures from ./modulation-parity deliberately do NOT ship on this
 // namespace. One of them reimplements the SUPERSEDED envelope formula and was published here only
 // so a cross-package migration test could reach it — an implementer could have called it and got
