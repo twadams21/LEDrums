@@ -28,7 +28,7 @@
   const project = $derived(store.project);
   const kit = $derived<KitConfig | null>(project?.kit ?? null);
   const drum = $derived(kit?.drums.find((x) => x.id === editor.drumId) ?? null);
-  const liveRouting = $derived(shell.patchRouting);
+  const liveRouting = $derived(shell.patch.routing);
 
   // This hoop's authoritative count: hoops[hoop-1].pixelCount (B4) when present, else the
   // drum's uniform density-derived fallback. `editor.hoop` is 1-based (A1).

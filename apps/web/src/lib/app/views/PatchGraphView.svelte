@@ -309,9 +309,9 @@
 
   // Publish the live routing to the shell so the Inspector's pixel read-out reflects the wiring.
   $effect(() => {
-    shell.setPatchRouting(liveRouting);
+    shell.patch.publish(liveRouting);
   });
-  onDestroy(() => shell.setPatchRouting(null));
+  onDestroy(() => shell.patch.publish(null));
 </script>
 
 <div class="patch-view">

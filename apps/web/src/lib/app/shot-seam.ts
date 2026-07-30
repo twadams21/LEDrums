@@ -23,6 +23,8 @@ import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.sve
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
+import { defaultRouting } from './patch-graph';
+import { patchToOutputs } from './patch-routing';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -101,6 +103,11 @@ export interface ShotSeam {
       anchor. Lights the node-face no-path-to-output badge + the lint strip row (Effect selected).
       Uses genuine `compileRenderPlan` output. */
   notReachingOutput(): void;
+  /** Wire every hoop into the outputs (the `defaultRouting` chain) and commit it, so the Patch
+      surface can be captured in its WIRED state. The seed project declares outputs with NO hoops,
+      so the hoop/output inspectors' first/last-pixel read-out has nothing to show — and that
+      read-out is the entire reason the live-routing channel exists. */
+  wirePatch(): void;
   /** Push transient toast(s) so ui-shot can capture the top-centre ToastHost stack and its
       per-role tint. `arg` is a single tone (`info`/`success`/`error`); omitted → one of each. */
   previewToasts(tone?: ToastTone): void;
@@ -351,6 +358,16 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  /** Wire every hoop into the outputs (the `defaultRouting` chain) and commit it via the same
+      `setRouting` call PatchGraphView makes on a rewire — so the Patch inspectors render a real
+      first/last-pixel span instead of their "wire this hoop in" empty state. Duplicates no logic. */
+  wirePatch(): void {
+    const drums = this.store.project?.kit.drums ?? [];
+    if (drums.length === 0) return;
+    const routing = defaultRouting(drums.map((d) => ({ id: d.id, hoopCount: d.hoops?.length ?? 0 })));
+    this.store.setRouting(patchToOutputs(routing));
+  }
+
   previewToasts(tone?: ToastTone): void {
     // ttl:0 keeps them pinned for the capture (no auto-dismiss race). Oldest-first so the
     // host renders info → success → error top-to-bottom when showing the full set.
@@ -433,6 +450,13 @@ class ShotSeamImpl implements ShotSeam {
         // Select a Patch-graph node/zone by id (e.g. `patch:kit`, `patch:hoop:kick:1`) → its
         // inspector. `arg` already carries the full id (everything after the first ':').
         this.shell.setView('patch');
+        if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
+        break;
+      case 'patch-wired':
+        // Commit the default hoop→output wiring first, THEN select — so a hoop/output inspector
+        // renders a real first/last-pixel span instead of its "wire this hoop in" empty state.
+        this.shell.setView('patch');
+        this.wirePatch();
         if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
         break;
       case 'expanded':

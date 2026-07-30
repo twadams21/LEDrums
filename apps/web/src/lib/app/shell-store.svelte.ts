@@ -9,7 +9,7 @@
    vocabulary plus the URL parser. */
 
 import type { Selection, View } from './shell-nav';
-import type { PatchRouting } from './patch-routing';
+import { PatchRoutingChannel } from './patch-routing-channel.svelte';
 
 export type { PatchNodeId, Selection, View } from './shell-nav';
 
@@ -17,13 +17,11 @@ export class ShellStore {
   private currentView = $state<View>('trigger');
   private currentSelection = $state<Selection | null>(null);
 
-  /** The LIVE Patch-graph routing (graph-node-id-keyed datalines + outputs), published by
-      PatchGraphView while the patch view is mounted, so the Inspector's first/last-pixel
-      read-out reflects the live wiring — including just-added palette lines and un-remounted
-      reorders — rather than a re-chunked snapshot of committed outputs (whose synthetic
-      dataline ids never match the selected node id). null when no patch view is mounted
-      (a patch node is only selectable from within it, so reads are always fresh). */
-  private liveRouting = $state<PatchRouting | null>(null);
+  /** The live Patch-graph routing side channel (INIT-02 S18) — published by PatchGraphView while
+      the patch view is mounted, read by the Patch inspectors. Held as a field here rather than
+      threaded as a prop; see {@link PatchRoutingChannel} for why. It is NOT navigation state, so
+      it owns its own object instead of sitting alongside view/selection. */
+  readonly patch = new PatchRoutingChannel();
 
   constructor(init: { view?: View } = {}) {
     this.currentView = init.view ?? 'trigger';
@@ -35,15 +33,6 @@ export class ShellStore {
   get selection(): Selection | null {
     return this.currentSelection;
   }
-  /** The live Patch-graph routing for the Inspector read-out (see {@link liveRouting}). */
-  get patchRouting(): PatchRouting | null {
-    return this.liveRouting;
-  }
-  /** PatchGraphView publishes its live routing here (null on unmount). */
-  setPatchRouting(routing: PatchRouting | null): void {
-    this.liveRouting = routing;
-  }
-
   /** Switch the workspace view; resets the Inspector selection (wireframe:
       "switching views resets the Inspector"). No-op when already on the view. */
   setView(view: View): void {
