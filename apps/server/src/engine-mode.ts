@@ -3,17 +3,19 @@
 export type EngineMode = 'voice' | 'legacy';
 
 /**
- * Resolve the engine mode from the environment (INIT-01 S1).
+ * Resolve the engine mode from the environment (INIT-01 S1, default flipped in S7).
  *
- * This lived inline at main.ts as `(process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice'`,
- * inside a side-effecting entry module no test can import — so nothing could assert what the
- * SHIPPED default actually is. That is precisely how the human-facing paths (`pnpm dev`,
- * the desktop shell) came to force voice while `pnpm start` silently ran legacy.
+ * This lived inline in main.ts, a side-effecting entry module no test can import — so nothing
+ * could assert what the SHIPPED default actually was. That is precisely how the human-facing
+ * paths (`pnpm dev`, the desktop shell) came to force voice while `pnpm start`, the shipped
+ * prod-server script, silently ran the legacy loop.
  *
- * Semantics are today's, reproduced exactly and now provable: only the literal `voice`
- * (case-insensitive) selects voice; unset, empty, or anything else is legacy. S7 inverts
- * this default in its own single-commit-revertable change.
+ * S7 inverted it: **voice is the default**, and only the literal `legacy` (case-insensitive)
+ * opts out. Unset, empty, or an unrecognised value all mean voice — an unreadable LEDRUMS_ENGINE
+ * can no longer quietly downgrade a live rig to the other engine.
+ *
+ * The legacy stack is still fully present behind that explicit opt-out; S12/S13 delete it.
  */
 export function resolveEngineMode(env: NodeJS.ProcessEnv): EngineMode {
-  return (env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice' ? 'voice' : 'legacy';
+  return (env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'legacy' ? 'legacy' : 'voice';
 }
