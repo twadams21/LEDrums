@@ -48,58 +48,58 @@ function fakeSink() {
 }
 
 /**
- * The handler under test with its collaborators. `voice: true` wires a real VoiceEngineHost onto
- * the SAME live project object the legacy host holds — the shape main.ts builds in voice mode —
- * so the load path's effect on the live render host is observable.
+ * The handler under test with its collaborators, in the shape main.ts builds since S8: the voice
+ * host is THE store (always present), and `legacy: true` adds the opt-out's legacy follower
+ * constructed over `voiceHost.getProject()` — the SAME object — so a load's effect on both is
+ * observable, including whether that shared identity survived.
  */
-function harness(snapshotPreRisk?: () => boolean, { voice = false }: { voice?: boolean } = {}) {
-  const live = defaultProject();
-  const host = new EngineHost(live);
-  const voiceHost = voice ? new VoiceEngineHost(live, null, new OutputManager(() => new NoOutput())) : null;
+function harness(snapshotPreRisk?: () => boolean, { legacy = false }: { legacy?: boolean } = {}) {
+  const voiceHost = new VoiceEngineHost(defaultProject(), null, new OutputManager(() => new NoOutput()));
+  const legacyHost = legacy ? new EngineHost(voiceHost.getProject()) : null;
   const autosaver = fakeAutosaver();
   const broadcastState = vi.fn();
   const { sink, sent } = fakeSink();
   // Explicit stub (S7): snapshotPreRisk is required; default = snapshot succeeds.
-  const deps = { host, voiceHost, autosaver, broadcastState, snapshotPreRisk: snapshotPreRisk ?? (() => true) };
+  const deps = { voiceHost, legacyHost, autosaver, broadcastState, snapshotPreRisk: snapshotPreRisk ?? (() => true) };
   const run = (msg: ClientMessage): boolean => handleProjectMessage(msg, sink, deps);
-  return { host, voiceHost, autosaver, broadcastState, sent, run };
+  return { voiceHost, legacyHost, autosaver, broadcastState, sent, run };
 }
 
 describe('handleProjectMessage — loadProject pre-risk fail-closed (#138 C1)', () => {
   it('loads the project when the pre-risk snapshot is taken (backups present, write ok)', () => {
     const snapshotPreRisk = vi.fn(() => true);
-    const { host, autosaver, broadcastState, run } = harness(snapshotPreRisk);
-    const before = host.engine.getProject();
+    const { voiceHost, autosaver, broadcastState, run } = harness(snapshotPreRisk);
+    const before = voiceHost.getProject();
 
     const handled = run({ t: 'loadProject', name: 'p' });
 
     expect(handled).toBe(true);
     expect(snapshotPreRisk).toHaveBeenCalledTimes(1);
-    expect(host.engine.getProject()).not.toBe(before); // the loaded project replaced live state
+    expect(voiceHost.getProject()).not.toBe(before); // the loaded project replaced live state
     expect(broadcastState).toHaveBeenCalledTimes(1);
     expect(autosaver.markDirty).toHaveBeenCalledTimes(1);
   });
 
   it('loads the project with the default harness stub (snapshot succeeds) (S9: the absent-backups config no longer exists)', () => {
-    const { host, broadcastState, run } = harness(undefined);
-    const before = host.engine.getProject();
+    const { voiceHost, broadcastState, run } = harness(undefined);
+    const before = voiceHost.getProject();
 
     run({ t: 'loadProject', name: 'p' });
 
-    expect(host.engine.getProject()).not.toBe(before);
+    expect(voiceHost.getProject()).not.toBe(before);
     expect(broadcastState).toHaveBeenCalledTimes(1);
   });
 
   it('REFUSES the load and leaves live state untouched when the pre-risk snapshot fails', () => {
     const snapshotPreRisk = vi.fn(() => false); // safety snapshot WRITE failed
-    const { host, autosaver, broadcastState, sent, run } = harness(snapshotPreRisk);
-    const before = host.engine.getProject();
+    const { voiceHost, autosaver, broadcastState, sent, run } = harness(snapshotPreRisk);
+    const before = voiceHost.getProject();
 
     const handled = run({ t: 'loadProject', name: 'p' });
 
     expect(handled).toBe(true); // message consumed (a visible error was sent), not passed through
     expect(snapshotPreRisk).toHaveBeenCalledTimes(1);
-    expect(host.engine.getProject()).toBe(before); // live state untouched — no setProject
+    expect(voiceHost.getProject()).toBe(before); // live state untouched — no adoptProject
     expect(broadcastState).not.toHaveBeenCalled();
     expect(autosaver.markDirty).not.toHaveBeenCalled();
     const err = sent.find((m) => m.t === 'error');
@@ -109,41 +109,47 @@ describe('handleProjectMessage — loadProject pre-risk fail-closed (#138 C1)', 
 
 describe('handleProjectMessage — loadProject re-points the VOICE host too (INIT-01 S5)', () => {
   it('leaves voiceHost.getProject() deep-equal to the loaded file, INCLUDING composition.transport', () => {
-    const { voiceHost, run } = harness(undefined, { voice: true });
+    const { voiceHost, run } = harness(undefined);
 
     run({ t: 'loadProject', name: 'p' });
 
-    // Before S5 this was the previous project: only `host.engine.setProject(loaded)` ran, so the
-    // live render host kept the old kit/inputMap/output while `state` described the new one.
-    expect(voiceHost!.getProject()).toEqual(fileOnDisk());
-    expect(voiceHost!.getProject().composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
+    // Before S5 this was the previous project: only the LEGACY engine was re-pointed, so the live
+    // render host kept the old kit/inputMap/output while `state` described the new one.
+    expect(voiceHost.getProject()).toEqual(fileOnDisk());
+    expect(voiceHost.getProject().composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
   });
 
   it('rebuilds the live pixel model from the loaded kit (the geometry rebuild actually ran)', () => {
-    const { voiceHost, run } = harness(undefined, { voice: true });
-    const before = voiceHost!.getModel().pixelCount;
+    const { voiceHost, run } = harness(undefined);
+    const before = voiceHost.getModel().pixelCount;
 
     run({ t: 'loadProject', name: 'p' });
 
     // Equal to a FRESH build from the loaded kit — a stale model would still hold `before`.
-    expect(voiceHost!.getModel().pixelCount).toBe(buildPixelModel(fileOnDisk().kit).pixelCount);
-    expect(voiceHost!.getModel().pixelCount).not.toBe(before);
+    expect(voiceHost.getModel().pixelCount).toBe(buildPixelModel(fileOnDisk().kit).pixelCount);
+    expect(voiceHost.getModel().pixelCount).not.toBe(before);
   });
 
   it('does NOT touch the voice host when the pre-risk snapshot fails (fail-closed, both hosts)', () => {
-    const { voiceHost, run } = harness(() => false, { voice: true });
-    const before = voiceHost!.getProject();
+    const { voiceHost, run } = harness(() => false);
+    const before = voiceHost.getProject();
 
     run({ t: 'loadProject', name: 'p' });
 
-    expect(voiceHost!.getProject()).toBe(before);
-    expect(voiceHost!.getProject().name).toBe('LEDrums Default');
+    expect(voiceHost.getProject()).toBe(before);
+    expect(voiceHost.getProject().name).toBe('LEDrums Default');
   });
 
-  it('legacy mode (voiceHost null) still loads into the legacy engine and does not throw', () => {
-    const { host, run } = harness(undefined, { voice: false });
+  it('re-points the legacy follower at the SAME object — a load never splits the identity (S8)', () => {
+    const { voiceHost, legacyHost, run } = harness(undefined, { legacy: true });
+    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject()); // shared by construction
 
-    expect(() => run({ t: 'loadProject', name: 'p' })).not.toThrow();
-    expect(host.engine.getProject().name).toBe('On Disk');
+    run({ t: 'loadProject', name: 'p' });
+
+    // A load REPLACES the store's project object — the exact point the invariant is lost if the
+    // follower is not re-pointed. Object identity, not deep equality: two equal copies would still
+    // mean two sources of truth.
+    expect(voiceHost.getProject().name).toBe('On Disk');
+    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject());
   });
 });

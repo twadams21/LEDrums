@@ -13,11 +13,12 @@ export interface JsonSink {
 
 /** Collaborators the project-IO handler needs from the server wiring. */
 export interface ProjectHandlerDeps {
-  host: EngineHost;
-  /** The voice-bus host, or `null` in legacy mode. REQUIRED, not optional: a load that forgets to
-   * re-point the live render host is exactly the bug S5 closes, and an omitted field must be a
-   * compile error rather than a silent half-load. */
-  voiceHost: VoiceEngineHost | null;
+  /** THE authoritative store (S8): a load replaces its project object, and a save reads it. */
+  voiceHost: VoiceEngineHost;
+  /** The legacy render host, or `null` unless the `LEDRUMS_ENGINE=legacy` opt-out is set (S12
+   * deletes it). Only ever RE-POINTED at `voiceHost.getProject()`, never used to compute a
+   * mutation — that shared identity is what a load must not break. */
+  legacyHost: EngineHost | null;
   autosaver: Autosaver;
   /** Broadcast the full `state` message to all clients (`broadcastJson(stateMessage())`). */
   broadcastState(): void;
@@ -45,19 +46,20 @@ export function handleProjectMessage(msg: ClientMessage, ws: JsonSink, deps: Pro
       ws.send(encodeServer({ t: 'error', message: `Backup failed — project "${msg.name}" not loaded (no recovery snapshot)` }));
       return true;
     }
-    deps.host.engine.setProject(loaded);
-    deps.host.reloadOutputSettings();
-    // S5 LOAD AUTHORITY: in voice mode the voice host owns the live render + output, so a load that
-    // only re-pointed the legacy engine left it rendering the PREVIOUS project's geometry while the
-    // `state` broadcast below described the newly loaded one. Adopt the same object (kit, inputMap,
-    // output AND the authored composition/transport) and rebuild geometry.
-    deps.voiceHost?.adoptProject(loaded);
+    // S5 LOAD AUTHORITY, now through the sole store (S8): the voice host adopts the loaded document
+    // BY REFERENCE (kit, inputMap, output AND the authored composition/transport) and rebuilds
+    // geometry. Before S5 only the legacy engine was re-pointed, leaving the live render on the
+    // PREVIOUS project's geometry while the `state` broadcast below described the new one.
+    deps.voiceHost.adoptProject(loaded);
+    // The legacy follower is re-pointed at the SAME object, so identity survives a load.
+    deps.legacyHost?.engine.setProject(deps.voiceHost.getProject());
+    deps.legacyHost?.reloadOutputSettings();
     deps.broadcastState();
     deps.autosaver.markDirty(); // the loaded project is now the live state — persist it
     return true;
   }
   if (msg.t === 'saveProject') {
-    saveProject(msg.name, deps.host.engine.getProject());
+    saveProject(msg.name, deps.voiceHost.getProject());
     ws.send(encodeServer({ t: 'projects', names: listProjects() }));
     return true;
   }

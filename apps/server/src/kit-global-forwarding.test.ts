@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Engine } from '@ledrums/core';
 import { applyClientMessage } from './input-router';
-import { propagateToVoiceHost } from './handlers/voice-input';
+import { applyStructuralMessage } from './handlers/voice-input';
 import type { VoiceEngineHost } from './voice-engine-host';
 import type { ClientMessage } from './ws-protocol';
 
 /* A kit-global `setKitGlobal` (the C1/C2 Advatek/kit config) must reach BOTH server paths that
    own a live render — the legacy reducer (`applyClientMessage` → engine.setKitGlobal) and the
-   voice bridge (`propagateToVoiceHost` → voiceHost.setKitGlobal) — so the edit applies live on
-   either host. These are kit-wide, not per-drum, so they ride their own message rather than
+   voice-side reducer (`applyStructuralMessage` → voiceHost.setKitGlobal) — so the edit applies live
+   on either host. These are kit-wide, not per-drum, so they ride their own message rather than
    setKitTransform. Undefined fields must NOT be forwarded (partial-merge shape). */
 
 const msg = (extra: Partial<Extract<ClientMessage, { t: 'setKitGlobal' }>>): ClientMessage => ({
@@ -39,11 +39,11 @@ describe('legacy engine path — applyClientMessage(setKitGlobal)', () => {
   });
 });
 
-describe('voice host path — propagateToVoiceHost(setKitGlobal)', () => {
+describe('voice reducer (sole writer since S8) — applyStructuralMessage(setKitGlobal)', () => {
   it('forwards the C1/C2 kit-global fields to the live voice host', () => {
     const setKitGlobal = vi.fn();
     const host = { setKitGlobal } as unknown as VoiceEngineHost;
-    propagateToVoiceHost(host, msg({ expanded: true, ledDensityPxPerM: 96, hoopCount: 6, defaultHoopSpacingMm: 40, maxPixelsPerOutput: 340 }));
+    applyStructuralMessage(host, msg({ expanded: true, ledDensityPxPerM: 96, hoopCount: 6, defaultHoopSpacingMm: 40, maxPixelsPerOutput: 340 }));
     expect(setKitGlobal).toHaveBeenCalledWith({ expanded: true, ledDensityPxPerM: 96, hoopCount: 6, defaultHoopSpacingMm: 40, maxPixelsPerOutput: 340 });
   });
 });

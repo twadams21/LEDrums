@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildPixelModel, defaultProject, voice, type Project, type ProjectPatch } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
-import { propagateToVoiceHost } from './handlers/voice-input';
+import { applyStructuralMessage } from './handlers/voice-input';
 import { OutputManager } from './output-manager';
 import { FRAME_FAULT_REPORT_WINDOW_MS, VoiceEngineHost } from './voice-engine-host';
 
@@ -584,7 +584,7 @@ describe('VoiceEngineHost transport authority (S5)', () => {
     // 120 ticks of 1000/120ms = exactly 1000ms. At 120bpm that is 2 beats.
     expect(beatOver(host, 120)).toBeCloseTo(2, 5);
 
-    propagateToVoiceHost(host, { t: 'setTransport', bpm: 240 });
+    applyStructuralMessage(host, { t: 'setTransport', bpm: 240 });
 
     expect(host.getProject().composition.transport.bpm).toBe(240);
     // The field write is exactly what already LOOKED right while being inert, so assert the clock:
@@ -600,7 +600,7 @@ describe('VoiceEngineHost transport authority (S5)', () => {
     // used to deliver transport edits through is now severed by construction.
     expect(host.getProject()).not.toBe(project);
 
-    propagateToVoiceHost(host, { t: 'setTransport', bpm: 60, beatsPerBar: 3 });
+    applyStructuralMessage(host, { t: 'setTransport', bpm: 60, beatsPerBar: 3 });
 
     expect(host.getProject().composition.transport).toEqual({ bpm: 60, playing: true, beatsPerBar: 3 });
     expect(beatOver(host, 120)).toBeCloseTo(1, 5);
@@ -609,16 +609,16 @@ describe('VoiceEngineHost transport authority (S5)', () => {
   it('playing:false stops the beat clock; playing:true resumes it', () => {
     const { host } = makeHost();
 
-    propagateToVoiceHost(host, { t: 'setTransport', playing: false });
+    applyStructuralMessage(host, { t: 'setTransport', playing: false });
     expect(beatOver(host, 120)).toBe(0);
 
-    propagateToVoiceHost(host, { t: 'setTransport', playing: true });
+    applyStructuralMessage(host, { t: 'setTransport', playing: true });
     expect(beatOver(host, 120)).toBeCloseTo(2, 5);
   });
 
   it('a partial setTransport leaves the untouched transport fields alone', () => {
     const { host } = makeHost();
-    propagateToVoiceHost(host, { t: 'setTransport', bpm: 90 });
+    applyStructuralMessage(host, { t: 'setTransport', bpm: 90 });
     expect(host.getProject().composition.transport).toEqual({ bpm: 90, playing: true, beatsPerBar: 4 });
   });
 });

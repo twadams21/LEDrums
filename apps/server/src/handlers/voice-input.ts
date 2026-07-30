@@ -128,13 +128,18 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
 }
 
 /**
- * Voice mode: the legacy reducer mutates the shared project, but the voice host owns the
- * live render + output. Propagate kit/output/input-map/transport edits so real device
- * behaviour changes without a restart. (`setKitOutputs` has no legacy reducer case, so the
- * host mutation here is what actually applies it; `setTransport` is forwarded because the
- * voice loop reads its own transport per frame — S5.) Other message types are no-ops.
+ * THE structural reducer (S8). Was `propagateToVoiceHost`, a bridge that forwarded edits the
+ * legacy reducer had already applied; it is now the SOLE writer of the live Project, which the
+ * voice host owns. Every arm here mutates the authoritative project in place and rebuilds
+ * whatever the edit invalidated (geometry, DMX map, output settings), so no caller has to
+ * remember a follow-up `reloadOutputSettings`.
+ *
+ * Returns `true` when `msg` was a structural edit this reducer applied — the caller's signal to
+ * broadcast fresh `state` and mark the autosaver dirty — and `false` for anything else (inputs,
+ * reads, project IO, and the fourteen composition messages no client sends, which S11 deletes
+ * outright along with their protocol variants).
  */
-export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMessage): void {
+export function applyStructuralMessage(voiceHost: VoiceEngineHost, msg: ClientMessage): boolean {
   switch (msg.t) {
     case 'setKitTransform':
       voiceHost.setKitTransform(msg.drumId, {
@@ -151,7 +156,7 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
         ...(msg.color !== undefined ? { color: msg.color } : {}),
       });
-      break;
+      return true;
     case 'setKitGlobal':
       voiceHost.setKitGlobal({
         ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
@@ -160,19 +165,19 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.defaultHoopSpacingMm !== undefined ? { defaultHoopSpacingMm: msg.defaultHoopSpacingMm } : {}),
         ...(msg.maxPixelsPerOutput !== undefined ? { maxPixelsPerOutput: msg.maxPixelsPerOutput } : {}),
       });
-      break;
+      return true;
     case 'setHoopConfig':
       voiceHost.setHoopConfig(msg.drumId, msg.hoopIndex, {
         ...(msg.pixelCount !== undefined ? { pixelCount: msg.pixelCount } : {}),
         ...(msg.reverse !== undefined ? { reverse: msg.reverse } : {}),
       });
-      break;
+      return true;
     case 'setKitOutputs':
       voiceHost.setKitOutputs(msg.outputs);
-      break;
+      return true;
     case 'setKitNodeLayout':
       voiceHost.setKitNodeLayout(msg.nodeLayout);
-      break;
+      return true;
     case 'setOutput':
       voiceHost.setOutput({
         ...(msg.state !== undefined ? { state: msg.state } : {}),
@@ -185,21 +190,23 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.port !== undefined ? { port: msg.port } : {}),
         ...(msg.iface !== undefined ? { iface: msg.iface } : {}),
       });
-      break;
+      return true;
     case 'setInputMap':
       voiceHost.setInputMap(msg.inputMap);
-      break;
+      return true;
     case 'setTransport':
-      // S5 TRANSPORT AUTHORITY: this arm did not exist. The voice loop reads its OWN
-      // `project.composition.transport` every frame (advanceTransport), so a BPM edit reached it
-      // only through the project object the legacy reducer happens to share — a reference that
-      // splits on the first `adoptPatch` (which rebuilds `project` by spread). Forwarding it makes
-      // the voice host the authority over its own transport instead of a bystander.
+      // S5 TRANSPORT AUTHORITY (now the only writer, S8): the voice loop reads
+      // `project.composition.transport` every frame via advanceTransport, and this arm is the sole
+      // path that writes it. Before S5 there was no voice-side writer at all — a BPM edit reached
+      // the loop only through a project reference the legacy reducer happened to share, which
+      // splits the moment a patch is adopted.
       voiceHost.setTransport({
         ...(msg.bpm !== undefined ? { bpm: msg.bpm } : {}),
         ...(msg.playing !== undefined ? { playing: msg.playing } : {}),
         ...(msg.beatsPerBar !== undefined ? { beatsPerBar: msg.beatsPerBar } : {}),
       });
-      break;
+      return true;
+    default:
+      return false;
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultProject, Engine, type InputMap, type NodeLayout, type OutputConfig, type Project } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
-import { propagateToVoiceHost } from './handlers/voice-input';
+import { applyStructuralMessage } from './handlers/voice-input';
 import { applyClientMessage } from './input-router';
 import { OutputManager } from './output-manager';
 import { VoiceEngineHost } from './voice-engine-host';
@@ -11,7 +11,7 @@ import type { ClientMessage } from './ws-protocol';
  * INIT-01 S2 — the DIFFERENTIAL PARITY HARNESS.
  *
  * Two reducers write the live Project today: the legacy `applyClientMessage(engine, …)` and the
- * voice bridge `propagateToVoiceHost(voiceHost, …)`. Every structural client edit runs through
+ * voice-side reducer `applyStructuralMessage(voiceHost, …)` (named `propagateToVoiceHost` until S8 made it the only one). Every structural client edit runs through
  * BOTH (divergent-change-0001), and where their arms disagree the live state silently splits —
  * exactly how `pixelsPerHoop` was dropped on one path for months.
  *
@@ -64,7 +64,7 @@ function drive(msg: ClientMessage): { pA: Project; pB: Project; pristine: Projec
   const { pA, pB, legacy, voiceHost } = bothStacks();
   expect(pA).toEqual(pB);
   applyClientMessage(legacy, msg, 0);
-  propagateToVoiceHost(voiceHost, msg);
+  applyStructuralMessage(voiceHost, msg);
   return { pA, pB, pristine: defaultProject() };
 }
 
@@ -262,7 +262,7 @@ describe('engine parity — KNOWN DRIFT (recorded, not hidden)', () => {
 describe('engine parity — the harness is not vacuous', () => {
   /**
    * A harness that passes against a gutted arm proves nothing. The manual form of this check is
-   * "delete a case from propagateToVoiceHost, confirm red, restore" (done at S2, recorded in the
+   * "delete a case from the voice reducer, confirm red, restore" (done at S2, recorded in the
    * commit body). This is its PERMANENT form: drive each agreeing discriminant through the legacy
    * stack ONLY and assert the projects diverge — i.e. every fixture moves state the deep-equal
    * comparison can see, so a silently-missing voice arm cannot pass.
@@ -281,7 +281,7 @@ describe('engine parity — the harness is not vacuous', () => {
     it(`${msg.t}: skipping the voice arm makes the Projects diverge`, () => {
       const { pA, pB, legacy } = bothStacks();
       applyClientMessage(legacy, msg, 0);
-      // propagateToVoiceHost deliberately NOT called — this is the gutted-arm simulation.
+      // The voice reducer deliberately NOT called — this is the gutted-arm simulation.
       expect(pA).not.toEqual(pB);
     });
   }

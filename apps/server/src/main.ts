@@ -66,9 +66,10 @@ import {
 const port = Number(process.env.PORT) || WS_PORT;
 const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
 
-/** Engine mode: the voice-bus brain (DEFAULT, S7) or the legacy layer/clip/binding brain.
- * `LEDRUMS_ENGINE=legacy` is the explicit opt-out; unset or anything else runs voice, so every
- * shipping path (`pnpm start`, `pnpm dev`, the desktop shell) runs the same engine.
+/** Engine mode. Since S8 this no longer selects a render brain — the voice host is BOTH the sole
+ * store and the sole render loop. `LEDRUMS_ENGINE=legacy` now does exactly one thing: it keeps the
+ * legacy {@link EngineHost} constructed as an inert shared-reference follower so S8 is a pure
+ * wiring change that reverts without code loss. S12 deletes the flag and the class together.
  * The decision itself lives in `engine-mode.ts` so it is testable (S1). */
 const VOICE_MODE = resolveEngineMode(process.env) === 'voice';
 
@@ -164,7 +165,7 @@ function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
 let flushReportsSync: () => void = () => {};
 installProcessErrorCapture({
   monitor,
-  onFatal: createFatalHandler({ darken: () => (voiceHost ?? host).darken(), flushReports: () => flushReportsSync() }),
+  onFatal: createFatalHandler({ darken: () => voiceHost.darken(), flushReports: () => flushReportsSync() }),
   drainMs: 100,
 });
 
@@ -174,19 +175,27 @@ installProcessErrorCapture({
 // captured + reported before exit.
 const projectLoad = resolveInitialProject({ name: LIVE_PROJECT, dir: resolveProjectsDir(process.env) });
 const project0 = projectLoad.project;
-const host = new EngineHost(project0);
-/** Voice-bus host, only constructed in voice mode. It owns the live render + output;
- * the legacy `host` still backs the `state` message and the structural reducer so the
- * existing UI/project surface keeps working. Both hosts share the same `project0` object
- * by reference, so the voice host's in-place geometry/routing edits are visible through
- * `host.engine.getProject()` — which is what the autosaver persists. */
-const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
+
+/** THE store (S8). Constructed UNCONDITIONALLY: it owns the one live Project object, the live
+ * render, and the output. Every authoritative read below goes through it and
+ * `applyStructuralMessage` is the only reducer that writes it — divergent-change-0001 was two
+ * reducers writing one project, and this is the seam that closes it. */
+const voiceHost = new VoiceEngineHost(project0);
+
+/** The legacy render host, alive ONLY behind the explicit `LEDRUMS_ENGINE=legacy` opt-out (S12
+ * deletes it). Constructed over `voiceHost.getProject()` — the SAME object — so the
+ * shared-reference invariant this file used to document in prose now holds BY CONSTRUCTION.
+ * It is write-never: nothing computes a mutation through it, and it is never started; the two
+ * places the voice host swaps its project object (adoptProject on load, adoptPatch on a paste)
+ * re-point this engine at the new one, so `legacyHost.engine.getProject() === voiceHost.getProject()`
+ * holds at every observable moment. Asserted in store-authority.test.ts, not assumed. */
+const legacyHost = VOICE_MODE ? null : new EngineHost(voiceHost.getProject());
 
 /** Live persistence: debounce-autosave the authoritative project to {@link LIVE_PROJECT}
  * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
-// NOT a createPersistedSlot: the live project IS engine state (the voice host mutates it in place
-// through `host.engine.getProject()`), so a slot-owned get/set would be a second source of truth.
-const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()), 400, {
+// NOT a createPersistedSlot: the live project IS engine state (the voice host owns and mutates it
+// in place), so a slot-owned get/set would be a second source of truth.
+const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, voiceHost.getProject()), 400, {
   onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave scheduled' }),
   onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave saved' }),
   onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'project', label: 'Project autosave failed', detail: message }),
@@ -412,7 +421,8 @@ if (projectLoad.recovery) {
 }
 
 function monitorInput(msg: ClientMessage, origin: string): void {
-  const destination = VOICE_MODE ? 'voice-engine' : 'legacy-engine';
+  // One engine since S8 — every input lands on the voice bus regardless of the env flag.
+  const destination = 'voice-engine';
   switch (msg.t) {
     case 'midi':
       monitor({
@@ -468,17 +478,17 @@ function tunnelInfo(): TunnelInfo {
   return { status: tunnelControl.status, url: tunnelControl.url, pin: pinGate.pin, ...(error ? { error } : {}) };
 }
 
-/** Build the full `state` message reflecting the current engine/project. In voice mode
- * the voice host owns the live geometry, so its model is authoritative for the wire. */
+/** Build the full `state` message reflecting the live project. Every field comes off the ONE store
+ * (S8) — before it, `project` was read from the legacy engine while `model`/`output` already came
+ * from the voice host, and the wire payload was correct only because the two shared an object. */
 function stateMessage(): ServerMessage {
-  const model = voiceHost ? voiceHost.getModel() : host.engine.getModel();
   return {
     t: 'state',
-    project: host.engine.getProject(),
-    model: serializeModel(model),
+    project: voiceHost.getProject(),
+    model: serializeModel(voiceHost.getModel()),
     effects: effectSpecs(),
     projects: listProjects(),
-    output: (voiceHost ?? host).getOutputStatus(),
+    output: voiceHost.getOutputStatus(),
     showLibrary: showLibrarySlot.get(),
     songLibrary: songLibrarySlot.get(),
     tunnel: tunnelInfo(),
@@ -494,11 +504,9 @@ function stateMessage(): ServerMessage {
   };
 }
 
-if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
-else host.onFrame = (rgb) => broadcastBinary(rgb);
-host.setOutputMonitor(monitor);
-voiceHost?.setOutputMonitor(monitor);
-voiceHost?.setMonitor(monitor);
+voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
+voiceHost.setOutputMonitor(monitor);
+voiceHost.setMonitor(monitor);
 
 // The connection body lives in ws-connection.ts (S12); main.ts only supplies the wiring.
 const wsConnectionHandler = createWsConnectionHandler<WebSocket>({
@@ -535,11 +543,17 @@ function isVersionedBlob(v: unknown): v is ShowLibraryBlob & SongLibraryBlob {
 
 /** Restore sink: replace the live project + libraries from a snapshot and reload every client exactly
  * like a cold load (mirrors the `loadProject` path). The project is re-parsed (validated) before it
- * touches the engine; the library slots are the module-level live state `stateMessage` reads. */
+ * touches the engine; the library slots are the module-level live state `stateMessage` reads.
+ *
+ * S8 note: this only ever re-pointed the LEGACY engine, so restoring a backup left the live voice
+ * render on the previous project's geometry while the `state` broadcast below described the restored
+ * one — the same defect S5 fixed on the `loadProject` path. Routing it through the sole store fixes
+ * it as a consequence of having one. */
 function applyRestoredSnapshot(files: SnapshotFiles): void {
   const project = parseProject(files.project);
-  host.engine.setProject(project);
-  host.reloadOutputSettings();
+  voiceHost.adoptProject(project);
+  legacyHost?.engine.setProject(voiceHost.getProject());
+  legacyHost?.reloadOutputSettings();
   autosaver.markDirty();
   if (isVersionedBlob(files.showLibrary)) showLibrarySlot.set(files.showLibrary);
   if (isVersionedBlob(files.songLibrary)) songLibrarySlot.set(files.songLibrary);
@@ -551,7 +565,7 @@ const snapshotOutbox = backupsQueue;
 const snapshotStore: SnapshotStore = createSnapshotStore({
   dir: join(resolveProjectsDir(process.env), 'backups'),
   now: () => Date.now(),
-  readCurrent: () => ({ project: host.engine.getProject(), showLibrary: showLibrarySlot.get(), songLibrary: songLibrarySlot.get() }),
+  readCurrent: () => ({ project: voiceHost.getProject(), showLibrary: showLibrarySlot.get(), songLibrary: songLibrarySlot.get() }),
   applyRestored: applyRestoredSnapshot,
   onSnapshot: snapshotOutbox ? (meta, bundle) => snapshotOutbox.enqueue(toBackupRecord(hostname(), meta, bundle)) : undefined,
 });
@@ -573,12 +587,12 @@ const snapshotTimer = setInterval(() => snapshotStore.snapshot('cadence'), SNAPS
 const controllerMonitor = createControllerMonitor({
   createClient: ({ host: controllerHost, auth }) => new HttpPixliteClient({ host: controllerHost, auth }),
   probe: (controllerHost, timeoutMs) => probeController(controllerHost, timeoutMs),
-  getOutputSettings: () => host.engine.getProject().output,
-  getController: () => host.engine.getProject().controller,
+  getOutputSettings: () => voiceHost.getProject().output,
+  getController: () => voiceHost.getProject().controller,
   persistController: (controller) => {
     // Store on the live project in place (no engine rebuild — the controller isn't geometry), then
     // autosave + re-broadcast state so every client sees the adopted controller.
-    host.engine.getProject().controller = controller ?? undefined;
+    voiceHost.getProject().controller = controller ?? undefined;
     autosaver.markDirty();
     broadcastState();
   },
@@ -588,8 +602,8 @@ const controllerMonitor = createControllerMonitor({
 
 const handleClientMessage = createClientMessageHandler<WebSocket>({
   clients,
-  host,
   voiceHost,
+  legacyHost,
   autosaver,
   showLibraryAutosaver: showLibrarySlot.autosaver,
   songLibraryAutosaver: songLibrarySlot.autosaver,
@@ -690,37 +704,31 @@ oscInput.onStatus((status) => {
 });
 
 oscInput.on((e) => {
-  const event = oscToEvent(e, host.engineTimeMs);
+  const event = oscToEvent(e, voiceHost.engineTimeMs);
   if (!event || event.kind !== 'osc') return;
-  monitor({ type: 'input', direction: 'in', source: 'osc', destination: VOICE_MODE ? 'voice-engine' : 'legacy-engine', label: `OSC ${event.address}`, detail: `value=${event.value}` });
-  if (voiceHost) {
-    // A section-recall address (e.g. from a show-control system) is always consumed by the
-    // recall handler before the zone-map, exactly like the WS osc path; anything else is a
-    // normal OSC input.
-    if (parseSectionRecallAddress(event.address) !== null) {
-      const target = oscRecall(voiceHost.getShow(), event.address, event.value);
-      if (target) applyTransportRecall(oscVoiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
-      return;
-    }
-    voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
-  } else {
-    host.markInput();
-    host.engine.applyEvent(event);
+  monitor({ type: 'input', direction: 'in', source: 'osc', destination: 'voice-engine', label: `OSC ${event.address}`, detail: `value=${event.value}` });
+  // A section-recall address (e.g. from a show-control system) is always consumed by the
+  // recall handler before the zone-map, exactly like the WS osc path; anything else is a
+  // normal OSC input.
+  if (parseSectionRecallAddress(event.address) !== null) {
+    const target = oscRecall(voiceHost.getShow(), event.address, event.value);
+    if (target) applyTransportRecall(oscVoiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
+    return;
   }
+  voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
   broadcastJson({ t: 'input', kind: 'osc', label: event.address, value: event.value });
 });
 
 // --- periodic stats ---------------------------------------------------------
 
 // The adaptation policy (and the cadence constant) lives in stats-frame.ts as a pure
-// function; this timer is just the clock. `beatsPerBar` is read fresh each tick off the
-// legacy host's project — the authoritative transport, even in voice mode.
+// function; this timer is just the clock. `beatsPerBar` is read fresh each tick off the ONE
+// authoritative project (S8) — the same object the voice loop advances its transport against.
 const statsTimer = setInterval(() => {
   broadcastJson(
     buildStatsMessage({
       voiceHost,
-      host,
-      beatsPerBar: host.engine.getProject().composition.transport.beatsPerBar,
+      beatsPerBar: voiceHost.getProject().composition.transport.beatsPerBar,
     }),
   );
 }, STATS_INTERVAL_MS);
@@ -736,7 +744,6 @@ boot({
   wss,
   clients,
   wsKeepalive: wsConnectionHandler,
-  host,
   voiceHost,
   oscInput,
   controllerMonitor,

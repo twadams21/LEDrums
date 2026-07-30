@@ -49,7 +49,10 @@ export interface VoiceStatsSource {
  */
 export function buildStatsMessage(deps: {
   voiceHost: VoiceStatsSource | null;
-  host: LegacyStatsSource;
+  /** The legacy host's stats source, or absent. S8 made the voice host unconditional, so the
+   * SHIPPED wiring no longer has a legacy source to hand over; the arm below (and its tests)
+   * survive until S12 deletes the runtime. */
+  host?: LegacyStatsSource | null;
   beatsPerBar: number;
 }): StatsMessage {
   const { voiceHost, host, beatsPerBar } = deps;
@@ -71,6 +74,9 @@ export function buildStatsMessage(deps: {
       voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
     };
   }
-  const s = host.getStats();
+  const s = host?.getStats();
+  // Fail loud rather than broadcast an invented frame: unreachable from the shipped wiring since S8
+  // (the voice host is unconditional), so reaching it means a caller passed neither source.
+  if (!s) throw new Error('buildStatsMessage: no stats source (neither a voice host nor a legacy host)');
   return { t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output };
 }

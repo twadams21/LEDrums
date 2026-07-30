@@ -2,12 +2,11 @@ import { blockingRoutingIssues, projectPatchSchema, validateRouting } from '@led
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
-import { applyClientMessage } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
 import { encodeServer, type BackupSnapshotMeta, type ClientMessage, type ControllerTestPattern, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
 import { handleProjectMessage, type JsonSink } from './projects';
-import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
+import { applyStructuralMessage, handleVoiceInput } from './voice-input';
 
 // ---------------------------------------------------------------------------
 // Read-only gating policy (S2)
@@ -83,9 +82,15 @@ export interface HandlerSocket extends CloseableSocket, JsonSink {}
  * fake sockets). */
 export interface ClientMessageDeps<S extends HandlerSocket> {
   clients: ClientRegistry<S>;
-  host: EngineHost;
-  /** The voice-bus host, or `null` in legacy mode. */
-  voiceHost: VoiceEngineHost | null;
+  /** THE authoritative store (S8): it owns the one live Project object, and
+   * {@link applyStructuralMessage} is the only reducer that writes it. */
+  voiceHost: VoiceEngineHost;
+  /** The legacy render host, alive only behind the `LEDRUMS_ENGINE=legacy` opt-out (S12 deletes
+   * it), else `null`. WRITE-NEVER: no arm here computes a mutation through it. It is only
+   * re-pointed at `voiceHost.getProject()` when the voice host swaps its project object, so
+   * `legacyHost.engine.getProject() === voiceHost.getProject()` holds at every observable moment —
+   * the invariant main.ts used to document in a comment and now asserts. */
+  legacyHost: EngineHost | null;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
   songLibraryAutosaver: Autosaver;
@@ -152,16 +157,18 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
  *     `presence` is re-broadcast so every client converges (last-press-wins).
  *  2. Read-only gate — every authoring mutation is rejected (silent no-op) unless the sender is
  *     the editor; engine inputs and pure reads always pass ({@link requiresEditor}).
- *  3. Project IO → show-library push/relay → voice-mode inputs → the legacy reducer, exactly as
- *     the S1 server did.
+ *  3. Project IO → show-library push/relay → engine inputs → {@link applyStructuralMessage}, the
+ *     SOLE structural reducer (S8). Every message that mutates the live Project takes exactly one
+ *     path through exactly one writer; a `true` from the reducer is the broadcast-and-persist
+ *     signal.
  */
 export function createClientMessageHandler<S extends HandlerSocket>(
   deps: ClientMessageDeps<S>,
 ): (msg: ClientMessage, ws: S) => void {
   const {
     clients,
-    host,
     voiceHost,
+    legacyHost,
     autosaver,
     showLibraryAutosaver,
     songLibraryAutosaver,
@@ -273,7 +280,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // the render loop is never blocked. `hoop` is 1-based (A1); `durationS <= 0` clears.
     if (msg.t === 'identifyHoop') {
       const durationMs = Math.max(0, msg.durationS) * 1000;
-      (voiceHost ?? host).identifyHoop(msg.drumId, msg.hoop, durationMs);
+      voiceHost.identifyHoop(msg.drumId, msg.hoop, durationMs);
       return;
     }
 
@@ -339,11 +346,11 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // Project IO (load/save/list) is handled here, not by the reducer. snapshotPreRisk is
     // fail-closed: `false` (pre-risk write failed) makes the load refuse (S9 — no absent-backups
     // fallback survives; a dropped `backups` field is a compile error, not a silent fail-open).
-    if (handleProjectMessage(msg, ws, { host, voiceHost, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
+    if (handleProjectMessage(msg, ws, { voiceHost, legacyHost, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
 
-    // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
-    // legacy reducer so every MIDI input adapter obeys the same setting.
-    if (!acceptsMidiChannel(msg, host.engine.getProject().inputMap.midiChannel)) return;
+    // App-wide MIDI channel filter. Runs before recall, zone mapping and the structural reducer
+    // so every MIDI input adapter obeys the same setting.
+    if (!acceptsMidiChannel(msg, voiceHost.getProject().inputMap.midiChannel)) return;
 
     // Show-library persistence: the editor pushes its authored library on every change; the server
     // adopts it as the live slot, debounce-autosaves it, AND relays it live to the OTHER clients so
@@ -389,9 +396,9 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // Bulk device re-rig (S45): a pasted `patch` ClipDoc's Project slices, applied as ONE message.
     // Schema-validate the WHOLE payload FIRST — an invalid patch is a user-visible `error` reply to
     // the sender with ZERO state touched (AGENTS.md: validate before any state, no partial apply).
-    // On accept, apply once: the legacy engine adopts the merged project (a single kit reload, never
-    // a granular setKit*/setInputMap/setOutput replay), the voice host bulk-adopts the same slices,
-    // then persist + broadcast fresh `state`. Authored composition/setlist are never touched.
+    // On accept, apply once through the sole store: `voiceHost.adoptPatch` swaps the three device
+    // slices and rebuilds geometry ONCE, never a granular setKit*/setInputMap/setOutput replay.
+    // Then persist + broadcast fresh `state`. Authored composition/setlist are never touched.
     if (msg.t === 'setProject') {
       const parsed = projectPatchSchema.safeParse(msg.patch);
       if (!parsed.success) {
@@ -449,16 +456,12 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         });
         return;
       }
-      const cur = host.engine.getProject();
-      host.engine.setProject({
-        ...cur,
-        name: patch.name ?? cur.name,
-        kit: patch.kit,
-        inputMap: patch.inputMap,
-        output: patch.output,
-      });
-      host.reloadOutputSettings();
-      if (voiceHost) voiceHost.adoptPatch(patch);
+      voiceHost.adoptPatch(patch);
+      // adoptPatch rebuilds `project` by spread, so the legacy follower's engine would keep the
+      // PREVIOUS object — the exact point identity is lost. Re-point it at the new authoritative
+      // object (a re-point, never a computed mutation) so the invariant survives a paste.
+      legacyHost?.engine.setProject(voiceHost.getProject());
+      legacyHost?.reloadOutputSettings();
       monitor({
         type: 'system',
         direction: 'in',
@@ -483,7 +486,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     if (msg.t === 'setKitOutputs') {
       // Blocking (error) issues reject with ZERO state applied; `hoop-uncovered` warnings pass
       // through and apply (the editor indicates incomplete coverage, it doesn't block it) (B1).
-      const issues = blockingRoutingIssues(validateRouting(host.engine.getProject().kit, msg.outputs));
+      const issues = blockingRoutingIssues(validateRouting(voiceHost.getProject().kit, msg.outputs));
       if (issues.length) {
         const first = issues[0]!;
         ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));
@@ -499,44 +502,17 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       }
     }
 
-    // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the voice-only
-    // types are consumed as no-ops; midi/osc fall through to the reducer below.
+    // Engine inputs (recalls, native pad hits, raw midi/osc) — consumed here, including the
+    // `input` monitor echo each one broadcasts. Structural edits fall through.
     if (handleVoiceInput(msg, voiceDeps)) return;
 
-    // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.
-    if (msg.t === 'midi' || msg.t === 'osc') host.markInput();
-
-    const result = applyClientMessage(host.engine, msg, host.engineTimeMs);
-
-    // Voice mode: the legacy reducer above mutated the shared project; propagate kit/output/
-    // input-map edits to the voice host (which owns the live render + output).
-    if (voiceHost) propagateToVoiceHost(voiceHost, msg);
-
-    // Output settings or geometry changed → re-apply output + send fresh state. (setKitOutputs has
-    // no legacy reducer case, so it never sets result.structural; mark dirty here so the output-
-    // topology reorder is persisted too.) setKitGlobal (expanded/density/hoopCount) and
-    // setHoopConfig (per-hoop pixel count) both change the pixel model AND the DMX patch, so they
-    // need reloadOutputSettings — the OutputManager must re-allocate universes off the new dmxMap.
-    if (
-      msg.t === 'setOutput' ||
-      msg.t === 'setKitTransform' ||
-      msg.t === 'setKitOutputs' ||
-      msg.t === 'setKitGlobal' ||
-      msg.t === 'setHoopConfig'
-    ) {
-      host.reloadOutputSettings();
+    // THE reducer (S8). One writer, one project object. Each arm rebuilds whatever its edit
+    // invalidated (geometry, DMX map, output settings), so there is no follow-up reload to forget —
+    // the pre-S8 shape needed a hand-maintained list of "messages that also need
+    // reloadOutputSettings" next to a second reducer that had no `setKitOutputs` arm at all.
+    if (applyStructuralMessage(voiceHost, msg)) {
       broadcastJson(stateMessage());
       autosaver.markDirty();
-      return;
-    }
-
-    if (result.structural) {
-      broadcastJson(stateMessage());
-      autosaver.markDirty();
-    }
-    if (result.monitor) {
-      const midiMeta = msg.t === 'midi' ? { note: msg.note, channel: msg.channel } : {};
-      broadcastJson({ t: 'input', kind: result.monitor.kind, label: result.monitor.label, value: result.monitor.value, ...midiMeta });
     }
   };
 }
