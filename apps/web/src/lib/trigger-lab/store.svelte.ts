@@ -694,12 +694,18 @@ export class TriggerLab {
       browser refresh inside the debounce window doesn't drop the last edit (e.g. a node
       drag). Registered in startAutosave, removed in stopAutosave. */
   private flushOnUnload: (() => void) | null = null;
-  /** Reactive save status for the TopBar indicator ('idle' | 'saving' | 'saved'),
+  /** Reactive save status for the TopBar indicator ('idle' | 'saving' | 'saved' | 'error'),
       driven by the autosave path through {@link saveStatusCtl}. */
   saveStatus = $state<SaveStatus>('idle');
+  /** Why the last save failed, for the indicator's tooltip. Null unless {@link saveStatus}
+      is 'error'. */
+  saveError = $state<string | null>(null);
   /** Timing controller behind {@link saveStatus} — enforces the min-visible 'saving'
       window + 'saved' hold so the indicator reads even when a flush is instant. */
-  private saveStatusCtl = new SaveStatusController((s) => (this.saveStatus = s));
+  private saveStatusCtl = new SaveStatusController((s, err) => {
+    this.saveStatus = s;
+    this.saveError = err;
+  });
   /** Skips the indicator for the autosave $effect's initial (mount) run, so the app
       doesn't flash "Saving…/Saved" on load; armed by the first scheduleSave. */
   private autosaveArmed = false;
@@ -1049,8 +1055,9 @@ export class TriggerLab {
         if (!this.saveTimer) return;
         clearTimeout(this.saveTimer);
         this.saveTimer = null;
-        writeStoredLibrary(serializeShowLibrary(this.library.currentLibrary()));
-        writeStoredSongLibrary(serializeSongLibrary(this.library.currentSongLibrary()));
+        // Last chance before the tab goes: no indicator can be seen now, but a lost write still
+        // gets its Monitor event so the loss is traceable afterwards.
+        this.writeLocalCaches(this.library.currentLibrary(), this.library.currentSongLibrary());
       };
       window.addEventListener('beforeunload', this.flushOnUnload);
     }
@@ -1064,8 +1071,9 @@ export class TriggerLab {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    writeStoredLibrary(serializeShowLibrary(this.library.currentLibrary()));
-    writeStoredSongLibrary(serializeSongLibrary(this.library.currentSongLibrary()));
+    // Same last-chance rule as the unload flush: the indicator is going away, the Monitor event
+    // is not.
+    this.writeLocalCaches(this.library.currentLibrary(), this.library.currentSongLibrary());
     this.persistDispose();
     this.persistDispose = null;
     if (this.flushOnUnload && typeof window !== 'undefined') {
@@ -1077,6 +1085,23 @@ export class TriggerLab {
     this.autosaveArmed = false;
   }
 
+  /** Write BOTH local library caches and report what actually landed. Returns the failures, so a
+      caller can tell "everything persisted" from "some of it did" — the distinction the old
+      always-says-Saved indicator could not make. Every failure raises a Monitor `error` event
+      here, including on the last-chance flush paths that do not drive the indicator: a lost
+      write must leave a trace even when there is no UI left to show it. */
+  private writeLocalCaches(lib: ShowLibrary, songLib: SongLibrary): Array<{ what: string; message: string }> {
+    const attempts = [
+      { what: 'show library', result: writeStoredLibrary(serializeShowLibrary(lib)) },
+      { what: 'song library', result: writeStoredSongLibrary(serializeSongLibrary(songLib)) },
+    ];
+    const failures = attempts
+      .filter((a) => !a.result.ok)
+      .map((a) => ({ what: a.what, message: `${(a.result as { reason: string }).reason}: ${(a.result as { message: string }).message}` }));
+    for (const f of failures) this.reportError('persistence', `${f.what} write failed`, f.message);
+    return failures;
+  }
+
   private scheduleSave(lib: ShowLibrary, songLib: SongLibrary): void {
     // Show "Saving…" the moment an edit schedules a write — but skip the autosave $effect's
     // first (mount) run, which fires with no user edit and shouldn't blip the indicator.
@@ -1085,8 +1110,8 @@ export class TriggerLab {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      writeStoredLibrary(serializeShowLibrary(lib)); // localStorage cache (write-through)
-      writeStoredSongLibrary(serializeSongLibrary(songLib)); // the song pool's own cache
+      // localStorage caches: the show library's write-through and the song pool's own.
+      const failures = this.writeLocalCaches(lib, songLib);
       // Same debounced tick re-syncs the active show's authored Show to the engine (guarded so
       // it only sends on a real change) — so live edits AND show switches reach the server.
       this.syncShowToServer();
@@ -1095,9 +1120,19 @@ export class TriggerLab {
       this.library.syncLibraryToServer();
       // …and the canonical song library (the sibling pool), same gated write-through.
       this.library.syncSongLibraryToServer();
-      // The write (local cache + server push) has flushed → settle to "Saved" (held at
-      // "Saving…" for the min-visible window first). A no-op for the skipped mount save.
-      this.saveStatusCtl.saved();
+      // "Saved" means the LOCAL writes landed — every one of them, not merely one of them. A
+      // quota failure on the song library while the show library succeeds is still lost work,
+      // and the song library is exactly the payload most likely to tip quota over.
+      //
+      // The server push deliberately counts for nothing here: `client.send` is fire-and-forget
+      // with no ack, and syncShowToServer early-returns on a closed link, so "the link looked
+      // open" is not knowable evidence that anything persisted anywhere.
+      if (failures.length === 0) {
+        // Held at "Saving…" for the min-visible window first. A no-op for the skipped mount save.
+        this.saveStatusCtl.saved();
+      } else {
+        this.saveStatusCtl.failed(failures.map((f) => `The ${f.what} could not be saved (${f.message}).`).join(' '));
+      }
     }, SAVE_DEBOUNCE_MS);
   }
 

@@ -11,10 +11,13 @@
       2. **A brief 'saved' hold** ({@link SAVED_HOLD_MS}) before settling back to 'idle',
          so the confirmation is legible before it fades.
 
-    All wall-clock access (now / timers) is injected via {@link SaveStatusClock} so tests
-    drive a deterministic fake clock; the default uses real `Date.now`/`setTimeout`. */
+    A third event, `failed()`, breaks both guarantees ON PURPOSE — see below. All wall-clock
+    access (now / timers) is injected via {@link SaveStatusClock} so tests drive a deterministic
+    fake clock; the default uses real `Date.now`/`setTimeout`. */
 
-export type SaveStatus = 'idle' | 'saving' | 'saved';
+/** `'error'` is the honest state: the write did NOT land. It is not a phase of a save cycle —
+    it is a condition that persists until a later save actually succeeds. */
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /** Minimum time 'saving' stays visible once shown, even if the write finished sooner. */
 export const MIN_SAVING_MS = 150;
@@ -54,8 +57,11 @@ export class SaveStatusController {
   private readonly minSavingMs: number;
   private readonly savedHoldMs: number;
 
+  /** Why the last write failed — the text the indicator's tooltip names. Null unless 'error'. */
+  private _error: string | null = null;
+
   constructor(
-    private readonly onChange: (status: SaveStatus) => void,
+    private readonly onChange: (status: SaveStatus, error: string | null) => void,
     options: SaveStatusOptions = {},
   ) {
     this.clock = options.clock ?? realClock;
@@ -65,6 +71,11 @@ export class SaveStatusController {
 
   get status(): SaveStatus {
     return this._status;
+  }
+
+  /** The reason behind an 'error' status, for the indicator's tooltip. Null in every other state. */
+  get error(): string | null {
+    return this._error;
   }
 
   /** An autosave was scheduled / is in flight. Enters 'saving' (starting the min-visible
@@ -85,6 +96,12 @@ export class SaveStatusController {
       transition is deferred until it is. A flush that arrives outside an active 'saving'
       window (e.g. the initial mount save, or a duplicate flush) is ignored. */
   saved(): void {
+    // A success arriving while the indicator is stuck on 'error' clears it — that is the ONLY
+    // thing that does. There is no saving window to honour, so it lands immediately.
+    if (this._status === 'error') {
+      this.enterSaved();
+      return;
+    }
     if (this._status !== 'saving' || this.settling) return;
     const remaining = this.minSavingMs - (this.clock.now() - this.startedAt);
     if (remaining <= 0) {
@@ -99,6 +116,19 @@ export class SaveStatusController {
     }, remaining);
   }
 
+  /** The write did NOT land. Goes to 'error' IMMEDIATELY — the min-visible 'saving' floor exists
+      to make success feel real, and there is nothing here to make feel real; a user who has lost
+      bytes should not watch a reassuring spinner first. Unlike {@link saved} it does NOT
+      auto-settle back to 'idle': the state is a standing condition, not a phase, and it stays on
+      screen until a later `saved()` clears it. Any pending settle/hold from the cycle it
+      interrupts is cancelled, so a deferred 'saved' cannot land on top of the failure. */
+  failed(reason: string): void {
+    this.clearTimer();
+    this.settling = false;
+    this._error = reason;
+    this.setStatus('error', true); // re-announce even when already 'error': the reason may differ
+  }
+
   /** Cancel any pending transition (on teardown). Leaves the visible status untouched. */
   dispose(): void {
     this.clearTimer();
@@ -107,17 +137,18 @@ export class SaveStatusController {
 
   private enterSaved(): void {
     this.clearTimer();
-    this.setStatus('saved');
+    this.setStatus('saved'); // setStatus clears the error text on any non-error status
     this.timer = this.clock.setTimer(() => {
       this.timer = null;
       this.setStatus('idle');
     }, this.savedHoldMs);
   }
 
-  private setStatus(next: SaveStatus): void {
-    if (this._status === next) return;
+  private setStatus(next: SaveStatus, force = false): void {
+    if (this._status === next && !force) return;
+    if (next !== 'error') this._error = null;
     this._status = next;
-    this.onChange(next);
+    this.onChange(next, this._error);
   }
 
   private clearTimer(): void {

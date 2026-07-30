@@ -6,6 +6,10 @@
     "state": "view:trigger",
     "target": ".top"
   },
+  "save-indicator-error": {
+    "state": "view:trigger,save-status:error",
+    "target": ".top"
+  },
   "transport": {
     "state": "view:trigger",
     "target": ".xport"

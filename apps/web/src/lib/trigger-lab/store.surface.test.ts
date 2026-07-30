@@ -27,11 +27,14 @@ import { harnessClient, newHarness } from '../test-support/ws-harness';
    dial out on construction, this file fails loudly instead of going flaky. localStorage is the
    shared MemStorage double, same beforeEach/afterEach pair as store.shows.test.ts. */
 
-/** Ceiling on the member count. The store only shrinks from here — a step that publishes a
-    collaborator deletes forwarders, so this ratchet never needs raising. */
-const MEMBER_CAP = 318;
-/** Ceiling on store.svelte.ts's line count. Same direction: down only. */
-const LOC_CAP = 3223;
+/** Ceiling on the member count. Decomposition steps only shrink it — publishing a collaborator
+    deletes forwarders — so the direction is down. It is not a law, though: NEW BEHAVIOUR can
+    legitimately raise it, and S22 did (`saveError` + `writeLocalCaches`, the honest save-error
+    state). A commit that raises a cap must say why in its message; a commit that raises one
+    silently is the thing this instrument exists to catch. */
+const MEMBER_CAP = 320;
+/** Ceiling on store.svelte.ts's line count. Same direction and the same rule. */
+const LOC_CAP = 3258;
 
 const EXPECTED_MEMBERS: string[] = [
   'acceptsMidiChannel',
@@ -245,6 +248,7 @@ const EXPECTED_MEMBERS: string[] = [
   'restoringUndo',
   'role',
   'runUndoable',
+  'saveError',
   'saveNodeAsPreset',
   'saveStatus',
   'saveStatusCtl',
@@ -352,6 +356,7 @@ const EXPECTED_MEMBERS: string[] = [
   'voiceLevelDisplay',
   'wireClient',
   'writeClip',
+  'writeLocalCaches',
 ];
 
 function surfaceOf(o: object): string[] {

@@ -2,7 +2,7 @@
   /* Key app composites, rendered from the REAL components: the shared NodeCard face
      (both graphs), live EffectThumbs (same sampler as the 3D kit), the OutputPill,
      the Monitor log, and the inspector control rows. Store-bound components
-     (OutputPill, Monitor, RenameField) run on minimal reactive stubs — they read a
+     (OutputPill, SaveIndicator, Monitor, RenameField) run on minimal reactive stubs — they read a
      tiny store surface, so the stub drives the real component, not a copy of it. */
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Link2 from '@lucide/svelte/icons/link-2';
@@ -13,6 +13,7 @@
   import { makeNode } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import SaveIndicator from '../../app/chrome/SaveIndicator.svelte';
   import OscInputPanel from '../../app/chrome/OscInputPanel.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
   import RecoveryBanner from '../../app/chrome/RecoveryBanner.svelte';
@@ -128,6 +129,10 @@
   });
   const pillStub = (link: TriggerLab['link'], output: OutputStatus | null = null) =>
     ({ link, output }) as unknown as TriggerLab;
+
+  /* ---- SaveIndicator (reads store.saveStatus + store.saveError) ----------------- */
+  const saveStub = (saveStatus: TriggerLab['saveStatus'], saveError: string | null = null) =>
+    ({ saveStatus, saveError }) as unknown as TriggerLab;
 
   /* ---- OscInputPanel (reads store.oscListen + store.oscHeardBadge) -------------- */
   const oscHeard: InputBadgeView = {
@@ -334,6 +339,18 @@
         <OutputPill store={pillStub('open', outStatus({ state: 'disabled' }))} />
         <OutputPill store={pillStub('connecting')} />
         <OutputPill store={pillStub('offline')} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Save indicator"
+      src={['lib/app/chrome/SaveIndicator', 'lib/trigger-lab/save-status']}
+      note="The performer's only evidence their work is persisted, so it must not overclaim. 'Saved' is a green check and means the LOCAL writes landed — every one of them; a server push is fire-and-forget with no ack and counts for nothing. When a write fails it becomes the app's standard fault: TriangleAlert in --live, 'Not saved', and a tooltip naming the cause. That state alone does not fade after a hold — it stands until a later save actually succeeds — and the live region turns assertive for it. Idle · Saving… · Saved · Not saved."
+    >
+      <div class="pill-row">
+        <SaveIndicator store={saveStub('saving')} />
+        <SaveIndicator store={saveStub('saved')} />
+        <SaveIndicator store={saveStub('error', 'The song library could not be saved (quota: the quota has been exceeded).')} />
       </div>
     </DemoCard>
 

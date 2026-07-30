@@ -23,6 +23,7 @@ import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.sve
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
+import type { SaveStatus } from '../trigger-lab/save-status';
 import { defaultRouting } from './patch-graph';
 import { patchToOutputs } from './patch-routing';
 
@@ -111,6 +112,10 @@ export interface ShotSeam {
   /** Push transient toast(s) so ui-shot can capture the top-centre ToastHost stack and its
       per-role tint. `arg` is a single tone (`info`/`success`/`error`); omitted → one of each. */
   previewToasts(tone?: ToastTone): void;
+  /** Drive the TopBar save indicator into a given state so ui-shot can capture it. `arg` is the
+      SaveStatus (`saving` / `saved` / `error`); omitted → `error`, the one that cannot otherwise
+      be reached without actually filling the browser's storage quota. */
+  previewSaveStatus(status?: SaveStatus): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -380,6 +385,36 @@ class ShotSeamImpl implements ShotSeam {
     for (const t of tones) pushToast(messages[t], { tone: t, ttl: 0 });
   }
 
+  previewSaveStatus(status: SaveStatus = 'error'): void {
+    if (status === 'error') {
+      // Make the failure REAL, not painted on. A status merely assigned here is settled back to
+      // 'saved' → 'idle' by the app's own next autosave cycle, which lands mid-capture — the
+      // indicator was caught fading out of frame when this shot was first taken. With writes
+      // actually throwing, every later cycle re-produces the error and the state holds.
+      // The patch goes on Storage.prototype: assigning to `localStorage.setItem` would hit the
+      // named-property setter and merely store a KEY called "setItem".
+      const err = new Error('The quota has been exceeded.');
+      err.name = 'QuotaExceededError';
+      Storage.prototype.setItem = function setItem(): void {
+        throw err;
+      };
+    }
+    // Cancel the cycle already in flight — its queued success would otherwise clear the state
+    // we are here to capture — then paint the value so the shot needn't wait for the next one.
+    const internals = this.store as unknown as {
+      saveTimer: ReturnType<typeof setTimeout> | null;
+      saveStatusCtl: { dispose(): void };
+    };
+    if (internals.saveTimer) {
+      clearTimeout(internals.saveTimer);
+      internals.saveTimer = null;
+    }
+    internals.saveStatusCtl.dispose();
+    this.store.saveStatus = status;
+    this.store.saveError =
+      status === 'error' ? 'The song library could not be saved (quota: the quota has been exceeded).' : null;
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -477,6 +512,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'toast':
       case 'toasts':
         this.previewToasts(arg as ToastTone | undefined);
+        break;
+      case 'save-status':
+        this.previewSaveStatus(arg as SaveStatus | undefined);
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
