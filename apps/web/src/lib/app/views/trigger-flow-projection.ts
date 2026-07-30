@@ -31,7 +31,12 @@ export function triggerNodeSignature(n: GraphNode, graph?: TriggerGraph | null):
   switch (n.kind) {
     case 'switch':
       return `${base}:on=${n.on}:valueMode=${n.valueMode}:bands=${(n.bands ?? []).join(',')}`;
+    // `effect` is the CANONICAL kind and `play` only its legacy persisted alias —
+    // normalizeTriggerGraphToGen3 (graph-integrity.ts:148/154) rewrites play→effect on every graph
+    // that reaches the store, so spelling only 'play' here made the arm dead and dropped
+    // effectId/playType/canvasScene out of every real effect node's signature.
     case 'play':
+    case 'effect':
       return `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
     case 'modifier':
       return `${base}:modifier=${n.modifierId ?? ''}`;

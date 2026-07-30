@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeNode, type TriggerGraph } from '../../trigger-lab/sim';
+import { makeNode, type GraphNode, type TriggerGraph } from '../../trigger-lab/sim';
 import {
   emptyTriggerProjectionCache,
   projectionDesyncIds,
@@ -291,6 +291,43 @@ describe('projectionDesyncIds', () => {
     expect(projectionDesyncIds(['a', 'ghost', 'c'], ['a', 'c'])).toEqual(['ghost']);
     expect(projectionDesyncIds(['g1', 'g2'], [])).toEqual(['g1', 'g2']);
     expect(projectionDesyncIds([], ['a'])).toEqual([]);
+  });
+});
+
+// repeated-switches-0001 regression (INIT-06 S1): the signature switch spelled only `case 'play':`,
+// but graph-integrity.ts:148/154 rewrite every `play` node to `effect` inside
+// normalizeTriggerGraphToGen3, and hydrate.ts runs that normalisation on every graph reaching the
+// store — so the 'play' arm was UNREACHABLE and every real effect node fell through to
+// `default: return base`. Its effectId / playType / canvasScene never entered the signature, so
+// projectTriggerFlowNodes reused the previous flow-node object verbatim when an effect node's
+// effect changed. These three assertions are what proves the arm is live.
+describe('triggerNodeSignature — canonical effect nodes', () => {
+  const effect = (over: Partial<GraphNode>) => makeNode('effect', 'e1', 10, 20, over);
+
+  it('folds effectId into the signature of a canonical effect node', () => {
+    expect(triggerNodeSignature(effect({ effectId: 'gen:radial-wash' }))).not.toBe(
+      triggerNodeSignature(effect({ effectId: 'gen:strobe' })),
+    );
+  });
+
+  it('folds playType into the signature of a canonical effect node', () => {
+    expect(triggerNodeSignature(effect({ effectId: 'gen:radial-wash', playType: 'hits' }))).not.toBe(
+      triggerNodeSignature(effect({ effectId: 'gen:radial-wash', playType: 'waves' })),
+    );
+  });
+
+  it('folds canvasScene into the signature of a canonical effect node', () => {
+    expect(triggerNodeSignature(effect({ effectId: 'gen:canvas', canvasScene: 'scene-a' }))).not.toBe(
+      triggerNodeSignature(effect({ effectId: 'gen:canvas', canvasScene: 'scene-b' })),
+    );
+  });
+
+  it('signs a legacy persisted `play` node the same way as its canonical `effect` twin', () => {
+    // The normalizer rewrites kind on load, so the two spellings must not disagree about which
+    // fields matter — only the `kind` segment of the signature may differ.
+    const play = triggerNodeSignature(makeNode('play', 'e1', 10, 20, { effectId: 'gen:strobe' }));
+    const canonical = triggerNodeSignature(effect({ effectId: 'gen:strobe' }));
+    expect(play.replace(':play:', ':effect:')).toBe(canonical);
   });
 });
 
