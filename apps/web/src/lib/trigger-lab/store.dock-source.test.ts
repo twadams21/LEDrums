@@ -1,48 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import type { WSClient } from '../ws/client';
-import type { ClientMessage } from '../ws/protocol-types';
-import type { VoiceStat } from '../ws/protocol-types';
-import type { Voice } from './sim';
+import type { EngineStats } from '@ledrums/core';
+import type { ClientMessage, OutputStatus, VoiceStat } from '../ws/protocol-types';
 
-/* S17 — the Layers/Buses dock reads server-truth when connected. `store.dockVoices` source-selects
-   between the streamed server voices (link open) and the local sim voices (offline); and while
-   connected the sim's per-frame `snapshot()` must NOT clobber the server-streamed bus levels. */
+/* S17 — the docks read ENGINE truth, and only engine truth. `store.dockVoices` and the bus meters
+   come from the streamed stats while the link is open; INIT-01 Decision 3 retired the browser-side
+   sim that used to be the offline second source, so with the link down there is nothing to show.
+   The drop path must CLEAR what it was showing: a frozen last-known reading is indistinguishable
+   from a live one, which is exactly the class of lie this initiative removes. */
 
 import { MemStorage } from '../test-support/mem-storage';
+import { newHarness, harnessClient, type Harness } from '../test-support/ws-harness';
 
 const capturing = (sent: ClientMessage[]): (() => WSClient) =>
   () =>
     ({ on() {}, connect() {}, close() {}, send(m: ClientMessage) { sent.push(m); } }) as unknown as WSClient;
 
-/** `snapshot()` is the private per-frame transient copy — reach it directly to prove the bus-level
-    clobber guard without spinning a rAF loop. */
-type Internals = { snapshot(): void };
-const internals = (store: TriggerLab): Internals => store as unknown as Internals;
-
-function simVoice(over: Partial<Voice> = {}): Voice {
-  return {
-    id: 'sv1',
-    effectId: 'flash',
-    busId: 'base',
-    mode: 'loop',
-    scope: 'kit',
-    sourceDrumId: null,
-    velocity: 1,
-    seed: 0,
-    params: { hue: 200 },
-    attackMs: 0,
-    sustainMs: 0,
-    releaseMs: 0,
-    phase: 'sustain',
-    level: 0.5,
-    bornAtMs: 0,
-    releaseAtMs: null,
-    releaseFromLevel: 0,
-    via: 'sim-via',
-    deckGain: 0.8,
-    ...over,
-  };
+/** rAF is unavailable in node; stub it so `start()` can wire the client without a live loop. */
+function withRaf(fn: () => void): void {
+  const raf = globalThis.requestAnimationFrame;
+  const caf = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+  try {
+    fn();
+  } finally {
+    globalThis.requestAnimationFrame = raf;
+    globalThis.cancelAnimationFrame = caf;
+  }
 }
 
 const serverVoice = (over: Partial<VoiceStat> = {}): VoiceStat => ({
@@ -57,6 +43,27 @@ const serverVoice = (over: Partial<VoiceStat> = {}): VoiceStat => ({
   ...over,
 });
 
+const engineStats = (over: Partial<EngineStats> = {}): EngineStats => ({
+  timeMs: 4000,
+  beat: 8,
+  bar: 3,
+  activeTriggers: 1,
+  tickCount: 120,
+  pixelCount: 548,
+  ...over,
+});
+
+const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 10, lastError: null, universeCount: 0 };
+
+/** Drive one `stats` tick through the harness — the real path the docks are fed from. */
+function fireStats(h: Harness, opts: { stats?: Partial<EngineStats>; voices?: VoiceStat[]; busLevels?: Record<string, number>; fps?: number } = {}): void {
+  h.cb!.onStats!(engineStats(opts.stats), 12, opts.fps ?? 44, OUTPUT, {
+    voiceCount: opts.voices?.length ?? 0,
+    busLevels: opts.busLevels ?? {},
+    voices: opts.voices ?? [],
+  });
+}
+
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
 });
@@ -65,51 +72,67 @@ afterEach(() => {
 });
 
 describe('store.dockVoices (S17)', () => {
-  it('connected: derives from the server-streamed voices, not the local sim voices', () => {
+  it('connected: derives from the engine-streamed voices', () => {
     const store = new TriggerLab(capturing([]));
-    // A stale local sim voice (e.g. an ungated section-recall look) must NOT leak into the dock.
-    store.voices = [simVoice({ id: 'stale', effectId: 'flash', via: 'sim-via' })];
     store.serverVoices = [serverVoice({ effectId: 'aurora', busId: 'base' })];
     store.link = 'open';
 
     expect(store.dockVoices).toHaveLength(1);
     expect(store.dockVoices[0]!.effectId).toBe('aurora');
     expect(store.dockVoices[0]!.via).toBe('server-via');
-    expect(store.dockVoices.some((v) => v.via === 'sim-via')).toBe(false);
   });
 
-  it('offline: derives from the local sim voices, ignoring any leftover server voices', () => {
+  it('offline: shows nothing — no renderer, so nothing is sounding', () => {
     const store = new TriggerLab(capturing([]));
-    store.voices = [simVoice({ effectId: 'flash', via: 'sim-via' })];
+    // Even with a leftover engine list still in the field, the gate holds: the dock is empty.
     store.serverVoices = [serverVoice({ effectId: 'aurora' })];
     store.link = 'offline';
 
-    expect(store.dockVoices).toHaveLength(1);
-    expect(store.dockVoices[0]!.effectId).toBe('flash');
-    expect(store.dockVoices[0]!.via).toBe('sim-via');
+    expect(store.dockVoices).toEqual([]);
   });
 });
 
-describe('bus levels follow the same authority rule (S17)', () => {
-  it('connected: snapshot() does not overwrite the server-streamed bus levels', () => {
-    const store = new TriggerLab(capturing([]));
-    const bus = store.buses[0]!.id;
-    store.link = 'open';
-    store.busLevels = { [bus]: 0.7 }; // as if just applied from an onStats voice payload
+describe('engine stats are the only writer of the transient dock/transport truth', () => {
+  it('a stats tick adopts the voices, bus levels, transport clock and output rate', () => {
+    const h = newHarness();
+    const store = new TriggerLab(harnessClient(h));
+    withRaf(() => {
+      store.start();
+      h.cb!.onConnection!('open');
+      const bus = store.buses[0]!.id;
 
-    internals(store).snapshot(); // a normal per-frame tick while connected
+      fireStats(h, { voices: [serverVoice()], busLevels: { [bus]: 0.7 }, stats: { beat: 8, timeMs: 4000 }, fps: 44 });
 
-    expect(store.busLevels[bus]).toBe(0.7);
+      expect(store.dockVoices).toHaveLength(1);
+      expect(store.busLevels[bus]).toBe(0.7);
+      // The transport readout is the ENGINE's clock — the browser advances no clock of its own.
+      expect(store.beat).toBe(8);
+      expect(store.timeMs).toBe(4000);
+      expect(store.fps).toBe(44);
+      expect(store.engineTransportLive).toBe(true);
+    });
   });
 
-  it('offline: snapshot() publishes the local sim bus levels', () => {
-    const store = new TriggerLab(capturing([]));
-    const bus = store.buses[0]!.id;
-    store.link = 'offline';
-    store.busLevels = { [bus]: 0.7 };
+  it('a link drop clears them instead of freezing the last reading', () => {
+    const h = newHarness();
+    const store = new TriggerLab(harnessClient(h));
+    withRaf(() => {
+      store.start();
+      h.cb!.onConnection!('open');
+      const bus = store.buses[0]!.id;
+      fireStats(h, { voices: [serverVoice()], busLevels: { [bus]: 0.7 }, stats: { beat: 8, timeMs: 4000 }, fps: 44 });
 
-    internals(store).snapshot(); // offline the sim owns the meters — no voices ⇒ level 0
+      h.cb!.onConnection!('closed');
 
-    expect(store.busLevels[bus]).toBe(0);
+      expect(store.link).toBe('offline');
+      expect(store.dockVoices).toEqual([]);
+      expect(store.busLevels).toEqual({});
+      expect(store.beat).toBe(0);
+      expect(store.timeMs).toBe(0);
+      expect(store.fps).toBe(0);
+      expect(store.engineTransportLive).toBe(false);
+      // …and the visualiser stops claiming live output rather than holding the last frame.
+      expect(store.enginePreviewLive).toBe(false);
+    });
   });
 });

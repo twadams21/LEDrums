@@ -1,16 +1,22 @@
 <script lang="ts">
   /* Shared transport cluster: play/stop · beat dot · bar.beat clock · time
-     signature · tempo (slider + tap) · velocity · panic. Owns the tap-tempo
-     logic behind its interface (callers just pass the engine store). Built on the
-     lib/ui design system — no bare controls. `compact` drops the velocity slider
-     for the tighter Perform bar. */
+     signature · tempo (slider + tap) · velocity. Owns the tap-tempo logic behind its
+     interface (callers just pass the engine store). Built on the lib/ui design system — no bare
+     controls. `compact` drops the velocity slider for the tighter Perform bar.
+
+     The bar.beat clock reads the ENGINE's transport (store.beat, streamed in `stats`) — nothing
+     in the browser advances a clock of its own, so with the link down the readout shows that it
+     is not running rather than ticking on a local timer.
+
+     (A "Stop all" panic control lived here until INIT-01 Decision 3: it only ever stopped the
+     retired browser-side sim — there is no stop-all message in the protocol — so connected it
+     had always been inert. It comes back with a real engine-side panic.) */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Select from '../../ui/Select.svelte';
   import Slider from '../../ui/Slider.svelte';
   import Play from '@lucide/svelte/icons/play';
   import Pause from '@lucide/svelte/icons/pause';
-  import Square from '@lucide/svelte/icons/square';
 
   let { store, compact = false }: { store: TriggerLab; compact?: boolean } = $props();
 
@@ -61,10 +67,6 @@
       <b>{Math.round(store.velocity * 100)}</b>
     </label>
   {/if}
-
-  <button class="panic" type="button" onclick={() => store.panic()} title="Stop all playback">
-    <Square size={11} aria-hidden="true" /> Stop all
-  </button>
 </div>
 
 <style>
@@ -135,15 +137,6 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     letter-spacing: var(--tracking-label);
-  }
-  .panic {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px var(--space-2);
-    font-size: var(--text-2xs);
-    color: var(--live);
-    border-color: color-mix(in oklch, var(--live) 45%, var(--border));
   }
   @media (prefers-reduced-motion: reduce) {
     .beatdot {

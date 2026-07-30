@@ -64,15 +64,18 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     expect(store.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds'); // derived look-list agrees
   });
 
-  it('offline: picking a look on the ACTIVE section morphs the local sim immediately', () => {
-    const store = new TriggerLab(capturing([]));
+  it('offline: picking a look on the ACTIVE section authors it and sends nothing', () => {
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
     const sectionId = store.activeSong!.sections[0]!.id;
-    store.setActiveSection(sectionId); // make it active (offline recall)
+    store.setActiveSection(sectionId); // make it active (no engine to recall on)
 
     store.setLook(sectionId, 'base', 'gen:perlin-clouds');
 
-    // The sim re-morphed to the new look — a base-bus voice is live in the preview.
-    expect(store.voices.some((v) => v.busId === 'base')).toBe(true);
+    // The edit is authored + persisted; nothing morphs, because the engine is the only renderer
+    // (INIT-01 Decision 3). It takes visible effect on the next connect, via the Show resync.
+    expect(store.activeSong!.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds');
+    expect(sent).toHaveLength(0);
   });
 
   it('connected: an authored look flows through buildShow onto the engine (spawns on recall)', () => {

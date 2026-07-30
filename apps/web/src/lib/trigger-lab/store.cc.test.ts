@@ -110,12 +110,13 @@ describe('MIDI-learn — binds the next incoming CC', () => {
   });
 });
 
-describe('WebMIDI forward feeds the offline sim CC table', () => {
-  it('a CC event updates the sim table under omni + its channel (0..1 normalized)', () => {
+describe('WebMIDI forward feeds the live CC table', () => {
+  it('a CC event updates the live table under omni + its channel (0..1 normalized)', () => {
     const { store } = withCc();
     forward(store, { kind: 'cc', controller: 30, value: 127, channel: 4 });
-    const table = (store as unknown as { sim: { ccTable: Map<string, number> } }).sim.ccTable;
-    expect(table.get(voice.ccKey(30, null))).toBe(1); // omni slot
-    expect(table.get(voice.ccKey(30, 4))).toBe(1); // channel slot
+    // `liveCcTable` is the public read the node-face value bar samples through (S38); the table
+    // moved off the retired sim onto the store's LiveInputTables, unchanged in shape.
+    expect(store.liveCcTable.get(voice.ccKey(30, null))).toBe(1); // omni slot
+    expect(store.liveCcTable.get(voice.ccKey(30, 4))).toBe(1); // channel slot
   });
 });

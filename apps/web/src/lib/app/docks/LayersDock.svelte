@@ -10,13 +10,11 @@
   import type { DockVoice } from '../../trigger-lab/dock-voices';
   import { groupVoicesByBus } from '../../trigger-lab/dock-smoothing';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
-  import IconButton from '../../ui/IconButton.svelte';
   import Slider from '../../ui/Slider.svelte';
   import { busIcon } from '../views/trigger-node-meta';
   import Zap from '@lucide/svelte/icons/zap';
   import Repeat from '@lucide/svelte/icons/repeat';
   import Hand from '@lucide/svelte/icons/hand';
-  import Square from '@lucide/svelte/icons/square';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -61,7 +59,6 @@
           onChange={(v) => store.setPolyphony(bus.id, v as Polyphony)}
           ariaLabel="{bus.name} polyphony"
         />
-        <IconButton icon={Square} label="Release {bus.name}" size={13} onclick={() => store.stopBus(bus.id)} />
       </header>
 
       <div class="meter" aria-hidden="true"><span style="transform:scaleX({store.busLevelsDisplay[bus.id] ?? 0})"></span></div>
@@ -73,7 +70,7 @@
           {#each voices as v (v.id)}
             <span class="voice" class:releasing={v.releasing} style={voiceStyle(v)} title={v.via}>
               {#if v.mode === 'oneshot'}<Zap size={11} aria-hidden="true" />{:else if v.mode === 'loop'}<Repeat size={11} aria-hidden="true" />{:else}<Hand size={11} aria-hidden="true" />{/if}
-              {store.sim.effectName(v.effectId)}
+              {store.effectName(v.effectId)}
             </span>
           {/each}
         {/if}

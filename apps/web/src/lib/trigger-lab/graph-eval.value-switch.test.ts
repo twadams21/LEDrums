@@ -1,36 +1,22 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { BUSES, EFFECTS, PRESETS } from './fixtures';
-import { Sim, bandIndex, makeNode, type GraphEdge, type GraphNode, type TriggerGraph, type TriggerCtx } from './sim';
+import { describe, expect, it } from 'vitest';
+import { bandIndex, makeNode, type GraphEdge, type GraphNode, type TriggerGraph } from './sim';
+import { evalPlays, firedEffectIds } from '../test-support/graph-eval';
 
-/** A fresh sim over the fixture buses/effects/presets for each scenario. */
-function mk(): Sim {
-  return new Sim(
-    BUSES.map((b) => ({ ...b })),
-    EFFECTS.map((e) => ({ ...e })),
-    PRESETS.map((p) => ({ ...p })),
-  );
-}
+/* Value-switch routing, back-compat defaults, output gating and cascading Scope — evaluated
+   through the ENGINE's evaluator (`voice.evalGraph`, via test-support/graph-eval). These used to
+   drive the browser-side sim; it delegated to the same evaluator, and INIT-01 Decision 3 retired
+   it, so the assertions moved onto the real path rather than a mirror of it. */
 
-function ctxV(velocity: number): TriggerCtx {
-  return { velocity, sectionIndex: 0, sectionCount: 3, beatPhase: 0, sourceDrumId: 'd', bpm: 120 };
-}
-
-/** trigger → switch(value) → children, then return effect ids spawned by a hit. */
+/** trigger → switch(value) → children, then return effect ids a hit spawns (sorted). */
 function fireValueSwitch(sw: Partial<GraphNode>, children: GraphNode[], edges: GraphEdge[], velocity: number): string[] {
-  const sim = mk();
   const graph: TriggerGraph = {
     nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('switch', 'sw', 200, 0, { on: 'value', ...sw }), ...children],
     edges: [{ id: 'e-t', from: 'trigger', to: 'sw' }, ...edges],
   };
-  sim.triggerGraph('pad', graph, ctxV(velocity));
-  return sim.voices.map((v) => v.effectId).sort();
+  return firedEffectIds(graph, { velocity, sourceDrumId: 'd' }).sort();
 }
 
-function fireGraph(graph: TriggerGraph): Sim['voices'] {
-  const sim = mk();
-  sim.triggerGraph('pad', graph, ctxV(1));
-  return sim.voices;
-}
+const fireGraph = (graph: TriggerGraph) => evalPlays(graph, { velocity: 1, sourceDrumId: 'd' });
 
 describe('bandIndex resolver', () => {
   it('routes value at or below a cutoff to that band (lower wins at the boundary)', () => {
@@ -137,7 +123,6 @@ describe('value switch — back-compat defaults', () => {
   // a switch node missing the new value fields (as an old persisted graph would be)
   // must still evaluate: default to gate, threshold 0.5, not inverted.
   it('defaults a value switch with absent fields to a ≤0.5 gate', () => {
-    const sim = mk();
     const sw = makeNode('switch', 'sw', 200, 0, { on: 'value' });
     // simulate an old node lacking the new fields entirely
     delete (sw as Partial<GraphNode>).valueMode;
@@ -151,14 +136,12 @@ describe('value switch — back-compat defaults', () => {
         { id: 'e1', from: 'sw', to: 'p' },
       ],
     };
-    sim.triggerGraph('pad', graph, ctxV(0.3));
-    expect(sim.voices.map((v) => v.effectId)).toEqual(['gen:chase-bands']); // ≤0.5 → passes
+    expect(firedEffectIds(graph, { velocity: 0.3, sourceDrumId: 'd' })).toEqual(['gen:chase-bands']); // ≤0.5 → passes
   });
 });
 
 describe('non-value switch modes unchanged', () => {
   it('section routes by section index, count-based (velocity is gone; section stays)', () => {
-    const sim = mk();
     const graph: TriggerGraph = {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
@@ -172,8 +155,8 @@ describe('non-value switch modes unchanged', () => {
         { id: 'e1', from: 'sw', to: 'b' },
       ],
     };
-    sim.triggerGraph('pad', graph, ctxV(0.2)); // ctx sectionIndex 0 → first child
-    expect(sim.voices.map((v) => v.effectId)).toEqual(['gen:chase-bands']);
+    // ctx sectionIndex 0 → first child
+    expect(firedEffectIds(graph, { velocity: 0.2, sourceDrumId: 'd' })).toEqual(['gen:chase-bands']);
   });
 });
 
@@ -191,7 +174,7 @@ describe('Gen3 output-gated rendering and cascading Scope', () => {
     expect(fireGraph(loose)).toHaveLength(0);
 
     const wired: TriggerGraph = { ...loose, edges: [...loose.edges, { id: 'e2', from: 'fx', to: 'output' }] };
-    expect(fireGraph(wired).map((v) => v.effectId)).toEqual(['gen:chase-bands']);
+    expect(fireGraph(wired).map((a) => a.effectId)).toEqual(['gen:chase-bands']);
   });
 
   it('migrated legacy routes wired through Scope to Output still emit', () => {

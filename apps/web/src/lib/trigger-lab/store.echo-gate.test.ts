@@ -5,13 +5,15 @@ import type { WSClient } from '../ws/client';
 import type { ClientMessage } from '../ws/protocol-types';
 import type { MidiEvent } from '../midi/webmidi';
 
-/* S12 — the authority principle: the web sim resolves + renders ONLY when the engine link is
-   closed. When connected the server is the sole resolver/renderer and streams frames/levels
-   back, so:
-     - the `input` echo (a server broadcast of our own / another client's hit) never fires the
-       sim — that was the echo loop — but MIDI-learn still runs from it;
-     - the outbound paths (forwardMidi / hit / fireSectionGraph) fire the local sim only offline;
-       connected, they forward to the server and return.
+/* S12 — the authority principle, in its final form: the ENGINE is the only resolver/renderer, and
+   the browser only ever forwards intent. INIT-01 Decision 3 retired the local sim that used to
+   resolve while the link was closed, so:
+     - the `input` echo (a server broadcast of our own / another client's hit) resolves nothing and
+       sends nothing — that was the echo loop — but MIDI-learn and the last-heard badges still run
+       from it, which is the whole reason the echo path exists;
+     - the outbound paths (forwardMidi / hit / fireSectionGraph / setActiveSection) forward when
+       connected and are silent when not. What each one sends IS the observable — there is no local
+       resolution left to assert about.
    `start()` is never called (no live socket); a capturing fake client records the sends and
    `link` is set directly to model connected vs offline. */
 
@@ -28,8 +30,8 @@ type Internals = {
 };
 const internals = (store: TriggerLab): Internals => store as unknown as Internals;
 
-/** Local-sim resolution events — added only by the sim-firing paths, so their presence is a
-    faithful "the sim fired locally" signal. */
+/** Monitor `effect` events — these were the local sim's resolution reports. Nothing writes them
+    now, so a non-empty list means a browser-side resolver came back. */
 const effectEvents = (store: TriggerLab) => store.monitorEvents.filter((e) => e.type === 'effect');
 
 const noteOn = (n: number, velocity = 100): MidiEvent => ({ kind: 'note', note: n, velocity, on: true, channel: 0 });
@@ -41,20 +43,21 @@ afterEach(() => {
   delete (globalThis as { localStorage?: Storage }).localStorage;
 });
 
-describe('onInput echo never fires the sim (S12)', () => {
-  it('an echoed MIDI input does NOT fire the local sim, even for a directly-bound graph', () => {
-    const store = new TriggerLab(capturing([]));
-    // A graph bound to raw note 60 — the sim WOULD have fired it under the old echo handler.
+describe('onInput echo resolves nothing locally (S12)', () => {
+  it('an echoed MIDI input neither resolves nor re-sends, even for a directly-bound graph', () => {
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    // A graph bound to raw note 60 — the old echo handler fired it locally, doubling the hit.
     const key = store.createGraph('Direct 60');
     store.setTriggerSource(key, { kind: 'midi', note: 60 });
 
     internals(store).receiveInputEcho('midi', 'C4', 0.8, 60, 0);
 
     expect(effectEvents(store)).toHaveLength(0);
-    expect(store.voices).toHaveLength(0);
+    expect(sent).toHaveLength(0); // no re-forward — that was the echo loop
   });
 
-  it('MIDI-learn still works from an echoed input (and does not also fire the sim)', () => {
+  it('MIDI-learn still works from an echoed input', () => {
     const store = new TriggerLab(capturing([]));
     const key = store.createGraph('Learn me');
     store.startMidiLearn({ kind: 'trigger', graphKey: key });
@@ -69,7 +72,7 @@ describe('onInput echo never fires the sim (S12)', () => {
      input surfaces (the `input` echo), and S12 rewrote that place. Neither slice tested the
      other's half — these pin the union: the echo records last-heard activity for both kinds,
      while still never firing the sim. */
-  it('an echoed MIDI input records last-heard badge activity (S04 seam) without firing', () => {
+  it('an echoed MIDI input records last-heard badge activity (S04 seam)', () => {
     const store = new TriggerLab(capturing([]));
 
     internals(store).receiveInputEcho('midi', 'C4', 0.8, 60, 0);
@@ -90,14 +93,14 @@ describe('onInput echo never fires the sim (S12)', () => {
   });
 });
 
-describe('outbound firing is gated on the engine link (S12)', () => {
+describe('outbound intent reaches the engine and nothing resolves locally (S12)', () => {
   describe('forwardMidi (WebMIDI → server)', () => {
     const bindDirect = (store: TriggerLab): void => {
       const key = store.createGraph('Direct 60');
       store.setTriggerSource(key, { kind: 'midi', note: 60 });
     };
 
-    it('offline: fires the local preview AND forwards the note', () => {
+    it('offline: forwards the note unconditionally (the closed client drops it) and resolves nothing', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
       bindDirect(store);
@@ -105,11 +108,13 @@ describe('outbound firing is gated on the engine link (S12)', () => {
 
       internals(store).forwardMidi(noteOn(60));
 
-      expect(effectEvents(store).length).toBeGreaterThan(0);
+      // The forward is unconditional — the real WSClient no-ops while closed. What must NOT happen
+      // is a local resolution standing in for the engine.
       expect(sent).toContainEqual({ t: 'midi', note: 60, velocity: 100, on: true, channel: 0 });
+      expect(effectEvents(store)).toHaveLength(0);
     });
 
-    it('connected: forwards the note WITHOUT firing the local sim', () => {
+    it('connected: forwards the note and resolves nothing locally', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
       bindDirect(store);
@@ -128,18 +133,18 @@ describe('outbound firing is gated on the engine link (S12)', () => {
       return store.pads.find((p) => store.graphs[padKey(p)]) ?? store.pads[0]!;
     };
 
-    it('offline: fires the local preview and sends nothing', () => {
+    it('offline: sends nothing and resolves nothing — the hit is UI feedback only', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
       const pad = padWithGraph(store);
 
       store.hit(pad);
 
-      expect(effectEvents(store).length).toBeGreaterThan(0);
       expect(sent).toHaveLength(0);
+      expect(effectEvents(store)).toHaveLength(0);
     });
 
-    it('connected: forwards a key hit WITHOUT firing the local sim', () => {
+    it('connected: forwards a key hit and resolves nothing locally', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
       const pad = padWithGraph(store);
@@ -153,18 +158,22 @@ describe('outbound firing is gated on the engine link (S12)', () => {
   });
 
   describe('fireSectionGraph (keyboard performance)', () => {
-    it('offline: fires the local preview and sends nothing', () => {
+    it('offline: selects + flashes the graph but sends nothing and resolves nothing', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
+      const key0 = store.activeSection!.graphs[0]!;
       expect(store.activeSection?.graphs.length ?? 0).toBeGreaterThan(0);
 
       store.fireSectionGraph(0);
 
-      expect(effectEvents(store).length).toBeGreaterThan(0);
+      // UI feedback still happens (you pressed the key) — the light does not, because the only
+      // renderer is the engine and it is not there.
+      expect(store.selectedPadKey).toBe(key0);
       expect(sent).toHaveLength(0);
+      expect(effectEvents(store)).toHaveLength(0);
     });
 
-    it('connected: sends the fireGraph intent (exact key), not a synthetic source, and does not fire the sim (S13)', () => {
+    it('connected: sends the fireGraph intent (exact key), not a synthetic source (S13)', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
       const key0 = store.activeSection!.graphs[0]!;
@@ -172,7 +181,7 @@ describe('outbound firing is gated on the engine link (S12)', () => {
 
       store.fireSectionGraph(0);
 
-      // No local sim fire (authority principle) …
+      // Nothing resolved locally (authority principle) …
       expect(effectEvents(store)).toHaveLength(0);
       // … and EXACTLY the fireGraph intent goes out — no synthetic key/midi/osc source to
       // re-resolve (which is what echo-re-fired the old keyboard path).
@@ -197,32 +206,32 @@ describe('outbound firing is gated on the engine link (S12)', () => {
   });
 });
 
-/* S15 — the same authority principle for SECTION RECALL. The engine now spawns a section's
-   looks on recall (engine parity), so the sim must recall its looks ONLY while offline —
-   otherwise the sim + engine double-spawn when connected. `setActiveSection` therefore fires
-   `sim.recallSection` only when `link !== 'open'`, and always forwards `{t:'recallSection'}`
-   when connected. (S12 deferred this gate to S15; here is where it lands.) */
-describe('setActiveSection recall is gated on the engine link (S15)', () => {
-  /** A fixture section whose looks name at least one effect, so recalling it spawns
-      look voices in the local sim (an observable "the sim recalled" signal). */
+/* S15 — the same authority principle for SECTION RECALL. The engine spawns a section's looks on
+   recall (engine parity), and it is the ONLY thing that does: `setActiveSection` moves the local
+   pointer (an arrangement edit) and forwards `{t:'recallSection'}` when connected. With the link
+   down the pointer still moves and no look morphs — there is nothing in the browser to morph. */
+describe('setActiveSection recall (S15)', () => {
+  /** A fixture section whose looks name at least one effect — the engine spawns those on recall. */
   const sectionWithLook = (store: TriggerLab): string => {
     const s = store.sections.find((sec) => Object.values(sec.looks).some((v) => v != null));
     expect(s, 'a fixture section with a non-null look').toBeTruthy();
     return s!.id;
   };
 
-  it('offline: recalls the local sim (spawns the section looks) and sends nothing', () => {
+  it('offline: moves the active-section pointer and sends nothing', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
     expect(store.link).toBe('offline');
+    const id = sectionWithLook(store);
 
-    store.setActiveSection(sectionWithLook(store));
+    store.setActiveSection(id);
 
-    expect(store.voices.length).toBeGreaterThan(0); // the sim spawned the looks locally
+    expect(store.activeSectionId).toBe(id); // the arrangement edit is local and still lands
     expect(sent).toHaveLength(0);
+    expect(effectEvents(store)).toHaveLength(0);
   });
 
-  it('connected: forwards the recall WITHOUT firing the local sim (no double-spawn)', () => {
+  it('connected: forwards the recall so the engine spawns the looks', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
     const id = sectionWithLook(store);
@@ -230,7 +239,7 @@ describe('setActiveSection recall is gated on the engine link (S15)', () => {
 
     store.setActiveSection(id);
 
-    expect(store.voices).toHaveLength(0); // sim did NOT spawn — the server engine is authority
     expect(sent).toContainEqual({ t: 'recallSection', songId: store.activeSongId, sectionId: id });
+    expect(effectEvents(store)).toHaveLength(0);
   });
 });

@@ -23,12 +23,13 @@ export type EaseDir = voice.EaseDir;
 export type EaseSpec = voice.EaseSpec;
 
 // ---- Modulation model (doc 10, S33) — single-sourced in core, re-exported here ----
-// The mapping model + sweep are core (`voice/modulation.ts`); the web sim mirrors the engine
-// by importing them, so the offline preview can never drift from real output.
+// The mapping model + sweep are core (`voice/modulation.ts`); the web authoring surface names
+// them by importing them, so an authored mapping is the exact shape the engine consumes.
+// (`ModSampleCtx` was re-exported for the retired offline renderer's per-frame sweep — the
+// engine owns that sweep now, so the web no longer names the type.)
 export type Mapping = voice.Mapping;
 export type ModSource = voice.ModSource;
 export type ModSourceKind = voice.ModSourceKind;
-export type ModSampleCtx = voice.ModSampleCtx;
 export const { applyModulations, envelopeToMapping } = voice;
 
 // Re-exported by value so identity holds (`sampleEnvelope === voice.sampleEnvelope`):
