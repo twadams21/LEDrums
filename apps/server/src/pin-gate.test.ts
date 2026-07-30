@@ -11,6 +11,7 @@ import {
   isTrustedHost,
   isViaCloudflare,
   MIN_HOST_TOKEN_LENGTH,
+  MIN_PIN_LENGTH,
   pinFromUrl,
   resolveHostToken,
   resolvePin,
@@ -34,6 +35,15 @@ describe('createPinGate', () => {
     expect(gate.check(null)).toBe(false); // absent
     expect(gate.check(undefined)).toBe(false);
     expect(gate.check('4242 ')).toBe(false); // no trimming — exact match
+  });
+
+  it('compares multi-byte input without throwing (constant-time swap is total)', () => {
+    // timingSafeEqual throws on unequal-length buffers, and a multi-byte char makes BYTE length
+    // diverge from code-unit length — so this is the case a naive Buffer compare gets wrong.
+    const gate = createPinGate('4242');
+    expect(gate.check('424é')).toBe(false);
+    expect(gate.check('éééé')).toBe(false);
+    expect(createPinGate('café').check('café')).toBe(true);
   });
 });
 
@@ -254,6 +264,30 @@ describe('resolvePin', () => {
   it('leaves the gate open (null) for plain local dev', () => {
     expect(resolvePin({}, false)).toBeNull();
     expect(resolvePin({ LEDRUMS_PIN: '' }, false)).toBeNull();
+    expect(resolvePin({ LEDRUMS_PIN: '   ' }, false)).toBeNull(); // whitespace-only = unset, not weak
+  });
+
+  it('THROWS on an explicit PIN below the minimum — a silently-dropped PIN means an open server', () => {
+    expect(() => resolvePin({ LEDRUMS_PIN: '1' }, false)).toThrow(/at least 4/);
+    expect(() => resolvePin({ LEDRUMS_PIN: '123' }, false)).toThrow(/at least 4/);
+    // Enforced regardless of the tunnel flag: the in-app Share control can open a tunnel later
+    // on an already-booted server, and ensurePin() would keep the weak PIN.
+    expect(() => resolvePin({ LEDRUMS_PIN: '12' }, true)).toThrow(/at least 4/);
+  });
+
+  it('accepts a PIN exactly at the minimum, and the rule is LENGTH-only (non-numeric stays legal)', () => {
+    expect(resolvePin({ LEDRUMS_PIN: '4242' }, false)).toBe('4242');
+    expect(resolvePin({ LEDRUMS_PIN: 'drum' }, false)).toBe('drum');
+    expect(MIN_PIN_LENGTH).toBe(4);
+  });
+
+  it('trims before measuring, so a padded at-minimum PIN is accepted as its trimmed value', () => {
+    expect(resolvePin({ LEDRUMS_PIN: ' 4242 ' }, false)).toBe('4242');
+    expect(() => resolvePin({ LEDRUMS_PIN: '  12  ' }, false)).toThrow(/at least 4/);
+  });
+
+  it('still generates a 6-digit PIN when the tunnel is enabled and none is set', () => {
+    expect(resolvePin({}, true)).toMatch(/^\d{6}$/);
   });
 });
 

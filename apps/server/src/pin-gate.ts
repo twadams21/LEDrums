@@ -18,6 +18,43 @@ import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
 // connections indistinguishable from the host's own browser — the gate is therefore uniform
 // (the host enters the PIN too; it is printed to the boot console).
 
+// ---------------------------------------------------------------------------
+// Credential primitives (module-private) — the invariant, made structural
+// ---------------------------------------------------------------------------
+//
+// This module holds TWO credentials: the room PIN (public-tunnel facing) and the host-session
+// token. The strength rule and the constant-time comparison were originally written for the host
+// token alone, so the PIN — the credential that actually faces the internet — reached a plain
+// `===`. These two helpers are the single home for both operations, and EVERY credential path
+// below routes through them, so a future third credential cannot get a weaker comparison by
+// omission. They are deliberately NOT exported: the invariant becomes structural without the
+// module's interface growing.
+
+/**
+ * Parse a credential supplied by CONFIG (env/injection): trim, then reject anything empty or
+ * shorter than `minLength`. Returns null for "no usable credential here" — the caller decides
+ * whether that means fail-closed (throw) or fall back to minting a strong one.
+ *
+ * Deliberately NOT applied to a credential supplied by a CONNECTING PEER: trimming a peer's
+ * value would widen what counts as a match (`'4242 '` must stay a wrong PIN), and a length gate
+ * on the supplied side buys nothing — a short value cannot equal a long secret anyway.
+ */
+function parseCredential(raw: string | null | undefined, minLength: number): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed || trimmed.length < minLength) return null;
+  return trimmed;
+}
+
+/** Constant-time credential equality, so a wrong credential cannot be recovered byte-by-byte via
+ * comparison timing. Length-checks first (timingSafeEqual throws on unequal-length buffers), which
+ * also makes it total over multi-byte input where byte length ≠ code-unit length. */
+function credentialsEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8');
+  const bb = Buffer.from(b, 'utf8');
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
 /** The PIN check, with a `null` pin meaning the gate is open. */
 export interface PinGate {
   /** The active room PIN, or null when the gate is disabled (open). */
@@ -32,7 +69,7 @@ export function createPinGate(pin: string | null): PinGate {
     pin,
     check(supplied) {
       if (pin === null) return true; // gate disabled → admit everyone
-      return typeof supplied === 'string' && supplied.length > 0 && supplied === pin;
+      return typeof supplied === 'string' && supplied.length > 0 && credentialsEqual(supplied, pin);
     },
   };
 }
@@ -55,7 +92,7 @@ export function createMutablePinGate(initial: string | null): MutablePinGate {
     },
     check(supplied) {
       if (pin === null) return true; // gate disabled → admit everyone
-      return typeof supplied === 'string' && supplied.length > 0 && supplied === pin;
+      return typeof supplied === 'string' && supplied.length > 0 && credentialsEqual(supplied, pin);
     },
     ensurePin() {
       if (pin === null) pin = generatePin();
@@ -71,16 +108,32 @@ export function generatePin(digits = 6): string {
   return out;
 }
 
+/** Minimum accepted length for an EXPLICIT `LEDRUMS_PIN`. A LENGTH rule only — the charset stays
+ * unconstrained, so a non-numeric PIN ('drum') is still legal and the desktop banner parser must
+ * not assume digits. {@link generatePin} produces 6 digits, comfortably above this floor. */
+export const MIN_PIN_LENGTH = 4;
+
 /**
  * Resolve the room PIN from config + whether the tunnel is enabled:
  *  - an explicit `LEDRUMS_PIN` always wins (works with or without a tunnel);
  *  - otherwise, when the tunnel is enabled, a PIN is generated per run (never expose a public
  *    tunnel un-gated);
  *  - otherwise `null` — the gate is open (plain local dev is unchanged).
+ *
+ * FAIL CLOSED on strength: an explicit PIN shorter than {@link MIN_PIN_LENGTH} THROWS rather than
+ * being ignored, because a silently-dropped PIN means an OPEN server — the operator asked for a
+ * gate and would get none. The minimum is enforced regardless of `tunnelEnabled`, because
+ * {@link MutablePinGate.ensurePin} keeps an existing weak PIN when the in-app Share control opens
+ * a tunnel on an already-booted server: "no tunnel at boot" is not "never public". An unset or
+ * whitespace-only `LEDRUMS_PIN` is "no PIN configured", not a weak one, and still opens the gate.
  */
 export function resolvePin(env: NodeJS.ProcessEnv, tunnelEnabled: boolean): string | null {
-  const explicit = env.LEDRUMS_PIN?.trim();
-  if (explicit) return explicit;
+  const raw = env.LEDRUMS_PIN?.trim();
+  if (raw) {
+    const explicit = parseCredential(raw, MIN_PIN_LENGTH);
+    if (explicit === null) throw new Error(`LEDRUMS_PIN must be at least ${MIN_PIN_LENGTH} characters`);
+    return explicit;
+  }
   return tunnelEnabled ? generatePin() : null;
 }
 
@@ -149,9 +202,7 @@ export const MIN_HOST_TOKEN_LENGTH = 32;
  * token is never null, so the bypass is always available to a caller that can prove it holds it.
  */
 export function resolveHostToken(env: NodeJS.ProcessEnv): string {
-  const injected = env.LEDRUMS_HOST_TOKEN?.trim();
-  if (injected && injected.length >= MIN_HOST_TOKEN_LENGTH) return injected;
-  return generateHostToken();
+  return parseCredential(env.LEDRUMS_HOST_TOKEN, MIN_HOST_TOKEN_LENGTH) ?? generateHostToken();
 }
 
 /** Extract the `hostToken` query parameter from a WS connect URL (or null when absent/unparseable).
@@ -163,15 +214,6 @@ export function hostTokenFromUrl(url: string | undefined): string | null {
   } catch {
     return null;
   }
-}
-
-/** Constant-time string equality, so a wrong token cannot be recovered byte-by-byte via comparison
- * timing. Length-checks first (timingSafeEqual throws on unequal-length buffers). */
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a, 'utf8');
-  const bb = Buffer.from(b, 'utf8');
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
 }
 
 /** Inputs to {@link isTrustedHost} — the per-connection facts plus the server's current host token. */
@@ -197,7 +239,7 @@ export function isTrustedHost({ remoteAddress, headers, url, hostToken }: HostTr
   if (!isLoopbackAddress(remoteAddress)) return false; // LAN/remote peer → gated
   if (isViaCloudflare(headers)) return false; // tunnel-forwarded → gated
   const supplied = hostTokenFromUrl(url);
-  return supplied !== null && safeEqual(supplied, hostToken);
+  return supplied !== null && credentialsEqual(supplied, hostToken);
 }
 
 /**
