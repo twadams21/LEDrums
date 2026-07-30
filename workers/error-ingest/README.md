@@ -60,8 +60,9 @@ and says so on the in-app **Monitor** — you do not have to read a log to find 
   `Error reporting recovered` when a ship succeeds.
 - **401 / 403 (a rotated `TELEMETRY_TOKEN`)** — the queue enters `blocked`: it keeps and persists
   everything but **stops shipping entirely**, because retrying a rejected credential can only ever
-  fail. Monitor shows `Error reporting blocked`. Fix the token and restart the server, or call the
-  queue's `flush()` — either re-arms it and retries once.
+  fail. Monitor shows `Error reporting blocked`. Fix the token and restart the server — `blocked`
+  is in-memory, so the restart re-arms the queue and it retries. (`ShipQueue.flush()` also
+  force-unblocks, but no operator-reachable surface calls it today.)
 - **Any other permanent status (400 / 413 / …)** — that batch is a poison pill, so it is appended to
   `<queue path>.deadletter.jsonl` and dropped, and the queue keeps draining the items behind it.
   Monitor shows `… dead-lettered`, and the boot event names the exact path. Dead-letters are purely

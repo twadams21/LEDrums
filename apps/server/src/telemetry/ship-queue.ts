@@ -280,10 +280,12 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
 
   function doShip(force = false): Promise<void> {
     if (shipInFlight) return shipInFlight;
-    // The authoritative blocked guard — and a deliberate BACKSTOP: with the `enqueue` and `tick`
-    // guards in place no timer survives the transition, so nothing currently reaches here while
-    // blocked, and no test can distinguish this line's presence. It stays because it is the one
-    // check that does not depend on every future scheduling site remembering to look at `blocked`.
+    // The authoritative blocked guard — and NOT just a backstop: `blocked` is only set in this
+    // function's catch, AFTER the transport await, so an `enqueue` racing the in-flight 401 sees
+    // blocked === false and arms a flush timer that survives the transition. When that timer
+    // fires, `tick` calls doShip() unconditionally and THIS line is what prevents one more
+    // rejected POST. It is also the one check that does not depend on every future scheduling
+    // site remembering to look at `blocked`.
     if (blocked && !force) return Promise.resolve();
     if (store.size === 0) return Promise.resolve();
     const keys = batchKeys();
