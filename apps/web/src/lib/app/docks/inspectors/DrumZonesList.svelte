@@ -86,7 +86,7 @@
   }
 
   function zoneLearning(slot: number): boolean {
-    const t = store.midiLearnTarget;
+    const t = store.midi.learnTarget;
     return t?.kind === 'zone' && t.drumId === drumId && t.slot === slot;
   }
 </script>
@@ -134,7 +134,7 @@
                 class:active={armed}
                 onclick={(e) => {
                   e.preventDefault();
-                  armed ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'zone', drumId, slot });
+                  armed ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'zone', drumId, slot });
                 }}
               >
                 <Radio size={13} aria-hidden="true" />

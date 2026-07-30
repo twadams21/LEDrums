@@ -60,7 +60,7 @@ describe('onInput echo resolves nothing locally (S12)', () => {
   it('MIDI-learn still works from an echoed input', () => {
     const store = new TriggerLab(capturing([]));
     const key = store.createGraph('Learn me');
-    store.startMidiLearn({ kind: 'trigger', graphKey: key });
+    store.midi.startLearn({ kind: 'trigger', graphKey: key });
 
     internals(store).receiveInputEcho('midi', 'E4', 1, 64, 0);
 

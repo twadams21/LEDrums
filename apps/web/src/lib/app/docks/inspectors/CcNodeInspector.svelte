@@ -12,7 +12,7 @@
 
   const controller = $derived(store.ccNodeController(node));
   const channel = $derived(store.ccNodeChannel(node));
-  const learning = $derived(store.midiLearnTarget?.kind === 'cc-node' && store.midiLearnTarget.nodeId === node.id);
+  const learning = $derived(store.midi.learnTarget?.kind === 'cc-node' && store.midi.learnTarget.nodeId === node.id);
 
   // Omni + channels 1..16 — value is the channel string, 'omni' maps to a null filter.
   const CHANNEL_OPTS = [
@@ -44,7 +44,7 @@
           class:active={learning}
           onclick={(e) => {
             e.preventDefault();
-            learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'cc-node', nodeId: node.id });
+            learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'cc-node', nodeId: node.id });
           }}
         >
           <Radio size={13} aria-hidden="true" />

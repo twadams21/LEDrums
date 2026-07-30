@@ -43,8 +43,8 @@ import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { LiveInputTables } from './live-input';
 import { WSClient, type ConnectionState } from '../ws/client';
-import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
-import type { BackupSnapshotMeta, BootRecoveryInfo, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { type MidiEvent } from '../midi/webmidi';
+import type { BackupSnapshotMeta, BootRecoveryInfo, ClientMessage, ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -803,36 +803,22 @@ export class TriggerLab {
       and torn down in {@link stop}. Null while not running. */
   private errorCaptureUninstall: (() => void) | null = null;
   /** MIDI input + MIDI-learn (R6/S37) — the WebMIDI device layer + learn-arm machinery, extracted
-      into {@link MidiController} (R21). The store keeps `forwardMidi`/`receiveInputEcho` (entangled
-      with the offline sim + S04 badges) and delegates the rest via the accessors + forwarders below,
-      so callers/tests are unchanged. */
-  private readonly midi = new MidiController({
+      into {@link MidiController} (R21). PUBLIC (INIT-02 S4): callers reach the collaborator itself
+      (`store.midi.learnTarget` / `.devices` / `.available` / `.unavailableReason` / `.startLearn()`
+      / `.cancelLearn()`) — the forwarder layer is gone. The store still OWNS `midiChannel` (a
+      $derived over the patch input map), `forwardMidi` and `receiveInputEcho`, which stay here
+      because they are entangled with the S04 activity badges, not with the device layer. */
+  readonly midi = new MidiController({
     isViewer: () => this.isViewer,
     getInputMap: () => this.project?.inputMap ?? null,
     setInputMap: (inputMap) => this.setInputMap(inputMap),
     setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
     selectedGraphNodes: () => this.selectedGraph?.nodes,
   });
-  /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
-      {@link MidiController.learnTarget}. */
-  get midiLearnTarget(): MidiLearnTarget | null {
-    return this.midi.learnTarget;
-  }
-  /** The global MIDI channel filter (null = omni), from the patch input map. */
+  /** The global MIDI channel filter (null = omni), from the patch input map. Store-owned, NOT part
+      of {@link MidiController}: it is a $derived over `project.inputMap`, and the learn appliers
+      gate on it via {@link acceptsMidiChannel}. */
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
-  /** Live WebMIDI input devices for the settings list. See {@link MidiController.devices}. */
-  get midiDevices(): MidiDeviceInfo[] {
-    return this.midi.devices;
-  }
-  /** Whether WebMIDI access succeeded — drives the settings empty-state copy. See
-      {@link MidiController.available}. */
-  get midiAvailable(): boolean {
-    return this.midi.available;
-  }
-  /** Why WebMIDI is unavailable, when it is. See {@link MidiController.unavailableReason}. */
-  get midiUnavailableReason(): string | undefined {
-    return this.midi.unavailableReason;
-  }
 
   // --- input activity ("last heard") ---------------------------------------
   /** Last-heard event per input identity (note / OSC address), for the S04 activity
@@ -1792,14 +1778,6 @@ export class TriggerLab {
   setMidiChannel(channel: number | null): void {
     if (this.isViewer || !this.project) return;
     this.setInputMap({ ...this.project.inputMap, midiChannel: channel });
-  }
-
-  startMidiLearn(target: MidiLearnTarget): void {
-    this.midi.startLearn(target);
-  }
-
-  cancelMidiLearn(): void {
-    this.midi.cancelLearn();
   }
 
   private acceptsMidiChannel(channel: number | undefined): boolean {

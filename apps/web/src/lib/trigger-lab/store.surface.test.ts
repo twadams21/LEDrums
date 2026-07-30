@@ -29,9 +29,9 @@ import { harnessClient, newHarness } from '../test-support/ws-harness';
 
 /** Ceiling on the member count. The store only shrinks from here — a step that publishes a
     collaborator deletes forwarders, so this ratchet never needs raising. */
-const MEMBER_CAP = 381;
+const MEMBER_CAP = 375;
 /** Ceiling on store.svelte.ts's line count. Same direction: down only. */
-const LOC_CAP = 3507;
+const LOC_CAP = 3485;
 
 const EXPECTED_MEMBERS: string[] = [
   'acceptsMidiChannel',
@@ -76,7 +76,6 @@ const EXPECTED_MEMBERS: string[] = [
   'canEdit',
   'canSplice',
   'canTakeover',
-  'cancelMidiLearn',
   'cancelPasteFallback',
   'canvasEffects',
   'canvasSceneJson',
@@ -191,11 +190,7 @@ const EXPECTED_MEMBERS: string[] = [
   'markGraphFire',
   'materializePaste',
   'midi',
-  'midiAvailable',
   'midiChannel',
-  'midiDevices',
-  'midiLearnTarget',
-  'midiUnavailableReason',
   'modInputsOf',
   'modSourcesFor',
   'modTargetSpecs',
@@ -388,7 +383,6 @@ const EXPECTED_MEMBERS: string[] = [
   'spliceOnDrop',
   'start',
   'startAutosave',
-  'startMidiLearn',
   'stop',
   'stopAutosave',
   'stripBandPorts',

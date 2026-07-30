@@ -90,23 +90,23 @@ describe('setCcChannel', () => {
 describe('MIDI-learn — binds the next incoming CC', () => {
   it('binds the controller of the next CC event and clears the learn arm', () => {
     const { store, cc } = withCc();
-    store.startMidiLearn({ kind: 'cc-node', nodeId: cc.id });
-    expect(store.midiLearnTarget).toEqual({ kind: 'cc-node', nodeId: cc.id });
+    store.midi.startLearn({ kind: 'cc-node', nodeId: cc.id });
+    expect(store.midi.learnTarget).toEqual({ kind: 'cc-node', nodeId: cc.id });
     forward(store, { kind: 'cc', controller: 42, value: 100, channel: 1 });
     expect(store.ccNodeController(cc)).toBe(42);
-    expect(store.midiLearnTarget).toBeNull();
+    expect(store.midi.learnTarget).toBeNull();
   });
 
   it('does NOT bind CC 0 (reserved) — stays armed for a real controller', () => {
     const { store, cc } = withCc();
     store.setCcController(cc, 7);
-    store.startMidiLearn({ kind: 'cc-node', nodeId: cc.id });
+    store.midi.startLearn({ kind: 'cc-node', nodeId: cc.id });
     forward(store, { kind: 'cc', controller: 0, value: 100, channel: 1 }); // reserved
     expect(store.ccNodeController(cc)).toBe(7); // unchanged
-    expect(store.midiLearnTarget).toEqual({ kind: 'cc-node', nodeId: cc.id }); // still armed
+    expect(store.midi.learnTarget).toEqual({ kind: 'cc-node', nodeId: cc.id }); // still armed
     forward(store, { kind: 'cc', controller: 15, value: 100, channel: 1 }); // real CC
     expect(store.ccNodeController(cc)).toBe(15);
-    expect(store.midiLearnTarget).toBeNull();
+    expect(store.midi.learnTarget).toBeNull();
   });
 });
 
