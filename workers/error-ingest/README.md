@@ -50,6 +50,28 @@ The 503 is the load-bearing one: a bare runtime 500 with no body reads to the cl
 forever", whereas a 503 says the fault is honestly transient. The client caps its own batches at
 900,000 bytes so a well-behaved shipper never provokes a 413 in the first place.
 
+### What the app does with each of them
+
+The shipping queue (`apps/server/src/telemetry/ship-queue.ts`) acts on the retryable verdict above,
+and says so on the in-app **Monitor** — you do not have to read a log to find out shipping is broken:
+
+- **Retryable (503 / 429 / 408 / offline)** — the batch is retained and retried on a backoff curve up
+  to 30 minutes. Monitor shows `Error reporting retrying` once per outage, not once per attempt, then
+  `Error reporting recovered` when a ship succeeds.
+- **401 / 403 (a rotated `TELEMETRY_TOKEN`)** — the queue enters `blocked`: it keeps and persists
+  everything but **stops shipping entirely**, because retrying a rejected credential can only ever
+  fail. Monitor shows `Error reporting blocked`. Fix the token and restart the server, or call the
+  queue's `flush()` — either re-arms it and retries once.
+- **Any other permanent status (400 / 413 / …)** — that batch is a poison pill, so it is appended to
+  `<queue path>.deadletter.jsonl` and dropped, and the queue keeps draining the items behind it.
+  Monitor shows `… dead-lettered`, and the boot event names the exact path. Dead-letters are purely
+  forensic: nothing re-ingests them, and the file itself is capped at 4MB.
+
+The same rules apply to the off-site backups queue, under `Off-site backups …` labels.
+
+To see all of this against a throwaway stub instead of the live Worker:
+`node scripts/telemetry-health-probe.mjs`.
+
 ## One-time deploy (Trent — secrets are yours, do not commit them)
 
 Prereqs: `npm i -g wrangler` (or use `npx wrangler@4`), and `wrangler login`.
