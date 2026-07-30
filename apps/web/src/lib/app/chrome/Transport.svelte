@@ -22,8 +22,11 @@
 
   const bar = $derived(Math.floor(store.beat / store.beatsPerBar) + 1);
   const beatInBar = $derived(Math.floor(store.beat % store.beatsPerBar) + 1);
-  // pulse the beat dot on the leading edge of each whole beat (only when running)
-  const onBeat = $derived(store.playing && store.beat - Math.floor(store.beat) < 0.18);
+  // With no engine there is no clock at all — show that rather than "1.1", which reads as a
+  // transport parked at the top of a bar (INIT-01 Decision 3: nothing local advances the beat).
+  const clock = $derived(store.engineTransportLive ? `${bar}.${beatInBar}` : '–.–');
+  // pulse the beat dot on the leading edge of each whole beat (only when actually running)
+  const onBeat = $derived(store.engineTransportLive && store.playing && store.beat - Math.floor(store.beat) < 0.18);
 
   const BPB_OPTS = [3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: `${n}/4` }));
 
@@ -49,7 +52,7 @@
       onclick={() => store.togglePlay()}
     />
     <span class="beatdot" class:lit={onBeat} aria-hidden="true"></span>
-    <span class="clock">{bar}.{beatInBar}</span>
+    <span class="clock" class:idle={!store.engineTransportLive} title={store.engineTransportLive ? 'Bar.beat (engine transport)' : 'No engine — the transport clock is not running'}>{clock}</span>
     <span class="bpb"><Select value={String(store.beatsPerBar)} options={BPB_OPTS} onChange={(v) => (store.beatsPerBar = Number(v))} ariaLabel="Time signature" /></span>
   </div>
 
@@ -103,6 +106,12 @@
     color: var(--accent);
     min-width: 48px;
     font-variant-numeric: tabular-nums;
+    transition: color 140ms ease;
+  }
+  /* No engine, no clock: drop the accent so the readout stops presenting itself as a live value.
+     Colour is not the only signal — the digits themselves become "–.–". */
+  .clock.idle {
+    color: var(--text-disabled);
   }
   .bpb {
     display: inline-flex;

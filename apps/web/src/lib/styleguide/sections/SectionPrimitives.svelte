@@ -31,6 +31,7 @@
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import AnchorHeader from '../../ui/AnchorHeader.svelte';
   import LintCallout from '../../ui/LintCallout.svelte';
+  import EngineOffline from '../../ui/EngineOffline.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
   import { pushToast } from '../../ui/toast.svelte';
@@ -423,6 +424,26 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Engine offline"
+      src="lib/ui/EngineOffline"
+      note="The honest empty state for a surface fed by the ENGINE — visualiser frames, dock voices, the transport clock. The browser renders nothing of its own, so a closed link shows this instead of a simulation, a frozen last reading, or a plausible zero. Neutral-toned (an unplugged editor is ordinary, not a fault) and never colour-only. 'overlay' plates over a stage and is pointer-transparent so the surface under it still drags; 'inline' replaces one value in a list."
+      wide
+    >
+      <div class="comp-row" style="align-items:stretch; gap:var(--space-4)">
+        <div class="eo-stage-demo">
+          <EngineOffline
+            variant="overlay"
+            label="No engine frames"
+            detail="The kit is dark because nothing is rendering — reconnect to see live output."
+          />
+        </div>
+        <div class="ph-demo" style="align-items:center">
+          <EngineOffline label="no engine" />
+        </div>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Logo / mark" src="lib/ui/Logo" note="Neon-rainbow drum kit (kick, snare, two rack toms, floor tom, hi-hat, ride) on a dark rounded tile — a vector trace of the desktop app icon, re-coloured with a fixed brand gradient + soft glow so the mark matches the dock icon in any theme. Detailed by design; richest from ~32px up.">
       <div class="comp-row" style="align-items:center; gap:var(--space-4)">
         <Logo size={20} />
@@ -487,6 +508,17 @@
 <ToastHost />
 
 <style>
+  /* Stand-in stage for the EngineOffline overlay demo — the real caller is the Visualizer's
+     canvas; this just gives the plate a dark surface to sit on at a realistic size. */
+  .eo-stage-demo {
+    position: relative;
+    flex: 1;
+    min-width: 260px;
+    min-height: 116px;
+    background: var(--bg-perform);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+  }
   .comp-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

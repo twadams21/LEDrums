@@ -1,9 +1,12 @@
 <script lang="ts">
-  /* Compact engine telemetry for the lab header — modeled on the main shell's
-     engine-status readout, on the lab's design tokens. Shows the engine link state
-     (dot + label), pixel count, render rate, and round-trip latency. The link
-     fields are store-backed but inert today (local sim); the real WS values get
-     wired in a later slice — see store.svelte.ts (link / latencyMs). */
+  /* Compact engine telemetry for the lab header — modeled on the main shell's engine-status
+     readout, on the lab's design tokens. Shows the engine link state (dot + label), pixel count,
+     LED output rate and round-trip latency.
+
+     Every number here is the ENGINE's, streamed in `stats`. With the link down they are not zero,
+     they are UNKNOWN — so the two engine-only stats read "–" rather than a plausible 0 (the fps
+     figure used to be this browser's own rAF rate offline, which was never LED output; INIT-01
+     Decision 3 retired that local measure along with the preview it belonged to). */
   import type { TriggerLab } from './store.svelte';
   import { formatFps, formatMs } from './stat-format';
 
@@ -14,8 +17,9 @@
   // pixel count lives on the serialized model; reuse the live fps the rAF loop measures
   const pixels = $derived(store.model?.count ?? 0);
   // raw fps/latency can be long fractions — compact + fixed-width (see stat-format.ts)
-  const fps = $derived(formatFps(store.fps));
-  const latency = $derived(formatMs(store.latencyMs));
+  const live = $derived(store.link === 'open');
+  const fps = $derived(live ? formatFps(store.fps) : '–');
+  const latency = $derived(live ? formatMs(store.latencyMs) : '–');
 </script>
 
 <div class="status" aria-label="Engine status">
@@ -29,11 +33,11 @@
     <b>{pixels}</b><i>px</i>
   </span>
   <span class="sep" aria-hidden="true"></span>
-  <span class="stat" title="LED output frame rate">
+  <span class="stat" class:unknown={!live} title={live ? 'LED output frame rate' : 'No engine — the output rate is unknown'}>
     <b>{fps}</b><i>fps</i>
   </span>
   <span class="sep" aria-hidden="true"></span>
-  <span class="stat" title="Engine round-trip latency">
+  <span class="stat" class:unknown={!live} title={live ? 'Engine round-trip latency' : 'No engine — latency is unknown'}>
     <b>{latency}</b><i>ms</i>
   </span>
 </div>
@@ -93,6 +97,12 @@
     min-width: 18px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+    transition: color 140ms ease;
+  }
+  /* Unknown, not zero: the accent is what makes a figure read as live telemetry, so an unknown
+     one drops it. The "–" glyph carries the meaning on its own. */
+  .stat.unknown b {
+    color: var(--text-disabled);
   }
   .stat i {
     font-style: normal;
