@@ -16,6 +16,7 @@ function fakeQueue(): ShipQueue<ReportRecord> & { enqueued: ReportRecord[] } {
     flush: () => Promise.resolve(),
     persistSync: () => {},
     size: () => enqueued.length,
+    state: () => 'ok',
     dropped: () => 0,
     items: () => enqueued,
     dispose: () => {},
