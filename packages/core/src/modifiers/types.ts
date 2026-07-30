@@ -18,7 +18,7 @@
  * `createState`, and RESETS with the voice (per-voice-state rule — see group-G handoff).
  */
 import type { PixelModel } from '../geometry/pixel-model';
-import type { Framebuffer } from '../engine/framebuffer';
+import type { Framebuffer } from '../render/framebuffer';
 import type { ParamSpec, ResolvedParams } from '../effects/types';
 import type { Mapping } from '../voice/modulation';
 

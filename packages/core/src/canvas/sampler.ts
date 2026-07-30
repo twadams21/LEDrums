@@ -10,8 +10,8 @@
  */
 import { clamp01, DEG2RAD } from '../math';
 import type { PixelModel } from '../geometry/pixel-model';
-import type { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext } from '../engine/render-context';
+import type { Framebuffer } from '../render/framebuffer';
+import type { RenderContext } from '../render/render-context';
 import type { SamplerConfig } from './types';
 
 /**

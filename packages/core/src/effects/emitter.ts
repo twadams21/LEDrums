@@ -1,4 +1,4 @@
-import type { RenderContext, Trigger } from '../engine/render-context';
+import type { RenderContext, Trigger } from '../render/render-context';
 
 /**
  * Per-hit emissions — the missing multiplicity primitive for trigger effects.

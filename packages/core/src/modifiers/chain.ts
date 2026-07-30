@@ -14,7 +14,7 @@
  * the caller (the compositor, which owns the voice clock) so modifier code never re-derives
  * time (group-G timebase contract).
  */
-import type { Framebuffer } from '../engine/framebuffer';
+import type { Framebuffer } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
 import { applyModulations, type ModSampleCtx } from '../voice/modulation';
 import { tryGetModifier } from './registry';
@@ -30,6 +30,10 @@ import type { ModifierContext, PixelRange, ResolvedModifier } from './types';
  * a link carries `modulations`, its params are sampled into an effective copy just before
  * `apply` (summed + clamped to the modifier's spec, same model as play-voice params). Omit it
  * — or a link with no `modulations` — and the link runs on its authored params allocation-free.
+ *
+ * `onUnresolved` (S14) is an optional observation hook: it fires with the offending
+ * `modifierId` at the unknown-id skip, and changes nothing about what is rendered. Callers
+ * that omit it keep today's silent skip.
  */
 export function applyModifierChain(
   chain: readonly ResolvedModifier[],
@@ -40,13 +44,18 @@ export function applyModifierChain(
   timeMs: number,
   dt: number,
   modCtx?: ModSampleCtx,
+  onUnresolved?: (id: string) => void,
 ): void {
   const ctx: ModifierContext = { model, timeMs, dt };
   for (let i = 0; i < chain.length; i++) {
     const link = chain[i]!;
     if (link.bypass) continue;
     const def = tryGetModifier(link.modifierId);
-    if (!def) continue; // unknown id → skip (never throw on the render path)
+    if (!def) {
+      // unknown id → skip (never throw on the render path); report it if the host wired a sink.
+      onUnresolved?.(link.modifierId);
+      continue;
+    }
     if (state[i] === undefined && def.createState) state[i] = def.createState(model, range);
     let params = link.params;
     if (modCtx && link.modulations && link.modulations.length) {

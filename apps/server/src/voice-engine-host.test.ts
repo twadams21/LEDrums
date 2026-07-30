@@ -3,6 +3,7 @@ import { buildPixelModel, defaultProject, voice, type Project, type ProjectPatch
 import type { PixelOutput } from '@ledrums/io';
 import { applyStructuralMessage } from './handlers/voice-input';
 import { OutputManager } from './output-manager';
+import type { MonitorDraft } from './monitor';
 import { FRAME_FAULT_REPORT_WINDOW_MS, VoiceEngineHost } from './voice-engine-host';
 
 class FakeOutput implements PixelOutput {
@@ -536,6 +537,29 @@ describe('VoiceEngineHost', () => {
         detail: expect.stringContaining('matched no zone or graph'),
       }),
     );
+  });
+
+  it('emits ONE error monitor event naming an unresolved generator id, however many frames render (S14)', () => {
+    const { host } = makeHost();
+    const events: MonitorDraft[] = [];
+    host.setMonitor((event) => events.push(event));
+    // Authored content referencing a generator no registry holds: the render path skips the
+    // voice (as it always has) and the skip becomes one named Monitor error.
+    const show = makeShow('kick', '0');
+    show.effects[0]!.generatorId = 'ghost-generator';
+    host.setShow(show);
+
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
+    for (let i = 0; i < 40; i++) host.step(STEP);
+
+    const unresolved = events.filter((e) => e.label === 'Unknown generator id');
+    expect(unresolved).toHaveLength(1); // once per id, not once per frame
+    expect(unresolved[0]).toMatchObject({
+      type: 'error',
+      direction: 'local',
+      source: 'server/voice',
+      detail: expect.stringContaining('generator=ghost-generator'),
+    });
   });
 
   it('emits a graph-miss monitor event for a routed pad hit with no resolved graph', () => {

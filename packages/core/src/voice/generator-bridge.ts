@@ -17,14 +17,15 @@
  * instance and reused across every voice in the frame; the only per-generator-voice
  * allocation is the merged params object (generator defaults overlaid with live params).
  */
-import { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
-import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
+import type { RenderContext, TransportState, Trigger } from '../render/render-context';
 import { defaultParams, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
 import { applyModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
 import type { ModSampleCtx } from './modulation';
+import type { UnresolvedIdSink } from './diagnostics';
 import type { Voice } from './types';
 
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
@@ -43,8 +44,17 @@ export interface GeneratorBridge {
   renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, start: number, end: number, dst: Framebuffer, modCtx: ModSampleCtx): void;
 }
 
-export function createGeneratorBridge(): GeneratorBridge {
+/**
+ * `onUnresolved` (S14) is an optional observation sink for authored ids no registry holds —
+ * this bridge's own unknown-generator skip, and the unknown-modifier skips inside the chains
+ * it runs. Injected once at construction rather than per `renderVoice` call so the hot
+ * per-voice signature stays as it was and the bound modifier sink allocates exactly once.
+ * Omit it and both skips stay silent, exactly as before.
+ */
+export function createGeneratorBridge(onUnresolved?: UnresolvedIdSink): GeneratorBridge {
   let genScratch: Framebuffer | null = null;
+  /** Bound once (not per frame): the chain runner reports modifier ids as bare strings. */
+  const noteUnresolvedModifier = onUnresolved ? (id: string): void => onUnresolved('modifier', id) : undefined;
   /** Cached default param record per generator id (incl. enum/colour string defaults). */
   const genDefaults = new Map<string, ResolvedParams>();
   /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
@@ -77,7 +87,11 @@ export function createGeneratorBridge(): GeneratorBridge {
 
     renderVoice(v, model, timeMs, level, start, end, dst, modCtx): void {
       const gen = tryGetEffect(v.generatorId!);
-      if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
+      if (!gen) {
+        // unknown id → render nothing (don't fall through to pattern); report it if wired.
+        onUnresolved?.('generator', v.generatorId!);
+        return;
+      }
       if (!genCtx || !frameTransport) return; // beginFrame not called this frame (never happens in practice)
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
         genScratch = new Framebuffer(model.pixelCount);
@@ -149,7 +163,7 @@ export function createGeneratorBridge(): GeneratorBridge {
         if (!v.modState) v.modState = [];
         modRange.start = start;
         modRange.end = end;
-        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt, modCtx);
+        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt, modCtx, noteUnresolvedModifier);
       }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is

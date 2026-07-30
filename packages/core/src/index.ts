@@ -61,15 +61,16 @@ export {
   listModifiersByCategory,
 } from './modifiers/palette';
 
-// Render primitives. INIT-01 S13 deleted the legacy engine's four modules from this barrel
-// (control-state, modulation, compositor, engine). What survives is what the LIVE stack uses:
+// Render primitives, in `render/` — INIT-01 S15 renamed the directory once S13 left no engine
+// in it (control-state, modulation, compositor, engine all deleted). What survives is what the
+// LIVE stack uses:
 // framebuffer + render-context have 30+ import sites across effects/, modifiers/, canvas/ and
 // voice/; transport.ts is called every frame by the voice loop (advanceTransport); stats.ts holds
 // the `stats` wire type the deleted engine happened to declare.
-export * from './engine/framebuffer';
-export * from './engine/render-context';
-export * from './engine/transport';
-export * from './engine/stats';
+export * from './render/framebuffer';
+export * from './render/render-context';
+export * from './render/transport';
+export * from './render/stats';
 
 // Voice-bus brain. The namespace was introduced to avoid name clashes with the legacy Engine's
 // InputEvent/EngineStats during the migration; S13 deleted that engine, and the namespace stays

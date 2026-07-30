@@ -5,8 +5,8 @@
    disagreed (2 vs 1); an explicit argument at every call site is the guard. */
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { RenderContext, TransportState, Trigger } from '../render/render-context';
 import { defaultParams, type EffectGenerator, type ResolvedParams } from '../effects/types';
 
 export function model(drums: number, hoopCount = 4): PixelModel {

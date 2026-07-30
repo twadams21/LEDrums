@@ -1,6 +1,6 @@
 import type { PixelModel } from '../geometry/pixel-model';
-import type { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext } from '../engine/render-context';
+import type { Framebuffer } from '../render/framebuffer';
+import type { RenderContext } from '../render/render-context';
 import type { EffectTag } from './vocabulary';
 
 export type ParamType = 'number' | 'color' | 'enum' | 'bool';

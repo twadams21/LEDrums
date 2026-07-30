@@ -10,10 +10,10 @@
  * carried in engine state. Zero allocation on the hot path: the voice pool, per-frame
  * scratch, and the compositor's buffers are all pre-sized and reused.
  */
-import type { Framebuffer } from '../engine/framebuffer';
-import { Framebuffer as Fb } from '../engine/framebuffer';
+import type { Framebuffer } from '../render/framebuffer';
+import { Framebuffer as Fb } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
-import type { TransportState } from '../engine/render-context';
+import type { TransportState } from '../render/render-context';
 import { Prng } from './prng';
 import {
   createDefaultCompositor,
@@ -156,7 +156,15 @@ class VoiceBusEngine implements RenderEngine {
 
   private model: PixelModel | null = null;
   private finalFb: Framebuffer | null = null;
-  private readonly compositor: Compositor = createDefaultCompositor();
+  private readonly compositor: Compositor = createDefaultCompositor((idKind, id) => this.noteUnresolvedId(idKind, id));
+
+  /**
+   * S14 — ids already reported through {@link noteUnresolvedId}, so one stale authored id
+   * costs one diagnostic rather than one per frame. Keyed `${idKind}:${id}` so a modifier and
+   * a generator sharing a name each report. Cleared on `setShow` (authored content changed →
+   * the report re-arms).
+   */
+  private readonly reportedUnresolvedIds = new Set<string>();
 
   private show: Show = emptyShow();
   private busById = new Map<string, Bus>();
@@ -264,6 +272,18 @@ class VoiceBusEngine implements RenderEngine {
     }
   }
 
+  /**
+   * The render path skipped an authored id no registry holds. Emits the diagnostic on FIRST
+   * sight only; never touches the frame. Called from inside the compositor's render, so it
+   * must stay allocation-light and must not throw.
+   */
+  private noteUnresolvedId(idKind: 'modifier' | 'generator', id: string): void {
+    const key = `${idKind}:${id}`;
+    if (this.reportedUnresolvedIds.has(key)) return;
+    this.reportedUnresolvedIds.add(key);
+    this.onDiagnostic?.({ kind: 'unresolved-id', idKind, id });
+  }
+
   setShow(show: Show): void {
     this.syncCanvasScenes(show.canvasScenes);
     this.show = {
@@ -287,6 +307,7 @@ class VoiceBusEngine implements RenderEngine {
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
     this.noteTable.clear();
+    this.reportedUnresolvedIds.clear(); // S14: authored content changed → unresolved-id report re-arms
     // Seed active section from the first song/section (a recallSection event can
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;

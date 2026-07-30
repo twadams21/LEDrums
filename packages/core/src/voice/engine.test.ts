@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import type { TransportState } from '../engine/render-context';
+import type { TransportState } from '../render/render-context';
 import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
 import type { VoiceDiagnostic } from './diagnostics';
 import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Section, type Show, type ShowSong, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';

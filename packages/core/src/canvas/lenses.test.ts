@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { RenderContext } from '../render/render-context';
 import { defaultParams } from '../effects/types';
 import { applyLens, applyLensChain, hyper4dUv, type UvPair } from './lenses';
 import { buildSamplerTable } from './sampler';

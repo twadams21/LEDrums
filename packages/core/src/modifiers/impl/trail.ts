@@ -17,7 +17,7 @@
  * createState?, apply }`; temporal state lives in `createState` (sized to the model),
  * `apply` reads `ctx.dt` for integration and never re-derives time.
  */
-import { Framebuffer } from '../../engine/framebuffer';
+import { Framebuffer } from '../../render/framebuffer';
 import type { PixelModel } from '../../geometry/pixel-model';
 import { pnum, pstr } from '../../effects/types';
 import type { ModifierDef, PixelRange } from '../types';

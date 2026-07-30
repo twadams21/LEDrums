@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import type { TransportState } from '../engine/render-context';
+import type { TransportState } from '../render/render-context';
 import { canvasEffectId } from '../canvas/ids';
 import { tryGetCanvasScene } from '../canvas/registry';
 import { tryGetEffect } from '../effects/registry';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { RenderContext } from '../render/render-context';
 import { model, transport, ctx, trig, render, litCount } from '../test-support/effect-harness';
 import { type EffectGenerator, type ResolvedParams } from './types';
 import { listEffects } from './registry';

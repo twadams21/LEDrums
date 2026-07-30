@@ -698,6 +698,19 @@ export class VoiceEngineHost {
       return;
     }
 
+    if (d.kind === 'unresolved-id') {
+      // Authored content references an id no registry holds — the render path skipped it and
+      // kept going, so this is the only place it becomes visible. Reported once per id per show.
+      this.monitorSink?.({
+        type: 'error',
+        direction: 'local',
+        source: 'server/voice',
+        label: `Unknown ${d.idKind} id`,
+        detail: `${d.idKind}=${d.id} is not registered — rendering skipped it`,
+      });
+      return;
+    }
+
     if (d.kind === 'input-unrouted') {
       this.monitorSink?.({
         type: 'graph',
