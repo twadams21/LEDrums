@@ -73,7 +73,7 @@ describe('SongRow', () => {
   it('marks the live song with a trailing status dot and activates on click', async () => {
     const store = new TriggerLab(fakeClient);
     const song = store.songs.find((s) => s.id === store.activeSongId)!;
-    const spy = vi.spyOn(store, 'setActiveSong');
+    const spy = vi.spyOn(store.library, 'setActiveSong'); // SongRow calls through the published controller (S11)
     const { container } = render(SongRow, { props: { store, song } });
     expect(container.querySelector('.li-trailing .dot')).not.toBeNull(); // active → dot
     await fireEvent.click(container.querySelector('.li-main')!);

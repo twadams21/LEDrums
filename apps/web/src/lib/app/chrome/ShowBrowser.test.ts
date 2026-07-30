@@ -8,21 +8,26 @@ import ShowBrowser from './ShowBrowser.svelte';
    Row rename/select is the shared EditableRow primitive (tested separately); these lock
    the ShowBrowser→store wiring + the navigation-dismisses-the-browser behaviour. */
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
+  const { library: libraryOver, ...rest } = over as { library?: Record<string, unknown> };
   return {
-    shows: [
-      { id: 'sh1', name: 'Show A' },
-      { id: 'sh2', name: 'Show B' },
-    ],
-    activeShowId: 'sh1',
-    activeShow: { id: 'sh1', name: 'Show A' },
-    newShow: vi.fn(),
-    saveShow: vi.fn(),
-    saveShowAs: vi.fn(),
-    closeShow: vi.fn(),
-    openShow: vi.fn(),
-    renameShow: vi.fn(),
-    deleteShow: vi.fn(),
-    ...over,
+    ...rest,
+    // Shows live on the published ShowsController (INIT-02 S10) — `store.library.*`.
+    library: {
+      shows: [
+        { id: 'sh1', name: 'Show A' },
+        { id: 'sh2', name: 'Show B' },
+      ],
+      activeShowId: 'sh1',
+      activeShow: { id: 'sh1', name: 'Show A' },
+      newShow: vi.fn(),
+      saveShow: vi.fn(),
+      saveShowAs: vi.fn(),
+      closeShow: vi.fn(),
+      openShow: vi.fn(),
+      renameShow: vi.fn(),
+      deleteShow: vi.fn(),
+      ...(libraryOver ?? {}),
+    },
   } as unknown as TriggerLab;
 }
 
@@ -38,7 +43,7 @@ describe('ShowBrowser', () => {
     const onClose = vi.fn();
     render(ShowBrowser, { props: { store, open: true, onClose } });
     await fireEvent.click(await screen.findByText('New'));
-    expect(store.newShow).toHaveBeenCalledTimes(1);
+    expect(store.library.newShow).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -47,7 +52,7 @@ describe('ShowBrowser', () => {
     const onClose = vi.fn();
     render(ShowBrowser, { props: { store, open: true, onClose } });
     await fireEvent.click(await screen.findByText('Close show'));
-    expect(store.closeShow).toHaveBeenCalledTimes(1);
+    expect(store.library.closeShow).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -57,7 +62,7 @@ describe('ShowBrowser', () => {
     render(ShowBrowser, { props: { store, open: true, onClose } });
     const rowButton = (await screen.findByText('Show B')).closest('button');
     await fireEvent.click(rowButton!);
-    expect(store.openShow).toHaveBeenCalledWith('sh2');
+    expect(store.library.openShow).toHaveBeenCalledWith('sh2');
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
@@ -67,7 +72,7 @@ describe('ShowBrowser', () => {
     render(ShowBrowser, { props: { store, open: true, onClose } });
     const rowButton = (await screen.findByText('Show A')).closest('button');
     await fireEvent.click(rowButton!);
-    expect(store.openShow).not.toHaveBeenCalled();
+    expect(store.library.openShow).not.toHaveBeenCalled();
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

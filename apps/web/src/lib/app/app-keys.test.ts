@@ -21,7 +21,7 @@ function harness(blocked: boolean) {
     selectedGraph: { nodes: [{ id: 'n1', kind: 'effect' }] },
     removeNode: vi.fn(),
     fireSectionGraph: vi.fn(),
-    activeSong: { sections: [{ id: 's1' }, { id: 's2' }] },
+    library: { activeSong: { sections: [{ id: 's1' }, { id: 's2' }] } },
     arrangement: { activeSectionId: 's1' },
     setActiveSection: vi.fn(),
   };

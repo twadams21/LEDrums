@@ -24,26 +24,26 @@
   let justAdded = $state(false);
   let addedTimer: ReturnType<typeof setTimeout> | null = null;
   function addToLibrary(): void {
-    if (store.exportSongToLibrary(song.id) == null) return;
+    if (store.library.exportSongToLibrary(song.id) == null) return;
     justAdded = true;
     if (addedTimer) clearTimeout(addedTimer);
     addedTimer = setTimeout(() => (justAdded = false), 1400);
   }
 
   let editing = $state(false);
-  const active = $derived(store.activeSongId === song.id);
-  const canDelete = $derived(store.songs.length > 1);
+  const active = $derived(store.library.activeSongId === song.id);
+  const canDelete = $derived(store.library.songs.length > 1);
   const sub = $derived(
     `${song.sections.length} ${song.sections.length === 1 ? 'section' : 'sections'}`,
   );
 
   function remove(): void {
-    store.removeSong(song.id);
+    store.library.removeSong(song.id);
   }
 
   const actions = $derived<ContextMenuAction[]>([
-    { label: 'Activate', icon: Play, onSelect: () => store.setActiveSong(song.id) },
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSong(song.id) },
+    { label: 'Activate', icon: Play, onSelect: () => store.library.setActiveSong(song.id) },
+    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.library.duplicateSong(song.id) },
     { label: 'Copy', icon: Copy, onSelect: () => void store.copySongToClipboard(song.id) },
     { label: 'Add to library', icon: BookPlus, onSelect: addToLibrary },
     { label: 'Delete', icon: Trash2, danger: true, disabled: !canDelete, onSelect: remove },
@@ -56,8 +56,8 @@
   secondary={sub}
   {active}
   bind:editing
-  onclick={() => store.setActiveSong(song.id)}
-  onCommit={(name) => store.renameSong(song.id, name)}
+  onclick={() => store.library.setActiveSong(song.id)}
+  onCommit={(name) => store.library.renameSong(song.id, name)}
   {actions}
   renameLabel="Song name"
 >
@@ -66,7 +66,7 @@
   {/snippet}
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename song" size={13} onclick={() => (editing = true)} />
-    <IconButton icon={CopyPlus} label="Duplicate song" size={13} onclick={() => store.duplicateSong(song.id)} />
+    <IconButton icon={CopyPlus} label="Duplicate song" size={13} onclick={() => store.library.duplicateSong(song.id)} />
     <IconButton icon={Copy} label="Copy song to clipboard" size={13} onclick={() => void store.copySongToClipboard(song.id)} />
     <IconButton
       icon={justAdded ? Check : BookPlus}

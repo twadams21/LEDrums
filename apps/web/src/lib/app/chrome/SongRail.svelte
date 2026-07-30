@@ -26,14 +26,14 @@
 
   let { store, heading = true }: { store: TriggerLab; heading?: boolean } = $props();
 
-  const rows = $derived(showSongRows(store.songs, store.resolvedSongs));
+  const rows = $derived(showSongRows(store.library.songs, store.library.resolvedSongs));
   // The last-song guard counts LOCAL songs only — a reference isn't a local song, and removing it
   // (below) drops the ref, never the local setlist.
-  const canDeleteLocal = $derived(store.songs.length > 1);
+  const canDeleteLocal = $derived(store.library.songs.length > 1);
 
   function detach(id: string): void {
-    const localId = store.detachSongReference(id);
-    if (localId) store.setActiveSong(localId);
+    const localId = store.library.detachSongReference(id);
+    if (localId) store.library.setActiveSong(localId);
   }
 
   /** The right-click verbs for one row, by origin — local song CRUD vs library-reference verbs. */
@@ -41,25 +41,25 @@
     if (row.origin === 'reference') {
       return [
         { label: 'Detach copy', icon: Unlink, onSelect: () => detach(row.id) },
-        { label: 'Remove from show', icon: X, onSelect: () => store.removeSongReference(row.id) },
+        { label: 'Remove from show', icon: X, onSelect: () => store.library.removeSongReference(row.id) },
       ];
     }
     return [
-      { label: 'Duplicate', icon: Copy, onSelect: () => store.duplicateSong(row.id) },
+      { label: 'Duplicate', icon: Copy, onSelect: () => store.library.duplicateSong(row.id) },
       {
         label: 'Delete',
         icon: Trash2,
         danger: true,
         disabled: !canDeleteLocal, // the app always keeps one LOCAL song
-        onSelect: () => store.removeSong(row.id),
+        onSelect: () => store.library.removeSong(row.id),
       },
     ];
   }
 
   /** Rename routes to the canonical library copy for a reference (propagates), else the local song. */
   function commitRename(row: ShowSongRow, name: string): void {
-    if (row.origin === 'reference') store.renameLibrarySong(row.id, name);
-    else store.renameSong(row.id, name);
+    if (row.origin === 'reference') store.library.renameLibrarySong(row.id, name);
+    else store.library.renameSong(row.id, name);
   }
 </script>
 
@@ -67,13 +67,13 @@
   {#if heading}
     <PanelHeader icon={ListMusic} title="Setlist">
       {#if store.canEdit}
-        <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.createSong()} />
+        <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.library.createSong()} />
       {/if}
     </PanelHeader>
   {:else if store.canEdit}
     <div class="head">
       <span class="add">
-        <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.createSong()} />
+        <IconButton icon={Plus} label="Add song" size={14} onclick={() => store.library.createSong()} />
       </span>
     </div>
   {/if}
@@ -83,9 +83,9 @@
         <EditableRow
           label={row.name}
           secondary={`${row.sectionCount} ${row.sectionCount === 1 ? 'section' : 'sections'}`}
-          active={store.activeSongId === row.id}
+          active={store.library.activeSongId === row.id}
           renameLabel={row.origin === 'reference' ? 'Rename library song' : 'Rename song'}
-          onclick={() => store.setActiveSong(row.id)}
+          onclick={() => store.library.setActiveSong(row.id)}
           onCommit={(name) => commitRename(row, name)}
           actions={rowActions(row)}
         >

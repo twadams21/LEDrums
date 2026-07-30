@@ -382,10 +382,10 @@ export class TriggerLab {
   // supplies the active-song reads and the `songs` rune swap through the injected host.
   readonly arrangement = new SectionsController({
     isViewer: () => this.isViewer,
-    activeSong: () => this.activeSong,
-    activeSongId: () => this.activeSongId,
-    songs: () => this.songs,
-    setSongs: (songs) => (this.songs = songs),
+    activeSong: () => this.library.activeSong,
+    activeSongId: () => this.library.activeSongId,
+    songs: () => this.library.songs,
+    setSongs: (songs) => (this.library.songs = songs),
   } satisfies SectionsControllerHost);
 
 
@@ -860,7 +860,7 @@ export class TriggerLab {
   // Read through the RESOLVED graphs (S42): selecting a referenced library graph opens the
   // library's rune-backed proxy, so editing its nodes writes through to the canonical copy
   // (propagation) — while a local graph resolves to the same proxy it always did.
-  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.resolvedView.graphs[this.selectedPadKey] ?? null : null);
+  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.library.resolvedView.graphs[this.selectedPadKey] ?? null : null);
 
   /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
       and authored graphs alike, no distinction — in graph insertion order (pads first, then
@@ -895,7 +895,7 @@ export class TriggerLab {
   graphLabel(key: string): string {
     // Resolved names (S42): a referenced library graph's display name lives in the resolved
     // view, not the local `graphNames`; local names are a subset, so labels still resolve.
-    return graphsLib.graphLabelOf(this.resolvedView.graphNames, key, this.pads);
+    return graphsLib.graphLabelOf(this.library.resolvedView.graphNames, key, this.pads);
   }
 
   // --- lifecycle -----------------------------------------------------------
@@ -1050,14 +1050,14 @@ export class TriggerLab {
     return $state.snapshot({
       graphs: this.graphs,
       graphNames: this.graphNames,
-      songs: this.songs,
-      songRefs: this.songRefs,
+      songs: this.library.songs,
+      songRefs: this.library.songRefs,
       buses: this.buses,
       presets: this.presets,
       effects: this.effects,
       canvasScenes: this.canvasScenes,
       selectedPadKey: this.selectedPadKey,
-      activeSongId: this.activeSongId,
+      activeSongId: this.library.activeSongId,
       activeSectionId: this.arrangement.activeSectionId,
       bpm: this.bpm,
       velocity: this.velocity,
@@ -1072,10 +1072,10 @@ export class TriggerLab {
   private applyAuthored(a: Partial<AuthoredState>): void {
     if (a.graphs) this.graphs = a.graphs;
     if (a.graphNames) this.graphNames = a.graphNames;
-    if (a.songs) this.songs = a.songs;
+    if (a.songs) this.library.songs = a.songs;
     // Always assigned (even when absent) so a show that references nothing CLEARS the outgoing
     // show's refs on a swap — no cross-show bleed of references (seed/applyShow reset to []).
-    this.songRefs = a.songRefs ?? [];
+    this.library.songRefs = a.songRefs ?? [];
     if (a.buses) this.buses = a.buses;
     // Union, never replace (mirrors effects below): a stale localStorage slice must
     // not drop the built-in generator `:default` presets, or play nodes that point at
@@ -1088,7 +1088,7 @@ export class TriggerLab {
     // scene-less show clears prior scenes — no cross-show bleed.
     this.canvasScenes = a.canvasScenes ?? [];
     if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
-    if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
+    if (a.activeSongId !== undefined) this.library.activeSongId = a.activeSongId;
     if (a.activeSectionId !== undefined) this.arrangement.activeSectionId = a.activeSectionId;
     if (typeof a.bpm === 'number') this.bpm = a.bpm;
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
@@ -1306,7 +1306,7 @@ export class TriggerLab {
           this.client.send({ t: 'setTransport', ...cur });
           // align the engine's active section with the store's current active section
           if (this.arrangement.activeSectionId) {
-            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangement.activeSectionId });
+            this.client.send({ t: 'recallSection', songId: this.library.activeSongId, sectionId: this.arrangement.activeSectionId });
           }
         } else {
           // a drop means our next open must re-send the transport + Show
@@ -1442,7 +1442,7 @@ export class TriggerLab {
       stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
       via {@link activeSong}. */
   get showSource(): ShowSource {
-    const rv = this.resolvedView;
+    const rv = this.library.resolvedView;
     return {
       buses: this.buses,
       graphs: rv.graphs,
@@ -1453,7 +1453,7 @@ export class TriggerLab {
       presets: [...rv.presets, ...this.allPresets.filter((p) => p.effectId.startsWith('canvas:'))],
       canvasScenes: this.canvasScenes,
       drums: this.drums,
-      songs: this.resolvedSongs,
+      songs: this.library.resolvedSongs,
     };
   }
 
@@ -1464,7 +1464,7 @@ export class TriggerLab {
     this.client.send({ t: 'setShow', show });
     // setShow reseeds the active section to the first song/section — restore focus.
     if (this.arrangement.activeSectionId) {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.arrangement.activeSectionId });
+      this.client.send({ t: 'recallSection', songId: this.library.activeSongId, sectionId: this.arrangement.activeSectionId });
     }
   }
 
@@ -1560,7 +1560,7 @@ export class TriggerLab {
     const section = this.arrangement.activeSection;
     // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
     // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
-    const graphs = this.resolvedView.graphs;
+    const graphs = this.library.resolvedView.graphs;
     if (section) {
       const resolved: Array<{ graph: TriggerGraph; label: string; key: string }> = [];
       for (const key of section.graphs) {
@@ -1641,7 +1641,7 @@ export class TriggerLab {
   setActiveSection(sectionId: string): void {
     this.arrangement.activeSectionId = sectionId;
     if (this.link === 'open') {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
+      this.client.send({ t: 'recallSection', songId: this.library.activeSongId, sectionId });
     }
   }
 
@@ -1654,7 +1654,7 @@ export class TriggerLab {
   selectGraphInSection(sectionId: string, graphKey: string): void {
     this.setActiveSection(sectionId);
     // Resolved lookup (S42) so a referenced section's `lib:<id>/…` graph is selectable/openable.
-    if (this.resolvedView.graphs[graphKey]) this.selectedPadKey = graphKey;
+    if (this.library.resolvedView.graphs[graphKey]) this.selectedPadKey = graphKey;
   }
 
   // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
@@ -1869,23 +1869,23 @@ export class TriggerLab {
       envelope carries plain data, never live rune proxies. */
   private clipSources(): ClosureSources {
     return {
-      graphs: $state.snapshot(this.resolvedView.graphs),
-      graphNames: $state.snapshot(this.resolvedView.graphNames),
-      effects: $state.snapshot(this.resolvedView.effects) as EffectDef[],
-      presets: $state.snapshot(this.resolvedView.presets) as Preset[],
+      graphs: $state.snapshot(this.library.resolvedView.graphs),
+      graphNames: $state.snapshot(this.library.resolvedView.graphNames),
+      effects: $state.snapshot(this.library.resolvedView.effects) as EffectDef[],
+      presets: $state.snapshot(this.library.resolvedView.presets) as Preset[],
       canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
     };
   }
 
   /** Provenance stamped on every exported ClipDoc (advisory only — never gates paste). */
   private clipMeta(): Partial<ClipDocMeta> {
-    const name = this.activeShow?.name;
+    const name = this.library.activeShow?.name;
     return name ? { sourceShow: name } : {};
   }
 
   /** Find a section by id anywhere in the resolved setlist (local or referenced song). */
   private findResolvedSection(sectionId: string): SetlistSection | undefined {
-    for (const song of this.resolvedView.songs) {
+    for (const song of this.library.resolvedView.songs) {
       const sec = song.sections.find((s) => s.id === sectionId);
       if (sec) return sec;
     }
@@ -1902,7 +1902,7 @@ export class TriggerLab {
 
   /** Copy a graph (by key) + its effect/preset closure to the system clipboard. */
   async copyGraphToClipboard(key: string): Promise<void> {
-    if (!this.resolvedView.graphs[key]) return;
+    if (!this.library.resolvedView.graphs[key]) return;
     await this.writeClip(buildGraphClipDoc(key, this.clipSources(), this.clipMeta()), 'Graph copied.');
   }
 
@@ -1920,7 +1920,7 @@ export class TriggerLab {
 
   /** Copy a song + its full closure to the system clipboard. */
   async copySongToClipboard(songId: string): Promise<void> {
-    const song = this.resolvedView.songs.find((s) => s.id === songId);
+    const song = this.library.resolvedView.songs.find((s) => s.id === songId);
     if (!song) return;
     await this.writeClip(buildSongClipDoc($state.snapshot(song), this.clipSources(), this.clipMeta()), 'Song copied.');
   }
@@ -1957,8 +1957,8 @@ export class TriggerLab {
       this.arrangement.insertSection(res.section);
     } else if (res.kind === 'song' && res.song) {
       const song = res.song;
-      this.songs = [...this.songs, song];
-      this.activeSongId = song.id;
+      this.library.songs = [...this.library.songs, song];
+      this.library.activeSongId = song.id;
     }
   }
 
@@ -1981,7 +1981,7 @@ export class TriggerLab {
 
     // Song → Library: extract a fresh, self-contained namespaced closure into the pool.
     if (doc.kind === 'song' && opts.songDest === 'library') {
-      const libId = freshId('song', (id) => id in this.songLibrary.songs);
+      const libId = freshId('song', (id) => id in this.library.songLibrary.songs);
       const sources: ClosureSources = {
         graphs: doc.deps.graphs ?? {},
         graphNames: doc.deps.graphNames ?? {},
@@ -1989,7 +1989,7 @@ export class TriggerLab {
         presets: doc.deps.presets ?? [],
       };
       const closure = extractSongClosure(doc.payload.song, sources, libId);
-      this.songLibrary = songRefsLib.withLibrarySong(this.songLibrary, closure);
+      this.library.songLibrary = songRefsLib.withLibrarySong(this.library.songLibrary, closure);
       // Reserve the new pool entry's raw node/edge ids: S42 lets a user edit this referenced graph,
       // so a fresh node mint must clear any high id the pasted closure carried in.
       reserveIds(idsFromLibrarySong(closure));
@@ -2123,10 +2123,10 @@ export class TriggerLab {
   deleteGraph(key: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!(key in this.graphs)) return;
-    const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
+    const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.library.songs, key);
     this.graphs = next.graphs;
     this.graphNames = next.graphNames;
-    this.songs = next.songs;
+    this.library.songs = next.songs;
     if (this.selectedPadKey === key) this.selectedPadKey = null;
   }
 
@@ -2149,7 +2149,7 @@ export class TriggerLab {
       the graph/trigger is missing, or an authored graph has no source bound yet. */
   triggerSource(graphKey: string): TriggerSource | undefined {
     // Resolved (S42): a referenced section's rows read their graph's source from the resolved view.
-    return this.resolvedView.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
+    return this.library.resolvedView.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
   }
 
   // --- registries / lookups ------------------------------------------------
@@ -3156,7 +3156,7 @@ export class TriggerLab {
       know still labels itself instead of rendering blank. Replaces the retired sim registry's
       `effectName`; the resolved view is the same set that registry was fed from. */
   effectName(id: string): string {
-    return this.resolvedView.effects.find((e) => e.id === id)?.name ?? id;
+    return this.library.resolvedView.effects.find((e) => e.id === id)?.name ?? id;
   }
 
   /** The live CC value table — the S38 param-row tick reads it for `cc` sources. */

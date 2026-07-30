@@ -50,12 +50,12 @@
   // Songs split by SOURCE (S42): the show's setlist — local authored songs + resolved library
   // references — vs the shared Song Library pool. `showSongRows` tags the references (the tail of
   // the resolved list); local songs render as editable SongRows, references as LibraryRefRows.
-  const localSongs = $derived(store.songs);
+  const localSongs = $derived(store.library.songs);
   const refSongs = $derived(
-    showSongRows(store.songs, store.resolvedSongs).filter((r) => r.origin === 'reference'),
+    showSongRows(store.library.songs, store.library.resolvedSongs).filter((r) => r.origin === 'reference'),
   );
-  const setlistCount = $derived(store.resolvedSongs.length);
-  const librarySongs = $derived(librarySongRows(store.songLibraryList, store.songRefs));
+  const setlistCount = $derived(store.library.resolvedSongs.length);
+  const librarySongs = $derived(librarySongRows(store.library.songLibraryList, store.library.songRefs));
   const effects = $derived(effectRows(store.effects, store.presets));
   const graphs = $derived(graphRows(store.graphLibrary));
   const presets = $derived(presetRows(store.presets, store.effects, (id) => store.presetUsageCount(id)));

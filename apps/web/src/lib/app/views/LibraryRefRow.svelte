@@ -2,7 +2,7 @@
   /* One "This show" setlist row that is a REFERENCE to a Song Library song (not a local copy).
      The name/sections resolve from the library, so a rename here edits the LIBRARY copy and
      propagates to every show that references it (canonical). A "Library" badge marks the link;
-     "Detach copy" (store.detachSongReference) clones the closure into this show as an editable
+     "Detach copy" (store.library.detachSongReference) clones the closure into this show as an editable
      local song and severs the link — after which it renders as an ordinary SongRow. Composes
      the shared EditableRow primitive, like SongRow. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -23,13 +23,13 @@
   /** Clone the referenced closure into this show as a local song and jump to it — it's now
       editable in place, independent of the library. */
   function detach(): void {
-    const localId = store.detachSongReference(row.id);
-    if (localId) store.setActiveSong(localId);
+    const localId = store.library.detachSongReference(row.id);
+    if (localId) store.library.setActiveSong(localId);
   }
 
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Detach copy', icon: Unlink, onSelect: detach },
-    { label: 'Remove from show', icon: X, onSelect: () => store.removeSongReference(row.id) },
+    { label: 'Remove from show', icon: X, onSelect: () => store.library.removeSongReference(row.id) },
   ]);
 </script>
 
@@ -38,7 +38,7 @@
   label={row.name}
   secondary={sub}
   bind:editing
-  onCommit={(name) => store.renameLibrarySong(row.id, name)}
+  onCommit={(name) => store.library.renameLibrarySong(row.id, name)}
   {actions}
   renameLabel="Library song name"
 >
@@ -48,6 +48,6 @@
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename (edits library copy)" size={13} onclick={() => (editing = true)} />
     <IconButton icon={Unlink} label="Detach copy" size={13} onclick={detach} />
-    <IconButton icon={X} label="Remove from show" size={13} onclick={() => store.removeSongReference(row.id)} />
+    <IconButton icon={X} label="Remove from show" size={13} onclick={() => store.library.removeSongReference(row.id)} />
   {/snippet}
 </EditableRow>

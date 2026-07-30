@@ -15,7 +15,7 @@
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  const song = $derived(store.activeSong);
+  const song = $derived(store.library.activeSong);
   const section = $derived(store.arrangement.activeSection);
   const graphs = $derived(section?.graphs ?? []);
 
@@ -78,7 +78,7 @@
       <p class="none">No section is active — pick one in the Sections view.</p>
     {:else}
       {#each graphs as key, i (key)}
-        {@const g = store.resolvedView.graphs[key]}
+        {@const g = store.library.resolvedView.graphs[key]}
         {@const hk = hotkey(i)}
         {@const thumb = g ? graphThumb(g) : null}
         <button

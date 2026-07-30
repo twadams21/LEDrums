@@ -24,7 +24,7 @@
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  const song = $derived(store.activeSong);
+  const song = $derived(store.library.activeSong);
   const sections = $derived(song?.sections ?? []);
   const shortcutPlatform: ShortcutPlatform = platformShortcutModifier(globalThis.navigator?.platform ?? '');
 
@@ -94,9 +94,9 @@
   const sectionSel = $derived.by(() => {
     const sel = shell.selection;
     if (sel?.kind !== 'section') return null;
-    const songIdx = store.resolvedSongs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
+    const songIdx = store.library.resolvedSongs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
     if (songIdx < 0) return null;
-    const owner = store.resolvedSongs[songIdx]!;
+    const owner = store.library.resolvedSongs[songIdx]!;
     const sectionIdx = owner.sections.findIndex((sec) => sec.id === sel.sectionId);
     const section = owner.sections[sectionIdx]!;
     return { song: owner, section, sectionIdx, recall: sectionRecall(songIdx, sectionIdx) };
