@@ -1,4 +1,4 @@
-/* INIT-02 S15 — the characterization matrix over ShowLibrarySync and SongLibrarySync.
+/* INIT-02 S15 — the characterization matrix; since S16, one LibrarySync run once per codec.
 
    duplicated-code-0003 wants these two collapsed into one generic (S16). Their bodies are subtle —
    viewer-follow, the once-per-session gate, local-wins seed, echo suppression, and the
@@ -22,8 +22,7 @@
      librarySig    — stable for equal libraries, distinct for different ones. */
 
 import { describe, expect, it } from 'vitest';
-import { ShowLibrarySync } from './show-library-sync';
-import { SongLibrarySync } from './song-library-sync';
+import { LibrarySync } from './library-sync';
 import {
   deserializeShowLibrary,
   deserializeSongLibrary,
@@ -64,8 +63,8 @@ const show = (id: string): ShowLibrary => ({
   activeShowId: id,
 });
 const showSubject: Subject<ShowLibrary, ReturnType<typeof serializeShowLibrary>> = {
-  label: 'ShowLibrarySync',
-  create: () => new ShowLibrarySync(),
+  label: 'LibrarySync + show codec',
+  create: () => new LibrarySync({ serialize: serializeShowLibrary, deserialize: deserializeShowLibrary }),
   serialize: serializeShowLibrary,
   libA: deserializeShowLibrary(serializeShowLibrary(show('show-a')))!,
   libB: deserializeShowLibrary(serializeShowLibrary(show('show-b')))!,
@@ -82,8 +81,8 @@ const librarySong = (id: string): LibrarySong => ({
 });
 const songs = (...ids: string[]): SongLibrary => ({ songs: Object.fromEntries(ids.map((id) => [id, librarySong(id)])) });
 const songSubject: Subject<SongLibrary, ReturnType<typeof serializeSongLibrary>> = {
-  label: 'SongLibrarySync',
-  create: () => new SongLibrarySync(),
+  label: 'LibrarySync + song codec',
+  create: () => new LibrarySync({ serialize: serializeSongLibrary, deserialize: deserializeSongLibrary }),
   serialize: serializeSongLibrary,
   libA: deserializeSongLibrary(serializeSongLibrary(songs('song-a')))!,
   libB: deserializeSongLibrary(serializeSongLibrary(songs('song-b')))!,

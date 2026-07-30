@@ -1,22 +1,37 @@
-/* Server-authoritative show-library controller (#21) — the cold-load-adopt + write-through
-   path, lifted out of the store as a small stateful controller (no runes/DOM, like
-   SaveStatusController). The server owns the authored show library (as it owns the routing
-   Project): it persists the library and broadcasts it on `state`. The web ADOPTS it once, on the
-   first state of a cold load (server wins); thereafter the web is the source and pushes every
-   authored change up via setShowLibrary. localStorage is a fast cache (offline / first paint).
+/* Server-authoritative LIBRARY controller (#21 / S40) — the cold-load-adopt + write-through path,
+   lifted out of the store as a small stateful controller (no runes/DOM, like SaveStatusController).
+   The server owns each authored library (as it owns the routing Project): it persists the library
+   and broadcasts it on `state`. The web ADOPTS it once, on the first state of a cold load (server
+   wins); thereafter the web is the source and pushes every authored change up. localStorage is a
+   fast cache (offline / first paint).
 
    This controller owns ONLY the once-per-session gate + echo/no-op suppression signatures; the
-   store performs the rune swap (adoptLibrary) and the actual WS send. */
+   store performs the rune swap (adoptLibrary) and the actual WS send.
 
-import { type ShowLibrary, deserializeShowLibrary, serializeShowLibrary } from '../persistence';
+   ONE class for BOTH libraries (INIT-02 S16, duplicated-code-0003). The show library and the song
+   library reconciled through two classes whose policy was identical line-for-line — same guards,
+   same order, same plan kinds — differing only in which pair of serializers they called. That pair
+   is now the injected {@link LibraryCodec}, so the policy has exactly one home and the two
+   libraries cannot drift apart by editing one and forgetting the other. The codecs stay LOCAL to
+   the construction sites (shows-controller), so this module exports three symbols where the old
+   pair exported four. The parity matrix in library-sync.parity.test.ts runs the SAME rows against
+   both constructions and is the contract this collapse had to preserve. */
+
+/** How a particular library serializes to (and parses back from) its persisted/wire envelope.
+    `deserialize` returns null for anything unusable — a wrong version, a malformed body — so the
+    reconcile guards can treat "server has nothing usable" and "server has nothing" identically. */
+export interface LibraryCodec<L, W> {
+  serialize(lib: L): W;
+  deserialize(raw: unknown): L | null;
+}
 
 /** What a `state`-message reconcile decides the store should do. */
-export type ReconcilePlan =
-  | { kind: 'adopt'; library: ShowLibrary } // server has a library → swap it into the runes
-  | { kind: 'seed' } //                        server has none → push our cache up to seed it
-  | { kind: 'noop' }; //                       already synced this session → never clobber
+export type ReconcilePlan<L> =
+  | { kind: 'adopt'; library: L } // server has a library → swap it into the runes
+  | { kind: 'seed' } //             server has none → push our cache up to seed it
+  | { kind: 'noop' }; //            already synced this session → never clobber
 
-export class ShowLibrarySync {
+export class LibrarySync<L, W> {
   /** Signature of the library last synchronized with the server (adopted or pushed). null until
       the FIRST `state` is reconciled — the gate that makes cold-load adopt happen exactly once
       and never clobber later in-session edits. */
@@ -25,9 +40,11 @@ export class ShowLibrarySync {
       debounced push that races the connect handshake can't pre-empt the cold-load adopt. */
   private serverStateSeen = false;
 
+  constructor(private readonly codec: LibraryCodec<L, W>) {}
+
   /** Stable signature of a library envelope (for echo/no-op suppression). */
-  librarySig(lib: ShowLibrary): string {
-    return JSON.stringify(serializeShowLibrary(lib));
+  librarySig(lib: L): string {
+    return JSON.stringify(this.codec.serialize(lib));
   }
 
   /** Called from the first `state` handler (before reconcile), so a seed-push isn't gated off. */
@@ -49,21 +66,21 @@ export class ShowLibrarySync {
       content we KEEP it and push it up (`seed`), never letting the server clobber unsynced local
       edits (the node-positions-reset-on-refresh bug). We only ADOPT the server when there was
       nothing local to lose (a cleared / fresh browser — the "survive a localStorage clear" case). */
-  planReconcile(raw: unknown, hasLocalLibrary: boolean, isViewer: boolean): ReconcilePlan {
+  planReconcile(raw: unknown, hasLocalLibrary: boolean, isViewer: boolean): ReconcilePlan<L> {
     if (isViewer) return this.planFollow(raw); // viewer follows the server, every state
     if (this.lastLibrarySig !== null) return { kind: 'noop' }; // already synced — never clobber
     if (hasLocalLibrary) return { kind: 'seed' }; // local is freshest → keep it, push up
-    const incoming = deserializeShowLibrary(raw);
+    const incoming = this.codec.deserialize(raw);
     return incoming ? { kind: 'adopt', library: incoming } : { kind: 'seed' };
   }
 
-  /** Decide whether to follow a server-pushed library (`raw`) — the live `showLibrary` broadcast a
-      viewer receives, or a viewer's `state`. Adopt when it deserializes AND differs from what we
-      last synced (sig-guarded), so a viewer live-follows the editor; the editor ignores its own
-      echo (its current library matches `lastLibrarySig`). Never seeds — a follower is not the
+  /** Decide whether to follow a server-pushed library (`raw`) — the live library broadcast a viewer
+      receives, or a viewer's `state`. Adopt when it deserializes AND differs from what we last
+      synced (sig-guarded), so a viewer live-follows the editor; the editor ignores its own echo
+      (its current library matches `lastLibrarySig`). Never seeds — a follower is not the
       authoring source. */
-  planFollow(raw: unknown): ReconcilePlan {
-    const incoming = deserializeShowLibrary(raw);
+  planFollow(raw: unknown): ReconcilePlan<L> {
+    const incoming = this.codec.deserialize(raw);
     if (!incoming) return { kind: 'noop' };
     if (this.librarySig(incoming) === this.lastLibrarySig) return { kind: 'noop' }; // own echo / unchanged
     return { kind: 'adopt', library: incoming };
@@ -79,7 +96,7 @@ export class ShowLibrarySync {
   /** Whether the current library envelope should be pushed to the server: only once the first
       `state` has been seen (so the cold-load adopt wins the race), and only when it actually
       changed (sig-guarded). Records the new signature when it returns true. */
-  planPush(envelope: ReturnType<typeof serializeShowLibrary>): boolean {
+  planPush(envelope: W): boolean {
     if (!this.serverStateSeen) return false;
     const sig = JSON.stringify(envelope);
     if (sig === this.lastLibrarySig) return false;

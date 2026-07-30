@@ -44,8 +44,7 @@ import {
   type SongLibrary,
   type PersistedSongLibrary,
 } from './persistence';
-import { ShowLibrarySync } from './store/show-library-sync';
-import { SongLibrarySync } from './store/song-library-sync';
+import { LibrarySync } from './store/library-sync';
 import { nid, freshId, reserveIds } from './store/ids';
 import { seedSongs } from './store/seed';
 import { authoredIdsFromLibrary, idsFromSongLibrary } from './store/reserve-library-ids';
@@ -172,13 +171,22 @@ export class ShowsController {
       cold load and pushed on change via {@link songSync}. Hydrated in {@link hydrateFromStorage}. */
   songLibrary = $state<SongLibrary>({ songs: {} });
 
-  /** Server-authoritative show-library controller (cold-load adopt + write-through). */
-  private readonly libSync = new ShowLibrarySync();
-  /** Server-authoritative SONG-library controller — the sibling of {@link libSync}. */
-  private readonly songSync = new SongLibrarySync();
+  /** Server-authoritative show-library controller (cold-load adopt + write-through). The codec is
+      supplied HERE rather than living in the sync module, so one {@link LibrarySync} policy serves
+      both libraries (INIT-02 S16) without the module knowing either library's shape. */
+  private readonly libSync = new LibrarySync({
+    serialize: serializeShowLibrary,
+    deserialize: deserializeShowLibrary,
+  });
+  /** Server-authoritative SONG-library controller — the sibling of {@link libSync}, same policy,
+      its own codec. */
+  private readonly songSync = new LibrarySync({
+    serialize: serializeSongLibrary,
+    deserialize: deserializeSongLibrary,
+  });
   /** Whether boot found REAL local content (a valid library, or a migratable legacy blob). When
       true, the localStorage cache is the freshest source (written on every edit) and the server's
-      cold-load library must not clobber it — see {@link ShowLibrarySync.planReconcile}. */
+      cold-load library must not clobber it — see {@link LibrarySync.planReconcile}. */
   private bootedFromLocalLibrary = false;
   /** Whether boot found a REAL local song library — the song-pool sibling of
       {@link bootedFromLocalLibrary}, so the server's cold-load song library can't clobber unsynced
@@ -566,7 +574,7 @@ export class ShowsController {
   // persists them and broadcasts them on the `state` message. The web ADOPTS each once, on the first
   // state of a cold load (server wins); thereafter the web is the source and pushes every change up.
   // localStorage is a fast cache. The once-per-session gate + echo suppression live in the two
-  // ShowLibrarySync/SongLibrarySync controllers.
+  // LibrarySync controllers (one policy, one codec each).
 
   /** Reconcile BOTH server libraries against ours on a `state` message — the cold-load adopt (server
       wins) / seed-from-cache / viewer-follow path for the show library AND the canonical song pool.
