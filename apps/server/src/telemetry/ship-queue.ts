@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, promises as fsp } from 'node:fs';
 import { writeFileAtomic, writeFileAtomicSync } from '../atomic-file';
+import { ShipHttpError } from './transport';
 
 /**
  * A durable, capped, batched outbox — the reusable ship machinery behind the error Reporter (#122)
@@ -18,11 +19,31 @@ import { writeFileAtomic, writeFileAtomicSync } from '../atomic-file';
  * write for the crash/shutdown path, so a report describing a crash reaches disk before the process
  * dies. The factory reloads the file on construction (retry-on-boot).
  *
- * Isolation: a transport that throws NEVER propagates — the batch stays queued and backs off. The
- * queue reports its own failures only through the injected `log` (never by emitting an error event),
- * so a shipping failure can never recurse into the very stream it ships.
+ * Outcome policy: a transport that throws NEVER propagates, but not every failure means the same
+ * thing. The rejection is classified into three outcomes (see {@link ShipHttpError}):
+ *   - TRANSIENT (5xx / 408 / 429, or any unclassified rejection like DNS or offline) → retain the
+ *     batch and back off. This is the historical behaviour and remains untouched.
+ *   - CREDENTIALS (401 / 403) → enter `blocked`: retain the batch and genuinely STOP shipping. A
+ *     rotated token used to wedge the queue at the 30-minute backoff ceiling, re-POSTing a doomed
+ *     request forever. `flush()` is the operator escape hatch — it re-arms and retries once.
+ *   - POISON (any other permanent status: 400 / 404 / 413 / 422 / …) → append the batch to
+ *     `<path>.deadletter.jsonl` and DROP it, so one malformed item can never block the items behind
+ *     it. Dead-letters are forensic, not a second queue: the file is capped at
+ *     `MAX_DEADLETTER_BYTES` and nothing ever re-ingests it.
+ *
+ * Isolation (unchanged, and load-bearing): the queue still NEVER emits onto the Monitor bus. It
+ * reports its own health only through injected plain functions — `log`, `onStateChange` and
+ * `onDeadLetter`, all exactly as inert as each other — and it is the composition root, not the queue,
+ * that turns those into Monitor events. A shipping failure therefore cannot recurse into the very
+ * stream it ships.
  */
 export type ShipTransport<T> = (items: T[], meta: { dropped: number }) => Promise<void>;
+
+/** Health of the shipping path. `blocked` is the only state that stops the queue shipping at all. */
+export type ShipQueueState = 'ok' | 'retrying' | 'blocked';
+
+/** A dead-letter file is a debugging aid, not an unbounded second queue. */
+const MAX_DEADLETTER_BYTES = 4_000_000;
 
 export interface ShipQueueOptions<T> {
   /** JSONL file the queue is mirrored to (one JSON item per line). */
@@ -43,13 +64,29 @@ export interface ShipQueueOptions<T> {
   persistDebounceMs?: number;
   /** Local-only logger for the queue's own failures (default console.error). */
   log?: (message: string) => void;
+  /**
+   * Health TRANSITIONS only — fires when the state actually changes, never per attempt, so a long
+   * outage produces one event rather than one every backoff tick.
+   */
+  onStateChange?: (state: ShipQueueState, detail: string) => void;
+  /**
+   * Fires on EVERY dead-lettered batch. Deliberately not folded into `onStateChange`: a dead-letter
+   * is an event, not a state, and a transition-only channel would swallow the second one.
+   */
+  onDeadLetter?: (count: number, status: number) => void;
 }
 
 export interface ShipQueue<T> {
   /** Add (or upsert-by-key) an item; enforces caps and schedules a flush. */
   enqueue(item: T): void;
-  /** Ship now, bypassing the cadence; resolves once the attempt settles (never rejects). */
+  /**
+   * Ship now, bypassing the cadence AND the blocked guard; resolves once the attempt settles (never
+   * rejects). This is the operator escape hatch out of `blocked` — a re-baked token recovers without
+   * a process restart.
+   */
   flush(): Promise<void>;
+  /** Current health of the shipping path. */
+  state(): ShipQueueState;
   /** Synchronous atomic disk write of the current queue (crash/shutdown path). */
   persistSync(): void;
   /** Retained item count. */
@@ -90,6 +127,21 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
   let shipInFlight: Promise<void> | null = null;
   let failures = 0;
   let persistChain: Promise<void> = Promise.resolve();
+  let blocked = false;
+  let lastState: ShipQueueState = 'ok';
+  // Dead-letter byte tally. Seeded from a stat on the FIRST append rather than kept purely in memory:
+  // an in-memory-only tally resets every boot, which would let the file grow without bound across
+  // restarts. The stat/append pair races only against another process writing the same file, which
+  // the single-server model does not do — that slack is accepted, not defended with a lock.
+  let deadLetterBytes: number | null = null;
+  const deadLetterPath = `${opts.path}.deadletter.jsonl`;
+
+  /** Emit a health transition. Non-transitions are swallowed here, so no call site has to check. */
+  function setState(next: ShipQueueState, detail: string): void {
+    if (next === lastState) return;
+    lastState = next;
+    opts.onStateChange?.(next, detail);
+  }
 
   function keyFor(item: T): string {
     return opts.keyOf ? opts.keyOf(item) : String(seq++);
@@ -138,14 +190,56 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
   async function tick(): Promise<void> {
     await doShip();
     // Reschedule only while items remain: idle → no wakeups; failed → backoff; ok-but-refilled → base.
-    if (store.size > 0) {
+    // A blocked queue arms no timer at all — that is what makes `blocked` different from a long backoff.
+    if (store.size > 0 && !blocked) {
       const delay = failures > 0 ? Math.min(flushIntervalMs * 2 ** failures, maxBackoffMs) : flushIntervalMs;
       scheduleFlush(delay);
     }
   }
 
-  function doShip(): Promise<void> {
+  /** Drop `keys` from the store. Shared by the success and dead-letter paths. */
+  function removeShipped(keys: string[]): void {
+    for (const k of keys) {
+      bytes -= lengths.get(k) ?? 0;
+      store.delete(k);
+      lengths.delete(k);
+    }
+  }
+
+  /**
+   * Append a poison batch to `<path>.deadletter.jsonl`. Chained onto `persistChain` with async
+   * `appendFile`, so it serializes behind the queue's own writes and never blocks a caller.
+   */
+  async function deadLetter(batch: T[], status: number): Promise<void> {
+    const chunk = batch.map((item) => `${JSON.stringify(item)}\n`).join('');
+    persistChain = persistChain.then(async () => {
+      try {
+        if (deadLetterBytes === null) {
+          deadLetterBytes = await fsp.stat(deadLetterPath).then(
+            (s) => s.size,
+            () => 0, // ENOENT — no prior dead-letter file
+          );
+        }
+        if (deadLetterBytes >= MAX_DEADLETTER_BYTES) {
+          log(`[ship-queue] dead-letter file at cap (${deadLetterBytes} bytes) — dropping ${batch.length} item(s)`);
+          return;
+        }
+        await fsp.appendFile(deadLetterPath, chunk);
+        deadLetterBytes += Buffer.byteLength(chunk);
+      } catch (err) {
+        log(`[ship-queue] dead-letter append failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+    await persistChain;
+  }
+
+  function doShip(force = false): Promise<void> {
     if (shipInFlight) return shipInFlight;
+    // The authoritative blocked guard — and a deliberate BACKSTOP: with the `enqueue` and `tick`
+    // guards in place no timer survives the transition, so nothing currently reaches here while
+    // blocked, and no test can distinguish this line's presence. It stays because it is the one
+    // check that does not depend on every future scheduling site remembering to look at `blocked`.
+    if (blocked && !force) return Promise.resolve();
     if (store.size === 0) return Promise.resolve();
     const keys = [...store.keys()];
     const batch = keys.map((k) => store.get(k)!);
@@ -156,17 +250,36 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       try {
         await opts.transport(batch, { dropped: droppedSnapshot });
         // Success: remove exactly what shipped (items enqueued during the await are retained).
-        for (const k of keys) {
-          bytes -= lengths.get(k) ?? 0;
-          store.delete(k);
-          lengths.delete(k);
-        }
+        removeShipped(keys);
         droppedCount -= droppedSnapshot;
         failures = 0;
+        blocked = false;
         schedulePersist();
+        setState('ok', `shipped ${batch.length} item(s)`);
       } catch (err) {
-        failures++;
-        log(`[ship-queue] ship failed (attempt ${failures}): ${err instanceof Error ? err.message : String(err)}`);
+        const status = err instanceof ShipHttpError ? err.status : null;
+        if (status === 401 || status === 403) {
+          // CREDENTIALS: retrying cannot help. Retain the batch, stop shipping, wait for an operator.
+          // `failures` is deliberately NOT incremented — there is no backoff to escalate.
+          blocked = true;
+          log(`[ship-queue] ship blocked: ingest rejected credentials (${status})`);
+          setState('blocked', `ingest rejected credentials (${status})`);
+        } else if (status !== null && !(err as ShipHttpError).retryable) {
+          // POISON: this batch will be rejected identically forever. Park it and keep draining, so
+          // one bad item cannot hold the whole queue hostage.
+          removeShipped(keys);
+          failures = 0;
+          log(`[ship-queue] dead-lettered ${batch.length} item(s) after ${status} → ${deadLetterPath}`);
+          await deadLetter(batch, status);
+          opts.onDeadLetter?.(batch.length, status);
+          schedulePersist();
+          setState('ok', `dead-lettered ${batch.length} item(s) after ${status}`);
+        } else {
+          // TRANSIENT (or unclassified): exactly the historical path — retain, count, back off.
+          failures++;
+          log(`[ship-queue] ship failed (attempt ${failures}): ${err instanceof Error ? err.message : String(err)}`);
+          setState('retrying', `ship failed (attempt ${failures})`);
+        }
       } finally {
         shipInFlight = null;
       }
@@ -203,15 +316,19 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       lengths.set(k, len);
       enforceCaps();
       schedulePersist();
-      scheduleFlush(flushIntervalMs);
+      // Retention and durability are unaffected by `blocked` — only the wakeup is. Without this
+      // guard a live error stream would re-arm the timer on every single upsert.
+      if (!blocked) scheduleFlush(flushIntervalMs);
     },
     async flush(): Promise<void> {
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
-      await doShip();
-      if (store.size > 0) {
+      // The operator escape hatch: re-arm a blocked queue and give the credentials one more go.
+      blocked = false;
+      await doShip(true);
+      if (store.size > 0 && !blocked) {
         const delay = failures > 0 ? Math.min(flushIntervalMs * 2 ** failures, maxBackoffMs) : flushIntervalMs;
         scheduleFlush(delay);
       }
@@ -224,6 +341,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       }
     },
     size: () => store.size,
+    state: () => (blocked ? 'blocked' : failures > 0 ? 'retrying' : 'ok'),
     dropped: () => droppedCount,
     items: () => [...store.values()],
     dispose(): void {
