@@ -14,6 +14,7 @@ import {
 import { HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe as probeController } from '@ledrums/io';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
+import { resolveEngineMode } from './engine-mode';
 import { VoiceEngineHost } from './voice-engine-host';
 import {
   oscToEvent,
@@ -65,9 +66,11 @@ import {
 const port = Number(process.env.PORT) || WS_PORT;
 const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
 
-/** Engine mode: legacy layer/clip/binding brain (default) or the voice-bus brain.
- * Opt in with `LEDRUMS_ENGINE=voice`; anything else (or unset) keeps legacy. */
-const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
+/** Engine mode: the voice-bus brain (DEFAULT, S7) or the legacy layer/clip/binding brain.
+ * `LEDRUMS_ENGINE=legacy` is the explicit opt-out; unset or anything else runs voice, so every
+ * shipping path (`pnpm start`, `pnpm dev`, the desktop shell) runs the same engine.
+ * The decision itself lives in `engine-mode.ts` so it is testable (S1). */
+const VOICE_MODE = resolveEngineMode(process.env) === 'voice';
 
 // --- remote access: outbound tunnel + room PIN (S3) --------------------------
 

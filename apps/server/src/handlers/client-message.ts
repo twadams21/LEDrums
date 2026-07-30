@@ -339,7 +339,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // Project IO (load/save/list) is handled here, not by the reducer. snapshotPreRisk is
     // fail-closed: `false` (pre-risk write failed) makes the load refuse (S9 — no absent-backups
     // fallback survives; a dropped `backups` field is a compile error, not a silent fail-open).
-    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
+    if (handleProjectMessage(msg, ws, { host, voiceHost, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
 
     // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
     // legacy reducer so every MIDI input adapter obeys the same setting.

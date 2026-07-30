@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { defaultProject, voice } from '@ledrums/core';
+import { buildPixelModel, defaultProject, voice, type Project, type ProjectPatch } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
+import { propagateToVoiceHost } from './handlers/voice-input';
 import { OutputManager } from './output-manager';
 import { FRAME_FAULT_REPORT_WINDOW_MS, VoiceEngineHost } from './voice-engine-host';
 
@@ -556,6 +557,102 @@ describe('VoiceEngineHost', () => {
         detail: expect.stringContaining('reason='),
       }),
     );
+  });
+});
+
+// --- INIT-01 S5: transport + whole-project authority ------------------------
+
+/** A device patch whose kit differs from the default (halved kick hoop counts), so adopting it is
+ *  observable in the rebuilt pixel model. Carries only the three device slices, like a real
+ *  pasted patch — deliberately NO composition, which is the point of the tests below. */
+function devicePatch(): ProjectPatch {
+  const base = defaultProject();
+  base.kit.drums[0]!.hoops = base.kit.drums[0]!.hoops!.map((h) => ({ ...h, pixelCount: 98 }));
+  return { name: 'Patched', kit: base.kit, inputMap: base.inputMap, output: base.output };
+}
+
+/** Beat advanced over `steps` fixed ticks — what the LOOP actually read, not what a field says. */
+function beatOver(host: VoiceEngineHost, steps: number): number {
+  const before = host.getStats().engine.beat;
+  for (let i = 0; i < steps; i++) host.step(STEP);
+  return host.getStats().engine.beat - before;
+}
+
+describe('VoiceEngineHost transport authority (S5)', () => {
+  it('a setTransport message changes the BPM the render loop reads, not just a field', () => {
+    const { host } = makeHost();
+    // 120 ticks of 1000/120ms = exactly 1000ms. At 120bpm that is 2 beats.
+    expect(beatOver(host, 120)).toBeCloseTo(2, 5);
+
+    propagateToVoiceHost(host, { t: 'setTransport', bpm: 240 });
+
+    expect(host.getProject().composition.transport.bpm).toBe(240);
+    // The field write is exactly what already LOOKED right while being inert, so assert the clock:
+    // the same 1000ms of ticks must now advance twice as far.
+    expect(beatOver(host, 120)).toBeCloseTo(4, 5);
+  });
+
+  it('survives adoptPatch: the transport edit still reaches the loop after the project object is rebuilt', () => {
+    const { host, project } = makeHost();
+
+    host.adoptPatch(devicePatch());
+    // adoptPatch rebuilds `project` by spread — the shared-reference channel the legacy reducer
+    // used to deliver transport edits through is now severed by construction.
+    expect(host.getProject()).not.toBe(project);
+
+    propagateToVoiceHost(host, { t: 'setTransport', bpm: 60, beatsPerBar: 3 });
+
+    expect(host.getProject().composition.transport).toEqual({ bpm: 60, playing: true, beatsPerBar: 3 });
+    expect(beatOver(host, 120)).toBeCloseTo(1, 5);
+  });
+
+  it('playing:false stops the beat clock; playing:true resumes it', () => {
+    const { host } = makeHost();
+
+    propagateToVoiceHost(host, { t: 'setTransport', playing: false });
+    expect(beatOver(host, 120)).toBe(0);
+
+    propagateToVoiceHost(host, { t: 'setTransport', playing: true });
+    expect(beatOver(host, 120)).toBeCloseTo(2, 5);
+  });
+
+  it('a partial setTransport leaves the untouched transport fields alone', () => {
+    const { host } = makeHost();
+    propagateToVoiceHost(host, { t: 'setTransport', bpm: 90 });
+    expect(host.getProject().composition.transport).toEqual({ bpm: 90, playing: true, beatsPerBar: 4 });
+  });
+});
+
+describe('VoiceEngineHost.adoptProject (S5 load authority)', () => {
+  /** A whole loaded document: new name, new authored transport, new kit geometry. */
+  function loaded(): Project {
+    const p = defaultProject();
+    p.name = 'Loaded';
+    p.composition.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
+    p.kit.drums[0]!.hoops = p.kit.drums[0]!.hoops!.map((h) => ({ ...h, pixelCount: 64 }));
+    return p;
+  }
+
+  it('adopts the whole document INCLUDING composition/transport (adoptPatch carries neither)', () => {
+    const { host } = makeHost();
+    const file = loaded();
+
+    host.adoptProject(file);
+
+    expect(host.getProject()).toBe(file); // by reference — the shared-object autosave invariant
+    expect(host.getProject().composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
+    // …and the loop reads it: playing:false means the beat clock does not advance at all.
+    expect(beatOver(host, 120)).toBe(0);
+  });
+
+  it('rebuilds the pixel model from the adopted kit', () => {
+    const { host } = makeHost();
+    const before = host.getModel().pixelCount;
+
+    host.adoptProject(loaded());
+
+    expect(host.getModel().pixelCount).toBe(buildPixelModel(loaded().kit).pixelCount);
+    expect(host.getModel().pixelCount).not.toBe(before);
   });
 });
 

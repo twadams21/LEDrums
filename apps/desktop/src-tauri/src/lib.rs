@@ -376,15 +376,9 @@ fn spawn_sidecar(
             projects_dir.to_string_lossy().to_string(),
         )
         .env("LEDRUMS_WEB_ROOT", web_root.to_string_lossy().to_string())
-        // The desktop app is the drummer's live rig, which runs the voice-bus engine. The server
-        // defaults to the legacy engine unless LEDRUMS_ENGINE=voice, so set it here (matching how
-        // `pnpm dev` is run) — otherwise the packaged app silently runs a different engine than
-        // dev (patch-graph edits don't drive routing, triggers don't fire, etc.). Respect an
-        // explicit override from the launching environment for debugging.
-        .env(
-            "LEDRUMS_ENGINE",
-            std::env::var("LEDRUMS_ENGINE").unwrap_or_else(|_| "voice".into()),
-        )
+        // Engine: the server defaults to the voice-bus engine (INIT-01 S7), which is what the
+        // drummer's live rig runs, so the shell forces nothing here. A LEDRUMS_ENGINE=legacy
+        // override on the launching environment reaches the sidecar by normal env inheritance.
         .env("LEDRUMS_APP_VERSION", env!("CARGO_PKG_VERSION"))
         // Hand the sidecar the token we already hold, so the shell never has to scrape it back out
         // of stdout to authenticate the MIDI bridge or the app window (#139). The server prefers an
