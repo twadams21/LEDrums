@@ -84,25 +84,41 @@ function readStoredSongLibrary(): unknown {
   return readStoredKey(SONGS_STORAGE_KEY);
 }
 
-/** Write the versioned library envelope. Best-effort — quota / private-mode failures are swallowed
-    (persistence must never throw into the render loop or lifecycle). */
-export function writeStoredLibrary(payload: PersistedShowLibrary): void {
-  if (typeof localStorage === 'undefined') return;
+/** What a local write actually did. A write still NEVER throws — but it no longer lies by
+    silence either: the caller can see that the bytes did not land, and `reason` names the cause
+    precisely enough to tell the user (a boolean could not). `quota` is the origin's storage
+    budget, `unavailable` is SSR / a browser with localStorage switched off, `error` is anything
+    else (a serialisation failure, a security exception). */
+export type StorageWriteResult = { ok: true } | { ok: false; reason: 'quota' | 'unavailable' | 'error'; message: string };
+
+/** Chrome/Safari raise `QuotaExceededError`; Firefox raises `NS_ERROR_DOM_QUOTA_REACHED`. */
+function reasonFor(err: unknown): 'quota' | 'error' {
+  const name = err instanceof Error ? err.name : '';
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' ? 'quota' : 'error';
+}
+
+/** JSON-write one localStorage key, reporting the outcome. The try/catch stays exactly where it
+    was: persistence must still never throw into the render loop or a lifecycle hook. */
+function writeStoredKey(key: string, payload: unknown): StorageWriteResult {
+  if (typeof localStorage === 'undefined') {
+    return { ok: false, reason: 'unavailable', message: 'localStorage is not available' };
+  }
   try {
-    localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* ignore */
+    localStorage.setItem(key, JSON.stringify(payload));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: reasonFor(err), message: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/** Write the versioned SONG-library envelope (best-effort, mirrors {@link writeStoredLibrary}). */
-export function writeStoredSongLibrary(payload: PersistedSongLibrary): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(SONGS_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* ignore */
-  }
+/** Write the versioned library envelope. Never throws; returns whether the bytes landed. */
+export function writeStoredLibrary(payload: PersistedShowLibrary): StorageWriteResult {
+  return writeStoredKey(SHOWS_STORAGE_KEY, payload);
+}
+
+/** Write the versioned SONG-library envelope (mirrors {@link writeStoredLibrary}). */
+export function writeStoredSongLibrary(payload: PersistedSongLibrary): StorageWriteResult {
+  return writeStoredKey(SONGS_STORAGE_KEY, payload);
 }
 
 /** The store-side surface the shows controller depends on — injected so it stays free of the
