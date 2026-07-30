@@ -8,9 +8,9 @@
     WS-send + viewer gating; R22 gives the spec's separately-named "controller test" controller its
     own module so the five slices read as five controllers. Reactivity for the active pattern lives on
     the server-reported controller status (owned by ControllerMonitor), so this reads it through the
-    injected {@link ControllerTestHost} rather than duplicating that state — one source of truth. The
-    store delegates its public surface (`controllerTakeover` / `setControllerTestData` / `backToLive`)
-    to this via getter + forwarders, so callers/tests are unchanged. */
+    injected {@link ControllerTestHost} rather than duplicating that state — one source of truth.
+    Published directly as `store.controllerTest` (INIT-02 S3) — callers reach `takeover` /
+    `setTestData` / `backToLive` on this object; the store keeps no forwarder layer. */
 
 import type { ClientMessage, ControllerTestPattern } from '../ws/protocol-types';
 

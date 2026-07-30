@@ -71,8 +71,8 @@
         the adopted controller's IP has drifted from where packets are being sent. */
     outputHost?: string;
     /** Active built-in test pattern (S49), or null in normal LIVE mode. Non-null lights the LOUD
-        takeover banner + highlights the running control. Server-authoritative (mirrors the store's
-        `controllerTakeover`), so every watcher agrees. Defaults null for the styleguide stub. */
+        takeover banner + highlights the running control. Server-authoritative (mirrors
+        `store.controllerTest.takeover`), so every watcher agrees. Defaults null for the styleguide stub. */
     takeover?: ControllerTestPattern | null;
     /** The featured network adapter (the NIC the output is bound to, else the first) — drives the
         "set the A4 to …" recommendation shown when nothing is adopted or the controller is lost.

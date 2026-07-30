@@ -644,7 +644,7 @@ export class TriggerLab {
   presence = $state<{ editorId: string | null; youAreEditor: boolean; clientCount: number } | null>(null);
   /** Local project backups (#123), newest-first — the server's reply to `listBackups`, rendered by
       the Backups dialog. Populated on demand via {@link refreshBackups}; empty until then. Public +
-      settable like {@link presence}/{@link controllerStatus} so the dev shot-seam can seed it. */
+      settable like {@link presence}/`controllerMonitor.status` so the dev shot-seam can seed it. */
   backups = $state<BackupSnapshotMeta[]>([]);
   /** latest binary RGB frame from the server engine (null until one arrives) —
       the kit preview shows this instead of the local composite when connected. */
@@ -3318,7 +3318,7 @@ export class TriggerLab {
 
   // --- CC SOURCE node settings (S37) ---------------------------------------
   // The node's controller number + channel filter drive an engine CC-table read at sample
-  // time. MIDI-learn reuses the shared learn flow (see startMidiLearn + applyCcLearn).
+  // time. MIDI-learn reuses the shared learn flow (see midi.startLearn + applyCcLearn).
 
   /** The CC source node's controller number (default 1). */
   ccNodeController(node: GraphNode): number {
