@@ -36,7 +36,9 @@ import type { AdmissionThrottle, ThrottleAlert } from './admission-throttle';
 //     rather than "incorrect PIN". Each ESCALATION (never each attempt) raises one Monitor
 //     event: 'Repeated PIN refusals', or 'Remote access cooling down (global)' when the
 //     server-wide tier trips. That global tier is attacker-operable — a sustained flood can
-//     hold first-time remote peers out — so it is the alert to act on; peers that have already
+//     hold first-time remote peers out — so it is the alert to act on (though when a failure
+//     trips both tiers at once the peer alert wins the slot, and the global trip can go
+//     unreported for up to one 60s window); peers that have already
 //     connected successfully this run are exempt from it, and it can be disabled outright by
 //     constructing the throttle with `globalFailures: Infinity`, no revert required.
 //

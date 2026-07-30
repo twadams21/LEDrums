@@ -86,6 +86,9 @@ export interface AdmissionThrottle {
  * Residual, accepted: a local process that can reach the loopback port could forge BOTH
  * cf-connecting-ip and cdn-loop to mint fresh buckets. It stays bounded by maxTrackedPeers
  * eviction and by the global tier, and a hostile local process already outranks this control.
+ * The same forgery can instead TARGET an existing `cf:<ip>` bucket and cool a legitimate
+ * drummer's key (known-good status exempts only the global tier) — same trust boundary,
+ * same acceptance: tunnel-origin traffic cannot do this (cloudflared overwrites the header).
  */
 export function peerKeyFrom(
   remoteAddress: string | null | undefined,
