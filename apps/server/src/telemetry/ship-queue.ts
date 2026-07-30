@@ -56,6 +56,12 @@ export interface ShipQueueOptions<T> {
   maxItems?: number;
   /** Approx max retained bytes (serialized) before drop-oldest (default 2,000,000). */
   maxBytes?: number;
+  /**
+   * Max serialized bytes per SHIPPED batch (default 900,000). Distinct from `maxBytes`, which caps
+   * what is RETAINED: retention can legitimately exceed what one HTTP body may carry, so a batch is
+   * cut to an insertion-ordered prefix that fits. Keep this under the ingest Worker's own body cap.
+   */
+  maxBatchBytes?: number;
   /** Base flush cadence when non-empty (default 30,000ms). */
   flushIntervalMs?: number;
   /** Backoff ceiling (default 30 min). */
@@ -102,14 +108,23 @@ export interface ShipQueue<T> {
 const DEFAULTS = {
   maxItems: 200,
   maxBytes: 2_000_000,
+  maxBatchBytes: 900_000,
   flushIntervalMs: 30_000,
   maxBackoffMs: 30 * 60_000,
   persistDebounceMs: 1_000,
 };
 
+/**
+ * A ship can now leave items behind, so a partial success reschedules on this instead of the full
+ * flush interval — a 100-item backlog drains in ~100s rather than ~50 minutes. Failure paths keep
+ * their backoff, and the blocked guard outranks this like every other reschedule site.
+ */
+const DRAIN_DELAY_MS = 1_000;
+
 export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
   const maxItems = opts.maxItems ?? DEFAULTS.maxItems;
   const maxBytes = opts.maxBytes ?? DEFAULTS.maxBytes;
+  const maxBatchBytes = opts.maxBatchBytes ?? DEFAULTS.maxBatchBytes;
   const flushIntervalMs = opts.flushIntervalMs ?? DEFAULTS.flushIntervalMs;
   const maxBackoffMs = opts.maxBackoffMs ?? DEFAULTS.maxBackoffMs;
   const persistDebounceMs = opts.persistDebounceMs ?? DEFAULTS.persistDebounceMs;
@@ -187,14 +202,44 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
     (flushTimer as { unref?: () => void }).unref?.();
   }
 
+  /**
+   * Delay before the next attempt, given items remain. Failed → the existing backoff curve, untouched.
+   * Otherwise the last attempt settled without failing and still left a remainder — which since the
+   * byte cut is the normal case, not an anomaly — so drain promptly rather than idling a full
+   * interval per batch. (A ship that merely got refilled during its own await lands here too; a fast
+   * drain is the wanted behaviour in that case as well.)
+   */
+  function rescheduleDelay(): number {
+    if (failures > 0) return Math.min(flushIntervalMs * 2 ** failures, maxBackoffMs);
+    return DRAIN_DELAY_MS;
+  }
+
   async function tick(): Promise<void> {
     await doShip();
-    // Reschedule only while items remain: idle → no wakeups; failed → backoff; ok-but-refilled → base.
+    // Reschedule only while items remain: idle → no wakeups; failed → backoff; partial → drain fast.
     // A blocked queue arms no timer at all — that is what makes `blocked` different from a long backoff.
-    if (store.size > 0 && !blocked) {
-      const delay = failures > 0 ? Math.min(flushIntervalMs * 2 ** failures, maxBackoffMs) : flushIntervalMs;
-      scheduleFlush(delay);
+    if (store.size > 0 && !blocked) scheduleFlush(rescheduleDelay());
+  }
+
+  /**
+   * The insertion-ordered PREFIX of the store that fits in one body, by the cached per-item lengths.
+   * The report queue retains up to 2MB against the Worker's 1MB body cap, so shipping the whole store
+   * was a straightforwardly reachable permanent 413; cutting here makes that unreachable and shrinks
+   * a poison batch's blast radius at the same time.
+   *
+   * At least one item always ships: an item larger than the whole budget goes alone, and the Worker's
+   * own cap becomes the authority — S3 then dead-letters it rather than wedging on it.
+   */
+  function batchKeys(): string[] {
+    const picked: string[] = [];
+    let total = 0;
+    for (const k of store.keys()) {
+      const len = lengths.get(k) ?? 0;
+      if (picked.length > 0 && total + len > maxBatchBytes) break;
+      picked.push(k);
+      total += len;
     }
+    return picked;
   }
 
   /** Drop `keys` from the store. Shared by the success and dead-letter paths. */
@@ -241,7 +286,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
     // check that does not depend on every future scheduling site remembering to look at `blocked`.
     if (blocked && !force) return Promise.resolve();
     if (store.size === 0) return Promise.resolve();
-    const keys = [...store.keys()];
+    const keys = batchKeys();
     const batch = keys.map((k) => store.get(k)!);
     const droppedSnapshot = droppedCount;
     // Wrap in an async IIFE so a SYNCHRONOUS throw from the transport is normalized to a rejection
@@ -328,10 +373,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       // The operator escape hatch: re-arm a blocked queue and give the credentials one more go.
       blocked = false;
       await doShip(true);
-      if (store.size > 0 && !blocked) {
-        const delay = failures > 0 ? Math.min(flushIntervalMs * 2 ** failures, maxBackoffMs) : flushIntervalMs;
-        scheduleFlush(delay);
-      }
+      if (store.size > 0 && !blocked) scheduleFlush(rescheduleDelay());
     },
     persistSync(): void {
       try {

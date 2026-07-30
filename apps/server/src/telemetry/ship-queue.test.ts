@@ -8,6 +8,8 @@ import { ShipHttpError } from './transport';
 interface Item {
   key: string;
   count: number;
+  /** Ballast, so a test can build items of a known serialized size for the byte-budget cases (S4). */
+  pad?: string;
 }
 
 let dir: string;
@@ -293,6 +295,86 @@ describe('createShipQueue outcome policy (#137 INIT-11 S3)', () => {
     q.enqueue({ key: 'a', count: 1 });
     await q.flush();
     expect(existsSync(deadPath())).toBe(false);
+    q.dispose();
+  });
+});
+
+describe('createShipQueue byte-budgeted batches (#137 INIT-11 S4)', () => {
+  /** ~200 bytes serialized, so `maxBatchBytes: 500` fits exactly two per batch. */
+  const fat = (key: string): Item => ({ key, count: 1, pad: 'x'.repeat(160) });
+
+  it('cuts a batch at the byte budget, in insertion order', async () => {
+    const transport = vi.fn<ShipTransport<Item>>().mockResolvedValue(undefined);
+    const q = createShipQueue<Item>({ path: path(), transport, keyOf: (i) => i.key, maxBatchBytes: 500, persistDebounceMs: 60_000 });
+    for (let n = 1; n <= 10; n++) q.enqueue(fat(`k${n}`));
+    await q.flush();
+
+    const first = transport.mock.calls[0]![0];
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBeLessThan(10); // it was genuinely CUT, not shipped whole
+    expect(first.map((i) => i.key)).toEqual(['k1', 'k2']); // the oldest, in insertion order
+    expect(q.size()).toBe(10 - first.length); // the remainder is retained, not lost
+    q.dispose();
+  });
+
+  it('always ships at least one item, even one bigger than the whole budget', async () => {
+    const transport = vi.fn<ShipTransport<Item>>().mockResolvedValue(undefined);
+    const q = createShipQueue<Item>({ path: path(), transport, keyOf: (i) => i.key, maxBatchBytes: 50, persistDebounceMs: 60_000 });
+    q.enqueue(fat('huge'));
+    await q.flush();
+    // The Worker's own cap is then the authority, and S3 dead-letters it — an item can never wedge
+    // the queue by being individually un-shippable.
+    expect(transport.mock.calls[0]![0].map((i) => i.key)).toEqual(['huge']);
+    expect(q.size()).toBe(0);
+    q.dispose();
+  });
+
+  it('drains the remainder on the short delay, not the full flush interval', async () => {
+    vi.useFakeTimers();
+    const transport = vi.fn<ShipTransport<Item>>().mockResolvedValue(undefined);
+    const q = createShipQueue<Item>({ path: path(), transport, keyOf: (i) => i.key, maxBatchBytes: 500, flushIntervalMs: 30_000, persistDebounceMs: 600_000 });
+    for (let n = 1; n <= 6; n++) q.enqueue(fat(`k${n}`));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(transport).toHaveBeenCalledTimes(1);
+
+    // A 100-item backlog must drain in ~100s, not ~50 minutes.
+    await vi.advanceTimersByTimeAsync(999);
+    expect(transport).toHaveBeenCalledTimes(1); // not yet
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport).toHaveBeenCalledTimes(2); // at exactly +1_000ms
+    q.dispose();
+  });
+
+  it('a blocked queue does not drain — the S3 guard outranks the drain delay', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const transport = vi
+      .fn<ShipTransport<Item>>()
+      .mockResolvedValueOnce(undefined) // partial ship succeeds, leaving a remainder
+      .mockRejectedValueOnce(new ShipHttpError(401)) // the drain attempt is rejected
+      .mockResolvedValue(undefined);
+    const q = createShipQueue<Item>({ path: path(), transport, keyOf: (i) => i.key, maxBatchBytes: 500, flushIntervalMs: 30_000, persistDebounceMs: 600_000 });
+    for (let n = 1; n <= 6; n++) q.enqueue(fat(`k${n}`));
+    await vi.advanceTimersByTimeAsync(30_000); // call 1: partial ship
+    await vi.advanceTimersByTimeAsync(1_000); // call 2: drain, 401 → blocked
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(q.state()).toBe<ShipQueueState>('blocked');
+
+    // No third call: DRAIN_DELAY_MS must not sneak past the blocked guard.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(transport).toHaveBeenCalledTimes(2);
+    q.dispose();
+  });
+
+  it('the dropped counter still ships with the FIRST batch and resets only on its success', async () => {
+    const transport = vi.fn<ShipTransport<Item>>().mockResolvedValue(undefined);
+    const q = createShipQueue<Item>({ path: path(), transport, maxItems: 6, maxBatchBytes: 500, persistDebounceMs: 60_000 }); // append-only
+    for (let n = 1; n <= 8; n++) q.enqueue(fat(`k${n}`));
+    expect(q.dropped()).toBe(2);
+    await q.flush();
+    expect(transport.mock.calls[0]![1]).toEqual({ dropped: 2 }); // rides the first (cut) batch
+    expect(q.dropped()).toBe(0); // and resets on ITS success, not the whole drain's
+    expect(q.size()).toBeGreaterThan(0); // a remainder is genuinely still queued
     q.dispose();
   });
 });
