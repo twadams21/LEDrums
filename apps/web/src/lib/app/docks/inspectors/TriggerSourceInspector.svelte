@@ -30,6 +30,7 @@
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import InspectorHeader from '../../../ui/InspectorHeader.svelte';
   import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
   import ReadRow from './ReadRow.svelte';
   import DrumZonesList from './DrumZonesList.svelte';
@@ -108,21 +109,20 @@
   );
 </script>
 
-<header class="ihead">
-  <div class="titles">
-    <h3>
-      {store.selectedPad
-        ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
-        : gkey
-          ? store.graphLabel(gkey)
-          : 'Trigger'}
-    </h3>
-    <span class="sub">graph input</span>
-  </div>
-  {#if gkey}
-    <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
-  {/if}
-</header>
+<InspectorHeader
+  title={store.selectedPad
+    ? `${store.selectedPad.drumLabel} · ${store.selectedPad.zoneLabel}`
+    : gkey
+      ? store.graphLabel(gkey)
+      : 'Trigger'}
+  sub="graph input"
+>
+  {#snippet trailing()}
+    {#if gkey}
+      <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
+    {/if}
+  {/snippet}
+</InspectorHeader>
 <div class="trigbody">
   <p class="hint">Every hit enters here — declare what fires this graph, then wire it to a block on the canvas.</p>
   <Field layout="row" label="Trigger source">
@@ -256,28 +256,6 @@
 </div>
 
 <style>
-  .ihead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-  }
   .trigbody {
     display: flex;
     flex-direction: column;

@@ -4,6 +4,7 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { SectionRecall } from '../../recall';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
+  import InspectorHeader from '../../../ui/InspectorHeader.svelte';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -29,13 +30,7 @@
   ];
 </script>
 
-<header class="ihead">
-  <div class="titles">
-    <Eyebrow>Section</Eyebrow>
-    <h3>{sectionName}</h3>
-    <span class="sub">{songName} · #{sectionIdx + 1}</span>
-  </div>
-</header>
+<InspectorHeader eyebrow="Section" title={sectionName} sub={`${songName} · #${sectionIdx + 1}`} />
 <div class="sectionbody">
   <Field layout="row" label="Name" hint="display label">
     <CommitInput
@@ -89,28 +84,6 @@
 </div>
 
 <style>
-  .ihead {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .titles {
-    flex: 1;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .sub {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-  }
   .k {
     color: var(--text-faint);
     text-transform: uppercase;
