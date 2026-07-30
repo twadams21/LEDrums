@@ -26,8 +26,8 @@ function loadEnvLocal() {
 
 loadEnvLocal();
 
-// Engine: the server itself now defaults to the voice engine (INIT-01 S7), so dev forces nothing —
-// use LEDRUMS_ENGINE=legacy (shell or .env.local) to run the legacy engine instead.
+// Engine: there is one (INIT-01 S12 deleted the legacy stack), so dev forces nothing and there is
+// nothing to switch.
 
 const child = spawnSync('pnpm', ['--parallel', '--filter', '@ledrums/server', '--filter', '@ledrums/web', 'run', 'dev'], {
   cwd: repoRoot,

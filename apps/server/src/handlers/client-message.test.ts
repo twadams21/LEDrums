@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultProject, getHoopPixelRange, voice } from '@ledrums/core';
-import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
 import type { Autosaver } from '../autosave';
@@ -74,12 +73,9 @@ function nullController(): ClientMessageDeps<FakeSocket>['controller'] {
 
 function harness(opts: TunnelHarnessOpts = {}) {
   const clients = new ClientRegistry<FakeSocket>();
-  // The shape main.ts builds since S8: the voice host owns the one live Project, and the legacy
-  // host — alive only behind the LEDRUMS_ENGINE=legacy opt-out — is constructed over that SAME
-  // object as a write-never follower. The harness always wires the follower (the stricter of the
-  // two shipped configurations) so every test also exercises the shared-identity invariant.
+  // The shape main.ts builds since S12: ONE host, owning the one live Project, the render loop and
+  // the output. There is no second engine to wire and no mode to pick.
   const voiceHost = new VoiceEngineHost(defaultProject());
-  const legacyHost = new EngineHost(voiceHost.getProject());
   const autosaver = fakeAutosaver();
   const showLibraryAutosaver = fakeAutosaver();
   const songLibraryAutosaver = fakeAutosaver();
@@ -114,7 +110,6 @@ function harness(opts: TunnelHarnessOpts = {}) {
   const handleInner = createClientMessageHandler<FakeSocket>({
     clients,
     voiceHost,
-    legacyHost,
     autosaver,
     showLibraryAutosaver,
     songLibraryAutosaver,
@@ -164,7 +159,7 @@ function harness(opts: TunnelHarnessOpts = {}) {
 
   voiceHost.setMonitor(monitor);
 
-  return { clients, voiceHost, legacyHost, autosaver, showLibraryAutosaver, songLibraryAutosaver, slot, handle, join, monitor };
+  return { clients, voiceHost, autosaver, showLibraryAutosaver, songLibraryAutosaver, slot, handle, join, monitor };
 }
 
 function voiceEffect(id: string): voice.EffectDef {
@@ -503,18 +498,21 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid routing)' }));
   });
 
-  it('re-points the legacy follower at the SAME object — a paste never splits the identity (S8)', () => {
-    const { handle, join, voiceHost, legacyHost } = harness();
+  it('the autosaver and the wire read the SAME object the paste produced (one source of truth)', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
-    expect(legacyHost.engine.getProject()).toBe(voiceHost.getProject()); // shared by construction
 
     handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
 
-    // adoptPatch REBUILDS the project object by spread — the exact point identity is lost if the
-    // follower is not re-pointed. Object identity, not deep equality: two equal copies would still
-    // be two sources of truth, which is what made the autosaver persist stale state.
-    expect(voiceHost.getProject().name).toBe('Rig B');
-    expect(legacyHost.engine.getProject()).toBe(voiceHost.getProject());
+    // S8 asserted this as object identity against the legacy FOLLOWER; S12 deleted the follower, so
+    // what remains to assert is the property the identity existed to protect — what the wire
+    // describes is what the store holds. (Deep equality, not `toBe`: this harness's socket really
+    // encodes and decodes, so the frame is a wire copy by construction. The identity form of this
+    // assertion lives in store-authority.test.ts, whose sink keeps the object.)
+    const applied = voiceHost.getProject();
+    expect(applied.name).toBe('Rig B');
+    const broadcast = editor.sent.filter((m): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state').at(-1);
+    expect(broadcast!.project).toEqual(applied);
   });
 
   it('ignores a viewer setProject (read-only gate), applies once taken over', () => {
@@ -737,14 +735,14 @@ describe('identifyHoop message (E1)', () => {
     expect(voiceHost.getIdentifyRange()).toEqual(expected);
   });
 
-  it('never reaches the legacy follower — the render host is the store, write-never is write-never (S8)', () => {
-    const { handle, join, voiceHost, legacyHost } = harness();
+  it('maps a SECOND (drumId, hoop) pair independently — the range follows the request', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     handle({ t: 'identifyHoop', drumId: 'tom1', hoop: 1, durationS: 0.5 }, editor);
     expect(voiceHost.getIdentifyRange()).toEqual(getHoopPixelRange(voiceHost.getModel(), 'tom1', 1));
-    // Pre-S8 this was `(voiceHost ?? host).identifyHoop` — a two-armed route. The legacy host owns
-    // its own OutputManager, so a stray identify landing there would flash nothing at all.
-    expect(legacyHost.getIdentifyRange()).toBeNull();
+    // Pre-S8 this route was `(voiceHost ?? host).identifyHoop` — two arms, two OutputManagers, and
+    // an identify that flashed nothing if it landed on the wrong one. One host, one range.
+    expect(voiceHost.getIdentifyRange()).not.toEqual(getHoopPixelRange(voiceHost.getModel(), 'snare', 2));
   });
 
   it('durationS <= 0 clears any active identify', () => {
@@ -804,18 +802,20 @@ describe('kit-global / drum-color / per-hoop apply (P1 — end-to-end through th
     expect(editor.has('state')).toBe(true);
   });
 
-  it('an in-place structural edit is visible through the legacy follower without any legacy write (S8)', () => {
-    const { handle, join, voiceHost, legacyHost } = harness();
+  it('an in-place structural edit reaches the wire through the same object (S8)', () => {
+    const { handle, join, voiceHost } = harness();
     const editor = join();
     const target = voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount + 7;
 
     handle({ t: 'setHoopConfig', drumId: 'snare', hoopIndex: 2, pixelCount: target }, editor);
 
-    // ONE reducer wrote ONE object; the follower reads the edit because it holds that same object,
-    // not because a second reducer arm replayed it. This is the mechanism divergent-change-0001
-    // asked for: no arm can drift from the other when there is no other arm.
-    expect(voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
-    expect(legacyHost.engine.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
+    // ONE reducer wrote ONE object, in place — and the `state` the clients receive describes that
+    // write, with no second arm that could have replayed it differently. This is the mechanism
+    // divergent-change-0001 asked for: no arm can drift from the other when there is no other arm.
+    const snare = () => voiceHost.getProject().kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount;
+    expect(snare()).toBe(target);
+    const broadcast = editor.sent.filter((m): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state').at(-1);
+    expect(broadcast!.project.kit.drums.find((d) => d.id === 'snare')!.hoops![1]!.pixelCount).toBe(target);
   });
 
   it('a viewer cannot mutate the kit (setHoopConfig is editor-gated, deny-by-default)', () => {

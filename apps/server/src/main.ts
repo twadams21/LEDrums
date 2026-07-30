@@ -13,8 +13,6 @@ import {
 } from '@ledrums/core';
 import { HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe as probeController } from '@ledrums/io';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { EngineHost } from './engine-host';
-import { resolveEngineMode } from './engine-mode';
 import { VoiceEngineHost } from './voice-engine-host';
 import {
   oscToEvent,
@@ -65,13 +63,6 @@ import {
 
 const port = Number(process.env.PORT) || WS_PORT;
 const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
-
-/** Engine mode. Since S8 this no longer selects a render brain — the voice host is BOTH the sole
- * store and the sole render loop. `LEDRUMS_ENGINE=legacy` now does exactly one thing: it keeps the
- * legacy {@link EngineHost} constructed as an inert shared-reference follower so S8 is a pure
- * wiring change that reverts without code loss. S12 deletes the flag and the class together.
- * The decision itself lives in `engine-mode.ts` so it is testable (S1). */
-const VOICE_MODE = resolveEngineMode(process.env) === 'voice';
 
 // --- remote access: outbound tunnel + room PIN (S3) --------------------------
 
@@ -176,20 +167,12 @@ installProcessErrorCapture({
 const projectLoad = resolveInitialProject({ name: LIVE_PROJECT, dir: resolveProjectsDir(process.env) });
 const project0 = projectLoad.project;
 
-/** THE store (S8). Constructed UNCONDITIONALLY: it owns the one live Project object, the live
- * render, and the output. Every authoritative read below goes through it and
- * `applyStructuralMessage` is the only reducer that writes it — divergent-change-0001 was two
- * reducers writing one project, and this is the seam that closes it. */
+/** THE store, and THE render loop (S8/S12). It owns the one live Project object; every
+ * authoritative read below goes through it and `applyStructuralMessage` is the only reducer that
+ * writes it. divergent-change-0001 was two reducers writing one project across two engines; after
+ * S12 there is no second engine to choose, no mode to resolve, and no branch to keep in sync. */
 const voiceHost = new VoiceEngineHost(project0);
 
-/** The legacy render host, alive ONLY behind the explicit `LEDRUMS_ENGINE=legacy` opt-out (S12
- * deletes it). Constructed over `voiceHost.getProject()` — the SAME object — so the
- * shared-reference invariant this file used to document in prose now holds BY CONSTRUCTION.
- * It is write-never: nothing computes a mutation through it, and it is never started; the two
- * places the voice host swaps its project object (adoptProject on load, adoptPatch on a paste)
- * re-point this engine at the new one, so `legacyHost.engine.getProject() === voiceHost.getProject()`
- * holds at every observable moment. Asserted in store-authority.test.ts, not assumed. */
-const legacyHost = VOICE_MODE ? null : new EngineHost(voiceHost.getProject());
 
 /** Live persistence: debounce-autosave the authoritative project to {@link LIVE_PROJECT}
  * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
@@ -340,7 +323,9 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
       envelope: (origin) => ({
         machine,
         version,
-        engineMode: VOICE_MODE ? 'voice' : 'legacy',
+        // One engine since S12 — the field stays on the wire (the ingest Worker's envelope contract)
+        // but there is no longer a mode to report.
+        engineMode: 'voice',
         platform: osPlatform,
         osRelease,
         session,
@@ -389,7 +374,6 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
 }
 
 for (const event of startupDiagnostics({
-  voiceMode: VOICE_MODE,
   port,
   oscPort,
   oscHosts: lanAddresses(),
@@ -547,13 +531,11 @@ function isVersionedBlob(v: unknown): v is ShowLibraryBlob & SongLibraryBlob {
  *
  * S8 note: this only ever re-pointed the LEGACY engine, so restoring a backup left the live voice
  * render on the previous project's geometry while the `state` broadcast below described the restored
- * one — the same defect S5 fixed on the `loadProject` path. Routing it through the sole store fixes
- * it as a consequence of having one. */
+ * one — the same defect S5 fixed on the `loadProject` path. Routing it through the store fixed it as
+ * a consequence of having one. */
 function applyRestoredSnapshot(files: SnapshotFiles): void {
   const project = parseProject(files.project);
   voiceHost.adoptProject(project);
-  legacyHost?.engine.setProject(voiceHost.getProject());
-  legacyHost?.reloadOutputSettings();
   autosaver.markDirty();
   if (isVersionedBlob(files.showLibrary)) showLibrarySlot.set(files.showLibrary);
   if (isVersionedBlob(files.songLibrary)) songLibrarySlot.set(files.songLibrary);
@@ -603,7 +585,6 @@ const controllerMonitor = createControllerMonitor({
 const handleClientMessage = createClientMessageHandler<WebSocket>({
   clients,
   voiceHost,
-  legacyHost,
   autosaver,
   showLibraryAutosaver: showLibrarySlot.autosaver,
   songLibraryAutosaver: songLibrarySlot.autosaver,
@@ -749,7 +730,6 @@ boot({
   controllerMonitor,
   port,
   oscPort,
-  voiceMode: VOICE_MODE,
   statsTimer,
   snapshotTimer,
   autosaver,

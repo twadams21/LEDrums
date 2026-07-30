@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { ClientRegistry, type CloseableSocket } from './client-registry';
-import { EngineHost } from './engine-host';
+import { VoiceEngineHost } from './voice-engine-host';
 
 class FakeSocket implements CloseableSocket {
   closed: { code?: number; reason?: string } | null = null;
@@ -147,7 +147,7 @@ describe('engine keeps running regardless of client count', () => {
   it('the host keeps ticking and emitting frames through client churn', () => {
     // Output disabled (default): the render loop runs independently of any transport, so the
     // liveness signal is engine ticks + preview frames, not the output stream.
-    const host = new EngineHost(defaultProject());
+    const host = new VoiceEngineHost(defaultProject());
     host.reloadOutputSettings();
     let frames = 0;
     host.onFrame = () => {

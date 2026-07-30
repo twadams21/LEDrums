@@ -1,5 +1,4 @@
 import type { Autosaver } from '../autosave';
-import type { EngineHost } from '../engine-host';
 import { listProjects, loadProject, saveProject } from '../projects';
 import type { VoiceEngineHost } from '../voice-engine-host';
 import { encodeServer, type ClientMessage } from '../ws-protocol';
@@ -15,10 +14,6 @@ export interface JsonSink {
 export interface ProjectHandlerDeps {
   /** THE authoritative store (S8): a load replaces its project object, and a save reads it. */
   voiceHost: VoiceEngineHost;
-  /** The legacy render host, or `null` unless the `LEDRUMS_ENGINE=legacy` opt-out is set (S12
-   * deletes it). Only ever RE-POINTED at `voiceHost.getProject()`, never used to compute a
-   * mutation — that shared identity is what a load must not break. */
-  legacyHost: EngineHost | null;
   autosaver: Autosaver;
   /** Broadcast the full `state` message to all clients (`broadcastJson(stateMessage())`). */
   broadcastState(): void;
@@ -46,14 +41,11 @@ export function handleProjectMessage(msg: ClientMessage, ws: JsonSink, deps: Pro
       ws.send(encodeServer({ t: 'error', message: `Backup failed — project "${msg.name}" not loaded (no recovery snapshot)` }));
       return true;
     }
-    // S5 LOAD AUTHORITY, now through the sole store (S8): the voice host adopts the loaded document
-    // BY REFERENCE (kit, inputMap, output AND the authored composition/transport) and rebuilds
-    // geometry. Before S5 only the legacy engine was re-pointed, leaving the live render on the
-    // PREVIOUS project's geometry while the `state` broadcast below described the new one.
+    // S5 LOAD AUTHORITY, through the only store there is (S8/S12): the host adopts the loaded
+    // document BY REFERENCE (kit, inputMap, output AND the authored composition/transport) and
+    // rebuilds geometry. Before S5 only the legacy engine was re-pointed, leaving the live render on
+    // the PREVIOUS project's geometry while the `state` broadcast below described the new one.
     deps.voiceHost.adoptProject(loaded);
-    // The legacy follower is re-pointed at the SAME object, so identity survives a load.
-    deps.legacyHost?.engine.setProject(deps.voiceHost.getProject());
-    deps.legacyHost?.reloadOutputSettings();
     deps.broadcastState();
     deps.autosaver.markDirty(); // the loaded project is now the live state — persist it
     return true;

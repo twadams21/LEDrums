@@ -12,8 +12,8 @@ export interface BootDeps {
   server: Server;
   wss: WebSocketServer;
   clients: ClientRegistry<WebSocket>;
-  /** The one render loop (S8). Not nullable: there is no second brain to choose between — the
-   * legacy host is an inert shared-reference follower and is never started. */
+  /** The render loop. There is exactly one (S12 deleted the other), so there is nothing to
+   * choose and no mode to be told about. */
   voiceHost: VoiceEngineHost;
   oscInput: OscInput;
   /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
@@ -22,9 +22,6 @@ export interface BootDeps {
   wsKeepalive?: { disposeKeepalive(): void };
   port: number;
   oscPort: number;
-  /** Whether the `LEDRUMS_ENGINE=legacy` opt-out is UNSET. Banner-only from S8 on: the opt-out no
-   * longer switches the render brain, so the banner says so instead of implying it did. */
-  voiceMode: boolean;
   /** The periodic-stats interval, cleared on shutdown. */
   statsTimer: ReturnType<typeof setInterval>;
   /** The 30-min backup-cadence interval (#123), cleared on shutdown. */
@@ -74,12 +71,7 @@ function lanUrls(p: number): string[] {
 export function boot(deps: BootDeps): void {
   deps.server.listen(deps.port, () => {
     deps.voiceHost.start();
-    console.log(
-      `LEDrums server listening on http://localhost:${deps.port} [voice engine]` +
-        // Never let a set-but-ineffective env var read as if it still worked (S8 made the voice
-        // host the sole store AND the sole render loop; S12 removes the flag).
-        (deps.voiceMode ? '' : ' — note: LEDRUMS_ENGINE=legacy no longer switches engines'),
-    );
+    console.log(`LEDrums server listening on http://localhost:${deps.port}`);
     for (const url of lanUrls(deps.port)) console.log(`  LAN: ${url}`);
     // Print the address a sender is actually configured with, not just the port — the whole
     // point of the OSC surface is that a user can answer "what do I type into Sensory

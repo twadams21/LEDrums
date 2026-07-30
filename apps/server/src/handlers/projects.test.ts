@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildPixelModel, defaultProject, type Project } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
-import { EngineHost } from '../engine-host';
 import { OutputManager } from '../output-manager';
 import { VoiceEngineHost } from '../voice-engine-host';
 import type { Autosaver } from '../autosave';
@@ -48,21 +47,18 @@ function fakeSink() {
 }
 
 /**
- * The handler under test with its collaborators, in the shape main.ts builds since S8: the voice
- * host is THE store (always present), and `legacy: true` adds the opt-out's legacy follower
- * constructed over `voiceHost.getProject()` — the SAME object — so a load's effect on both is
- * observable, including whether that shared identity survived.
+ * The handler under test with its collaborators, in the shape main.ts builds since S12: one host,
+ * which is THE store — so a load's effect on the live render is directly observable.
  */
-function harness(snapshotPreRisk?: () => boolean, { legacy = false }: { legacy?: boolean } = {}) {
+function harness(snapshotPreRisk?: () => boolean) {
   const voiceHost = new VoiceEngineHost(defaultProject(), null, new OutputManager(() => new NoOutput()));
-  const legacyHost = legacy ? new EngineHost(voiceHost.getProject()) : null;
   const autosaver = fakeAutosaver();
   const broadcastState = vi.fn();
   const { sink, sent } = fakeSink();
   // Explicit stub (S7): snapshotPreRisk is required; default = snapshot succeeds.
-  const deps = { voiceHost, legacyHost, autosaver, broadcastState, snapshotPreRisk: snapshotPreRisk ?? (() => true) };
+  const deps = { voiceHost, autosaver, broadcastState, snapshotPreRisk: snapshotPreRisk ?? (() => true) };
   const run = (msg: ClientMessage): boolean => handleProjectMessage(msg, sink, deps);
-  return { voiceHost, legacyHost, autosaver, broadcastState, sent, run };
+  return { voiceHost, autosaver, broadcastState, sent, run };
 }
 
 describe('handleProjectMessage — loadProject pre-risk fail-closed (#138 C1)', () => {
@@ -140,16 +136,18 @@ describe('handleProjectMessage — loadProject re-points the VOICE host too (INI
     expect(voiceHost.getProject().name).toBe('LEDrums Default');
   });
 
-  it('re-points the legacy follower at the SAME object — a load never splits the identity (S8)', () => {
-    const { voiceHost, legacyHost, run } = harness(undefined, { legacy: true });
-    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject()); // shared by construction
+  it('adopts the loaded document BY REFERENCE, not as a copy (one source of truth)', () => {
+    const { voiceHost, run } = harness(undefined);
 
     run({ t: 'loadProject', name: 'p' });
 
-    // A load REPLACES the store's project object — the exact point the invariant is lost if the
-    // follower is not re-pointed. Object identity, not deep equality: two equal copies would still
-    // mean two sources of truth.
-    expect(voiceHost.getProject().name).toBe('On Disk');
-    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject());
+    // A load REPLACES the store's project object. S8 asserted the legacy follower was re-pointed at
+    // the same one; S12 deleted the follower, so what remains to assert is that the store holds the
+    // loaded document itself — the autosaver closes over `getProject()`, so a COPY here is exactly
+    // how a load would persist stale state.
+    const live = voiceHost.getProject();
+    expect(live.name).toBe('On Disk');
+    expect(live.composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
+    expect(live.kit).toBe(live.kit); // the host's live kit reference IS project.kit (in-place edits)
   });
 });

@@ -1,7 +1,6 @@
 import { blockingRoutingIssues, projectPatchSchema, validateRouting } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
-import type { EngineHost } from '../engine-host';
 import type { VoiceEngineHost } from '../voice-engine-host';
 import { encodeServer, type BackupSnapshotMeta, type ClientMessage, type ControllerTestPattern, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
@@ -82,15 +81,9 @@ export interface HandlerSocket extends CloseableSocket, JsonSink {}
  * fake sockets). */
 export interface ClientMessageDeps<S extends HandlerSocket> {
   clients: ClientRegistry<S>;
-  /** THE authoritative store (S8): it owns the one live Project object, and
+  /** THE store (S8/S12): it owns the one live Project object, it IS the render loop, and
    * {@link applyStructuralMessage} is the only reducer that writes it. */
   voiceHost: VoiceEngineHost;
-  /** The legacy render host, alive only behind the `LEDRUMS_ENGINE=legacy` opt-out (S12 deletes
-   * it), else `null`. WRITE-NEVER: no arm here computes a mutation through it. It is only
-   * re-pointed at `voiceHost.getProject()` when the voice host swaps its project object, so
-   * `legacyHost.engine.getProject() === voiceHost.getProject()` holds at every observable moment —
-   * the invariant main.ts used to document in a comment and now asserts. */
-  legacyHost: EngineHost | null;
   autosaver: Autosaver;
   showLibraryAutosaver: Autosaver;
   songLibraryAutosaver: Autosaver;
@@ -168,7 +161,6 @@ export function createClientMessageHandler<S extends HandlerSocket>(
   const {
     clients,
     voiceHost,
-    legacyHost,
     autosaver,
     showLibraryAutosaver,
     songLibraryAutosaver,
@@ -346,7 +338,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // Project IO (load/save/list) is handled here, not by the reducer. snapshotPreRisk is
     // fail-closed: `false` (pre-risk write failed) makes the load refuse (S9 — no absent-backups
     // fallback survives; a dropped `backups` field is a compile error, not a silent fail-open).
-    if (handleProjectMessage(msg, ws, { voiceHost, legacyHost, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
+    if (handleProjectMessage(msg, ws, { voiceHost, autosaver, broadcastState, snapshotPreRisk: () => deps.backups.snapshotPreRisk() })) return;
 
     // App-wide MIDI channel filter. Runs before recall, zone mapping and the structural reducer
     // so every MIDI input adapter obeys the same setting.
@@ -457,11 +449,6 @@ export function createClientMessageHandler<S extends HandlerSocket>(
         return;
       }
       voiceHost.adoptPatch(patch);
-      // adoptPatch rebuilds `project` by spread, so the legacy follower's engine would keep the
-      // PREVIOUS object — the exact point identity is lost. Re-point it at the new authoritative
-      // object (a re-point, never a computed mutation) so the invariant survives a paste.
-      legacyHost?.engine.setProject(voiceHost.getProject());
-      legacyHost?.reloadOutputSettings();
       monitor({
         type: 'system',
         direction: 'in',

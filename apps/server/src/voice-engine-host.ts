@@ -60,14 +60,14 @@ export const FRAME_FAULT_REPORT_WINDOW_MS = 1_000;
 const PREVIEW_FPS = 30; // WS preview broadcast throttle
 
 /**
- * Voice-mode host: owns a {@link voice.RenderEngine} (the trigger-graph / voice-bus
- * brain) and an {@link OutputManager}, running the SAME fixed-timestep discipline as
- * the legacy {@link EngineHost} (recursive `setTimeout` + accumulator + catch-up
- * clamp) but at 120fps. Transmit + preview streams are throttled independently of the
- * tick rate, exactly like the legacy host.
+ * THE host: owns a {@link voice.RenderEngine} (the trigger-graph / voice-bus brain), the one live
+ * Project, and an {@link OutputManager}, running a fixed-timestep loop at 120fps (recursive
+ * `setTimeout` + accumulator + catch-up clamp). Transmit + preview streams are throttled
+ * independently of the tick rate.
  *
- * This is a deliberately separate class (not a mode bolted onto EngineHost) so the
- * legacy layer/clip/binding path stays untouched and this is easy to rip out.
+ * It began as a deliberately separate class so the legacy layer/clip/binding host stayed untouched
+ * and the new one was easy to rip out. That bet paid the other way: INIT-01 S12 ripped out the
+ * legacy one, and this is what remains.
  */
 export class VoiceEngineHost {
   readonly engine: voice.RenderEngine;

@@ -351,7 +351,7 @@ fn ignores_message_types_the_server_does_not_accept() {
 ///
 /// ```text
 /// TOKEN=$(openssl rand -hex 32)
-/// PORT=4399 OSC_PORT=57155 LEDRUMS_ENGINE=voice LEDRUMS_HOST_TOKEN=$TOKEN \
+/// PORT=4399 OSC_PORT=57155 LEDRUMS_HOST_TOKEN=$TOKEN \
 ///   pnpm --filter @ledrums/server exec tsx src/main.ts &
 /// LIVE_PORT=4399 LIVE_TOKEN=$TOKEN cargo test --lib live_ -- --ignored --nocapture
 /// ```

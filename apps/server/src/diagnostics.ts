@@ -3,7 +3,6 @@ import type { MonitorEvent } from './ws-protocol';
 type MonitorDraft = Omit<MonitorEvent, 'id' | 'time'>;
 
 export interface StartupDiagnosticsInput {
-  voiceMode: boolean;
   port: number;
   oscPort: number;
   /** LAN addresses an OSC sender can aim at (#139) — empty on a machine with no LAN address. */
@@ -24,7 +23,9 @@ export function startupDiagnostics(input: StartupDiagnosticsInput): MonitorDraft
       type: 'system',
       direction: 'local',
       source: 'server',
-      label: `Server started in ${input.voiceMode ? 'voice' : 'legacy'} mode`,
+      // S12: there is one engine, so this row reports that the server started, not which brain it
+      // picked. It used to read "Server started in legacy mode" on the path `pnpm start` took.
+      label: 'Server started',
       detail: `http=:${input.port}; osc=:${input.oscPort}`,
     },
     {

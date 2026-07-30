@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Engine } from '@ledrums/core';
-import { applyClientMessage } from './input-router';
 import { applyStructuralMessage } from './handlers/voice-input';
 import type { VoiceEngineHost } from './voice-engine-host';
 import type { ClientMessage } from './ws-protocol';
@@ -17,32 +15,11 @@ const msg = (extra: Partial<Extract<ClientMessage, { t: 'setKitTransform' }>>): 
   ...extra,
 });
 
-describe('legacy engine path — applyClientMessage(setKitTransform)', () => {
-  it('forwards flip and pixelsPerHoop to engine.setKitTransform', () => {
-    const setKitTransform = vi.fn();
-    const engine = { setKitTransform } as unknown as Engine;
-    applyClientMessage(engine, msg({ pixelsPerHoop: 50, flip: true }), 0);
-    expect(setKitTransform).toHaveBeenCalledWith('kick', { pixelsPerHoop: 50, flip: true });
-  });
-
-  it('omits undefined fields (partial merge — a spin-only edit carries neither)', () => {
-    const setKitTransform = vi.fn();
-    const engine = { setKitTransform } as unknown as Engine;
-    applyClientMessage(engine, msg({ localSpinDeg: 15 }), 0);
-    const partial = setKitTransform.mock.calls[0]![1] as Record<string, unknown>;
-    expect(partial).toEqual({ localSpinDeg: 15 });
-    expect('flip' in partial).toBe(false);
-    expect('pixelsPerHoop' in partial).toBe(false);
-  });
-
-  it('forwards color (C3 drum swatch) to engine.setKitTransform', () => {
-    const setKitTransform = vi.fn();
-    const engine = { setKitTransform } as unknown as Engine;
-    applyClientMessage(engine, msg({ color: '#ff8800' }), 0);
-    expect(setKitTransform).toHaveBeenCalledWith('kick', { color: '#ff8800' });
-  });
-});
-
+/**
+ * S12 deleted the legacy half of this file: a describe that drove the same message through
+ * `applyClientMessage` → `Engine.setKitTransform` and asserted the identical partial-merge shape. Two
+ * arms was the finding; the surviving one below is the whole reducer.
+ */
 describe('voice reducer (sole writer since S8) — applyStructuralMessage(setKitTransform)', () => {
   it('forwards flip and pixelsPerHoop to voiceHost.setKitTransform', () => {
     const setKitTransform = vi.fn();

@@ -11,8 +11,8 @@ import type { ClientMessage, ServerMessage } from '../ws-protocol';
 
 /** Collaborators the voice-input handler needs from the server wiring. */
 export interface VoiceInputDeps {
-  /** The voice-bus host, or `null` in legacy mode. */
-  voiceHost: VoiceEngineHost | null;
+  /** THE host. Not nullable since S12: there is no legacy mode for it to be absent in. */
+  voiceHost: VoiceEngineHost;
   /** Broadcast a JSON message to all clients (`broadcastJson`). */
   broadcastJson(msg: ServerMessage): void;
 }
@@ -28,102 +28,85 @@ export function applyTransportRecall(
   target: RecallTarget,
   monitor: { kind: 'midi' | 'osc'; label: string; value: number },
 ): void {
-  if (!deps.voiceHost) return;
   deps.voiceHost.applyInput({ kind: 'recallSection', songId: target.songId, sectionId: target.sectionId });
   deps.broadcastJson({ t: 'input', kind: monitor.kind, label: monitor.label, value: monitor.value });
 }
 
 /**
- * Voice-mode input dispatch (programChange / cc / setShow / key / recallSection / midi /
- * osc, plus the global transport recalls). Returns `true` when `msg` has been fully
- * handled (the caller should stop); `false` when the caller should fall through to the
- * legacy reducer path.
+ * Engine-input dispatch (programChange / cc / setShow / key / recallSection / midi / osc, plus the
+ * global transport recalls). Returns `true` when `msg` has been fully handled (the caller stops);
+ * `false` when the caller should fall through to {@link applyStructuralMessage}.
  *
- * In legacy mode (`voiceHost === null`) the voice-only message types are consumed as
- * no-ops (returns `true`), while midi/osc fall through (returns `false`) so the legacy
- * reducer drives them.
+ * S12 deleted the legacy arm this used to have — a block that swallowed the voice-only message
+ * types as no-ops when `voiceHost` was null. There is no such mode now, so an input either applies
+ * or falls through; it can no longer be silently consumed.
  */
 export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): boolean {
   const { voiceHost } = deps;
-  if (voiceHost) {
-    // Global transport recall — STEP 0, before the per-trigger zone-map. A Program Change
-    // selects a song (+ its first section); CC#0 recalls a section in the active song.
-    if (msg.t === 'programChange') {
-      const target = programChangeRecall(voiceHost.getShow(), msg.value);
-      if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `PC ${msg.value}`, value: msg.value });
-      return true;
-    }
-    if (msg.t === 'cc') {
-      if (msg.controller === SECTION_RECALL_CC) {
-        const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
-        if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
-      } else {
-        // S37: any other controller feeds the engine's CC value table (queued input event),
-        // where `cc` modulation sources read it per frame. Determinism preserved — same events,
-        // same frames. Controller 0 is reserved above for section recall and never reaches here.
-        voiceHost.applyInput({ kind: 'cc', controller: msg.controller, value: msg.value, channel: msg.channel });
-      }
-      return true;
-    }
-    if (msg.t === 'setShow') {
-      voiceHost.setShow(msg.show);
-      return true;
-    }
-    if (msg.t === 'key') {
-      voiceHost.applyInput({ kind: 'key', drumId: msg.drumId, zone: msg.zone, velocity: msg.velocity });
-      deps.broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
-      return true;
-    }
-    if (msg.t === 'fireGraph') {
-      // Keyboard performance intent: fire the EXACT authored graph, no re-resolution. The
-      // engine validates the key (emits `graph-missed` → "No graph resolved" on a stale key)
-      // and emits the normal input-resolved / graph-fired diagnostics for a valid one. No
-      // `input` broadcast: the fire is surfaced by those diagnostics + the server ingress line
-      // (`monitorInput` in main.ts), so there is no note/address to echo for MIDI-learn.
-      voiceHost.applyInput({ kind: 'fireGraph', graphKey: msg.graphKey, velocity: msg.velocity });
-      return true;
-    }
-    if (msg.t === 'recallSection') {
-      voiceHost.applyInput({ kind: 'recallSection', songId: msg.songId, sectionId: msg.sectionId });
-      return true;
-    }
-    if (msg.t === 'midi') {
-      if (msg.on && msg.velocity > 0) {
-        voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127, channel: msg.channel });
-      } else {
-        voiceHost.applyInput({ kind: 'noteOff', note: msg.note, channel: msg.channel });
-      }
-      deps.broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127, note: msg.note, channel: msg.channel });
-      return true;
-    }
-    if (msg.t === 'osc') {
-      // A section-recall address is a reserved global convention: it is ALWAYS consumed
-      // here (recall on a valid index, no-op when out of range) and never falls through to
-      // the zone-map. Any other address is a normal OSC input.
-      if (parseSectionRecallAddress(msg.address) !== null) {
-        const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
-        if (target) applyTransportRecall(deps, target, { kind: 'osc', label: msg.address, value: msg.value });
-        return true;
-      }
-      voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
-      deps.broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
-      return true;
-    }
-    // Any other message falls through to the legacy reducer (it still backs structural edits).
-    return false;
-  }
-
-  if (
-    msg.t === 'setShow' ||
-    msg.t === 'key' ||
-    msg.t === 'fireGraph' ||
-    msg.t === 'recallSection' ||
-    msg.t === 'cc' ||
-    msg.t === 'programChange'
-  ) {
-    // These only apply to the voice engine; ignore in legacy mode.
+  // Global transport recall — STEP 0, before the per-trigger zone-map. A Program Change
+  // selects a song (+ its first section); CC#0 recalls a section in the active song.
+  if (msg.t === 'programChange') {
+    const target = programChangeRecall(voiceHost.getShow(), msg.value);
+    if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `PC ${msg.value}`, value: msg.value });
     return true;
   }
+  if (msg.t === 'cc') {
+    if (msg.controller === SECTION_RECALL_CC) {
+      const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
+      if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
+    } else {
+      // S37: any other controller feeds the engine's CC value table (queued input event),
+      // where `cc` modulation sources read it per frame. Determinism preserved — same events,
+      // same frames. Controller 0 is reserved above for section recall and never reaches here.
+      voiceHost.applyInput({ kind: 'cc', controller: msg.controller, value: msg.value, channel: msg.channel });
+    }
+    return true;
+  }
+  if (msg.t === 'setShow') {
+    voiceHost.setShow(msg.show);
+    return true;
+  }
+  if (msg.t === 'key') {
+    voiceHost.applyInput({ kind: 'key', drumId: msg.drumId, zone: msg.zone, velocity: msg.velocity });
+    deps.broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
+    return true;
+  }
+  if (msg.t === 'fireGraph') {
+    // Keyboard performance intent: fire the EXACT authored graph, no re-resolution. The
+    // engine validates the key (emits `graph-missed` → "No graph resolved" on a stale key)
+    // and emits the normal input-resolved / graph-fired diagnostics for a valid one. No
+    // `input` broadcast: the fire is surfaced by those diagnostics + the server ingress line
+    // (`monitorInput` in main.ts), so there is no note/address to echo for MIDI-learn.
+    voiceHost.applyInput({ kind: 'fireGraph', graphKey: msg.graphKey, velocity: msg.velocity });
+    return true;
+  }
+  if (msg.t === 'recallSection') {
+    voiceHost.applyInput({ kind: 'recallSection', songId: msg.songId, sectionId: msg.sectionId });
+    return true;
+  }
+  if (msg.t === 'midi') {
+    if (msg.on && msg.velocity > 0) {
+      voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127, channel: msg.channel });
+    } else {
+      voiceHost.applyInput({ kind: 'noteOff', note: msg.note, channel: msg.channel });
+    }
+    deps.broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127, note: msg.note, channel: msg.channel });
+    return true;
+  }
+  if (msg.t === 'osc') {
+    // A section-recall address is a reserved global convention: it is ALWAYS consumed
+    // here (recall on a valid index, no-op when out of range) and never falls through to
+    // the zone-map. Any other address is a normal OSC input.
+    if (parseSectionRecallAddress(msg.address) !== null) {
+      const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
+      if (target) applyTransportRecall(deps, target, { kind: 'osc', label: msg.address, value: msg.value });
+      return true;
+    }
+    voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
+    deps.broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
+    return true;
+  }
+  // Anything else is not an input — it falls through to the structural reducer.
   return false;
 }
 

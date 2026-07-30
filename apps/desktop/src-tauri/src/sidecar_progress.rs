@@ -85,7 +85,7 @@ mod tests {
 
     /// The banner a sidecar prints when a tunnel IS configured (PIN + host token).
     const BANNER_WITH_TOKEN: &[&str] = &[
-        "LEDrums server listening on http://localhost:4178 [voice engine]",
+        "LEDrums server listening on http://localhost:4178",
         "  LAN: http://192.168.1.10:4178",
         "OSC listening on udp:9000",
         "Pixel output: set target IP + Arm in the UI",
@@ -107,7 +107,7 @@ mod tests {
         // A sidecar whose host token is not banner-printed (the conditional
         // `if (deps.hostToken) console.log(...)` in apps/server/src/boot.ts).
         let lines = [
-            "LEDrums server listening on http://localhost:4178 [voice engine]",
+            "LEDrums server listening on http://localhost:4178",
             "  LAN: http://192.168.1.10:4178",
             "OSC listening on udp:9000",
             "Pixel output: set target IP + Arm in the UI",
@@ -124,7 +124,7 @@ mod tests {
         // stdout and stderr are merged into ONE line buffer by the reader, so a stderr write
         // (cloudflared is spawned moments after the banner) can land mid-line and defeat the regex.
         let lines = [
-            "LEDrums server listening on http://localhost:4178 [voice engine]",
+            "LEDrums server listening on http://localhost:4178",
             "  Host tok2026-07-26T00:00:00Z INF Requesting new quick tunnelen: a1b2c3d4",
         ];
         assert!(

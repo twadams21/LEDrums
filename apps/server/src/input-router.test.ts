@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Engine, defaultProject, voice } from '@ledrums/core';
 import {
-  applyClientMessage,
   midiToEvent,
   oscRecall,
   oscToEvent,
@@ -23,27 +22,15 @@ describe('input-router', () => {
     expect(oscToEvent({ address: '/p', args: ['x', 0.7] }, 0)).toEqual({ kind: 'osc', address: '/p', value: 0.7, timeMs: 0 });
   });
 
-  it('routes a mapped MIDI note through the engine to activate its trigger clip', () => {
-    const e = new Engine(defaultProject());
-    e.setActiveClip('trigger', 'whole-drum');
-    const r = applyClientMessage(e, { t: 'midi', note: 38, velocity: 100, on: true }, 0);
-    e.tick(16);
-    expect(r.structural).toBe(false);
-    expect(r.monitor?.kind).toBe('midi');
-    expect(e.getProject().composition.layers.find((l) => l.id === 'trigger')!.activeClipId).toBe('chase');
-  });
-
-  it('ignores an unmapped MIDI note without throwing', () => {
-    const e = new Engine(defaultProject());
-    expect(() => applyClientMessage(e, { t: 'midi', note: 7, velocity: 100, on: true }, 0)).not.toThrow();
-    e.tick(16);
-  });
-
-  it('marks a transport edit structural (the one surviving member of that family, S11)', () => {
-    const e = new Engine(defaultProject());
-    expect(applyClientMessage(e, { t: 'setTransport', bpm: 140 }, 0).structural).toBe(true);
-  });
 });
+
+/**
+ * S12 deleted `applyClientMessage` and the three tests that drove it (a mapped note reaching the
+ * legacy engine's trigger clip, an unmapped note not throwing, a transport edit reported structural).
+ * The reducer's surviving successor is `applyStructuralMessage`, covered by
+ * structural-forwarding.test.ts; the pure input-translation helpers this file exercises are what
+ * input-router.ts is now for.
+ */
 
 describe('zone-map resolution (PINNED precedence step 1)', () => {
   // defaultProject maps note 36 → kick/slot 0 and OSC /sp/kick → kick/slot 0. The zone is the

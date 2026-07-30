@@ -52,7 +52,8 @@ digest; anything listed under "Retained" is never redacted.
 ## Proven properties (S0 gates, all passed at 7d6c910)
 
 1. **Stability** — two consecutive runs byte-identical, both `--engine voice`
-   and `--engine legacy`.
+   and `--engine legacy`. (Re-proven for the single remaining boot at INIT-01
+   S12, which removed the flag — see below.)
 2. **Negative control (a)** — deleting the `WebSocket client accepted` monitor
    emit in main.ts produces a non-empty digest diff.
 3. **Negative control (b)** — swapping the presence-then-state send order in
@@ -62,9 +63,19 @@ digest; anything listed under "Retained" is never redacted.
 
 The harness clears every `LEDRUMS_*` env var, then sets: fresh temp
 `LEDRUMS_PROJECTS_DIR` (boot is always `source: seed` unless `--seed-corrupt`),
-`LEDRUMS_TELEMETRY=off`, ephemeral `PORT` / `OSC_PORT`, and the requested
-`LEDRUMS_ENGINE`. `--seed-corrupt` (added for S10) writes a truncated
-`default.local.json` before boot to exercise the recovery ladder.
+`LEDRUMS_TELEMETRY=off`, and ephemeral `PORT` / `OSC_PORT`. `--seed-corrupt`
+(added for S10) writes a truncated `default.local.json` before boot to exercise
+the recovery ladder.
+
+**INIT-01 S12 removed `--engine`** along with the legacy engine itself, so there
+is one boot to digest and the digest no longer carries an `engine` field.
+Passing the flag now exits 2 rather than being ignored. Consequences for this
+note: `smoke-baseline-legacy.json` is historical and unreproducible, and
+`smoke-baseline-voice.json` predates the INIT-01 chunks (its `engine` field, its
+`[voice engine]` banner suffix and its `Server started in voice mode` monitor row
+are all gone), so it is superseded rather than a live gate. S12's own parity
+evidence is a before/after pair captured across its own commit, recorded in that
+commit body.
 
 Baselines are machine-local in one respect: `lanUrlCount` counts this machine's
 non-internal IPv4 interfaces. Re-capture baselines when comparing on another

@@ -1,13 +1,5 @@
-import { TRIGGER_SLOT_COUNT, type Engine, type InputEvent, type InputMap, type voice } from '@ledrums/core';
+import { TRIGGER_SLOT_COUNT, type InputEvent, type InputMap, type voice } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
-import type { ClientMessage } from './ws-protocol';
-
-export interface ReduceResult {
-  /** True when the change alters structure and clients should receive a fresh `state`. */
-  structural: boolean;
-  /** Optional monitor echo for the input panel. */
-  monitor?: { kind: 'midi' | 'osc'; label: string; value: number };
-}
 
 /** A drum-zone pad resolved from the patch zone-map (the pad-bound graph it fires). */
 export interface ZonePad {
@@ -133,79 +125,4 @@ export function oscRecall(show: voice.Show | null | undefined, address: string, 
   const songIndex = parseSectionRecallAddress(address);
   if (songIndex === null) return null;
   return targetForIndices(show, songIndex, Math.floor(value));
-}
-
-/**
- * Apply a client message to the engine (the typed reducer, plan U8). Mutations are
- * explicit and type-safe — no generic path-mutation. Project IO (`loadProject`,
- * `saveProject`, `listProjects`) is handled by the host, not here.
- */
-export function applyClientMessage(engine: Engine, msg: ClientMessage, now: number): ReduceResult {
-  switch (msg.t) {
-    case 'midi':
-      engine.applyEvent(midiToEvent(msg.note, msg.velocity, msg.on, now));
-      return { structural: false, monitor: { kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127 } };
-    case 'osc':
-      engine.applyEvent({ kind: 'osc', address: msg.address, value: msg.value, timeMs: now });
-      return { structural: false, monitor: { kind: 'osc', label: msg.address, value: msg.value } };
-    case 'setTransport':
-      engine.setTransport({
-        ...(msg.bpm !== undefined ? { bpm: msg.bpm } : {}),
-        ...(msg.playing !== undefined ? { playing: msg.playing } : {}),
-        ...(msg.beatsPerBar !== undefined ? { beatsPerBar: msg.beatsPerBar } : {}),
-      });
-      return { structural: true };
-    case 'setKitTransform':
-      engine.setKitTransform(msg.drumId, {
-        ...(msg.origin !== undefined ? { origin: msg.origin } : {}),
-        ...(msg.rotation !== undefined ? { rotation: msg.rotation } : {}),
-        ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
-        ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
-        // pixelsPerHoop was historically dropped on this legacy-engine path (the voice
-        // host already forwarded it) — forward it here too so literal LED counts apply.
-        ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
-        ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
-        ...(msg.diameterIn !== undefined ? { diameterIn: msg.diameterIn } : {}),
-        ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
-        ...(msg.color !== undefined ? { color: msg.color } : {}),
-      });
-      return { structural: true };
-    case 'setKitGlobal':
-      engine.setKitGlobal({
-        ...(msg.expanded !== undefined ? { expanded: msg.expanded } : {}),
-        ...(msg.ledDensityPxPerM !== undefined ? { ledDensityPxPerM: msg.ledDensityPxPerM } : {}),
-        ...(msg.hoopCount !== undefined ? { hoopCount: msg.hoopCount } : {}),
-        ...(msg.defaultHoopSpacingMm !== undefined ? { defaultHoopSpacingMm: msg.defaultHoopSpacingMm } : {}),
-        ...(msg.maxPixelsPerOutput !== undefined ? { maxPixelsPerOutput: msg.maxPixelsPerOutput } : {}),
-      });
-      return { structural: true };
-    case 'setHoopConfig':
-      engine.setHoopConfig(msg.drumId, msg.hoopIndex, {
-        ...(msg.pixelCount !== undefined ? { pixelCount: msg.pixelCount } : {}),
-        ...(msg.reverse !== undefined ? { reverse: msg.reverse } : {}),
-      });
-      return { structural: true };
-    case 'setKitNodeLayout':
-      engine.setKitNodeLayout(msg.nodeLayout);
-      return { structural: true };
-    case 'setOutput':
-      engine.setOutput({
-        ...(msg.state !== undefined ? { state: msg.state } : {}),
-        ...(msg.protocol !== undefined ? { protocol: msg.protocol } : {}),
-        ...(msg.host !== undefined ? { host: msg.host } : {}),
-        ...(msg.rgbOrder !== undefined ? { rgbOrder: msg.rgbOrder } : {}),
-        ...(msg.fps !== undefined ? { fps: msg.fps } : {}),
-        ...(msg.broadcast !== undefined ? { broadcast: msg.broadcast } : {}),
-        ...(msg.priority !== undefined ? { priority: msg.priority } : {}),
-        ...(msg.port !== undefined ? { port: msg.port } : {}),
-        ...(msg.iface !== undefined ? { iface: msg.iface } : {}),
-      });
-      return { structural: true };
-    case 'setInputMap':
-      engine.setInputMap(msg.inputMap);
-      return { structural: true };
-    default:
-      // loadProject / saveProject / listProjects are handled by the host.
-      return { structural: false };
-  }
 }

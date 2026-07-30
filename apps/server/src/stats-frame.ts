@@ -14,17 +14,7 @@ export type VoiceStats = NonNullable<StatsMessage['voice']>;
  */
 export const STATS_INTERVAL_MS = 1000 / 30;
 
-/** Structural view of the legacy {@link EngineHost} the stats frame needs. */
-export interface LegacyStatsSource {
-  getStats(): {
-    engine: StatsMessage['stats'];
-    latencyMs: number;
-    fps: number;
-    output: StatsMessage['output'];
-  };
-}
-
-/** Structural view of the voice host the stats frame needs. */
+/** Structural view of the host the stats frame needs. */
 export interface VoiceStatsSource {
   getStats(): {
     engine: { timeMs: number; beat: number } & VoiceStats;
@@ -39,44 +29,31 @@ export interface VoiceStatsSource {
  * Build the periodic `stats` broadcast — pure in its inputs, so the adaptation policy
  * (which used to live inside main.ts's setInterval callback) is testable.
  *
- * In voice mode the voice engine's stats are adapted onto the legacy `stats` shape
- * (voiceCount → activeTriggers, model pixel count → pixelCount, `bar` derived from the
- * transport's `beatsPerBar`), plus the additive `voice` extension. `tickCount` is not a
- * concept the voice engine reports, so it stays the literal 0 the wire has always carried.
+ * The voice engine's stats are adapted onto the wire's `stats` shape (voiceCount →
+ * activeTriggers, model pixel count → pixelCount, `bar` derived from the transport's
+ * `beatsPerBar`), plus the additive `voice` extension. `tickCount` is not a concept the voice
+ * engine reports, so it stays the literal 0 the wire has always carried.
  *
- * In legacy mode the host's engine stats pass through verbatim and the message carries NO
- * `voice` key — adding one would change the wire payload every client parses.
+ * S12 deleted the second arm. There WAS a legacy branch here that passed a different host's stats
+ * through verbatim and omitted the `voice` key — a second wire payload shape, reachable only
+ * through the engine mode that no longer exists.
  */
-export function buildStatsMessage(deps: {
-  voiceHost: VoiceStatsSource | null;
-  /** The legacy host's stats source, or absent. S8 made the voice host unconditional, so the
-   * SHIPPED wiring no longer has a legacy source to hand over; the arm below (and its tests)
-   * survive until S12 deletes the runtime. */
-  host?: LegacyStatsSource | null;
-  beatsPerBar: number;
-}): StatsMessage {
-  const { voiceHost, host, beatsPerBar } = deps;
-  if (voiceHost) {
-    const s = voiceHost.getStats();
-    return {
-      t: 'stats',
-      stats: {
-        timeMs: s.engine.timeMs,
-        beat: s.engine.beat,
-        bar: Math.floor(s.engine.beat / beatsPerBar),
-        activeTriggers: s.engine.voiceCount,
-        tickCount: 0,
-        pixelCount: voiceHost.getModel().pixelCount,
-      },
-      latencyMs: s.latencyMs,
-      fps: s.fps,
-      output: s.output,
-      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
-    };
-  }
-  const s = host?.getStats();
-  // Fail loud rather than broadcast an invented frame: unreachable from the shipped wiring since S8
-  // (the voice host is unconditional), so reaching it means a caller passed neither source.
-  if (!s) throw new Error('buildStatsMessage: no stats source (neither a voice host nor a legacy host)');
-  return { t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output };
+export function buildStatsMessage(deps: { voiceHost: VoiceStatsSource; beatsPerBar: number }): StatsMessage {
+  const { voiceHost, beatsPerBar } = deps;
+  const s = voiceHost.getStats();
+  return {
+    t: 'stats',
+    stats: {
+      timeMs: s.engine.timeMs,
+      beat: s.engine.beat,
+      bar: Math.floor(s.engine.beat / beatsPerBar),
+      activeTriggers: s.engine.voiceCount,
+      tickCount: 0,
+      pixelCount: voiceHost.getModel().pixelCount,
+    },
+    latencyMs: s.latencyMs,
+    fps: s.fps,
+    output: s.output,
+    voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
+  };
 }

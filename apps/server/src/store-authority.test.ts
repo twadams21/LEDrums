@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { defaultProject, type Project } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { createClientMessageHandler, type ClientMessageDeps, type HandlerSocket } from './handlers/client-message';
-import { EngineHost } from './engine-host';
 import { OutputManager } from './output-manager';
 import { VoiceEngineHost } from './voice-engine-host';
 import type { Autosaver } from './autosave';
@@ -24,26 +23,24 @@ vi.mock('./projects', () => ({
 }));
 
 /**
- * INIT-01 S8 — THE STORE-AUTHORITY WIRING TEST.
+ * INIT-01 S8/S12 — THE STORE-AUTHORITY WIRING TEST.
  *
  * main.ts is a side-effecting entry module no test can import, which is precisely how its central
  * invariant came to live in a comment instead of an assertion: "both hosts share the same project0
  * object by reference, so the voice host's in-place edits are visible through
  * `host.engine.getProject()` — which is what the autosaver persists." That sentence was TRUE at
  * construction and FALSE after the first `adoptPatch` (which rebuilds `project` by spread) and after
- * the first `loadProject` (which hands each host its own re-point). Nothing failed when it broke.
+ * the first `loadProject`. Nothing failed when it broke.
  *
- * This file reconstructs main's wiring — voice host UNCONDITIONAL, legacy host constructed over
- * `voiceHost.getProject()` behind the LEDRUMS_ENGINE=legacy opt-out — and drives the two real
- * project-swapping paths through the real handler, asserting OBJECT IDENTITY (`toBe`) at every
- * observable moment. Deep equality would not do: two equal copies are still two sources of truth,
- * and that is the defect, not the symptom.
+ * S8 turned it into an assertion by constructing the legacy engine over the store's OWN project
+ * object and asserting `toBe` through both swap paths. S12 then deleted that engine — so there is no
+ * second holder left to diverge, and what this file asserts is the property the identity existed to
+ * protect: the object the reducer writes is the object every reader gets.
  *
- * It also pins the two other S8 claims:
- *  • ONE REDUCER — `applyStructuralMessage` is the only writer, so a structural edit lands exactly
- *    once and the follower observes it without any legacy arm replaying it.
- *  • STATE-MESSAGE PARITY — the `state` message's `project` moved from the legacy engine to the
- *    store; identical bytes, because it is the same object.
+ *  • ONE OBJECT — a paste and a load both leave the store holding the document itself, and the
+ *    `state` broadcast carries that very object rather than a copy.
+ *  • ONE REDUCER — `applyStructuralMessage` is the only writer; its boolean IS the
+ *    broadcast-and-persist signal, so a missing arm is a silent no-op and every arm is enumerated.
  */
 
 /** Inert pixel sink: nothing here arms output, and a real UDP socket in a unit test is a flake. */
@@ -68,15 +65,10 @@ function fakeAutosaver(): Autosaver {
   return { markDirty: vi.fn(), flush: () => Promise.resolve(), dispose: () => {} };
 }
 
-/**
- * main.ts's wiring, reproduced: the store first, then the opt-out's follower over the store's OWN
- * project object. `legacy: false` is the shipped default (no follower at all).
- *
- * The `state` builder mirrors main's `stateMessage` exactly — every field off the store.
- */
-function wiring({ legacy = true }: { legacy?: boolean } = {}) {
+/** main.ts's wiring, reproduced. The `state` builder mirrors main's `stateMessage` exactly — every
+ * field off the one store. */
+function wiring() {
   const voiceHost = new VoiceEngineHost(defaultProject(), null, new OutputManager(() => new NoOutput()));
-  const legacyHost = legacy ? new EngineHost(voiceHost.getProject(), new OutputManager(() => new NoOutput())) : null;
   const autosaver = fakeAutosaver();
   const broadcasts: ServerMessage[] = [];
 
@@ -94,10 +86,6 @@ function wiring({ legacy = true }: { legacy?: boolean } = {}) {
     recovery: null,
   });
 
-  /** The pre-S8 `state` builder: `project` read off the LEGACY engine, everything else already
-   * voice-side. The parity claim is that swapping this one read changed no bytes. */
-  const legacyStateMessage = (): ServerMessage => ({ ...(stateMessage() as Extract<ServerMessage, { t: 'state' }>), project: legacyHost!.engine.getProject() });
-
   const clients = {
     admit: () => {},
     takeover: () => {},
@@ -110,7 +98,6 @@ function wiring({ legacy = true }: { legacy?: boolean } = {}) {
   const handle = createClientMessageHandler<FakeSocket>({
     clients,
     voiceHost,
-    legacyHost,
     autosaver,
     showLibraryAutosaver: fakeAutosaver(),
     songLibraryAutosaver: fakeAutosaver(),
@@ -140,7 +127,7 @@ function wiring({ legacy = true }: { legacy?: boolean } = {}) {
 
   const ws = new FakeSocket();
   const send = (msg: ClientMessage): void => handle(msg, ws);
-  return { voiceHost, legacyHost, autosaver, broadcasts, send, ws, stateMessage, legacyStateMessage };
+  return { voiceHost, autosaver, broadcasts, send, ws, stateMessage };
 }
 
 /** A patch derived from the live project — the payload shape a pasted `patch` ClipDoc carries. */
@@ -153,30 +140,30 @@ function patchFrom(project: Project) {
   };
 }
 
-describe('S8 — one project object: identity holds through every swap', () => {
-  it('is shared at construction (by construction, not by convention)', () => {
-    const { voiceHost, legacyHost } = wiring();
-    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject());
-  });
-
-  it('survives an adoptPatch (setProject) — the spread-rebuild that used to split it', () => {
-    const { voiceHost, legacyHost, send } = wiring();
+describe('S8/S12 — one project object, through every swap', () => {
+  it('a paste leaves the store holding the object the wire carries', () => {
+    const { voiceHost, send, broadcasts } = wiring();
 
     send({ t: 'setProject', patch: patchFrom(voiceHost.getProject()) });
 
     expect(voiceHost.getProject().name).toBe('Rig B'); // the paste really landed
     expect(voiceHost.getProject().output.host).toBe('10.0.0.9');
-    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject());
+    // adoptPatch REBUILDS the project by spread — historically the point two holders diverged.
+    // `toBe`, not `toEqual`: an equal copy on the wire would mean two sources of truth again.
+    const state = broadcasts.filter((m): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state').at(-1);
+    expect(state!.project).toBe(voiceHost.getProject());
   });
 
-  it('survives a loadProject — where each host used to be re-pointed separately', () => {
-    const { voiceHost, legacyHost, send } = wiring();
+  it('a load replaces the object and the wire follows it', () => {
+    const { voiceHost, send, broadcasts } = wiring();
     const before = voiceHost.getProject();
 
     send({ t: 'loadProject', name: 'p' });
 
     expect(voiceHost.getProject()).not.toBe(before); // a load REPLACES the object
-    expect(legacyHost!.engine.getProject()).toBe(voiceHost.getProject());
+    expect(voiceHost.getProject().name).toBe('On Disk');
+    const state = broadcasts.filter((m): m is Extract<ServerMessage, { t: 'state' }> => m.t === 'state').at(-1);
+    expect(state!.project).toBe(voiceHost.getProject());
   });
 
   it('the autosaver reads the same object the reducer wrote (what identity was protecting)', () => {
@@ -261,19 +248,9 @@ describe('S8 — one reducer: a structural edit lands exactly once', () => {
   });
 });
 
-describe('S8 — state-message parity: moving `project` to the store changed no bytes', () => {
-  it('serialises identically to the pre-S8 builder that read the legacy engine', () => {
-    const { stateMessage, legacyStateMessage } = wiring();
-    expect(JSON.stringify(stateMessage())).toBe(JSON.stringify(legacyStateMessage()));
-  });
-
-  it('…and still does after a paste and a load — the two moments the sources could diverge', () => {
-    const { send, voiceHost, stateMessage, legacyStateMessage } = wiring();
-
-    send({ t: 'setProject', patch: patchFrom(voiceHost.getProject()) });
-    expect(JSON.stringify(stateMessage())).toBe(JSON.stringify(legacyStateMessage()));
-
-    send({ t: 'loadProject', name: 'p' });
-    expect(JSON.stringify(stateMessage())).toBe(JSON.stringify(legacyStateMessage()));
-  });
-});
+/**
+ * S12 deleted the state-message PARITY describe. It asserted that moving the `state` message's
+ * `project` read from `legacyHost.engine.getProject()` to the store changed no bytes — a claim whose
+ * comparator was the legacy engine. With that engine gone the claim has no other side; what replaces
+ * it is the `toBe` assertion above, which is stronger: the wire carries the store's object itself.
+ */
