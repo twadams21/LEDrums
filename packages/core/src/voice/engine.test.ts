@@ -3,6 +3,7 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../render/render-context';
 import { bandIndex, createNullEngine, createVoiceBusEngine, type InputEvent } from './engine';
+import { normalizeTriggerGraphToGen3 } from './graph-integrity';
 import type { VoiceDiagnostic } from './diagnostics';
 import { padKey, type Bus, type EffectDef, type GraphEdge, type GraphNode, type Section, type Show, type ShowSong, type SwitchOn, type TriggerGraph, type TriggerSource } from './types';
 
@@ -211,6 +212,66 @@ describe('VoiceBusEngine — stats().voices per-voice detail (S17)', () => {
     const lead = voices.find((v) => v.effectId === 'lkLead');
     expect(base).toMatchObject({ busId: 'base', mode: 'loop' });
     expect(lead).toMatchObject({ busId: 'lead', mode: 'loop' });
+  });
+});
+
+// INIT-06 chunk 06C — THE LOAD-PATH CONTRACT, pinned before the authoring-side drop.
+// `play` leaves the AUTHORING node union, but a persisted or pasted pre-Gen3 doc may still carry
+// it. `setShow` runs every graph through `normalizeTriggerGraphToGen3` (engine.ts:301), which
+// rewrites `play` → `effect` BEFORE eval ever dispatches on kind — so an old doc must still load
+// and render, never crash. These are the assertions that make that ordering a fact rather than a
+// comment. The old-shape node is hand-cast in, exactly as the velocity-fold suite simulates a
+// retired `SwitchOn` value.
+describe('VoiceBusEngine — legacy persisted `play` node (06C load path)', () => {
+  const legacyPlay = (id: string, over: Partial<GraphNode> = {}): GraphNode => ({
+    ...node('effect', id, over),
+    kind: 'play' as unknown as GraphNode['kind'],
+  });
+
+  it('normalizes a persisted play leaf to effect at setShow and still spawns its voice', () => {
+    const g: TriggerGraph = {
+      nodes: [node('trigger', 'trigger', { y: 0 }), legacyPlay('pa', { y: 0, effectId: 'fxA', params: { brightness: 1 } })],
+      edges: [{ id: 'e0', from: 'trigger', to: 'pa' }],
+    };
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(g));
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+    expect(e.stats().voices.map((v) => v.effectId)).toEqual(['fxA']);
+  });
+
+  it('renders a play leaf identically to its canonical effect twin (alias, not a second behaviour)', () => {
+    const graphWith = (leaf: GraphNode): TriggerGraph => ({
+      nodes: [node('trigger', 'trigger', { y: 0 }), leaf],
+      edges: [{ id: 'e0', from: 'trigger', to: 'pa' }],
+    });
+    const fields: Partial<GraphNode> = { y: 0, effectId: 'fxA', busId: 'lead', mode: 'hold', params: { brightness: 1 } };
+    const voicesFor = (leaf: GraphNode): unknown[] => {
+      const e = createVoiceBusEngine();
+      e.setModel(testModel());
+      e.setShow(show(graphWith(leaf)));
+      e.applyInput(hit('kick', 0));
+      e.tick(5, 5, transport(5));
+      // `id` is a fresh mint per engine, so it is the one field the two runs may legitimately
+      // disagree on; everything the alias could plausibly change is compared.
+      return e.stats().voices.map(({ id: _id, ...rest }) => rest);
+    };
+    const legacy = voicesFor(legacyPlay('pa', fields));
+    expect(legacy).toHaveLength(1); // the comparison must not pass on two empty voice lists
+    expect(legacy).toEqual(voicesFor(node('effect', 'pa', fields)));
+  });
+
+  it('flags the rewrite as a system-visible issue when the doc already claims Gen3', () => {
+    // A version-3 doc has no business carrying the alias — the normalizer still rewrites it, but
+    // says so (`persisted-play-in-gen3`), so the fix-up is reportable rather than silent.
+    const { graph: next, issues } = normalizeTriggerGraphToGen3({
+      version: 3,
+      nodes: [node('trigger', 'trigger'), legacyPlay('pa', { effectId: 'fxA' }), node('output', 'output')],
+      edges: [{ id: 'e0', from: 'trigger', to: 'pa' }, { id: 'e1', from: 'pa', to: 'output' }],
+    });
+    expect(issues.map((i) => i.code)).toContain('persisted-play-in-gen3');
+    expect(next.nodes.find((n) => n.id === 'pa')?.kind).toBe('effect');
   });
 });
 

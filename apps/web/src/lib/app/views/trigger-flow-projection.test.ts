@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../../trigger-lab/sim';
+import { normalizeGraphs } from '../../trigger-lab/store/hydrate';
 import {
   emptyTriggerProjectionCache,
   projectionDesyncIds,
@@ -328,6 +329,35 @@ describe('triggerNodeSignature — canonical effect nodes', () => {
     const play = triggerNodeSignature(makeNode('play', 'e1', 10, 20, { effectId: 'gen:strobe' }));
     const canonical = triggerNodeSignature(effect({ effectId: 'gen:strobe' }));
     expect(play.replace(':play:', ':effect:')).toBe(canonical);
+  });
+});
+
+// INIT-06 chunk 06C — THE ORDERING PROOF for the `play` KIND_SIG entry's removal. The comment at
+// :297 asserts that normalisation rewrites `play` → `effect` before any signature is computed;
+// this makes it a measured fact through the REAL hydrate path (`normalizeGraphs`), not a claim.
+// If that ordering ever inverted, the alias would reach `triggerNodeSignature` with no arm to
+// serve it — so this test is what licenses dropping the entry.
+describe('load path — a persisted `play` node never reaches triggerNodeSignature as `play`', () => {
+  const legacyDoc = (): TriggerGraph => ({
+    // Hand-built old-shape doc: the alias is cast in, as the velocity-fold suite does for a
+    // retired `SwitchOn` — the authoring union cannot spell it.
+    nodes: [
+      makeNode('trigger', 'trigger', 0, 0),
+      { ...makeNode('effect', 'p1', 12, 34, { effectId: 'gen:strobe' }), kind: 'play' as unknown as NodeKind },
+    ],
+    edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
+  });
+
+  it('hydrate normalises the alias away before the projection sees the graph', () => {
+    const { graphs } = normalizeGraphs({ 'kick:0': legacyDoc() }, {}, [], () => [], () => undefined);
+    const g = graphs['kick:0']!;
+    expect(g.nodes.some((n) => n.kind === 'play')).toBe(false);
+    const p1 = g.nodes.find((n) => n.id === 'p1')!;
+    expect(p1.kind).toBe('effect');
+    const sig = triggerNodeSignature(p1, g);
+    expect(sig).toContain(':effect:'); // signed by the effect arm...
+    expect(sig).toContain(':effect=gen:strobe'); // ...which really read the effect fields
+    expect(sig).not.toContain(':play:');
   });
 });
 
