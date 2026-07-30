@@ -546,13 +546,21 @@ export class TriggerLab {
       itself is carrying anything at all. */
   lastOscHeard = $state<InputActivity | null>(null);
 
-  /** The server refused our connection for a wrong/absent room PIN (close 4401) — drives the
+  /** The server refused our connection at the room-PIN gate (close 4401 or 4429) — drives the
       PIN-entry gate. Cleared once a supplied PIN is accepted (the link opens). */
   authRequired = $state(false);
-  /** Count of PIN refusals — increments on every 4401. The gate watches it to show an
-      "incorrect PIN" hint after a failed retry (authRequired alone can't signal a re-failure
-      since it stays true across the retry). */
+  /** Count of admission refusals — increments on EVERY refusal, wrong-PIN or throttled. The gate
+      watches it to tell "still waiting on the server" from "refused again" after a retry
+      (authRequired alone can't signal a re-failure since it stays true across the retry), so it
+      must move for both kinds or a throttled retry would hang on "Joining…" forever. WHICH kind
+      the last one was is {@link authThrottledSeconds}. */
   authFailCount = $state(0);
+  /** Non-null when the LAST refusal was a cooldown (close 4429) rather than a wrong PIN: the
+      seconds the server asked us to wait, or 0 when it refused to say. The distinction is not
+      cosmetic — during a cooldown the server refuses without comparing the PIN at all, so the
+      "Incorrect PIN" copy would be a lie to someone holding the right one. Reset to null on the
+      next wrong-PIN refusal and on a successful connect. */
+  authThrottledSeconds = $state<number | null>(null);
   /** The last server `error` message (e.g. a rejected patch paste — S45), or null once cleared.
       Surfaced as a dismissible notice so an invalid `setProject` is user-visible with no silent
       failure; cleared on the next successful patch send or when the user dismisses it. */
@@ -1200,11 +1208,13 @@ export class TriggerLab {
         // Reply to listBackups (#123) — the local snapshot listing the Backups dialog renders.
         this.backups = items;
       },
-      onAuthError: () => {
-        // Server refused our room PIN (close 4401). Surface the PIN-entry gate; the reconnect
-        // loop is paused in the client until submitPin() supplies one.
+      onAuthError: (refusal) => {
+        // Server refused us at the admission gate. Surface the PIN-entry gate; the reconnect
+        // loop is paused in the client until submitPin() supplies one. A throttled refusal
+        // (4429) is NOT a wrong PIN — record it separately so the gate can say so.
         this.authRequired = true;
         this.authFailCount += 1;
+        this.authThrottledSeconds = refusal.throttled ? (refusal.retryAfterSeconds ?? 0) : null;
         this.link = 'offline';
       },
       onConnection: (state: ConnectionState) => {
@@ -1213,6 +1223,7 @@ export class TriggerLab {
         if (state === 'open') {
           // A successful handshake means any PIN we sent was accepted — clear the gate.
           this.authRequired = false;
+          this.authThrottledSeconds = null;
           // hand the server the authored content (with library refs resolved in), then transport
           const show = buildShow(this.showSource);
           this.client.send({ t: 'setShow', show });

@@ -42,9 +42,9 @@ import { harnessClient, newHarness } from '../test-support/ws-harness';
    a real artifact rather than this comment, so a later phase can pick the work up. */
 
 /** Ceiling on the member count — the measured value at this commit, exactly. */
-const MEMBER_CAP = 320;
+const MEMBER_CAP = 321;
 /** Ceiling on store.svelte.ts's line count — likewise measured, likewise exact. */
-const LOC_CAP = 3258;
+const LOC_CAP = 3269;
 
 const EXPECTED_MEMBERS: string[] = [
   'acceptsMidiChannel',
@@ -63,6 +63,7 @@ const EXPECTED_MEMBERS: string[] = [
   'arrangement',
   'authFailCount',
   'authRequired',
+  'authThrottledSeconds',
   'autoWireEffectToOutput',
   'autosaveArmed',
   'availableModParams',

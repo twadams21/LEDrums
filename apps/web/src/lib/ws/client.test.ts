@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
+import { throttledCloseReason, WS_CLOSE_INVALID_PIN, WS_CLOSE_PIN_THROTTLED } from '@ledrums/protocol';
 import { WSClient, type WSLike } from './client';
 import type { ServerMessage } from './protocol-types';
 
@@ -32,10 +32,11 @@ class FakeWS implements WSLike {
     this.readyState = 1; // OPEN
     this.onopen?.();
   }
-  /** Simulate the server closing with a specific close code (e.g. 4401 invalid-pin). */
-  closeWith(code: number): void {
+  /** Simulate the server closing with a specific close code (e.g. 4401 invalid-pin) and, for
+      the throttled refusal, the reason string that carries the wait. */
+  closeWith(code: number, reason?: string): void {
     this.readyState = 3; // CLOSED
-    this.onclose?.({ code });
+    this.onclose?.({ code, reason });
   }
   emitText(data: string): void {
     this.onmessage?.({ data });
@@ -235,10 +236,48 @@ describe('WSClient — room PIN (S3)', () => {
     FakeWS.instances[0]!.closeWith(WS_CLOSE_INVALID_PIN);
 
     expect(onAuthError).toHaveBeenCalledTimes(1);
+    expect(onAuthError).toHaveBeenCalledWith({ throttled: false, retryAfterSeconds: null });
     expect(client.hasAuthError).toBe(true);
     // Backoff must NOT dial again — we'd just be refused forever.
     vi.advanceTimersByTime(500);
     expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it('a 4429 close reports a THROTTLE with the wait, not a wrong PIN', () => {
+    const onAuthError = vi.fn();
+    const client = new WSClient({ url: 'ws://test/ws', factory, baseDelayMs: 10, maxDelayMs: 100 });
+    client.on({ onAuthError });
+    client.connect();
+    FakeWS.instances[0]!.closeWith(WS_CLOSE_PIN_THROTTLED, throttledCloseReason(30_000));
+
+    // The distinction is the whole point: during a cooldown the server refuses without
+    // comparing the PIN, so a caller told `throttled: false` would accuse a correct PIN.
+    expect(onAuthError).toHaveBeenCalledWith({ throttled: true, retryAfterSeconds: 30 });
+    expect(client.hasAuthError).toBe(true);
+    // Same pause as 4401 — dialing into a cooldown only deepens it.
+    vi.advanceTimersByTime(500);
+    expect(FakeWS.instances.length).toBe(1);
+  });
+
+  it('a 4429 close with no/garbled reason still reports the throttle, with no number', () => {
+    // Close reasons are best-effort on the wire; a dropped reason must not downgrade the
+    // refusal back into "incorrect PIN".
+    const onAuthError = vi.fn();
+    const client = new WSClient({ url: 'ws://test/ws', factory, baseDelayMs: 10, maxDelayMs: 100 });
+    client.on({ onAuthError });
+    client.connect();
+    FakeWS.instances[0]!.closeWith(WS_CLOSE_PIN_THROTTLED);
+    expect(onAuthError).toHaveBeenCalledWith({ throttled: true, retryAfterSeconds: null });
+  });
+
+  it('reconnectWithPin clears the pause after a THROTTLED refusal too', () => {
+    const client = new WSClient({ url: 'ws://test/ws', factory, baseDelayMs: 10, maxDelayMs: 100 });
+    client.connect();
+    FakeWS.instances[0]!.closeWith(WS_CLOSE_PIN_THROTTLED, throttledCloseReason(1_000));
+    expect(client.hasAuthError).toBe(true);
+    client.reconnectWithPin('4242');
+    expect(client.hasAuthError).toBe(false);
+    expect(FakeWS.instances[1]!.url).toBe('ws://test/ws?pin=4242');
   });
 
   it('reconnectWithPin retries with the new PIN and clears the auth-paused state', () => {

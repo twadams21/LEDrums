@@ -1,5 +1,5 @@
 import { WS_PATH } from '@ledrums/core';
-import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
+import { retryAfterSecondsFrom, WS_CLOSE_INVALID_PIN, WS_CLOSE_PIN_THROTTLED } from '@ledrums/protocol';
 import {
   decodeServer,
   type BackupSnapshotMeta,
@@ -81,9 +81,24 @@ export interface WSCallbacks {
   onNetworkAdapters?: (adapters: NetworkAdapter[]) => void;
   onError?: (message: string) => void;
   onConnection?: (state: ConnectionState) => void;
-  /** The server refused the connection for a wrong/absent room PIN (close 4401). The reconnect
-      loop is paused; supply a PIN via {@link WSClient.reconnectWithPin} to retry. */
-  onAuthError?: () => void;
+  /** The server refused the connection at the room-PIN gate. The reconnect loop is paused;
+      supply a PIN via {@link WSClient.reconnectWithPin} to retry. The argument says WHY, so the
+      UI is not forced to guess — see {@link AuthRefusal}. */
+  onAuthError?: (refusal: AuthRefusal) => void;
+}
+
+/** Why the server refused us at the admission gate.
+ *
+ * The two cases must not be conflated: `throttled` means the peer spent its attempt allowance
+ * and the server refused WITHOUT comparing the PIN at all, so during that cooldown even the
+ * CORRECT PIN comes back refused. Telling that user "Incorrect PIN" is simply false. */
+export interface AuthRefusal {
+  /** True for a {@link WS_CLOSE_PIN_THROTTLED} (4429) close — a cooldown, not a wrong PIN. */
+  throttled: boolean;
+  /** Seconds the server asked us to wait, when it told us. Null when it did not, or when this
+      is a plain wrong-PIN refusal — close reasons are best-effort on the wire (a proxy may drop
+      the reason), so every reader must have a sentence that works without a number. */
+  retryAfterSeconds: number | null;
 }
 
 export interface WSClientOptions {
@@ -226,12 +241,19 @@ export class WSClient {
       this.clearWatchdog();
       this.cb.onConnection?.('closed');
       this.ws = null;
-      // A 4401 close means the server refused our PIN. Don't dial forever against a gate we
-      // can't pass — pause reconnect and surface it so the UI can prompt for a PIN.
-      const code = (ev as { code?: number } | undefined)?.code;
-      if (code === WS_CLOSE_INVALID_PIN) {
+      // A 4401 (wrong PIN) or 4429 (out of attempts, cooling down) close means the server
+      // refused us at the admission gate. Don't dial forever against a gate we can't pass —
+      // pause reconnect and surface WHICH refusal it was, so the UI can prompt for a PIN or
+      // tell the truth about the wait instead of accusing a correct PIN of being wrong.
+      const closed = ev as { code?: number; reason?: string } | undefined;
+      const code = closed?.code;
+      if (code === WS_CLOSE_INVALID_PIN || code === WS_CLOSE_PIN_THROTTLED) {
         this.authRejected = true;
-        this.cb.onAuthError?.();
+        const throttled = code === WS_CLOSE_PIN_THROTTLED;
+        this.cb.onAuthError?.({
+          throttled,
+          retryAfterSeconds: throttled ? retryAfterSecondsFrom(closed?.reason) : null,
+        });
         return;
       }
       if (!this.closedByUser) this.scheduleReconnect();
