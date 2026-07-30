@@ -31,6 +31,17 @@ nodeModSource dispatch), scope-lint's private hoop parse aligned with the
 post-A1 1-based grammar (S13), then S14 LAST: the measured kind-mutation probe
 across every dispatch site — acceptance evidence, not vibes.
 
+## Chunk 06C — drop the 'play' NodeKind alias (decision-mandated, added 2026-07-30)
+
+11-decisions.md's INIT-06 row mandates the legacy 'play' alias drops from the
+AUTHORING union; the plan's open question 4 priced it out of S1–S14, so it is
+its own chunk with its own fence: packages/core/src/voice/types.ts (union),
+web hydrate's pre-normalisation migrations, persistence.ts's cast, clipdoc's
+load path. The load normalizer keeps rewriting 'play' → canonical on load
+(greenfield posture: authoring-side drop only). 06A's S6 Record deliberately
+carries the legacy key as a TEMPORARY shared entry; 06C removes it. Runs after
+06B.
+
 ## Every chunk
 
 `lanes/COMMON.md` binds. Re-measure baseline at starting HEAD. packages/core
