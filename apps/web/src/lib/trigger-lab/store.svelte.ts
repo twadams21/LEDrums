@@ -377,10 +377,10 @@ export class TriggerLab {
   // `songs` / `songRefs` / `activeSongId` are owned by {@link showsCtl} (R23) — see the
   // delegators alongside its field. The section-arrangement concern (the active-section
   // pointer, the clipboard, the sections/activeSection deriveds, and section CRUD) is owned
-  // by {@link sectionsCtl} (R24, store split 5/5) — the store delegates its public surface
+  // by {@link arrangement} (R24, store split 5/5) — the store delegates its public surface
   // to this via the accessors + forwarders below, so callers/tests are unchanged. The store
   // supplies the active-song reads and the `songs` rune swap through the injected host.
-  private readonly sectionsCtl = new SectionsController({
+  readonly arrangement = new SectionsController({
     isViewer: () => this.isViewer,
     activeSong: () => this.activeSong,
     activeSongId: () => this.activeSongId,
@@ -388,23 +388,23 @@ export class TriggerLab {
     setSongs: (songs) => (this.songs = songs),
   } satisfies SectionsControllerHost);
 
-  // --- section-arrangement state delegators (R24) — owned by sectionsCtl ------------------------
+  // --- section-arrangement state delegators (R24) — owned by arrangement ------------------------
   /** The ONE active section (U4 merged the old look-recall + arrange focus): the section you're
       playing IS the one you're editing. Drives hit-resolution (its graphs fire, in the play
       surface below), the look-morph recall, and the Sections / Trigger views' highlight. */
   get activeSectionId(): string | null {
-    return this.sectionsCtl.activeSectionId;
+    return this.arrangement.activeSectionId;
   }
   set activeSectionId(id: string | null) {
-    this.sectionsCtl.activeSectionId = id;
+    this.arrangement.activeSectionId = id;
   }
   /** Section copy/paste scratch — a deep copy of the last-copied section, or null when empty.
       Transient (NOT persisted): a fresh session starts empty. `pasteSection` clones it. */
   get sectionClipboard(): SetlistSection | null {
-    return this.sectionsCtl.sectionClipboard;
+    return this.arrangement.sectionClipboard;
   }
   set sectionClipboard(v: SetlistSection | null) {
-    this.sectionsCtl.sectionClipboard = v;
+    this.arrangement.sectionClipboard = v;
   }
 
   // --- clipboard paste dialogs (S44) ---------------------------------------------
@@ -882,12 +882,12 @@ export class TriggerLab {
 
   // `shows`/`activeShow` (show derived) and `activeSong` (over the RESOLVED song list) are owned by
   // {@link showsCtl} (R23) — exposed via the getters alongside its field. The section-arrangement
-  // deriveds are owned by {@link sectionsCtl} (R24) and exposed via the getters below (they read the
+  // deriveds are owned by {@link arrangement} (R24) and exposed via the getters below (they read the
   // active song through that same seam).
   /** The active section (SetlistSection) in the active song — the section you play + edit.
       Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
   get activeSection(): SetlistSection | null {
-    return this.sectionsCtl.activeSection;
+    return this.arrangement.activeSection;
   }
   /** The look-morph section list (`{ id, name, looks }`) the engine spawns on recall, the
       offline sim recalls, and the Perform view lists — DERIVED from the active song's authored
@@ -895,7 +895,7 @@ export class TriggerLab {
       array to drift). `buildShow` reads this for `Show.sections`; the offline `setActiveSection`
       recall resolves the look here. Empty when there is no active song. */
   get sections(): Section[] {
-    return this.sectionsCtl.sections;
+    return this.arrangement.sections;
   }
   /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
       and authored graphs alike, no distinction — in graph insertion order (pads first, then
@@ -1893,55 +1893,55 @@ export class TriggerLab {
   // --- setlist arranging (songs → sections → per-drum graph slots) ----------
   // Song CRUD (setActiveSong / createSong / renameSong / duplicateSong / removeSong) lives on
   // {@link showsCtl} (R23) — forwarded above. The section-arrangement edits (add/rename/remove/
-  // reorder sections + graph slots + looks, R24) live on {@link sectionsCtl} — thin, API-preserving
+  // reorder sections + graph slots + looks, R24) live on {@link arrangement} — thin, API-preserving
   // forwarders below. They mutate the songs rune ShowsController owns, reached through the host.
 
   /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
   addGraphToSection(sectionId: string, graphKey: string): void {
-    this.sectionsCtl.addGraphToSection(sectionId, graphKey);
+    this.arrangement.addGraphToSection(sectionId, graphKey);
   }
   /** Remove a graph reference from a section's flat list. */
   removeGraphFromSection(sectionId: string, graphKey: string): void {
-    this.sectionsCtl.removeGraphFromSection(sectionId, graphKey);
+    this.arrangement.removeGraphFromSection(sectionId, graphKey);
   }
   /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
   setSectionGraphs(sectionId: string, graphs: string[]): void {
-    this.sectionsCtl.setSectionGraphs(sectionId, graphs);
+    this.arrangement.setSectionGraphs(sectionId, graphs);
   }
   /** Reorder a section in the active song by drag/drop. */
   moveSection(sectionId: string, toIndex: number): void {
-    this.sectionsCtl.moveSection(sectionId, toIndex);
+    this.arrangement.moveSection(sectionId, toIndex);
   }
   /** Move one graph placement within a section or across sections by drag/drop. */
   moveGraphPlacement(fromSectionId: string, graphKey: string, toSectionId: string, toIndex: number): void {
-    this.sectionsCtl.moveGraphPlacement(fromSectionId, graphKey, toSectionId, toIndex);
+    this.arrangement.moveGraphPlacement(fromSectionId, graphKey, toSectionId, toIndex);
   }
   /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). */
   setLook(sectionId: string, busId: string, effectId: string | null): void {
-    this.sectionsCtl.setLook(sectionId, busId, effectId);
+    this.arrangement.setLook(sectionId, busId, effectId);
   }
   addSongSection(name: string): void {
-    this.sectionsCtl.addSongSection(name);
+    this.arrangement.addSongSection(name);
   }
   /** Rename a section of the active song (no-op-safe on an unknown id). */
   renameSection(sectionId: string, name: string): void {
-    this.sectionsCtl.renameSection(sectionId, name);
+    this.arrangement.renameSection(sectionId, name);
   }
   /** Delete a section from the active song, re-pointing `activeSectionId` when it was active. */
   removeSection(sectionId: string): void {
-    this.sectionsCtl.removeSection(sectionId);
+    this.arrangement.removeSection(sectionId);
   }
   /** Copy a section of the active song onto the in-app clipboard. */
   copySection(sectionId: string): void {
-    this.sectionsCtl.copySection(sectionId);
+    this.arrangement.copySection(sectionId);
   }
   /** Paste the in-app clipboard as a NEW section appended to the active song, and make it active. */
   pasteSection(): void {
-    this.sectionsCtl.pasteSection();
+    this.arrangement.pasteSection();
   }
   /** Duplicate a section in one step (copy + paste). */
   duplicateSection(sectionId: string): void {
-    this.sectionsCtl.duplicateSection(sectionId);
+    this.arrangement.duplicateSection(sectionId);
   }
 
   // --- system clipboard copy / paste (S44, group K) ------------------------------
@@ -2043,7 +2043,7 @@ export class TriggerLab {
     if (res.kind === 'graph' && res.graphKey) {
       this.selectedPadKey = res.graphKey;
     } else if (res.kind === 'section' && res.section) {
-      this.sectionsCtl.insertSection(res.section);
+      this.arrangement.insertSection(res.section);
     } else if (res.kind === 'song' && res.song) {
       const song = res.song;
       this.songs = [...this.songs, song];
