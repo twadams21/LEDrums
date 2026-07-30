@@ -95,7 +95,7 @@ const bytes = (f: Float32Array): Buffer => Buffer.from(f.buffer, f.byteOffset, f
 
 describe('replay determinism at the compositor seam', () => {
   it('two engines fed identical (time, inputs, model) render byte-identical frames — pattern effect', () => {
-    const s = (): Show => showOf(graphOf([node('play', 'p1', { effectId: 'fx' })]), [effect('fx')]);
+    const s = (): Show => showOf(graphOf([node('effect', 'p1', { effectId: 'fx' })]), [effect('fx')]);
     const a = run(s(), script);
     const b = run(s(), script);
     expect(a.length).toBe(b.length);
@@ -104,7 +104,7 @@ describe('replay determinism at the compositor seam', () => {
 
   it('… and with a seeded-RNG generator effect (confetti-burst)', () => {
     const s = (): Show =>
-      showOf(graphOf([node('play', 'p1', { effectId: 'confetti' })]), [effect('confetti', { generatorId: 'confetti-burst' })]);
+      showOf(graphOf([node('effect', 'p1', { effectId: 'confetti' })]), [effect('confetti', { generatorId: 'confetti-burst' })]);
     const a = run(s(), script);
     const b = run(s(), script);
     // sanity: the session actually lights pixels (a zero session would pass vacuously)
@@ -113,11 +113,11 @@ describe('replay determinism at the compositor seam', () => {
   });
 
   it('two play nodes with identical settings contribute identically (A+A = 2×A, clamped additive)', () => {
-    const one = showOf(graphOf([node('play', 'p1', { effectId: 'fx', params: { brightness: 0.25 } })]), [effect('fx')]);
+    const one = showOf(graphOf([node('effect', 'p1', { effectId: 'fx', params: { brightness: 0.25 } })]), [effect('fx')]);
     const two = showOf(
       graphOf([
-        node('play', 'p1', { effectId: 'fx', params: { brightness: 0.25 } }),
-        node('play', 'p2', { y: 100, effectId: 'fx', params: { brightness: 0.25 } }),
+        node('effect', 'p1', { effectId: 'fx', params: { brightness: 0.25 } }),
+        node('effect', 'p2', { y: 100, effectId: 'fx', params: { brightness: 0.25 } }),
       ]),
       [effect('fx')],
     );
@@ -137,7 +137,7 @@ describe('replay determinism at the compositor seam', () => {
 describe('per-trigger seeding (item C)', () => {
   it('two successive confetti fires differ from each other, yet the whole session replays exactly', () => {
     const s = (): Show =>
-      showOf(graphOf([node('play', 'p1', { effectId: 'confetti' })]), [effect('confetti', { generatorId: 'confetti-burst' })]);
+      showOf(graphOf([node('effect', 'p1', { effectId: 'confetti' })]), [effect('confetti', { generatorId: 'confetti-burst' })]);
     // hit at t=16 and t=160; compare each fire's first bright frame
     const twoFires = Array.from({ length: 40 }, (_, i) => ({ t: (i + 1) * 16, hit: i === 0 || i === 9 }));
     const a = run(s(), twoFires);
@@ -157,7 +157,7 @@ describe('retrigger overlap (item C)', () => {
   it('rapid retriggers spawn independent overlapping voices, each enveloping from its own t=0', () => {
     const e = createVoiceBusEngine();
     e.setModel(testModel());
-    e.setShow(showOf(graphOf([node('play', 'p1', { effectId: 'fx' })]), [effect('fx', { attackMs: 100, sustainMs: 300, releaseMs: 200 })]));
+    e.setShow(showOf(graphOf([node('effect', 'p1', { effectId: 'fx' })]), [effect('fx', { attackMs: 100, sustainMs: 300, releaseMs: 200 })]));
     e.applyInput(hit(0));
     e.tick(50, 50, transport(50)); // voice 1 mid-attack (level 0.5)
     e.applyInput(hit(50)); // retrigger while voice 1 is alive
@@ -182,7 +182,7 @@ describe('hoop scope — geometry-only difference', () => {
   it('the same node on a different hoop of the same drum differs only by pixel range', () => {
     const mk = (hoop: number): Show =>
       showOf(
-        graphOf([node('play', 'p1', { effectId: 'fx', scope: 'hoop', targetId: `kick#${hoop}` })]),
+        graphOf([node('effect', 'p1', { effectId: 'fx', scope: 'hoop', targetId: `kick#${hoop}` })]),
         [effect('fx', { scope: 'hoop' })],
       );
     const a = run(mk(1), script); // hoop 1 = first hoop (1-based, A1)

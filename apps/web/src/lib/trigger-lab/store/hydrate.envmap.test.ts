@@ -19,7 +19,7 @@ function playGraph(param: string, env: Envelope, base: number): TriggerGraph {
   return {
     nodes: [
       makeNode('trigger', 'trigger'),
-      makeNode('play', 'p1', 100, 40, { effectId: 'fx', params: { [param]: base }, env: { [param]: env } }),
+      makeNode('effect', 'p1', 100, 40, { effectId: 'fx', params: { [param]: base }, env: { [param]: env } }),
     ],
     edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
   };

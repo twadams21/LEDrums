@@ -44,7 +44,7 @@ describe('setDelayMode', () => {
   it('is a no-op on a non-delay node', () => {
     const store = new TriggerLab(fakeClient);
     store.createGraph('g');
-    const play = store.addNode('play', 200, 0)!;
+    const play = store.addNode('effect', 200, 0)!;
     const before = play.delayMode;
     store.setDelayMode(play, 'beats');
     expect(play.delayMode).toBe(before); // unchanged

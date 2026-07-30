@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
-import type { GraphEdge, GraphNode, TriggerGraph } from './types';
+import type { GraphEdge, GraphNode, PersistedGraphNode, PersistedTriggerGraph } from './types';
 
 function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
   return {
@@ -31,10 +31,18 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
 
 const edge = (id: string, from: string, to: string, over: Partial<GraphEdge> = {}): GraphEdge => ({ id, from, to, ...over });
 
+/** A node as an OLD DOCUMENT spells an effect leaf. `play` is gone from the authoring union
+    (06C), so the only way to build one is the ingest shape — which is the point: this suite
+    tests the one function allowed to read it, and nothing else in the tree can produce it. */
+const playNode = (id: string, over: Partial<GraphNode> = {}): PersistedGraphNode => ({
+  ...node('effect', id, over),
+  kind: 'play',
+});
+
 describe('normalizeTriggerGraphToGen3', () => {
   it('migrates legacy play leaves to effect nodes wired through one output anchor', () => {
-    const graph: TriggerGraph = {
-      nodes: [node('trigger', 'trigger'), node('play', 'p', { effectId: 'fx' })],
+    const graph: PersistedTriggerGraph = {
+      nodes: [node('trigger', 'trigger'), playNode('p', { effectId: 'fx' })],
       edges: [edge('e1', 'trigger', 'p')],
     };
     const { graph: next, issues } = normalizeTriggerGraphToGen3(graph);
@@ -46,8 +54,8 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('converts legacy scoped output nodes to scope filters before adding terminal output', () => {
-    const graph: TriggerGraph = {
-      nodes: [node('trigger', 'trigger'), node('play', 'p'), node('output', 'legacy-out', { scope: 'drum', targetId: 'snare' })],
+    const graph: PersistedTriggerGraph = {
+      nodes: [node('trigger', 'trigger'), playNode('p'), node('output', 'legacy-out', { scope: 'drum', targetId: 'snare' })],
       edges: [edge('e1', 'trigger', 'p'), edge('e2', 'p', 'legacy-out')],
     };
     const { graph: next } = normalizeTriggerGraphToGen3(graph);
@@ -57,7 +65,7 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('repairs duplicate outputs duplicate ids dangling self and duplicate edges deterministically', () => {
-    const graph: TriggerGraph = {
+    const graph: PersistedTriggerGraph = {
       version: 3,
       nodes: [
         node('trigger', 'trigger'),
@@ -89,9 +97,9 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('flags Gen3 persisted play and uses only flow edges for render leaf detection', () => {
-    const graph: TriggerGraph = {
+    const graph: PersistedTriggerGraph = {
       version: 3,
-      nodes: [node('trigger', 'trigger'), node('play', 'p'), node('envelope', 'env'), node('modifier', 'mod'), node('output', 'output')],
+      nodes: [node('trigger', 'trigger'), playNode('p'), node('envelope', 'env'), node('modifier', 'mod'), node('output', 'output')],
       edges: [
         edge('e1', 'trigger', 'p'),
         edge('param', 'env', 'p', { toPort: 'param:brightness' }),
@@ -105,8 +113,8 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('reports the system actions performed: legacy migration + auto-wired leaf count', () => {
-    const graph: TriggerGraph = {
-      nodes: [node('trigger', 'trigger'), node('play', 'a', { effectId: 'fx' }), node('play', 'b', { effectId: 'fx' })],
+    const graph: PersistedTriggerGraph = {
+      nodes: [node('trigger', 'trigger'), playNode('a', { effectId: 'fx' }), playNode('b', { effectId: 'fx' })],
       edges: [edge('e1', 'trigger', 'a'), edge('e2', 'trigger', 'b')],
     };
     const { actions } = normalizeTriggerGraphToGen3(graph);
@@ -114,7 +122,7 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('reports no system actions for an already-Gen3, fully-wired graph', () => {
-    const graph: TriggerGraph = {
+    const graph: PersistedTriggerGraph = {
       version: 3,
       nodes: [node('trigger', 'trigger'), node('effect', 'p', { effectId: 'fx' }), node('output', 'output')],
       edges: [edge('e1', 'trigger', 'p'), edge('e2', 'p', 'output')],
@@ -124,14 +132,14 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('is idempotent after the first repair pass', () => {
-    const once = normalizeTriggerGraphToGen3({ nodes: [node('trigger', 'trigger'), node('play', 'p')], edges: [] }).graph;
+    const once = normalizeTriggerGraphToGen3({ nodes: [node('trigger', 'trigger'), playNode('p')], edges: [] }).graph;
     const twice = normalizeTriggerGraphToGen3(once);
     expect(twice.issues).toEqual([]);
     expect(twice.graph).toEqual(once);
   });
 
   it('does not auto-wire an already-Gen3 unwired effect leaf', () => {
-    const graph: TriggerGraph = {
+    const graph: PersistedTriggerGraph = {
       version: 3,
       nodes: [node('trigger', 'trigger'), node('effect', 'p', { effectId: 'fx' }), node('output', 'output')],
       edges: [edge('e1', 'trigger', 'p')],
@@ -141,7 +149,7 @@ describe('normalizeTriggerGraphToGen3', () => {
   });
 
   it('reserves the terminal output id for the output anchor', () => {
-    const graph: TriggerGraph = {
+    const graph: PersistedTriggerGraph = {
       version: 3,
       nodes: [node('trigger', 'trigger'), node('effect', 'output', { effectId: 'fx' }), node('output', 'out2')],
       edges: [edge('e1', 'trigger', 'output'), edge('e2', 'output', 'out2')],

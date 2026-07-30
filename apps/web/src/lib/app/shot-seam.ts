@@ -210,7 +210,7 @@ class ShotSeamImpl implements ShotSeam {
   openGallery(): void {
     const graph = this.store.selectedGraph;
     if (!graph) return;
-    const isEffect = (node: GraphNode): boolean => node.kind === 'effect' || node.kind === 'play';
+    const isEffect = (node: GraphNode): boolean => node.kind === 'effect';
     const selectedId = this.shell.selection?.kind === 'node' ? this.shell.selection.nodeId : null;
     const selected = selectedId ? graph.nodes.find((node) => node.id === selectedId) : null;
     const target =
@@ -284,7 +284,7 @@ class ShotSeamImpl implements ShotSeam {
     // The static stand-in wire spans two nodes — make sure the open graph has a non-trigger node
     // for its far end to land on, so the capture reads as a wire refused AT a target.
     const graph = this.store.selectedGraph;
-    if (graph && graph.nodes.every((n) => n.kind === 'trigger')) this.addNode('play');
+    if (graph && graph.nodes.every((n) => n.kind === 'trigger')) this.addNode('effect');
     wireInvalidPreview.set(true);
   }
 
@@ -608,7 +608,7 @@ class ShotSeamImpl implements ShotSeam {
     if (!graph) return;
     // Reuse an existing Effect if one is already wired; otherwise a fresh one auto-wires to
     // Output (R04), giving the Effect → Output flow path the lint walks.
-    const fx = graph.nodes.find((n) => n.kind === 'effect' || n.kind === 'play') ?? this.addNode('effect') ?? undefined;
+    const fx = graph.nodes.find((n) => n.kind === 'effect') ?? this.addNode('effect') ?? undefined;
     const output = graph.nodes.find((n) => n.kind === 'output');
     if (!fx || !output) return;
     // Two distinct drums so the intersection is provably empty for every firing drum. Prefer
@@ -632,7 +632,7 @@ class ShotSeamImpl implements ShotSeam {
     if (!graph) return;
     // Reuse an existing Effect if one is wired; otherwise a fresh one auto-wires to Output (R04),
     // giving us an Effect → Output edge to sever.
-    const fx = graph.nodes.find((n) => n.kind === 'effect' || n.kind === 'play') ?? this.addNode('effect') ?? undefined;
+    const fx = graph.nodes.find((n) => n.kind === 'effect') ?? this.addNode('effect') ?? undefined;
     if (!fx) return;
     // Cut every outgoing flow wire from the Effect: with no path forward it can never reach the
     // terminal Output anchor → the R07 no-path-to-output lint (badge + strip). Re-read the graph so

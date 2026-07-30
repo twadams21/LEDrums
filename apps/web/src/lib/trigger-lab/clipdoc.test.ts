@@ -37,7 +37,7 @@ const preset = (id: string, effectId: string, params: Record<string, number> = {
 const playGraph = (effectId: string, presetId: string): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger', 0, 0),
-    makeNode('play', 'p1', 0, 0, { kind: 'play', effectId, presetId, params: { hue: 0.5 } }),
+    makeNode('effect', 'p1', 0, 0, { effectId, presetId, params: { hue: 0.5 } }),
   ],
   edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
 });
@@ -47,7 +47,7 @@ const playGraph = (effectId: string, presetId: string): TriggerGraph => ({
 const modulatedGraph = (): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger'),
-    makeNode('play', 'p1', 0, 0, { kind: 'play', effectId: 'fx-mod', presetId: 'fx-mod:default', modInputs: [{ param: 'hue' }] }),
+    makeNode('effect', 'p1', 0, 0, { effectId: 'fx-mod', presetId: 'fx-mod:default', modInputs: [{ param: 'hue' }] }),
     makeNode('modifier', 'm1', 0, 0, { kind: 'modifier', modifierId: 'invert', modInputs: [{ param: 'amount' }] }),
     makeNode('lfo', 'l1', 0, 0, { kind: 'lfo' }),
     makeNode('cc', 'c1', 0, 0, { kind: 'cc', ccController: 21 }),
@@ -213,7 +213,7 @@ describe('remapClipDoc — re-key + ref rewrite', () => {
 
     // the materialized graph references the (possibly re-keyed) effect/preset
     const graph = r.graphs[r.graphKey!]!;
-    const play = graph.nodes.find((n) => n.kind === 'play')!;
+    const play = graph.nodes.find((n) => n.kind === 'effect')!;
     expect(play.effectId).toBe(newEff);
     expect(play.presetId).toBe(`${newEff}:default`);
     expect(r.graphNames[r.graphKey!]).toBe('Kick');
@@ -234,7 +234,7 @@ describe('remapClipDoc — re-key + ref rewrite', () => {
     // modifierId is a global registry id — never re-keyed
     expect(graph.nodes.find((n) => n.kind === 'modifier')!.modifierId).toBe('invert');
     // modInputs (exposed param rows) travel verbatim
-    expect(graph.nodes.find((n) => n.kind === 'play')!.modInputs).toEqual([{ param: 'hue' }]);
+    expect(graph.nodes.find((n) => n.kind === 'effect')!.modInputs).toEqual([{ param: 'hue' }]);
   });
 
   it('remaps a section: fresh id, graph refs + look effect ids rewritten', () => {
@@ -338,7 +338,7 @@ describe('remapClipDoc — content reuse', () => {
     expect(r.effects).toHaveLength(1);
     const newEff = r.effects[0]!.id;
     expect(newEff).not.toBe('my-fx'); // collision → re-keyed
-    expect(r.graphs[r.graphKey!]!.nodes.find((n) => n.kind === 'play')!.effectId).toBe(newEff);
+    expect(r.graphs[r.graphKey!]!.nodes.find((n) => n.kind === 'effect')!.effectId).toBe(newEff);
     expect(r.presets[0]!.id).toBe(`${newEff}:default`);
   });
 
@@ -362,7 +362,7 @@ describe('remapClipDoc — content reuse', () => {
     const ids = r.effects.map((e) => e.id);
     expect(new Set(ids).size).toBe(2); // DISTINCT — no self-collision within the pass
     // each emitted graph's play node points at a real, distinct emitted effect
-    const playEffs = Object.values(r.graphs).map((g) => g.nodes.find((n) => n.kind === 'play')!.effectId);
+    const playEffs = Object.values(r.graphs).map((g) => g.nodes.find((n) => n.kind === 'effect')!.effectId);
     expect(new Set(playEffs)).toEqual(new Set(ids));
     // default presets track their (distinct) effect ids
     expect(r.presets.map((p) => p.id).sort()).toEqual(ids.map((id) => `${id}:default`).sort());
@@ -377,7 +377,7 @@ describe('remapClipDoc — content reuse', () => {
     const r = remapClipDoc(doc, show) as RemapResult;
     expect(r.effects).toHaveLength(0); // built-in kept, not emitted
     const graph = r.graphs[r.graphKey!]!;
-    expect(graph.nodes.find((n) => n.kind === 'play')!.effectId).toBe('swirl'); // id preserved verbatim
+    expect(graph.nodes.find((n) => n.kind === 'effect')!.effectId).toBe('swirl'); // id preserved verbatim
   });
 });
 

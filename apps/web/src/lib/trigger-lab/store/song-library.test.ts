@@ -22,7 +22,7 @@ const preset = (id: string, effectId: string): Preset => ({ id, name: id, effect
 const playGraph = (effectId: string, presetId: string): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger', 0, 0),
-    makeNode('play', 'p1', 0, 0, { kind: 'play', effectId, presetId, params: { hue: 0.5 } }),
+    makeNode('effect', 'p1', 0, 0, { effectId, presetId, params: { hue: 0.5 } }),
   ],
   edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
 });
@@ -33,7 +33,7 @@ const playGraph = (effectId: string, presetId: string): TriggerGraph => ({
 const modulatedGraph = (): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger'),
-    makeNode('play', 'p1', 0, 0, { kind: 'play', effectId: 'fx-mod', presetId: 'fx-mod:default', modInputs: [{ param: 'hue' }] }),
+    makeNode('effect', 'p1', 0, 0, { effectId: 'fx-mod', presetId: 'fx-mod:default', modInputs: [{ param: 'hue' }] }),
     makeNode('modifier', 'm1', 0, 0, { kind: 'modifier', modifierId: 'invert', modInputs: [{ param: 'amount' }] }),
     makeNode('lfo', 'l1', 0, 0, { kind: 'lfo' }),
     makeNode('cc', 'c1', 0, 0, { kind: 'cc', ccController: 21 }),
@@ -106,7 +106,7 @@ describe('extractSongClosure — exact reachability', () => {
     expect(closure.sections[0]!.id).toBe(`${ns}song-1-s1`);
     expect(closure.sections[0]!.graphs).toEqual([`${ns}g-kick`]);
     // play node's effect + preset refs namespaced
-    const play = closure.graphs[`${ns}g-kick`]!.nodes.find((n) => n.kind === 'play')!;
+    const play = closure.graphs[`${ns}g-kick`]!.nodes.find((n) => n.kind === 'effect')!;
     expect(play.effectId).toBe(`${ns}fx-kick`);
     expect(play.presetId).toBe(`${ns}fx-kick:default`);
     // preset → effect back-reference namespaced too
@@ -202,7 +202,7 @@ describe('extractSongClosure — defensive', () => {
     expect(Object.keys(closure.graphs)).toEqual([`${ns}g-real`]);
     // dangling preset ref carries no def, but the node's ref is still namespaced (faithful to source)
     expect(closure.presets).toEqual([]);
-    const play = closure.graphs[`${ns}g-real`]!.nodes.find((n) => n.kind === 'play')!;
+    const play = closure.graphs[`${ns}g-real`]!.nodes.find((n) => n.kind === 'effect')!;
     expect(play.presetId).toBe(`${ns}fx-missing`);
   });
 
@@ -218,7 +218,7 @@ describe('extractSongClosure — defensive', () => {
     const before = structuredClone(closure);
 
     // Mutate the source show's live objects that a shallow copy would alias.
-    const srcPlay = src.graphs.g!.nodes.find((n) => n.kind === 'play')!;
+    const srcPlay = src.graphs.g!.nodes.find((n) => n.kind === 'effect')!;
     srcPlay.params.hue = 0.99;
     srcPlay.bands.push(0.123);
     (src.effects[0]!.params as unknown[]).push({ key: 'injected' });

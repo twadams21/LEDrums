@@ -377,7 +377,7 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
     const store = new TriggerLab(noopClient);
     // As standalone (an editor), mint a graph + a play node we can try to mutate later.
     const key = store.createGraph('Test graph');
-    const node = store.addNode('play', 0, 0);
+    const node = store.addNode('effect', 0, 0);
     expect(node).not.toBeNull();
     const paramKey = Object.keys(node!.params)[0];
     const paramBefore = paramKey ? node!.params[paramKey] : undefined;

@@ -48,7 +48,7 @@ describe('auto-wire Effect → Output on add (R04)', () => {
 
   it('auto-wires a play node too (both map to the light-making Effect node)', () => {
     const store = freshGraph();
-    const play = store.addNode('play', 200, 0)!;
+    const play = store.addNode('effect', 200, 0)!;
     expect(play.kind).toBe('effect');
     expect(graphOf(store).edges.some((e) => e.from === play.id && e.to === outputId(store))).toBe(true);
   });

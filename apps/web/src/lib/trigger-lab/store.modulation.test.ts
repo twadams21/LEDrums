@@ -36,7 +36,7 @@ function withRaf(body: () => void): void {
 function withEnvelope(): { store: TriggerLab; key: string; play: GraphNode; env: GraphNode } {
   const store = new TriggerLab(fakeClient);
   const key = store.createGraph('test');
-  const play = store.addNode('play', 200, 0)!; // seeds effect 'chase' (hue/brightness/speed/width)
+  const play = store.addNode('effect', 200, 0)!; // seeds effect 'chase' (hue/brightness/speed/width)
   const env = store.addNode('envelope', 0, 100)!;
   return { store, key, play, env };
 }
@@ -139,7 +139,7 @@ describe('persistence round-trip', () => {
       const store = new TriggerLab(fakeClient);
       store.start();
       key = store.createGraph('test');
-      const play = store.addNode('play', 200, 0)!;
+      const play = store.addNode('effect', 200, 0)!;
       const env = store.addNode('envelope', 0, 100)!;
       playId = play.id;
       envId = env.id;

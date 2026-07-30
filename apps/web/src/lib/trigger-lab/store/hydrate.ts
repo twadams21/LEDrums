@@ -140,7 +140,7 @@ export function materializeLinkedNodes(graph: TriggerGraph, presetParamsFor: Pre
     if (!('linked' in (n as MaybeLinked))) return n; // already migrated — keep the ref
     const wasLinked = (n as MaybeLinked).linked === true;
     const { linked: _drop, ...rest } = n as GraphNode & MaybeLinked;
-    if (wasLinked && (n.kind === 'play' || n.kind === 'effect')) {
+    if (wasLinked && (n.kind === 'effect')) {
       const shared = presetParamsFor(n.presetId);
       if (shared) return { ...rest, params: { ...(shared as Record<string, unknown>) } } as GraphNode;
     }
@@ -188,7 +188,7 @@ function adsrEqual(a: AdsrShape, b: AdsrShape): boolean {
 export function migrateGraphEnvelopes(graph: TriggerGraph): TriggerGraph {
   let graphChanged = false;
   const nodes = graph.nodes.map((n) => {
-    if (n.kind !== 'play' && n.kind !== 'effect') return n;
+    if (n.kind !== 'effect') return n;
     let envChanged = false;
     const env: EnvMap = {};
     for (const [key, e] of Object.entries(n.env)) {
@@ -254,13 +254,13 @@ export function migrateGraphEnvMaps(graph: TriggerGraph, specsFor: SpecsFor): Tr
   // Any play node still carrying an `env` map is un-migrated (post-migration play env is `{}`), so
   // its mere presence is the trigger — including a map with only inert (`none` / non-number)
   // entries, which must still be cleared or the pass would never reach its fixed point.
-  const hasLegacyEnv = graph.nodes.some((n) => (n.kind === 'play' || n.kind === 'effect') && Object.keys(n.env).length > 0);
+  const hasLegacyEnv = graph.nodes.some((n) => (n.kind === 'effect') && Object.keys(n.env).length > 0);
   if (!hasLegacyEnv) return graph; // nothing to migrate → same reference (idempotent)
 
   const nodes: GraphNode[] = [];
   const addedEdges: GraphEdge[] = [];
   for (const n of graph.nodes) {
-    if ((n.kind !== 'play' && n.kind !== 'effect') || Object.keys(n.env).length === 0) {
+    if ((n.kind !== 'effect') || Object.keys(n.env).length === 0) {
       nodes.push(n); // non-play, or an already-migrated play node — untouched (alias-stable)
       continue;
     }
@@ -321,7 +321,7 @@ function resolveGraphAliases(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if ((n.kind !== 'play' && n.kind !== 'effect') || !n.effectId) return n;
+      if ((n.kind !== 'effect') || !n.effectId) return n;
       const resolved = resolveEffectAlias(n.effectId);
       if (resolved === n.effectId) return n;
       changed = true;
@@ -345,7 +345,7 @@ export function inferPlayTypes(
   for (const [key, graph] of Object.entries(graphs)) {
     let changed = false;
     const nodes = graph.nodes.map((n) => {
-      if ((n.kind !== 'play' && n.kind !== 'effect') || n.playType) return n;
+      if ((n.kind !== 'effect') || n.playType) return n;
       changed = true;
       return { ...n, playType: n.canvasScene ? ('canvas' as const) : playTypeForEffect(n.effectId) };
     });

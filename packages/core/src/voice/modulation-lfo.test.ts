@@ -128,7 +128,7 @@ describe('graph resolution — an LFO node wired to a param modulates every voic
   const graph: TriggerGraph = {
     nodes: [
       { id: 'lfo1', kind: 'lfo', lfo: lfo({ waveform: 'saw', rateHz: 1 }) } as unknown as GraphNode,
-      { id: 'play1', kind: 'play' } as unknown as GraphNode,
+      { id: 'play1', kind: 'effect' } as unknown as GraphNode,
     ],
     edges: [{ id: 'e1', from: 'lfo1', to: 'play1', toPort: 'param:brightness', amount: 1 }],
   };

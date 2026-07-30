@@ -44,7 +44,7 @@ describe('bandIndex resolver', () => {
 });
 
 describe('value switch — gate', () => {
-  const playChase = makeNode('play', 'p', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' });
+  const playChase = makeNode('effect', 'p', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' });
   const wire: GraphEdge[] = [{ id: 'e1', from: 'sw', to: 'p' }];
 
   it('passes the child when value ≤ threshold (default direction)', () => {
@@ -68,8 +68,8 @@ describe('value switch — gate', () => {
 describe('value switch — bands', () => {
   // two bands (cutoff 0.5): band-0 → chase, band-1 → sparkle
   const twoBandKids = [
-    makeNode('play', 'a', 400, -40, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
-    makeNode('play', 'b', 400, 40, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
+    makeNode('effect', 'a', 400, -40, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+    makeNode('effect', 'b', 400, 40, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
   ];
   const twoBandWires: GraphEdge[] = [
     { id: 'e0', from: 'sw', to: 'a', fromPort: 'band-0' },
@@ -98,8 +98,8 @@ describe('value switch — bands', () => {
   it('a band with no wired child does nothing (empty middle band)', () => {
     // three bands (cutoffs 0.3, 0.7); wire only band-0 and band-2, leave band-1 empty
     const kids = [
-      makeNode('play', 'a', 400, -60, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
-      makeNode('play', 'c', 400, 60, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
+      makeNode('effect', 'a', 400, -60, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+      makeNode('effect', 'c', 400, 60, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
     ];
     const wires: GraphEdge[] = [
       { id: 'e0', from: 'sw', to: 'a', fromPort: 'band-0' },
@@ -113,7 +113,7 @@ describe('value switch — bands', () => {
 
   it('ignores edges on the default output when in bands mode (port-less wires fire nothing)', () => {
     // an edge with no fromPort must not be treated as any band
-    const kids = [makeNode('play', 'a', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' })];
+    const kids = [makeNode('effect', 'a', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' })];
     const wires: GraphEdge[] = [{ id: 'e0', from: 'sw', to: 'a' }];
     expect(fireValueSwitch({ valueMode: 'bands', bands: [0.5] }, kids, wires, 0.2)).toEqual([]);
   });
@@ -130,7 +130,7 @@ describe('value switch — back-compat defaults', () => {
     delete (sw as Partial<GraphNode>).invert;
     delete (sw as Partial<GraphNode>).bands;
     const graph: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0), sw, makeNode('play', 'p', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' })],
+      nodes: [makeNode('trigger', 'trigger', 0, 0), sw, makeNode('effect', 'p', 400, 0, { effectId: 'gen:chase-bands', presetId: 'chase:default' })],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },
         { id: 'e1', from: 'sw', to: 'p' },
@@ -146,8 +146,8 @@ describe('non-value switch modes unchanged', () => {
       nodes: [
         makeNode('trigger', 'trigger', 0, 0),
         makeNode('switch', 'sw', 200, 0, { on: 'section' }),
-        makeNode('play', 'a', 400, -40, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
-        makeNode('play', 'b', 400, 40, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
+        makeNode('effect', 'a', 400, -40, { effectId: 'gen:chase-bands', presetId: 'chase:default' }),
+        makeNode('effect', 'b', 400, 40, { effectId: 'gen:pixel-accum', presetId: 'sparkle:default' }),
       ],
       edges: [
         { id: 'e-t', from: 'trigger', to: 'sw' },

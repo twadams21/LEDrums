@@ -27,7 +27,7 @@ const effect = (id: string): EffectDef => ({
 });
 const preset = (id: string, effectId: string): Preset => ({ id, name: id, effectId, params: {} });
 const playGraph = (effectId: string, presetId: string): TriggerGraph => ({
-  nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 0, 0, { kind: 'play', effectId, presetId })],
+  nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 0, 0, { effectId, presetId })],
   edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
 });
 

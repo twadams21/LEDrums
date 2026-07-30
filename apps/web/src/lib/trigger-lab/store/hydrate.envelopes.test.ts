@@ -15,7 +15,7 @@ const legacyCurveHalf: AdsrShape = { attack: 0.2, decay: 0.3, sustain: 0.5, rele
 const graphWith = (adsr: AdsrShape): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger'),
-    makeNode('play', 'p1', 0, 0, { effectId: 'gen:radial-wash', env: { hue: envOf(adsr) } }),
+    makeNode('effect', 'p1', 0, 0, { effectId: 'gen:radial-wash', env: { hue: envOf(adsr) } }),
   ],
   edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
 });
@@ -69,7 +69,7 @@ describe('migrateGraphEnvelopes', () => {
 
   it('is a no-op for a play node with no envelope shapes', () => {
     const g: TriggerGraph = {
-      nodes: [makeNode('play', 'p1', 0, 0, { effectId: 'gen:radial-wash' })],
+      nodes: [makeNode('effect', 'p1', 0, 0, { effectId: 'gen:radial-wash' })],
       edges: [],
     };
     expect(migrateGraphEnvelopes(g)).toBe(g);

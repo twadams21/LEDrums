@@ -43,8 +43,8 @@ function twoNodeGraph(store: TriggerLab): { A: GraphNode; B: GraphNode } {
   const wide = store.presetById('gen:helix:default')!;
   const graph: TriggerGraph = {
     nodes: [
-      makeNode('play', 'A', 0, 0, { effectId: 'gen:helix', presetId: 'gen:helix:default', params: { ...wide.params } }),
-      makeNode('play', 'B', 0, 0, { effectId: 'gen:helix', presetId: 'gen:helix:default', params: { ...wide.params } }),
+      makeNode('effect', 'A', 0, 0, { effectId: 'gen:helix', presetId: 'gen:helix:default', params: { ...wide.params } }),
+      makeNode('effect', 'B', 0, 0, { effectId: 'gen:helix', presetId: 'gen:helix:default', params: { ...wide.params } }),
     ],
     edges: [],
   };

@@ -75,8 +75,8 @@ function allGraph(): TriggerGraph {
     nodes: [
       node('trigger', 'trigger', { y: 0 }),
       node('all', 'all', { y: 0 }),
-      node('play', 'pa', { y: 0, effectId: 'fxA', params: { brightness: 1 } }),
-      node('play', 'pb', { y: 100, effectId: 'fxB', busId: 'lead', params: { brightness: 1 } }),
+      node('effect', 'pa', { y: 0, effectId: 'fxA', params: { brightness: 1 } }),
+      node('effect', 'pb', { y: 100, effectId: 'fxB', busId: 'lead', params: { brightness: 1 } }),
     ],
     edges: [
       { id: 'e0', from: 'trigger', to: 'all' },
@@ -92,8 +92,8 @@ function sequenceGraph(): TriggerGraph {
     nodes: [
       node('trigger', 'trigger', { y: 0 }),
       node('sequence', 'seq', { y: 0 }),
-      node('play', 'pa', { y: 0, effectId: 'fxA' }),
-      node('play', 'pb', { y: 100, effectId: 'fxB' }),
+      node('effect', 'pa', { y: 0, effectId: 'fxA' }),
+      node('effect', 'pb', { y: 100, effectId: 'fxB' }),
     ],
     edges: [
       { id: 'e0', from: 'trigger', to: 'seq' },
@@ -109,7 +109,7 @@ function toggleGraph(): TriggerGraph {
     nodes: [
       node('trigger', 'trigger', { y: 0 }),
       node('toggle', 'tog', { y: 0 }),
-      node('play', 'pa', { y: 0, effectId: 'fxHold', mode: 'hold', busId: 'lead' }),
+      node('effect', 'pa', { y: 0, effectId: 'fxHold', mode: 'hold', busId: 'lead' }),
     ],
     edges: [
       { id: 'e0', from: 'trigger', to: 'tog' },
@@ -302,7 +302,7 @@ describe('VoiceBusEngine — graph eval parity (deterministic nodes)', () => {
     const g: TriggerGraph = {
       nodes: [
         node('trigger', 'trigger'),
-        node('play', 'pa', { effectId: 'fxHold', mode: 'hold', busId: 'lead' }),
+        node('effect', 'pa', { effectId: 'fxHold', mode: 'hold', busId: 'lead' }),
       ],
       edges: [{ id: 'e0', from: 'trigger', to: 'pa' }],
     };
@@ -339,7 +339,7 @@ describe('VoiceBusEngine — graph eval parity (deterministic nodes)', () => {
     const g: TriggerGraph = {
       nodes: [
         node('trigger', 'trigger'),
-        node('play', 'pa', { effectId: 'fxA', scope: 'drum', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', scope: 'drum', params: { brightness: 1 } }),
       ],
       edges: [{ id: 'e0', from: 'trigger', to: 'pa' }],
     };
@@ -378,7 +378,7 @@ describe('VoiceBusEngine — graph eval parity (deterministic nodes)', () => {
     const g: TriggerGraph = {
       nodes: [
         node('trigger', 'trigger'),
-        node('play', 'pa', { effectId: 'fxA', scope, params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', scope, params: { brightness: 1 } }),
       ],
       edges: [{ id: 'e0', from: 'trigger', to: 'pa' }],
     };
@@ -422,10 +422,10 @@ describe('VoiceBusEngine — determinism', () => {
         nodes: [
           node('trigger', 'trigger'),
           node('random', 'rnd', { noRepeat: true }),
-          node('play', 'pa', { y: 0, effectId: 'fxA', params: { brightness: 1 } }),
-          node('play', 'pb', { y: 100, effectId: 'fxB', params: { brightness: 1 } }),
+          node('effect', 'pa', { y: 0, effectId: 'fxA', params: { brightness: 1 } }),
+          node('effect', 'pb', { y: 100, effectId: 'fxB', params: { brightness: 1 } }),
           node('chance', 'ch', { y: 200, p: 0.5 }),
-          node('play', 'pc', { y: 200, effectId: 'fxA', scope: 'drum', params: { brightness: 1 } }),
+          node('effect', 'pc', { y: 200, effectId: 'fxA', scope: 'drum', params: { brightness: 1 } }),
         ],
         edges: [
           { id: 'e0', from: 'trigger', to: 'rnd' },
@@ -455,7 +455,7 @@ function flatGraph(effectId: string): TriggerGraph {
   return {
     nodes: [
       node('trigger', 'trigger'),
-      node('play', 'p1', { effectId, params: { brightness: 1 } }),
+      node('effect', 'p1', { effectId, params: { brightness: 1 } }),
     ],
     edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
   };
@@ -667,8 +667,8 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('sequence', 'seq', { y: 0 }),
-        node('play', 'pa', { y: 0, effectId: 'fxA' }),
-        node('play', 'pb', { y: 100, effectId: 'fxB' }),
+        node('effect', 'pa', { y: 0, effectId: 'fxA' }),
+        node('effect', 'pb', { y: 100, effectId: 'fxB' }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'seq' },
@@ -722,8 +722,8 @@ describe('VoiceBusEngine — section-aware slot resolution', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('sequence', 'seq', { y: 0 }),
-        node('play', 'pa', { y: 0, effectId: 'fxA', busId: 'base' }),
-        node('play', 'pb', { y: 100, effectId: 'fxB', busId: 'busB' }),
+        node('effect', 'pa', { y: 0, effectId: 'fxA', busId: 'base' }),
+        node('effect', 'pb', { y: 100, effectId: 'fxB', busId: 'busB' }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'seq' },
@@ -831,7 +831,7 @@ describe('VoiceBusEngine — zero-alloc / cap sanity', () => {
 
 /** A play node forced onto a given bus, so a fired child is identifiable by bus. */
 function playOn(id: string, busId: string, y: number): GraphNode {
-  return node('play', id, { y, effectId: 'fxA', busId, params: { brightness: 1 } });
+  return node('effect', id, { y, effectId: 'fxA', busId, params: { brightness: 1 } });
 }
 
 /** Build a value-switch show: trigger → switch(on:'value', ...over) → children. */
@@ -1319,7 +1319,7 @@ describe('VoiceBusEngine — delay node (before/after ordering)', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('delay', 'dly', { delayMode: 'time', ms: 200 }),
-        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'dly' },
@@ -1344,9 +1344,9 @@ describe('VoiceBusEngine — delay node (before/after ordering)', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('all', 'all'),
-        node('play', 'pi', { y: 0, effectId: 'fxA', busId: 'base', params: { brightness: 1 } }),
+        node('effect', 'pi', { y: 0, effectId: 'fxA', busId: 'base', params: { brightness: 1 } }),
         node('delay', 'dly', { y: 100, delayMode: 'time', ms: 200 }),
-        node('play', 'pd', { effectId: 'fxB', busId: 'lead', params: { brightness: 1 } }),
+        node('effect', 'pd', { effectId: 'fxB', busId: 'lead', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'all' },
@@ -1376,7 +1376,7 @@ describe('VoiceBusEngine — delay node (bpm snapshot)', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('delay', 'dly', { delayMode: 'beats', division: '1/8' }),
-        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'dly' },
@@ -1406,7 +1406,7 @@ describe('VoiceBusEngine — delay node (nested delays)', () => {
         node('trigger', 'trigger'),
         node('delay', 'd1', { delayMode: 'time', ms: 100 }),
         node('delay', 'd2', { delayMode: 'time', ms: 150 }),
-        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'd1' },
@@ -1436,7 +1436,7 @@ describe('VoiceBusEngine — delay node (zero / negative → immediate)', () => 
       nodes: [
         node('trigger', 'trigger'),
         node('delay', 'dly', { delayMode: 'time', ms: 0 }),
-        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'dly' },
@@ -1456,7 +1456,7 @@ describe('VoiceBusEngine — delay node (zero / negative → immediate)', () => 
       nodes: [
         node('trigger', 'trigger'),
         node('delay', 'dly', { delayMode: 'time', ms: -50 }),
-        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'dly' },
@@ -1481,8 +1481,8 @@ describe('VoiceBusEngine — delay node (multiple fires drain in time order)', (
         node('all', 'all'),
         node('delay', 'd_late', { y: 0, delayMode: 'time', ms: 300 }),
         node('delay', 'd_early', { y: 100, delayMode: 'time', ms: 100 }),
-        node('play', 'p_late', { effectId: 'fxA', params: { brightness: 1 } }),
-        node('play', 'p_early', { effectId: 'fxB', params: { brightness: 1 } }),
+        node('effect', 'p_late', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'p_early', { effectId: 'fxB', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'all' },
@@ -1542,9 +1542,9 @@ describe('VoiceBusEngine — delay node (determinism)', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('all', 'all'),
-        node('play', 'pb', { y: 100, effectId: 'fxB', params: { brightness: 1 } }),
+        node('effect', 'pb', { y: 100, effectId: 'fxB', params: { brightness: 1 } }),
         node('delay', 'dly', { y: 0, delayMode: 'time', ms: 80 }),
-        node('play', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
+        node('effect', 'pa', { effectId: 'fxA', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'all' },

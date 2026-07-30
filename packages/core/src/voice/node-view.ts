@@ -40,10 +40,9 @@ type Base = Pick<GraphNode, 'id' | 'x' | 'y'>;
  */
 type View<K extends NodeKind, F extends keyof GraphNode = never> = Base & { kind: K } & Pick<GraphNode, F>;
 
-/** The play/effect payload, shared by the canonical `effect` arm and its legacy `play` alias so
-    the two spellings cannot drift apart — the same reason S6's signature Record shares one
-    `effectSig` across both keys. The `play` arm is DELIBERATELY TEMPORARY: 11-decisions.md drops
-    `'play'` from the authoring union, tracked as INIT-06 chunk 06C. */
+/** The effect leaf's payload. Named separately from its one arm because the shape used to be
+    shared with the legacy `play` alias; 06C dropped that arm, and the name still earns its keep
+    as the one place the leaf's field set is spelled. */
 type EffectFields =
   | 'mode'
   | 'scope'
@@ -73,7 +72,6 @@ export type NodeView =
   | View<'delay', 'delayMode' | 'ms' | 'division'>
   // --- media ---
   | View<'effect', EffectFields>
-  | View<'play', EffectFields> // legacy persisted alias — owned by chunk 06C
   | View<'modifier', 'modifierId' | 'bypass' | 'params' | 'env' | 'modInputs'>
   | View<'mix', 'mixBlendMode'>
   // --- scope + terminal anchor ---

@@ -31,7 +31,6 @@ import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 /** Icon per node kind (add palette, node card chip, kind selector). */
 export const kindIcon: Record<NodeKind, Component> = {
   trigger: Zap,
-  play: Sparkles,
   effect: Sparkles,
   all: Layers,
   random: Shuffle,
@@ -62,7 +61,6 @@ export const busIcon: Record<string, Component> = {
 /** Type colour per node kind — rides the node card's icon chip. */
 export const tint: Record<NodeKind, string> = {
   trigger: 'var(--accent)',
-  play: 'var(--role-content)',
   effect: 'var(--role-content)',
   all: 'var(--role-layer)',
   random: 'var(--role-effect)',
@@ -86,7 +84,6 @@ export const tint: Record<NodeKind, string> = {
 /** Human label per node kind (node card title for containers/modifiers, selector). */
 export const kindLabel: Record<NodeKind, string> = {
   trigger: 'Trigger',
-  play: 'Play',
   effect: 'Effect',
   all: 'All',
   random: 'Random',

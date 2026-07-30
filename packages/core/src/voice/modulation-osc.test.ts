@@ -97,7 +97,7 @@ function oscGraph(address: string): TriggerGraph {
   return {
     nodes: [
       node('trigger', 'trigger'),
-      node('play', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
+      node('effect', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
       node('osc', 'osc1', { oscAddress: address }),
     ],
     edges: [

@@ -10,15 +10,15 @@ const graphOf = (nodes: TriggerGraph['nodes']): Record<string, TriggerGraph> => 
 
 describe('inferPlayTypes (D3 hydrate migration)', () => {
   it('infers a missing playType from the effect id via the shared collection derivation', () => {
-    const play = makeNode('play', 'p', 0, 0, { effectId: 'plasma' });
+    const play = makeNode('effect', 'p', 0, 0, { effectId: 'plasma' });
     expect(play.playType).toBeUndefined();
     const out = inferPlayTypes(graphOf([play]));
     expect(out.g!.nodes[0]!.playType).toBe('textures');
   });
 
   it('a canvasScene-bearing node infers canvas; existing playType is kept (idempotent)', () => {
-    const canvas = makeNode('play', 'c', 0, 0, { effectId: 'canvas:x', canvasScene: 'x' });
-    const typed = makeNode('play', 't', 0, 0, { effectId: 'plasma', playType: 'hits' });
+    const canvas = makeNode('effect', 'c', 0, 0, { effectId: 'canvas:x', canvasScene: 'x' });
+    const typed = makeNode('effect', 't', 0, 0, { effectId: 'plasma', playType: 'hits' });
     const out = inferPlayTypes(graphOf([canvas, typed]));
     expect(out.g!.nodes[0]!.playType).toBe('canvas');
     expect(out.g!.nodes[1]!.playType).toBe('hits'); // never overwritten

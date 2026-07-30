@@ -48,7 +48,7 @@ export function graphToFlowEdges(graph: TriggerGraph): TriggerFlowEdge[] {
       ? { data: { mod: true } }
       : voice.paramKeyOf(e.toPort) !== null
         ? { data: { modulation: true } }
-        : kindById.get(e.from) === 'play' || kindById.get(e.from) === 'effect' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
+        : kindById.get(e.from) === 'effect' || kindById.get(e.from) === 'modifier' || kindById.get(e.to) === 'output'
           ? { data: { effect: true } }
         : {}),
   }));

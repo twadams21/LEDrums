@@ -44,7 +44,7 @@ describe('buildShow canvas scenes', () => {
     const key = Object.keys(src.graphs)[0]!;
     src.graphs[key]!.nodes.push({
       id: 'canvasnode',
-      kind: 'play',
+      kind: 'effect',
       x: 0,
       y: 0,
       mode: 'oneshot',

@@ -63,9 +63,9 @@ function mixDelayGraph(ms: number): TriggerGraph {
     version: 3,
     nodes: [
       node('trigger', 'trigger', { y: 0 }),
-      node('play', 'a', { y: 0, effectId: 'fxA' }),
+      node('effect', 'a', { y: 0, effectId: 'fxA' }),
       node('delay', 'd', { y: 50, ms }),
-      node('play', 'b', { y: 100, effectId: 'fxB' }),
+      node('effect', 'b', { y: 100, effectId: 'fxB' }),
       node('mix', 'mix', { y: 0, mixBlendMode: 'add' }),
       node('output', 'output', { y: 0 }),
     ],
@@ -86,8 +86,8 @@ function noDelayMixGraph(): TriggerGraph {
     version: 3,
     nodes: [
       node('trigger', 'trigger', { y: 0 }),
-      node('play', 'a', { y: 0, effectId: 'fxA' }),
-      node('play', 'b', { y: 100, effectId: 'fxB' }),
+      node('effect', 'a', { y: 0, effectId: 'fxA' }),
+      node('effect', 'b', { y: 100, effectId: 'fxB' }),
       node('mix', 'mix', { y: 0, mixBlendMode: 'add' }),
       node('output', 'output', { y: 0 }),
     ],

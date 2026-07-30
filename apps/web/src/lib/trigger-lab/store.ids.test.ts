@@ -63,7 +63,7 @@ describe('TriggerLab persisted id reservation', () => {
     const { graphKey } = persistLibrary(9000, graph);
 
     const store = new TriggerLab(fakeClient);
-    const added = store.addNode('play', 300, 400);
+    const added = store.addNode('effect', 300, 400);
 
     expect(store.selectedPadKey).toBe(graphKey);
     expect(added?.id).not.toBe('n-9000');
@@ -79,7 +79,7 @@ describe('TriggerLab persisted id reservation', () => {
     const { graphKey } = persistLibrary(9100, graph);
 
     const store = new TriggerLab(fakeClient);
-    const added = store.addNode('play', 300, 400)!;
+    const added = store.addNode('effect', 300, 400)!;
     store.connect('n-9100', added.id);
 
     const ids = store.graphs[graphKey]!.edges.map((e) => e.id);

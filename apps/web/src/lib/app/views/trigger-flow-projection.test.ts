@@ -36,7 +36,7 @@ describe('projectTriggerFlowNodes', () => {
 
   it('rebuilds a same-id node when modulation parameter rows change its handles', () => {
     const graph: TriggerGraph = {
-      nodes: [makeNode('play', 'p1', 10, 20, { effectId: 'gen:radial-wash' })],
+      nodes: [makeNode('effect', 'p1', 10, 20, { effectId: 'gen:radial-wash' })],
       edges: [],
     };
     const first = projectTriggerFlowNodes({
@@ -48,7 +48,7 @@ describe('projectTriggerFlowNodes', () => {
     });
     const modulated: TriggerGraph = {
       nodes: [
-        makeNode('play', 'p1', 10, 20, {
+        makeNode('effect', 'p1', 10, 20, {
           effectId: 'gen:radial-wash',
           modInputs: [{ param: 'brightness' }],
         }),
@@ -322,14 +322,6 @@ describe('triggerNodeSignature — canonical effect nodes', () => {
       triggerNodeSignature(effect({ effectId: 'gen:canvas', canvasScene: 'scene-b' })),
     );
   });
-
-  it('signs a legacy persisted `play` node the same way as its canonical `effect` twin', () => {
-    // The normalizer rewrites kind on load, so the two spellings must not disagree about which
-    // fields matter — only the `kind` segment of the signature may differ.
-    const play = triggerNodeSignature(makeNode('play', 'e1', 10, 20, { effectId: 'gen:strobe' }));
-    const canonical = triggerNodeSignature(effect({ effectId: 'gen:strobe' }));
-    expect(play.replace(':play:', ':effect:')).toBe(canonical);
-  });
 });
 
 // INIT-06 chunk 06C — THE ORDERING PROOF for the `play` KIND_SIG entry's removal. The comment at
@@ -351,7 +343,7 @@ describe('load path — a persisted `play` node never reaches triggerNodeSignatu
   it('hydrate normalises the alias away before the projection sees the graph', () => {
     const { graphs } = normalizeGraphs({ 'kick:0': legacyDoc() }, {}, [], () => [], () => undefined);
     const g = graphs['kick:0']!;
-    expect(g.nodes.some((n) => n.kind === 'play')).toBe(false);
+    expect(g.nodes.map((n) => n.kind as string)).not.toContain('play');
     const p1 = g.nodes.find((n) => n.id === 'p1')!;
     expect(p1.kind).toBe('effect');
     const sig = triggerNodeSignature(p1, g);
@@ -449,13 +441,6 @@ describe('triggerNodeSignature — golden table over every canonical kind', () =
       ['all', 'chance', 'delay', 'envelope', 'output', 'random', 'scope', 'sequence', 'toggle', 'trigger'].sort(),
     );
     expect(baseOnlyKinds).toHaveLength(10);
-  });
-
-  it('routes the legacy `play` alias through the SAME entry as canonical `effect`', () => {
-    // Not merely equal output — the two keys share one function object, so they cannot drift.
-    const play = makeNode('play', 'n-x', 12, 34, SIG_FIELDS);
-    const effect = makeNode('effect', 'n-x', 12, 34, SIG_FIELDS);
-    expect(triggerNodeSignature(play).replace(':play:', ':effect:')).toBe(triggerNodeSignature(effect));
   });
 });
 

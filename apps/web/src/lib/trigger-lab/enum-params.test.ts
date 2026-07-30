@@ -23,7 +23,7 @@ describe('enum params — authoring (render + edit)', () => {
   it('exposes the radial-wash mode as an enum spec so the inspector renders a Select', () => {
     const store = new TriggerLab(fakeClient);
     store.createGraph('t');
-    const node = store.addNode('play', 0, 0)!;
+    const node = store.addNode('effect', 0, 0)!;
     store.pickEffect(node, 'gen:radial-wash');
 
     expect(store.effectOf(node)?.id).toBe('gen:radial-wash');
@@ -37,7 +37,7 @@ describe('enum params — authoring (render + edit)', () => {
   it('setParam edits the enum value; liveParams reflects the choice', () => {
     const store = new TriggerLab(fakeClient);
     store.createGraph('t');
-    const node = store.addNode('play', 0, 0)!;
+    const node = store.addNode('effect', 0, 0)!;
     store.pickEffect(node, 'gen:radial-wash');
 
     store.setParam(node, 'mode', 'in');
@@ -52,7 +52,7 @@ describe('enum params — persistence round-trip', () => {
   const graphWithEnum = (): TriggerGraph => ({
     nodes: [
       makeNode('trigger', 'trigger'),
-      makeNode('play', 'p1', 0, 0, {
+      makeNode('effect', 'p1', 0, 0, {
         effectId: 'gen:radial-wash',
         params: { hue: 280, brightness: 0.9, mode: 'bounce' },
       }),

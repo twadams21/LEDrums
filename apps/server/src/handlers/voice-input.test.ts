@@ -37,7 +37,7 @@ function directNoteShow(note: number): voice.Show {
   const graph: voice.TriggerGraph = {
     nodes: [
       node('trig', 'trigger', { source: { kind: 'midi', note } }),
-      node('play', 'play', { effectId: 'fx-flash', busId: 'main', params: { brightness: 1 } }),
+      node('play', 'effect', { effectId: 'fx-flash', busId: 'main', params: { brightness: 1 } }),
     ],
     edges: [{ id: 'e1', from: 'trig', to: 'play' }],
   };

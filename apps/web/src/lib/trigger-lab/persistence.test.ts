@@ -74,7 +74,7 @@ describe('serializeAuthored / deserializeAuthored round-trip', () => {
     const modGraph: TriggerGraph = {
       nodes: [
         makeNode('trigger', 'trigger'),
-        makeNode('play', 'p', 200, 0, { effectId: 'flash', presetId: 'flash:default' }),
+        makeNode('effect', 'p', 200, 0, { effectId: 'flash', presetId: 'flash:default' }),
         makeNode('modifier', 'm', 100, 100, {
           modifierId: 'trail',
           bypass: true,

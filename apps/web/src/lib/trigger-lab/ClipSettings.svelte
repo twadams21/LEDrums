@@ -20,7 +20,7 @@
   const block = $derived(store.settingsBlock);
   const eff = $derived(block ? store.effectOf(block) : undefined);
   const live = $derived(block ? store.liveParams(block) : {});
-  const open = $derived(!!block && block.kind === 'play' && !!eff);
+  const open = $derived(!!block && block.kind === 'effect' && !!eff);
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
 
   function num(v: ParamValue | undefined, d: number): number {
@@ -33,7 +33,7 @@
 </script>
 
 <Dialog {open} onClose={() => store.closeSettings()} title={eff?.name ?? 'Clip'} class="dlg-settings">
-  {#if block && block.kind === 'play' && eff}
+  {#if block && block.kind === 'effect' && eff}
     <header class="shead">
       <div class="thumb"><EffectThumb params={live} generatorId={eff.generatorId} w={84} h={46} /></div>
       <div class="titles">

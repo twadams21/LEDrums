@@ -18,7 +18,7 @@ function linkedGraph(linked: boolean, ownParams: Record<string, number>): Trigge
   return {
     nodes: [
       makeNode('trigger', 'trigger'),
-      withLinked(makeNode('play', 'p1', 0, 0, { effectId: 'fx', presetId: 'fx:wide', params: ownParams }), linked),
+      withLinked(makeNode('effect', 'p1', 0, 0, { effectId: 'fx', presetId: 'fx:wide', params: ownParams }), linked),
     ],
     edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
   };
@@ -56,7 +56,7 @@ describe('materializeLinkedNodes — S39 linked → snapshot migration', () => {
     const migrated = materializeLinkedNodes(linkedGraph(true, { hue: 0 }), presetParamsFor);
     expect(materializeLinkedNodes(migrated, presetParamsFor)).toBe(migrated); // no-op re-run
     // A freshly-authored graph (makeNode no longer sets `linked`) is likewise untouched.
-    const fresh: TriggerGraph = { nodes: [makeNode('play', 'p', 0, 0, { effectId: 'fx' })], edges: [] };
+    const fresh: TriggerGraph = { nodes: [makeNode('effect', 'p', 0, 0, { effectId: 'fx' })], edges: [] };
     expect(materializeLinkedNodes(fresh, presetParamsFor)).toBe(fresh);
   });
 

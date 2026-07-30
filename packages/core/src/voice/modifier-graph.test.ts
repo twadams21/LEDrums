@@ -66,13 +66,13 @@ function firstPlay(graph: TriggerGraph): PlayAction | undefined {
 
 describe('resolveModifierChain (pure)', () => {
   it('returns [] for a play node with no mod wires', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const graph: TriggerGraph = { nodes: [play], edges: [] };
     expect(resolveModifierChain(graph, play)).toEqual([]);
   });
 
   it('resolves a single Trail → play mod wire', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const trail = mod('m', 'trail', { params: { decayMs: 300, mode: 'max' } });
     const graph: TriggerGraph = {
       nodes: [play, trail],
@@ -85,7 +85,7 @@ describe('resolveModifierChain (pure)', () => {
 
   it('ignores non-mod (trigger-flow) edges into the play node', () => {
     const trig = node('trigger', 'trigger');
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const trail = mod('m', 'trail');
     const graph: TriggerGraph = {
       nodes: [trig, play, trail],
@@ -98,7 +98,7 @@ describe('resolveModifierChain (pure)', () => {
   });
 
   it('ignores a mod edge whose source is not a modifier node', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const other = node('all', 'a');
     const graph: TriggerGraph = {
       nodes: [play, other],
@@ -108,7 +108,7 @@ describe('resolveModifierChain (pure)', () => {
   });
 
   it('orders parallel mod wires by source y-position', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const low = mod('lo', 'bloom', { y: 10 });
     const high = mod('hi', 'grain', { y: 90 });
     const graph: TriggerGraph = {
@@ -123,7 +123,7 @@ describe('resolveModifierChain (pure)', () => {
 
   it('resolves an explicit mod→mod chain front-to-back (Grain → Bloom → Play)', () => {
     // Grain feeds Bloom's mod input; Bloom feeds Play's mod input.
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const bloom = mod('bl', 'bloom');
     const grain = mod('gr', 'grain');
     const graph: TriggerGraph = {
@@ -138,7 +138,7 @@ describe('resolveModifierChain (pure)', () => {
   });
 
   it('carries bypass through and omits it when false', () => {
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const on = mod('a', 'trail', { y: 0, bypass: true });
     const off = mod('b', 'grain', { y: 10, bypass: false });
     const graph: TriggerGraph = {
@@ -154,8 +154,8 @@ describe('resolveModifierChain (pure)', () => {
   });
 
   it('a shared modifier node feeding two play nodes yields equal params (independent state comes later)', () => {
-    const p1 = node('play', 'p1', { effectId: 'fx' });
-    const p2 = node('play', 'p2', { effectId: 'fx' });
+    const p1 = node('effect', 'p1', { effectId: 'fx' });
+    const p2 = node('effect', 'p2', { effectId: 'fx' });
     const shared = mod('s', 'trail', { params: { decayMs: 500 } });
     const graph: TriggerGraph = {
       nodes: [p1, p2, shared],
@@ -172,7 +172,7 @@ describe('resolveModifierChain (pure)', () => {
 
   it('does not loop on a cyclic mod graph (guarded)', () => {
     // a → b → a (both modifier nodes) plus b → play
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const a = mod('a', 'grain');
     const b = mod('b', 'bloom');
     const graph: TriggerGraph = {
@@ -194,7 +194,7 @@ describe('resolveModifierChain (pure)', () => {
 describe('eval-graph integration', () => {
   it('populates PlayAction.modifiers from the play node mod chain', () => {
     const trig = node('trigger', 'trigger');
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const trail = mod('m', 'trail', { params: { decayMs: 250 } });
     const output = node('output', 'output', { scope: 'kit' });
     const graph: TriggerGraph = {
@@ -212,7 +212,7 @@ describe('eval-graph integration', () => {
 
   it('leaves modifiers undefined when nothing is wired (hot path preserved)', () => {
     const trig = node('trigger', 'trigger');
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const graph: TriggerGraph = { nodes: [trig, play], edges: [edge('e0', 'trigger', 'p')] };
     expect(firstPlay(graph)?.modifiers).toBeUndefined();
   });
@@ -221,7 +221,7 @@ describe('eval-graph integration', () => {
     // trigger → modifier → play: the modifier does NOT forward the flow, so no play fires.
     const trig = node('trigger', 'trigger');
     const modNode = mod('m', 'trail');
-    const play = node('play', 'p', { effectId: 'fx' });
+    const play = node('effect', 'p', { effectId: 'fx' });
     const graph: TriggerGraph = {
       nodes: [trig, modNode, play],
       edges: [

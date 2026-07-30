@@ -38,7 +38,7 @@ function withRaf(body: () => void): void {
 
 /** A standalone graph holding one play node bound to `presetId` (for usage / delete gating). */
 function playGraph(nodeId: string, presetId: string): TriggerGraph {
-  return { nodes: [makeNode('play', nodeId, 0, 0, { effectId: 'gen:helix', presetId })], edges: [] };
+  return { nodes: [makeNode('effect', nodeId, 0, 0, { effectId: 'gen:helix', presetId })], edges: [] };
 }
 
 describe('renameEffect', () => {
@@ -146,10 +146,10 @@ describe('presetUsageCount', () => {
     store.graphs = {
       ...store.graphs,
       'graph-a': {
-        nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 0, 0, { presetId: id })],
+        nodes: [makeNode('trigger', 'trigger'), makeNode('effect', 'p1', 0, 0, { presetId: id })],
         edges: [],
       },
-      'graph-b': { nodes: [makeNode('play', 'p2', 0, 0, { presetId: id })], edges: [] },
+      'graph-b': { nodes: [makeNode('effect', 'p2', 0, 0, { presetId: id })], edges: [] },
     };
     expect(store.presetUsageCount(id)).toBe(2);
   });

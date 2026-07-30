@@ -40,8 +40,6 @@ const FIELD_USAGE = {
   // busId/params; resolveNodeModulations reads env + modInputs; PlayNodeInspector reads
   // presetId. KIND_SIG's effectSig reads playType/effectId/canvasScene.
   effect: ['mode', 'scope', 'targetId', 'effectId', 'playType', 'canvasScene', 'presetId', 'busId', 'params', 'env', 'modInputs'],
-  // Legacy persisted alias — same reads, same arm (chunk 06C removes the kind entirely).
-  play: ['mode', 'scope', 'targetId', 'effectId', 'playType', 'canvasScene', 'presetId', 'busId', 'params', 'env', 'modInputs'],
 
   // modifier-graph.ts:33/36/55/56 read modifierId/env/params/bypass; ModifierNodeInspector
   // edits bypass/modifierId/params; modulation wires land on modInputs.
@@ -127,6 +125,6 @@ describe('NodeView', () => {
     // Totality against the union itself is `_Total` in node-view.ts (a compile error, not a
     // test); this pins the TABLE to the same length so a kind cannot be added to the union and
     // its arm without anyone recording what that kind actually reads.
-    expect(KINDS.length).toBe(20);
+    expect(KINDS.length).toBe(19); // 20 before 06C dropped the legacy `play` alias arm
   });
 });

@@ -81,7 +81,7 @@ function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}
 /** trigger → play(effectId) with the given scope + optional targetId. */
 function flatGraph(effectId: string, scope: 'drum' | 'kit' | 'hoop' = 'kit', targetId?: string): TriggerGraph {
   return {
-    nodes: [node('trigger', 'trigger'), node('play', 'p1', { effectId, scope, targetId, params: { brightness: 1 } })],
+    nodes: [node('trigger', 'trigger'), node('effect', 'p1', { effectId, scope, targetId, params: { brightness: 1 } })],
     edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
   };
 }
@@ -262,8 +262,8 @@ describe('Compositor — hosted legacy-generator bridge', () => {
       nodes: [
         node('trigger', 'trigger'),
         node('all', 'all'),
-        node('play', 'pa', { y: 0, effectId: 'patt', params: { brightness: 1 } }),
-        node('play', 'pb', { y: 100, effectId: 'gen', params: { brightness: 1 } }),
+        node('effect', 'pa', { y: 0, effectId: 'patt', params: { brightness: 1 } }),
+        node('effect', 'pb', { y: 100, effectId: 'gen', params: { brightness: 1 } }),
       ],
       edges: [
         { id: 'e0', from: 'trigger', to: 'all' },

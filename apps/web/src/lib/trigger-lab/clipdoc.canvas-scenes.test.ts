@@ -24,8 +24,8 @@ const scene = (id: string, name = 'Scene ' + id): CanvasScene => ({
 const canvasGraph = (sceneId: string): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger', 0, 0),
-    makeNode('play', 'p1', 0, 0, {
-      kind: 'play',
+    makeNode('effect', 'p1', 0, 0, {
+      kind: 'effect',
       playType: 'canvas',
       canvasScene: sceneId,
       effectId: `canvas:${sceneId}`,

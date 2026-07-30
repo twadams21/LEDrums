@@ -64,7 +64,7 @@ function makeShow(drumId: string, zone: string): voice.Show {
   const graph: voice.TriggerGraph = {
     nodes: [
       node('trig', 'trigger'),
-      node('play', 'play', { effectId: 'fx-flash', params: { hue: 60, brightness: 1 } }),
+      node('play', 'effect', { effectId: 'fx-flash', params: { hue: 60, brightness: 1 } }),
     ],
     edges: [{ id: 'e1', from: 'trig', to: 'play' }],
   };
@@ -330,7 +330,7 @@ describe('VoiceEngineHost', () => {
 
   const playNode = (busId: string): voice.GraphNode =>
     ({
-      id: 'play', kind: 'play', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
+      id: 'play', kind: 'effect', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
       presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {},
       noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
       delayMode: 'time', ms: 0, division: '1/8',

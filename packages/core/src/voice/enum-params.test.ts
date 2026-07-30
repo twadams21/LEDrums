@@ -53,7 +53,7 @@ function renderWith(generatorId: string, params: Record<string, number | string>
   const m = testModel();
   const e = createVoiceBusEngine();
   const graph: TriggerGraph = {
-    nodes: [node('trigger', 'trigger'), node('play', 'p1', { effectId: 'fx', scope: 'kit', params: { brightness: 1, ...params } })],
+    nodes: [node('trigger', 'trigger'), node('effect', 'p1', { effectId: 'fx', scope: 'kit', params: { brightness: 1, ...params } })],
     edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
   };
   const showDoc: Show = { buses: BUSES, graphs: { [padKey('kick', '')]: graph }, sections: [], effects: [genEffect(generatorId)], presets: [] };

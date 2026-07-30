@@ -84,7 +84,7 @@ function ccGraph(controller: number, channel: number | null): TriggerGraph {
   return {
     nodes: [
       node('trigger', 'trigger'),
-      node('play', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
+      node('effect', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
       node('cc', 'cc1', { ccController: controller, ccChannel: channel }),
     ],
     edges: [

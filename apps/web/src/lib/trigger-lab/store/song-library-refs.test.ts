@@ -36,7 +36,7 @@ const preset = (id: string, effectId: string): Preset => ({ id, name: id, effect
 const playGraph = (effectId: string, presetId: string): TriggerGraph => ({
   nodes: [
     makeNode('trigger', 'trigger', 0, 0),
-    makeNode('play', 'p1', 0, 0, { kind: 'play', effectId, presetId, params: { hue: 0.5 } }),
+    makeNode('effect', 'p1', 0, 0, { effectId, presetId, params: { hue: 0.5 } }),
   ],
   edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
 });
@@ -75,7 +75,7 @@ function assertRenderable(view: ResolvableView): void {
   }
   for (const g of Object.values(view.graphs)) {
     for (const n of g.nodes) {
-      if (n.kind !== 'play') continue;
+      if (n.kind !== 'effect') continue;
       if (n.effectId) expect(effectIds.has(n.effectId), `effect ${n.effectId}`).toBe(true);
       if (n.presetId) expect(presetIds.has(n.presetId), `preset ${n.presetId}`).toBe(true);
     }
@@ -185,11 +185,11 @@ describe('detachLibrarySong — clone to a fresh namespace, sever propagation', 
     const detached = detachLibrarySong(closure, 'song-local');
 
     // mutate the detached graph node params
-    detached.graphs[`${songNamespace('song-local')}kick:center`]!.nodes.find((n) => n.kind === 'play')!.params!.hue = 0.99;
+    detached.graphs[`${songNamespace('song-local')}kick:center`]!.nodes.find((n) => n.kind === 'effect')!.params!.hue = 0.99;
     detached.effects[0]!.name = 'changed';
 
     // the library closure is untouched
-    const libPlay = closure.graphs[`${songNamespace('lib-1')}kick:center`]!.nodes.find((n) => n.kind === 'play')!;
+    const libPlay = closure.graphs[`${songNamespace('lib-1')}kick:center`]!.nodes.find((n) => n.kind === 'effect')!;
     expect(libPlay.params!.hue).toBe(0.5);
     expect(closure.effects.every((e) => e.name !== 'changed')).toBe(true);
   });

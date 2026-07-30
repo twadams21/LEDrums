@@ -109,7 +109,7 @@ describe('canvas scene show registration', () => {
     const graph: TriggerGraph = {
       nodes: [
         node('trigger', 'trig'),
-        node('play', 'n1', { playType: 'canvas', canvasScene: 'scene_c', effectId: effId, presetId: `${effId}:default`, params: { brightness: 1 } }),
+        node('effect', 'n1', { playType: 'canvas', canvasScene: 'scene_c', effectId: effId, presetId: `${effId}:default`, params: { brightness: 1 } }),
       ],
       edges: [{ id: 'e0', from: 'trig', to: 'n1' }],
     };
