@@ -13,6 +13,7 @@ import { evalGraph, type EvalState, type PlayAction, type TriggerCtx } from './e
 import { VoicePool, type SpawnDeps } from './voice-pool';
 import { applyEffectiveParams } from './compositor';
 import { defaultEnvelope } from './envelope';
+import { defaultLfoSettings } from './lfo';
 import { Prng } from './prng';
 import type { Bus, EffectDef, Envelope, GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
 
@@ -134,6 +135,49 @@ describe('nodeModSource', () => {
   it('returns null for a non-source node', () => {
     expect(nodeModSource(node('play', 'p'))).toBeNull();
     expect(nodeModSource(node('modifier', 'm'))).toBeNull();
+  });
+
+  // INIT-06 S12. The switch became a Record keyed by ModSourceKind, so MOD_SOURCE_KINDS and the
+  // builder table are now linked by the compiler. Proven by mutation, each run in isolation:
+  //   append 'switch' (a REAL NodeKind, not a source) -> the Record errors "Property 'switch' is
+  //     missing"; the `satisfies readonly NodeKind[]` clause correctly stays silent. Nothing
+  //     errored at all before this step — that link is S12's gain.
+  //   append 'bogus' (not a NodeKind) -> BOTH fire: satisfies (S4's pre-existing gain) and the
+  //     Record (S12's).
+  // Reverted after each. The two tests below guard the runtime half of that change.
+
+  /** Every NodeKind that is NOT a modulation source. Spelled out rather than derived so the
+      fail-open is pinned TOTALLY instead of sampled — the old `default: return null` covered
+      these by accident, and `resolveNodeModulations`' `if (!source) continue` still depends on
+      it. `satisfies` keeps the list honest if a kind is renamed. */
+  const NON_SOURCE_KINDS = [
+    'trigger', 'effect', 'play', 'all', 'random', 'sequence', 'switch',
+    'chance', 'toggle', 'delay', 'modifier', 'mix', 'scope', 'output',
+  ] as const satisfies readonly NodeKind[];
+
+  it('preserves the fail-open for EVERY non-source kind, not just a sampled two', () => {
+    expect(NON_SOURCE_KINDS).toHaveLength(14); // 20 kinds - 6 sources
+    for (const kind of NON_SOURCE_KINDS) {
+      expect(nodeModSource(node(kind, `n-${kind}`))).toBeNull();
+    }
+    // ...and the two sets are disjoint and together cover the union.
+    for (const k of MOD_SOURCE_KINDS) expect(NON_SOURCE_KINDS as readonly string[]).not.toContain(k);
+  });
+
+  // The `??` defaults are load-bearing BACK-COMPAT: each one lets a source authored before its
+  // field existed — or wired before its shape is set — still animate. S12 moved all six bodies
+  // across verbatim; this pins them so a later edit cannot shift one silently.
+  it('applies every documented default when a source node carries no authored fields', () => {
+    expect(nodeModSource(node('lfo', 'l'))).toEqual({ kind: 'lfo', lfo: defaultLfoSettings() });
+    expect(nodeModSource(node('cc', 'c'))).toEqual({ kind: 'cc', controller: 1, channel: null });
+    expect(nodeModSource(node('osc', 'o'))).toEqual({ kind: 'osc', address: '' });
+    expect(nodeModSource(node('note', 'n'))).toEqual({
+      kind: 'note', note: 60, channel: null, mode: 'gate', releaseMs: 0,
+    });
+    expect(nodeModSource(node('randomMod', 'r'))).toEqual({
+      kind: 'random', value: 0, distribution: 'linear', steps: 4,
+    });
+    // envelope's own default (decay) is pinned by the fallback test above.
   });
 });
 
