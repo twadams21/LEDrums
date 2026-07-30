@@ -19,6 +19,7 @@ import {
   createDefaultCompositor,
   applyEffectiveParams,
   type Compositor,
+  type FrameModCtx,
 } from './compositor';
 import {
   evalGraph,
@@ -217,6 +218,15 @@ class VoiceBusEngine implements RenderEngine {
   private timeMs = 0;
   private beat = 0;
   private bpm = 120;
+  /**
+   * ONE reusable frame-modulation slice, refreshed at the top of each {@link tick} and handed to
+   * every `applyEffectiveParams` call in the per-voice sweep — so that loop allocates nothing new.
+   *
+   * ENGINE-PRIVATE MUTABLE SCRATCH. It must never escape: not into a voice, a modifier state slot,
+   * a pending/delay descriptor, or the {@link CompositorFrame} handed to `render` (which keeps its
+   * own separate literal). A retained reference would read a LATER frame's clock and tables.
+   */
+  private frameMod: FrameModCtx = { timeMs: 0, bpm: 120 };
   private sectionIndex = 0;
   private perf: EnginePerfStats = emptyPerfStats();
 
@@ -718,6 +728,12 @@ class VoiceBusEngine implements RenderEngine {
     this.beat = transport.beat;
     this.bpm = transport.bpm;
     this.sectionIndex = this.show.sections.length > 0 ? transport.bar % this.show.sections.length : 0;
+    // Refresh the reusable per-frame modulation slice in place, beside the fields it mirrors.
+    this.frameMod.timeMs = now;
+    this.frameMod.bpm = transport.bpm;
+    this.frameMod.cc = this.ccTable;
+    this.frameMod.osc = this.oscTable;
+    this.frameMod.notes = this.noteTable;
 
     this.drainQueue();
     this.drainPendingFires();
@@ -729,7 +745,7 @@ class VoiceBusEngine implements RenderEngine {
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {
       for (const v of this.voices.pool) {
-        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
+        if (v.active) applyEffectiveParams(v, this.frameMod);
       }
       this.compositor.render(
         this.voices.pool,

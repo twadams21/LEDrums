@@ -59,7 +59,7 @@ export function voicePhase(v: Voice, timeMs: number): number {
  * `bpm` is supplied by the engine (which owns transport); the compositor reads the
  * already-resolved `liveParams`, keeping its `render` signature narrow.
  */
-export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ParamValues {
+export function applyEffectiveParams(v: Voice, frame: FrameModCtx): ParamValues {
   const out = v.liveParams;
   // Refill the scratch from the spawn snapshot.
   for (const k of Object.keys(out)) delete out[k];
@@ -69,16 +69,24 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
   // absolute clock + tempo (LFO) or a live table (CC / OSC). The legacy env sweep folded in S35.
   const mods = v.modulations;
   if (mods && mods.length) {
-    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes });
+    // The same SINGLE allocation this line always made, now stamping the voice's phase onto the
+    // shared frame slice instead of re-bundling five loose params.
+    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, frame.timeMs), ...frame });
   }
-  if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
+  if (out.tempoSync === true) out.speed = num(out.speed, 1) * (frame.bpm / 120);
   return out;
 }
 
 /** The frame-wide slice of a {@link ModSampleCtx}: the absolute clock + tempo and the live
     CC/OSC/note tables, all identical for every voice this frame. Built once per render and
-    stamped with each voice's own `phase` by {@link modCtxFor}. */
-type FrameModCtx = Omit<ModSampleCtx, 'phase'>;
+    stamped with each voice's own `phase` by {@link modCtxFor}.
+
+    EXPORTED (data-clumps-0001) so {@link applyEffectiveParams} can take this clump by its own
+    name instead of five positional params it immediately re-bundled. Distinct from
+    {@link CompositorFrame} ON PURPOSE: CompositorFrame is the HOST-FACING seam and carries `dt`
+    + `transport`, and the engine's reusable FrameModCtx scratch must never cross into it —
+    render() keeps its own single conversion. */
+export type FrameModCtx = Omit<ModSampleCtx, 'phase'>;
 
 /** Build the per-frame modulation-sample context for a voice — its life phase (envelope
     sources restart per hit) over the shared frame context (absolute clock + tempo continuous

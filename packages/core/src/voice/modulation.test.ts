@@ -189,9 +189,9 @@ describe('envelope mapping — per-voice phase (compositor sweep)', () => {
 
   it('samples by the voice life phase — the value sweeps as the voice ages', () => {
     const v = mkVoice({ params: { brightness: 1 }, specs: [spec], modulations: mods, bornAtMs: 0 });
-    const at0 = applyEffectiveParams(v, 0, 120).brightness; // phase 0 → decay=1 → base+0
-    const atHalf = applyEffectiveParams(v, 250, 120).brightness; // phase 0.5 → decay=0.5
-    const atEnd = applyEffectiveParams(v, 500, 120).brightness; // phase 1 → decay=0
+    const at0 = applyEffectiveParams(v, { timeMs: 0, bpm: 120 }).brightness; // phase 0 → decay=1 → base+0
+    const atHalf = applyEffectiveParams(v, { timeMs: 250, bpm: 120 }).brightness; // phase 0.5 → decay=0.5
+    const atEnd = applyEffectiveParams(v, { timeMs: 500, bpm: 120 }).brightness; // phase 1 → decay=0
     expect(at0).toBeCloseTo(1, 6);
     expect(atHalf).toBeCloseTo(0.5, 6);
     expect(atEnd).toBeCloseTo(0, 6);
@@ -199,18 +199,18 @@ describe('envelope mapping — per-voice phase (compositor sweep)', () => {
 
   it('restarts per voice/retrigger — a fresh voice (age 0) samples from phase 0 again', () => {
     const v1 = mkVoice({ params: { brightness: 1 }, specs: [spec], modulations: mods, bornAtMs: 0 });
-    const mid = applyEffectiveParams(v1, 250, 120).brightness;
+    const mid = applyEffectiveParams(v1, { timeMs: 250, bpm: 120 }).brightness;
     expect(mid).toBeCloseTo(0.5, 6);
     // Retrigger = a new voice whose clock starts at its own bornAtMs; at bornAtMs its phase is 0.
     const v2 = mkVoice({ params: { brightness: 1 }, specs: [spec], modulations: mods, bornAtMs: 1000 });
-    expect(applyEffectiveParams(v2, 1000, 120).brightness).toBeCloseTo(1, 6);
-    expect(applyEffectiveParams(v2, 1250, 120).brightness).toBeCloseTo(0.5, 6);
+    expect(applyEffectiveParams(v2, { timeMs: 1000, bpm: 120 }).brightness).toBeCloseTo(1, 6);
+    expect(applyEffectiveParams(v2, { timeMs: 1250, bpm: 120 }).brightness).toBeCloseTo(0.5, 6);
   });
 
   it('is deterministic across runs at the compositor seam', () => {
     const run = (): number[] => {
       const v = mkVoice({ params: { brightness: 1 }, specs: [spec], modulations: mods, bornAtMs: 0 });
-      return [0, 125, 250, 375, 500].map((t) => applyEffectiveParams(v, t, 120).brightness as number);
+      return [0, 125, 250, 375, 500].map((t) => applyEffectiveParams(v, { timeMs: t, bpm: 120 }).brightness as number);
     };
     expect(run()).toEqual(run());
   });

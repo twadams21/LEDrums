@@ -327,8 +327,8 @@ describe('modulation graph — end to end (engine render path)', () => {
     const pool = new VoicePool();
     const v = pool.spawn(play, 'kick', 1, deps(0))!;
     // life = 1000ms; sample early vs late.
-    const early = applyEffectiveParams(v, 50, 120).brightness as number;
-    const late = applyEffectiveParams(v, 950, 120).brightness as number;
+    const early = applyEffectiveParams(v, { timeMs: 50, bpm: 120 }).brightness as number;
+    const late = applyEffectiveParams(v, { timeMs: 950, bpm: 120 }).brightness as number;
     expect(late).toBeGreaterThan(early);
     expect(early).toBeLessThan(0.5); // rise starts below the 0.5 base
     expect(late).toBeGreaterThan(0.9); // and climbs toward the range max
@@ -360,8 +360,8 @@ describe('modulation graph — end to end (engine render path)', () => {
     const vEarly = pool.spawn(plays[0]!, 'kick', 1, deps(0))!; // born at 0
     const vLate = pool.spawn(plays[1]!, 'kick', 1, deps(600))!; // born at 600
     // Sample BOTH at the same wall clock: their ages (hence phases) differ → different values.
-    const a = applyEffectiveParams(vEarly, 800, 120).brightness as number; // age 800
-    const b = applyEffectiveParams(vLate, 800, 120).brightness as number; // age 200
+    const a = applyEffectiveParams(vEarly, { timeMs: 800, bpm: 120 }).brightness as number; // age 800
+    const b = applyEffectiveParams(vLate, { timeMs: 800, bpm: 120 }).brightness as number; // age 200
     expect(a).toBeGreaterThan(b); // the older voice is further up the rise
   });
 });
