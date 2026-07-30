@@ -28,7 +28,7 @@
 import type { EffectDef, Preset, TriggerGraph, GraphNode } from './sim';
 import type { SetlistSection, Song } from '../app/setlist';
 import type { Project, CanvasScene } from '@ledrums/core';
-import { canvasEffectId, canvasSceneIdOf } from '@ledrums/core';
+import { canvasEffectId, canvasSceneIdOf, voice } from '@ledrums/core';
 import { extractSongClosure, songNamespace, type ClosureSources } from './store/song-library';
 import { migrateGraphHoopTargets, migrateGraphsHoopTargets } from './persistence';
 import { freshEffectId } from './store/objects';
@@ -313,7 +313,15 @@ export function parse(text: string): ClipDoc | ClipParseError {
   // v1 → v2: a pasted doc authored before A1 carries 0-based hoop targetIds; shift them +1 so the
   // pasted clip lights the SAME physical hoop. Version-gated (v2 docs are already 1-based → no
   // double shift); serialize re-stamps CLIPDOC_VERSION so a re-copied clip is v2.
-  return raw.v === CLIPDOC_PRIOR_VERSION ? migrateClipDocHoopTargets(doc) : doc;
+  const migrated = raw.v === CLIPDOC_PRIOR_VERSION ? migrateClipDocHoopTargets(doc) : doc;
+  // NOT version-gated, unlike the hoop shift: the `play` alias was dropped from the authoring
+  // union in 06C without a ClipDoc version bump, so a v2 doc copied from an older build carries
+  // it just as a v1 doc does. Paste is the SECOND way graphs enter the store (hydrate is the
+  // first) and it ran no normalize gate, so an un-normalized node reached the projection, where
+  // there is no longer an arm for it. Canonicalising here — at parse, the doc's own ingest
+  // boundary — puts the gate on both paths and covers every consumer of a parsed doc, including
+  // the song→library route that never touches `this.graphs`.
+  return canonicalizeClipDocGraphs(migrated);
 }
 
 function coerceKind(kind: unknown, payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): ClipDoc | ClipParseError {
@@ -342,6 +350,33 @@ function migrateClipDocHoopTargets(doc: ClipDoc): ClipDoc {
     : doc.deps;
   if (doc.kind === 'graph') {
     return { ...doc, payload: { ...doc.payload, graph: migrateGraphHoopTargets(doc.payload.graph) }, deps };
+  }
+  return { ...doc, deps };
+}
+
+/** Rewrite the retired `play` node spelling to canonical `effect` in every graph a parsed doc
+    carries, through the CORE helper the load normalizer itself uses — so paste and load cannot
+    drift on what the node grammar is. Graph node data lives only in a graph payload and in
+    `deps.graphs` (section/song payloads reference graph keys, not inline nodes); a patch doc
+    carries no trigger graphs.
+
+    Deliberately the kind rewrite ONLY, not the full Gen3 normalize: `parse` is a coercion whose
+    round-trip identity is pinned, and running the migration here would insert output anchors and
+    auto-wire leaves into a doc the user is merely moving between shows. Topology repair stays the
+    LOAD path's job; grammar is what both paths owe. Alias-stable, so an already-canonical doc
+    keeps its references and re-parses byte-identically. */
+function canonicalizeClipDocGraphs(doc: ClipDoc): ClipDoc {
+  if (doc.kind === 'patch') return doc;
+  const deps: ClipDocDeps = doc.deps.graphs
+    ? {
+        ...doc.deps,
+        graphs: Object.fromEntries(
+          Object.entries(doc.deps.graphs).map(([k, g]) => [k, voice.canonicalizeNodeKinds(g)]),
+        ),
+      }
+    : doc.deps;
+  if (doc.kind === 'graph') {
+    return { ...doc, payload: { ...doc.payload, graph: voice.canonicalizeNodeKinds(doc.payload.graph) }, deps };
   }
   return { ...doc, deps };
 }

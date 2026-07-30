@@ -81,6 +81,24 @@ function canonicalize(node: PersistedGraphNode): GraphNode {
   return node.kind === 'play' ? { ...node, kind: 'effect' } : (node as GraphNode);
 }
 
+/**
+ * The KIND rewrite on its own — {@link normalizeTriggerGraphToGen3} without the Gen3 migration.
+ *
+ * Exists because there are two ways a foreign graph enters the app and they need different
+ * amounts of repair. A LOADED show gets the full pass (anchors, auto-wire, edge repair). A PASTED
+ * ClipDoc must not: `parse` is a coercion, and its round-trip identity is pinned — reshaping a
+ * pasted doc's topology would silently rewrite content the user is moving between shows. What
+ * both paths DO owe is the grammar: after either, no node spells the retired alias, because
+ * nothing downstream has an arm for it.
+ *
+ * Alias-stable and idempotent: a graph with no legacy node keeps its reference, so a re-parse or
+ * an already-canonical doc costs nothing and cannot perturb an equality assertion.
+ */
+export function canonicalizeNodeKinds(graph: PersistedTriggerGraph): TriggerGraph {
+  if (!graph.nodes.some((n) => n.kind === 'play')) return graph as TriggerGraph;
+  return { ...graph, nodes: graph.nodes.map(canonicalize) };
+}
+
 function edgeIdFor(existing: Set<string>, base: string): string {
   if (!existing.has(base)) return base;
   let i = 2;

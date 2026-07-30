@@ -311,9 +311,15 @@ export function migrateGraphsEnvMaps(
   return out;
 }
 
-/** Rewrite every play node's `effectId` (and its `presetId` prefix) through the effect
+/** Rewrite every effect node's `effectId` (and its `presetId` prefix) through the effect
     alias map so a retired id resolves to its live replacement. Pure + idempotent — only
-    touches graphs that actually reference an aliased id, so it's free when the map is empty. */
+    touches graphs that actually reference an aliased id, so it's free when the map is empty.
+
+    ORDERING (06C): this narrows on the CANONICAL kind, so it must run AFTER the Gen3 normalize
+    — a legacy `play` node reaching it first would skip alias resolution entirely and keep a
+    retired effect id. See the call order in {@link normalizeGraphs}, where the swap is safe
+    because the normalizer never reads `effectId`/`presetId` (it only writes empty ones onto the
+    anchors it mints). Whoever lands U3 and populates the alias map inherits that constraint. */
 function resolveGraphAliases(
   graphs: Record<string, TriggerGraph>,
 ): Record<string, TriggerGraph> {
@@ -473,17 +479,20 @@ export function normalizeGraphs(
   presetParamsFor: PresetParamsFor,
 ): { graphs: Record<string, TriggerGraph>; graphNames: Record<string, string>; actions: SystemActionSummary } {
   const padKeys = new Set(pads.map(padKey));
-  // Consult the effect alias map FIRST (D1, locked decision 1): a show referencing a
-  // retired effect id has its play nodes rewritten to the live target before anything
-  // else resolves them. Empty map today (U3 populates it) → an identity pass for now.
-  let next = resolveGraphAliases(graphs);
   // FIRST integrity pass owns the Gen3 migration + auto-wire, so read the batched system
   // actions off it here (R02); the later idempotent passes over already-Gen3 graphs add nothing.
-  const firstPass = sanitizeGraphsIntegrityWithActions(next);
-  next = firstPass.graphs;
+  // It also runs FIRST overall (06C): every later pass narrows on canonical kinds, so the alias
+  // has to be gone before any of them look. Safe to precede alias resolution — the normalizer
+  // never reads `effectId`/`presetId`, so neither pass can see the other's work.
+  const firstPass = sanitizeGraphsIntegrityWithActions(graphs);
+  let next = firstPass.graphs;
   const actions = firstPass.actions;
+  // Consult the effect alias map (D1, locked decision 1): a show referencing a retired effect id
+  // has its effect nodes rewritten to the live target before anything else resolves them.
+  // Empty map today (U3 populates it) → an identity pass for now.
+  next = resolveGraphAliases(next);
   // AFTER alias resolution (a retired id must infer from its live replacement): give every
-  // persisted play node its D3 `playType` so typed-node UI (U5) always has one.
+  // persisted effect node its D3 `playType` so typed-node UI (U5) always has one.
   next = inferPlayTypes(next);
   next = unionTriggerSources(next, padKeys);
   // Materialize formerly-linked play nodes' params from their preset, then drop `linked` (S39) —
