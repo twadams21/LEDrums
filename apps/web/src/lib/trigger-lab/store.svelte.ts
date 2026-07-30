@@ -2255,7 +2255,7 @@ export class TriggerLab {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g) return null;
-    const rejection = classifyConnection(g, fromId, toId, fromPort, toPort);
+    const rejection = classifyConnection(g, { from: fromId, to: toId, fromPort, toPort });
     if (rejection) return rejection;
     this.pushUndoSnapshot();
     // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
@@ -2303,7 +2303,7 @@ export class TriggerLab {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const g = this.selectedGraph;
     if (!g) return null;
-    const rejection = classifyReconnect(g, edgeId, fromId, toId, fromPort, toPort);
+    const rejection = classifyReconnect(g, edgeId, { from: fromId, to: toId, fromPort, toPort });
     if (rejection) return rejection;
     this.pushUndoSnapshot();
     const edge = g.edges.find((e) => e.id === edgeId)!;
