@@ -709,7 +709,7 @@ const statsTimer = setInterval(() => {
   broadcastJson(
     buildStatsMessage({
       voiceHost,
-      beatsPerBar: voiceHost.getProject().composition.transport.beatsPerBar,
+      beatsPerBar: voiceHost.getProject().transport.beatsPerBar,
     }),
   );
 }, STATS_INTERVAL_MS);

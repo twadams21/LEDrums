@@ -63,10 +63,9 @@ export function assertProjectIntegrity(project: Project): void {
     if (!ids.has(m.drumId)) bad.push(`inputMap.midiNotes note ${m.note} → drum "${m.drumId}"`);
   for (const o of project.inputMap.oscMap)
     if (!ids.has(o.drumId)) bad.push(`inputMap.oscMap "${o.address}" → drum "${o.drumId}"`);
-  for (const song of project.setlist.songs)
-    for (const sec of song.sections)
-      for (const b of sec.bindings)
-        if (!ids.has(b.drumId)) bad.push(`setlist "${song.id}"/"${sec.id}" binding → drum "${b.drumId}"`);
+  // Decision 2 removed `project.setlist`, so the third walk here is gone: it checked every
+  // section binding's `drumId` against the kit. The authored content those bindings described now
+  // lives in the voice Show, whose own referential check is `assertShowIntegrity` below.
 
   if (bad.length) {
     throw new ReferentialIntegrityError(

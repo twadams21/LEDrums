@@ -179,7 +179,7 @@ export function applyStructuralMessage(voiceHost: VoiceEngineHost, msg: ClientMe
       return true;
     case 'setTransport':
       // S5 TRANSPORT AUTHORITY (now the only writer, S8): the voice loop reads
-      // `project.composition.transport` every frame via advanceTransport, and this arm is the sole
+      // `project.transport` every frame via advanceTransport, and this arm is the sole
       // path that writes it. Before S5 there was no voice-side writer at all — a BPM edit reached
       // the loop only through a project reference the legacy reducer happened to share, which
       // splits the moment a patch is adopted.

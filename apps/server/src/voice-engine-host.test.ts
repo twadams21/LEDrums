@@ -586,7 +586,7 @@ describe('VoiceEngineHost transport authority (S5)', () => {
 
     applyStructuralMessage(host, { t: 'setTransport', bpm: 240 });
 
-    expect(host.getProject().composition.transport.bpm).toBe(240);
+    expect(host.getProject().transport.bpm).toBe(240);
     // The field write is exactly what already LOOKED right while being inert, so assert the clock:
     // the same 1000ms of ticks must now advance twice as far.
     expect(beatOver(host, 120)).toBeCloseTo(4, 5);
@@ -602,7 +602,7 @@ describe('VoiceEngineHost transport authority (S5)', () => {
 
     applyStructuralMessage(host, { t: 'setTransport', bpm: 60, beatsPerBar: 3 });
 
-    expect(host.getProject().composition.transport).toEqual({ bpm: 60, playing: true, beatsPerBar: 3 });
+    expect(host.getProject().transport).toEqual({ bpm: 60, playing: true, beatsPerBar: 3 });
     expect(beatOver(host, 120)).toBeCloseTo(1, 5);
   });
 
@@ -619,7 +619,7 @@ describe('VoiceEngineHost transport authority (S5)', () => {
   it('a partial setTransport leaves the untouched transport fields alone', () => {
     const { host } = makeHost();
     applyStructuralMessage(host, { t: 'setTransport', bpm: 90 });
-    expect(host.getProject().composition.transport).toEqual({ bpm: 90, playing: true, beatsPerBar: 4 });
+    expect(host.getProject().transport).toEqual({ bpm: 90, playing: true, beatsPerBar: 4 });
   });
 });
 
@@ -628,7 +628,7 @@ describe('VoiceEngineHost.adoptProject (S5 load authority)', () => {
   function loaded(): Project {
     const p = defaultProject();
     p.name = 'Loaded';
-    p.composition.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
+    p.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
     p.kit.drums[0]!.hoops = p.kit.drums[0]!.hoops!.map((h) => ({ ...h, pixelCount: 64 }));
     return p;
   }
@@ -640,7 +640,7 @@ describe('VoiceEngineHost.adoptProject (S5 load authority)', () => {
     host.adoptProject(file);
 
     expect(host.getProject()).toBe(file); // by reference — the shared-object autosave invariant
-    expect(host.getProject().composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
+    expect(host.getProject().transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
     // …and the loop reads it: playing:false means the beat clock does not advance at all.
     expect(beatOver(host, 120)).toBe(0);
   });

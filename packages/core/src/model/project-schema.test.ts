@@ -9,34 +9,51 @@ describe('project schema', () => {
     expect(round).toEqual(p);
   });
 
-  it('default project has a base layer, a trigger layer, and a valid transport', () => {
+  it('default project carries a valid top-level transport', () => {
     const p = defaultProject();
-    const roles = p.composition.layers.map((l) => l.role);
-    expect(roles).toContain('base');
-    expect(roles).toContain('trigger');
-    expect(p.composition.transport.bpm).toBeGreaterThan(0);
-    expect(p.composition.transport.beatsPerBar).toBeGreaterThan(0);
+    expect(p.transport.bpm).toBeGreaterThan(0);
+    expect(p.transport.beatsPerBar).toBeGreaterThan(0);
+    expect(p.transport.playing).toBe(true);
   });
 
-  it('rejects an unknown blend mode', () => {
-    const p = JSON.parse(JSON.stringify(defaultProject()));
-    p.composition.layers[0].blendMode = 'glow';
-    expect(() => parseProject(p)).toThrow();
-  });
-
-  it('rejects out-of-range opacity', () => {
-    const p = JSON.parse(JSON.stringify(defaultProject()));
-    p.composition.layers[0].opacity = 1.7;
-    expect(() => parseProject(p)).toThrow();
-  });
-
-  it('accepts a clip with zero modulations', () => {
-    const result = projectSchema.safeParse({
-      kit: defaultProject().kit,
+  /**
+   * DECISION 2's acceptance criterion, asserted rather than assumed: `composition` + `setlist` are
+   * gone from the schema and "old files parse clean via zod strip" — no migration machinery, per the
+   * greenfield posture. Three things must be true at once, and the third is the honest cost.
+   *
+   * The three tests this replaces (unknown blend mode, out-of-range opacity, a clip with zero
+   * modulations) all validated `composition.layers`. With the field stripped they would have passed
+   * VACUOUSLY — parseProject cannot reject a shape it discards — which is worse than not testing it.
+   */
+  it('strips a pre-Decision-2 file\'s composition + setlist instead of rejecting it', () => {
+    const old = {
+      ...JSON.parse(JSON.stringify(defaultProject())),
       composition: {
-        layers: [{ id: 'l1', clips: [{ id: 'c1', effectId: 'solid-base' }], activeClipId: 'c1' }],
+        layers: [{ id: 'base', name: 'Base', role: 'base', blendMode: 'normal', opacity: 1, clips: [], activeClipId: null }],
+        transport: { bpm: 155, playing: false, beatsPerBar: 3 },
       },
-    });
-    expect(result.success).toBe(true);
+      setlist: { songs: [{ id: 's1', name: 'Demo', sections: [] }], activeSongId: 's1', activeSectionId: null },
+    };
+
+    const parsed = parseProject(old);
+
+    // (1) it PARSES — an old file is readable, not a boot failure.
+    expect(parsed.kit.drums.length).toBeGreaterThan(0);
+    // (2) both slices are STRIPPED, not carried through as unknown keys.
+    expect('composition' in parsed).toBe(false);
+    expect('setlist' in parsed).toBe(false);
+    // (3) THE COST, stated: the old file's authored tempo lived under `composition`, so it is
+    // stripped too and `transport` takes its schema defaults. Two users, no real show files — this
+    // is the trade Decision 2 accepted, and it is asserted here rather than discovered later.
+    expect(parsed.transport).toEqual({ bpm: 120, playing: true, beatsPerBar: 4 });
+  });
+
+  it('a garbage `transport` is still rejected — the relocated field is validated, not waved through', () => {
+    const p = JSON.parse(JSON.stringify(defaultProject()));
+    p.transport.bpm = -1;
+    expect(() => parseProject(p)).toThrow();
+    const q = JSON.parse(JSON.stringify(defaultProject()));
+    q.transport.beatsPerBar = 2.5;
+    expect(() => parseProject(q)).toThrow();
   });
 });

@@ -12,7 +12,7 @@ import { serializeModel, type ClientMessage, type ServerMessage } from './ws-pro
 function fileOnDisk(): Project {
   const p = defaultProject();
   p.name = 'On Disk';
-  p.composition.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
+  p.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
   return p;
 }
 
@@ -184,7 +184,7 @@ describe('S8 — one reducer: a structural edit lands exactly once', () => {
 
     send({ t: 'setTransport', bpm: 137, beatsPerBar: 7 });
 
-    expect(voiceHost.getProject().composition.transport).toMatchObject({ bpm: 137, beatsPerBar: 7 });
+    expect(voiceHost.getProject().transport).toMatchObject({ bpm: 137, beatsPerBar: 7 });
     expect(broadcasts.filter((m) => m.t === 'state')).toHaveLength(1);
     expect(autosaver.markDirty).toHaveBeenCalledTimes(1);
   });

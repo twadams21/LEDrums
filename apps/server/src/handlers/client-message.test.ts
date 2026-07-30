@@ -438,17 +438,17 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'system', label: 'Patch applied' }));
   });
 
-  it('leaves authored composition/setlist untouched (re-rigs only the device)', () => {
+  it('leaves the authored transport untouched (re-rigs only the device)', () => {
     const { handle, join, voiceHost } = harness();
     const editor = join();
-    const before = voiceHost.getProject();
-    const composition = before.composition;
-    const setlist = before.setlist;
+    // A tempo the drummer is playing to — a device re-rig must not move it. (Pre-Decision-2 this
+    // test guarded `composition` + `setlist`, the authored slices that no longer exist; `transport`
+    // is what survived of them and is the only authored field a patch could still clobber.)
+    voiceHost.setTransport({ bpm: 143, beatsPerBar: 7 });
 
     handle({ t: 'setProject', patch: patchFrom(voiceHost) }, editor);
 
-    expect(voiceHost.getProject().composition).toEqual(composition);
-    expect(voiceHost.getProject().setlist).toEqual(setlist);
+    expect(voiceHost.getProject().transport).toMatchObject({ bpm: 143, beatsPerBar: 7 });
   });
 
   it('rejects an invalid payload with a user-visible error and zero partial apply', () => {

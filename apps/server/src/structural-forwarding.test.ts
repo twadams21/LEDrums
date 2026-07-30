@@ -228,7 +228,7 @@ describe('structural forwarding — every live discriminant lands on the sole st
     const { project, pristine } = drive(FULL_TRANSPORT);
 
     expect(project).not.toEqual(pristine);
-    expect(project.composition.transport).toEqual({ bpm: 137, playing: false, beatsPerBar: 7 });
+    expect(project.transport).toEqual({ bpm: 137, playing: false, beatsPerBar: 7 });
   });
 });
 

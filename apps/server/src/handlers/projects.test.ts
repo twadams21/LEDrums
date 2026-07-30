@@ -15,7 +15,7 @@ import { handleProjectMessage, type JsonSink } from './projects';
 function fileOnDisk(): Project {
   const p = defaultProject();
   p.name = 'On Disk';
-  p.composition.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
+  p.transport = { bpm: 155, playing: false, beatsPerBar: 3 };
   p.kit.drums[0]!.hoops = p.kit.drums[0]!.hoops!.map((h) => ({ ...h, pixelCount: 64 }));
   return p;
 }
@@ -112,7 +112,7 @@ describe('handleProjectMessage — loadProject re-points the VOICE host too (INI
     // Before S5 this was the previous project: only the LEGACY engine was re-pointed, so the live
     // render host kept the old kit/inputMap/output while `state` described the new one.
     expect(voiceHost.getProject()).toEqual(fileOnDisk());
-    expect(voiceHost.getProject().composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
+    expect(voiceHost.getProject().transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
   });
 
   it('rebuilds the live pixel model from the loaded kit (the geometry rebuild actually ran)', () => {
@@ -147,7 +147,7 @@ describe('handleProjectMessage — loadProject re-points the VOICE host too (INI
     // how a load would persist stale state.
     const live = voiceHost.getProject();
     expect(live.name).toBe('On Disk');
-    expect(live.composition.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
+    expect(live.transport).toEqual({ bpm: 155, playing: false, beatsPerBar: 3 });
     expect(live.kit).toBe(live.kit); // the host's live kit reference IS project.kit (in-place edits)
   });
 });

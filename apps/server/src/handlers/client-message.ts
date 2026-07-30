@@ -390,7 +390,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // the sender with ZERO state touched (AGENTS.md: validate before any state, no partial apply).
     // On accept, apply once through the sole store: `voiceHost.adoptPatch` swaps the three device
     // slices and rebuilds geometry ONCE, never a granular setKit*/setInputMap/setOutput replay.
-    // Then persist + broadcast fresh `state`. Authored composition/setlist are never touched.
+    // Then persist + broadcast fresh `state`. The authored `transport` is never touched.
     if (msg.t === 'setProject') {
       const parsed = projectPatchSchema.safeParse(msg.patch);
       if (!parsed.success) {

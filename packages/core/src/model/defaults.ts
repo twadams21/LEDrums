@@ -1,7 +1,7 @@
 import { parseKit, type KitConfig } from '../geometry/kit-schema';
 import { CURRENT_KIT_VERSION } from '../geometry/kit-migrations';
 import { assertProjectIntegrity } from './integrity';
-import { parseProject, type Layer, type Project } from './project-schema';
+import { parseProject, type Project } from './project-schema';
 
 const HOOP_COUNT = 4;
 
@@ -64,78 +64,18 @@ export const DEFAULT_KIT: KitConfig = parseKit({
 /**
  * A compact, always-valid default project used as a programmatic fallback (the
  * full hardware kit + topology ships as `apps/server/projects/default.json`, U11).
- * Density is modest and the DMX map is left flat so this never depends on a wiring
- * topology; the starter composition exercises base / trigger / effect layers.
+ * Density is modest and the DMX map is left flat so this never depends on a wiring topology.
+ *
+ * Decision 2 (11-decisions.md) removed the `composition` + `setlist` slices from the Project, so
+ * this no longer seeds a starter layer stack or a demo setlist — building them here would be
+ * constructing objects `parseProject` strips on the way in. Authored content lives in the voice-bus
+ * Show, seeded separately.
  */
 export function defaultProject(): Project {
-  const layers: Layer[] = [
-    {
-      id: 'base',
-      name: 'Base',
-      role: 'base',
-      blendMode: 'normal',
-      opacity: 1,
-      activeClipId: 'base-swirl',
-      clips: [
-        {
-          id: 'base-swirl',
-          name: 'Swirl',
-          effectId: 'solid-base',
-          params: { hue: 210, saturation: 0.7, brightness: 0.4, speed: 0.3, noise: 0.4 },
-          modulations: [{ source: { type: 'volume' }, param: 'saturation', min: 0.4, max: 1, curve: 'linear' }],
-        },
-      ],
-    },
-    {
-      id: 'trigger',
-      name: 'Trigger',
-      role: 'trigger',
-      blendMode: 'add',
-      opacity: 1,
-      activeClipId: 'chase',
-      clips: [
-        {
-          id: 'chase',
-          name: 'Chase',
-          effectId: 'chase',
-          params: { hue: 30, brightness: 1, subdivision: 4 },
-          modulations: [{ source: { type: 'velocity' }, param: 'brightness', min: 0.3, max: 1, curve: 'linear' }],
-        },
-        {
-          id: 'whole-drum',
-          name: 'Whole Drum',
-          effectId: 'whole-drum',
-          params: { hue: 0, brightness: 1, decayMs: 220 },
-          modulations: [],
-        },
-      ],
-    },
-    {
-      id: 'effect',
-      name: 'Effect',
-      role: 'effect',
-      blendMode: 'screen',
-      opacity: 0.8,
-      activeClipId: 'wash',
-      clips: [
-        {
-          id: 'wash',
-          name: 'Radial Wash',
-          effectId: 'radial-wash',
-          params: { hue: 280, brightness: 0.9, mode: 'out', speed: 1.2, width: 180, decayMs: 500 },
-          modulations: [],
-        },
-      ],
-    },
-  ];
-
   const project = parseProject({
     name: 'LEDrums Default',
     kit: DEFAULT_KIT,
-    composition: {
-      layers,
-      transport: { bpm: 120, playing: true, beatsPerBar: 4 },
-    },
+    transport: { bpm: 120, playing: true, beatsPerBar: 4 },
     inputMap: {
       midiChannel: null,
       midiNotes: [
@@ -149,44 +89,6 @@ export function defaultProject(): Project {
         { address: '/sp/snare', drumId: 'snare', slot: 0 },
       ],
       volumeOscAddress: '/ledrums/volume',
-    },
-    setlist: {
-      activeSongId: 'song1',
-      activeSectionId: 'verse',
-      songs: [
-        {
-          id: 'song1',
-          name: 'Demo Song',
-          bpm: 120,
-          sections: [
-            {
-              id: 'verse',
-              name: 'Verse',
-              layerClips: [
-                { layerId: 'base', clipId: 'base-swirl' },
-                { layerId: 'trigger', clipId: 'chase' },
-                { layerId: 'effect', clipId: 'wash' },
-              ],
-              bindings: [
-                { drumId: 'kick', slot: 0, layerId: 'trigger', clipId: 'whole-drum' },
-                { drumId: 'snare', slot: 0, layerId: 'trigger', clipId: 'chase' },
-              ],
-            },
-            {
-              id: 'chorus',
-              name: 'Chorus',
-              layerClips: [
-                { layerId: 'base', clipId: 'base-swirl' },
-                { layerId: 'effect', clipId: 'wash' },
-              ],
-              bindings: [
-                { drumId: 'kick', slot: 0, layerId: 'trigger', clipId: 'chase' },
-                { drumId: 'snare', slot: 0, layerId: 'trigger', clipId: 'whole-drum' },
-              ],
-            },
-          ],
-        },
-      ],
     },
     output: { state: 'disabled', protocol: 'artnet', host: '255.255.255.255', rgbOrder: 'RGB', fps: 44 },
   });
