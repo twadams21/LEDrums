@@ -21,9 +21,13 @@ import { makeNode, type GraphNode, type TriggerGraph } from './sim';
    the show-schema migrator shifts them +1 on load (so the SAME physical hoop lights) and is
    idempotent (a re-saved v2 blob is never shifted again). */
 
-// Compositor resolve options — the strict grammar the render/output path uses (A1 filters index >= 1).
-const COMPOSITOR = { sourceDrumOnNoHash: false, emptyFallback: 'sentinel', sort: true } as const;
-const resolve = (targetId: string) => voice.parseHoopTarget(targetId, 'kick', COMPOSITOR).hoopIndices;
+/* The strict grammar the render/output path resolves through (A1 filters index >= 1). This is the
+   RESOLVER policy, despite the name this const carried until INIT-06 S13: `HOOP_TARGET_POLICIES`
+   has a distinct `compositor` entry ({sourceDrumOnNoHash: true, emptyFallback: 'first', sort:
+   false}), and these flags were never it. Referencing the shared policy rather than respelling its
+   three flags means this test cannot drift from the grammar it claims to be checking. */
+const resolve = (targetId: string) =>
+  voice.parseHoopTarget(targetId, 'kick', voice.HOOP_TARGET_POLICIES.resolver).hoopIndices;
 
 function hoopGraph(targetId: string): TriggerGraph {
   return { nodes: [makeNode('effect', 'fx', 0, 0, { scope: 'hoop', targetId })], edges: [] };

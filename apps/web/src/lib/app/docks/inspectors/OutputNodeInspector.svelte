@@ -28,8 +28,11 @@
     if (node.scope === 'drum') return infos.map((d) => ({ value: d.id, label: d.label }));
     if (node.scope === 'hoop') {
       return infos.flatMap((d) =>
+        // Encoded through core's helper, not hand-spelled: `encodeHoopTarget` is the ONE module
+        // that spells the `"<drumId>#<hoopIndex>"` wire form, so an option value here cannot
+        // drift from what the resolver parses back (INIT-06 06A reviewer note).
         Array.from({ length: d.hoopCount }, (_, i) => ({
-          value: `${d.id}#${i + 1}`,
+          value: voice.encodeHoopTarget(d.id, [i + 1]),
           label: `${d.label} · Hoop ${i + 1}`,
         })),
       );
