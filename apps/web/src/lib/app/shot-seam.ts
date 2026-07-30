@@ -116,6 +116,12 @@ export interface ShotSeam {
       SaveStatus (`saving` / `saved` / `error`); omitted → `error`, the one that cannot otherwise
       be reached without actually filling the browser's storage quota. */
   previewSaveStatus(status?: SaveStatus): void;
+  /** Seed multi-client presence so the TopBar's role affordances can be captured (02A flagged
+      that TAKEOVER had no way in). `arg` is the role to stand in: `viewer` (default) → another
+      client holds the editor slot, so the read-only banner + Take over button render; `editor` →
+      we hold it with others connected, so the "You're editing" indicator renders; `solo` clears
+      presence back to standalone, where neither shows. */
+  previewPresence(role?: 'viewer' | 'editor' | 'solo'): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -385,6 +391,13 @@ class ShotSeamImpl implements ShotSeam {
     for (const t of tones) pushToast(messages[t], { tone: t, ttl: 0 });
   }
 
+  previewPresence(role: 'viewer' | 'editor' | 'solo' = 'viewer'): void {
+    // `role` is derived from presence alone, so seeding presence IS the whole seam — nothing here
+    // reaches past the same public field the server's `presence` message writes.
+    this.store.presence =
+      role === 'solo' ? null : { editorId: role === 'editor' ? 'me' : 'other-client', youAreEditor: role === 'editor', clientCount: 2 };
+  }
+
   previewSaveStatus(status: SaveStatus = 'error'): void {
     if (status === 'error') {
       // Make the failure REAL, not painted on. A status merely assigned here is settled back to
@@ -515,6 +528,10 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'save-status':
         this.previewSaveStatus(arg as SaveStatus | undefined);
+        break;
+      case 'presence':
+      case 'takeover':
+        this.previewPresence(arg as 'viewer' | 'editor' | 'solo' | undefined);
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
