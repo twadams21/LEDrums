@@ -159,40 +159,44 @@ describe('copy / paste section (clipboard)', () => {
   });
 });
 
+/* Which graphs a pad hit RESOLVES to — the section-scoped source match, its layering, and the
+   pre-section fallback. The engine renders the hit; what the browser decides is which graph keys
+   the hit belongs to, and it stamps each one's fire clock (`graphFireAt`, the live-on-trigger node
+   previews). That stamp is the observable here — it replaces the retired sim's resolution log,
+   which is what these cases used to read (INIT-01 Decision 3). */
 describe('hit resolution = active section graphs whose drum source matches the pad', () => {
-  it('fires only the matching pad graph (each zone fires its own)', () => {
+  /** The graph keys a hit resolved to, read off the per-key fire clocks. */
+  const firedKeys = (store: TriggerLab): string[] => Object.keys(store.graphFireAt);
+
+  it('resolves only the matching pad graph (each zone fires its own)', () => {
     const store = new TriggerLab(fakeClient);
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(1); // exactly one graph fired
-    expect(store.log[0]!.pad).toBe(store.graphLabel('kick:0'));
+    expect(firedKeys(store)).toEqual(['kick:0']);
   });
 
-  it('fires nothing when the active section has no graph matching the pad', () => {
+  it('resolves nothing when the active section has no graph matching the pad', () => {
     const store = new TriggerLab(fakeClient);
     store.removeGraphFromSection(store.activeSectionId!, 'kick:0');
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(0); // the section gates resolution — no fallback while active
+    expect(firedKeys(store)).toEqual([]); // the section gates resolution — no fallback while active
   });
 
-  it('layers two section graphs that share a source (both fire on the hit)', () => {
+  it('layers two section graphs that share a source (both resolve on the hit)', () => {
     const store = new TriggerLab(fakeClient);
     // an authored graph bound to the SAME drum source as kick:0 → layered onto kick centre
     const layer = store.createGraph('Kick layer');
     store.setTriggerSource(layer, { kind: 'drum', drumId: 'kick', zone: '0' });
     store.addGraphToSection(store.activeSectionId!, layer);
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(2); // kick:0 + the layered graph
-    expect(store.log.map((l) => l.pad)).toEqual(
-      expect.arrayContaining([store.graphLabel('kick:0'), 'Kick layer']),
-    );
+    expect(firedKeys(store).sort()).toEqual(['kick:0', layer].sort());
+    expect(store.graphLabel(layer)).toBe('Kick layer');
   });
 
   it('falls back to the pad’s own graph when there is NO active section (pre-section behaviour)', () => {
     const store = new TriggerLab(fakeClient);
     store.activeSectionId = null;
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(1);
-    expect(store.log[0]!.pad).toBe('Kick · center');
+    expect(firedKeys(store)).toEqual(['kick:0']);
   });
 });
 
@@ -209,29 +213,27 @@ describe('keyboard graph firing', () => {
     store.fireSectionGraph(index);
 
     // S13: the server fires the EXACT graph by key. We no longer forward a synthetic {t:'midi'}
-    // (which the server re-resolved AND echoed back → the old keyboard triple-fire); the sim
-    // stays silent locally.
+    // (which the server re-resolved AND echoed back → the old keyboard triple-fire).
     expect(sent).toContainEqual({ t: 'fireGraph', graphKey: key, velocity: store.velocity });
     expect(sent.some((m) => m.t === 'midi')).toBe(false);
-    expect(store.localPreviewActive).toBe(false);
   });
 
-  it('a connected keyboard graph fire stays server-authoritative and never previews the local sim (S12)', () => {
+  it('a connected keyboard graph fire keeps the visualiser on the engine frames (S12)', () => {
     const store = new TriggerLab(fakeClient);
     const key = store.createGraph('Midi graph');
     store.setTriggerSource(key, { kind: 'midi', note: 36 });
     store.addGraphToSection(store.activeSectionId!, key);
     store.link = 'open';
     store.serverModel = store.labModel.model;
-    store.serverFrame = new Uint8Array(store.frameBuf.length);
+    store.serverFrame = new Uint8Array(store.labModel.model.count * 3);
 
     expect(store.useServer).toBe(true);
     store.fireSectionGraph(store.activeSection!.graphs.indexOf(key));
 
-    // S12 authority principle: connected, the sim never fires — no local preview flash, and the
-    // visualiser keeps rendering the server's frames.
-    expect(store.localPreviewActive).toBe(false);
+    // Authority principle: the frame on screen is the engine's, before and after the fire — there
+    // is no local composite that could swap in (INIT-01 Decision 3).
     expect(store.useServer).toBe(true);
+    expect(store.enginePreviewLive).toBe(true);
     expect(store.previewFrame).toBe(store.serverFrame);
   });
 });

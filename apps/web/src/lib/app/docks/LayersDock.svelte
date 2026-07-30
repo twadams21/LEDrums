@@ -3,20 +3,23 @@
      voice bus, stacked vertically: name, polyphony rule (mono/poly), live meter, and
      the voices currently sounding on it. Selecting a bus expands its settings
      (crossfade + behaviour note) inline in the card — there is no separate bus
-     inspector panel. */
+     inspector panel.
+
+     Voices and meters are the ENGINE's — it is the only renderer (INIT-01 Decision 3). An empty
+     list therefore means one of two different things, and the dock says which: connected and
+     nothing sounding, or no engine at all. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Polyphony } from '../../trigger-lab/sim';
   import type { DockVoice } from '../../trigger-lab/dock-voices';
   import { groupVoicesByBus } from '../../trigger-lab/dock-smoothing';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
-  import IconButton from '../../ui/IconButton.svelte';
+  import EngineOffline from '../../ui/EngineOffline.svelte';
   import Slider from '../../ui/Slider.svelte';
   import { busIcon } from '../views/trigger-node-meta';
   import Zap from '@lucide/svelte/icons/zap';
   import Repeat from '@lucide/svelte/icons/repeat';
   import Hand from '@lucide/svelte/icons/hand';
-  import Square from '@lucide/svelte/icons/square';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -61,19 +64,23 @@
           onChange={(v) => store.setPolyphony(bus.id, v as Polyphony)}
           ariaLabel="{bus.name} polyphony"
         />
-        <IconButton icon={Square} label="Release {bus.name}" size={13} onclick={() => store.stopBus(bus.id)} />
       </header>
 
       <div class="meter" aria-hidden="true"><span style="transform:scaleX({store.busLevelsDisplay[bus.id] ?? 0})"></span></div>
 
       <div class="voices" class:empty={voices.length === 0}>
         {#if voices.length === 0}
-          <span class="silent">no voices</span>
+          {#if store.engineTransportLive}
+            <span class="silent">no voices</span>
+          {:else}
+            <!-- Not "silent": with no engine there is nothing to be silent ABOUT. -->
+            <EngineOffline label="no engine" />
+          {/if}
         {:else}
           {#each voices as v (v.id)}
             <span class="voice" class:releasing={v.releasing} style={voiceStyle(v)} title={v.via}>
               {#if v.mode === 'oneshot'}<Zap size={11} aria-hidden="true" />{:else if v.mode === 'loop'}<Repeat size={11} aria-hidden="true" />{:else}<Hand size={11} aria-hidden="true" />{/if}
-              {store.sim.effectName(v.effectId)}
+              {store.effectName(v.effectId)}
             </span>
           {/each}
         {/if}

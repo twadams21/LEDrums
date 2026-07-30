@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import type { WSClient } from '../ws/client';
+import type { ClientMessage } from '../ws/protocol-types';
 
 /* CRUD on GENERIC graphs — no authored/pad distinction. Rename, duplicate, and delete go
    through real store mutators (autosave-consistent) and work on ANY graph key (pad graphs
@@ -11,6 +12,9 @@ import type { WSClient } from '../ws/client';
 import { MemStorage } from '../test-support/mem-storage';
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
+const capturing = (sent: ClientMessage[]): (() => WSClient) =>
+  () =>
+    ({ on() {}, connect() {}, close() {}, send(m: ClientMessage) { sent.push(m); } }) as unknown as WSClient;
 
 const kickCentre = (store: TriggerLab) => store.pads.find((p) => p.drumId === 'kick' && p.zone === 0)!;
 
@@ -201,11 +205,14 @@ describe('deleteGraph (any graph)', () => {
 });
 
 describe('deleted pad graph → silence, no respawn', () => {
-  it('a hit on the pad fires nothing once its graph is deleted', () => {
-    const store = new TriggerLab(fakeClient);
+  it('a hit on the pad sends nothing once its graph is deleted', () => {
+    const sent: ClientMessage[] = [];
+    const store = new TriggerLab(capturing(sent));
+    store.link = 'open';
     store.deleteGraph('kick:0'); // also purges it from the active section
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(0); // no graph resolves for the pad → silent
+    // No graph resolves for the pad, so no `key` reaches the engine — the hit is silent.
+    expect(sent.filter((m) => m.t === 'key')).toHaveLength(0);
   });
 
   it('does not respawn the pad graph across a reload', () => {

@@ -164,7 +164,7 @@ let n = 0;
 const bid = (k: string) => `${k}-${++n}`;
 
 /** Build a fresh single-instance Play from an effect's Default preset. */
-export const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
+const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
   const eff = effectById.get(effectId)!;
   const presetId = `${effectId}:default`;
   const p = presetById.get(presetId);

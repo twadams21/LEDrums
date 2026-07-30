@@ -76,3 +76,52 @@ export function hashString(s: string): number {
   }
   return h >>> 0;
 }
+
+// --- deterministic value noise (closed-form hash, no RNG state) ---
+// One implementation for every render path: canvas elements (`noise` kind) and the
+// perlin-clouds generator both scramble the same lattice, so a formula edit here moves
+// both together instead of drifting one against the other.
+
+/** Deterministic 2D hash → [0,1) using a closed-form sin scramble (no RNG state). */
+export function hash2(ix: number, iy: number): number {
+  const s = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** Smooth Hermite fade for cleaner interpolation than raw bilinear. */
+export function fade(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/** Bilinear value noise at (x,y); integer lattice hashed, {@link fade}-interpolated. */
+export function valueNoise(x: number, y: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const a = hash2(ix, iy);
+  const b = hash2(ix + 1, iy);
+  const c = hash2(ix, iy + 1);
+  const d = hash2(ix + 1, iy + 1);
+  const ux = fade(fx);
+  const uy = fade(fy);
+  const top = a + (b - a) * ux;
+  const bot = c + (d - c) * ux;
+  return top + (bot - top) * uy;
+}
+
+/** Fractal value noise, `octaves` layers (clamped to 1..6), normalized to [0,1]. */
+export function fbm(x: number, y: number, octaves: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  let freq = 1;
+  let norm = 0;
+  const n = Math.max(1, Math.min(6, Math.round(octaves)));
+  for (let o = 0; o < n; o++) {
+    sum += valueNoise(x * freq, y * freq) * amp;
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return clamp01(sum / norm);
+}

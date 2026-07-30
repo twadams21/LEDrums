@@ -1,16 +1,16 @@
-/* Reactive bridge over the throwaway Sim. Owns editable config + the effect/preset
-   registries as runes, drives the sim from a rAF loop, and snapshots transient
-   voice/log state each frame. Throwaway — see ./NOTES.md.
+/* Reactive authoring store for the lab. Owns editable config + the effect/preset registries
+   as runes, and adopts the ENGINE's streamed truth (frames · voices · bus levels · transport)
+   from the WS link — there is no second renderer in the browser (INIT-01 Decision 3 retired
+   the offline sim; with the link down the preview surfaces say so rather than simulating).
 
    THIN WRAPPER (S3.2): the domain logic lives in pure reducer slices under `store/`
    (ids · seed · hydrate · graphs · graph-wiring · value-switch · objects ·
    trigger-routing · shows · show-library-sync · transport) + the existing pure modules
    (persistence · save-status · setlist · show-builder). This class holds the runes +
-   sim/client lifecycle and delegates each domain to its slice — mirroring
+   client lifecycle and delegates each domain to its slice — mirroring
    setlist.ts / shell-nav.ts. The public TriggerLab API is unchanged. */
 
 import {
-  Sim,
   defaultParams,
   defaultAdsr,
   adsrToPoints,
@@ -21,7 +21,6 @@ import {
   type Envelope,
   type EnvKind,
   type EnvPoint,
-  type LogEntry,
   type ParamValue,
   type PlayMode,
   type Polyphony,
@@ -30,7 +29,6 @@ import {
   type Section,
   type SwitchOn,
   type ValueMode,
-  type Voice,
   type GraphNode,
   type NodeKind,
   type TriggerGraph,
@@ -43,7 +41,7 @@ import {
 import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
-import { renderFrame as compositeFrame } from './render';
+import { LiveInputTables } from './live-input';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { BackupSnapshotMeta, BootRecoveryInfo, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
@@ -381,19 +379,13 @@ export class TriggerLab {
   // pointer, the clipboard, the sections/activeSection deriveds, and section CRUD) is owned
   // by {@link sectionsCtl} (R24, store split 5/5) — the store delegates its public surface
   // to this via the accessors + forwarders below, so callers/tests are unchanged. The store
-  // supplies the active-song reads, the `songs` rune swap, the WS link, and the offline sim
-  // look-recall (the play surface stays here) through the injected host.
+  // supplies the active-song reads and the `songs` rune swap through the injected host.
   private readonly sectionsCtl = new SectionsController({
     isViewer: () => this.isViewer,
     activeSong: () => this.activeSong,
     activeSongId: () => this.activeSongId,
     songs: () => this.songs,
     setSongs: (songs) => (this.songs = songs),
-    linkOpen: () => this.link === 'open',
-    recallSectionLook: (look) => {
-      this.sim.recallSection(look);
-      this.snapshot();
-    },
   } satisfies SectionsControllerHost);
 
   // --- section-arrangement state delegators (R24) — owned by sectionsCtl ------------------------
@@ -437,16 +429,17 @@ export class TriggerLab {
   // songLibrary) + its deriveds/CRUD/sync/persistence are owned by {@link showsCtl} (R23, store split
   // 4/5). The store delegates its public surface via the accessors below.
 
-  // transient snapshot
-  voices = $state<Voice[]>([]);
-  log = $state<LogEntry[]>([]);
+  // Transient engine truth, adopted from the link — never computed locally (INIT-01 Decision 3).
+  /** The engine's transport clock, from `stats.engine.timeMs`. 0 while the link is down. */
   timeMs = $state(0);
+  /** The engine's beat position, from `stats.engine.beat`. 0 while the link is down — nothing
+      in the browser advances a clock of its own, so a frozen readout means "no engine", and
+      {@link engineTransportLive} is what the UI gates its honest empty state on. */
   beat = $state(0);
   busLevels = $state<Record<string, number>>({});
-  /** Per-voice detail streamed from the server engine's stats (S17) — the authoritative voice list
-      while the engine link is open (the sim stops firing when connected, so its `voices` are stale).
-      Empty offline / before the first stats. {@link dockVoices} source-selects between this and the
-      sim. */
+  /** Per-voice detail streamed from the server engine's stats (S17) — the ONLY voice list there
+      is: the engine resolves and renders, the browser only draws. Empty while the link is down or
+      before the first stats, which is what {@link dockVoices} shows as an honest empty dock. */
   serverVoices = $state<VoiceStat[]>([]);
   monitorEvents = $state<MonitorEvent[]>([]);
   monitorTypeFilter = $state<MonitorFilterType>(DEFAULT_MONITOR_FILTERS.type);
@@ -714,33 +707,39 @@ export class TriggerLab {
       failure; cleared on the next successful patch send or when the user dismisses it. */
   serverError = $state<string | null>(null);
 
-  /** mutable effect registry — the effect creator appends here (synced to the sim). */
+  /** mutable effect registry — the effect creator appends here. */
   effects = $state<EffectDef[]>([...EFFECTS]);
   drums = DRUMS;
 
   labModel = buildLabModel();
-  frameBuf = new Uint8Array(this.labModel.model.count * 3);
-  localPreviewActive = $state(false);
-  private localPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+  /** All-dark frame sized to the lab kit — what the preview paints while the engine's frames are
+      unavailable. Never composited into: it is the literal "no output" reading, and the preview
+      surfaces label it as disconnected rather than letting dark pixels imply a live blackout. */
+  private readonly blankFrame = new Uint8Array(this.labModel.model.count * 3);
   /** Safe to preview server geometry only once the link is up AND we have BOTH the
       server's model and a frame — model.count and frame length must agree, so they
       switch together (never a server frame on the lab model, or vice versa). */
   useServer = $derived(this.link === 'open' && !!this.serverModel && !!this.serverFrame);
-  /** Preview model: the engine's real kit when connected, else the local lab kit. */
+  /** Preview model: the engine's real kit when connected, else the local lab kit's geometry (that
+      is authored data, not a simulation — it gives the preview its spatial frame while dark). */
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
-  /** Preview frame: the engine's composited output when connected, else local sim. */
-  previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.frameBuf);
-  /** Voice list for the Layers/Buses dock (S17): the server's streamed voices while the engine link
-      is open (its render is authoritative — the sim no longer fires when connected), the local sim's
-      voices offline. Pure source-selection lives in {@link selectDockVoices}. Gated on `link` (the
+  /** Preview frame: the engine's composited output when connected, else all-dark. The browser
+      composites nothing — INIT-01 Decision 3 retired the offline mirror, so "not connected" is
+      shown as such ({@link enginePreviewLive}) instead of being simulated. */
+  previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.blankFrame);
+  /** Whether {@link previewFrame} is real engine output. False ⇒ the preview surfaces show their
+      disconnected state; the frame is dark because there is no engine, not because it went dark. */
+  enginePreviewLive = $derived(this.useServer);
+  /** Whether {@link beat}/{@link timeMs} are a live engine transport reading. Nothing local
+      advances them, so a closed link means the readout is not running (honest empty state). */
+  engineTransportLive = $derived(this.link === 'open');
+  /** Voice list for the Layers/Buses dock (S17), normalized from the engine's streamed voices —
+      the one and only source. Empty while the link is down: the engine resolves and renders, so
+      with it gone there are no voices to show, and the dock says so. Gated on `link` (the
       firing/authority gate), not `useServer` (the stricter visualiser-frame gate): the dock owns no
       pixels, so it can adopt server voices the instant the link opens without waiting for a frame. */
   dockVoices = $derived<DockVoice[]>(
-    selectDockVoices({
-      connected: this.link === 'open',
-      simVoices: this.voices,
-      serverVoices: this.serverVoices,
-    }),
+    selectDockVoices({ connected: this.link === 'open', serverVoices: this.serverVoices }),
   );
 
   /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
@@ -791,11 +790,13 @@ export class TriggerLab {
     this.role === 'viewer' ? 'Another client is editing' : this.role === 'editor' ? "You're editing" : 'Editing',
   );
 
-  sim: Sim;
+  /** Last-seen live MIDI CC / OSC / note values — input state behind the node-face readouts
+      (S38). Fed by our WebMIDI forward and by the server's `input` echo, so it is live in both
+      directions; it is NOT render state (see {@link LiveInputTables}). */
+  readonly liveInput = new LiveInputTables();
   private raf = 0;
   private last = 0;
   private fpsLast = 0;
-  private fpsFrames = 0;
 
   // --- engine link (real output runs on the server, mirrored here) ----------
   /** WS link to the server voice engine. Injectable so tests can pass a fake;
@@ -884,10 +885,8 @@ export class TriggerLab {
     makeClient: () => WSClient = () =>
       new WSClient({ pin: readStoredPin(), hostToken: readHostToken() }),
   ) {
-    // Load the show library from storage BEFORE the sim is built and the engine link opens,
-    // so the sim's registries and the first setShow/recallSection reflect the ACTIVE show's
-    // restored content. loadShowLibrary never throws: a valid library wins; else a legacy
-    // single blob is migrated to one "Default Show"; else a fresh "Untitled Show" is seeded.
+    // Load the show library from storage BEFORE the engine link opens, so the first
+    // setShow/recallSection reflects the ACTIVE show's restored content.
     // Hydrate the show + song libraries from storage into the controller (reserving their ids) and
     // mirror the ACTIVE show's authored over the seed defaults — a migrated/fresh slice is partial,
     // so applyAuthored fills any absent field. loadShowLibrary never throws: a valid library wins;
@@ -897,9 +896,6 @@ export class TriggerLab {
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
     this.normalizeGraphs();
-    // Build the sim from the (possibly restored) arrays — it snapshots `buses` by reference and
-    // indexes `effects`/`presets` into maps at construction, so it must see the hydrated arrays.
-    this.sim = new Sim(this.buses, this.effects, this.presets);
     this.client = makeClient();
   }
 
@@ -986,26 +982,17 @@ export class TriggerLab {
     void this.midi.openInput((ev) => this.forwardMidi(ev));
     this.last = performance.now();
     this.fpsLast = this.last;
-    this.fpsFrames = 0;
     const loop = (now: number): void => {
       const dt = Math.min(64, now - this.last);
       this.last = now;
-      this.sim.bpm = this.bpm;
-      if (this.playing) this.sim.tick(dt);
-      // Skip the sim composite while the visualiser is adopting SERVER frames — the local
-      // buffer would be rendered and thrown away every frame (wave-1 finding: wasted work,
-      // and a second render truth ticking in the background). The sim still ticks above so
-      // the offline preview resumes instantly when the link drops.
-      if (!this.useServer) this.renderFrame();
-      this.snapshot();
+      // Nothing renders here: the loop only smooths the DISPLAY of engine-streamed values and
+      // paces the fps/activity clocks. The engine composites; the browser draws what arrives.
       this.tickDockDisplay(dt);
-      // measure local output rate — but only publish it when offline; when the
-      // link is open the server reports the real LED output rate via onStats.
-      this.fpsFrames++;
+      // No local fps publish: `fps` is the ENGINE's measured LED output rate (onStats) and
+      // nothing else. The old offline branch published this rAF loop's own rate as if it were
+      // output, which was never true and is now not even a preview — offline it reads 0.
       const elapsed = now - this.fpsLast;
       if (elapsed >= 500) {
-        if (this.link !== 'open') this.fps = Math.round((this.fpsFrames * 1000) / elapsed);
-        this.fpsFrames = 0;
         this.fpsLast = now;
         // Advance the input-activity age clock (~2×/s) so badges age out visually.
         this.nowTick = Date.now();
@@ -1025,9 +1012,6 @@ export class TriggerLab {
     this.errorCaptureUninstall = null;
     this.client.close();
     this.engineSync.reset();
-    if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
-    this.localPreviewTimer = null;
-    this.localPreviewActive = false;
     this.stopAutosave();
   }
 
@@ -1063,27 +1047,24 @@ export class TriggerLab {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
-        this.sim.setNote(ev.note, ev.velocity, ev.channel, ev.on && ev.velocity > 0);
+        // Live note state for the `note` node-face readout (S38) — input state, not a fire.
+        this.liveInput.setNote(ev.note, ev.velocity, ev.channel, ev.on && ev.velocity > 0);
         if (ev.on && ev.velocity > 0) {
           // Local WebMIDI never round-trips back as a server `input` echo, so record the
           // badge activity here (channel-filtered inside recordInputActivity).
           this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
-          if (this.acceptsMidiChannel(ev.channel)) {
-            this.midi.applyNoteLearn(ev.note);
-            // Preview the fire on the local sim ONLY when offline. When connected the server is the
-            // sole resolver/renderer and streams its frames/levels back — firing here as well would
-            // double the hit (the echo loop). Authority principle, doc 03.
-            if (this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
-          }
+          if (this.acceptsMidiChannel(ev.channel)) this.midi.applyNoteLearn(ev.note);
         }
+        // The engine resolves and renders the hit; we only forward it. Nothing fires locally —
+        // with the link down the note is learned/recorded but no light moves (Decision 3).
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
         // S37: a CC source node can MIDI-learn the next incoming controller; the live value
-        // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
+        // feeds the CC table so the node-face readout (S38) tracks it.
         // Controller 0 is reserved for section recall and never learns/binds here.
         if (this.acceptsMidiChannel(ev.channel)) this.midi.applyCcLearn(ev.controller);
-        this.sim.setCc(ev.controller, ev.value, ev.channel);
+        this.liveInput.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
       case 'programChange':
@@ -1121,14 +1102,13 @@ export class TriggerLab {
 
   /** Load a show's authored content into the live runes: reset to the blank seed, apply the
       show's (partial-tolerant, detached) authored over it, then re-run the graph normalizers.
-      A FULL swap — no field of the previously-active show bleeds through. Clears the sim's
-      pending-fire queue so stale delay fires from the outgoing show cannot materialise
-      (mirrors core `engine.ts` `setShow()` clearing `pendingFires`). */
+      A FULL swap — no field of the previously-active show bleeds through. Pending delay fires
+      live on the ENGINE and are cleared there by core `engine.ts` `setShow()`; the browser has no
+      fire queue of its own to flush. */
   private applyShow(show: Show): void {
     this.resetAuthoredToSeed();
     this.applyAuthored($state.snapshot(show.authored));
     this.normalizeGraphs();
-    this.sim.clearPendingFires();
   }
 
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped). */
@@ -1222,8 +1202,6 @@ export class TriggerLab {
     this.resetAuthoredToSeed();
     this.applyAuthored(prev.authored);
     this.normalizeGraphs();
-    this.sim = new Sim(this.buses, this.effects, this.presets);
-    this.sim.clearPendingFires();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
     // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the
     // project untouched and sends nothing.
@@ -1232,7 +1210,6 @@ export class TriggerLab {
       this.project = prev.project;
       for (const msg of resync) this.client.send(msg);
     }
-    this.snapshot();
     this.restoringUndo = false;
     return true;
   }
@@ -1250,13 +1227,6 @@ export class TriggerLab {
         // re-schedules a save on the SAME debounce as any authored edit.
         const songLib = this.showsCtl.currentSongLibrary();
         this.scheduleSave(lib, songLib);
-      });
-      // Keep the offline sim's effect/preset registries in step with the RESOLVED view (S42), so a
-      // referenced section fires its own effects/presets in the in-browser preview — not just over
-      // the engine link. register* are idempotent upserts; re-runs on any ref/library change.
-      $effect(() => {
-        for (const e of this.resolvedView.effects) this.sim.registerEffect(e);
-        for (const p of this.resolvedView.presets) this.sim.registerPreset(p);
       });
     });
     if (typeof window !== 'undefined') {
@@ -1420,14 +1390,26 @@ export class TriggerLab {
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
-          // Drop the server voice list — offline the dock reads the sim again, and stale server
-          // voices must not linger into the next connect.
+          // Drop the engine's transient truth on a drop — voices, bus levels, transport and the
+          // output rate all came from a renderer we can no longer see, and a frozen last-known
+          // reading would be indistinguishable from a live one. The docks show their honest empty
+          // state until the next `stats` repopulates them.
           this.serverVoices = [];
+          this.busLevels = {};
+          this.timeMs = 0;
+          this.beat = 0;
+          this.fps = 0;
+          this.serverFrame = null;
         }
       },
-      onStats: (_stats, latencyMs, fps, output, voice) => {
+      onStats: (stats, latencyMs, fps, output, voice) => {
         this.latencyMs = latencyMs;
-        this.fps = fps; // the server's measured LED output rate wins while connected
+        this.fps = fps; // the server's measured LED output rate — the only rate there is
+        // Transport truth: the ENGINE's clock/beat, which is what the render loop actually runs
+        // on. Nothing in the browser advances these (INIT-01 Decision 3), so the Transport
+        // readout can no longer disagree with the lights.
+        this.timeMs = stats.timeMs;
+        this.beat = stats.beat;
         // Output transport truth: adopt the status (for the OutputPill, S02) and derive packets/s
         // (S03) from the change in the cumulative counter since the last tick. The derivation is
         // pure + tested; the store just owns the "previous sample" bookkeeping across discrete ticks.
@@ -1479,9 +1461,9 @@ export class TriggerLab {
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson).
       this.recordInputActivity({ kind: 'osc', address: label, value, time });
-      // Feed the sim's OSC table so an OSC-bound modulation source previews live (the OSC
-      // analogue of forwardMidi's `sim.setCc`; OSC arrives only via the server broadcast).
-      this.sim.setOsc(label, value);
+      // Feed the OSC table so an OSC-bound node face reads live (the OSC analogue of
+      // forwardMidi's CC write; OSC arrives only via the server broadcast).
+      this.liveInput.setOsc(label, value);
     }
   }
 
@@ -1565,21 +1547,6 @@ export class TriggerLab {
     this.client.send({ t: 'setTransport', ...cur });
   }
 
-  private snapshot(): void {
-    this.voices = this.sim.voices.slice();
-    this.log = this.sim.log.slice(0, 40);
-    this.timeMs = this.sim.timeMs;
-    this.beat = this.sim.beat;
-    // Bus meters follow the same authority rule as the voice list: the server owns them when
-    // connected (streamed via onStats). Writing the sim's levels here every rAF frame would clobber
-    // that ~2 Hz server value ~30× a second, so only publish sim levels while offline.
-    if (this.link !== 'open') {
-      const levels: Record<string, number> = {};
-      for (const b of this.buses) levels[b.id] = this.sim.busLevel(b.id);
-      this.busLevels = levels;
-    }
-  }
-
   private addMonitor(event: Omit<MonitorEvent, 'id' | 'time'> | MonitorEvent): void {
     const full: MonitorEvent = { id: this.monitorSeq++, time: Date.now(), ...event };
     this.monitorEvents = appendMonitorEvent(this.monitorEvents, full);
@@ -1629,19 +1596,6 @@ export class TriggerLab {
     });
   });
 
-  private renderFrame(): void {
-    compositeFrame(this.frameBuf, this.sim, this.labModel);
-  }
-
-  private markLocalPreview(): void {
-    this.localPreviewActive = true;
-    if (this.localPreviewTimer) clearTimeout(this.localPreviewTimer);
-    this.localPreviewTimer = setTimeout(() => {
-      this.localPreviewActive = false;
-      this.localPreviewTimer = null;
-    }, 350);
-  }
-
   private mappedDrumIdForMidiNote(note: number): string | null {
     return this.project?.inputMap.midiNotes.find((m) => m.note === note)?.drumId ?? null;
   }
@@ -1652,33 +1606,6 @@ export class TriggerLab {
       return this.mappedDrumIdForMidiNote(src.note) ?? this.pads[0]?.drumId ?? '';
     }
     return this.pads[0]?.drumId ?? '';
-  }
-
-  private fireRawMidiLocal(note: number, value: number): void {
-    const toFire = resolveGraphsForFire(this.resolvedView.graphs, { kind: 'midi', note, value });
-    if (toFire.length === 0) return;
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    const ctx = {
-      velocity: Math.max(0, Math.min(1, value / 127)),
-      sectionIndex: idx < 0 ? 0 : idx,
-      sectionCount: this.sections.length,
-      beatPhase: this.beatPhase,
-      sourceDrumId: this.mappedDrumIdForMidiNote(note) ?? this.pads[0]?.drumId ?? '',
-      bpm: this.bpm,
-    };
-    for (const { key, graph } of toFire) {
-      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
-      this.addMonitor({
-        type: 'effect',
-        direction: 'local',
-        source: `midi:${note}`,
-        label: this.graphLabel(key),
-        detail: resolved.join(' | '),
-      });
-    }
-    this.renderFrame();
-    this.snapshot();
-    this.markLocalPreview();
   }
 
   // --- play surface --------------------------------------------------------
@@ -1721,30 +1648,14 @@ export class TriggerLab {
     // Mark each fired graph's UI fire-clock so its live-on-trigger node previews play (both
     // online + offline — the preview is display-only and reacts to the local intent either way).
     for (const { key } of toFire) this.markGraphFire(key);
-    // Connected: the server owns resolution + render. Forward the hit and let its frames/levels
-    // come back; do NOT fire the local sim (authority principle, doc 03). `onInput` has no `key`
-    // echo branch, so this is a single authoritative fire.
+    // The engine owns resolution + render: forward the hit and let its frames/levels come back
+    // (authority principle, doc 03 — `onInput` has no `key` echo branch, so this is a single
+    // authoritative fire). With the link DOWN nothing lights: the browser has no renderer since
+    // INIT-01 Decision 3 retired the offline sim, so the hit is UI feedback only and the preview
+    // surfaces show their disconnected state rather than a simulated one.
     if (this.link === 'open') {
       this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
-      return;
     }
-    // Offline preview: fire the local sim (it drives the lab's voice lanes + resolution log).
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    const ctx = {
-      velocity: this.velocity,
-      sectionIndex: idx < 0 ? 0 : idx,
-      sectionCount: this.sections.length,
-      beatPhase: this.beatPhase,
-      sourceDrumId: pad.drumId,
-      bpm: this.bpm,
-    };
-    for (const { graph, label } of toFire) {
-      const resolved = this.sim.triggerGraph(label, graph, ctx);
-      this.addMonitor({ type: 'effect', direction: 'local', source: `${pad.drumId}:${pad.zone}`, label, detail: resolved.join(' | ') });
-    }
-    this.renderFrame();
-    this.snapshot();
-    this.markLocalPreview();
   }
 
   /** Fire the graph at `index` in the ACTIVE section's ordered graph list directly — the
@@ -1758,43 +1669,17 @@ export class TriggerLab {
     this.selectedPadKey = key; // show the graph that fired
     this.lastSectionFire = { key, seq: ++this.fireSeq }; // Graphs-dock card flash
     this.markGraphFire(key); // live-on-trigger node previews
-    const src = triggerSourceOf(graph);
-    // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
-    // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct
-    // both-fire and no echo mis-fire (the old keyboard triple-fire). The local sim stays silent
-    // (authority principle, doc 03 §3).
+    // Send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC source. The
+    // server fires precisely this graph — no re-resolution, so no zone-map/direct both-fire and no
+    // echo mis-fire (the old keyboard triple-fire). With the link down nothing fires: the graph is
+    // selected + flashed as feedback, but the only renderer is the engine (Decision 3).
     if (this.link === 'open') {
       this.client.send({ t: 'fireGraph', graphKey: key, velocity: this.velocity });
-      return;
     }
-    // Offline preview: fire the local sim directly (no source-match filter — the n-th graph plays).
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    const ctx = {
-      velocity: this.velocity,
-      sectionIndex: idx < 0 ? 0 : idx,
-      sectionCount: this.sections.length,
-      beatPhase: this.beatPhase,
-      sourceDrumId: this.sourceDrumIdForTriggerSource(src),
-      bpm: this.bpm,
-    };
-    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
-    this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
-    this.renderFrame();
-    this.snapshot();
-    this.markLocalPreview();
   }
 
   togglePlay(): void {
     this.playing = !this.playing;
-  }
-
-  stopBus(busId: string): void {
-    this.sim.stopBus(busId);
-    this.snapshot();
-  }
-  panic(): void {
-    this.sim.stopAll();
-    this.snapshot();
   }
 
   // --- voice model (branch 1) ----------------------------------------------
@@ -1815,19 +1700,12 @@ export class TriggerLab {
   /**
    * Activate a section — it becomes the one you're PLAYING and the one you're EDITING
    * (U4 merged the old `recall` look-morph and `setArrangeSection` arrange focus). Sets
-   * `activeSectionId`, recalls the timed look-morph when a fixture look shares this id, and
-   * tells the engine to fire this section's graphs.
+   * `activeSectionId` and tells the engine to recall the section, which is what spawns its
+   * timed look-morph (S15 engine parity). With the link down the pointer still moves — the
+   * arrangement edit is local — but no look morphs, because the engine is the only renderer.
    */
   setActiveSection(sectionId: string): void {
     this.activeSectionId = sectionId;
-    const look = this.sections.find((s) => s.id === sectionId);
-    // Offline preview only: when connected the server engine spawns this section's looks
-    // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
-    // outbound authority gate (S12) — the sim resolves only while the link is closed.
-    if (look && this.link !== 'open') {
-      this.sim.recallSection(look);
-      this.snapshot();
-    }
     if (this.link === 'open') {
       this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
     }
@@ -3032,11 +2910,10 @@ export class TriggerLab {
     if (!cur) return;
     const renamed: EffectDef = { ...cur, name: trimmed };
     this.effects = this.effects.map((e) => (e.id === id ? renamed : e));
-    this.sim.registerEffect(renamed);
   }
 
-  /** Duplicate an effect: clone its definition under a fresh id named "<name> copy", register
-      it with the sim, and seed its `${newId}:default` preset. This is the ONLY effect-authoring
+  /** Duplicate an effect: clone its definition under a fresh id named "<name> copy" and seed
+      its `${newId}:default` preset. This is the ONLY effect-authoring
       path now (the pattern-authoring EffectCreator was retired with the pattern engine in U3).
       Returns the new id, or null for an unknown id. The clone is independent (its own id +
       Default preset); a generator-backed effect keeps its `generatorId` so it renders
@@ -3049,17 +2926,15 @@ export class TriggerLab {
     const newId = objects.freshEffectId(this.effects, name);
     const eff = objects.cloneEffect($state.snapshot(src) as EffectDef, newId, name);
     this.effects.push(eff);
-    this.sim.registerEffect(eff);
     const preset = objects.defaultPresetFor(eff);
     this.presets.push(preset);
-    this.sim.registerPreset(preset);
     return newId;
   }
 
   /** Rename a preset. No-op on an unknown id or a blank name (mirrors {@link renameSong}).
       Replaces the Preset IMMUTABLY (re-added built-in presets share the module fixture by
-      reference) and re-points the sim's id-map. Persists via the autosave ({@link unionPresets}
-      keeps a renamed built-in preset on reload). */
+      reference). Persists via the autosave ({@link unionPresets} keeps a renamed built-in preset
+      on reload). */
   renamePreset(id: string, name: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const trimmed = name.trim();
@@ -3068,12 +2943,11 @@ export class TriggerLab {
     if (!cur) return;
     const renamed: Preset = { ...cur, name: trimmed };
     this.presets = this.presets.map((p) => (p.id === id ? renamed : p));
-    this.sim.registerPreset(renamed);
   }
 
   /** Duplicate a preset: clone it under a fresh id named "<name> copy" (same effect, an
-      independent copy of its params), and register it with the sim. Returns the new id, or
-      null for an unknown id. Persists via the authored autosave. */
+      independent copy of its params). Returns the new id, or null for an unknown id. Persists
+      via the authored autosave. */
   duplicatePreset(id: string): string | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.presetById(id);
@@ -3081,7 +2955,6 @@ export class TriggerLab {
     const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
     const preset = objects.clonePreset(src, newId);
     this.presets.push(preset);
-    this.sim.registerPreset(preset);
     return newId;
   }
 
@@ -3095,8 +2968,8 @@ export class TriggerLab {
 
   /** Delete a preset — ONLY when it is used nowhere ({@link presetUsageCount} === 0) and it is
       not a live effect's foundational `:default` (an effect's seeded baseline is never
-      deletable while the effect exists). Removes it from `presets` + the sim registry and
-      returns true; returns false (a no-op) when the id is unknown, the preset is in use, or it
+      deletable while the effect exists). Removes it from `presets` and returns true;
+      returns false (a no-op) when the id is unknown, the preset is in use, or it
       is a live effect's `:default`. Persists via the authored autosave. */
   deletePreset(id: string): boolean {
     if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
@@ -3104,7 +2977,6 @@ export class TriggerLab {
     const usage = pr ? objects.presetUsageCount(this.graphs, id) : 0;
     if (!objects.canDeletePreset(pr, usage, this.effects)) return false;
     this.presets = this.presets.filter((p) => p.id !== id);
-    this.sim.unregisterPreset(id);
     return true;
   }
 
@@ -3315,7 +3187,6 @@ export class TriggerLab {
     const label = name?.trim() || `${eff.name} preset`;
     const preset: Preset = { id: newId, name: label, effectId: eff.id, params: { ...node.params } };
     this.presets.push(preset);
-    this.sim.registerPreset(preset);
     node.presetId = newId;
     return newId;
   }
@@ -3440,32 +3311,40 @@ export class TriggerLab {
     return mg.modSourcesFor(g.nodes, g.edges, node.id, param);
   }
 
-  /** A `cc` source node's current live 0..1 level, read from the sim's CC table — or, when the
-      node is in OSC mode, from the sim's OSC table at its address. Drives the node-face value bar
-      + readout (S38); the branch keeps the preview honest for both live inputs. */
+  /** A `cc` source node's current live 0..1 level, read from the live CC table — or, when the
+      node is in OSC mode, from the live OSC table at its address. Drives the node-face value bar
+      + readout (S38); the branch keeps the readout honest for both live inputs. */
   ccNodeLiveValue(node: GraphNode): number {
     if (node?.kind !== 'cc') return 0;
-    return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
+    return voice.sampleCc(this.liveInput.cc, node.ccController ?? 1, node.ccChannel ?? null);
   }
 
   oscNodeLiveValue(node: GraphNode): number {
-    return node?.kind === 'osc' ? voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '') : 0;
+    return node?.kind === 'osc' ? voice.sampleOsc(this.liveInput.osc, node.oscAddress ?? '') : 0;
   }
 
   noteNodeLiveValue(node: GraphNode): number {
     return node?.kind === 'note'
-      ? voice.sampleNote(this.sim.noteTable, node.noteNumber ?? 60, node.noteChannel ?? null, node.noteMode ?? 'gate', node.noteReleaseMs ?? 0, this.sim.timeMs)
+      ? voice.sampleNote(this.liveInput.notes, node.noteNumber ?? 60, node.noteChannel ?? null, node.noteMode ?? 'gate', node.noteReleaseMs ?? 0, this.liveInput.nowMs())
       : 0;
   }
 
-  /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
-  get liveCcTable(): voice.CcTable {
-    return this.sim.ccTable;
+  /** Display name for an effect id, over the RESOLVED effect set (local + referenced library
+      effects, S42) — falls back to the raw id, so a voice naming an effect this editor does not
+      know still labels itself instead of rendering blank. Replaces the retired sim registry's
+      `effectName`; the resolved view is the same set that registry was fed from. */
+  effectName(id: string): string {
+    return this.resolvedView.effects.find((e) => e.id === id)?.name ?? id;
   }
 
-  /** The live OSC value table (sim mirror) — the S38 param-row tick reads it for `osc` sources. */
+  /** The live CC value table — the S38 param-row tick reads it for `cc` sources. */
+  get liveCcTable(): voice.CcTable {
+    return this.liveInput.cc;
+  }
+
+  /** The live OSC value table — the S38 param-row tick reads it for `osc` sources. */
   get liveOscTable(): voice.OscTable {
-    return this.sim.oscTable;
+    return this.liveInput.osc;
   }
 
   private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {

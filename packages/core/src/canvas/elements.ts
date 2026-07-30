@@ -5,7 +5,7 @@
  * evaluation composites elements in painter's order with plain alpha-over
  * ({@link sceneColorAt}). No state, no RNG — everything derives from (u, v, t, el).
  */
-import { clamp01, DEG2RAD } from '../math';
+import { clamp01, DEG2RAD, fbm } from '../math';
 import { hsvToRgb } from '../color/color';
 import type { CanvasElement, GradientStop } from './types';
 
@@ -23,49 +23,6 @@ function smoothstep(e0: number, e1: number, x: number): number {
 function wrap(x: number, m: number): number {
   const r = x % m;
   return r < 0 ? r + m : r;
-}
-
-// --- deterministic value noise (closed-form hash, no RNG state) ---
-
-function hash2(ix: number, iy: number): number {
-  const s = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-
-function fade(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-function valueNoise(x: number, y: number): number {
-  const ix = Math.floor(x);
-  const iy = Math.floor(y);
-  const fx = x - ix;
-  const fy = y - iy;
-  const a = hash2(ix, iy);
-  const b = hash2(ix + 1, iy);
-  const c = hash2(ix, iy + 1);
-  const d = hash2(ix + 1, iy + 1);
-  const ux = fade(fx);
-  const uy = fade(fy);
-  const top = a + (b - a) * ux;
-  const bot = c + (d - c) * ux;
-  return top + (bot - top) * uy;
-}
-
-/** Fractal value noise, `octaves` layers, normalized to [0,1]. */
-function fbm(x: number, y: number, octaves: number): number {
-  let sum = 0;
-  let amp = 0.5;
-  let freq = 1;
-  let norm = 0;
-  const n = Math.max(1, Math.min(6, Math.round(octaves)));
-  for (let o = 0; o < n; o++) {
-    sum += valueNoise(x * freq, y * freq) * amp;
-    norm += amp;
-    amp *= 0.5;
-    freq *= 2;
-  }
-  return clamp01(sum / norm);
 }
 
 // --- per-kind renderers ---

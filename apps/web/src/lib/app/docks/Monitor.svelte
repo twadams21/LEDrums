@@ -1,5 +1,11 @@
 <script lang="ts">
-  /* Monitor / Log: input, output and graph/effect events for debugging routing. */
+  /* Monitor / Log: input, output and graph/effect events for debugging routing.
+
+     Every entry is a real event — ours (sends, local faults) or the engine's (echoes, monitor
+     broadcasts). The old "Resolution log" section under this list came from the browser-side sim
+     that INIT-01 Decision 3 retired: it listed what a LOCAL evaluation would have spawned, which
+     is precisely the second truth this initiative removed. Graph resolution is reported by the
+     engine on the same timeline as everything else. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import { monitorEventRowKey } from '../monitor';
   import Select from '../../ui/Select.svelte';
@@ -74,18 +80,6 @@
           <span class="meta">{fmtTime(e.time)} - {e.type} - {e.direction} - {e.source}{e.destination ? ` -> ${e.destination}` : ''}</span>
           <span class="line">{e.label}</span>
           {#if e.detail}<span class="detail">{e.detail}</span>{/if}
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  {#if store.log.length > 0}
-    <div class="section-title">Resolution log</div>
-    <div class="log">
-      {#each store.log as e, i (i + '-' + e.t)}
-        <div class="entry">
-          <span class="meta">{e.pad}</span>
-          {#each e.resolved as r (r)}<span class="line">{r}</span>{/each}
         </div>
       {/each}
     </div>
@@ -212,14 +206,6 @@
   .detail {
     font-size: var(--text-2xs);
     color: var(--text-muted);
-  }
-  .section-title {
-    padding: var(--space-2) var(--space-3) 0;
-    color: var(--text-faint);
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-label);
   }
   @media (max-width: 980px) {
     .workspace .tools {

@@ -16,11 +16,11 @@
       that {@link ShowsController} owns (R23), reached through the host's songs get/set.
 
     Reactivity lives here (Svelte 5 runes fields); the store delegates its public surface via
-    getter/setter/forwarders so callers + tests are unchanged. The sim PLAY surface (hit /
-    fireSectionGraph / setActiveSection's look recall) stays in the store — this split extracts the
-    arrangement/authoring model, not the play surface. The lone play-surface touch here is
-    {@link setLook}'s offline re-morph, reached through the injected {@link SectionsControllerHost}
-    (`recallSectionLook`). The active-song reads + the `songs` rune swap are host calls too. */
+    getter/setter/forwarders so callers + tests are unchanged. The PLAY surface (hit /
+    fireSectionGraph / setActiveSection's engine recall) stays in the store — this split extracts
+    the arrangement/authoring model, not the play surface. Nothing here fires: the engine is the
+    only renderer, so a look edit is authored + persisted and lands on the engine via the
+    debounced Show resync. The active-song reads + the `songs` rune swap are host calls. */
 
 import { SECTIONS } from './fixtures';
 import type { Section } from './sim';
@@ -44,11 +44,6 @@ export interface SectionsControllerHost {
   songs(): Song[];
   /** Write the setlist songs rune back (the section edit's only mutation surface). */
   setSongs(songs: Song[]): void;
-  /** Whether the engine WS link is open — gates {@link setLook}'s offline re-morph. */
-  linkOpen(): boolean;
-  /** Re-morph the offline sim to a freshly-edited active-section look (sim.recallSection +
-      snapshot) — the store owns the sim play surface. */
-  recallSectionLook(look: Section): void;
 }
 
 export class SectionsController {
@@ -120,16 +115,11 @@ export class SectionsController {
       = None. Rides the standard authored-edit path: the mutation to `songs` persists via
       autosave and live-resyncs the Show to the engine (the debounced `syncShowToServer`
       re-sends `setShow` + re-recalls the active section, so a look edited on the active section
-      re-morphs with the new effect). Offline — where that resync never runs — re-morph the
-      local sim NOW when the edited section is the active one, so the pick is immediately
-      visible/audible in the preview; connected we defer to the resync's re-recall (an immediate
-      recall would race the not-yet-sent Show, spawning the stale look). */
+      re-morphs with the new effect). With the link DOWN nothing morphs — the engine is the only
+      renderer (INIT-01 Decision 3 retired the browser-side preview), so the edit is authored and
+      persisted now and takes visible effect on the next connect. */
   setLook(sectionId: string, busId: string, effectId: string | null): void {
     this.updateActiveSong((song) => setlist.setLook(song, sectionId, busId, effectId));
-    if (!this.host.linkOpen() && sectionId === this.activeSectionId) {
-      const look = this.sections.find((s) => s.id === sectionId);
-      if (look) this.host.recallSectionLook(look);
-    }
   }
   addSongSection(name: string): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op

@@ -1,8 +1,10 @@
 <script lang="ts">
-  /* Kit preview — 3D stage ⇄ 2D pixel map, off one SegmentedControl. Shows the
-     REAL server LED output when the engine link is open (and a frame has arrived),
-     else the local sim composite, so offline === local preview. Reused by the
-     Author right-dock (pinned) and the Perform split.
+  /* Kit preview — 3D stage ⇄ 2D pixel map, off one SegmentedControl. Shows the REAL engine LED
+     output when the link is open and a frame has arrived. There is no second renderer: with the
+     link down the kit geometry stays on screen (it is authored data) with every pixel dark, and an
+     EngineOffline plate says why — INIT-01 Decision 3 retired the browser-side composite that used
+     to stand in, because a simulated preview is indistinguishable from real output.
+     Reused by the Author right-dock (pinned) and the Perform split.
 
      Two chrome variants:
      · 'panel'   — a docked panel with a PanelHeader bar (title + mode toggle in the
@@ -13,6 +15,7 @@
   import Scene from '../../visualizer/Scene.svelte';
   import Pixels2D from '../../visualizer/Pixels2D.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
+  import EngineOffline from '../../ui/EngineOffline.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Box from '@lucide/svelte/icons/box';
@@ -31,15 +34,17 @@
     variant?: 'panel' | 'overlay';
   } = $props();
 
-  // store.previewFrame + store.model swap together (server when connected, else
-  // local) so the frame always matches the model it's painted on.
+  // store.previewFrame + store.model swap together (engine when connected, else the lab kit +
+  // an all-dark frame) so the frame always matches the model it is painted on.
   const PREVIEW_OPTS = [
     { value: '3d', label: '3D' },
     { value: '2d', label: '2D' },
   ];
 </script>
 
-<div class="viz" class:panel={variant === 'panel'}>
+<!-- Named region: the preview is a meaningful surface, so it gets an accessible name (the
+     styleguide-wide aria-label region convention) — which is also what makes it capturable. -->
+<div class="viz" class:panel={variant === 'panel'} role="region" aria-label={label}>
   {#if variant === 'panel'}
     <PanelHeader icon={Box} title={label}>
       {#if showToggle}
@@ -59,6 +64,13 @@
       <Scene model={store.model} frame={store.previewFrame} />
     {:else}
       <Pixels2D model={store.model} frame={store.previewFrame} />
+    {/if}
+    {#if !store.enginePreviewLive}
+      <EngineOffline
+        variant="overlay"
+        label="No engine frames"
+        detail="The kit is dark because nothing is rendering — reconnect to see live output."
+      />
     {/if}
   </div>
 </div>

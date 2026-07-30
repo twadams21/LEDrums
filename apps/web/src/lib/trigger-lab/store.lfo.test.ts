@@ -2,15 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { voice } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
 import { BUSES, EFFECTS, PRESETS } from './fixtures';
-import { Sim, makeNode, type GraphEdge, type GraphNode, type TriggerCtx, type TriggerGraph } from './sim';
-import { buildLabModel } from './kit';
-import { renderFrame } from './render';
+import { makeNode, type GraphEdge, type GraphNode, type TriggerGraph } from './sim';
+import { evalPlays } from '../test-support/graph-eval';
 
-/* S36 — LFO source node (web store + offline sim). Store side: addNode seeds default settings,
-   setLfo patches them (kind-guarded, round-trips). Sim side: an LFO wired to a play param resolves
-   onto the spawned voice's `modulations` and animates the param CONTINUOUSLY off absolute frame
-   time — a looped voice keeps moving as time advances (it never phase-locks to the voice life, the
-   way an envelope does). Companion to the engine-seam goldens in core (modulation-lfo.test.ts). */
+/* S36 — LFO source node. Store side: addNode seeds default settings, setLfo patches them
+   (kind-guarded, round-trips). Graph side: an LFO wired to a play param resolves onto the play
+   action's `modulations`, and an LFO in the trigger FLOW is inert — both evaluated through the
+   engine's evaluator (test-support/graph-eval).
+
+   The third case here used to render the browser-side sim's pixels across 1800ms to prove the LFO
+   tracks ABSOLUTE frame time rather than voice age. That renderer went with INIT-01 Decision 3;
+   the claim is asserted against the real render path in core's modulation-lfo.test.ts, which this
+   file was already described as the companion to. */
 
 import { MemStorage } from '../test-support/mem-storage';
 const fakeClient = () => ({ on() {}, connect() {}, close() {}, send() {} }) as never;
@@ -72,14 +75,8 @@ describe('setLfo', () => {
   });
 });
 
-// ---- offline sim: continuous modulation off absolute time -------------------------
+// ---- graph resolution: an LFO reaches the play action as a modulation source ------
 
-function freshSim(): Sim {
-  return new Sim(BUSES.map((b) => ({ ...b })), [...EFFECTS], [...PRESETS]);
-}
-function ctx(): TriggerCtx {
-  return { velocity: 1, sectionIndex: 0, sectionCount: 0, beatPhase: 0, sourceDrumId: 'kick', bpm: 120 };
-}
 const trigger = (): GraphNode => makeNode('trigger', 'trigger', 0, 0);
 const playNode = (): GraphNode =>
   makeNode('play', 'p', 200, 0, { effectId: 'gen:solid-base', presetId: 'gen:solid-base:default', mode: 'loop', scope: 'kit' });
@@ -95,45 +92,14 @@ function lfoToBrightness(over: Partial<voice.LfoSettings> = {}): TriggerGraph {
   };
 }
 
-function totalRgb(buf: Uint8Array): number {
-  let s = 0;
-  for (let i = 0; i < buf.length; i++) s += buf[i]!;
-  return s;
-}
-/** Fire, advance to `targetMs` in ~50ms steps, render, return total brightness. */
-function renderAt(graph: TriggerGraph, targetMs: number): number {
-  const lab = buildLabModel();
-  const sim = freshSim();
-  sim.triggerGraph('test', graph, ctx());
-  let t = 0;
-  while (t < targetMs) {
-    sim.tick(50);
-    t += 50;
-  }
-  const buf = new Uint8Array(lab.model.count * 3);
-  renderFrame(buf, sim, lab);
-  return totalRgb(buf);
-}
-
-describe('sim — LFO graph resolution + continuous modulation', () => {
-  it('an LFO wired to a play param resolves onto the spawned voice as an lfo source', () => {
-    const sim = freshSim();
-    sim.triggerGraph('test', lfoToBrightness(), ctx());
-    expect(sim.voices.length).toBe(1);
-    const mods = sim.voices[0]!.modulations;
+describe('LFO graph resolution', () => {
+  it('an LFO wired to a play param resolves onto the play action as an lfo source', () => {
+    const plays = evalPlays(lfoToBrightness());
+    expect(plays).toHaveLength(1);
+    const mods = plays[0]!.modulations;
     expect(mods).toHaveLength(1);
     expect(mods![0]!.targetParam).toBe('brightness');
     expect(mods![0]!.source.kind).toBe('lfo');
-  });
-
-  it('modulates a looped voice continuously off frame time (saw ramps up then resets)', () => {
-    // saw at 0.5 Hz → period 2000ms. Brightness tracks absolute frame time, not voice age.
-    const g = () => lfoToBrightness({ waveform: 'saw', rateMode: 'hz', rateHz: 0.5 });
-    const early = renderAt(g(), 200); // phase ~0.1
-    const mid = renderAt(g(), 900); // phase ~0.45
-    const late = renderAt(g(), 1800); // phase ~0.9
-    expect(mid).toBeGreaterThan(early);
-    expect(late).toBeGreaterThan(mid);
   });
 
   it('an LFO node does not fire as a trigger-flow child (inert source)', () => {
@@ -141,9 +107,7 @@ describe('sim — LFO graph resolution + continuous modulation', () => {
       nodes: [trigger(), lfoNode(), playNode()],
       edges: [edge('e0', 'trigger', 'l'), edge('e1', 'l', 'p')],
     };
-    const sim = freshSim();
-    sim.triggerGraph('test', graph, ctx());
-    expect(sim.voices.length).toBe(0);
+    expect(evalPlays(graph)).toHaveLength(0);
   });
 });
 

@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { BUSES, EFFECTS, PRESETS } from './fixtures';
 import {
-  Sim,
   foldVelocitySwitch,
   foldVelocitySwitches,
   makeNode,
   type GraphEdge,
   type GraphNode,
   type SwitchOn,
-  type TriggerCtx,
   type TriggerGraph,
 } from './sim';
+import { firedEffectIds } from '../test-support/graph-eval';
 
 /* The velocity→value fold migration. `velocity` was a near-duplicate of `value` (an even
    split on the trigger's normalized intensity by child count); these cover that an
    `on:'velocity'` switch folds into a behaviour-EQUIVALENT `value`+`bands` switch:
    N even bands + each outgoing edge re-homed onto its `band-${i}` handle in target-y
    order, with routing parity, the N≤1 / N=0 edge cases, idempotency, and that
-   section/beat (and already-folded) graphs are left untouched. */
+   section/beat (and already-folded) graphs are left untouched.
+
+   Routing parity is evaluated through the ENGINE's evaluator (test-support/graph-eval) — the
+   browser-side sim that used to run these hits was retired by INIT-01 Decision 3, and it only
+   ever delegated to that same evaluator, so the parity claim is now made against the real path. */
 
 const EFFECT_IDS = ['gen:chase-bands', 'gen:pixel-accum', 'gen:whole-drum', 'gen:ripple-3d', 'gen:strobe'];
 
@@ -44,12 +46,7 @@ const sw = (g: TriggerGraph): GraphNode => g.nodes.find((n) => n.id === 'sw')!;
 const portByTarget = (g: TriggerGraph): Map<string, string | undefined> =>
   new Map(g.edges.filter((e) => e.from === 'sw').map((e) => [e.to, e.fromPort]));
 
-function mk(): Sim {
-  return new Sim(BUSES.map((b) => ({ ...b })), EFFECTS.map((e) => ({ ...e })), PRESETS.map((p) => ({ ...p })));
-}
-function ctxV(velocity: number): TriggerCtx {
-  return { velocity, sectionIndex: 0, sectionCount: 3, beatPhase: 0, sourceDrumId: 'd', bpm: 120 };
-}
+const fire = (g: TriggerGraph, velocity: number): string[] => firedEffectIds(g, { velocity, sourceDrumId: 'd' });
 /** The pre-fold `switchIndexN` velocity formula: child = min(N−1, floor(v·N)). */
 const oldVelocityChild = (n: number, v: number): number => Math.min(n - 1, Math.floor(v * n));
 
@@ -83,10 +80,8 @@ describe('foldVelocitySwitch — routing parity', () => {
       const g = foldVelocitySwitch(velocityGraph(n));
       for (let i = 0; i < n; i++) {
         const v = (i + 0.5) / n; // band midpoint — away from exact cutoffs (≤ boundary)
-        const sim = mk();
-        sim.triggerGraph('pad', g, ctxV(v));
         const expected = EFFECT_IDS[oldVelocityChild(n, v) % EFFECT_IDS.length];
-        expect(sim.voices.map((x) => x.effectId)).toEqual([expected]);
+        expect(fire(g, v)).toEqual([expected]);
       }
     }
   });
@@ -98,9 +93,7 @@ describe('foldVelocitySwitch — edge cases', () => {
     expect(sw(g).bands).toEqual([]);
     expect(portByTarget(g).get('c0')).toBe('band-0');
     for (const v of [0.1, 0.9]) {
-      const sim = mk();
-      sim.triggerGraph('pad', g, ctxV(v));
-      expect(sim.voices.map((x) => x.effectId)).toEqual(['gen:chase-bands']); // c0
+      expect(fire(g, v)).toEqual(['gen:chase-bands']); // c0
     }
   });
 
@@ -108,9 +101,7 @@ describe('foldVelocitySwitch — edge cases', () => {
     const g = foldVelocitySwitch(velocityGraph(0));
     expect(sw(g).bands).toEqual([]);
     expect(g.edges.filter((e) => e.from === 'sw')).toEqual([]);
-    const sim = mk();
-    sim.triggerGraph('pad', g, ctxV(0.5));
-    expect(sim.voices.map((x) => x.effectId)).toEqual([]);
+    expect(fire(g, 0.5)).toEqual([]);
   });
 });
 
