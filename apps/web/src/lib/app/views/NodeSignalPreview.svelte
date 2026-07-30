@@ -22,7 +22,11 @@
   import { readThemeTokens } from '../../ui/theme-tokens';
 
   interface Props {
-    kind: 'envelope' | 'lfo' | 'cc' | 'note' | 'osc' | 'random';
+    /** The modulation-source NodeKind this preview draws. One vocabulary, shared with core — this
+        was previously a component-local union that renamed randomMod -> 'random' at the boundary,
+        which additionally COLLIDED with the real, unrelated `random` fan NodeKind. A seventh
+        source kind now forces a compile decision here too. */
+    kind: voice.ModSourceKind;
     env?: voice.Envelope;
     lfo?: voice.LfoSettings;
     bpm?: number;
@@ -44,7 +48,7 @@
   // The random density is static (distribution + steps only) — compute it once here, not per
   // frame. Absent `distribution` ⇒ the node-face fallback glyph below.
   const randomDensity = $derived(
-    kind === 'random' && distribution ? randomDistributionTrace(distribution, steps) : null,
+    kind === 'randomMod' && distribution ? randomDistributionTrace(distribution, steps) : null,
   );
 
   let root = $state<HTMLElement>();
@@ -154,7 +158,7 @@
       ccReadout = formatCcReadout(v);
       return;
     }
-    if (kind === 'random') {
+    if (kind === 'randomMod') {
       if (randomDensity) {
         drawDensity(g, randomDensity);
         return;
@@ -181,7 +185,7 @@
           ? 'Note live value'
           : kind === 'osc'
             ? 'OSC live value'
-            : kind === 'random'
+            : kind === 'randomMod'
               ? 'Random distribution preview'
               : 'CC live value',
   );
