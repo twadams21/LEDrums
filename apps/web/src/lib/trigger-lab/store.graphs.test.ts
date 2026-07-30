@@ -149,34 +149,34 @@ describe('deleteGraph (any graph)', () => {
 
   it('deletes a PAD graph too (gone from graphs, graphNames, its seeded sections)', () => {
     const store = new TriggerLab(fakeClient);
-    const sectionsWithKick = store.activeSong!.sections.filter((s) => s.graphs.includes('kick:0')).length;
+    const sectionsWithKick = store.library.activeSong!.sections.filter((s) => s.graphs.includes('kick:0')).length;
     expect(sectionsWithKick).toBeGreaterThan(0); // seeded into sections
 
     store.deleteGraph('kick:0');
     expect(store.graphs['kick:0']).toBeUndefined();
     expect('kick:0' in store.graphNames).toBe(false);
     expect(store.graphLibrary.some((g) => g.key === 'kick:0')).toBe(false);
-    for (const song of store.songs) for (const sec of song.sections) expect(sec.graphs).not.toContain('kick:0');
+    for (const song of store.library.songs) for (const sec of song.sections) expect(sec.graphs).not.toContain('kick:0');
   });
 
   it('purges the key from every section across ALL songs (no dangling refs)', () => {
     const store = new TriggerLab(fakeClient);
     const key = store.createGraph('Shared');
 
-    const songAId = store.activeSongId;
-    const secA = store.activeSong!.sections[0]!.id;
+    const songAId = store.library.activeSongId;
+    const secA = store.library.activeSong!.sections[0]!.id;
     store.arrangement.addGraphToSection(secA, key);
 
-    const songBId = store.createSong('Song B'); // becomes active
-    const secB = store.activeSong!.sections[0]!.id;
+    const songBId = store.library.createSong('Song B'); // becomes active
+    const secB = store.library.activeSong!.sections[0]!.id;
     store.arrangement.addGraphToSection(secB, key);
 
     // sanity: referenced in both songs before the delete
-    expect(store.songs.find((s) => s.id === songAId)!.sections[0]!.graphs).toContain(key);
-    expect(store.songs.find((s) => s.id === songBId)!.sections[0]!.graphs).toContain(key);
+    expect(store.library.songs.find((s) => s.id === songAId)!.sections[0]!.graphs).toContain(key);
+    expect(store.library.songs.find((s) => s.id === songBId)!.sections[0]!.graphs).toContain(key);
 
     store.deleteGraph(key);
-    for (const song of store.songs) for (const sec of song.sections) expect(sec.graphs).not.toContain(key);
+    for (const song of store.library.songs) for (const sec of song.sections) expect(sec.graphs).not.toContain(key);
   });
 
   it('clears selectedPadKey when the deleted graph was the open one', () => {
@@ -225,7 +225,7 @@ describe('deleted pad graph → silence, no respawn', () => {
       const reloaded = new TriggerLab(fakeClient); // a "reload" hydrates from storage
       expect(reloaded.graphs['kick:0']).toBeUndefined(); // gone, not reseeded
       expect('kick:0' in reloaded.graphNames).toBe(false);
-      for (const song of reloaded.songs) for (const s of song.sections) expect(s.graphs).not.toContain('kick:0');
+      for (const song of reloaded.library.songs) for (const s of song.sections) expect(s.graphs).not.toContain('kick:0');
     });
   });
 });
@@ -238,7 +238,7 @@ describe('persistence (autosave → hydrate)', () => {
       const keeper = store.createGraph('Keeper');
       store.renameGraph(keeper, 'Renamed');
       const doomed = store.createGraph('Doomed');
-      const sec = store.activeSong!.sections[0]!.id;
+      const sec = store.library.activeSong!.sections[0]!.id;
       store.arrangement.addGraphToSection(sec, doomed);
       store.deleteGraph(doomed);
       store.stop(); // flush authored slice → localStorage
@@ -247,7 +247,7 @@ describe('persistence (autosave → hydrate)', () => {
       expect(reloaded.graphNames[keeper]).toBe('Renamed');
       expect(reloaded.graphs[doomed]).toBeUndefined();
       expect(doomed in reloaded.graphNames).toBe(false);
-      for (const song of reloaded.songs) for (const s of song.sections) expect(s.graphs).not.toContain(doomed);
+      for (const song of reloaded.library.songs) for (const s of song.sections) expect(s.graphs).not.toContain(doomed);
     });
   });
 });

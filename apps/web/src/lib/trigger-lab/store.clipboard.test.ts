@@ -42,10 +42,10 @@ function testMint(): RemapMint {
 }
 
 const sourcesOf = (store: TriggerLab): ClosureSources => ({
-  graphs: store.resolvedView.graphs,
-  graphNames: store.resolvedView.graphNames,
-  effects: store.resolvedView.effects,
-  presets: store.resolvedView.presets,
+  graphs: store.library.resolvedView.graphs,
+  graphNames: store.library.resolvedView.graphNames,
+  effects: store.library.resolvedView.effects,
+  presets: store.library.resolvedView.presets,
 });
 
 beforeEach(() => {
@@ -106,47 +106,47 @@ describe('paste materialize — graph', () => {
 describe('paste materialize — section', () => {
   it('appends the section to the active song and activates it', () => {
     const store = new TriggerLab(fakeClient);
-    const sec = store.resolvedView.songs[0]!.sections[0]!;
+    const sec = store.library.resolvedView.songs[0]!.sections[0]!;
     const text = serialize(buildSectionClipDoc(sec, sourcesOf(store)));
-    const sectionsBefore = store.activeSong!.sections.length;
+    const sectionsBefore = store.library.activeSong!.sections.length;
 
     const res = store.materializePaste(text, { context: 'section', mint: testMint() });
 
     expect(res.ok).toBe(true);
-    expect(store.activeSong!.sections.length).toBe(sectionsBefore + 1);
+    expect(store.library.activeSong!.sections.length).toBe(sectionsBefore + 1);
     expect(store.arrangement.activeSectionId).toBe('ts-1');
-    expect(store.activeSong!.sections.some((s) => s.id === 'ts-1')).toBe(true);
+    expect(store.library.activeSong!.sections.some((s) => s.id === 'ts-1')).toBe(true);
   });
 });
 
 describe('paste materialize — song', () => {
   it('into this show: inserts a new song and activates it, closure intact', () => {
     const store = new TriggerLab(fakeClient);
-    const song = store.resolvedView.songs[0]!;
+    const song = store.library.resolvedView.songs[0]!;
     const text = serialize(buildSongClipDoc(song, sourcesOf(store)));
-    const songsBefore = store.songs.length;
+    const songsBefore = store.library.songs.length;
 
     const res = store.materializePaste(text, { context: 'song', songDest: 'show', mint: testMint() });
 
     expect(res.ok).toBe(true);
-    expect(store.songs.length).toBe(songsBefore + 1);
-    expect(store.activeSongId).toBe('tso-1');
-    const pasted = store.songs.find((s) => s.id === 'tso-1')!;
+    expect(store.library.songs.length).toBe(songsBefore + 1);
+    expect(store.library.activeSongId).toBe('tso-1');
+    const pasted = store.library.songs.find((s) => s.id === 'tso-1')!;
     // every section graph the pasted song references resolves in the show
     for (const secn of pasted.sections) for (const gk of secn.graphs) expect(store.graphs[gk]).toBeDefined();
   });
 
   it('into the Song Library: adds a self-contained pool entry (not a show song)', () => {
     const store = new TriggerLab(fakeClient);
-    const song = store.resolvedView.songs[0]!;
+    const song = store.library.resolvedView.songs[0]!;
     const text = serialize(buildSongClipDoc(song, sourcesOf(store)));
-    const songsBefore = store.songs.length;
+    const songsBefore = store.library.songs.length;
 
     const res = store.materializePaste(text, { context: 'song', songDest: 'library' });
 
     expect(res.ok).toBe(true);
-    expect(store.songs.length).toBe(songsBefore); // show setlist untouched
-    expect(store.songLibraryList.length).toBe(1);
+    expect(store.library.songs.length).toBe(songsBefore); // show setlist untouched
+    expect(store.library.songLibraryList.length).toBe(1);
   });
 });
 

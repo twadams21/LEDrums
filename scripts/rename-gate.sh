@@ -48,8 +48,17 @@ case "$map" in
   sections)
     expr='s/\bstore\.(activeSectionId|sectionClipboard|activeSection|sections|addGraphToSection|removeGraphFromSection|setSectionGraphs|moveGraphPlacement|moveSection|setLook|addSongSection|renameSection|removeSection|copySection|pasteSection|duplicateSection)\b/store.arrangement.$1/g'
     ;;
+  shows)
+    # Receiver alternation, not a bare `store`: the persistence tests build a
+    # SECOND TriggerLab named `reloaded` to prove a hydrate round-trip, and it
+    # owns the same members, sometimes inline as `reload(store).songs`. All three
+    # are store instances; `show.songs` and the like are plain voice.Show/Song
+    # data and must NOT match, which is why this is an explicit receiver list
+    # rather than a leading `\w+\.`.
+    expr='s/\b(store|reloaded|reload\(store\))\.(songLibraryList|songLibrary|songRefs|songs|showsUsingSong|shows|saveShowAs|saveShow|activeShowId|activeShow|activeSongId|activeSong|resolvedSongs|resolvedView|newShow|openShow|renameShow|deleteShow|closeShow|exportSongToLibrary|importSongReference|removeSongReference|detachSongReference|renameLibrarySong|deleteLibrarySong|setActiveSong|createSong|renameSong|duplicateSong|removeSong)\b/$1.library.$2/g'
+    ;;
   *)
-    echo "rename-gate: unknown map '$map' (known: sections)" >&2
+    echo "rename-gate: unknown map '$map' (known: sections, shows)" >&2
     exit 2
     ;;
 esac

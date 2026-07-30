@@ -56,25 +56,25 @@ afterEach(() => {
 describe('setLook — authored per-bus section looks (S16)', () => {
   it('writes the look into the AUTHORED model (songs), not a fixture side-array', () => {
     const store = new TriggerLab(capturing([]));
-    const sectionId = store.activeSong!.sections[0]!.id;
+    const sectionId = store.library.activeSong!.sections[0]!.id;
 
     store.arrangement.setLook(sectionId, 'base', 'gen:perlin-clouds');
 
-    expect(store.activeSong!.sections[0]!.looks.base).toBe('gen:perlin-clouds'); // authored SetlistSection
+    expect(store.library.activeSong!.sections[0]!.looks.base).toBe('gen:perlin-clouds'); // authored SetlistSection
     expect(store.arrangement.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds'); // derived look-list agrees
   });
 
   it('offline: picking a look on the ACTIVE section authors it and sends nothing', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
-    const sectionId = store.activeSong!.sections[0]!.id;
+    const sectionId = store.library.activeSong!.sections[0]!.id;
     store.setActiveSection(sectionId); // make it active (no engine to recall on)
 
     store.arrangement.setLook(sectionId, 'base', 'gen:perlin-clouds');
 
     // The edit is authored + persisted; nothing morphs, because the engine is the only renderer
     // (INIT-01 Decision 3). It takes visible effect on the next connect, via the Show resync.
-    expect(store.activeSong!.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds');
+    expect(store.library.activeSong!.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds');
     expect(sent).toHaveLength(0);
   });
 
@@ -84,7 +84,7 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     // proves the engine spawns AUTHORED looks, not just the fixture-seeded ones.
     store.arrangement.addSongSection('My Section');
     const sectionId = store.arrangement.activeSectionId!;
-    expect(store.activeSong!.sections.find((s) => s.id === sectionId)!.looks).toEqual({}); // starts silent
+    expect(store.library.activeSong!.sections.find((s) => s.id === sectionId)!.looks).toEqual({}); // starts silent
 
     store.arrangement.setLook(sectionId, 'base', 'gen:perlin-clouds');
 

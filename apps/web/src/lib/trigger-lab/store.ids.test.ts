@@ -98,7 +98,7 @@ describe('TriggerLab persisted id reservation', () => {
     store.arrangement.copySection(sectionId);
     store.arrangement.pasteSection();
 
-    const ids = store.activeSong!.sections.map((s) => s.id);
+    const ids = store.library.activeSong!.sections.map((s) => s.id);
     expect(ids).toContain(sectionId);
     expect(new Set(ids).size).toBe(ids.length);
   });

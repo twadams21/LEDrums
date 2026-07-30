@@ -239,7 +239,7 @@ describe('setActiveSection recall (S15)', () => {
 
     store.setActiveSection(id);
 
-    expect(sent).toContainEqual({ t: 'recallSection', songId: store.activeSongId, sectionId: id });
+    expect(sent).toContainEqual({ t: 'recallSection', songId: store.library.activeSongId, sectionId: id });
     expect(effectEvents(store)).toHaveLength(0);
   });
 });

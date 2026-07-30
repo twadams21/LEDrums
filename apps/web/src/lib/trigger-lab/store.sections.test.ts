@@ -29,9 +29,9 @@ describe('seed: sections are flat graph lists of every pad', () => {
   it('every section lists every pad graph key (and defaults the first section active)', () => {
     const store = new TriggerLab(fakeClient);
     const padKeys = store.pads.map((p) => `${p.drumId}:${p.zone}`);
-    expect(store.activeSong!.sections.length).toBeGreaterThan(0);
-    for (const sec of store.activeSong!.sections) expect(sec.graphs).toEqual(padKeys);
-    expect(store.arrangement.activeSectionId).toBe(store.activeSong!.sections[0]!.id);
+    expect(store.library.activeSong!.sections.length).toBeGreaterThan(0);
+    for (const sec of store.library.activeSong!.sections) expect(sec.graphs).toEqual(padKeys);
+    expect(store.arrangement.activeSectionId).toBe(store.library.activeSong!.sections[0]!.id);
     expect(store.arrangement.activeSection?.id).toBe(store.arrangement.activeSectionId);
   });
 });
@@ -39,15 +39,15 @@ describe('seed: sections are flat graph lists of every pad', () => {
 describe('setActiveSection / selectGraphInSection (merged active+arrange)', () => {
   it('setActiveSection sets the active section id', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.activeSong!.sections[1]!.id;
+    const id = store.library.activeSong!.sections[1]!.id;
     store.setActiveSection(id);
     expect(store.arrangement.activeSectionId).toBe(id);
   });
 
   it('selectGraphInSection activates the section AND opens the graph (highlight)', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.activeSong!.sections[1]!.id;
-    const key = store.activeSong!.sections[1]!.graphs[0]!;
+    const id = store.library.activeSong!.sections[1]!.id;
+    const key = store.library.activeSong!.sections[1]!.graphs[0]!;
     store.selectGraphInSection(id, key);
     expect(store.arrangement.activeSectionId).toBe(id); // section made active
     expect(store.selectedPadKey).toBe(key); // graph opened in the canvas
@@ -55,7 +55,7 @@ describe('setActiveSection / selectGraphInSection (merged active+arrange)', () =
 
   it('selectGraphInSection ignores an unknown graph key but still activates the section', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.activeSong!.sections[1]!.id;
+    const id = store.library.activeSong!.sections[1]!.id;
     store.selectGraphInSection(id, 'no-such-graph');
     expect(store.arrangement.activeSectionId).toBe(id);
     expect(store.selectedPadKey).not.toBe('no-such-graph');
@@ -66,53 +66,53 @@ describe('section graph-list mutators', () => {
   it('addGraphToSection appends (idempotent) + removeGraphFromSection removes', () => {
     const store = new TriggerLab(fakeClient);
     const key = store.createGraph('Authored'); // an authored graph, not yet in any section
-    const id = store.activeSong!.sections[0]!.id;
+    const id = store.library.activeSong!.sections[0]!.id;
     store.arrangement.addGraphToSection(id, key);
-    expect(store.activeSong!.sections[0]!.graphs).toContain(key);
+    expect(store.library.activeSong!.sections[0]!.graphs).toContain(key);
     store.arrangement.addGraphToSection(id, key); // idempotent — no duplicate
-    expect(store.activeSong!.sections[0]!.graphs.filter((k) => k === key)).toHaveLength(1);
+    expect(store.library.activeSong!.sections[0]!.graphs.filter((k) => k === key)).toHaveLength(1);
     store.arrangement.removeGraphFromSection(id, key);
-    expect(store.activeSong!.sections[0]!.graphs).not.toContain(key);
+    expect(store.library.activeSong!.sections[0]!.graphs).not.toContain(key);
   });
 
   it('moveSection reorders sections in the active song', () => {
     const store = new TriggerLab(fakeClient);
-    const ids = store.activeSong!.sections.map((s) => s.id);
+    const ids = store.library.activeSong!.sections.map((s) => s.id);
     store.arrangement.moveSection(ids[0]!, 2);
-    expect(store.activeSong!.sections.map((s) => s.id)).toEqual([ids[1], ids[0], ids[2], ...ids.slice(3)]);
+    expect(store.library.activeSong!.sections.map((s) => s.id)).toEqual([ids[1], ids[0], ids[2], ...ids.slice(3)]);
   });
 
   it('moveGraphPlacement reorders a graph inside one section', () => {
     const store = new TriggerLab(fakeClient);
-    const section = store.activeSong!.sections[0]!;
+    const section = store.library.activeSong!.sections[0]!;
     const [first, second, third] = section.graphs;
     store.arrangement.moveGraphPlacement(section.id, first!, section.id, 2);
-    expect(store.activeSong!.sections[0]!.graphs.slice(0, 3)).toEqual([second, first, third]);
+    expect(store.library.activeSong!.sections[0]!.graphs.slice(0, 3)).toEqual([second, first, third]);
   });
 
   it('moveGraphPlacement moves a graph between sections', () => {
     const store = new TriggerLab(fakeClient);
-    const from = store.activeSong!.sections[0]!;
-    const to = store.activeSong!.sections[1]!;
+    const from = store.library.activeSong!.sections[0]!;
+    const to = store.library.activeSong!.sections[1]!;
     const graph = from.graphs[0]!;
     store.arrangement.removeGraphFromSection(to.id, graph);
     store.arrangement.moveGraphPlacement(from.id, graph, to.id, 0);
-    expect(store.activeSong!.sections[0]!.graphs).not.toContain(graph);
-    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(graph);
+    expect(store.library.activeSong!.sections[0]!.graphs).not.toContain(graph);
+    expect(store.library.activeSong!.sections[1]!.graphs[0]).toBe(graph);
   });
 });
 
 describe('copy / paste section (clipboard)', () => {
   it('paste appends an independent clone (fresh id, "<name> copy") and activates it', () => {
     const store = new TriggerLab(fakeClient);
-    const src = store.activeSong!.sections[0]!;
-    const before = store.activeSong!.sections.length;
+    const src = store.library.activeSong!.sections[0]!;
+    const before = store.library.activeSong!.sections.length;
 
     store.arrangement.copySection(src.id);
     expect(store.arrangement.sectionClipboard).not.toBeNull();
     store.arrangement.pasteSection();
 
-    const sections = store.activeSong!.sections;
+    const sections = store.library.activeSong!.sections;
     expect(sections).toHaveLength(before + 1);
     const pasted = sections[sections.length - 1]!;
     expect(pasted.id).not.toBe(src.id); // fresh id
@@ -123,33 +123,33 @@ describe('copy / paste section (clipboard)', () => {
 
   it('the pasted section is independent — editing one does not touch the other', () => {
     const store = new TriggerLab(fakeClient);
-    const src = store.activeSong!.sections[0]!;
+    const src = store.library.activeSong!.sections[0]!;
     const key = src.graphs[0]!;
     store.arrangement.duplicateSection(src.id);
-    const pasted = store.activeSong!.sections.at(-1)!;
+    const pasted = store.library.activeSong!.sections.at(-1)!;
 
     // remove a graph from the COPY → the original section keeps it
     store.arrangement.removeGraphFromSection(pasted.id, key);
-    expect(store.activeSong!.sections.find((s) => s.id === pasted.id)!.graphs).not.toContain(key);
-    expect(store.activeSong!.sections.find((s) => s.id === src.id)!.graphs).toContain(key);
+    expect(store.library.activeSong!.sections.find((s) => s.id === pasted.id)!.graphs).not.toContain(key);
+    expect(store.library.activeSong!.sections.find((s) => s.id === src.id)!.graphs).toContain(key);
   });
 
   it('the clipboard is a snapshot — editing the source after copy does not change a later paste', () => {
     const store = new TriggerLab(fakeClient);
-    const src = store.activeSong!.sections[0]!;
+    const src = store.library.activeSong!.sections[0]!;
     const key = src.graphs[0]!;
     store.arrangement.copySection(src.id);
     store.arrangement.removeGraphFromSection(src.id, key); // mutate the source AFTER copying
     store.arrangement.pasteSection();
-    expect(store.activeSong!.sections.at(-1)!.graphs).toContain(key); // paste reflects copy-time list
+    expect(store.library.activeSong!.sections.at(-1)!.graphs).toContain(key); // paste reflects copy-time list
   });
 
   it('paste with an empty clipboard is a no-op', () => {
     const store = new TriggerLab(fakeClient);
-    const before = store.activeSong!.sections.length;
+    const before = store.library.activeSong!.sections.length;
     expect(store.arrangement.sectionClipboard).toBeNull();
     store.arrangement.pasteSection();
-    expect(store.activeSong!.sections).toHaveLength(before); // nothing added
+    expect(store.library.activeSong!.sections).toHaveLength(before); // nothing added
   });
 
   it('copySection ignores an id that is not a section of the active song', () => {
@@ -241,26 +241,26 @@ describe('keyboard graph firing', () => {
 describe('rename / delete section', () => {
   it('renameSection relabels the section (no-op-safe on an unknown id)', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.activeSong!.sections[0]!.id;
+    const id = store.library.activeSong!.sections[0]!.id;
     store.arrangement.renameSection(id, 'Big Chorus');
-    expect(store.activeSong!.sections.find((s) => s.id === id)!.name).toBe('Big Chorus');
+    expect(store.library.activeSong!.sections.find((s) => s.id === id)!.name).toBe('Big Chorus');
 
-    const names = store.activeSong!.sections.map((s) => s.name);
+    const names = store.library.activeSong!.sections.map((s) => s.name);
     store.arrangement.renameSection('no-such-section', 'X'); // no-op
-    expect(store.activeSong!.sections.map((s) => s.name)).toEqual(names);
+    expect(store.library.activeSong!.sections.map((s) => s.name)).toEqual(names);
   });
 
   it('removeSection drops the section (no-op-safe on an unknown id)', () => {
     const store = new TriggerLab(fakeClient);
-    const before = store.activeSong!.sections.length;
-    const id = store.activeSong!.sections[1]!.id; // a non-active section
+    const before = store.library.activeSong!.sections.length;
+    const id = store.library.activeSong!.sections[1]!.id; // a non-active section
     store.arrangement.removeSection(id);
-    expect(store.activeSong!.sections.map((s) => s.id)).not.toContain(id);
-    expect(store.activeSong!.sections).toHaveLength(before - 1);
+    expect(store.library.activeSong!.sections.map((s) => s.id)).not.toContain(id);
+    expect(store.library.activeSong!.sections).toHaveLength(before - 1);
 
-    const after = store.activeSong!.sections.length;
+    const after = store.library.activeSong!.sections.length;
     store.arrangement.removeSection('no-such-section'); // no-op
-    expect(store.activeSong!.sections).toHaveLength(after);
+    expect(store.library.activeSong!.sections).toHaveLength(after);
   });
 
   it('deleting the active section re-points activeSectionId to its left neighbour', () => {
@@ -277,8 +277,8 @@ describe('rename / delete section', () => {
 
   it('deleting the active FIRST section re-points to the new first', () => {
     const store = new TriggerLab(fakeClient);
-    const first = store.activeSong!.sections[0]!.id;
-    const second = store.activeSong!.sections[1]!.id;
+    const first = store.library.activeSong!.sections[0]!.id;
+    const second = store.library.activeSong!.sections[1]!.id;
     store.setActiveSection(first);
     store.arrangement.removeSection(first);
     expect(store.arrangement.activeSectionId).toBe(second); // the new first section
@@ -286,8 +286,8 @@ describe('rename / delete section', () => {
 
   it('clears activeSectionId once the last section is removed', () => {
     const store = new TriggerLab(fakeClient);
-    for (const s of [...store.activeSong!.sections]) store.arrangement.removeSection(s.id);
-    expect(store.activeSong!.sections).toHaveLength(0);
+    for (const s of [...store.library.activeSong!.sections]) store.arrangement.removeSection(s.id);
+    expect(store.library.activeSong!.sections).toHaveLength(0);
     expect(store.arrangement.activeSectionId).toBeNull();
   });
 
@@ -304,14 +304,14 @@ describe('rename / delete section', () => {
       store.start();
       store.arrangement.addSongSection('Victim'); // a guaranteed extra section, now active
       const victim = store.arrangement.activeSectionId!;
-      const keep = store.activeSong!.sections[0]!.id;
+      const keep = store.library.activeSong!.sections[0]!.id;
       store.arrangement.renameSection(keep, 'Persisted');
       store.arrangement.removeSection(victim);
       store.stop(); // flush authored → localStorage
 
       const reloaded = new TriggerLab(fakeClient);
-      expect(reloaded.activeSong!.sections.find((s) => s.id === keep)!.name).toBe('Persisted');
-      expect(reloaded.activeSong!.sections.map((s) => s.id)).not.toContain(victim);
+      expect(reloaded.library.activeSong!.sections.find((s) => s.id === keep)!.name).toBe('Persisted');
+      expect(reloaded.library.activeSong!.sections.map((s) => s.id)).not.toContain(victim);
     } finally {
       globalThis.requestAnimationFrame = raf;
       globalThis.cancelAnimationFrame = caf;

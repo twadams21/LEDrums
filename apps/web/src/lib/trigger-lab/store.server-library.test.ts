@@ -96,14 +96,14 @@ describe('cold-load adopt (server wins)', () => {
       const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
-      expect(store.shows).toHaveLength(1); // fresh "Untitled Show" before any state
+      expect(store.library.shows).toHaveLength(1); // fresh "Untitled Show" before any state
 
       fireOpen(h);
       fireState(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 145 }, [{ id: 'srv-2', name: 'Second' }]));
 
-      expect(store.shows.map((s) => s.name).sort()).toEqual(['Second', 'Server Show']);
-      expect(store.activeShowId).toBe('srv-1');
-      expect(store.activeShow!.name).toBe('Server Show');
+      expect(store.library.shows.map((s) => s.name).sort()).toEqual(['Second', 'Server Show']);
+      expect(store.library.activeShowId).toBe('srv-1');
+      expect(store.library.activeShow!.name).toBe('Server Show');
       expect(store.bpm).toBe(145); // the active show's authored content was applied
       store.stop();
     });
@@ -138,12 +138,12 @@ describe('localStorage-cache fallback + seeding the server', () => {
       const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
-      expect(store.activeShow!.name).toBe('Local Show'); // hydrated from the cache at boot
+      expect(store.library.activeShow!.name).toBe('Local Show'); // hydrated from the cache at boot
 
       fireOpen(h);
       fireState(h, null); // server has no library yet
 
-      expect(store.activeShow!.name).toBe('Local Show'); // not clobbered
+      expect(store.library.activeShow!.name).toBe('Local Show'); // not clobbered
       expect(store.bpm).toBe(132);
       const push = h.sent.find((m) => m.t === 'setShowLibrary');
       expect(push).toBeTruthy(); // the cache was pushed up to seed the server
@@ -188,14 +188,14 @@ describe('no clobber after the cold-load adopt', () => {
       store.start();
       fireOpen(h);
       fireState(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 145 })); // cold-load adopt
-      expect(store.activeShow!.name).toBe('Server Show');
+      expect(store.library.activeShow!.name).toBe('Server Show');
 
-      store.renameShow('srv-1', 'Renamed'); // in-session edits
+      store.library.renameShow('srv-1', 'Renamed'); // in-session edits
       store.bpm = 99;
 
       // a later `state` (e.g. broadcast after a project mutation) must NOT re-adopt / clobber
       fireState(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 145 }));
-      expect(store.activeShow!.name).toBe('Renamed');
+      expect(store.library.activeShow!.name).toBe('Renamed');
       expect(store.bpm).toBe(99);
       store.stop();
     });
@@ -236,7 +236,7 @@ describe('viewer live-follows the editor broadcast (S1)', () => {
       firePresence(h, /* youAreEditor */ false); // we are a viewer
       // initial cold-load follow via state
       fireState(h, serverLib({ id: 'srv-1', name: 'Server Show', bpm: 100 }));
-      expect(store.activeShow!.name).toBe('Server Show');
+      expect(store.library.activeShow!.name).toBe('Server Show');
       expect(store.bpm).toBe(100);
 
       // the editor edits → the server relays a live showLibrary broadcast → the viewer follows it
@@ -261,13 +261,13 @@ describe('viewer live-follows the editor broadcast (S1)', () => {
       const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
-      expect(store.activeShow!.name).toBe('Local Show'); // hydrated from cache at boot
+      expect(store.library.activeShow!.name).toBe('Local Show'); // hydrated from cache at boot
 
       fireOpen(h);
       firePresence(h, /* youAreEditor */ false); // viewer (presence precedes state on a real connect)
       fireState(h, serverLib({ id: 'srv-1', name: 'Editor Show', bpm: 90 }));
 
-      expect(store.activeShow!.name).toBe('Editor Show'); // adopted the editor's, NOT kept local
+      expect(store.library.activeShow!.name).toBe('Editor Show'); // adopted the editor's, NOT kept local
       expect(store.bpm).toBe(90);
       expect(h.sent.some((m) => m.t === 'setShowLibrary')).toBe(false); // no seed-push from a viewer
       store.stop();
@@ -281,14 +281,14 @@ describe('editor ignores a showLibrary broadcast (its own echo) (S1)', () => {
       const h = newHarness();
       const store = new TriggerLab(harnessClient(h));
       store.start();
-      const ownName = store.activeShow!.name; // the editor's own fresh "Untitled Show"
+      const ownName = store.library.activeShow!.name; // the editor's own fresh "Untitled Show"
       fireOpen(h);
       firePresence(h, /* youAreEditor */ true); // we are the editor (clientCount 2)
       expect(store.role).toBe('editor');
 
       // a relayed broadcast must not clobber the editor's authoritative local content
       fireShowLibrary(h, serverLib({ id: 'evil', name: 'Not Mine', bpm: 999 }));
-      expect(store.activeShow!.name).toBe(ownName);
+      expect(store.library.activeShow!.name).toBe(ownName);
       expect(store.bpm).not.toBe(999);
       store.stop();
     });
@@ -352,25 +352,25 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
     store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
     expect(store.isViewer).toBe(true);
 
-    const songCount = store.songs.length;
-    const showCount = store.shows.length;
+    const songCount = store.library.songs.length;
+    const showCount = store.library.shows.length;
     const graphCount = Object.keys(store.graphs).length;
-    const firstSong = store.activeSong!;
+    const firstSong = store.library.activeSong!;
     const sectionCount = firstSong.sections.length;
 
-    store.createSong('Nope');
+    store.library.createSong('Nope');
     store.createGraph('Nope');
-    store.newShow('Nope');
+    store.library.newShow('Nope');
     store.arrangement.addSongSection('Nope');
-    store.renameShow(store.activeShowId, 'Renamed');
-    store.renameSong(firstSong.id, 'Renamed');
+    store.library.renameShow(store.library.activeShowId, 'Renamed');
+    store.library.renameSong(firstSong.id, 'Renamed');
 
-    expect(store.songs).toHaveLength(songCount);
-    expect(store.shows).toHaveLength(showCount);
+    expect(store.library.songs).toHaveLength(songCount);
+    expect(store.library.shows).toHaveLength(showCount);
     expect(Object.keys(store.graphs)).toHaveLength(graphCount);
-    expect(store.activeSong!.sections).toHaveLength(sectionCount);
-    expect(store.activeShow!.name).not.toBe('Renamed');
-    expect(store.activeSong!.name).not.toBe('Renamed');
+    expect(store.library.activeSong!.sections).toHaveLength(sectionCount);
+    expect(store.library.activeShow!.name).not.toBe('Renamed');
+    expect(store.library.activeSong!.name).not.toBe('Renamed');
   });
 
   it('blocks fine-grained node setters (setParam / setScope) while a viewer', () => {
@@ -415,13 +415,13 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
   it('resumes authoring once the viewer takes over (presence flips to editor)', () => {
     const store = new TriggerLab(noopClient);
     store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
-    const songCount = store.songs.length;
-    store.createSong('Nope');
-    expect(store.songs).toHaveLength(songCount); // blocked
+    const songCount = store.library.songs.length;
+    store.library.createSong('Nope');
+    expect(store.library.songs).toHaveLength(songCount); // blocked
 
     store.presence = { editorId: 'c2', youAreEditor: true, clientCount: 2 }; // we took over
-    store.createSong('Now allowed');
-    expect(store.songs).toHaveLength(songCount + 1); // authoring restored
+    store.library.createSong('Now allowed');
+    expect(store.library.songs).toHaveLength(songCount + 1); // authoring restored
   });
 });
 
@@ -429,8 +429,8 @@ describe('legacy offline migration (unchanged by server persistence)', () => {
   it('migrates a legacy single-blob authored state to one Default Show on a fresh offline boot', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored({ bpm: 156 } as AuthoredState)));
     const store = new TriggerLab(noopClient);
-    expect(store.shows).toHaveLength(1);
-    expect(store.activeShow!.name).toBe('Default Show');
+    expect(store.library.shows).toHaveLength(1);
+    expect(store.library.activeShow!.name).toBe('Default Show');
     expect(store.bpm).toBe(156);
   });
 });
