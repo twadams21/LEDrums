@@ -21,7 +21,7 @@
   import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
   import Link2 from '@lucide/svelte/icons/link-2';
-  import Radio from '@lucide/svelte/icons/radio';
+  import MidiLearnRow from '../../../ui/MidiLearnRow.svelte';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
@@ -178,7 +178,14 @@
       <p class="hint">CC 0 reserved for section recall.</p>
     {:else}
       <Field layout="row" label="Note" hint={src.note === undefined ? 'C-1 - G9' : String(src.note)}>
-        <div class="note-row">
+        <MidiLearnRow
+          {learning}
+          disabled={!gkey}
+          onToggle={() => {
+            if (!gkey) return;
+            learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'trigger', graphKey: gkey });
+          }}
+        >
           <CommitInput
             value={src.note === undefined ? '' : formatMidiNote(src.note)}
             placeholder="C4"
@@ -187,21 +194,7 @@
             ariaLabel="MIDI note"
             onCommit={(v) => gkey && commitMidiNote(gkey, v)}
           />
-          <button
-            type="button"
-            class="learn"
-            class:active={learning}
-            disabled={!gkey}
-            onclick={(e) => {
-              e.preventDefault();
-              if (!gkey) return;
-              learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'trigger', graphKey: gkey });
-            }}
-          >
-            <Radio size={13} aria-hidden="true" />
-            {learning ? 'Listening' : 'Learn'}
-          </button>
-        </div>
+        </MidiLearnRow>
       </Field>
       {#if heard}
         <div class="heard"><InputActivityBadge {...heard} /></div>
@@ -264,35 +257,6 @@
   }
   .trigbody :global(.sel) {
     width: 100%;
-  }
-  .note-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-2);
-    align-items: center;
-  }
-  .learn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .learn:hover:not(:disabled),
-  .learn.active {
-    border-color: var(--accent);
-    color: var(--ink);
-  }
-  .learn:disabled {
-    opacity: 0.45;
   }
   .hint {
     margin: 0;

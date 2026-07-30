@@ -15,6 +15,7 @@
   import IconButton from '../../ui/IconButton.svelte';
   import ActionButton from '../../ui/ActionButton.svelte';
   import InspectorHeader from '../../ui/InspectorHeader.svelte';
+  import MidiLearnRow from '../../ui/MidiLearnRow.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
@@ -469,6 +470,24 @@
             <span class="ih-chip"><Blend size={16} aria-hidden="true" /></span>
           {/snippet}
         </InspectorHeader>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="MIDI learn row"
+      src="lib/ui/MidiLearnRow"
+      note="The 'type it, or hit Learn and play it' row — a value field paired with a 29px learn pill that lights accent and reads 'Listening' while armed. Retired from three hand-written copies (DrumZonesList, TriggerSourceInspector, CcNodeInspector). TARGET-AGNOSTIC ON PURPOSE: it takes `learning` + `onToggle`, never a learn-target descriptor, so each caller keeps its own store.midi.startLearn dispatch and a change to how targets are addressed never reaches this component. The field is the caller's snippet — their inputs genuinely differ. Deliberately NOT unified with ActionButton: the learn pill is 29px / text-2xs / weight 600 / muted against the action's 30px / text-xs / normal / ink."
+    >
+      <div class="comp-stack">
+        <MidiLearnRow learning={false} onToggle={() => {}}>
+          <CommitInput value="C4" mono autofocus={false} ariaLabel="Idle MIDI note" onCommit={() => {}} />
+        </MidiLearnRow>
+        <MidiLearnRow learning onToggle={() => {}}>
+          <CommitInput value="" placeholder="none" mono allowEmpty autofocus={false} ariaLabel="Armed MIDI note" onCommit={() => {}} />
+        </MidiLearnRow>
+        <MidiLearnRow learning={false} disabled onToggle={() => {}}>
+          <CommitInput value="" placeholder="none" mono allowEmpty autofocus={false} ariaLabel="Disabled MIDI note" onCommit={() => {}} />
+        </MidiLearnRow>
       </div>
     </DemoCard>
 

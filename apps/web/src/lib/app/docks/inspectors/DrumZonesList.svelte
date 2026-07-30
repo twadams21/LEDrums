@@ -9,7 +9,7 @@
      is fixed by the caller (a patch trigger names its drum by id; a graph trigger resolves it from
      its source / selected pad), so this component assumes a known drum and owns only the list. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
-  import Radio from '@lucide/svelte/icons/radio';
+  import MidiLearnRow from '../../../ui/MidiLearnRow.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Field from '../../../ui/Field.svelte';
@@ -118,7 +118,10 @@
             <IconButton icon={Trash2} label="Remove zone" variant="soft" size={13} onclick={() => removeZone(slot)} />
           </div>
           <Field layout="row" label="Note" hint={note === null ? 'C-1 - G9' : String(note)}>
-            <div class="note-row">
+            <MidiLearnRow
+              learning={armed}
+              onToggle={() => (armed ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'zone', drumId, slot }))}
+            >
               <CommitInput
                 value={note === null ? '' : formatMidiNote(note)}
                 placeholder="none"
@@ -128,19 +131,7 @@
                 ariaLabel="Zone MIDI note"
                 onCommit={(v) => commitZoneNote(slot, v)}
               />
-              <button
-                type="button"
-                class="learn"
-                class:active={armed}
-                onclick={(e) => {
-                  e.preventDefault();
-                  armed ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'zone', drumId, slot });
-                }}
-              >
-                <Radio size={13} aria-hidden="true" />
-                {armed ? 'Listening' : 'Learn'}
-              </button>
-            </div>
+            </MidiLearnRow>
           </Field>
           {#if heardNote}
             <div class="heard"><InputActivityBadge {...heardNote} /></div>
@@ -214,35 +205,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-2);
     align-items: center;
-  }
-  .note-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-2);
-    align-items: center;
-  }
-  .learn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .learn:hover:not(:disabled),
-  .learn.active {
-    border-color: var(--accent);
-    color: var(--ink);
-  }
-  .learn:disabled {
-    opacity: 0.45;
   }
   .hint {
     margin: 0;
