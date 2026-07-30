@@ -65,17 +65,17 @@ describe('store — controller status/discovery broadcasts', () => {
   it('adopts controllerStatus from the server broadcast (and clears on null)', () => {
     const { store, h } = wired();
     h.cb!.onControllerStatus!(status());
-    expect(store.controllerStatus?.host).toBe('192.168.1.50');
+    expect(store.controllerMonitor.status?.host).toBe('192.168.1.50');
     h.cb!.onControllerStatus!(null);
-    expect(store.controllerStatus).toBeNull();
+    expect(store.controllerMonitor.status).toBeNull();
   });
 
   it('replaces the candidate list wholesale on each discovery reply', () => {
     const { store, h } = wired();
     h.cb!.onControllerDiscovery!([candidate('192.168.1.50'), candidate('192.168.1.51')]);
-    expect(store.controllerCandidates.map((c) => c.host)).toEqual(['192.168.1.50', '192.168.1.51']);
+    expect(store.controllerMonitor.candidates.map((c) => c.host)).toEqual(['192.168.1.50', '192.168.1.51']);
     h.cb!.onControllerDiscovery!([]); // sweep found nothing → cleared
-    expect(store.controllerCandidates).toEqual([]);
+    expect(store.controllerMonitor.candidates).toEqual([]);
   });
 
   it('clears controller state on a link drop (frozen truth must not linger)', () => {
@@ -83,8 +83,8 @@ describe('store — controller status/discovery broadcasts', () => {
     h.cb!.onControllerStatus!(status());
     h.cb!.onControllerDiscovery!([candidate('192.168.1.50')]);
     h.cb!.onConnection!('closed');
-    expect(store.controllerStatus).toBeNull();
-    expect(store.controllerCandidates).toEqual([]);
+    expect(store.controllerMonitor.status).toBeNull();
+    expect(store.controllerMonitor.candidates).toEqual([]);
   });
 });
 
@@ -93,8 +93,8 @@ describe('store — controller send helpers', () => {
     const { store, h } = wired();
     store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
     expect(store.isViewer).toBe(true);
-    store.watchController(true);
-    store.watchController(false);
+    store.controllerMonitor.watch(true);
+    store.controllerMonitor.watch(false);
     expect(h.sent).toEqual([
       { t: 'watchController', watching: true },
       { t: 'watchController', watching: false },
@@ -103,18 +103,18 @@ describe('store — controller send helpers', () => {
 
   it('discoverControllers sends for an editor and no-ops for a viewer', () => {
     const editor = wired();
-    editor.store.discoverControllers();
+    editor.store.controllerMonitor.discover();
     expect(editor.h.sent).toContainEqual({ t: 'discoverControllers' });
 
     const viewer = wired();
     viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
-    viewer.store.discoverControllers();
+    viewer.store.controllerMonitor.discover();
     expect(viewer.h.sent).toEqual([]);
   });
 
   it('adoptController adopts AND points the output host at it in one click (Adopt-IP)', () => {
     const { store, h } = wired();
-    store.adoptController('192.168.1.77');
+    store.controllerMonitor.adopt('192.168.1.77');
     expect(h.sent).toContainEqual({ t: 'adoptController', host: '192.168.1.77' });
     expect(h.sent).toContainEqual({ t: 'setOutput', host: '192.168.1.77' });
     // optimistic local write of the output target
@@ -125,19 +125,19 @@ describe('store — controller send helpers', () => {
     const { store, h } = wired();
     store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
     const before = store.project!.output.host;
-    store.adoptController('192.168.1.77');
+    store.controllerMonitor.adopt('192.168.1.77');
     expect(h.sent).toEqual([]);
     expect(store.project!.output.host).toBe(before);
   });
 
   it('identifyController sends the flash duration (default 5s) and no-ops for a viewer', () => {
     const editor = wired();
-    editor.store.identifyController();
+    editor.store.controllerMonitor.identify();
     expect(editor.h.sent).toContainEqual({ t: 'identifyController', durationS: 5 });
 
     const viewer = wired();
     viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
-    viewer.store.identifyController(10);
+    viewer.store.controllerMonitor.identify(10);
     expect(viewer.h.sent).toEqual([]);
   });
 });
@@ -190,28 +190,28 @@ describe('store — controller test patterns + takeover (S49)', () => {
 describe('store — network adapters + controller recommendation', () => {
   it('ingests the server network-adapter list', () => {
     const { store, h } = wired();
-    expect(store.networkAdapters).toEqual([]);
+    expect(store.controllerMonitor.adapters).toEqual([]);
     const a = adapter('Ethernet', '192.168.1.10', '192.168.1.50');
     h.cb!.onNetworkAdapters!([a]);
-    expect(store.networkAdapters).toEqual([a]);
+    expect(store.controllerMonitor.adapters).toEqual([a]);
   });
 
   it('requestNetworkAdapters asks the server to enumerate NICs — ungated, so a viewer still asks', () => {
     const viewer = wired();
     viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
     expect(viewer.store.isViewer).toBe(true);
-    viewer.store.requestNetworkAdapters();
+    viewer.store.controllerMonitor.requestNetworkAdapters();
     expect(viewer.h.sent).toContainEqual({ t: 'listNetworkAdapters' });
   });
 
   it('recommendation picks the adapter the output iface is bound to, else the first', () => {
     const { store, h } = wired();
-    expect(store.controllerRecommendation).toBeNull(); // none known yet
+    expect(store.controllerMonitor.recommendationFor(store.project?.output.iface)).toBeNull(); // none known yet
     const eth = adapter('Ethernet', '192.168.1.10', '192.168.1.50');
     const wifi = adapter('Wi-Fi', '10.0.0.5', '10.0.0.50');
     h.cb!.onNetworkAdapters!([eth, wifi]);
-    expect(store.controllerRecommendation).toEqual(eth); // no iface bound → first NIC
+    expect(store.controllerMonitor.recommendationFor(store.project?.output.iface)).toEqual(eth); // no iface bound → first NIC
     store.setOutput({ iface: '10.0.0.5' });
-    expect(store.controllerRecommendation).toEqual(wifi); // iface-bound adapter wins
+    expect(store.controllerMonitor.recommendationFor(store.project?.output.iface)).toEqual(wifi); // iface-bound adapter wins
   });
 });

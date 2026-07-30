@@ -29,9 +29,9 @@ import { harnessClient, newHarness } from '../test-support/ws-harness';
 
 /** Ceiling on the member count. The store only shrinks from here — a step that publishes a
     collaborator deletes forwarders, so this ratchet never needs raising. */
-const MEMBER_CAP = 375;
+const MEMBER_CAP = 364;
 /** Ceiling on store.svelte.ts's line count. Same direction: down only. */
-const LOC_CAP = 3485;
+const LOC_CAP = 3431;
 
 const EXPECTED_MEMBERS: string[] = [
   'acceptsMidiChannel',
@@ -49,7 +49,6 @@ const EXPECTED_MEMBERS: string[] = [
   'addNode',
   'addPlayNode',
   'addSongSection',
-  'adoptController',
   'allCanvasScenes',
   'allPresets',
   'applyAuthored',
@@ -96,10 +95,7 @@ const EXPECTED_MEMBERS: string[] = [
   'closeShow',
   'closeSongPaste',
   'connect',
-  'controllerCandidates',
-  'controllerRecommendation',
-  'controllerScanning',
-  'controllerStatus',
+  'controllerMonitor',
   'controllerTest',
   'copyGraphToClipboard',
   'copyNode',
@@ -117,7 +113,6 @@ const EXPECTED_MEMBERS: string[] = [
   'deleteShow',
   'detachSongReference',
   'disconnect',
-  'discoverControllers',
   'dockVoices',
   'dockVoicesDisplay',
   'drums',
@@ -162,7 +157,6 @@ const EXPECTED_MEMBERS: string[] = [
   'graphNames',
   'graphs',
   'hit',
-  'identifyController',
   'identifyHoop',
   'importSongReference',
   'inputActivity',
@@ -195,7 +189,6 @@ const EXPECTED_MEMBERS: string[] = [
   'modSourcesFor',
   'modTargetSpecs',
   'model',
-  'monitor',
   'monitorDestinationFilter',
   'monitorEvents',
   'monitorForClientMessage',
@@ -206,7 +199,6 @@ const EXPECTED_MEMBERS: string[] = [
   'moveGraphPlacement',
   'moveNode',
   'moveSection',
-  'networkAdapters',
   'newShow',
   'nodeClipboard',
   'normalizeGraphs',
@@ -275,7 +267,6 @@ const EXPECTED_MEMBERS: string[] = [
   'renameShow',
   'renameSong',
   'reportError',
-  'requestNetworkAdapters',
   'resetAuthoredToSeed',
   'resetMonitorFilters',
   'resolveHitGraphsLocal',
@@ -315,7 +306,6 @@ const EXPECTED_MEMBERS: string[] = [
   'setCcController',
   'setCcNodeSource',
   'setChance',
-  'setControllerAuth',
   'setCrossfade',
   'setDelayMode',
   'setDelayMs',
@@ -406,7 +396,6 @@ const EXPECTED_MEMBERS: string[] = [
   'velocity',
   'visibleMonitorEvents',
   'voiceLevelDisplay',
-  'watchController',
   'wireClient',
   'writeClip',
 ];
