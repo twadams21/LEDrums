@@ -12,6 +12,7 @@
      SIGNAL animates; the chrome does not (per Trent's graph prefs — no hover/click motion). */
   import { ticker } from './effect-thumb-ticker';
   import { PREVIEW_STATIC_MS } from './signal-preview';
+  import { elementVisibility, prefersReducedMotion } from './canvas-visibility.svelte';
 
   interface Props {
     /** Paints one frame into the 2D context at ticker time `tMs` (already cleared). */
@@ -25,46 +26,13 @@
   let { draw, w = 56, h = 32, staticMs = PREVIEW_STATIC_MS, ariaLabel }: Props = $props();
 
   let canvas = $state<HTMLCanvasElement>();
-  let isVisible = $state(true); // starts visible; the observer only pauses after confirmed visible
-  let prefersReduced = $state(false);
+  // Both gates are the shared runes (canvas-visibility.svelte.ts) — EffectThumb uses the same
+  // pair, including the pre-layout guard that keeps a portaled preview's ticker alive.
+  const visibility = elementVisibility(() => canvas);
+  const reducedMotion = prefersReducedMotion();
+  const isVisible = $derived(visibility.current);
+  const prefersReduced = $derived(reducedMotion.current);
 
-  // IntersectionObserver — pause drawing while the node face is offscreen. Same guard as
-  // EffectThumb: only allow isVisible=false once we've confirmed visibility at least once, so
-  // a pre-layout false (portaled panels) never kills the initial subscription.
-  $effect(() => {
-    const cv = canvas;
-    if (!cv) return;
-    let hasBeenVisible = false;
-    const observer =
-      typeof IntersectionObserver !== 'undefined'
-        ? new IntersectionObserver(([entry]) => {
-            if (entry) {
-              if (entry.isIntersecting) {
-                hasBeenVisible = true;
-                isVisible = true;
-              } else if (hasBeenVisible) {
-                isVisible = false;
-              }
-            }
-          })
-        : null;
-    if (observer) {
-      observer.observe(cv);
-      return () => observer.disconnect();
-    }
-  });
-
-  // prefers-reduced-motion: a static, numeric-legible frame instead of an animated signal.
-  $effect(() => {
-    const mq = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
-    if (!mq) return;
-    const handler = () => {
-      prefersReduced = mq.matches;
-    };
-    handler();
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  });
 
   // Drawing: subscribe the draw closure to the shared ticker, gated by visibility + reduced-motion.
   $effect(() => {
