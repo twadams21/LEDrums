@@ -20,6 +20,7 @@
 import type { Scope } from './types';
 import type { GraphNode } from './types';
 import type { RenderPlanChild, RenderPlanIssue } from './render-plan';
+import { HOOP_TARGET_POLICIES, parseHoopTarget } from './scope'; // S13 — one grammar, not a fifth copy
 
 /** A source-independent view of a scope constraint. `drum: null` is the firing-drum
     wildcard (a bare/auto target) — it can be ANY concrete drum, so it never proves an
@@ -32,23 +33,35 @@ type StaticScope =
 const EMPTY = Symbol('empty-scope');
 type Intersection = StaticScope | typeof EMPTY;
 
-/** Parse a node's `(scope, targetId)` into a StaticScope — the static twin of `scope.ts`'s
-    `toPixelSet`, with the runtime `sourceDrumId` replaced by the `null` wildcard. */
+/**
+ * Parse a node's `(scope, targetId)` into a StaticScope — the static twin of `scope.ts`'s
+ * `toPixelSet`, with the runtime `sourceDrumId` replaced by the `null` wildcard.
+ *
+ * The hoop axis goes through {@link parseHoopTarget} under the SAME named policy `toPixelSet`
+ * itself uses (`HOOP_TARGET_POLICIES.resolver`), so the lint and the resolver decode one
+ * grammar and cannot disagree. Until INIT-06 S13 this was a fifth hand-rolled copy, and it had
+ * missed the A1 cutover in three ways:
+ *
+ *   · it filtered `v >= 0`, admitting hoop index 0 where the resolver filters `v >= 1` and
+ *     falls back to the unmatchable `[-1]` sentinel — so `"kick#0"` rendered nothing at runtime
+ *     while the lint saw hoop {0} and called the branch alive (a false NEGATIVE, and the whole
+ *     point of this diagnostic);
+ *   · it gave a bare (auto) hoop target `hoops: [0]`, where the resolver gives `[1]` — a bare
+ *     hoop target resolves to hoop 1 of the firing drum, so the lint called a live branch
+ *     provably empty (a false POSITIVE);
+ *   · it split on `'#'` and kept only the second field, so a drumId containing '#' lost its
+ *     tail differently from every other site. `parseHoopTarget` splits at the FIRST '#' and
+ *     keeps the remainder, matching the resolver. (The unescaped-separator limitation itself is
+ *     unchanged and still pinned by scope.parse.test.ts's characterisation test.)
+ *
+ * `drum: null` wildcard semantics are preserved: `sourceDrumId` is passed as `null`, so a bare
+ * or drum-less target keeps the firing-drum wildcard that can coincide with any concrete drum.
+ */
 function staticScope(scope: Scope, targetId: string | undefined): StaticScope {
   if (scope === 'kit') return { level: 'kit' };
   if (scope === 'drum') return { level: 'drum', drum: targetId || null };
-  // hoop — encoding "<drumId>#<i,j,…>"; a missing drum or hoop list defaults per scope.ts.
-  if (!targetId) return { level: 'hoop', drum: null, hoops: [0] };
-  const [drumId, hoop] = targetId.split('#');
-  const hoops = (hoop ?? '')
-    .split(',')
-    .map((v) => Number(v))
-    .filter((v) => Number.isInteger(v) && v >= 0);
-  return {
-    level: 'hoop',
-    drum: drumId || null,
-    hoops: hoops.length ? [...new Set(hoops)].sort((a, b) => a - b) : [-1],
-  };
+  const { drumId, hoopIndices } = parseHoopTarget(targetId, null, HOOP_TARGET_POLICIES.resolver);
+  return { level: 'hoop', drum: drumId, hoops: hoopIndices };
 }
 
 /** Two drums are provably different only when BOTH are concrete and unequal — a wildcard
