@@ -21,6 +21,7 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
 import { createGeneratorBridge } from './generator-bridge';
+import type { UnresolvedIdSink } from './diagnostics';
 import { applyModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
@@ -182,9 +183,15 @@ export interface Compositor {
  * Owns one generator bridge for its lifetime; it keeps its own reused scratch, so the only
  * per-voice allocation is the bridge's merged params object (see `generator-bridge.ts`).
  * Generators run few voices (mono buses, level gating), so this stays well within budget.
+ *
+ * `onUnresolved` (S14) is handed straight to the generator bridge and to this module's own
+ * mix-branch modifier chain, so every unknown authored id on the render path reaches the same
+ * sink. Omit it (browser-hosted paths, tests) and every skip stays silent as before.
  */
-export function createDefaultCompositor(): Compositor {
-  const generators = createGeneratorBridge();
+export function createDefaultCompositor(onUnresolved?: UnresolvedIdSink): Compositor {
+  const generators = createGeneratorBridge(onUnresolved);
+  /** Bound once (not per frame): the chain runner reports modifier ids as bare strings. */
+  const noteUnresolvedModifier = onUnresolved ? (id: string): void => onUnresolved('modifier', id) : undefined;
   let mixScratch: Framebuffer | null = null;
   let mixInputScratch: Framebuffer | null = null;
 
@@ -241,7 +248,7 @@ export function createDefaultCompositor(): Compositor {
           if (mods && mods.length) {
             if (!v.modState) v.modState = [];
             const modCtx = modCtxFor(v, frameCtx);
-            for (const range of ranges) applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx);
+            for (const range of ranges) applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx, noteUnresolvedModifier);
           }
           for (const range of ranges) {
             for (let i = range.start; i < range.end; i++) {

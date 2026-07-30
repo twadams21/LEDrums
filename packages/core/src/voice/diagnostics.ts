@@ -56,9 +56,28 @@ export type VoiceDiagnostic =
       input: VoiceInputDescriptor;
     }
   | {
+      // Authored content names a modifier or generator id no registry holds. The render path
+      // still SKIPS it silently (it must never fault on stale authored data) — this arm is the
+      // one observation that turns that silent skip into something the Monitor can show.
+      // Emitted on FIRST sight per id only, and re-armed on `setShow`. (INIT-01 S14 /
+      // resilience-hole-0011.) Server-scoped: hosts without a diagnostic sink keep today's
+      // silent skip.
+      kind: 'unresolved-id';
+      idKind: 'modifier' | 'generator';
+      id: string;
+    }
+  | {
       kind: 'section-recalled';
       songId: string | null;
       sectionId: string | null;
     };
 
 export type VoiceDiagnosticSink = (event: VoiceDiagnostic) => void;
+
+/**
+ * The render path's report of an id it just skipped. Threaded down as an OPTIONAL callback
+ * (compositor → generator bridge → modifier chain) rather than added to the `RenderEngine`
+ * interface: widening the interface would oblige `createNullEngine` and leave browser-hosted
+ * render paths with no sink. Absent ⇒ the skip stays silent, byte-for-byte as before.
+ */
+export type UnresolvedIdSink = (idKind: 'modifier' | 'generator', id: string) => void;
