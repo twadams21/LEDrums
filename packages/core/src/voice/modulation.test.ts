@@ -273,9 +273,7 @@ describe('modifier-param modulation (chain-runner seam)', () => {
       [],
       modulated,
       range,
-      model,
-      0,
-      0,
+      { model, timeMs: 0, dt: 0 },
       modCtx,
     );
     const direct = strip(N);
@@ -284,9 +282,7 @@ describe('modifier-param modulation (chain-runner seam)', () => {
       [],
       direct,
       range,
-      model,
-      0,
-      0,
+      { model, timeMs: 0, dt: 0 },
     );
     expect(Array.from(modulated.rgba)).toEqual(Array.from(direct.rgba));
   });
@@ -298,16 +294,14 @@ describe('modifier-param modulation (chain-runner seam)', () => {
       modulations: [brightnessMap],
     };
     const noCtx = strip(N);
-    applyModifierChain([link], [], noCtx, range, model, 0, 0); // modCtx omitted
+    applyModifierChain([link], [], noCtx, range, { model, timeMs: 0, dt: 0 }); // modCtx omitted
     const authored = strip(N);
     applyModifierChain(
       [{ modifierId: 'levels', params: { brightness: 1, saturation: 1, invert: false } }],
       [],
       authored,
       range,
-      model,
-      0,
-      0,
+      { model, timeMs: 0, dt: 0 },
     );
     expect(Array.from(noCtx.rgba)).toEqual(Array.from(authored.rgba));
   });

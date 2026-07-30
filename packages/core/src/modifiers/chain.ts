@@ -15,7 +15,6 @@
  * time (group-G timebase contract).
  */
 import type { Framebuffer } from '../render/framebuffer';
-import type { PixelModel } from '../geometry/pixel-model';
 import { applyModulations, type ModSampleCtx } from '../voice/modulation';
 import { tryGetModifier } from './registry';
 import type { ModifierContext, PixelRange, ResolvedModifier } from './types';
@@ -34,19 +33,23 @@ import type { ModifierContext, PixelRange, ResolvedModifier } from './types';
  * `onUnresolved` (S14) is an optional observation hook: it fires with the offending
  * `modifierId` at the unknown-id skip, and changes nothing about what is rendered. Callers
  * that omit it keep today's silent skip.
+ *
+ * `ctx` (data-clumps-0004) is the already-public {@link ModifierContext} — the same object
+ * every modifier's `apply` receives — rather than four loose positional args. It is
+ * CONSTRUCTED PER CALL BY THE CALLER, exactly where this function used to construct it: one
+ * allocation per call before, one allocation per call after, and the same aliasing. Do NOT
+ * "optimise" this by hoisting one ctx per frame and mutating `timeMs` per voice — see the
+ * BORROWED-VIEW contract on {@link ModifierContext}.
  */
 export function applyModifierChain(
   chain: readonly ResolvedModifier[],
   state: unknown[],
   fb: Framebuffer,
   range: PixelRange,
-  model: PixelModel,
-  timeMs: number,
-  dt: number,
+  ctx: ModifierContext,
   modCtx?: ModSampleCtx,
   onUnresolved?: (id: string) => void,
 ): void {
-  const ctx: ModifierContext = { model, timeMs, dt };
   for (let i = 0; i < chain.length; i++) {
     const link = chain[i]!;
     if (link.bypass) continue;
@@ -56,7 +59,7 @@ export function applyModifierChain(
       onUnresolved?.(link.modifierId);
       continue;
     }
-    if (state[i] === undefined && def.createState) state[i] = def.createState(model, range);
+    if (state[i] === undefined && def.createState) state[i] = def.createState(ctx.model, range);
     let params = link.params;
     if (modCtx && link.modulations && link.modulations.length) {
       params = { ...link.params };

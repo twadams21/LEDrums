@@ -248,7 +248,20 @@ export function createDefaultCompositor(onUnresolved?: UnresolvedIdSink): Compos
           if (mods && mods.length) {
             if (!v.modState) v.modState = [];
             const modCtx = modCtxFor(v, frameCtx);
-            for (const range of ranges) applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx, noteUnresolvedModifier);
+            // ONE ModifierContext PER CALL, constructed here — the same allocation count and the
+            // same aliasing the callee used to produce. Deliberately INSIDE the range loop: today
+            // one ctx exists per applyModifierChain call, and hoisting it would silently share one
+            // object across ranges. See the borrowed-view contract on ModifierContext.
+            for (const range of ranges)
+              applyModifierChain(
+                mods,
+                v.modState,
+                mix,
+                range,
+                { model, timeMs: timeMs - v.bornAtMs, dt: frame.dt },
+                modCtx,
+                noteUnresolvedModifier,
+              );
           }
           for (const range of ranges) {
             for (let i = range.start; i < range.end; i++) {

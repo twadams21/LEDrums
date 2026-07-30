@@ -163,7 +163,16 @@ export function createGeneratorBridge(onUnresolved?: UnresolvedIdSink): Generato
         if (!v.modState) v.modState = [];
         modRange.start = start;
         modRange.end = end;
-        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt, modCtx, noteUnresolvedModifier);
+        // One ModifierContext per call, constructed at the caller (see compositor.ts).
+        applyModifierChain(
+          mods,
+          v.modState,
+          genScratch,
+          modRange,
+          { model, timeMs: genTrigger.ageMs, dt: genCtx.dt },
+          modCtx,
+          noteUnresolvedModifier,
+        );
       }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is

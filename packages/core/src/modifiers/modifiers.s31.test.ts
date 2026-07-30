@@ -37,7 +37,7 @@ function ch0(fb: Framebuffer): number[] {
 function once(def: ModifierDef<any>, params: Record<string, unknown>, vals: number[]): number[] {
   const link: ResolvedModifier = { modifierId: def.id, params: params as ResolvedModifier['params'] };
   const fb = fbFrom(vals);
-  applyModifierChain([link], [], fb, range(0, vals.length), model(vals.length), 0, 16);
+  applyModifierChain([link], [], fb, range(0, vals.length), { model: model(vals.length), timeMs: 0, dt: 16 });
   return ch0(fb);
 }
 
@@ -50,7 +50,7 @@ function expectBypassIdentity(def: ModifierDef<any>, params: Record<string, unkn
     bypass: true,
   };
   const fb = fbFrom(vals);
-  applyModifierChain([link], [], fb, range(0, vals.length), model(vals.length), 0, 16);
+  applyModifierChain([link], [], fb, range(0, vals.length), { model: model(vals.length), timeMs: 0, dt: 16 });
   expect(ch0(fb)).toEqual(f32(vals));
 }
 
@@ -65,7 +65,7 @@ function echoTicks(params: Record<string, unknown>, inputs: number[], dt: number
   const out: number[] = [];
   for (let i = 0; i < inputs.length; i++) {
     const fb = fbFrom([inputs[i]!]);
-    applyModifierChain([link], state, fb, range(0, 1), model(1), i * dt, dt);
+    applyModifierChain([link], state, fb, range(0, 1), { model: model(1), timeMs: i * dt, dt });
     out.push(fb.rgba[0]!);
   }
   return out;
@@ -122,7 +122,7 @@ describe('Pixelate modifier — block-average goldens', () => {
 
   it('respects a sub-range: only the voice range is touched, blocks anchored at range.start', () => {
     const fb = fbFrom([0.2, 1, 0, 0.9]);
-    applyModifierChain([{ modifierId: 'pixelate', params: { size: 2 } }], [], fb, range(1, 3), model(4), 0, 16);
+    applyModifierChain([{ modifierId: 'pixelate', params: { size: 2 } }], [], fb, range(1, 3), { model: model(4), timeMs: 0, dt: 16 });
     // pixel 0 and 3 untouched; the single block [1,0] over pixels 1..2 averages to 0.5.
     expect(ch0(fb)).toEqual(f32([0.2, 0.5, 0.5, 0.9]));
   });
@@ -172,7 +172,7 @@ describe('HueShift modifier — hue rotation goldens', () => {
   function hue(params: Record<string, unknown>, rgb: [number, number, number]): [number, number, number] {
     const fb = new Framebuffer(1);
     fb.set(0, rgb[0], rgb[1], rgb[2], 1);
-    applyModifierChain([{ modifierId: 'hue-shift', params: params as ResolvedModifier['params'] }], [], fb, range(0, 1), model(1), 0, 16);
+    applyModifierChain([{ modifierId: 'hue-shift', params: params as ResolvedModifier['params'] }], [], fb, range(0, 1), { model: model(1), timeMs: 0, dt: 16 });
     return [fb.rgba[0]!, fb.rgba[1]!, fb.rgba[2]!];
   }
 
@@ -213,7 +213,7 @@ describe('Levels modifier — saturation/brightness/invert goldens', () => {
   function levelsPx(params: Record<string, unknown>, rgb: [number, number, number]): [number, number, number] {
     const fb = new Framebuffer(1);
     fb.set(0, rgb[0], rgb[1], rgb[2], 1);
-    applyModifierChain([{ modifierId: 'levels', params: params as ResolvedModifier['params'] }], [], fb, range(0, 1), model(1), 0, 16);
+    applyModifierChain([{ modifierId: 'levels', params: params as ResolvedModifier['params'] }], [], fb, range(0, 1), { model: model(1), timeMs: 0, dt: 16 });
     return [fb.rgba[0]!, fb.rgba[1]!, fb.rgba[2]!];
   }
 

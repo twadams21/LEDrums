@@ -33,7 +33,7 @@ const f32 = (a: number[]): number[] => a.map((x) => Math.fround(x));
 function applyOnce(id: string, params: ResolvedParams, values: number[], timeMs = 0, dt = 16): number[] {
   const fb = grey(values);
   const n = values.length;
-  applyModifierChain([{ modifierId: id, params }], [], fb, fullRange(n), model(n), timeMs, dt);
+  applyModifierChain([{ modifierId: id, params }], [], fb, fullRange(n), { model: model(n), timeMs, dt });
   return ch0(fb);
 }
 
@@ -46,7 +46,7 @@ function runTicks(id: string, params: ResolvedParams, inputs: number[][], dt: nu
   const r = fullRange(n);
   return inputs.map((frame, t) => {
     const fb = grey(frame);
-    applyModifierChain([{ modifierId: id, params }], state, fb, r, m, t * dt, dt);
+    applyModifierChain([{ modifierId: id, params }], state, fb, r, { model: m, timeMs: t * dt, dt });
     return ch0(fb);
   });
 }
@@ -166,7 +166,7 @@ describe('Chromatic offset', () => {
     const R = [0.1, 0.2, 0.3, 0.4];
     const B = [0.5, 0.6, 0.7, 0.8];
     R.forEach((_, i) => fb.set(i, R[i]!, 0.9, B[i]!, 1));
-    applyModifierChain([{ modifierId: 'chromatic', params: { amount: 1 } }], [], fb, fullRange(4), model(4), 0, 16);
+    applyModifierChain([{ modifierId: 'chromatic', params: { amount: 1 } }], [], fb, fullRange(4), { model: model(4), timeMs: 0, dt: 16 });
     expect(chan(fb, 0)).toEqual(f32([0.1, 0.1, 0.2, 0.3])); // red shifted −1 (edge-clamped)
     expect(chan(fb, 2)).toEqual(f32([0.6, 0.7, 0.8, 0.8])); // blue shifted +1 (edge-clamped)
     expect(chan(fb, 1)).toEqual(f32([0.9, 0.9, 0.9, 0.9])); // green untouched
@@ -189,7 +189,7 @@ describe('bypass = identity (every S32 modifier)', () => {
     const params: ResolvedParams = {};
     for (const s of def.paramSpec) params[s.key] = s.default;
     const fb = grey(values);
-    applyModifierChain([{ modifierId: id, params, bypass: true }], [], fb, fullRange(n), model(n), 40, 16);
+    applyModifierChain([{ modifierId: id, params, bypass: true }], [], fb, fullRange(n), { model: model(n), timeMs: 40, dt: 16 });
     expect(ch0(fb)).toEqual(f32(values));
   });
 });
