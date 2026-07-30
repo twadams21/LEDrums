@@ -121,7 +121,7 @@ export function createWsConnectionHandler<S extends ConnectionSocket>(
       url: req.url,
       hostToken,
     });
-    const decision = admitDecision(req.url, pinGate, trustedLocal);
+    const decision = admitDecision(req.url, pinGate, { trustedLocal });
     if (!decision.ok) {
       ws.close(decision.code, decision.reason);
       return;

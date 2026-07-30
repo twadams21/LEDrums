@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
+import { WS_CLOSE_INVALID_PIN, WS_CLOSE_PIN_THROTTLED } from '@ledrums/protocol';
+import { createAdmissionThrottle, type ThrottlePolicy } from './admission-throttle';
 import {
   createMutablePinGate,
   admitDecision,
+  type AdmitContext,
   createPinGate,
   generateHostToken,
   generatePin,
@@ -74,13 +76,126 @@ describe('admitDecision', () => {
 
   it('trustedLocal bypasses the PIN entirely (the host on its own machine)', () => {
     const gate = createPinGate('1234');
-    expect(admitDecision('/ws', gate, true)).toEqual({ ok: true });
-    expect(admitDecision('/ws?pin=9999', gate, true)).toEqual({ ok: true });
+    expect(admitDecision('/ws', gate, { trustedLocal: true })).toEqual({ ok: true });
+    expect(admitDecision('/ws?pin=9999', gate, { trustedLocal: true })).toEqual({ ok: true });
   });
 
   it('a non-trusted connection is still gated even without a PIN', () => {
     const gate = createPinGate('1234');
-    expect(admitDecision('/ws', gate, false)).toEqual({ ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' });
+    expect(admitDecision('/ws', gate, { trustedLocal: false })).toEqual({ ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' });
+  });
+});
+
+describe('admitDecision — throttled admission', () => {
+  const PIN = '1234';
+  const PEER = 'cf:198.51.100.4';
+
+  /** A gate + throttle over a hand-driven clock, plus the one call the live path makes. */
+  function setup(policy: Partial<ThrottlePolicy> = {}) {
+    let t = 0;
+    const gate = createPinGate(PIN);
+    const throttle = createAdmissionThrottle(policy, () => t);
+    return {
+      throttle,
+      advance: (ms: number) => {
+        t += ms;
+      },
+      dial: (pin: string | null, over: Partial<AdmitContext> = {}) =>
+        admitDecision(pin === null ? '/ws' : `/ws?pin=${pin}`, gate, { throttle, peerKey: PEER, ...over }),
+    };
+  }
+
+  const THROTTLED = (seconds: number) => ({
+    ok: false,
+    code: WS_CLOSE_PIN_THROTTLED,
+    reason: `too many attempts; retry in ${seconds}s`,
+  });
+
+  it('THE FINDING: after the allowance, even the CORRECT PIN is refused until the cooldown lapses', () => {
+    const { dial, advance } = setup();
+    for (let i = 0; i < 5; i++) {
+      expect(dial('0000')).toMatchObject({ ok: false, code: WS_CLOSE_INVALID_PIN });
+    }
+    // The 6th wrong PIN escalates — still an honest "invalid pin", with the alert riding along.
+    expect(dial('0000')).toMatchObject({
+      ok: false,
+      code: WS_CLOSE_INVALID_PIN,
+      alert: { scope: 'peer', key: PEER, failures: 6, cooldownMs: 1_000 },
+    });
+    // ...and now the correct PIN is refused too, with the honest code and reason.
+    expect(dial(PIN)).toEqual(THROTTLED(1));
+    advance(1_001);
+    expect(dial(PIN)).toEqual({ ok: true }); // no permanent lockout
+  });
+
+  it('a throttled refusal never compares the PIN — that is what makes the cooldown a control', () => {
+    const { dial, advance } = setup();
+    for (let i = 0; i < 6; i++) dial('0000');
+    // Both a right and a wrong PIN get the SAME answer while cooling: the gate was never consulted.
+    expect(dial(PIN)).toEqual(THROTTLED(1));
+    expect(dial('9999')).toEqual(THROTTLED(1));
+    // And the in-cooldown attempts did not extend the cooldown (no re-escalation).
+    advance(1_001);
+    expect(dial(PIN)).toEqual({ ok: true });
+  });
+
+  it('carries the escalating wait in the close reason, so the overlay can be honest about it', () => {
+    const { dial, advance } = setup();
+    for (let i = 0; i < 6; i++) dial('0000');
+    expect(dial(PIN)).toEqual(THROTTLED(1));
+    advance(1_001);
+    expect(dial('0000')).toMatchObject({ alert: { cooldownMs: 2_000 } });
+    expect(dial(PIN)).toEqual(THROTTLED(2));
+    advance(2_001);
+    expect(dial('0000')).toMatchObject({ alert: { cooldownMs: 4_000 } });
+    expect(dial(PIN)).toEqual(THROTTLED(4));
+  });
+
+  it('the trusted host is neither throttled nor charged, however often it is wrong', () => {
+    const { dial, throttle } = setup();
+    for (let i = 0; i < 50; i++) {
+      expect(dial('0000', { trustedLocal: true })).toEqual({ ok: true });
+    }
+    expect(throttle.allow(PEER)).toEqual({ ok: true });
+    expect(throttle.size()).toBe(0); // not even a bucket was opened
+  });
+
+  it('an OPEN gate records nothing at all — a local dev server can never refuse anyone', () => {
+    let t = 0;
+    const throttle = createAdmissionThrottle({}, () => t);
+    const open = createPinGate(null);
+    for (let i = 0; i < 50; i++) {
+      expect(admitDecision('/ws?pin=whatever', open, { throttle, peerKey: PEER })).toEqual({ ok: true });
+    }
+    expect(throttle.size()).toBe(0);
+    // Not even a global-tier lockout driven by other peers can close an open gate.
+    for (let i = 0; i < 200; i++) throttle.recordFailure(`cf:203.0.113.${i % 200}`);
+    expect(admitDecision('/ws', open, { throttle, peerKey: 'cf:192.0.2.9' })).toEqual({ ok: true });
+  });
+
+  it('a successful admission exempts the peer from the global tier thereafter', () => {
+    const { dial, throttle } = setup();
+    expect(dial(PIN)).toEqual({ ok: true }); // recordSuccess → known-good for this run
+    for (let i = 0; i < 100; i++) throttle.recordFailure(`cf:203.0.113.${i}`); // trip the global tier
+    expect(throttle.allow('cf:192.0.2.9').ok).toBe(false); // a first-time peer is locked out…
+    expect(dial(PIN)).toEqual({ ok: true }); // …but the drummer who already connected is not
+  });
+
+  it('a peer under the GLOBAL tier is refused with the throttled code, not "incorrect PIN"', () => {
+    const { dial, throttle } = setup();
+    for (let i = 0; i < 100; i++) throttle.recordFailure(`cf:203.0.113.${i}`);
+    expect(dial(PIN)).toEqual(THROTTLED(60));
+  });
+
+  it('is byte-identical to the pre-throttle behaviour when no throttle is supplied', () => {
+    const gate = createPinGate(PIN);
+    const refused = { ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' };
+    for (let i = 0; i < 20; i++) {
+      expect(admitDecision('/ws?pin=0000', gate, {})).toEqual(refused);
+      expect(admitDecision('/ws?pin=0000', gate, { peerKey: PEER })).toEqual(refused); // key alone is inert
+    }
+    expect(admitDecision(`/ws?pin=${PIN}`, gate, {})).toEqual({ ok: true });
+    expect(admitDecision('/ws?pin=0000', gate)).toEqual(refused); // and with no ctx at all
   });
 });
 
@@ -192,16 +307,14 @@ describe('host bypass end-to-end (isTrustedHost → admitDecision)', () => {
     headers?: Record<string, string | string[] | undefined>;
     url: string;
   }) =>
-    admitDecision(
-      over.url,
-      gate,
-      isTrustedHost({
+    admitDecision(over.url, gate, {
+      trustedLocal: isTrustedHost({
         remoteAddress: over.remoteAddress ?? '127.0.0.1',
         headers: over.headers ?? {},
         url: over.url,
         hostToken: TOKEN,
       }),
-    );
+    });
   const refused = { ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' };
 
   it('admits the intended host app session without a room PIN', () => {

@@ -1,5 +1,6 @@
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
+import { throttledCloseReason, WS_CLOSE_INVALID_PIN, WS_CLOSE_PIN_THROTTLED } from '@ledrums/protocol';
+import type { AdmissionThrottle, ThrottleAlert } from './admission-throttle';
 
 // ---------------------------------------------------------------------------
 // Room PIN gate (S3 remote access)
@@ -149,8 +150,13 @@ export function pinFromUrl(url: string | undefined): string | null {
   }
 }
 
-/** The admit/refuse decision for an incoming WS connection — pure over the connect URL + gate. */
-export type AdmitDecision = { ok: true } | { ok: false; code: number; reason: string };
+/** The admit/refuse decision for an incoming WS connection — pure over the connect URL + gate
+ * (+ the throttle, whose only mutable state is its own bucket map). `alert` is present on the ONE
+ * refusal that caused an escalation, so the caller emits exactly one Monitor event per escalation
+ * rather than one per failed attempt. */
+export type AdmitDecision =
+  | { ok: true }
+  | { ok: false; code: number; reason: string; alert?: ThrottleAlert };
 
 /** True for a loopback peer address (the host's own machine). ws/http reports IPv4-mapped IPv6
  * (`::ffff:127.0.0.1`) on dual-stack sockets, so cover that form too. */
@@ -242,21 +248,66 @@ export function isTrustedHost({ remoteAddress, headers, url, hostToken }: HostTr
   return supplied !== null && credentialsEqual(supplied, hostToken);
 }
 
+/** The per-connection facts {@link admitDecision} needs beyond the URL and the gate. Supplying
+ * neither `throttle` nor `peerKey` gives exactly the pre-throttle behaviour. */
+export interface AdmitContext {
+  /** The host's own app window, proven by the host-session token (see {@link isTrustedHost}). */
+  trustedLocal?: boolean;
+  /** Failure accounting. Omit to disable throttling entirely for this call. */
+  throttle?: AdmissionThrottle;
+  /** This peer's throttle bucket (see `peerKeyFrom`). Required for `throttle` to do anything. */
+  peerKey?: string;
+}
+
 /**
- * Decide whether to admit a connection. On refusal the caller closes the socket with
- * {@link WS_CLOSE_INVALID_PIN} before admitting it anywhere.
+ * Decide whether to admit a connection — the WHOLE admission policy, in one pure function, in
+ * one place, so the ORDER of the checks has exactly one home. On refusal the caller closes the
+ * socket with `decision.code` before admitting it anywhere.
  *
- * `trustedLocal` short-circuits the PIN: it is the host's OWN app window, proven by the host-session
- * token (see {@link isTrustedHost}) — so the drummer never types the room PIN into the app on the
- * very machine that generated it. Remote clients (cf-* headers) and LAN peers (non-loopback) can
- * never be trustedLocal and stay gated.
+ * The order, and why each step sits where it does:
+ *
+ *  1. `trustedLocal` short-circuits everything, with NO throttle bookkeeping: it is the host's
+ *     OWN app window, proven by the host-session token — so the drummer never types the room PIN
+ *     into the app on the machine that generated it, the host can never lock ITSELF out, and the
+ *     host never consumes another peer's budget. Remote clients (cf-* headers) and LAN peers
+ *     (non-loopback) can never be trustedLocal and stay gated.
+ *  2. An OPEN gate (no PIN configured) admits with no accounting at all. There is no credential
+ *     to guess, so there is nothing to throttle — and a plain local `pnpm dev` must never be able
+ *     to refuse anyone, least of all via the global tier.
+ *  3. The throttle's `allow` runs BEFORE the PIN is compared. That ordering is what makes the
+ *     cooldown a real control rather than a delay, and it is also what guarantees a live-path
+ *     `recordFailure` never lands on an already-cooling bucket. A refusal here carries
+ *     {@link WS_CLOSE_PIN_THROTTLED}, NOT the invalid-pin code: during a cooldown even the
+ *     correct PIN is refused, so "incorrect PIN" would be a lie to a legitimate drummer.
+ *  4. Then, and only then, the PIN itself — success clears the bucket and marks the peer
+ *     known-good for the run; failure is counted, and if that count escalates, the escalation
+ *     rides back on the refusal as `alert` for the caller to emit exactly once.
  */
 export function admitDecision(
   url: string | undefined,
   gate: PinGate,
-  trustedLocal = false,
+  ctx: AdmitContext = {},
 ): AdmitDecision {
+  const { trustedLocal = false, throttle, peerKey } = ctx;
   if (trustedLocal) return { ok: true };
-  if (gate.check(pinFromUrl(url))) return { ok: true };
-  return { ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin' };
+  if (gate.pin === null) return { ok: true }; // open gate: no credential, nothing to account for
+
+  const accounting = throttle !== undefined && peerKey !== undefined ? { throttle, peerKey } : null;
+  if (accounting !== null) {
+    const verdict = accounting.throttle.allow(accounting.peerKey);
+    if (!verdict.ok) {
+      return {
+        ok: false,
+        code: WS_CLOSE_PIN_THROTTLED,
+        reason: throttledCloseReason(verdict.retryAfterMs),
+      };
+    }
+  }
+
+  if (gate.check(pinFromUrl(url))) {
+    accounting?.throttle.recordSuccess(accounting.peerKey);
+    return { ok: true };
+  }
+  const alert = accounting?.throttle.recordFailure(accounting.peerKey) ?? null;
+  return { ok: false, code: WS_CLOSE_INVALID_PIN, reason: 'invalid pin', ...(alert ? { alert } : {}) };
 }
