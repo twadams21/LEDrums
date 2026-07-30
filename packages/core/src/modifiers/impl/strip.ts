@@ -9,7 +9,7 @@
  * so spatial modifiers reuse it every frame — no per-frame allocation on the modified path.
  */
 import type { PixelModel } from '../../geometry/pixel-model';
-import type { Framebuffer } from '../../engine/framebuffer';
+import type { Framebuffer } from '../../render/framebuffer';
 import type { PixelRange } from '../types';
 
 /** Pixel count of a range's strip. */

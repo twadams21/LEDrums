@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../render/framebuffer';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import type { TransportState } from '../engine/render-context';
+import type { TransportState } from '../render/render-context';
 import { createDefaultCompositor, type CompositorFrame } from '../voice/compositor';
 import { resolveModifierChain } from '../voice/modifier-graph';
 import type { GraphEdge, GraphNode, TriggerGraph, Voice } from '../voice/types';

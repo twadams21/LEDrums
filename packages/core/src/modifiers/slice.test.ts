@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
 import { applyModifierChain } from './chain';
 import { buildSliceMapping, type SliceState } from './impl/slice';

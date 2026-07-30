@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Framebuffer } from '../engine/framebuffer';
-import type { Trigger } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { Trigger } from '../render/render-context';
 import { model, transport, ctx, trig, render, litIds, finite01Failures } from '../test-support/effect-harness';
 import { type EffectGenerator } from './types';
 import { createEmitterState, updateEmissions, MAX_EMISSIONS } from './emitter';

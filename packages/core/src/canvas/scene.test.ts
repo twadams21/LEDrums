@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { RenderContext } from '../render/render-context';
 import { defaultParams, type ResolvedParams } from '../effects/types';
 import { getEffect, tryGetEffect } from '../effects/registry';
 import { applyModulations, type Mapping } from '../voice/modulation';

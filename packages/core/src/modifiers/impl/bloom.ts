@@ -12,7 +12,7 @@
  * only state is that scratch buffer (sized to the model, reused each frame — no hot-path
  * alloc); it holds no history, so retrigger is a clean slate.
  */
-import { Framebuffer } from '../../engine/framebuffer';
+import { Framebuffer } from '../../render/framebuffer';
 import type { PixelModel } from '../../geometry/pixel-model';
 import { pnum } from '../../effects/types';
 import type { ModifierDef, PixelRange } from '../types';

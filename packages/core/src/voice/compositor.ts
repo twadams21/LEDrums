@@ -17,8 +17,8 @@
  * budget.
  */
 import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { TransportState } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { TransportState } from '../render/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
 import { createGeneratorBridge } from './generator-bridge';
 import type { UnresolvedIdSink } from './diagnostics';

@@ -10,10 +10,10 @@
  * carried in engine state. Zero allocation on the hot path: the voice pool, per-frame
  * scratch, and the compositor's buffers are all pre-sized and reused.
  */
-import type { Framebuffer } from '../engine/framebuffer';
-import { Framebuffer as Fb } from '../engine/framebuffer';
+import type { Framebuffer } from '../render/framebuffer';
+import { Framebuffer as Fb } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
-import type { TransportState } from '../engine/render-context';
+import type { TransportState } from '../render/render-context';
 import { Prng } from './prng';
 import {
   createDefaultCompositor,

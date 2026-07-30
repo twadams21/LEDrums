@@ -14,7 +14,7 @@
  * the caller (the compositor, which owns the voice clock) so modifier code never re-derives
  * time (group-G timebase contract).
  */
-import type { Framebuffer } from '../engine/framebuffer';
+import type { Framebuffer } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
 import { applyModulations, type ModSampleCtx } from '../voice/modulation';
 import { tryGetModifier } from './registry';

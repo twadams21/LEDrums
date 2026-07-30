@@ -17,9 +17,9 @@
  * instance and reused across every voice in the frame; the only per-generator-voice
  * allocation is the merged params object (generator defaults overlaid with live params).
  */
-import { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../render/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
-import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
+import type { RenderContext, TransportState, Trigger } from '../render/render-context';
 import { defaultParams, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
 import { applyModifierChain } from '../modifiers/chain';

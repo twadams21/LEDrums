@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import type { TransportState } from '../engine/render-context';
-import { Framebuffer } from '../engine/framebuffer';
+import type { TransportState } from '../render/render-context';
+import { Framebuffer } from '../render/framebuffer';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { createDefaultCompositor, type CompositorFrame } from './compositor';
 import {

@@ -7,8 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
-import { Framebuffer } from '../engine/framebuffer';
-import type { RenderContext, TransportState } from '../engine/render-context';
+import { Framebuffer } from '../render/framebuffer';
+import type { RenderContext, TransportState } from '../render/render-context';
 import { defaultParams } from '../effects/types';
 import { createVoiceBusEngine, type InputEvent } from '../voice/engine';
 import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from '../voice/types';

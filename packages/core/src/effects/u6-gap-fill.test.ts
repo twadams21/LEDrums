@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Framebuffer } from '../engine/framebuffer';
+import { Framebuffer } from '../render/framebuffer';
 import { model, transport, ctx, trig, render, litIds, finite01Failures } from '../test-support/effect-harness';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import { canvasEffectId } from '../canvas/ids';
