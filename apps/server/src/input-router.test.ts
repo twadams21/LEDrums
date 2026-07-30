@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Engine, defaultProject, voice } from '@ledrums/core';
+import { defaultProject, voice } from '@ledrums/core';
 import {
   midiToEvent,
   oscRecall,

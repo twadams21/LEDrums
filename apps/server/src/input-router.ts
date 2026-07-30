@@ -1,5 +1,19 @@
-import { TRIGGER_SLOT_COUNT, type InputEvent, type InputMap, type voice } from '@ledrums/core';
+import { TRIGGER_SLOT_COUNT, type InputMap, type voice } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
+
+/**
+ * A raw hardware input, time-stamped — a MIDI note or an OSC address/value.
+ *
+ * This was exported from `@ledrums/core` (declared in the legacy engine, which consumed it as its
+ * queue element). INIT-01 S13 deleted that engine, and this file is now both the only producer
+ * ({@link midiToEvent} / {@link oscToEvent}) and the only consumer, so the type lives where it is
+ * used rather than on a package boundary nothing else crosses. NOT to be confused with
+ * `voice.InputEvent`, the voice engine's richer pad/graph-aware event.
+ */
+export type InputEvent =
+  | { kind: 'noteOn'; note: number; velocity: number; timeMs: number }
+  | { kind: 'noteOff'; note: number; timeMs: number }
+  | { kind: 'osc'; address: string; value: number; timeMs: number };
 
 /** A drum-zone pad resolved from the patch zone-map (the pad-bound graph it fires). */
 export interface ZonePad {
