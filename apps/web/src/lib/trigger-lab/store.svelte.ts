@@ -1476,7 +1476,7 @@ export class TriggerLab {
       recallSection + fire a referenced section. Persistence (`toAuthored`) is untouched — it still
       stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
       via {@link activeSong}. */
-  private get showSource(): ShowSource {
+  get showSource(): ShowSource {
     const rv = this.resolvedView;
     return {
       buses: this.buses,

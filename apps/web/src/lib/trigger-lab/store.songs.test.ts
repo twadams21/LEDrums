@@ -25,7 +25,7 @@ function reload(store: TriggerLab): TriggerLab {
   const slice: Partial<AuthoredState> = {
     songs: store.songs,
     activeSongId: store.activeSongId,
-    activeSectionId: store.activeSectionId,
+    activeSectionId: store.arrangement.activeSectionId,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored(slice as AuthoredState)));
   return new TriggerLab(fakeClient);
@@ -44,7 +44,7 @@ describe('createSong', () => {
     expect(song.name).toBe('New song 1'); // auto-named
     expect(song.sections).toHaveLength(1); // one empty section
     expect(song.sections[0]!.graphs).toEqual([]);
-    expect(store.activeSectionId).toBe(song.sections[0]!.id); // active section re-pointed
+    expect(store.arrangement.activeSectionId).toBe(song.sections[0]!.id); // active section re-pointed
   });
 
   it('honours an explicit name and auto-increments the default for the next unnamed song', () => {
@@ -104,7 +104,7 @@ describe('duplicateSong', () => {
     const dupSecId = store.songs.find((s) => s.id === newId)!.sections[0]!.id;
     const key = store.songs.find((s) => s.id === newId)!.sections[0]!.graphs[0]!;
 
-    store.removeGraphFromSection(dupSecId, key); // active song is the dup → edits the copy
+    store.arrangement.removeGraphFromSection(dupSecId, key); // active song is the dup → edits the copy
     expect(store.songs.find((s) => s.id === newId)!.sections[0]!.graphs).not.toContain(key);
     expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs).toContain(key);
   });
@@ -127,7 +127,7 @@ describe('removeSong', () => {
     expect(store.songs.map((s) => s.id)).toEqual(['set-1', c]);
     expect(store.activeSongId).toBe(c); // re-pointed to the next song
     expect(store.activeSong!.id).toBe(c);
-    expect(store.activeSectionId).toBe(store.activeSong!.sections[0]!.id); // section re-pointed too
+    expect(store.arrangement.activeSectionId).toBe(store.activeSong!.sections[0]!.id); // section re-pointed too
   });
 
   it('deleting the active LAST song re-points to the previous one', () => {

@@ -119,7 +119,7 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
     expect(store.activeSongId).toBe(libId);
     expect(store.activeSong?.id).toBe(libId);
     expect(store.activeSong!.sections.length).toBeGreaterThan(0);
-    expect(store.activeSection).toBeTruthy(); // its first section became active (playable)
+    expect(store.arrangement.activeSection).toBeTruthy(); // its first section became active (playable)
   });
 
   it('editing a referenced graph writes through to the LIBRARY copy; authored state keeps the ref (no copy)', () => {
@@ -157,7 +157,7 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
     const show = buildShow({
       buses: store.buses,
       graphs: store.resolvedView.graphs,
-      sections: store.sections,
+      sections: store.arrangement.sections,
       effects: store.resolvedView.effects,
       presets: store.resolvedView.presets,
       drums: store.drums,

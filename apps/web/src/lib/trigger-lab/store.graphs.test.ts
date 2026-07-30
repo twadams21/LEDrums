@@ -165,11 +165,11 @@ describe('deleteGraph (any graph)', () => {
 
     const songAId = store.activeSongId;
     const secA = store.activeSong!.sections[0]!.id;
-    store.addGraphToSection(secA, key);
+    store.arrangement.addGraphToSection(secA, key);
 
     const songBId = store.createSong('Song B'); // becomes active
     const secB = store.activeSong!.sections[0]!.id;
-    store.addGraphToSection(secB, key);
+    store.arrangement.addGraphToSection(secB, key);
 
     // sanity: referenced in both songs before the delete
     expect(store.songs.find((s) => s.id === songAId)!.sections[0]!.graphs).toContain(key);
@@ -239,7 +239,7 @@ describe('persistence (autosave → hydrate)', () => {
       store.renameGraph(keeper, 'Renamed');
       const doomed = store.createGraph('Doomed');
       const sec = store.activeSong!.sections[0]!.id;
-      store.addGraphToSection(sec, doomed);
+      store.arrangement.addGraphToSection(sec, doomed);
       store.deleteGraph(doomed);
       store.stop(); // flush authored slice → localStorage
 

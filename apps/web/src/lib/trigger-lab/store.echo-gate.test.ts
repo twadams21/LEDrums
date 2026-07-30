@@ -129,7 +129,7 @@ describe('outbound intent reaches the engine and nothing resolves locally (S12)'
 
   describe('hit (pad surface)', () => {
     const padWithGraph = (store: TriggerLab) => {
-      store.activeSectionId = null; // flat per-pad resolution → the seeded pad graph fires
+      store.arrangement.activeSectionId = null; // flat per-pad resolution → the seeded pad graph fires
       return store.pads.find((p) => store.graphs[padKey(p)]) ?? store.pads[0]!;
     };
 
@@ -161,8 +161,8 @@ describe('outbound intent reaches the engine and nothing resolves locally (S12)'
     it('offline: selects + flashes the graph but sends nothing and resolves nothing', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
-      const key0 = store.activeSection!.graphs[0]!;
-      expect(store.activeSection?.graphs.length ?? 0).toBeGreaterThan(0);
+      const key0 = store.arrangement.activeSection!.graphs[0]!;
+      expect(store.arrangement.activeSection?.graphs.length ?? 0).toBeGreaterThan(0);
 
       store.fireSectionGraph(0);
 
@@ -176,7 +176,7 @@ describe('outbound intent reaches the engine and nothing resolves locally (S12)'
     it('connected: sends the fireGraph intent (exact key), not a synthetic source (S13)', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
-      const key0 = store.activeSection!.graphs[0]!;
+      const key0 = store.arrangement.activeSection!.graphs[0]!;
       store.link = 'open';
 
       store.fireSectionGraph(0);
@@ -191,7 +191,7 @@ describe('outbound intent reaches the engine and nothing resolves locally (S12)'
     it('connected: a MIDI-bound section graph sends fireGraph — NOT a synthetic {t:midi} (the old triple-fire) (S13)', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
-      const key0 = store.activeSection!.graphs[0]!;
+      const key0 = store.arrangement.activeSection!.graphs[0]!;
       store.setTriggerSource(key0, { kind: 'midi', note: 60 }); // rebind to a raw MIDI source
       store.link = 'open';
 
@@ -213,7 +213,7 @@ describe('outbound intent reaches the engine and nothing resolves locally (S12)'
 describe('setActiveSection recall (S15)', () => {
   /** A fixture section whose looks name at least one effect — the engine spawns those on recall. */
   const sectionWithLook = (store: TriggerLab): string => {
-    const s = store.sections.find((sec) => Object.values(sec.looks).some((v) => v != null));
+    const s = store.arrangement.sections.find((sec) => Object.values(sec.looks).some((v) => v != null));
     expect(s, 'a fixture section with a non-null look').toBeTruthy();
     return s!.id;
   };
@@ -226,7 +226,7 @@ describe('setActiveSection recall (S15)', () => {
 
     store.setActiveSection(id);
 
-    expect(store.activeSectionId).toBe(id); // the arrangement edit is local and still lands
+    expect(store.arrangement.activeSectionId).toBe(id); // the arrangement edit is local and still lands
     expect(sent).toHaveLength(0);
     expect(effectEvents(store)).toHaveLength(0);
   });

@@ -114,7 +114,7 @@ describe('paste materialize — section', () => {
 
     expect(res.ok).toBe(true);
     expect(store.activeSong!.sections.length).toBe(sectionsBefore + 1);
-    expect(store.activeSectionId).toBe('ts-1');
+    expect(store.arrangement.activeSectionId).toBe('ts-1');
     expect(store.activeSong!.sections.some((s) => s.id === 'ts-1')).toBe(true);
   });
 });
