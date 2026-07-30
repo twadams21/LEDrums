@@ -4,15 +4,12 @@
      that so exactly one option stays selected. Pass `value` + `onChange`. */
   import { ToggleGroup } from 'bits-ui';
   import { untrack, type Component } from 'svelte';
+  import type { ControlProps } from './control-props';
 
   type Option = { value: string; label: string; icon?: Component; disabled?: boolean };
-  type Props = {
+  type Props = ControlProps<string> & {
     value: string;
     options: Option[];
-    onChange?: (v: string) => void;
-    disabled?: boolean;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let { value, options, onChange, disabled = false, ariaLabel, class: klass }: Props = $props();

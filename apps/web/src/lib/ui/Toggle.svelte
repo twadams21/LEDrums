@@ -2,15 +2,12 @@
   /* Two-state on/off toggle on Bits UI Toggle, styled to match the segmented
      buttons. Pass `pressed` + `onChange`, or `bind:pressed`. */
   import { Toggle } from 'bits-ui';
+  import type { ControlProps } from './control-props';
 
-  type Props = {
+  type Props = ControlProps<boolean> & {
     pressed: boolean;
-    onChange?: (v: boolean) => void;
-    disabled?: boolean;
     onLabel?: string;
     offLabel?: string;
-    ariaLabel?: string;
-    class?: string;
   };
 
   let {

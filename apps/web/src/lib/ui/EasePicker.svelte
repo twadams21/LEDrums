@@ -35,14 +35,13 @@
      Envelope node inspector (S34). */
   import Select from './Select.svelte';
   import SegmentedControl from './SegmentedControl.svelte';
+  import type { ControlProps } from './control-props';
 
-  type Props = {
+  type Props = ControlProps<EaseSpec> & {
     value: EaseSpec;
+    /** REQUIRED here, unlike the rest of the contract: this control owns no state of its
+        own — without a callback the family/direction picks go nowhere and it renders inert. */
     onChange: (spec: EaseSpec) => void;
-    /** Labels the pair for assistive tech, e.g. "Attack easing". */
-    ariaLabel?: string;
-    disabled?: boolean;
-    class?: string;
   };
 
   let { value, onChange, ariaLabel, disabled = false, class: klass }: Props = $props();
