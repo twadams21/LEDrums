@@ -429,6 +429,44 @@ describe('triggerNodeSignature — golden table over every canonical kind', () =
   });
 });
 
+/**
+ * S11 DECISION, pinned so it cannot be silently "fixed": the signature is INVARIANT to
+ * `bypass`, `ccSource` and `oscAddress`, and that is correct in this tree.
+ *
+ * primitive-obsession-0009 read these as omissions, on the premise that a node face which
+ * depends on a field must have that field in its signature or the face goes stale. That premise
+ * does not hold here. `graphToFlowNodes` puts ONLY `{ kind }` in a flow node's `data`; the face
+ * looks its model up live (`TriggerNode.svelte:59`, `$derived(store.selectedGraph?.nodes.find(…))`)
+ * and derives the bypass subtitle and `.bypassed` class from it (`:94`, `:321`). A bypass toggle
+ * therefore repaints through Svelte reactivity with no help from this cache.
+ *
+ * What the signature actually governs is whether the xyflow node OBJECT is REUSED, carrying its
+ * measured `handleBounds`. Adding a field that changes no handle costs a rebuild and discards
+ * those bounds for nothing — the R01/GH#80 vanishing-wire class this cache exists to prevent.
+ * The plan's own rule for this case: keep the retype, drop the addition.
+ *
+ * `ccSource`/`oscAddress` fail on a second count too: neither is reachable on a live `cc` node.
+ * `store.setCcNodeSource` has no component caller (only store.surface.test.ts), `oscNodeAddress`
+ * guards `kind === 'osc'`, and `hydrate.ts:363-365` migrates a persisted `cc` + `ccSource:'osc'`
+ * node to kind `osc` on load. The `osc` kind carries its own arm and DOES sign its address.
+ */
+describe('triggerNodeSignature — fields deliberately NOT signed', () => {
+  const sig = (kind: NodeKind, over: Partial<GraphNode>) =>
+    triggerNodeSignature({ ...makeNode(kind, `n-${kind}`, 12, 34, SIG_FIELDS), ...over } as GraphNode);
+
+  it('a modifier bypass toggle does not rebuild the node (the face repaints reactively)', () => {
+    expect(sig('modifier', { bypass: true })).toBe(sig('modifier', { bypass: false }));
+  });
+
+  it('a cc node ignores ccSource and oscAddress (unreachable on `cc`; hydrate migrates them to kind `osc`)', () => {
+    expect(sig('cc', { ccSource: 'osc', oscAddress: '/live/1' })).toBe(sig('cc', { ccSource: 'midi', oscAddress: '' }));
+  });
+
+  it('but an `osc` node DOES sign its address — the kind that can actually carry one', () => {
+    expect(sig('osc', { oscAddress: '/live/1' })).not.toBe(sig('osc', { oscAddress: '/live/2' }));
+  });
+});
+
 describe('triggerEdgeSignature', () => {
   it('includes source and target ports so handle-only wire changes rebuild edges', () => {
     expect(triggerEdgeSignature({ id: 'e1', from: 'sw', fromPort: 'band-0', to: 'p', toPort: 'in' })).not.toBe(

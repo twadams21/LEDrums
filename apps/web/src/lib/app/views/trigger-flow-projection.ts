@@ -1,3 +1,4 @@
+import { voice } from '@ledrums/core';
 import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from '../../trigger-lab/sim';
 import { graphToFlowNodes, type TriggerFlowNode } from './graph-to-flow';
 
@@ -20,19 +21,37 @@ function mixRowSetSignature(graph: TriggerGraph | null | undefined, mixNodeId: s
     .join(',');
 }
 
-/** What one kind contributes to its node's signature, on top of the shared `base`. */
-type SigFn = (n: GraphNode, base: string, graph: TriggerGraph | null | undefined) => string;
+/**
+ * What one kind contributes to its node's signature, on top of the shared `base`.
+ *
+ * Typed against that kind's own {@link voice.NodeView} arm (S11), not the flat `GraphNode`. After
+ * S6 this Record was total over kinds, but every entry still received the whole 40-field record —
+ * so an arm could freely read a field belonging to a DIFFERENT kind, which is what made the
+ * omissions in primitive-obsession-0009 possible in the first place. A cross-kind read is now a
+ * compile error instead of a silent read of an always-undefined field.
+ */
+type SigFn<K extends NodeKind> = (
+  n: voice.NodeViewOf<K>,
+  base: string,
+  graph: TriggerGraph | null | undefined,
+) => string;
 
 /** A kind that deliberately contributes NOTHING beyond `base`. Spelled as a named function rather
     than an inline arrow at ten keys so "this kind has no structural fields" reads as a DECISION on
-    the page — which is the whole point of deleting the old `default:` arm. */
-const baseOnly: SigFn = (_n, base) => base;
+    the page — which is the whole point of deleting the old `default:` arm. Takes `unknown` because
+    it reads no field at all, which makes it assignable to every arm's SigFn. */
+const baseOnly = (_n: unknown, base: string): string => base;
 
 /** Shared by the canonical `effect` key AND its legacy `play` alias, so the two spellings cannot
     drift apart again — spelling only 'play' is exactly what made the arm dead (S1). The legacy key
     is DELIBERATELY TEMPORARY: 11-decisions.md drops 'play' from the authoring union, tracked as
-    INIT-06 chunk 06C, which owns the persistence-side threading that removal requires. */
-const effectSig: SigFn = (n, base) =>
+    INIT-06 chunk 06C, which owns the persistence-side threading that removal requires.
+
+    The parameter is spelled as the two-arm union rather than annotated `SigFn<'effect' | 'play'>`:
+    TS compares two instantiations of a generic alias by its INFERRED VARIANCE, and measures `K`
+    here as covariant, so the alias form is rejected assigning to `SigFn<'effect'>` even though the
+    ordinary contravariant parameter check passes. Same type, structural comparison. */
+const effectSig = (n: voice.NodeViewOf<'effect' | 'play'>, base: string): string =>
   `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
 
 /**
@@ -47,7 +66,7 @@ const effectSig: SigFn = (n, base) =>
  * measured, not assumed — the golden table in the test file is the authority, so a miscount here
  * fails a test rather than shipping.
  */
-const KIND_SIG: Record<NodeKind, SigFn> = {
+const KIND_SIG: { [K in NodeKind]: SigFn<K> } = {
   // --- contributes nothing beyond base (10 canonical kinds, deliberately) ---
   trigger: baseOnly,
   all: baseOnly,
@@ -82,9 +101,17 @@ const KIND_SIG: Record<NodeKind, SigFn> = {
     reusing stale bounds that have nowhere to attach the new wire (R01/GH #80: the vanishing wire).
     Mirrors how `modInputs` (a play/modifier node's dynamic param handles) already lives in `base`. */
 export function triggerNodeSignature(n: GraphNode, graph?: TriggerGraph | null): string {
+  // `base` is deliberately computed on the FLAT record: `modInputs` is a play/modifier field, yet
+  // every kind's base folds it in, so this read is cross-kind BY DESIGN and belongs here, before
+  // the per-kind narrowing, rather than inside any arm.
   const modInputs = (n.modInputs ?? []).map((m) => m.param).join(',');
   const base = `${n.id}:${n.kind}:pos=${n.x},${n.y}:mod=${modInputs}`;
-  return KIND_SIG[n.kind](n, base, graph);
+  const v = voice.narrowNode(n);
+  // The one widening keyed-Record dispatch costs in TS, confined to this single line: indexing
+  // with `v.kind` yields the UNION of every arm's SigFn, whose parameters TS intersects, so no
+  // real value satisfies it — `never` is assignable to all of them. The narrowing is not lost:
+  // each ENTRY above is type-checked against its own arm; only the call site is widened.
+  return KIND_SIG[v.kind](v as never, base, graph);
 }
 
 export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort' | 'opacity'>): string {
