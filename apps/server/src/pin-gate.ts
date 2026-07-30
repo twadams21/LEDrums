@@ -18,6 +18,31 @@ import type { AdmissionThrottle, ThrottleAlert } from './admission-throttle';
 // NOTE: the tunnel forwards to localhost, so tunnel-origin requests arrive as local
 // connections indistinguishable from the host's own browser — the gate is therefore uniform
 // (the host enters the PIN too; it is printed to the boot console).
+//
+// OPERATOR RULES (INIT-05). Two things an operator must know before pointing this at a tunnel:
+//
+//  1. STRENGTH, FAIL-CLOSED. An explicit `LEDRUMS_PIN` must be at least {@link MIN_PIN_LENGTH}
+//     (4) characters and the server REFUSES TO BOOT below that — it does not quietly ignore the
+//     value, because a silently-dropped PIN means an OPEN server. The rule is LENGTH only: the
+//     charset stays unconstrained, so a non-numeric PIN is still legal. Under the desktop
+//     sidecar, which inherits the user environment, a too-short PIN surfaces as a dead sidecar
+//     plus the thrown message in the server log; the fix is a longer PIN. Enforced whether or
+//     not a tunnel is enabled at boot, because the in-app Share control can open one later.
+//
+//  2. THROTTLE. Repeated failed admissions from one peer buy an escalating cooldown (1s → 2s →
+//     4s … capped at 60s, see `admission-throttle.ts`), and a peer that is cooling is refused
+//     with WS_CLOSE_PIN_THROTTLED (4429) WITHOUT the PIN being compared — so during a cooldown
+//     even the correct PIN is refused, which is why the web overlay says "too many attempts"
+//     rather than "incorrect PIN". Each ESCALATION (never each attempt) raises one Monitor
+//     event: 'Repeated PIN refusals', or 'Remote access cooling down (global)' when the
+//     server-wide tier trips. That global tier is attacker-operable — a sustained flood can
+//     hold first-time remote peers out — so it is the alert to act on; peers that have already
+//     connected successfully this run are exempt from it, and it can be disabled outright by
+//     constructing the throttle with `globalFailures: Infinity`, no revert required.
+//
+//     The TRUSTED HOST is exempt from all of the above: it bypasses the PIN, is never
+//     throttled, and never consumes another peer's budget, so the host cannot lock itself out.
+//     An OPEN gate never touches the throttle at all — nothing to guess, nothing to account for.
 
 // ---------------------------------------------------------------------------
 // Credential primitives (module-private) — the invariant, made structural

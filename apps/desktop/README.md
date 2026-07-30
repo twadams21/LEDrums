@@ -58,8 +58,10 @@ On launch (`src-tauri/src/lib.rs`) the Rust shell:
    - `LEDRUMS_TUNNEL=quick` + `LEDRUMS_TUNNEL_BIN=<resource_dir>/cloudflared/cloudflared`
      **only when** a bundled cloudflared is present (otherwise local/LAN only, no PIN).
 2. Captures the sidecar's stdout/stderr and parses the boot banner for the tunnel URL
-   (`https://*.trycloudflare.com`), the room PIN (`(PIN <digits>)` / `Room PIN: <digits>`),
+   (`https://*.trycloudflare.com`), the room PIN (`(PIN <pin>)` / `Room PIN: <pin>`),
    and the local URL — pushing them to the native share window via the `boot://status` event.
+   The PIN is captured up to the next whitespace or `)`, **not** as digits: the server's only
+   rule is a minimum LENGTH (see below), so a non-numeric PIN is legal.
 3. Opens the **full app** in a second webview window at `http://127.0.0.1:<port>` (single
    origin → UI + WebSocket share the tunnel, reusing the web PinGate/ShareInfo).
 4. On macOS, creates a CoreMIDI virtual destination named `LEDrums` and forwards incoming
@@ -71,6 +73,26 @@ On launch (`src-tauri/src/lib.rs`) the Rust shell:
 The server changes that make this possible are env-gated with defaults that reproduce today's
 behavior exactly: `LEDRUMS_PROJECTS_DIR` (apps/server `projects.ts`) and `LEDRUMS_WEB_ROOT`
 (apps/server `static-host.ts`).
+
+### Room-PIN rules the shell inherits
+
+The sidecar inherits the user environment, so both of these reach the desktop app. Full spec in
+the header of `apps/server/src/pin-gate.ts`.
+
+- **`LEDRUMS_PIN` must be at least 4 characters, and the server REFUSES TO BOOT below that.**
+  It does not quietly ignore a weak value, because a silently-dropped PIN means an *open*
+  server. Under the shell that surfaces as a **dead sidecar** plus the thrown message
+  (`LEDRUMS_PIN must be at least 4 characters`) in the sidecar log — the fix is a longer PIN.
+  The rule is LENGTH only; the charset is unconstrained, so `drum` is a valid PIN and the
+  banner parser must not assume digits. Enforced whether or not a tunnel is on at boot, since
+  the in-app Share control can open one later on an already-booted server.
+- **Repeated failed joins from one peer buy an escalating cooldown** (1s → 2s → 4s …, capped at
+  60s). A cooling peer is refused with close code **4429** *without the PIN being compared*, so
+  during a cooldown even the correct PIN is refused — which is why the web overlay says "too
+  many attempts" rather than "incorrect PIN". The host app's own window is exempt: it bypasses
+  the PIN via the host-session token, is never throttled, and cannot lock itself out.
+  Escalations raise a Monitor event — `Repeated PIN refusals`, or `Remote access cooling down
+  (global)` when a server-wide flood is holding first-time remote peers out.
 
 ## Sidecar build (esbuild + Node SEA)
 
